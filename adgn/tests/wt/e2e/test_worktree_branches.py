@@ -31,10 +31,10 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory):
     env["WT_DIR"] = str(cfg.wt_dir)
 
     # Start daemon by calling status once
-    run_cli_command(["sh"], env=env)
+    run_cli_command([], env=env)
 
     # Call list command and ensure worktrees are present (ls output shows names/paths)
-    res = run_cli_command(["sh", "ls"], env=env)
+    res = run_cli_command(["ls"], env=env)
     assert res.returncode == 0
     out = res.stdout
     assert "aaaaa:" in out

@@ -18,22 +18,18 @@ import time
 
 import typer
 
-from adgn.llm.mini_codex.aggregating_handler import AutoHandler
-from adgn.llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
+from adgn.agent.reducer import AutoHandler
+from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.loggers import TranscriptLoggerHandler
 
-from .mcp.editor_server import make_editor_mcp
-from .mcp.inproc_transport import make_inproc_slot_spec
-from .mini_codex.agent import MiniCodex
-from adgn.llm.openai_utils.model import OpenAIModelProto
-from .mini_codex.mcp_manager import McpManager
-from adgn.llm.openai_utils.types import ReasoningSummary
-from adgn.llm.openai_utils.model import ReasoningEffort
-from adgn.llm import client_factory
-
-
-def _make_openai_client(model: str) -> OpenAIModelProto:
-    return client_factory.build_client(model)
+from adgn.mcp.editor_server import make_editor_mcp
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.agent.agent import MiniCodex
+from adgn.openai_utils.model import OpenAIModelProto
+from adgn.agent.mcp_manager import McpManager
+from adgn.openai_utils.types import ReasoningSummary
+from adgn.openai_utils.model import ReasoningEffort
+from adgn.openai_utils import client_factory
 
 
 async def _execute(
@@ -113,7 +109,7 @@ def _run_cli(
     reasoning_summary: str | None,
 ) -> None:
     # Construct the OpenAI adapter (with retries) and pass it to the agent
-    client = _make_openai_client(model)
+    client = client_factory.build_client(model)
     code = asyncio.run(
         _execute(
             file_path=file_path,

@@ -1,56 +1,71 @@
-# MiniCodex interactive UI and approvals — minimal design
+# MiniCodex Interactive UI — Summary
 
-Author: Rai (@agentydragon)
-Date: 2025-09-14
-Repo path: adgn
-sha=6f2877fa
+This document summarizes the interactive UI and approvals integration for MiniCodex.
 
-Scope and goals
-- Add a small HTTP UI for MiniCodex to:
-  - Gate selected MCP tools behind explicit user approval. If not approved, synthesize a rejection tool result and continue the loop so the user can instruct next steps.
-  - Provide a basic compose textarea with common keyboard shortcuts (Shift+Enter for newline; Cmd/Ctrl+Enter to send).
-  - Allow aborting an in-flight rollout while the model call is pending (and later, allow aborting tool calls).
-- Keep changes minimal and local to mini_codex; leverage existing event plumbing.
-- Out of scope (for this iteration): multi-session management, auth, any persistence outside process, streaming token UI, prompt optimization/inop integration.
+Implemented
 
-Current state (quick map)
-- Agent loop: src/adgn/llm/mini_codex/agent.py:249–521 controls a turn. Tool calls are collected, then executed in parallel via asyncio.gather in _invoke() wrappers.
-- Event emission: agent emits dict events via _emit_event(); handlers exist for both legacy dict and typed events.
-  - Aggregating controller/handlers: src/adgn/llm/mini_codex/aggregating_handler.py
-  - Transcript logger: src/adgn/llm/mini_codex/loggers.py
-- Tool call execution:
-  - ResponseFunctionToolCall objects are parsed (agent.py:332–356) and executed in _invoke (agent.py:380–424) and the sequential tail (agent.py:440–504).
-  - Results are emitted via _emit_tool_result (agent.py:598–624), which also emits a "tool_error" event when parsed_error is present.
-- No UI/server exists today; DisplayEventsHandler used by inop runner prints to console.
+- Approvals at the agent boundary
+  - ApprovalPolicyHandler + ApprovalPolicyEngine + ApprovalHub gate MCP tool calls (ask/allow/deny).
+  - MiniCodex.create can inject the handler when given `approval_engine` and `approval_hub`.
+  - NotificationsHandler inserts compact system messages when approval_policy resources change.
 
-Design overview
-We add three minimally-coupled pieces:
-1) Approvals proxy around MCP (modular): a wrapper around McpManager that enforces a hardcoded policy ("allow" or "ask"). For "ask", it consults an ApprovalsProvider (UI/CLI/headless). If the provider returns deny, the wrapper raises TurnAbortRequested(details) — a control-plane exception — instead of returning a tool result.
-2) Lightweight HTTP UI (FastAPI+WebSocket) to:
-   - Show transcript/events and pending tool calls.
-   - Allow the user to send a message, toggle pre-approvals per tool, and abort the active run.
-3) Abort controller: run the agent turn in an asyncio.Task and cancel it on user request; track and cancel per-tool tasks in Phase 2.
+- HTTP UI (FastAPI + WebSocket)
+  - adgn/agent/ui/server.py serves a simple UI and a WS endpoint.
+  - Shows transcript, pending approvals, and supports sending messages.
+  - UI resolves approvals by signaling ApprovalHub (Allow/Deny) per pending call.
+
+- MCP server: approval_policy (optional)
+  - adgn/mcp/approval_policy/server.py exposes:
+    - Resources: `approval-policy://policy.py`, `approval-policy://proposals/{id}.json`.
+    - Tools: `propose`, `withdraw`, `get_status` (apply is UI-only via engine).
+
+Usage (high level)
+
+- Enable approvals and UI:
+  - Create engine + hub, inject into agent:
+    - `engine = ApprovalPolicyEngine(); hub = ApprovalHub()`
+    - `agent = await MiniCodex.create(..., approval_engine=engine, approval_hub=hub)`
+  - Optionally expose `approval_policy` MCP: `ApprovalPolicyServer(engine)` via in-proc spec.
+  - Start the UI server (adgn/agent/ui/server.py) and connect the browser client.
+
+- Headless mode:
+  - Omit approvals or auto-resolve via a small driver that resolves ApprovalHub with Continue.
+
+Remaining / Follow‑ups
+
+- UI/UX
+  - Nicer rendering (tool-specific views, better logs), multi-session management, auth.
+  - Streaming tokens view; richer keyboard shortcuts.
+
+- Approvals
+  - Optional resource read gating; persistence/versioning for policies; sandboxed policy execution.
+
+References
+
+- Agent: `adgn/agent/agent.py`
+- Approvals: `adgn/agent/approvals.py`
+- UI server: `adgn/agent/ui/server.py`
+- MCP approval policy server: `adgn/mcp/approval_policy/server.py`
 
 Component details
-1) Approvals proxy (modular, not tightly coupled)
-- New module: src/adgn/llm/mini_codex/approvals.py
+1) Approval policy handler (modular, not tightly coupled)
+- Module: src/adgn/agent/approvals.py
 - Models
-  - Modes: only "allow" and "ask" (no "block" for now)
-  - ToolKey: str = namespaced tool name "mcp__{server}__{tool}" (existing naming)
-  - Policy: hardcoded Python function tool_policy(tool_key: str) -> Literal["allow","ask"]; no config/overrides yet.
-- Proxy classes
-  - class ApprovalsProvider: request_tool_approval(request: dict) -> Literal["allow","deny"] (pluggable; UI/CLI/headless). Optional async API.
-  - class McpManagerWithApprovals: wraps an underlying McpManager; decorates call_tool(server,name,args) and read_resource(server,uri). For call_tool/read_resource, consult policy; if "ask", call ApprovalsProvider. deny → raise TurnAbortRequested(reason="approval_denied", context=...); allow → delegate to inner.
+  - Modes: allow | deny_continue | deny_abort | ask (policy decides)
+  - ApprovalContext passed to policy with attributes: server, tool, arguments
+  - ApprovalHub: rendezvous for pending tool approvals (UI resolves decisions)
+- Handler class
+  - ApprovalPolicyHandler(engine, hub): injected as the first handler; gates tool calls before MCP execution and coordinates ask/deny paths.
 - Resources and approvals (note for MVP/follow‑up)
-  - The agent uses both tools and resources (mcp__resources__list/read and manager.read_resource()). The wrapper should also gate resource reads.
+  - The agent uses both tools and resources (mcp__resources__list/read and manager.read_resource()). The same policy engine may be extended to gate resource reads if desired.
   - Minimal approach: treat resource read as a virtual key like "resource_read::{server}" (include {uri} in the pending event payload for context). Policy can say ask/allow at server granularity; UI shows the exact URI before approving.
   - list_resources() stays allow; read_resource(server, uri) consults policy and, if "ask", emits approval_pending {kind:"approval_pending", call_id, type:"resource_read", server, uri} and awaits a decision.
 - Agent integration
-  - No changes to agent loop required; pass McpManagerWithApprovals into MiniCodex.create instead of bare McpManager.
-- Minimal UX: When a tool or resource read is "ask", a UI-backed ApprovalsProvider shows a Pending Approvals item with Allow/Deny (including server/uri for resources). The provider returns allow/deny to the wrapper. deny → TurnAbortRequested; allow → execute. No UI coupling in agent/wrapper APIs.
+  - No changes to the MCP manager. Pass approval_engine + approval_hub to MiniCodex.create so it prepends ApprovalPolicyHandler to the handler stack.
+- Minimal UX: When a tool call is "ask", the UI shows Pending Approvals from ApprovalHub with Allow/Deny controls. Deny resolves the hub with an Abort or an Injected structured error (policy-defined); Allow resolves with Continue.
 
 2) HTTP UI server
-- New package: src/adgn/llm/mini_codex/ui/
+- New package: src/adgn/agent/ui/
   - server.py: FastAPI app + WebSocket; minimal single-session state for now.
   - static/index.html: Simple page with:
     - Transcript pane (append-only),
@@ -70,7 +85,7 @@ Component details
       - Outbound: emit events (user_text, assistant_text, tool_call, function_call_output, tool_error), approval_pending, approval_decision, and synthetic notifications (aborted, status).
       - Inbound messages:
         - {type: "send", text: "..."} -> appends a user message and triggers agent.run(text)
-        - {type: "approve", call_id: string} / {type: "deny", call_id: string} -> ApprovalsProvider resolves a pending approval; deny leads to TurnAbortRequested inside wrapper (agent ends the turn via catch)
+        - {type: "approve", call_id: string} / {type: "deny", call_id: string} -> resolve ApprovalHub for that call_id with Continue or Abort/BypassToolInjectOutput
         - {type: "abort"} -> orchestrator cancels the outer task running agent.run()
   - Keyboard shortcuts: In index.html, attach keydown listener for Cmd/Ctrl+Enter to send; Shift+Enter inserts newline (browser default).
 - Launch entrypoint (optional now): small CLI to run the server, eg: adgn-mini-codex-ui --port 8765
@@ -85,20 +100,18 @@ Responses API invariant (must-answer-all tool calls)
   - After all function_call_output messages for that batch are emitted, the agent ends the turn (does not sample again).
 - Session.run() may be wrapped in a task by the orchestrator (UI/CLI) for user-initiated Abort.
 - Abort-TURN on approval denial:
-  - Wrapper raises TurnAbortRequested on deny. Agent catches it around each mcp.call_tool/read_resource, emits a synthetic function_call_output (error payload) and tool_error, then ends the turn immediately (returns AgentResult). No task cancellation needed; API is UI-agnostic.
+  - The handler returns Abort or BypassToolInjectOutput; the agent emits a structured function_call_output for each pending call_id (the denied one and any remaining in the batch as minimal aborted errors) and ends the turn immediately. No task cancellation needed; API is UI-agnostic.
 - Abort-BUTTON (user-triggered stop): orchestrator cancels the outer task running agent.run(); server emits {kind:"aborted"}. Phase 2 can track per-tool tasks to cancel mid-batch if desired.
 
 Wire-up and minimal code edits
 
-Agent-awareness guarantee (opt-in wrapper)
-- MiniCodex only depends on an McpManager-like interface; passing the approvals wrapper is optional. If you pass the plain McpManager, behavior is unchanged and the agent remains unaware of approvals.
-- The wrapper preserves the same surface (list_tools, list_resources, read_resource, call_tool[server,name,args]). No conditionals in the agent; no interception unless you instantiate the wrapper.
-- Minimal protocol sketch (preferred surface):
-  - McpManagerProtocol: list_tools() -> list[dict], list_resources(only: list[str]|None=None) -> list[dict], read_resource(server: str, uri: str) -> Any, call_tool(server: str, name: str, arguments: dict[str, Any]) -> Any
+Agent-awareness (handler injection)
+- MiniCodex accepts an approvals engine and hub; when provided, it prepends ApprovalPolicyHandler to the handler chain. If you omit them, behavior is unchanged and the agent runs without approvals.
+- The MCP manager surface remains unchanged (list_tools, list_resources, read_resource, call_tool).
 - Example wiring:
   - base = McpManager(slots)
-  - mcp = McpManagerWithApprovals(base, approval_hub, tool_policy)  # or just use base
-  - await MiniCodex.create(..., mcp=mcp, ...)
+  - engine = ApprovalPolicyEngine(); hub = ApprovalHub()
+  - await MiniCodex.create(..., mcp=base, approval_engine=engine, approval_hub=hub, ...)
 
 API stubs (for clarity; implementation follows these shapes)
 ```python
@@ -111,21 +124,18 @@ class McpManagerProtocol(Protocol):
     async def call_tool(self, server: str, name: str, arguments: dict[str, Any]) -> Any: ...
 
 class ApprovalHub:
-    async def await_decision(self, call_id: str, payload: dict[str, Any]) -> bool: ...
-    def resolve(self, call_id: str, allow: bool) -> None: ...
+    async def await_decision(self, call_id: str, request: dict[str, Any]) -> Any: ...
+    def resolve(self, call_id: str, decision: BeforeToolCallDecision) -> None: ...
 
-class McpManagerWithApprovals(McpManagerProtocol):
-    def __init__(self, inner: McpManagerProtocol, hub: ApprovalHub, tool_policy): ...
-    # delegates list_tools, list_resources; gates read_resource and call_tool
-    async def call_tool(self, server: str, name: str, arguments: dict[str, Any]) -> Any: ...
-    async def read_resource(self, server: str, uri: str) -> Any: ...
+class ApprovalPolicyHandler:
+    async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision: ...
 ```
 
-- Small agent refactor: switch to manager-level call_tool/read_resource; no approvals-specific logic in agent. Passing a plain McpManager or the approvals wrapper both satisfy the same protocol, so the agent remains unaware.
+- Agent uses manager-level call_tool/read_resource; approvals logic is isolated in ApprovalPolicyHandler and ApprovalHub.
 - New modules
-  - src/adgn/llm/mini_codex/approvals.py (policy/state/manager)
-  - src/adgn/llm/mini_codex/ui/server.py (FastAPI app)
-  - src/adgn/llm/mini_codex/ui/static/index.html (dumb UI)
+  - src/adgn/agent/approvals.py (policy/state/manager)
+  - src/adgn/agent/ui/server.py (FastAPI app)
+  - src/adgn/agent/ui/static/index.html (dumb UI)
 - No changes to Reducer/handlers in Phase 1.
 
 Data and event contracts
@@ -147,7 +157,7 @@ Security and ops
 
 Phased plan
 - Phase 1 (MVP)
-  - Approvals wrapper (McpManagerWithApprovals) + minimal UI glue
+  - ApprovalPolicyHandler + ApprovalHub + minimal UI glue
   - HTTP UI with transcript, pending approvals (Allow/Deny), compose box, abort button
   - Single session, single agent at a time; manual run start via UI
 - Phase 2
@@ -178,11 +188,7 @@ Refinement: typed approvals events (no dicts; no agent coupling)
     - on_resolved(evt: ApprovalResolved) -> None
   - Default: NoopPublisher (headless). Optional adapters (e.g., JsonlApprovalsPublisher, UISocketApprovalsPublisher) serialize at the edge; core stays typed-only.
 - Wrapper contract (no agent coupling):
-  - McpManagerWithApprovals(inner, hub, policy, publisher=None)
-    - allow → delegate to inner
-    - ask → publisher.on_requested(ApprovalRequested); await hub.await_decision(call_id, payload); publisher.on_resolved(ApprovalResolved)
-      - deny → raise TurnAbortRequested(request, decision)
-      - allow → delegate
+  - ApprovalPolicyHandler(engine, hub) is injected into the agent; any UI bridge publishes pending approvals from ApprovalHub and resolves them. No manager wrapper required.
 - Agent behavior (unchanged surface; minimal catch):
   - Agent catches TurnAbortRequested around call_tool/read_resource, emits synthetic function_call_output error for the denied call_id (and for remaining unprocessed call_ids in that batch), then ends the turn. This preserves the Responses invariant of exactly one function_call_output per tool_call. No approvals hooks in agent.
 - Logging/storage separation:
@@ -199,7 +205,7 @@ Future enhancements
 
 Implementation notes (code pointers)
 - Agent refactor: route all tool calls via mcp.call_tool(server, name, arguments) and resource reads via mcp.read_resource(server, uri); remove direct session.get + session.call_tool usage.
-- Approvals gating is entirely in McpManagerWithApprovals; no approval logic in the agent.
+- Approvals gating is implemented by ApprovalPolicyHandler at the agent boundary.
 - Abort turn on denial: define TurnAbortRequested(Exception) in approvals.py; wrapper raises it on deny; agent wraps mcp.call_tool/read_resource in try/except TurnAbortRequested, then:
   - Emits function_call_output for the denied call with a structured error payload, and tool_error for visibility.
   - Emits function_call_output with a minimal aborted/error payload for each remaining call_id in the same batch that hasn't been answered yet.
@@ -208,7 +214,7 @@ Implementation notes (code pointers)
 
 Progress log
 - 2025-09-14T00:00:00Z sha=6f2877fa: Drafted minimal design; next: implement approvals manager, add agent guard, scaffold FastAPI server and simple HTML UI.
-- 2025-09-14T18:55:00Z sha=6f2877fa: Refactored MiniCodex to manager-level mcp.call_tool/read_resource; added approvals wrapper scaffold (ApprovalHub + McpManagerWithApprovals); enforced handler on_reasoning; aligned ResponseUsage to SDK; updated editor_server.done to typed; tests passing (7/7).
+- 2025-09-14T18:55:00Z sha=6f2877fa: Earlier draft used a manager wrapper for approvals; current implementation uses ApprovalPolicyHandler + ApprovalHub injected into the agent stack.
 - 2025-09-14T19:20:00Z sha=6f2877fa: Revised abort-turn design to be UI-agnostic: introduce ApprovalsProvider and TurnAbortRequested; wrapper raises on deny; agent catches and ends the turn with synthetic events.
 
 ---
@@ -217,7 +223,7 @@ Progress log
 
 For local development, run Vite for the frontend and FastAPI for the backend, and proxy WebSocket traffic from Vite → FastAPI.
 
-1) Add a WS proxy in src/adgn/llm/mini_codex/ui/web/vite.config.ts:
+1) Add a WS proxy in src/adgn/agent/ui/web/vite.config.ts:
 
 ```ts
 import { defineConfig } from 'vite'
@@ -239,8 +245,8 @@ direnv exec /Users/mpokorny/code/ducktape/adgn adgn-mini-codex serve --host 127.
 3) Start the frontend (Vite dev server):
 
 ```bash
-npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/llm/mini_codex/ui/web install
-npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/llm/mini_codex/ui/web run dev -- --host 127.0.0.1 --port 5173
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/ui/web install
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/ui/web run dev -- --host 127.0.0.1 --port 5173
 ```
 
 4) Open http://127.0.0.1:5173. The UI connects to ws://127.0.0.1:5173/ws, which Vite proxies to the backend at 127.0.0.1:8765.
@@ -251,8 +257,8 @@ If you prefer to serve the built UI from FastAPI (no Vite), build assets once an
 
 ```bash
 # Build once
-npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/llm/mini_codex/ui/web install
-npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/llm/mini_codex/ui/web run build
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/ui/web install
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/ui/web run build
 
 # Start backend (serves /, /assets/*, /vite.svg from static/web)
 direnv exec /Users/mpokorny/code/ducktape/adgn adgn-mini-codex serve --host 127.0.0.1 --port 8765
@@ -260,6 +266,6 @@ direnv exec /Users/mpokorny/code/ducktape/adgn adgn-mini-codex serve --host 127.
 ```
 
 Notes
-- The backend serves static from src/adgn/llm/mini_codex/ui/static/web. Missing assets will 404 until you build.
+- The backend serves static from src/adgn/agent/ui/static/web. Missing assets will 404 until you build.
 - Vite dev server gives fast HMR during UI work; use single-CLI after you’re happy with the build.
 - A future flag (e.g., `--build-web`) can auto-build assets on `serve` when missing.

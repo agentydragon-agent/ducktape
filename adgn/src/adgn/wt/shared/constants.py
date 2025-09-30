@@ -8,7 +8,7 @@ COMMAND_DESCRIPTIONS = {
     "cp": "Copy worktree (with dirty state)",
     "rm": "Remove worktree (with safety checks)",
     "path": "Resolve worktree paths",
-    "-c": "Create new worktree from main branch",
+    "create": "Create new worktree (optionally from branch/worktree)",
     "help": "Show this help",
     "kill-daemon": "Kill the wt daemon",
 }

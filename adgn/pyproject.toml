@@ -97,12 +97,12 @@ where = ["src"]
 include = ["adgn*"]
 
 [tool.setuptools.package-data]
-"adgn.tana_export" = [
+"adgn.tana" = [
   "references/*",
   "references/**/*",
   "SEARCH_README.md",
 ]
-"adgn.llm.properties" = [
+"adgn.props" = [
   "definitions/*.md",
   "definitions/**/*.md",
   "specimens/**",
@@ -111,7 +111,7 @@ include = ["adgn*"]
   "prompts/*.j2.md",
   "prompts/**/*.j2.md",
 ]
-"adgn.llm.mini_codex.ui" = [
+"adgn.agent.ui" = [
   "static/*",
   "static/**/*",
 ]
@@ -166,14 +166,14 @@ wt = "adgn.wt.cli:main"
 wt-install = "adgn.wt.shell.install:main"
 # LLM console scripts
 adgn-sysrw = "adgn.llm.sysrw.cli:app"
-adgn-mini-codex = "adgn.llm.mini_codex.cli:main"
-adgn-properties = "adgn.llm.properties.cli:main"
-adgn-properties2 = "adgn.llm.properties.cli_app.main:app"
-git-commit-ai = "adgn.llm.git_commit_ai.cli:main"
-sandbox-jupyter-mcp = "adgn.llm.mcp.sandboxed_jupyter_mcp.wrapper:main"
+adgn-mini-codex = "adgn.agent.cli:main"
+adgn-properties = "adgn.props.cli:main"
+adgn-properties2 = "adgn.props.cli_app.main:app"
+git-commit-ai = "adgn.git_commit_ai.cli:main"
+sandbox-jupyter-mcp = "adgn.mcp.sandboxed_jupyter_mcp.wrapper:main"
 adgn-sandboxer = "adgn.llm.sandboxer:main"
 adgn-llm-edit = "adgn.llm.llm_edit:app"
-adgn-openai-probe = "adgn.llm.openai_utils.probe:main"
+adgn-openai-probe = "adgn.openai_utils.probe:main"
 
 [project.entry-points."wt.plugins"]
 wt_demo = "adgn.wt.demo_plugin"
@@ -190,12 +190,12 @@ check_untyped_defs = true
 # Exclude specimen code from type-checking (authoring data; not production code)
 # Exclude specimen code from type-checking (authoring data; not production code)
 # Use a broad regex that matches both "src/..." and "adgn/src/..." paths
-exclude = "(^|/)(adgn/)?src/adgn/llm/properties/specimens/.*"
+exclude = "(^|/)(adgn/)?src/adgn/props/specimens/.*"
 
 # Ruff configuration
 [tool.ruff]
 # Extend default excludes; add specimen paths
 extend-exclude = [
-  "src/adgn/llm/properties/specimens/**",
-  "adgn/src/adgn/llm/properties/specimens/**",
+  "src/adgn/props/specimens/**",
+  "adgn/src/adgn/props/specimens/**",
 ]

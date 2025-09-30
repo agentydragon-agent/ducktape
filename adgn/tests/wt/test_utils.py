@@ -37,4 +37,4 @@ def run_cli_command(
 
 def run_cli_sh_command(args, env, timeout: timedelta = timedelta(seconds=60.0)):
     """Run the CLI command with 'sh' subcommand as subprocess."""
-    return run_cli_command(["sh", *args], env=env, timeout=timeout)
+    return run_cli_command(list(args), env=env, timeout=timeout)

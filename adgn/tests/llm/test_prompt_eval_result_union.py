@@ -2,14 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.llm.mini_codex.mcp_manager import McpManager
-from adgn.llm.properties.critic import CriticSubmitPayload
-import adgn.llm.properties.prompt_eval.server as pe
-from adgn.llm.properties.prompt_eval.server import build_server
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.agent.mcp_manager import McpManager
+from adgn.props.critic import CriticSubmitPayload
+import adgn.props.prompt_eval.server as pe
+from adgn.props.prompt_eval.server import build_server
 
 from .support.openai_mock import LIVE  # sentinel for live client
-from adgn.llm.openai_utils.model import (
+from adgn.openai_utils.model import (
     ResponsesRequest,
 )
 from tests.fixtures.responses import (

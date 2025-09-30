@@ -212,7 +212,7 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
     # Attempt graceful shutdown via CLI (succeeds even if daemon already gone)
     try:
         result = subprocess.run(
-            ["python3", "-m", "adgn.wt.cli", "sh", "kill-daemon"],
+            ["python3", "-m", "adgn.wt.cli", "kill-daemon"],
             capture_output=True,
             text=True,
             timeout=5.0,
@@ -324,7 +324,7 @@ class WtCLI:
         cwd: Path | None = None,
     ):
         return run_cli_command(
-            ["sh", "-c", cmd], env=self.env, timeout=timeout, cwd=cwd
+            ["create", "--yes", cmd], env=self.env, timeout=timeout, cwd=cwd
         )
 
     def status(
@@ -332,11 +332,11 @@ class WtCLI:
         timeout: timedelta = timedelta(seconds=30),
         cwd: Path | None = None,
     ):
-        return run_cli_command(["sh"], env=self.env, timeout=timeout, cwd=cwd)
+        return run_cli_command([], env=self.env, timeout=timeout, cwd=cwd)
 
     def kill(self, timeout: timedelta = timedelta(seconds=30)):
         """Request the daemon to shut down via CLI."""
-        return run_cli_command(["sh", "kill-daemon"], env=self.env, timeout=timeout)
+        return run_cli_command(["kill-daemon"], env=self.env, timeout=timeout)
 
     def rpc(self, sock_path: str | os.PathLike, method: str, params: dict):
         """Minimal JSON-RPC helper to call the daemon directly over a UNIX socket."""

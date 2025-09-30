@@ -78,7 +78,7 @@ class TestCLIIntegration:
         """Test creating a worktree from master branch."""
 
         # Create worktree
-        result = run_cli_command(["sh", "-c", "new-feature"], env=real_env)
+        result = run_cli_command(["create", "--yes", "new-feature"], env=real_env)
         assert result.returncode == 0, f"Create failed: {result.stderr}"
 
         # Verify worktree was created
@@ -97,7 +97,7 @@ class TestCLIIntegration:
         """Test listing worktrees when some exist."""
 
         # Create a worktree first
-        result = run_cli_command(["sh", "-c", "feature1"], env=real_env)
+        result = run_cli_command(["create", "--yes", "feature1"], env=real_env)
         assert result.returncode == 0, f"Create failed: {result.stderr}"
 
         # List worktrees
@@ -109,8 +109,8 @@ class TestCLIIntegration:
         """Test that status command shows created worktrees."""
 
         # Create worktrees
-        run_cli_command(["sh", "-c", "feature1"], env=real_env)
-        run_cli_command(["sh", "-c", "feature2"], env=real_env)
+        run_cli_command(["create", "--yes", "feature1"], env=real_env)
+        run_cli_command(["create", "--yes", "feature2"], env=real_env)
 
         # Check status
         result = wt_cli.status()
@@ -121,7 +121,7 @@ class TestCLIIntegration:
     def test_create_worktree_reserved_name(self, real_temp_repo, real_env):
         """Test that creating worktrees with reserved names fails."""
 
-        result = run_cli_command(["sh", "-c", "main"], env=real_env)
+        result = run_cli_command(["create", "--yes", "main"], env=real_env)
         assert result.returncode != 0
         assert "reserved" in result.stderr.lower() or "error" in result.stdout.lower()
 
@@ -129,7 +129,7 @@ class TestCLIIntegration:
         """Test navigation to existing worktree."""
 
         # Create a worktree
-        run_cli_command(["sh", "-c", "nav-test"], env=real_env)
+        run_cli_command(["create", "--yes", "nav-test"], env=real_env)
 
         # Navigate to it (this should output a cd command)
         result = run_cli_command(["sh", "nav-test"], env=real_env)
@@ -139,7 +139,7 @@ class TestCLIIntegration:
     def test_help_commands(self, real_temp_repo, real_env):
         """Test help command works."""
 
-        result = run_cli_command(["sh", "help"], env=real_env)
+        result = run_cli_command(["help"], env=real_env)
         assert result.returncode == 0
         assert "wt - Enhanced worktree management" in result.stdout
 
@@ -147,34 +147,34 @@ class TestCLIIntegration:
         """Test path resolution commands."""
 
         # Create a worktree
-        run_cli_command(["sh", "-c", "path-test"], env=real_env)
+        run_cli_command(["create", "--yes", "path-test"], env=real_env)
 
         # Test path command
-        result = run_cli_command(["sh", "path", "path-test"], env=real_env)
+        result = run_cli_command(["path", "path-test"], env=real_env)
         assert result.returncode == 0
         assert "path-test" in result.stdout
 
     def test_path_command_worktree_name(self, real_temp_repo, real_env):
         """ "x" resolves to the worktree directory (treat as worktree name)."""
-        r = run_cli_command(["sh", "-c", "pth"], env=real_env)
+        r = run_cli_command(["create", "--yes", "pth"], env=real_env)
         assert r.returncode == 0, f"Create failed: {r.stderr}"
         wt_path = real_temp_repo / "worktrees" / "pth"
         assert wt_path.exists()
 
-        res = run_cli_command(["sh", "path", "pth"], env=real_env)
+        res = run_cli_command(["path", "pth"], env=real_env)
         assert res.returncode == 0
         assert str(wt_path) in res.stdout
 
     def test_path_command_relative_path(self, real_temp_repo, real_env):
         """ "./x" resolves to a path inside the current worktree (treat as path)."""
-        r = run_cli_command(["sh", "-c", "pth"], env=real_env)
+        r = run_cli_command(["create", "--yes", "pth"], env=real_env)
         assert r.returncode == 0, f"Create failed: {r.stderr}"
         wt_path = real_temp_repo / "worktrees" / "pth"
         assert wt_path.exists()
 
         (wt_path / "subdir").mkdir(parents=True, exist_ok=True)
 
-        res = run_cli_command(["sh", "path", "./subdir"], env=real_env, cwd=wt_path)
+        res = run_cli_command(["path", "./subdir"], env=real_env, cwd=wt_path)
         assert res.returncode == 0
         assert str(wt_path / "subdir") in res.stdout
 
@@ -193,7 +193,7 @@ class TestRealGitOperations:
         """Test that worktree creation actually creates git branches."""
 
         # Create worktree
-        result = run_cli_command(["sh", "-c", "test-branch"], env=real_env)
+        result = run_cli_command(["create", "--yes", "test-branch"], env=real_env)
         assert result.returncode == 0, f"Failed: {result.stderr}"
 
         # Check that branch exists using pygit2
@@ -212,7 +212,7 @@ class TestRealGitOperations:
         """Test git operations within created worktrees."""
 
         # Create worktree
-        run_cli_command(["sh", "-c", "git-ops"], env=real_env)
+        run_cli_command(["create", "--yes", "git-ops"], env=real_env)
         worktree_path = real_temp_repo / "worktrees" / "git-ops"
 
         # Make changes in worktree using pygit2
@@ -244,7 +244,7 @@ class TestRealGitOperations:
         """Test that status command shows git changes in worktrees."""
 
         # Create worktree
-        run_cli_command(["sh", "-c", "status-test"], env=real_env)
+        run_cli_command(["create", "--yes", "status-test"], env=real_env)
         worktree_path = real_temp_repo / "worktrees" / "status-test"
 
         # Make some changes
@@ -283,7 +283,7 @@ class TestRealGitOperations:
         env["WT_DIR"] = str(config.wt_dir)
 
         # Create worktree via CLI
-        result = run_cli_command(["sh", "-c", "cone-test"], env=env)
+        result = run_cli_command(["create", "--yes", "cone-test"], env=env)
         assert result.returncode == 0, f"Create failed: {result.stderr}"
         wt_path = real_temp_repo / "worktrees" / "cone-test"
         assert wt_path.exists()

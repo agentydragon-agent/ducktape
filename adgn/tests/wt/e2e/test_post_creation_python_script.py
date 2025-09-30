@@ -75,7 +75,7 @@ def test_post_creation_python_script_runs(real_env_with_python_post_script, stdi
     )  # parent CLI stdin is /dev/null; daemon inherits this
 
     result = run_cli_command(
-        ["sh", "-c", name], env=env, timeout=timedelta(seconds=30.0), stdin=stdin
+        ["create", "--yes", name], env=env, timeout=timedelta(seconds=30.0), stdin=stdin
     )
 
     if stdin_mode == "open":

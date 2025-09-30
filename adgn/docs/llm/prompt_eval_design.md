@@ -169,8 +169,8 @@ async def test_prompt(prompt: str) -> list[dict]:
 - Error cases captured per specimen; batch continues.
 
 ## Links
-- Critic server/payload: src/adgn/llm/properties/critic.py
-- Grader server/payload: src/adgn/llm/properties/grader.py
-- Specimen registry: src/adgn/llm/properties/specimens/registry.py
-- Prompt builders: src/adgn/llm/properties/prompts/builder.py
-- Inop optimizer (reference): src/adgn/llm/inop/engine/optimizer.py
+- Critic server/payload: src/adgn/props/critic.py
+- Grader server/payload: src/adgn/props/grader.py
+- Specimen registry: src/adgn/props/specimens/registry.py
+- Prompt builders: src/adgn/props/prompts/builder.py
+- Inop optimizer (reference): src/adgn/inop/engine/optimizer.py

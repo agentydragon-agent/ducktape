@@ -27,7 +27,7 @@ def test_post_creation_script_failure_is_streamed_and_nonzero(failing_env):
     env, repo = failing_env
     name = "hooked-fail"
     result = run_cli_command(
-        ["sh", "-c", name], env=env, timeout=timedelta(seconds=20.0)
+        ["create", "--yes", name], env=env, timeout=timedelta(seconds=20.0)
     )
     assert result.returncode != 0
     assert "hello from setup" in (result.stdout or "") + (result.stderr or "")

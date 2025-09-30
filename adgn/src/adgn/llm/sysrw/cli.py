@@ -6,7 +6,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from adgn.llm.client_factory import get_async_openai
+from adgn.openai_utils.client_factory import get_async_openai
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule

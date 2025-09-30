@@ -1,7 +1,7 @@
 import pytest
 
-from adgn.llm.properties.models.issue import LineRange
-from adgn.llm.properties.models.lint import (
+from adgn.props.models.issue import LineRange
+from adgn.props.models.lint import (
     AnchorIncorrect,
     Correction,
     FalsePositive,

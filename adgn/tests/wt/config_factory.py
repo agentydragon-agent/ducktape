@@ -76,6 +76,10 @@ class ConfigFactory:
             "gitstatusd_path": None,  # Will be filled by tests that need it
             "post_creation_script": None,
             "git_watcher_debounce_delay": WATCHER_DEBOUNCE_SECS,
+            # Keep daemon startup bounded well under per-test subprocess timeouts
+            "startup_timeout": 4,
+            # Keep post-creation hooks snappy in tests
+            "post_creation_timeout": 20,
             # Lower debounce in tests for faster watcher reaction (prod default ~0.5s)
         }
 

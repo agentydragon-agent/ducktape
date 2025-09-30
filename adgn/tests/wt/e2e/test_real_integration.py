@@ -31,11 +31,14 @@ def test_real_program_workflow(real_temp_repo, wt_cli):
     worktree2_path = real_temp_repo / "worktrees" / "feature2"
     assert worktree2_path.exists()
 
-    # Status shows both
-    result = wt_cli.status(timeout=timedelta(seconds=10.0))
-    assert result.returncode == 0
-    assert "feature1" in result.stdout
-    assert "feature2" in result.stdout
+    # Status shows both (allow brief propagation)
+    def _both_present() -> bool:
+        r = wt_cli.status(timeout=timedelta(seconds=10.0))
+        return (
+            r.returncode == 0 and ("feature1" in r.stdout) and ("feature2" in r.stdout)
+        )
+
+    assert wt_cli.wait_for(_both_present, timeout=timedelta(seconds=5.0))
 
     # Navigate to feature1
     result = wt_cli.sh("feature1", timeout=timedelta(seconds=10.0))
@@ -46,8 +49,12 @@ def test_real_program_workflow(real_temp_repo, wt_cli):
         "rm", "feature2", "--force", cwd=worktree1_path, timeout=timedelta(seconds=10.0)
     )
     assert result.returncode == 0
-    git_list = git_run(["worktree", "list"], cwd=real_temp_repo)
-    assert str(worktree2_path) not in git_list.stdout.decode()
+
+    def _removed() -> bool:
+        out = git_run(["worktree", "list"], cwd=real_temp_repo).stdout.decode()
+        return str(worktree2_path) not in out
+
+    assert wt_cli.wait_for(_removed, timeout=timedelta(seconds=5.0))
 
     # Final status
     result = wt_cli.status(timeout=timedelta(seconds=10.0))

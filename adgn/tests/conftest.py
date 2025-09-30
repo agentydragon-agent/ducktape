@@ -1,14 +1,18 @@
 import sys
 import shutil
+import os
 
 import pytest
+from openai import AsyncOpenAI
 import docker
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Tuple
 from mcp.server.fastmcp import FastMCP
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.llm.mcp.testing.typed_stubs import TypedClient
-from adgn.llm.mini_codex.mcp_manager import McpManager
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.agent.mcp_manager import McpManager
+from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp.docker_exec.server import make_container_exec_mcp
 
 
 pytest_plugins = ["tests.fixtures.responses"]
@@ -100,3 +104,50 @@ def make_typed_mcp():
             yield client, session
 
     return _open
+
+
+# ---- Shared Docker/OpenAI fixtures (moved from tests/llm/conftest.py) ----
+
+
+@pytest.fixture(scope="session")
+def live_openai() -> AsyncOpenAI:
+    if not os.getenv("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
+    return AsyncOpenAI()
+
+
+@pytest.fixture
+def container_opts_py312() -> ContainerOptions:
+    return ContainerOptions(
+        image="python:3.12-slim", working_dir="/workspace", volumes=None, describe=False
+    )
+
+
+@pytest.fixture
+def container_opts_alpine() -> ContainerOptions:
+    return ContainerOptions(image="alpine:3.19", describe=False)
+
+
+@pytest.fixture
+def docker_exec_server_py312(container_opts_py312) -> object:
+    return make_container_exec_mcp(container_opts_py312)
+
+
+@pytest.fixture
+def docker_exec_server_alpine(container_opts_alpine) -> object:
+    return make_container_exec_mcp(container_opts_alpine)
+
+
+@pytest.fixture
+def docker_inproc_spec_py312(docker_exec_server_py312) -> object:
+    return make_inproc_slot_spec(docker_exec_server_py312)
+
+
+@pytest.fixture
+def docker_inproc_spec_alpine(docker_exec_server_alpine) -> object:
+    return make_inproc_slot_spec(docker_exec_server_alpine)
+
+
+@pytest.fixture
+def docker_specs_py312(docker_inproc_spec_py312) -> dict[str, object]:
+    return {"docker": docker_inproc_spec_py312}

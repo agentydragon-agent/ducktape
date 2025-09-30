@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict
-from adgn.llm.openai_utils.model import (
+from adgn.openai_utils.model import (
     OpenAIModelProto,
     ResponsesRequest,
     ResponsesResult,

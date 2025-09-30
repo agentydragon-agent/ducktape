@@ -93,13 +93,14 @@ class TestShellIntegration:
 
         # Should succeed and show help output
         assert result.returncode == 0, f"Help command failed: {result.stderr}"
-        assert "USAGE:" in result.stdout
+        # Click default help prints 'Usage:' for subcommands
+        assert "Usage:" in result.stdout
 
     def test_wt_help_lists_examples(self, test_config, shell_runner):
         """Test that wt help shows example usage."""
         result = shell_runner.run_wt(
             main_repo=test_config.main_repo,
-            wt_args=["sh", "help"],
+            wt_args=["help"],
         )
 
         # Basic test that it doesn't crash
@@ -158,7 +159,7 @@ if ! declare -f wt > /dev/null; then
 fi
 
 # Use shell function - it calls Python CLI with fd3 redirection
-wt -c teleport-test
+wt create --yes teleport-test
 create_exit=$?
 
 pwd_before=$(pwd)
@@ -207,7 +208,7 @@ if ! declare -f wt > /dev/null; then
     echo "ERROR: wt function not loaded"
     exit 99
 fi
-wt -c to-main
+wt create --yes to-main
 create_exit=$?
 wt to-main
 to_wt_exit=$?

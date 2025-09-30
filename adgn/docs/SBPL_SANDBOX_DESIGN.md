@@ -220,7 +220,7 @@ Options
 
 ## References
 - Existing generator/runner: src/adgn/llm/sandboxer.py
-- Jupyter composer policy handling: src/adgn/llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py
+- Jupyter composer policy handling: src/adgn/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py
 - Notes on macOS isolation choices: docs/llm/sandboxer/SUPPORTED_SANDBOX.md
 
 ---

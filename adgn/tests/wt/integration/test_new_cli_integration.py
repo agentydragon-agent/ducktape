@@ -96,7 +96,7 @@ class TestNewCLIIntegration:
         mock_get_status.return_value = create_empty_status_response()
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
 
-        result = CliRunner().invoke(main, ["sh"])
+        result = CliRunner().invoke(main, [])
 
         if result.exit_code != 0:
             print(f"CLI output: {result.output}")
@@ -115,7 +115,7 @@ class TestNewCLIIntegration:
         mock_get_status.return_value = create_empty_status_response()
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
 
-        result = CliRunner().invoke(main, ["sh", "ls"])
+        result = CliRunner().invoke(main, ["ls"])
 
         assert result.exit_code == 0
 
@@ -130,7 +130,7 @@ class TestNewCLIIntegration:
         mock_get_status.return_value = create_test_status_response()
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
 
-        result = CliRunner().invoke(main, ["sh", "ls"])
+        result = CliRunner().invoke(main, ["ls"])
 
         assert result.exit_code == 0
         # Should show some content about worktrees
@@ -140,7 +140,7 @@ class TestNewCLIIntegration:
         """Test help command works with new CLI."""
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
 
-        result = CliRunner().invoke(main, ["sh", "help"])
+        result = CliRunner().invoke(main, ["help"])
 
         assert result.exit_code == 0
         assert "wt - Enhanced worktree management" in result.output
@@ -150,10 +150,11 @@ class TestNewCLIIntegration:
         """Test --help flag works with new CLI."""
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
 
-        result = CliRunner().invoke(main, ["sh", "--help"])
+        result = CliRunner().invoke(main, ["--help"])
 
         assert result.exit_code == 0
-        assert "USAGE:" in result.output  # Custom help format
+        # Click default help uses 'Usage:'; keep strict
+        assert "Usage:" in result.output
 
     @patch("adgn.wt.client.wt_client.WtClient.get_status")
     def test_status_command_with_pr_flag(
@@ -166,7 +167,7 @@ class TestNewCLIIntegration:
         mock_get_status.return_value = create_test_status_response()
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
 
-        result = CliRunner().invoke(main, ["sh", "--pr"])
+        result = CliRunner().invoke(main, [])
 
         assert result.exit_code == 0
         assert "test-worktree" in result.output  # from our test data

@@ -5,14 +5,14 @@ from typing import Any
 
 import pytest
 
-from adgn.llm.openai_utils.model import (
+from adgn.openai_utils.model import (
     ResponsesResult,
     AssistantMessageOut,
     FunctionCallItem,
     ReasoningItem,
     Usage as PUsage,
 )
-from adgn.llm.openai_utils import builders
+from adgn.openai_utils import builders
 
 
 @pytest.fixture(scope="session")

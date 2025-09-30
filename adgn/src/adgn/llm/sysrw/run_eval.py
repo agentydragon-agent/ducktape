@@ -14,11 +14,11 @@ from typing import Any, cast
 from openai import AsyncOpenAI
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from adgn.llm.client_factory import get_async_openai
+from adgn.openai_utils.client_factory import get_async_openai
 from pydantic import TypeAdapter
 import tiktoken
 
-from adgn.llm.openai_utils.retry import (
+from adgn.openai_utils.retry import (
     chat_create_with_retries,
     responses_create_with_retries,
 )

@@ -128,9 +128,9 @@ Environment
 Core CLIs (installed via adgn [project.scripts])
 - adgn-llm-edit → adgn.llm.llm_edit:app
 - adgn-sysrw → adgn.llm.sysrw.cli:app
-- adgn-properties → adgn.llm.properties.cli:main (and adgn-properties2 → adgn.llm.properties.cli_app.main:app)
-- git-commit-ai → adgn.llm.git_commit_ai.cli:main
-- sandbox-jupyter-mcp → adgn.llm.mcp.sandboxed_jupyter_mcp.wrapper:main
+- adgn-properties → adgn.props.cli:main (and adgn-properties2 → adgn.props.cli_app.main:app)
+- git-commit-ai → adgn.git_commit_ai.cli:main
+- sandbox-jupyter-mcp → adgn.mcp.sandboxed_jupyter_mcp.wrapper:main
 - adgn-sandboxer, adgn-mcp-* as needed by workflows
 
 Specimen inspection (properties)
@@ -157,10 +157,10 @@ Quick usage examples
 High-level module map
 - adgn.llm.sysrw — system prompt rewrite/eval
 - adgn.llm.llm_edit — local code/text edit helper
-- adgn.llm.properties — property definitions + CLI, data under src/adgn/llm/properties/specimens/** and prompts/**
-- adgn.llm.inop — instruction optimizer (runners/engine)
-- adgn.llm.mcp — MCP utilities/launchers (e.g., sandboxed Jupyter MCP)
-- adgn.llm.mini_codex — OpenAI client helpers and agent loop
+- adgn.props — property definitions + CLI, data under src/adgn/llm/properties/specimens/** and prompts/**
+- adgn.inop — instruction optimizer (runners/engine)
+- adgn.mcp — MCP utilities/launchers (e.g., sandboxed Jupyter MCP)
+- adgn.agent — OpenAI client helpers and agent loop
 
 Notes
 - Test/specimen data in src/adgn/llm/properties/specimens/** are excluded from linting/test discovery where configured.

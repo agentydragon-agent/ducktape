@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from adgn.llm.properties.specimens.registry import (
+from adgn.props.specimens.registry import (
     SpecimenRegistry,
     find_specimens_base,
     list_specimen_names,

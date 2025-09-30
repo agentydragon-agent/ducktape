@@ -1,4 +1,4 @@
-Updated src/adgn_llm/properties/specimens/2025-08-30-crush_internal_db/issues/iss-003-timestamps.libsonnet with 34 additions
+Updated src/adgn/props/specimens/2025-08-30-crush_internal_db/issues/iss-003-timestamps.libsonnet with 34 additions
  1 +  local I = import '../../specimen_issues.libsonnet';
  2 +
  3 +  // iss-003-timestamps

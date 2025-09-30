@@ -36,7 +36,7 @@ def test_post_creation_script_runs(real_env_with_post_script):
     env, repo = real_env_with_post_script
     name = "hooked"
     result = run_cli_command(
-        ["sh", "-c", name], env=env, timeout=timedelta(seconds=15.0)
+        ["create", "--yes", name], env=env, timeout=timedelta(seconds=15.0)
     )
     assert result.returncode == 0
     wt_path = Path(repo) / "worktrees" / name

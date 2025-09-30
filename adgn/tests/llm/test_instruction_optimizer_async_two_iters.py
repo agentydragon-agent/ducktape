@@ -1,13 +1,13 @@
 import json
 from pathlib import Path
 
-from adgn.llm.openai_utils.model import (
+from adgn.openai_utils.model import (
     FunctionCallItem,
     ResponsesRequest,
 )
 import pytest
 
-from adgn.llm.inop.config import (
+from adgn.inop.config import (
     DebugConfig,
     GraderConfig,
     OptimizerConfig,
@@ -17,15 +17,15 @@ from adgn.llm.inop.config import (
     TokenConfig,
     TruncationConfig,
 )
-from adgn.llm.inop.engine import optimizer as opt
-from adgn.llm.inop.engine.models import (
+from adgn.inop.engine import optimizer as opt
+from adgn.inop.engine.models import (
     AgentTaskType,
     Criterion,
     MessageBasedGrading,
     TaskDefinition,
     TaskType,
 )
-from adgn.llm.inop.io.jsonl_logger import JSONLLogger
+from adgn.inop.io.jsonl_logger import JSONLLogger
 
 
 def mk_func_call(*, name: str, args: dict, call_id: str) -> FunctionCallItem:
@@ -150,13 +150,13 @@ async def test_optimize_prompts_two_iterations_async(
     responses_factory,
 ):
     # Provide a lightweight runner that avoids Docker and writes deterministic outputs
-    from adgn.llm.inop.engine.models import (
+    from adgn.inop.engine.models import (
         AssistantMessage as TrMsg,
         Rollout,
         RunnerEnvironment,
     )
-    from adgn.llm.inop.runners.base import AgentRunner
-    from adgn.llm.inop.engine import runner_factory
+    from adgn.inop.runners.base import AgentRunner
+    from adgn.inop.engine import runner_factory
 
     class FakeRunner(AgentRunner):
         async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:  # noqa: D401

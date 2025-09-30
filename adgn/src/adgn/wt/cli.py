@@ -40,7 +40,7 @@ def show_help() -> None:
 
     # Flags with dynamic padding
     flags = [
-        ("--help", "Show this help"),
+        ("-h, --help", "Show this help"),
         ("--verbose", "Show client progress and daemon startup info"),
     ]
     max_flag = max(len(name) for name, _ in flags)
@@ -60,9 +60,14 @@ def show_help() -> None:
         ("wt status [name]", "Show detailed status"),
     ]
 
-    # Append reserved commands discovered from shared COMMAND_DESCRIPTIONS
+    # Append reserved commands discovered from shared COMMAND_DESCRIPTIONS (dedup)
+    seen = {c for c, _ in commands}
     for name in sorted(COMMAND_DESCRIPTIONS.keys()):
-        commands.append((f"wt {name}", COMMAND_DESCRIPTIONS[name]))
+        entry = f"wt {name}"
+        if entry in seen:
+            continue
+        commands.append((entry, COMMAND_DESCRIPTIONS[name]))
+        seen.add(entry)
 
     # Also keep a direct "wt main" navigation entry
     commands.append(("wt main", "Navigate to main repo"))
@@ -89,22 +94,17 @@ def show_help() -> None:
 
 @click.group(
     invoke_without_command=True,
-    context_settings={"ignore_unknown_options": True, "help_option_names": []},
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
-@click.option("-h", "--help", is_flag=True, help="Show this help and exit")
 @click.option(
     "--verbose",
     is_flag=True,
     help="Show client progress and daemon startup info",
 )
 @click.pass_context
-def main(ctx, help, verbose):
+def main(ctx, verbose):
     """Main CLI entry point."""
     init()  # colorama
-
-    if help:
-        show_help()
-        ctx.exit(0)
 
     # Accept --verbose anywhere (even after args like 'status')
     effective_verbose = bool(verbose) or ("--verbose" in (ctx.args or []))
@@ -115,7 +115,23 @@ def main(ctx, help, verbose):
 
     if ctx.invoked_subcommand is None:
         try:
-            asyncio.run(_async_main(verbose=effective_verbose))
+            # If positional args were provided, treat them as a command in sh-dispatch mode
+            if ctx.args:
+                config, formatter, daemon_client, plugin_manager = (
+                    _create_cli_dependencies(verbose=effective_verbose)
+                )
+                asyncio.run(
+                    _async_sh_main(
+                        daemon_client,
+                        formatter,
+                        config,
+                        plugin_manager,
+                        ctx.args,
+                        ctx,
+                    )
+                )
+            else:
+                asyncio.run(_async_main(verbose=effective_verbose))
         except Exception as e:
             if effective_verbose:
                 raise
@@ -143,46 +159,7 @@ async def _async_main(verbose: bool = False):
     await handle_status(daemon_client, formatter)
 
 
-@main.command(
-    context_settings={
-        "ignore_unknown_options": True,
-        "allow_extra_args": True,
-        "help_option_names": [],
-    },
-)
-@click.argument("args", nargs=-1)
-@click.pass_context
-def sh(ctx, args):
-    """Handle shell integration with argument parsing."""
-    # Combine args from Click with any extra args inline (avoid one-off variable)
-    if any(a in {"--help", "-h"} for a in [*args, *ctx.args]):
-        show_help()
-        return
-    filtered_args = [
-        a for a in [*args, *ctx.args] if (a in {"--force"} or not a.startswith("-"))
-    ]
-
-    verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
-        verbose=verbose,
-    )
-
-    # Run async command handler
-    try:
-        asyncio.run(
-            _async_sh_main(
-                daemon_client,
-                formatter,
-                config,
-                plugin_manager,
-                filtered_args,
-                ctx,
-            ),
-        )
-    except Exception as e:
-        if verbose:
-            raise
-        raise click.ClickException(str(e)) from e
+## legacy 'sh' subcommand removed; main group handles positional args.
 
 
 async def _cmd_ls(daemon_client, formatter, **_):
@@ -247,6 +224,25 @@ _COMMAND_DISPATCH: dict[str, Callable[..., Awaitable[None]]] = {
     "help": _cmd_help,
     "kill-daemon": _cmd_kill,
 }
+
+
+async def _cmd_create_sh(config, remaining_args, ctx, **_):
+    if not remaining_args:
+        click.echo("Error: create requires a worktree name")
+        ctx.exit(1)
+    name = remaining_args[0]
+    await handle_create_worktree(
+        config,
+        name,
+        from_default=True,
+        from_branch=None,
+        from_worktree=None,
+        confirm=False,
+    )
+
+
+# Register after definition
+_COMMAND_DISPATCH["create"] = _cmd_create_sh
 
 
 async def _async_sh_main(
@@ -333,6 +329,141 @@ def cmd_create(ctx, name, from_branch, from_worktree, yes):
                 from_branch=from_branch,
                 from_worktree=from_worktree,
                 confirm=not yes,
+            )
+        )
+    except Exception as e:
+        if verbose:
+            raise
+        raise click.ClickException(str(e)) from e
+
+
+@main.command("ls", context_settings={"help_option_names": ["-h", "--help"]})
+@click.pass_context
+def cmd_ls(ctx):
+    """List all worktrees."""
+    verbose = bool((ctx.obj or {}).get("verbose", False))
+    config, formatter, daemon_client, _ = _create_cli_dependencies(verbose=verbose)
+    try:
+        asyncio.run(handle_list_worktrees(daemon_client, formatter))
+    except Exception as e:
+        if verbose:
+            raise
+        raise click.ClickException(str(e)) from e
+
+
+@main.command("status", context_settings={"help_option_names": ["-h", "--help"]})
+@click.argument("name", required=False)
+@click.pass_context
+def cmd_status(ctx, name):
+    """Show status for all worktrees or a single worktree."""
+    verbose = bool((ctx.obj or {}).get("verbose", False))
+    config, formatter, daemon_client, _ = _create_cli_dependencies(verbose=verbose)
+    try:
+        if name:
+            asyncio.run(handle_status_single(daemon_client, formatter, name))
+        else:
+            asyncio.run(handle_status(daemon_client, formatter))
+    except Exception as e:
+        if verbose:
+            raise
+        raise click.ClickException(str(e)) from e
+
+
+@main.command("cp", context_settings={"help_option_names": ["-h", "--help"]})
+@click.argument("source")
+@click.argument("dest", required=False)
+@click.pass_context
+def cmd_cp(ctx, source, dest):
+    """Copy current or named worktree to a new worktree."""
+    verbose = bool((ctx.obj or {}).get("verbose", False))
+    config, *_ = _create_cli_dependencies(verbose=verbose)
+    try:
+        asyncio.run(handle_copy_worktree(config, source, dest))
+    except Exception as e:
+        if verbose:
+            raise
+        raise click.ClickException(str(e)) from e
+
+
+@main.command("rm", context_settings={"help_option_names": ["-h", "--help"]})
+@click.argument("name")
+@click.option("--force", is_flag=True, help="Force removal without confirmation")
+@click.pass_context
+def cmd_rm(ctx, name, force):
+    """Remove a worktree."""
+    verbose = bool((ctx.obj or {}).get("verbose", False))
+    config, *_ = _create_cli_dependencies(verbose=verbose)
+    try:
+        asyncio.run(handle_remove_worktree(config, name, force))
+    except Exception as e:
+        if verbose:
+            raise
+        raise click.ClickException(str(e)) from e
+
+
+@main.command("path", context_settings={"help_option_names": ["-h", "--help"]})
+@click.argument("worktree", required=False)
+@click.argument("subpath", required=False)
+@click.pass_context
+def cmd_path(ctx, worktree, subpath):
+    """Resolve a path under a worktree (or the current one)."""
+    verbose = bool((ctx.obj or {}).get("verbose", False))
+    config, *_ = _create_cli_dependencies(verbose=verbose)
+    try:
+        asyncio.run(handle_path_command(config, worktree, subpath))
+    except Exception as e:
+        if verbose:
+            raise
+        raise click.ClickException(str(e)) from e
+
+
+@main.command("kill-daemon", context_settings={"help_option_names": ["-h", "--help"]})
+@click.pass_context
+def cmd_kill(ctx):
+    """Stop the wt daemon and clean up its files."""
+    verbose = bool((ctx.obj or {}).get("verbose", False))
+    config, *_ = _create_cli_dependencies(verbose=verbose)
+    try:
+        asyncio.run(handle_kill_daemon(config))
+    except Exception as e:
+        if verbose:
+            raise
+        raise click.ClickException(str(e)) from e
+
+
+@main.command("help", context_settings={"help_option_names": ["-h", "--help"]})
+def cmd_help():
+    """Show extended wt help with examples."""
+    show_help()
+
+
+@main.command(
+    "sh",
+    context_settings={
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+        "help_option_names": ["-h", "--help"],
+    },
+)
+@click.pass_context
+def cmd_sh(ctx):
+    """Compatibility dispatcher for shell function and legacy tests.
+
+    Interprets arbitrary arguments using the internal sh-style dispatcher.
+    """
+    verbose = bool((ctx.obj or {}).get("verbose", False))
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
+        verbose=verbose
+    )
+    try:
+        asyncio.run(
+            _async_sh_main(
+                daemon_client,
+                formatter,
+                config,
+                plugin_manager,
+                list(ctx.args or []),
+                ctx,
             )
         )
     except Exception as e:

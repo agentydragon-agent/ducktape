@@ -1,11 +1,11 @@
 import pytest
 
-from adgn.llm.mini_codex.aggregating_handler import (
+from adgn.agent.reducer import (
     Reducer,
     BaseHandler,
     NoLoopDecision,
 )
-from adgn.llm.mini_codex.loop_control import Auto, Continue, RequireAny
+from adgn.agent.loop_control import Auto, Continue, RequireAny
 
 
 class DeferringHandler(BaseHandler):

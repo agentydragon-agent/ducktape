@@ -5,50 +5,50 @@ This document tracks the remaining cleanup from the current session. Items are g
 ## Quick lint fixes (ruff)
 
 - [ ] eval_harness.py: Remove duplicate class definition
-  - File: `src/adgn/llm/properties/eval_harness.py`
+  - File: `src/adgn/props/eval_harness.py`
   - Issue: `IssueEvalSpec` is defined twice (lines ~82 and ~420). Keep the first; delete the redefinition.
   - Done when: ruff no longer reports F811 in this file.
 
 ## Type fixes (mypy) — high priority
 
 - [ ] specimen_registry.py: jsonnet evaluate_file kwargs
-  - File: `src/adgn/llm/properties/specimen_registry.py`
+  - File: `src/adgn/props/specimen_registry.py`
   - Error: Unexpected kwargs `jpathdir`, `import_callback` for `_jsonnet.evaluate_file`.
   - Fix: Call via `cast(Any, _jsonnet).evaluate_file(...)` or wrap in a helper typed as `Any` to satisfy stubs.
 
 - [ ] tests: AnyUrl casts for read_resource
-  - Files: `tests/mini_codex/test_mcp_integration.py` (lines ~90, 109)
+  - Files: `tests/agent/test_mcp_integration.py` (lines ~90, 109)
   - Fix: `uri = cast(AnyUrl, "resource://container.info")` before `read_resource` calls, or use helper that accepts str.
 
 - [ ] tests: Guard None before dict indexing
-  - File: `tests/mini_codex/test_editor_inproc.py` (multiple lines)
+  - File: `tests/agent/test_editor_inproc.py` (multiple lines)
   - Fix: assert dict is not None or early-return before indexing/get(); remove union-attr violations.
 
 - [ ] tests: MiniCodex.create signature and client type
-  - Files: `tests/mini_codex/test_exec_roundtrip.py`, `src/adgn/llm/llm_edit.py`, `src/adgn/llm/properties/agent_runner.py`, `src/adgn/llm/mini_codex/cli.py`
+  - Files: `tests/agent/test_exec_roundtrip.py`, `src/adgn/llm/llm_edit.py`, `src/adgn/props/agent_runner.py`, `src/adgn/agent/cli.py`
   - Issues:
     - Provide `handlers=[...]` in `MiniCodex.create` (required now).
     - Client type: pass a `ResponsesClient`-compatible instance (wrap `AsyncOpenAI` or `cast(ResponsesClient, AsyncOpenAI())`).
     - Where code expects `.text` on result, handle `AgentResult | AsyncIterator` union (don’t access `.text` on iterator; run non-stream or consume iterator).
 
 - [ ] event_renderer.py: API rename
-  - File: `src/adgn/llm/mini_codex/event_renderer.py`
+  - File: `src/adgn/agent/event_renderer.py`
   - Error: `_render_function_call_output` no longer exists; replace with `emit_function_call_output` or update to current API.
 
 - [ ] lint_issue.py: no-redef variable
-  - File: `src/adgn/llm/properties/lint_issue.py`
+  - File: `src/adgn/props/lint_issue.py`
   - Error: Name `f` already defined earlier — rename inner `f` or use a different variable name in the later scope.
 
 - [ ] eval_harness.py: Optional list handling
-  - File: `src/adgn/llm/properties/eval_harness.py`
+  - File: `src/adgn/props/eval_harness.py`
   - Issues: `len(list|None)` and indexing on `list|None` — guard `None` before `len()`/indexing.
 
 - [ ] examples: Optional assignment
-  - File: `src/adgn/llm/mini_codex/examples/run_minicodex_docker_demo.py`
+  - File: `src/adgn/agent/examples/run_minicodex_docker_demo.py`
   - Issue: Assigning `str | None` to `str`; supply default string before assignment.
 
 - [ ] inop/engine/optimizer.py: multiple
-  - File: `src/adgn/llm/inop/engine/optimizer.py`
+  - File: `src/adgn/inop/engine/optimizer.py`
   - Items:
     - Guard optional logger before `.info` (lines ~109, 341).
     - Fix `TruncationConfig` field name to `max_file_size_pattern_analysis`.
@@ -93,5 +93,5 @@ How to work this list
 Verification
 - Run:
   - `uv run ruff check . --fix`
-  - `uv run python -m mypy adgn_llm`
-  - Affected tests under `tests/mini_codex/**`.
+  - `uv run python -m mypy adgn`
+  - Affected tests under `tests/agent/**`.

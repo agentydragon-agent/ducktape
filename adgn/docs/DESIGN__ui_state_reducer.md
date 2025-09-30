@@ -75,8 +75,8 @@ Risks & mitigations
 - Client/server mismatch during migration: version messages and feature flag on client
 
 Execution checklist
-- [ ] Define UiState and DisplayItem models (src/adgn/llm/mini_codex/ui/state.py)
-- [ ] Implement pure reducer (src/adgn/llm/mini_codex/ui/reducer.py) + unit tests
+- [ ] Define UiState and DisplayItem models (src/adgn/agent/ui/state.py)
+- [ ] Implement pure reducer (src/adgn/agent/ui/reducer.py) + unit tests
 - [ ] Extend protocol with UiStateSnapshot/UiStateUpdated (ui/protocol.py) + version constant
 - [ ] Server: create session.ui_state; apply reducer on UserText/ToolCall/FunctionCallOutput/ApprovalDecision
 - [ ] Server: drain UiBus after function outputs and before snapshot; reduce UiMessage into AssistantMarkdown items; emit UiStateUpdated

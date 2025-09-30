@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from adgn.llm.llm_edit import _execute
-from adgn.llm.openai_utils.model import ResponsesRequest
+from adgn.openai_utils.model import ResponsesRequest
 
 from tests.fixtures.responses import ResponsesFactory
 from ..support.openai_mock import LIVE

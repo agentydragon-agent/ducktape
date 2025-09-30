@@ -11,9 +11,9 @@ from unittest.mock import patch
 import pygit2
 import pytest
 
-from adgn.llm.git_commit_ai import cli
-from adgn.llm.git_commit_ai.cli import get_commit_diff
-from adgn.llm.git_commit_ai.core import build_prompt
+from adgn.git_commit_ai import cli
+from adgn.git_commit_ai.cli import get_commit_diff
+from adgn.git_commit_ai.core import build_prompt
 
 
 @pytest.fixture
@@ -264,11 +264,11 @@ async def test_full_amend_flow_integration(monkeypatch):
             return new_message
 
         monkeypatch.setattr(
-            "adgn.llm.git_commit_ai.minicodex_backend.generate_commit_message_minicodex",
+            "adgn.git_commit_ai.minicodex_backend.generate_commit_message_minicodex",
             _fake_generate,
         )
         monkeypatch.setattr(
-            "adgn.llm.git_commit_ai.cli.Cache.get",
+            "adgn.git_commit_ai.cli.Cache.get",
             lambda self, key: new_message,
         )
 
@@ -276,7 +276,7 @@ async def test_full_amend_flow_integration(monkeypatch):
         async def _fake_get_editor():
             return "fake-editor"
 
-        monkeypatch.setattr("adgn.llm.git_commit_ai.cli._get_editor", _fake_get_editor)
+        monkeypatch.setattr("adgn.git_commit_ai.cli._get_editor", _fake_get_editor)
 
         # Intercept the editor subprocess shell call and append comments + scissors
         class _Proc:

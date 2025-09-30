@@ -94,7 +94,7 @@ Use when testing sandboxed kernel explicitly. This manual recipe uses sandbox-ex
 # Choose run root under /tmp
 RUN_ROOT="/tmp/sjmcp_$$"; mkdir -p "$RUN_ROOT/runtime" "$RUN_ROOT/data/kernels" "$RUN_ROOT/config"
 # Write sandboxed python3 kernelspec (wraps sandbox-exec)
-POLICY="$PWD/adgn/src/adgn/llm/mcp/sandboxed_jupyter_mcp/policies/kernel_base.sb"
+POLICY="$PWD/adgn/src/adgn/mcp/sandboxed_jupyter_mcp/policies/kernel_base.sb"
 KDIR="$RUN_ROOT/data/kernels/python3"; mkdir -p "$KDIR"
 cat >"$KDIR/kernel.json" <<JSON
 {

@@ -247,6 +247,16 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         emit_cd_command(Path(tt.cd_path), main_repo=config.main_repo)
         return
 
+    # Test-mode auto-create (Option B): respect WT_TEST_MODE=1 to avoid prompts in tests
+    if os.environ.get("WT_TEST_MODE") == "1":
+        await handle_create_worktree(
+            config,
+            worktree_name,
+            from_default=True,
+            confirm=False,
+        )
+        return
+
     if click.confirm(
         f"Worktree '{worktree_name}' does not exist. Create branch '{config.branch_prefix}{worktree_name}' from base '{config.upstream_branch}'?",
         default=False,

@@ -222,7 +222,7 @@ for ev in batch.resources_updated:
 Notification delivery is opt-in. Callers explicitly add the handler when constructing MiniCodex:
 
 ```python
-from adgn.llm.mini_codex.aggregating_handler import NotificationsHandler, AutoHandler
+from adgn.agent.reducer import NotificationsHandler, AutoHandler
 
 handlers = [
     NotificationsHandler(mcp),  # opt-in delivery of batched resource FYIs
@@ -264,25 +264,25 @@ async with McpManager(specs) as mcp:
 Replace scattered build/parse usage with McpManager helpers.
 
 Scope (from code search):
-- adgn/src/adgn/llm/mini_codex/agent.py (parse_mcp_function on tool calls)
-- adgn/src/adgn/llm/mini_codex/event_renderer.py (parse_mcp_function)
-- adgn/src/adgn/llm/mini_codex/approvals.py (build/parse)
-- adgn/src/adgn/llm/git_commit_ai/minicodex_backend.py (build_mcp_function in bootstrap)
-- adgn/src/adgn/llm/mcp/helpers.py (build_mcp_function)
-- adgn/src/adgn/llm/properties/{lint_issue.py, grade_runner.py} (build_mcp_function)
-- tests under adgn/tests/llm/** using build/parse (adjust to new helpers or keep tiny test-only util)
+- adgn/src/adgn/agent/agent.py (parse_mcp_function on tool calls)
+- adgn/src/adgn/agent/event_renderer.py (parse_mcp_function)
+- adgn/src/adgn/agent/approvals.py (build/parse)
+- adgn/src/adgn/git_commit_ai/minicodex_backend.py (build_mcp_function in bootstrap)
+- adgn/src/adgn/mcp/helpers.py (build_mcp_function)
+- adgn/src/adgn/props/{lint_issue.py, grade_runner.py} (build_mcp_function)
+- tests under adgn/tests/{agent,mcp}/** using build/parse (adjust to new helpers or keep tiny test-only util)
 
 Steps:
 1) Add to McpManager:
    - list_tools_namespaced(only=None) -> list[tool defs]
    - call_tool_namespaced(name, arguments) -> CallToolResult
-   - (internal) _build_tool_name/_parse_tool_name; optionally expose stable adgn.llm.mcp.naming for tests
+   - (internal) _build_tool_name/_parse_tool_name; optionally expose stable adgn.mcp.naming for tests
 2) Switch MiniCodex:
    - On tool-call: use call_tool_namespaced(call.name, call.arguments)
    - For sampling: use sampling_snapshot()["tools"] (names already namespaced)
 3) Switch bootstrap sites (Git RO, properties runners) to build names via manager util or namespaced constant if needed
 4) Tests:
-   - Prefer namespaced helpers from McpManager or adgn.llm.mcp.naming; avoid direct f-strings
+   - Prefer namespaced helpers from McpManager or adgn.mcp.naming; avoid direct f-strings
 
 Behavioral guardrails:
 - Names passed to OpenAI must be of the form mcp__server__tool (manager-owned)
@@ -460,7 +460,7 @@ Notes:
   - `list_tools_namespaced()` — returns OpenAI/Anthropic‑ready tool defs with names like `mcp__server__tool`.
   - `call_tool_namespaced(name, arguments)` — takes the namespaced string and routes to the right server/tool with argument parsing and result serialization.
   - `sampling_snapshot()` — tools already namespaced; callers don’t build/parse names themselves.
-- Rare external use (tests/prompt building): if needed, provide a very small, stable utility under `adgn.llm.mcp.naming` (opt‑in) with `build_tool_name` and `parse_tool_name`. This avoids reaching into manager internals while keeping the main namespacing logic centralized. If not needed, keep helpers internal only.
+- Rare external use (tests/prompt building): if needed, provide a very small, stable utility under `adgn.mcp.naming` (opt‑in) with `build_tool_name` and `parse_tool_name`. This avoids reaching into manager internals while keeping the main namespacing logic centralized. If not needed, keep helpers internal only.
 
 ## Handling OpenAI namespaced tool calls
 
@@ -474,7 +474,7 @@ Example (raw call + raw serialization):
 
 ```python
 from mcp import types as mcp_types
-from adgn.llm.mini_codex.mcp_manager import parse_mcp_function
+from adgn.agent.mcp_manager import parse_mcp_function
 
 async def handle_responses_tool_call(
     mcp: McpManager, name: str, arguments: dict | str | None

@@ -10,10 +10,6 @@ from openai import AsyncOpenAI
 import pytest
 
 from .support.openai_mock import LIVE, OpenAIClient, make_mock
-from adgn.llm.mcp._shared.container_session import ContainerOptions
-from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.llm.mini_codex.mcp_manager import McpManager
 
 
 # Ensure MiniCodex logs go to a temp dir in tests
@@ -146,56 +142,4 @@ def openai_client_param(
     raise TypeError("openai_client_param must be a behavior fn or LIVE")
 
 
-# ---- Shared ContainerOptions fixtures and in-proc docker exec specs ----
-# Hoisted from mini_codex/conftest.py so MCP tests can reuse them.
-
-
-@pytest.fixture
-def container_opts_py312() -> ContainerOptions:
-    return ContainerOptions(
-        image="python:3.12-slim",
-        working_dir="/workspace",
-        volumes=None,
-        describe=False,
-    )
-
-
-@pytest.fixture
-def container_opts_alpine() -> ContainerOptions:
-    return ContainerOptions(image="alpine:3.19", describe=False)
-
-
-@pytest.fixture
-def docker_exec_server_py312(container_opts_py312) -> object:
-    return make_container_exec_mcp(container_opts_py312)
-
-
-@pytest.fixture
-def docker_exec_server_alpine(container_opts_alpine) -> object:
-    return make_container_exec_mcp(container_opts_alpine)
-
-
-@pytest.fixture
-def docker_inproc_spec_py312(docker_exec_server_py312) -> object:
-    return make_inproc_slot_spec(docker_exec_server_py312)
-
-
-@pytest.fixture
-def docker_inproc_spec_alpine(docker_exec_server_alpine) -> object:
-    return make_inproc_slot_spec(docker_exec_server_alpine)
-
-
-@pytest.fixture
-def docker_specs_py312(docker_inproc_spec_py312) -> dict[str, object]:
-    return {"docker": docker_inproc_spec_py312}
-
-
-@pytest.fixture
-async def empty_mcp() -> McpManager:
-    """A real McpManager with zero servers, entered for the test duration."""
-    mgr = McpManager({})
-    await mgr.__aenter__()
-    try:
-        yield mgr
-    finally:
-        await mgr.__aexit__(None, None, None)
+# Docker/OpenAI fixtures moved to top-level tests/conftest.py to be shared across suites.

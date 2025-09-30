@@ -19,7 +19,7 @@
 - [x] Tool output rule in agent: structuredContent → JSON; single TextContent → raw text; else JSON blocks
 - [x] Avoid getattr for session/agent fields in server; use direct fields
 - [x] Tests updated and passing for WS plain assistant text and WS tool multi-turn
-- [x] Svelte + TypeScript + Vite scaffolded at src/adgn/llm/mini_codex/ui/web; build targets static/web; index route serves static/web/index.html if present
+- [x] Svelte + TypeScript + Vite scaffolded at src/adgn/agent/ui/web; build targets static/web; index route serves static/web/index.html if present
 
 - [x] Snapshot sent on hello; includes transcript; UI restores transcript on reload
 - [x] Server persists transcript (UserText/AssistantText/ToolCall/FunctionCallOutput) for snapshots

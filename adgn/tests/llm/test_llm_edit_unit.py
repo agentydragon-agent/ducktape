@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from adgn.llm.mcp.editor_server import DoneInput, is_python_path, make_editor_mcp
+from adgn.mcp.editor_server import DoneInput, is_python_path, make_editor_mcp
 
 
 @pytest.fixture

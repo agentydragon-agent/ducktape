@@ -46,5 +46,5 @@ Status: Missing in current FastMCP Python SDK; desirable for reactive PE/agents.
   - Add ResourceManager hooks + server notification helpers
 
 ## Links
-- In-proc transport design: `src/adgn_llm/mcp/inproc_transport_design.md`
-- Prompt Engineer MCP client design: `src/adgn_llm/inop/prompt_engineer_mcp_client_design.md`
+- In-proc transport design: `src/adgn/mcp/inproc_transport_design.md`
+- Prompt Engineer MCP client design: `src/adgn/inop/prompt_engineer_mcp_client_design.md`

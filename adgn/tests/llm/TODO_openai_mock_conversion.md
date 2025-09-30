@@ -22,14 +22,14 @@ Pattern reference
     - Behavior returns real SDK Responses with minimal assistant text outputs for happy paths
     - Add branches for any prompts validated in assertions (envelope/shape-only assertions)
 
-- [ ] adgn/tests/llm/mini_codex/test_exec_roundtrip.py
+- [ ] adgn/tests/agent/test_exec_roundtrip.py
   - Current: contains `@pytest.mark.live_llm` and relies on real OpenAI
   - Target: shared trunk with `openai_client_param = [behavior_switch, LIVE]`
   - Expectations:
     - Behavior must simulate tool flow: emit `ResponseFunctionToolCall` where agent expects function calls; follow-up assistant text or tool outputs as needed
     - Keep assertions on envelope/order; avoid brittle text assertions
 
-- [ ] adgn/tests/llm/properties/test_eval_lint_issue_wt.py
+- [ ] adgn/tests/props/test_eval_lint_issue_wt.py
   - Current: `@pytest.mark.live_llm`; drives properties critic/grader flow
   - Target: shared trunk with `openai_client_param` and behavior that handles both agents
   - Expectations:

@@ -50,4 +50,4 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 USER 1000:1000
 
 # Default entrypoint runs the probe module; k8s overrides args
-ENTRYPOINT ["python", "-m", "adgn.llm.openai_utils.probe"]
+ENTRYPOINT ["python", "-m", "adgn.openai_utils.probe"]

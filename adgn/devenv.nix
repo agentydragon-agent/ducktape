@@ -24,7 +24,7 @@
   scripts."ui-build".exec = "npm --prefix ./src/adgn/llm/mini_codex/ui/web run build";
   scripts."ui-build".description = "Build MiniCodex UI assets into ui/static/web";
 
-  scripts."mini-codex-serve".exec = "python -m adgn.llm.mini_codex.cli serve --host 127.0.0.1 --port 8765";
+  scripts."mini-codex-serve".exec = "python -m adgn.agent.cli serve --host 127.0.0.1 --port 8765";
   scripts."mini-codex-serve".description = "Start MiniCodex backend + FastAPI UI server (http://127.0.0.1:8765)";
 
   # Background processes (start with: `devenv up`)

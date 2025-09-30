@@ -20,7 +20,7 @@ Use --trace-sandbox, --no-kernel-sandbox, --jupyter-port as needed.
 Use the standalone script to reproduce a seatbelt-wrapped Jupyter + MCP session without pytest:
 
 ```bash
-/Users/mpokorny/code/ducktape/adgn/src/adgn/llm/mcp/sandboxed_jupyter_mcp/run_one.sh \
+/Users/mpokorny/code/ducktape/adgn/src/adgn/mcp/sandboxed_jupyter_mcp/run_one.sh \
   /abs/path/to/.sandbox_jupyter.yaml \
   /abs/workspace \
   /abs/run_root \
@@ -95,5 +95,5 @@ For an end-to-end manual workflow, see docs/TMUX_MANUAL_TESTING.md. It walks thr
 
 Pytest fixtures provide a DRY harness (see tests/conftest.py). Run:
 ```bash
-pytest -q adgn/src/adgn/llm/mcp/sandboxed_jupyter_mcp/tests/
+pytest -q adgn/src/adgn/mcp/sandboxed_jupyter_mcp/tests/
 ```

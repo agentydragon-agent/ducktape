@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from adgn.llm.llm_edit import app
-from adgn.llm import client_factory
+from adgn.openai_utils import client_factory
 
 
 def test_typer_cli_invokes_execute_without_sys(
@@ -23,7 +23,7 @@ def test_typer_cli_invokes_execute_without_sys(
 
     def _mk_client(model: str):
         called.update({"client_model": model})
-        from adgn.llm.openai_utils.model import FakeOpenAIModel
+        from adgn.openai_utils.model import FakeOpenAIModel
 
         return FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
 

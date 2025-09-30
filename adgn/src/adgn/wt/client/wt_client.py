@@ -165,33 +165,20 @@ class WtClient:
 
             except TimeoutError as e:
                 timeout_secs = self.config.startup_timeout.total_seconds()
-                raise RuntimeError(
+                diag = self._collect_daemon_diagnostics()
+                msg = [
                     f"Daemon startup timed out after {timeout_secs:.1f} seconds",
-                ) from e
+                ]
+                if diag:
+                    msg.append(diag)
+                raise RuntimeError("\n".join(msg)) from e
             except (OSError, RuntimeError, ValueError) as e:
-                diag = []
-                try:
-                    daemon_log = self.config.wt_dir / "daemon.log"
-                    diag.append(f"daemon.log: {daemon_log}")
-                    if daemon_log.exists():
-                        tail = daemon_log.read_text(errors="ignore").splitlines()[-50:]
-                        diag.append("daemon.log (tail):\n" + "\n".join(tail))
-                except OSError:
-                    pass
-                try:
-                    diag.append(
-                        f"pid file exists: {self.config.daemon_pid_path.exists()}",
-                    )
-                    if self.config.daemon_pid_path.exists():
-                        diag.append(
-                            f"pid file contents: {self.config.daemon_pid_path.read_text().strip()}",
-                        )
-                    diag.append(
-                        f"socket exists: {self.config.daemon_socket_path.exists()}",
-                    )
-                except OSError:
-                    pass
-                raise RuntimeError("Daemon startup failed.\n" + "\n".join(diag)) from e
+                diag = self._collect_daemon_diagnostics()
+                raise RuntimeError(
+                    "Daemon startup failed.\n" + diag
+                    if diag
+                    else "Daemon startup failed.",
+                ) from e
             finally:
                 self._handshake_pipe = None
 
@@ -267,7 +254,11 @@ class WtClient:
                 if not line:
                     if last_obj:
                         return last_obj
-                    raise RuntimeError("Daemon closed handshake pipe before ready")
+                    diag = self._collect_daemon_diagnostics()
+                    msg = "Daemon closed handshake pipe before ready"
+                    if diag:
+                        msg += "\n" + diag
+                    raise RuntimeError(msg)
                 if self.verbose:
                     click.echo(f"[daemon-handshake] {line.rstrip()}")
                 line = line.strip()
@@ -523,9 +514,15 @@ class WtClient:
             ValidationError,
         ) as e:
             logger.error("RPC %s failed: %s", method, e)
-            if isinstance(e, RpcError):
-                raise RuntimeError(f"RPC {method} failed ({e.code}): {e}") from e
-            raise RuntimeError(f"RPC {method} failed: {e}") from e
+            diag = self._collect_daemon_diagnostics()
+            base = (
+                f"RPC {method} failed ({e.code}): {e}"
+                if isinstance(e, RpcError)
+                else f"RPC {method} failed: {e}"
+            )
+            if diag:
+                base = base + "\n" + diag
+            raise RuntimeError(base) from e
 
     async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
         result: WorktreeResolvePathResult = await self._rpc(
@@ -546,6 +543,31 @@ class WtClient:
             current_path=str(Path.cwd()),
         )
         return Path(await self.resolve_path(params))
+
+    def _collect_daemon_diagnostics(self) -> str:
+        """Collect a short diagnostic summary including daemon.log tail.
+
+        Returns a formatted string or empty string if nothing could be collected.
+        """
+        lines: list[str] = []
+        try:
+            daemon_log = self.config.wt_dir / "daemon.log"
+            lines.append(f"daemon.log: {daemon_log}")
+            if daemon_log.exists():
+                tail = daemon_log.read_text(errors="ignore").splitlines()[-50:]
+                lines.append("daemon.log (tail):\n" + "\n".join(tail))
+        except OSError:
+            pass
+        try:
+            lines.append(f"pid file exists: {self.config.daemon_pid_path.exists()}")
+            if self.config.daemon_pid_path.exists():
+                lines.append(
+                    f"pid file contents: {self.config.daemon_pid_path.read_text().strip()}"
+                )
+            lines.append(f"socket exists: {self.config.daemon_socket_path.exists()}")
+        except OSError:
+            pass
+        return "\n".join(lines).strip()
 
     async def teleport_target(
         self,

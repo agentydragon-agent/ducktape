@@ -106,7 +106,7 @@ class TestCLIOutputFormat:
         }
 
         status_response = create_test_status_response(results)
-        result = cli_runner_with_env(status_response, ["sh"], mock_get_status)
+        result = cli_runner_with_env(status_response, [], mock_get_status)
 
         print("Exit code:", result.exit_code)
         print("Output:", repr(result.output))
@@ -122,7 +122,7 @@ class TestCLIOutputFormat:
     def test_list_worktrees_empty(self, mock_get_status, cli_runner_with_env):
         """Test ls command with no worktrees."""
         status_response = create_test_status_response({})
-        result = cli_runner_with_env(status_response, ["sh", "ls"], mock_get_status)
+        result = cli_runner_with_env(status_response, ["ls"], mock_get_status)
 
         assert result.exit_code == 0
         assert "No worktrees found" in result.output
@@ -160,7 +160,7 @@ class TestCLIOutputFormat:
         }
 
         status_response = create_test_status_response(results)
-        result = cli_runner_with_env(status_response, ["sh", "ls"], mock_get_status)
+        result = cli_runner_with_env(status_response, ["ls"], mock_get_status)
 
         assert result.exit_code == 0
         # Should show some worktree content
@@ -169,7 +169,7 @@ class TestCLIOutputFormat:
     def test_help_command(self, cli_runner_with_env, monkeypatch, cli_test_env):
         """Test help command works with new CLI."""
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        result = CliRunner().invoke(main, ["sh", "help"])
+        result = CliRunner().invoke(main, ["help"])
 
         assert result.exit_code == 0
         assert "wt - Enhanced worktree management" in result.output
@@ -178,10 +178,11 @@ class TestCLIOutputFormat:
     def test_help_flag(self, cli_runner_with_env, monkeypatch, cli_test_env):
         """Test --help flag works with new CLI."""
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        result = CliRunner().invoke(main, ["sh", "--help"])
+        result = CliRunner().invoke(main, ["--help"])
 
         assert result.exit_code == 0
-        assert "USAGE:" in result.output  # Custom help format
+        # Click default help uses 'Usage:'; keep strict
+        assert "Usage:" in result.output
 
     @patch("adgn.wt.client.wt_client.WtClient.get_status")
     def test_status_unknown_when_not_cached(self, mock_get_status, cli_runner_with_env):
@@ -212,6 +213,6 @@ class TestCLIOutputFormat:
             ),
         }
         status_response = create_test_status_response(results)
-        result = cli_runner_with_env(status_response, ["sh"], mock_get_status)
+        result = cli_runner_with_env(status_response, [], mock_get_status)
         assert result.exit_code == 0
         assert "unknown" in result.output
