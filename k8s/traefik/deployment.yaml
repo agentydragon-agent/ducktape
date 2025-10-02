@@ -5,16 +5,22 @@ metadata:
   namespace: traefik
   labels:
     app: traefik
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: traefik-traefik
 spec:
   selector:
     matchLabels:
-      app: traefik
+      app.kubernetes.io/name: traefik
+      app.kubernetes.io/instance: traefik-traefik
   template:
     metadata:
       labels:
         app: traefik
+        app.kubernetes.io/name: traefik
+        app.kubernetes.io/instance: traefik-traefik
     spec:
       serviceAccountName: traefik
+      automountServiceAccountToken: true
       containers:
         - name: traefik
           image: traefik:v3.0
@@ -22,6 +28,7 @@ spec:
             - --api.insecure=true
             - --providers.kubernetesingress
             - --providers.kubernetesingress.ingressclass=traefik
+            - --providers.kubernetescrd
             - --entrypoints.web.address=:80
             - --entrypoints.websecure.address=:443
             - --log.level=INFO

@@ -19,7 +19,7 @@ synapse:
     className: traefik
     host: matrix.k3s.agentydragon.com
     tlsSecretName: ""
-    entrypoints: web
+    entrypoints: web,websecure
     annotations: {}
 
   admin:
@@ -50,5 +50,5 @@ element:
     className: traefik
     host: element.k3s.agentydragon.com
     tlsSecretName: ""
-    entrypoints: web
+    entrypoints: web,websecure
     annotations: {}
