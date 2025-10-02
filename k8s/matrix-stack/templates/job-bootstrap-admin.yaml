@@ -35,11 +35,22 @@ spec:
             - sh
             - -c
             - |
-              register_new_matrix_user -c /config/homeserver.yaml -u {{ .Values.synapse.admin.user | quote }} -p $(cat /secrets/admin-password) -a || echo "admin may already exist"
+              # Wait for Synapse to be ready
+              until curl -s -f http://{{ include "matrix-stack.fullname" . }}-synapse:8008/_matrix/client/versions > /dev/null 2>&1; do
+                echo "Waiting for Synapse..."
+                sleep 2
+              done
+              # Register admin user
+              register_new_matrix_user \
+                -c /config/homeserver.yaml \
+                -u {{ .Values.synapse.admin.user | quote }} \
+                -p $(cat /secrets/admin-password) \
+                -a \
+                http://{{ include "matrix-stack.fullname" . }}-synapse:8008 || echo "admin may already exist"
           volumeMounts:
             - name: config
               mountPath: /config
-            - name: admin-secret
+            - name: secrets
               mountPath: /secrets
       volumes:
         - name: homeserver-tmpl

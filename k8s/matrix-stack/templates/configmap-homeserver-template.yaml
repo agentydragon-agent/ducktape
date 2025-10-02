@@ -22,3 +22,7 @@ data:
     enable_registration: false
     report_stats: {{ ternary "yes" "no" .Values.synapse.reportStats | quote }}
     media_store_path: "/data/media_store"
+    database:
+      name: sqlite3
+      args:
+        database: /data/homeserver.db

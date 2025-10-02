@@ -8,6 +8,8 @@ spec:
   resources:
     requests:
       storage: {{ .Values.synapse.persistence.size }}
-  storageClassName: {{ if .Values.synapse.persistence.storageClass }}{{ .Values.synapse.persistence.storageClass }}{{ else }}null{{ end }}
+  {{- if .Values.synapse.persistence.storageClass }}
+  storageClassName: {{ .Values.synapse.persistence.storageClass }}
+  {{- end }}
 {{- end }}
 
