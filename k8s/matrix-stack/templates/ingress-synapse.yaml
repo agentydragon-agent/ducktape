@@ -1,0 +1,31 @@
+{{- if .Values.synapse.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "matrix-stack.fullname" . }}-synapse
+  annotations:
+{{- if .Values.synapse.ingress.entrypoints }}
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ .Values.synapse.ingress.entrypoints | quote }}
+{{- end }}
+{{- if .Values.synapse.ingress.annotations }}
+{{ toYaml .Values.synapse.ingress.annotations | indent 4 }}
+{{- end }}
+spec:
+  ingressClassName: {{ .Values.synapse.ingress.className | quote }}
+  rules:
+    - host: {{ .Values.synapse.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "matrix-stack.fullname" . }}-synapse
+                port:
+                  number: {{ .Values.synapse.service.port }}
+  {{- if .Values.synapse.ingress.tlsSecretName }}
+  tls:
+    - hosts: [{{ .Values.synapse.ingress.host | quote }}]
+      secretName: {{ .Values.synapse.ingress.tlsSecretName | quote }}
+  {{- end }}
+{{- end }}

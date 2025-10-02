@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "matrix-stack.fullname" . }}-bootstrap-admin
+  labels:
+    app.kubernetes.io/name: {{ include "matrix-stack.name" . }}
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "matrix-stack.name" . }}
+        app.kubernetes.io/component: bootstrap
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: render-config
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              cp /tmpl/homeserver.yaml.tmpl /config/homeserver.yaml
+              printf '\nregistration_shared_secret: "%s"\n' "$(cat /secrets/registration-shared-secret)" >> /config/homeserver.yaml
+          volumeMounts:
+            - name: homeserver-tmpl
+              mountPath: /tmpl
+            - name: config
+              mountPath: /config
+            - name: secrets
+              mountPath: /secrets
+      containers:
+        - name: register-admin
+          image: {{ .Values.synapse.image }}
+          command:
+            - sh
+            - -c
+            - |
+              register_new_matrix_user -c /config/homeserver.yaml -u {{ .Values.synapse.admin.user | quote }} -p $(cat /secrets/admin-password) -a || echo "admin may already exist"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: admin-secret
+              mountPath: /secrets
+      volumes:
+        - name: homeserver-tmpl
+          configMap:
+            name: {{ include "matrix-stack.fullname" . }}-homeserver-tmpl
+        - name: config
+          emptyDir: {}
+        - name: secrets
+          secret:
+            secretName: {{ ternary .Values.sealedSecrets.name .Values.synapse.secrets.name .Values.sealedSecrets.enabled }}
+            items:
+              - key: admin-password
+                path: admin-password
+              - key: registration-shared-secret
+                path: registration-shared-secret

@@ -1,0 +1,13 @@
+{{- if .Values.synapse.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "matrix-stack.fullname" . }}-synapse-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.synapse.persistence.size }}
+  storageClassName: {{ if .Values.synapse.persistence.storageClass }}{{ .Values.synapse.persistence.storageClass }}{{ else }}null{{ end }}
+{{- end }}
+

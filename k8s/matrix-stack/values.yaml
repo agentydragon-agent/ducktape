@@ -1,0 +1,54 @@
+synapse:
+  image: matrixdotorg/synapse:latest
+  serverName: matrix.k3s.agentydragon.com
+  publicBaseUrl: https://matrix.k3s.agentydragon.com/
+  reportStats: false
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 5Gi
+  service:
+    type: ClusterIP
+    port: 8008
+  ingress:
+    enabled: true
+    className: traefik
+    host: matrix.k3s.agentydragon.com
+    tlsSecretName: ""
+    entrypoints: web
+    annotations: {}
+
+  admin:
+    user: admin
+    # The password is provided via Secret/SealedSecret
+
+  secrets:
+    name: synapse-secrets
+    # If not using sealedSecrets, set plain Secret data here for dev only (base64-encoded)
+    registrationSharedSecretB64: ""
+    adminPasswordB64: ""
+
+sealedSecrets:
+  enabled: true
+  name: synapse-secrets
+  encryptedData:
+    # registration-shared-secret: "<sealed>"
+    # admin-password: "<sealed>"
+
+element:
+  enabled: true
+  image: vectorim/element-web:latest
+  service:
+    type: ClusterIP
+    port: 80
+  ingress:
+    enabled: true
+    className: traefik
+    host: element.k3s.agentydragon.com
+    tlsSecretName: ""
+    entrypoints: web
+    annotations: {}
