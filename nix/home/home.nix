@@ -49,7 +49,7 @@ in
     enable = true;
 
     # Match reasoning models used by the router's transformer
-    reasoningModelPatterns = [ "^o.(-mini)?$" "^gpt-5-2025-08-07$" ];
+    reasoningModelPatterns = [ "^o.(-mini)?$" "^gpt-5$" ];
 
     systemReplace = {
       search = "Claude Code";
@@ -59,16 +59,16 @@ in
 
     providers.openai = {
       apiBaseUrl = "https://api.openai.com/v1/chat/completions";
-      models = [ "o3" "o4-mini" "gpt-5-2025-08-07" ];
+      models = [ "o3" "o4-mini" "gpt-5" ];
       useTransformers = [ "system-replace" "openai-reasoning" ];
     };
 
     router = {
-      default = "openai,gpt-5-2025-08-07";
-      background = "openai,gpt-5-2025-08-07";
-      think = "openai,gpt-5-2025-08-07";
-      longContext = "openai,gpt-5-2025-08-07";
-      webSearch = "openai,gpt-5-2025-08-07";
+      default = "openai,gpt-5";
+      background = "openai,gpt-5";
+      think = "openai,gpt-5";
+      longContext = "openai,gpt-5";
+      webSearch = "openai,gpt-5";
     };
 
     # To run as a service, enable this and set env (e.g., OPENAI_API_KEY)
