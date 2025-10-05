@@ -5,7 +5,8 @@ let
   json = pkgs.formats.json {};
   homeDir = config.home.homeDirectory;
 
-  defaultTransformersSrc = ../../claude-code-router/transformers;
+  # Path relative to this module file: nix/home/modules -> nix/home/claude-code-router/transformers
+  defaultTransformersSrc = ../claude-code-router/transformers;
 
   transformersPkg = pkgs.stdenvNoCC.mkDerivation {
     pname = "claude-code-router-transformers";
