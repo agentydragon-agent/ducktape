@@ -71,12 +71,7 @@ in
       webSearch = "openai,gpt-5";
     };
 
-    # To run as a service, enable this and set env (e.g., OPENAI_API_KEY)
-    # service = {
-    #   enable = true;
-    #   command = [ "claude-code-router" "--config" "${config.home.homeDirectory}/.claude-code-router/config.json" ];
-    #   environment = { OPENAI_API_KEY = "set-me-in-env-or-secrets"; };
-    # };
+    # Service management removed; use your own runner if needed.
   };
 
   # Bat configuration with Solarized themes

@@ -10,7 +10,7 @@ let
   transformersPkg = pkgs.stdenvNoCC.mkDerivation {
     pname = "claude-code-router-transformers";
     version = "unstable";
-    src = if cfg.transformersSource != null then cfg.transformersSource else defaultTransformersSrc;
+    src = defaultTransformersSrc;
     installPhase = ''
       mkdir -p $out/transformers
       cp -r $src/* $out/transformers/
@@ -96,25 +96,6 @@ in {
       description = "Routing targets for various task types.";
     };
 
-    transformersSource = mkOption {
-      type = with lib.types; nullOr path;
-      default = null;
-      description = "Override source for transformers/ directory; defaults to repo dotfiles.";
-    };
-
-    service = {
-      enable = mkOption { type = types.bool; default = false; };
-      command = mkOption {
-        type = types.listOf types.str;
-        default = [ "claude-code-router" "--config" "${homeDir}/.claude-code-router/config.json" ];
-        description = "Command to run the router if managed as a user service.";
-      };
-      environment = mkOption {
-        type = types.attrsOf types.str;
-        default = { };
-        description = "Environment variables for the router service (e.g., OPENAI_API_KEY).";
-      };
-    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -122,24 +103,6 @@ in {
     home.file.".claude-code-router/transformers".source = "${transformersPkg}/transformers";
     home.file.".claude-code-router/config.json".source = configJson;
 
-    # Optional services
-    systemd.user.services.claude-code-router = lib.mkIf (cfg.service.enable && pkgs.stdenv.isLinux) {
-      Unit.Description = "Claude Code Router";
-      Service = {
-        ExecStart = lib.concatStringsSep " " cfg.service.command;
-        Environment = lib.mapAttrsToList (n: v: "${n}=${v}") cfg.service.environment;
-        Restart = "on-failure";
-      };
-      Install.WantedBy = [ "default.target" ];
-    };
-
-    launchd.user.agents.claude-code-router = lib.mkIf (cfg.service.enable && pkgs.stdenv.isDarwin) {
-      serviceConfig = {
-        ProgramArguments = cfg.service.command;
-        EnvironmentVariables = cfg.service.environment;
-        KeepAlive = true;
-        RunAtLoad = true;
-      };
-    };
+    # No service definitions; module only manages files
   };
 }
