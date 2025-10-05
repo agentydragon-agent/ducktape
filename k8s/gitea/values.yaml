@@ -14,6 +14,7 @@ service:
   http:
     type: ClusterIP
     port: 3000
+    clusterIP: ~  # Explicitly not headless
   ssh:
     type: LoadBalancer  # Or NodePort if you prefer
     port: 22
@@ -22,21 +23,20 @@ service:
 
 ingress:
   enabled: true
-  className: nginx  # Adjust if using different ingress controller
+  className: traefik  # Use traefik like Authentik
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    # For Authentik forward auth (optional initial setup)
-    # nginx.ingress.kubernetes.io/auth-url: "https://auth.k3s.agentydragon.com/outpost.goauthentik.io/auth/nginx"
-    # nginx.ingress.kubernetes.io/auth-signin: "https://auth.k3s.agentydragon.com/outpost.goauthentik.io/start?rd=$escaped_request_uri"
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    ingress.kubernetes.io/force-ssl-redirect: "false"
   hosts:
     - host: git.k3s.agentydragon.com
       paths:
         - path: /
           pathType: Prefix
-  tls:
-    - secretName: gitea-tls
-      hosts:
-        - git.k3s.agentydragon.com
+  # TLS disabled for now - using HTTP
+  # tls:
+  #   - secretName: gitea-tls
+  #     hosts:
+  #       - git.k3s.agentydragon.com
 
 persistence:
   enabled: true
@@ -56,6 +56,7 @@ gitea:
     APP_NAME: "agentydragon Gitea"
 
     server:
+      PROTOCOL: http  # Explicitly set to http for internal serving
       DOMAIN: git.k3s.agentydragon.com
       ROOT_URL: https://git.k3s.agentydragon.com/
       SSH_DOMAIN: git.k3s.agentydragon.com
@@ -63,9 +64,11 @@ gitea:
       LANDING_PAGE: login  # Go straight to login
 
     service:
-      DISABLE_REGISTRATION: true  # Private instance
+      DISABLE_REGISTRATION: false  # Need to be false for OAuth2 auto-registration
+      ALLOW_ONLY_EXTERNAL_REGISTRATION: true  # But only allow OAuth2 registration
       REQUIRE_SIGNIN_VIEW: true   # Require login to view
-      DEFAULT_PRIVATE: true        # Repos private by default
+      REGISTER_EMAIL_CONFIRM: false  # Don't require email confirmation for OAuth2
+      DEFAULT_ALLOW_CREATE_ORGANIZATION: false  # Don't auto-create orgs
 
     database:
       DB_TYPE: sqlite3  # Simple for small instance
@@ -79,12 +82,18 @@ gitea:
 
     # OAuth2 and OpenID for Authentik integration
     oauth2:
-      ENABLE: true
+      ENABLED: true  # Use ENABLED (not ENABLE) to avoid deprecation warning
 
     openid:
       ENABLE_OPENID_SIGNIN: true
       ENABLE_OPENID_SIGNUP: true  # Allow signup but control in Authentik
       WHITELISTED_URIS: "auth.k3s.agentydragon.com"
+
+    oauth2_client:
+      ENABLE_AUTO_REGISTRATION: true  # Auto-create accounts for OAuth2 users
+      USERNAME: preferred_username    # Use preferred_username from OIDC
+      ACCOUNT_LINKING: auto           # Auto-link with existing accounts
+      UPDATE_AVATAR: false            # Don't update avatar on each login
 
     repository:
       DEFAULT_PRIVATE: last  # Use last setting

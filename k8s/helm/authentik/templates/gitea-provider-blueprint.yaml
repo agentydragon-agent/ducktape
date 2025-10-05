@@ -13,6 +13,24 @@ data:
       labels:
         blueprints.goauthentik.io/type: gitea
     entries:
+      # Create custom scope mapping for Gitea groups (before provider)
+      - model: authentik_providers_oauth2.scopemapping
+        id: gitea-groups
+        state: present
+        identifiers:
+          scope_name: groups
+        attrs:
+          name: Gitea Groups
+          scope_name: groups
+          expression: |
+            # Pass groups claim for Gitea
+            groups = []
+            for group in request.user.ak_groups.all():
+                groups.append(group.name)
+            return {
+                "groups": groups,
+            }
+
       # Create OAuth2 Provider
       - model: authentik_providers_oauth2.oauth2provider
         id: gitea-provider
@@ -26,11 +44,14 @@ data:
           client_type: confidential
           client_id: !Env GITEA_CLIENT_ID
           client_secret: !Env GITEA_CLIENT_SECRET
-          redirect_uris: "https://git.k3s.agentydragon.com/user/oauth2/Authentik/callback"
+          redirect_uris:
+            - matching_mode: strict
+              url: https://git.k3s.agentydragon.com/user/oauth2/Authentik/callback
           property_mappings:
             - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
             - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
             - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+            - !KeyOf gitea-groups
           sub_mode: hashed_user_id
           include_claims_in_id_token: true
           issuer_mode: per_provider
@@ -47,8 +68,9 @@ data:
           provider: !KeyOf gitea-provider
           policy_engine_mode: any
           meta_launch_url: https://git.k3s.agentydragon.com
-          meta_icon: https://git.k3s.agentydragon.com/assets/img/logo.svg
+          meta_icon: https://about.gitea.com/images/gitea.svg
           meta_description: Private Git Repository
+          group: Development
 
       # Optional: Create a group for Gitea users
       - model: authentik_core.group
