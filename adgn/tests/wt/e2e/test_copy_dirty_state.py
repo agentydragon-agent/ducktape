@@ -1,8 +1,8 @@
+from datetime import timedelta
 from pathlib import Path
 import subprocess
 
 from ..test_utils import run_cli_command
-from datetime import timedelta
 
 
 def test_copy_dirty_state_cli(real_env, real_temp_repo):
@@ -11,9 +11,7 @@ def test_copy_dirty_state_cli(real_env, real_temp_repo):
 
     # Create source worktree via CLI
     src = "src_wt"
-    result = run_cli_command(
-        ["create", "--yes", src], env=env, timeout=timedelta(seconds=20.0)
-    )
+    result = run_cli_command(["create", "--yes", src], env=env, timeout=timedelta(seconds=20.0))
     assert result.returncode == 0, result.stderr
     src_path = Path(repo) / "worktrees" / src
 

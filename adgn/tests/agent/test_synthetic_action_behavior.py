@@ -6,15 +6,9 @@ from typing import Any
 
 from mcp import types as mcp_types
 from mcp.server.fastmcp import FastMCP
-from adgn.openai_utils.model import (
-    FunctionCallItem,
-    FakeOpenAIModel,
-)
 import pytest
 
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.handler import (
     BypassToolInjectOutput,
     ContinueDecision,
@@ -27,6 +21,13 @@ from adgn.agent.loop_control import (
     Continue,
 )
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import AutoHandler
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.openai_utils.model import (
+    FakeOpenAIModel,
+    FunctionCallItem,
+)
+from tests.agent.ws_helpers import assert_function_call_output_structured
 
 
 def _make_spy_server(counter: list[str]) -> FastMCP:
@@ -63,9 +64,7 @@ class LocalInjectHandler(AutoHandler):
             fc = FunctionCallItem(
                 name="mcp__spy__tool1",
                 call_id="client:replace-1",
-                arguments=json.dumps(
-                    {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"}
-                ),
+                arguments=json.dumps({"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"}),
             )
             return Continue(Auto(), inserts_input=(fc,), skip_sampling=True)
         # After firing once, abort the turn to avoid infinite loops in tests
@@ -96,7 +95,8 @@ async def test_synthetic_function_call_local_tool(responses_factory) -> None:
         structuredContent={"ok": True, "injected": "yes"},
     )
 
-    async with McpManager({"spy": spec}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("spy", spec)
         rec = RecordingHandler()
         inj = LocalInjectHandler(result=injected_result)
 
@@ -114,11 +114,7 @@ async def test_synthetic_function_call_local_tool(responses_factory) -> None:
         await asyncio.wait_for(agent.run("execute"), timeout=30)
 
         # Verify the recorded handler captured a function_call_output with our injected payload
-        fcos = [e for e in rec.records if e.get("kind") == "function_call_output"]
-        assert fcos, f"no function_call_output event found: {rec.records}"
-        payload = fcos[-1].get("result") or {}
-        structured = payload.get("structuredContent") or {}
-        assert structured == {"ok": True, "injected": "yes"}
+        assert_function_call_output_structured(rec.records, ok=True, injected="yes")
 
         # Underlying tool (mcp) must NOT have been called because we injected local result
         assert counter == []

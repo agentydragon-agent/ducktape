@@ -55,25 +55,25 @@ Notes:
 
 Safest:
 ```bash
-sandbox-jupyter-mcp --workspace /abs/repo --mode seatbelt \
+sandbox-jupyter --workspace /abs/repo --mode seatbelt \
   --profile safest --policy-dump
 ```
 
 Safest + OpenAI:
 ```bash
-sandbox-jupyter-mcp --workspace /abs/repo --mode seatbelt \
+sandbox-jupyter --workspace /abs/repo --mode seatbelt \
   --profile safest+openai --env-allow OPENAI_API_KEY --policy-dump
 ```
 
 Offline:
 ```bash
-sandbox-jupyter-mcp --workspace /abs/repo --mode seatbelt \
+sandbox-jupyter --workspace /abs/repo --mode seatbelt \
   --profile offline --policy-dump
 ```
 
 Custom:
 ```bash
-sandbox-jupyter-mcp --workspace /abs/repo --mode seatbelt \
+sandbox-jupyter --workspace /abs/repo --mode seatbelt \
   --fs-write workspace,run-root --net proxy:127.0.0.1:7890 \
   --env-allow OPENAI_API_KEY,HTTP_PROXY,HTTPS_PROXY --policy-dump
 ```

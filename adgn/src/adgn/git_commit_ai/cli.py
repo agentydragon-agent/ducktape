@@ -73,17 +73,13 @@ class AppConfig:
     @staticmethod
     def resolve(known: argparse.Namespace) -> AppConfig:
         # Precedence: CLI args > env vars > defaults. No git config.
-        model_str = (
-            known.model or os.environ.get("GIT_COMMIT_AI_MODEL") or DEFAULT_MODEL
-        )
+        model_str = known.model or os.environ.get("GIT_COMMIT_AI_MODEL") or DEFAULT_MODEL
 
         if known.timeout_secs is not None:
             raw_timeout_secs = known.timeout_secs
         else:
             raw_timeout_secs = int(DEFAULT_AI_TIMEOUT.total_seconds())
-            if (
-                env_timeout := os.environ.get("GIT_COMMIT_AI_TIMEOUT_SECS")
-            ) is not None:
+            if (env_timeout := os.environ.get("GIT_COMMIT_AI_TIMEOUT_SECS")) is not None:
                 with contextlib.suppress(ValueError):
                     raw_timeout_secs = int(env_timeout)
 
@@ -226,9 +222,7 @@ def build_commit_template(repo: pygit2.Repository, passthru: list[str]) -> str:
             template_text += f"#\t{status_text.ljust(12)} {filename}\n"
 
     # Add untracked files if any
-    untracked = [
-        line[3:] for line in status_output.splitlines() if line.startswith("?? ")
-    ]
+    untracked = [line[3:] for line in status_output.splitlines() if line.startswith("?? ")]
     if untracked:
         # Blank commented spacer before untracked section (readability)
         template_text += "#\n"
@@ -555,9 +549,7 @@ def create_pty_with_terminal_size():
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--model")  # Resolved via layered config (env/git/default)
-    parser.add_argument(
-        "--timeout-secs", type=int, help="AI timeout seconds (<=0 disables)"
-    )
+    parser.add_argument("--timeout-secs", type=int, help="AI timeout seconds (<=0 disables)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument(
         "--accept-ai",
@@ -567,9 +559,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _parse_args_and_passthru() -> tuple[argparse.Namespace, list[str]]:
+def _parse_args_and_passthru(argv: list[str] | None = None) -> tuple[argparse.Namespace, list[str]]:
     parser = _build_arg_parser()
-    return parser.parse_known_args()
+    # Allow tests to pass argv explicitly to avoid relying on sys.argv
+    return parser.parse_known_args(argv)
 
 
 def _init_logging(repo: pygit2.Repository, debug: bool) -> logging.Logger:
@@ -577,14 +570,10 @@ def _init_logging(repo: pygit2.Repository, debug: bool) -> logging.Logger:
     log_file = Path(repo.path) / "git_commit_ai.log"
     file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(levelname)s: %(message)s")
-    )
+    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s: %(message)s"))
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
-    logger.handlers = [
-        h for h in logger.handlers if not isinstance(h, logging.FileHandler)
-    ]
+    logger.handlers = [h for h in logger.handlers if not isinstance(h, logging.FileHandler)]
     logger.addHandler(file_handler)
     if debug:
         console_handler = logging.StreamHandler(sys.stderr)
@@ -611,15 +600,13 @@ def _stage_all_if_requested(repo: pygit2.Repository, passthru: list[str]) -> Non
         repo.index.write()
 
 
-def _get_previous_message_if_amend(
-    repo: pygit2.Repository, is_amend: bool
-) -> str | None:
+def _get_previous_message_if_amend(repo: pygit2.Repository, is_amend: bool) -> str | None:
     if not is_amend:
         return None
     try:
         commit = repo.revparse_single("HEAD").peel(pygit2.Commit)
         return (commit.message or "").strip()
-    except Exception as e:
+    except (KeyError, pygit2.GitError) as e:
         print(
             f"Error: Cannot amend - failed to retrieve previous commit message: {e}",
             file=sys.stderr,
@@ -748,9 +735,7 @@ async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
     )
 
     run_precommit = "--no-verify" not in inp.passthru
-    msg = await ParallelTaskRunner.create_and_run(
-        inp.repo, ai_task, run_precommit=run_precommit
-    )
+    msg = await ParallelTaskRunner.create_and_run(inp.repo, ai_task, run_precommit=run_precommit)
     inp.cache[inp.key] = msg
     return msg, False
 
@@ -769,14 +754,10 @@ async def _get_editor() -> str:
     )
     stdout, _stderr = await proc.communicate()
     result_stdout = stdout.decode() if stdout else ""
-    return (
-        result_stdout.strip()
-        if proc.returncode == 0
-        else os.environ.get("EDITOR", "vi")
-    )
+    return result_stdout.strip() if proc.returncode == 0 else os.environ.get("EDITOR", "vi")
 
 
-async def async_main():
+async def async_main(argv: list[str] | None = None):
     start_monotonic_s = time.monotonic()
     gitdir = pygit2.discover_repository(str(Path.cwd()))
     if not gitdir:
@@ -787,7 +768,7 @@ async def async_main():
         sys.exit(128)
     repo = pygit2.Repository(gitdir)
 
-    args, passthru = _parse_args_and_passthru()
+    args, passthru = _parse_args_and_passthru(argv)
     _validate_no_message_flag(passthru)
 
     # Detect --amend flag

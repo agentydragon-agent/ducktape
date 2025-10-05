@@ -9,9 +9,6 @@ from tabulate import tabulate
 from ..shared.github_models import PRData, PRState, PRStatus
 from ..shared.protocol import PRInfo, PRInfoError, PRInfoOk, StatusResult
 
-# Display limit for list summaries in UI
-FILE_LIST_DISPLAY_LIMIT = 3
-
 # PR status display mapping centralized via PRStatus.display_text
 PR_STATUS_DISPLAY_MAP = {
     PRStatus.MERGED.display_text: ("✅", "already merged"),
@@ -47,15 +44,8 @@ def format_sync_status(ahead: int, behind: int, *, compact: bool = False) -> str
 
 
 class ViewFormatter:
-    def __init__(self):
-        pass
-
-    def format_list_with_more(self, items: list[str]) -> str:
-        limit = FILE_LIST_DISPLAY_LIMIT
-        if len(items) <= limit:
-            return ", ".join(items)
-        shown = ", ".join(items[:limit])
-        return f"{shown} and {len(items) - limit} more"
+    def __init__(self, daemon_log_path: Path | None = None):
+        self.daemon_log_path = daemon_log_path
 
     def make_hyperlink(self, url: str, text: str) -> str:
         if os.getenv("TERM_PROGRAM") in ("iTerm.app", "vscode") or os.getenv(
@@ -141,7 +131,9 @@ class ViewFormatter:
 
         # Format with nice alignment - commitish as separate column
         # Note: sync_status contains ANSI codes, so we pad the content to exactly 9 chars
-        return f"{name:<{name_width}} {commit_short:<10} {sync_status} {work_status:<10} {pr_status}"
+        return (
+            f"{name:<{name_width}} {commit_short:<10} {sync_status} {work_status:<10} {pr_status}"
+        )
 
     def render_worktree_list(self, worktrees: list[tuple[str, Path, bool]]) -> None:
         if worktrees:
@@ -208,9 +200,7 @@ class ViewFormatter:
             github_state = components.github.state.value
         elif summary:
             github_state = summary.github.value
-        x_of_y = (
-            f"{summary.with_gitstatusd}/{summary.total_worktrees}" if summary else "-/-"
-        )
+        x_of_y = f"{summary.with_gitstatusd}/{summary.total_worktrees}" if summary else "-/-"
         click.echo(
             f"{discovery} discovery | gitstatusd {x_of_y} | github {github_state}",
         )
@@ -270,9 +260,13 @@ class ViewFormatter:
             click.echo("Errors:")
             for ln in error_lines:
                 click.echo(f"  - {ln}")
-            log_path = os.getenv("WT_DIR")
-            if log_path:
-                click.echo(f"See daemon log: {Path(log_path) / 'daemon.log'}")
+            if self.daemon_log_path:
+                click.echo(f"See daemon log: {self.daemon_log_path}")
+            else:
+                # Fallback: derive from environment if formatter is not configured
+                log_path = os.getenv("WT_DIR")
+                if log_path:
+                    click.echo(f"See daemon log: {Path(log_path) / 'daemon.log'}")
 
         # Component health summary
         if status_response and status_response.daemon_health:

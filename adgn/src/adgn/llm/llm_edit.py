@@ -11,25 +11,22 @@ Notes / Design:
 
 from __future__ import annotations
 
-import asyncio
 import os
 from pathlib import Path
 import time
 
 import typer
 
-from adgn.agent.reducer import AutoHandler
+from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.loggers import TranscriptLoggerHandler
-
+from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import AutoHandler
 from adgn.mcp.editor_server import make_editor_mcp
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.agent.agent import MiniCodex
-from adgn.openai_utils.model import OpenAIModelProto
-from adgn.agent.mcp_manager import McpManager
-from adgn.openai_utils.types import ReasoningSummary
-from adgn.openai_utils.model import ReasoningEffort
 from adgn.openai_utils import client_factory
+from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.types import ReasoningEffort, ReasoningSummary
 
 
 async def _execute(
@@ -49,10 +46,10 @@ async def _execute(
 
     # Build in-proc MCP spec for the editor FastMCP server over memory streams
     spec = make_inproc_slot_spec(make_editor_mcp(target_path))
-    slots = {"editor": spec}
 
     # Folded context: per-agent MCP lifetime + agent lifetime
-    async with McpManager(slots) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("editor", spec)
         # Normalize CLI strings to adapter-level values (no direct SDK types)
         effort_val: ReasoningEffort | None = None
         if reasoning_effort is not None:
@@ -63,9 +60,7 @@ async def _execute(
                 raise ValueError(
                     f"Invalid reasoning_effort={reasoning_effort!r}; expected one of: {allowed}"
                 ) from exc
-        summary_val = (
-            None if reasoning_summary is None else ReasoningSummary(reasoning_summary)
-        )
+        summary_val = None if reasoning_summary is None else ReasoningSummary(reasoning_summary)
 
         # Create a per-run transcript directory (aligned with MiniCodex defaults)
         run_dir = Path.cwd() / "logs" / "mini_codex" / "llm_edit"
@@ -100,31 +95,8 @@ async def _execute(
 app = typer.Typer(help="LLM-powered single-file editor", add_completion=False)
 
 
-def _run_cli(
-    *,
-    file_path: Path,
-    prompt: str,
-    model: str,
-    reasoning_effort: str | None,
-    reasoning_summary: str | None,
-) -> None:
-    # Construct the OpenAI adapter (with retries) and pass it to the agent
-    client = client_factory.build_client(model)
-    code = asyncio.run(
-        _execute(
-            file_path=file_path,
-            prompt=prompt,
-            model=model,
-            reasoning_effort=reasoning_effort,
-            reasoning_summary=reasoning_summary,
-            client=client,
-        ),
-    )
-    raise typer.Exit(code)
-
-
 @app.command()
-def edit(
+async def edit(
     file_path: Path = typer.Argument(  # noqa: B008
         ...,
         exists=True,
@@ -150,13 +122,16 @@ def edit(
         help="Emit reasoning summaries (auto/concise/detailed)",
     ),
 ) -> None:
-    _run_cli(
+    client = client_factory.build_client(model)
+    code = await _execute(
         file_path=file_path,
         prompt=prompt,
         model=model,
         reasoning_effort=reasoning_effort,
         reasoning_summary=reasoning_summary,
+        client=client,
     )
+    raise typer.Exit(code)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -164,7 +139,7 @@ def main(argv: list[str] | None = None) -> None:
     if argv is None:
         app()
     else:
-        app(argv=argv)
+        app(args=argv)
 
 
 if __name__ == "__main__":

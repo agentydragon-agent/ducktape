@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import platform
 import shutil
 
-from .model import SBPLPolicy
+from .model import Action, DefaultBehavior, FileOp, SBPLPolicy, Subpath
 
 
 @dataclass(frozen=True)
@@ -31,13 +31,19 @@ def make_runtime_context() -> ValidationContext:
     )
 
 
-def _file_read_paths(policy: SBPLPolicy) -> Iterable[str]:
+def _file_read_subpaths(policy: SBPLPolicy) -> Iterable[str]:
+    """Yield only directory roots allowed via (subpath "...") for file-read*.
+
+    LiteralFilter entries allow the exact path only and do not confer recursive
+    read access. For purposes of the default‑deny sanity check below, only
+    Subpath roots contribute coverage.
+    """
     for fr in policy.files:
-        if fr.op != "file-read*":
+        if fr.op != FileOp.FILE_READ_STAR:
             continue
         for pf in fr.filters:
-            # Only literal/subpath kinds exist in our model
-            yield pf.value
+            if isinstance(pf, Subpath):
+                yield pf.subpath
 
 
 def validate(policy: SBPLPolicy, ctx: ValidationContext | None = None) -> list[str]:
@@ -51,17 +57,15 @@ def validate(policy: SBPLPolicy, ctx: ValidationContext | None = None) -> list[s
 
     # Platform visibility
     if ctx.macos_version is None:
-        msgs.append(
-            "warning: non-macOS platform detected; seatbelt SBPL may be unsupported here"
-        )
+        msgs.append("warning: non-macOS platform detected; seatbelt SBPL may be unsupported here")
     if not ctx.sandbox_exec_present:
         msgs.append(
             "warning: sandbox-exec not found; cannot run SBPL via the deprecated CLI on this system"
         )
 
     # Default-deny sanity for Python/dyld basics (heuristic, message-only)
-    if policy.default_behavior == "deny":
-        read_paths = set(_file_read_paths(policy))
+    if policy.default_behavior == DefaultBehavior.DENY:
+        read_paths = set(_file_read_subpaths(policy))
         required_roots = [
             "/System",
             "/usr/lib",
@@ -70,10 +74,10 @@ def validate(policy: SBPLPolicy, ctx: ValidationContext | None = None) -> list[s
             "/System/Cryptexes",
             "/System/Volumes/Preboot/Cryptexes",
         ]
+        # Coverage: a subpath root rp covers p when p == rp or p startswith rp
+        # (i.e., p is inside rp). Do not treat rp being inside p as coverage.
         missing = [
-            p
-            for p in required_roots
-            if not any(rp.startswith(p) or p.startswith(rp) for rp in read_paths)
+            p for p in required_roots if not any(p == rp or p.startswith(rp) for rp in read_paths)
         ]
         if missing:
             mv = ctx.macos_version or "unknown macOS"
@@ -85,9 +89,9 @@ def validate(policy: SBPLPolicy, ctx: ValidationContext | None = None) -> list[s
 
     # Network note: if any non-local network allow is present, remind of egress risk
     for nr in policy.network:
-        if nr.action == "allow" and not nr.local_only:
+        if nr.action == Action.ALLOW and not nr.local_only:
             msgs.append(
-                f"note: network rule '{nr.op}' without local_only allows broader traffic; ensure this is intended"
+                f"note: network rule '{nr.op.value}' without local_only allows broader traffic; ensure this is intended"
             )
 
     # Mach lookup hygiene

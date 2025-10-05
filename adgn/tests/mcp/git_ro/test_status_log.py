@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.mcp.git_ro.server import LogInput, TextPage, TextSlice, StatusInput
+from adgn.mcp.git_ro.server import LogInput, StatusInput, TextPage, TextSlice
 
 
 @pytest.mark.asyncio

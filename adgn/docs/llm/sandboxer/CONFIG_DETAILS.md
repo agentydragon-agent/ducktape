@@ -9,7 +9,7 @@ The wrapper does not make implicit environment or filesystem decisions. All beha
 
 ## Required CLI
 
-- stdio subcommand: `sandbox-jupyter-mcp stdio`
+- stdio subcommand: `sandbox-jupyter stdio`
 - Required flags: `--policy-config`, `--workspace`, `--run-root`, `--kernel-python`
 
 ## Policy YAML schema

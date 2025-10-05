@@ -1,20 +1,25 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack, asynccontextmanager
+import logging
 from typing import cast
 
 import anyio
+
+from adgn.mcp.types import ServerSlotSpec
 from mcp.client.session import ClientSession, MessageHandlerFnT
 from mcp.server.fastmcp import FastMCP
 from mcp.server.lowlevel.server import NotificationOptions, Server
 from mcp.shared.memory import create_client_server_memory_streams
 
-from adgn.mcp.types import ServerSlotSpec
+logger = logging.getLogger(__name__)
 
 
 def make_inproc_slot_spec(
     app: FastMCP,
     message_handler: MessageHandlerFnT | None = None,
+    *,
+    init_timeout_secs: float | None = None,
 ) -> ServerSlotSpec:
     """Create a ServerSlotSpec for an in-proc FastMCP server.
 
@@ -40,9 +45,16 @@ def make_inproc_slot_spec(
             # client session, avoiding cross-task scope mismatches.
             tg = await stack.enter_async_context(anyio.create_task_group())
             low_server = cast(Server, getattr(app, "_mcp_server"))
+            name = getattr(low_server, "name", "<unknown>")
             init_opts = low_server.create_initialization_options(
                 notification_options=NotificationOptions(resources_changed=True)
             )
+            # Instrumentation: surface when the low-level server run loop starts
+            logger.info("[Inproc] starting server.run: %s", name)
+            try:
+                print(f"[Inproc] starting server.run: {name}")
+            except Exception:
+                pass
             tg.start_soon(
                 low_server.run,
                 server_read,
@@ -59,11 +71,18 @@ def make_inproc_slot_spec(
                     message_handler=message_handler,
                 )
             )
+            # Instrumentation: client session successfully created and entered
+            logger.info("[Inproc] client session entered: %s", name)
             try:
-                yield sess
-            finally:
+                print(f"[Inproc] client session entered: {name}")
+            except Exception:
                 pass
+            # Yield the uninitialized session; teardown is fully handled by the
+            # AsyncExitStack context managers above (no-op finally).
+            yield sess
 
         return _cm()
 
-    return ServerSlotSpec(open_uninitialized=open_uninitialized)
+    return ServerSlotSpec(
+        open_uninitialized=open_uninitialized, init_timeout_secs=init_timeout_secs
+    )

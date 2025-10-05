@@ -1,23 +1,24 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from contextlib import AsyncExitStack
 import functools
-from typing import Any, Callable, Protocol, cast
+import logging
+from typing import Any, Awaitable, Callable, Protocol, cast
 from weakref import WeakSet
 
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+from pydantic import AnyUrl, TypeAdapter
+
+from adgn.mcp._shared.fastmcp_helpers import FlatModelToolMixin, SafeDispatchServer
+from mcp import types as mcp_types
 from mcp.server.fastmcp import FastMCP
 from mcp.server.lowlevel.server import InitializationOptions
 from mcp.server.session import ServerSession
 from mcp.shared.message import SessionMessage
-from pydantic import AnyUrl, TypeAdapter
 
-from adgn.mcp._shared.fastmcp_helpers import FlatModelToolMixin, SafeDispatchServer
-
-logger = logging.getLogger("adgn.mcp")
+logger = logging.getLogger(__name__)
 
 _ANY_URL: TypeAdapter[AnyUrl] = TypeAdapter(AnyUrl)
 
@@ -38,10 +39,12 @@ class _CapturingServer(SafeDispatchServer):
         self,
         *a,
         on_session_created: "Callable[[ServerSession], None] | None" = None,
+        on_session_created_async: "Callable[[ServerSession], Awaitable[None]] | None" = None,
         **kw,
     ):
         super().__init__(*a, **kw)
         self._on_session_created = on_session_created
+        self._on_session_created_async = on_session_created_async
 
     async def run(
         self,
@@ -51,6 +54,12 @@ class _CapturingServer(SafeDispatchServer):
         raise_exceptions: bool = False,
         stateless: bool = False,
     ):
+        name = getattr(self, "name", "<unknown>")
+        logger.info("_CapturingServer.run: start name=%s", name)
+        try:
+            print(f"[CapturingServer] run start: {name}")
+        except Exception:
+            pass
         # Leverage SafeDispatchServer.run but intercept the moment the session is created.
         async with AsyncExitStack() as stack:
             lifespan_context = await stack.enter_async_context(self.lifespan(self))
@@ -62,8 +71,37 @@ class _CapturingServer(SafeDispatchServer):
                     stateless=stateless,
                 )
             )
+            logger.info("_CapturingServer.run: session created; awaiting incoming messages")
+            try:
+                print(f"[CapturingServer] session created: {name}")
+            except Exception:
+                pass
             if self._on_session_created:
                 self._on_session_created(session)
+            if self._on_session_created_async:
+                # Synchronously await async hook so callers can rely on immediate effects
+                await self._on_session_created_async(session)
+            # Wrap _handle_message to add per-message logging
+            orig_handle = super()._handle_message
+
+            async def _logged_handle(message, *a, **kw):  # type: ignore[no-untyped-def]
+                try:
+                    root = getattr(message, "root", message)
+                    method = (
+                        getattr(root, "method", None)
+                        if not isinstance(root, dict)
+                        else root.get("method")
+                    )
+                    logger.info("_CapturingServer: incoming method=%s", method)
+                    try:
+                        print(f"[CapturingServer] incoming method: {method}")
+                    except Exception:
+                        pass
+                except Exception:
+                    logger.info("_CapturingServer: incoming message (method=?); logging failed")
+                return await orig_handle(message, *a, **kw)
+
+            setattr(self, "_handle_message", _logged_handle)
             async with anyio.create_task_group() as tg:
                 async for message in session.incoming_messages:
                     tg.start_soon(
@@ -96,6 +134,7 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
         server = cast(_HasNameInstructions, self._mcp_server)
         name0 = server.name
         instr0 = server.instructions
+        prev_lifespan = getattr(self._mcp_server, "lifespan", None)
 
         async def _on_created(sess: ServerSession) -> None:
             # Register and flush any queued notifications
@@ -106,23 +145,29 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
         def _adapter(sess: ServerSession) -> None:
             # Worst-case: ensure the captured session is the correct low-level type
             assert isinstance(sess, ServerSession)
-            asyncio.create_task(_on_created(sess))
 
         capturing_server = _CapturingServer(
             name=name0,
             instructions=instr0,
             on_session_created=_adapter,
+            on_session_created_async=_on_created,
         )
+        # Preserve lifespan behavior from the previous low-level server
+        if prev_lifespan is not None:
+            try:
+                setattr(capturing_server, "lifespan", prev_lifespan)
+            except Exception:
+                logger.debug("NotifyingFastMCP: failed to preserve lifespan on capturing server")
         # Help mypy understand the concrete type of the low-level server
-        self._mcp_server: SafeDispatchServer = cast(
-            SafeDispatchServer, capturing_server
-        )
+        self._mcp_server: SafeDispatchServer = cast(SafeDispatchServer, capturing_server)
         # Re-install FastMCP handlers on the new low-level server
         self._setup_handlers()
 
     # ---- Capture current session when inside a request ----
     def _capture_session_if_any(self) -> None:
         ctx = self.get_context()
+        # SDK boundary: request_context is provided by the fastmcp/python-sdk context object.
+        # Use getattr with a default to avoid hard-coding internal types.
         rc = getattr(ctx, "request_context", None)
         if rc is None or rc.session is None:
             return
@@ -147,14 +192,14 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
 
         return _decorator
 
-    async def list_tools(self) -> Any:
-        res = await super().list_tools()
+    async def list_tools(self) -> list[mcp_types.Tool]:
+        res: list[mcp_types.Tool] = await super().list_tools()  # type: ignore[assignment]
         self._capture_session_if_any()
         await self.flush_pending()
         return res
 
-    async def list_resources(self) -> Any:
-        res = await super().list_resources()
+    async def list_resources(self) -> list[mcp_types.Resource]:
+        res: list[mcp_types.Resource] = await super().list_resources()  # type: ignore[assignment]
         self._capture_session_if_any()
         await self.flush_pending()
         return res
@@ -168,9 +213,7 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
             return
         # Send to all current sessions; prune failures
 
-        logger.debug(
-            "broadcast_resource_updated: uri=%s sessions=%d", uri, len(sessions)
-        )
+        logger.debug("broadcast_resource_updated: uri=%s sessions=%d", uri, len(sessions))
         uri_value = _ANY_URL.validate_python(uri)
         send_tasks = [s.send_resource_updated(uri_value) for s in sessions]
         results = await asyncio.gather(*send_tasks, return_exceptions=True)
@@ -179,10 +222,7 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
         for s, r in zip(sessions, results):
             if isinstance(r, Exception):
                 logger.warning("send_resource_updated failed: %s", r)
-                try:
-                    self._sessions.discard(s)
-                except Exception:
-                    pass
+                self._sessions.discard(s)
 
     async def flush_pending(self) -> None:
         """Send any queued URIs to current sessions (if any)."""

@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-
 import pytest
+
+from adgn.agent.agent import MiniCodex
+from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.loggers import RecordingHandler
+from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import AutoHandler
+from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.model import (
     FakeOpenAIModel,
     FunctionCallItem,
     FunctionCallOutputItem,
 )
-
-from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler
-from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loggers import RecordingHandler
-from adgn.agent.mcp_manager import McpManager
-from adgn.mcp.resources.server import ResourcesReadArgs
 
 
 @pytest.mark.asyncio
@@ -26,11 +25,10 @@ async def test_model_reads_container_info_with_stubbed_openai(
     # Use shared in-proc FastMCP spec named 'docker' for Alpine image
     spec = docker_inproc_spec_alpine
 
-    async with McpManager({"docker": spec}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("docker", spec)
         # Prepare a deterministic two-step sequence: function_call then final text
-        ResourcesReadArgs(
-            server="docker", uri="resource://container.info", max_bytes=1024
-        )
+        ResourcesReadArgs(server="docker", uri="resource://container.info", max_bytes=1024)
         seq = [
             responses_factory.make_tool_call(
                 "mcp__resources__read",

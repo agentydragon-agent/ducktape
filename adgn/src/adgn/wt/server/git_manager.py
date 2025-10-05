@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-from typing import Any, cast
 
 import pygit2
 
@@ -60,7 +59,7 @@ class GitManager:
     config: "Configuration"
 
     def __post_init__(self) -> None:
-        self._main_repo: Any = pygit2.Repository(str(self.config.main_repo))
+        self._main_repo: pygit2.Repository = pygit2.Repository(str(self.config.main_repo))
 
     def branch_exists(self, branch_name: str) -> bool:
         return branch_name in self._main_repo.branches
@@ -71,7 +70,8 @@ class GitManager:
         source_branch: str = "HEAD",
     ) -> None:
         if not self.branch_exists(branch_name):
-            target_commit = self._main_repo.revparse_single(source_branch)
+            target_obj = self._main_repo.revparse_single(source_branch)
+            target_commit = target_obj.peel(pygit2.Commit)
             self._main_repo.branches.local.create(branch_name, target_commit)
 
     async def get_working_directory_status(self) -> tuple[list[Path], list[Path]]:
@@ -82,12 +82,9 @@ class GitManager:
             untracked_files = []
 
             for file_path, flags in self._main_repo.status().items():
-                if flags & (
-                    cast(Any, pygit2).GIT_STATUS_WT_MODIFIED
-                    | cast(Any, pygit2).GIT_STATUS_INDEX_MODIFIED
-                ):
+                if flags & (pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_INDEX_MODIFIED):
                     dirty_files.append(Path(self.config.main_repo) / file_path)
-                elif flags & cast(Any, pygit2).GIT_STATUS_WT_NEW:
+                elif flags & pygit2.GIT_STATUS_WT_NEW:
                     untracked_files.append(Path(self.config.main_repo) / file_path)
 
             return dirty_files, untracked_files
@@ -95,7 +92,7 @@ class GitManager:
         except (pygit2.GitError, OSError) as e:
             raise GitError("Failed to get working directory status") from e
 
-    def get_repo(self, path: Path | None = None) -> Any:
+    def get_repo(self, path: Path | None = None) -> pygit2.Repository:
         if path is None or path == self.config.main_repo:
             return self._main_repo
         return pygit2.Repository(str(path))
@@ -135,9 +132,7 @@ class GitManager:
     def list_worktrees(self) -> list[WorktreeInfo]:
         """List all worktrees using pygit2 API."""
         current_branch = (
-            self._main_repo.head.shorthand
-            if not self._main_repo.head_is_detached
-            else None
+            self._main_repo.head.shorthand if not self._main_repo.head_is_detached else None
         )
 
         worktree_infos = [
@@ -196,7 +191,8 @@ class GitManager:
 
         # Ensure branch exists; if not, create it off upstream
         if self._main_repo.lookup_branch(branch) is None:
-            target = self._main_repo.revparse_single(self.config.upstream_branch)
+            target_obj = self._main_repo.revparse_single(self.config.upstream_branch)
+            target = target_obj.peel(pygit2.Commit)
             self._main_repo.branches.local.create(branch, target)
 
         # Use git CLI to create worktree without checkout (critical for large repos)

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import pytest
+
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import AutoHandler
 from adgn.openai_utils.model import (
     FakeOpenAIModel,
-    ReasoningItem,
     FunctionCallItem,
     FunctionCallOutputItem,
+    ReasoningItem,
 )
 
 
@@ -57,7 +58,9 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        for name, slot in specs.items():
+            await mcp.attach_server(name, slot)
         agent = await MiniCodex.create(
             model=responses_factory.model,
             mcp=mcp,
@@ -122,7 +125,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
         f"Turn 2: FunctionCallItem not followed by FunctionCallOutputItem(call_1): {turn2_types}"
     )
 
-    # Turn 3: [UserMessage, SystemMessage, RI1, FC1, FCO1, RI2, FC2, FCO2]
+    # Turn 3: [UserMessage, SystemMessage, RI1, FC1, function_call_output1, RI2, FC2, function_call_output2]
     turn3_input = list(client.captured[2].input or [])
     turn3_types = get_sequence_summary(turn3_input)
 
@@ -138,11 +141,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     assert ri1_idx is not None, f"Turn 3 missing ReasoningItem(rs_turn1): {turn3_types}"
 
     fc1 = turn3_input[ri1_idx + 1]
-    assert (
-        isinstance(fc1, FunctionCallItem)
-        and fc1.call_id == "call_1"
-        and fc1.id == "fc_id_1"
-    )
+    assert isinstance(fc1, FunctionCallItem) and fc1.call_id == "call_1" and fc1.id == "fc_id_1"
     fco1 = turn3_input[ri1_idx + 2]
     assert isinstance(fco1, FunctionCallOutputItem) and fco1.call_id == "call_1"
 

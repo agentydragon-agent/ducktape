@@ -3,19 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 
-from adgn.inop.clients.logging_openai_client import LoggingOpenAIModel
 from adgn.inop.engine.models import GradedRollout
 from adgn.inop.io.logging_utils import DualOutputLogging
+from adgn.inop.prompting.context_window import context_window_tokens_by_id
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
 from adgn.inop.prompting.truncation_utils import (
     TruncationManager,
     extract_text_from_openai_response,
 )
 from adgn.openai_utils.model import (
+    InputTextPart,
+    OpenAIModelProto,
     ResponsesRequest,
     SystemMessage,
     UserMessage,
-    InputTextPart,
 )
 
 logger = DualOutputLogging.get_logger()
@@ -23,9 +24,10 @@ logger = DualOutputLogging.get_logger()
 
 @dataclass
 class PatternSummarizer(FeedbackProvider):
-    model: LoggingOpenAIModel
+    model: OpenAIModelProto
     truncation_manager: TruncationManager
     max_file_size_pattern_analysis: int
+    context_model_id: str | None = None
 
     _SYSTEM_MESSAGE = (
         "You are a pattern analysis expert. Your job is to analyze multiple coding task rollouts with their grades "
@@ -56,11 +58,8 @@ class PatternSummarizer(FeedbackProvider):
 
         system_tokens = self._count_tokens(self._SYSTEM_MESSAGE)
         header_text = f"Analyze these {len(rollouts)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
-        remaining_tokens = (
-            self.model.context_window_tokens
-            - system_tokens
-            - self._count_tokens(header_text)
-        )
+        ctx_window = context_window_tokens_by_id(self.context_model_id)
+        remaining_tokens = ctx_window - system_tokens - self._count_tokens(header_text)
 
         logger.info(
             "Pattern analysis context management",
@@ -119,7 +118,7 @@ class PatternSummarizer(FeedbackProvider):
             final_tokens=final_tokens,
             included_rollouts=len(rollout_summaries),
             excluded_rollouts=original_count - len(rollout_summaries),
-            context_utilization=f"{(final_tokens / self.model.context_window_tokens) * 100:.1f}%",
+            context_utilization=f"{(final_tokens / max(ctx_window, 1)) * 100:.1f}%",
         )
         req = ResponsesRequest(
             input=[

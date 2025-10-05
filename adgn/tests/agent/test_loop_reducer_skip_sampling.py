@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.reducer import Reducer, BaseHandler
 from adgn.agent.loop_control import Auto, Continue
+from adgn.agent.reducer import BaseHandler, Reducer
 
 
 class _SkipHandler(BaseHandler):
@@ -15,9 +15,7 @@ class _SkipHandler(BaseHandler):
         self._policy = policy or Auto()
 
     def on_before_sample(self):  # type: ignore[override]
-        return Continue(
-            self._policy, inserts_input=self._inserts, skip_sampling=self._skip
-        )
+        return Continue(self._policy, inserts_input=self._inserts, skip_sampling=self._skip)
 
 
 def test_all_continue_same_policy_skip_true_merge():

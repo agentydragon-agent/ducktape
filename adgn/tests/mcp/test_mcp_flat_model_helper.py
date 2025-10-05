@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import pytest
 from typing import Literal
 
+from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
+import pytest
 
-from adgn.mcp._shared.fastmcp_helpers import FlatModelFastMCP
+from adgn.mcp._shared.fastmcp_helpers import FlatModelFastMCP, mcp_flat_model
 
 
 class EchoInput(BaseModel):
@@ -59,9 +60,6 @@ async def test_flat_schema_and_typed_invocation(make_typed_mcp):
 
 
 def test_mcp_flat_model_backward_compatibility():
-    from mcp.server.fastmcp import FastMCP
-    from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
-
     legacy = FastMCP("legacy")
 
     @mcp_flat_model(legacy, name="legacy_echo", structured_output=False)

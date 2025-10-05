@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 import statistics
 from typing import Any
-from pydantic import BaseModel
 
 import matplotlib
 import pandas as pd
@@ -22,6 +21,7 @@ from plotnine import (
     theme,
     theme_minimal,
 )
+from pydantic import BaseModel
 import tiktoken
 
 from adgn.inop.io.logging_utils import DualOutputLogging
@@ -54,9 +54,7 @@ def create_plot_data_point(
     facet_name: str,
 ) -> dict[str, Any]:
     """Create a plot data point for a given iteration and facet."""
-    stats = (
-        iter_data.overall if facet_name == "overall" else iter_data.facets[facet_name]
-    )
+    stats = iter_data.overall if facet_name == "overall" else iter_data.facets[facet_name]
 
     # Calculate 69% confidence interval (approximately 1 standard error)
     mean = stats.mean
@@ -105,9 +103,7 @@ class ScoreStatistics:
             # Get all facet names from first result
             facet_names = list(graded_codes[0].grade.axes.keys())
             for facet_name in facet_names:
-                facet_scores[facet_name] = [
-                    gc.grade.axes[facet_name].score for gc in graded_codes
-                ]
+                facet_scores[facet_name] = [gc.grade.axes[facet_name].score for gc in graded_codes]
 
         return overall_scores, facet_scores
 

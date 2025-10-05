@@ -75,6 +75,4 @@ async def test_responses_streaming_live(tmp_path):
                 items.append(event if isinstance(event, dict) else None)
 
     assert got_any, "No stream events received"
-    assert any(it is not None for it in items), (
-        "Stream events contained no usable payload"
-    )
+    assert any(it is not None for it in items), "Stream events contained no usable payload"

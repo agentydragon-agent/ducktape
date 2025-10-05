@@ -1,18 +1,18 @@
 import asyncio
+import json
 import time
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 import pytest
 
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import BaseHandler
 from adgn.agent.loggers import RecordingHandler
-from adgn.agent.loop_control import Abort, Continue, Auto
+from adgn.agent.loop_control import Abort, Auto, Continue
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import BaseHandler
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.openai_utils.model import FunctionCallItem
-import json
 
 
 class OneShotSyntheticHandler(BaseHandler):
@@ -25,9 +25,7 @@ class OneShotSyntheticHandler(BaseHandler):
     def on_before_sample(self):  # returns SyntheticAction first, then Abort
         if not self._done:
             self._done = True
-            return Continue(
-                Auto(), inserts_input=tuple(self._outputs), skip_sampling=True
-            )
+            return Continue(Auto(), inserts_input=tuple(self._outputs), skip_sampling=True)
         return Abort()
 
     # No-ops for hooks used by agent
@@ -87,7 +85,8 @@ async def test_parallel_tool_calls_reduce_wall_time():
     rec = RecordingHandler()
 
     # Use McpManager context to wire the inproc slot into a manager the agent expects
-    async with McpManager({"dummy": spec}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("dummy", spec)
         # Create agent with the controller wrapped as a handler so loop control comes from handlers
         agent = MiniCodex(
             model="noop",
@@ -121,9 +120,11 @@ async def test_parallel_tool_calls_reduce_wall_time():
 
     # Sanity checks on outputs/metrics via recording handler
     tc_count = len([e for e in rec.records if e.get("kind") == "tool_call"])
-    fco_count = len([e for e in rec.records if e.get("kind") == "function_call_output"])
+    function_call_output_count = len(
+        [e for e in rec.records if e.get("kind") == "function_call_output"]
+    )
     assert tc_count >= 2
-    assert fco_count >= 2
+    assert function_call_output_count >= 2
     kinds = [evt.get("kind") for evt in rec.records if isinstance(evt, dict)]
     assert kinds.count("tool_call") >= 2
     assert kinds.count("function_call_output") >= 2

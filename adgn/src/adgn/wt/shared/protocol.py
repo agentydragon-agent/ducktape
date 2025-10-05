@@ -386,6 +386,10 @@ class HookRunResult(BaseModel):
         default=None,
         description="Timeout value used when error=='timeout'",
     )
+    streamed: bool | None = Field(
+        default=None,
+        description="True if output was streamed live; stdout/stderr may be truncated previews",
+    )
 
 
 class WorktreeCreateResult(BaseModel):

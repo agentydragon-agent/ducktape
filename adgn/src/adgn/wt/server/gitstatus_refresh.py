@@ -1,9 +1,9 @@
 import asyncio
 import logging
 from pathlib import Path
+from typing import Any
 
 from watchdog.events import FileSystemEventHandler
-from typing import Any
 from watchdog.observers import Observer
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,7 @@ class DebouncedGitstatusRefresh:
         self.refresh_callback = refresh_callback
         self.debounce_delay = debounce_delay
         self._pending: asyncio.Task | None = None
-        self._loop: asyncio.AbstractEventLoop | None = (
-            None  # Main loop captured on start()
-        )
+        self._loop: asyncio.AbstractEventLoop | None = None  # Main loop captured on start()
 
         self.observer: Any | None = None
         self.handler = _GitHandler(self)

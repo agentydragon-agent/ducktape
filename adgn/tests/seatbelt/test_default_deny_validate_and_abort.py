@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.seatbelt.model import FileRule, PathFilter, ProcessRule, SBPLPolicy
-from adgn.seatbelt.runner import run_sandboxed
+from adgn.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
+from adgn.seatbelt.runner import run_sandboxed_async
 from adgn.seatbelt.validate import make_runtime_context, validate
 
 # This file documents observed dyld/startup behavior under seatbelt on this host.
@@ -33,9 +33,9 @@ from adgn.seatbelt.validate import make_runtime_context, validate
 def test_default_deny_without_dyld_roots_emits_warning():
     # Default-deny policy with only file-map-executable but no file-read* roots
     pol = SBPLPolicy(
-        default_behavior="deny",
+        default_behavior=DefaultBehavior.DENY,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
-        files=[FileRule(op="file-map-executable", filters=[])],
+        files=[FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[])],
     )
     msgs = validate(pol, make_runtime_context())
     # Expect a warning mentioning default deny and missing dyld/system roots
@@ -44,17 +44,18 @@ def test_default_deny_without_dyld_roots_emits_warning():
 
 @pytest.mark.macos
 @pytest.mark.shell
+@pytest.mark.asyncio
 @pytest.mark.xfail(
     reason="Document current abort signature for too-narrow default-deny; not stable across macOS versions",
     strict=False,
 )
-def test_default_deny_narrow_policy_exec_aborts_or_fails():
+async def test_default_deny_narrow_policy_exec_aborts_or_fails():
     pol = SBPLPolicy(
-        default_behavior="deny",
+        default_behavior=DefaultBehavior.DENY,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
-        files=[FileRule(op="file-map-executable", filters=[])],
+        files=[FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[])],
     )
-    res = run_sandboxed(pol, ["/bin/echo", "OK"], trace=True)
+    res = await run_sandboxed_async(pol, ["/bin/echo", "OK"], trace=True)
     assert res.exit_code == -6
     assert not (res.stderr)
     assert not b""
@@ -64,11 +65,12 @@ def test_default_deny_narrow_policy_exec_aborts_or_fails():
 
 @pytest.mark.macos
 @pytest.mark.shell
+@pytest.mark.asyncio
 @pytest.mark.xfail(
     reason="Even with explicit dyld roots, this host still aborts; will refine once stable",
     strict=False,
 )
-def test_default_deny_with_explicit_dyld_roots_succeeds():
+async def test_default_deny_with_explicit_dyld_roots_succeeds():
     # Allow the known dyld/system roots explicitly
     # Known dyld/system roots to try explicitly (see dyld_cache_format.h cryptexPrefixes)
     roots = [
@@ -80,16 +82,13 @@ def test_default_deny_with_explicit_dyld_roots_succeeds():
         "/System/Volumes/Preboot/Cryptexes",
     ]
     pol = SBPLPolicy(
-        default_behavior="deny",
+        default_behavior=DefaultBehavior.DENY,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
         files=[
-            FileRule(op="file-map-executable", filters=[]),
-            FileRule(
-                op="file-read*",
-                filters=[PathFilter(kind="subpath", value=r) for r in roots],
-            ),
+            FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
+            FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath=r) for r in roots]),
         ],
     )
-    res = run_sandboxed(pol, ["/bin/echo", "OK"])
+    res = await run_sandboxed_async(pol, ["/bin/echo", "OK"])
     assert res.exit_code == 0
     assert res.stdout == b"OK\n"

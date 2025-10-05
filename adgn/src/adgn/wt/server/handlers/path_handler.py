@@ -46,11 +46,7 @@ def _resolve_path_spec(
                 code=ErrorCodes.INVALID_PARAMS,
                 message="Cannot use relative path for different worktree",
             )
-        current_dir = (
-            target_path / current_relative_path
-            if current_relative_path
-            else target_path
-        )
+        current_dir = target_path / current_relative_path if current_relative_path else target_path
         return (current_dir / path_spec).resolve()
     return target_path / path_spec
 

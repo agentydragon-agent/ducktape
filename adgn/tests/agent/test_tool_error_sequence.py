@@ -4,14 +4,15 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 import pytest
-from adgn.openai_utils.model import FakeOpenAIModel
 
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import BaseHandler
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import BaseHandler
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.openai_utils.model import FakeOpenAIModel
+from tests.agent.ws_helpers import assert_function_call_output_structured
 
 
 def _make_failing_server() -> FastMCP:
@@ -31,7 +32,8 @@ async def test_tool_error_is_surfaced_in_sequence(
 ) -> None:
     # Build in-proc failing server spec using FastMCP
     spec = make_inproc_slot_spec(_make_failing_server())
-    async with McpManager({"editor": spec}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("editor", spec)
         # Create agent and run one turn
 
         class _AutoHandler(BaseHandler):
@@ -56,11 +58,4 @@ async def test_tool_error_is_surfaced_in_sequence(
         await agent.run("call failing tool once")
 
     # Extract the function_call_output from the recording handler and assert failure payload surfaced
-    fco_items = [
-        evt for evt in rec.records if evt.get("kind") == "function_call_output"
-    ]
-    assert fco_items, "No function_call_output captured"
-    payload = fco_items[-1].get("result", {}) or {}
-    structured = payload.get("structuredContent") or {}
-
-    assert structured == {"ok": False, "error": "boom"}
+    assert_function_call_output_structured(rec.records, ok=False, error="boom")

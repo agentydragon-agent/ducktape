@@ -9,7 +9,7 @@ import yaml
 from adgn.wt.shared.config_file import ConfigFile
 from adgn.wt.shared.configuration import Configuration
 
-from .test_data import ConfigPresets, TestData, WATCHER_DEBOUNCE_SECS
+from .test_data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
 
 
 class ConfigFactory:
@@ -55,9 +55,7 @@ class ConfigFactory:
         # Set up WT_DIR
         if wt_dir is None:
             wt_dir = (
-                self.temp_base_dir
-                / TestData.Paths.TEST_WT_DIR_PARENT
-                / TestData.Paths.WT_DIR_NAME
+                self.temp_base_dir / TestData.Paths.TEST_WT_DIR_PARENT / TestData.Paths.WT_DIR_NAME
             )
 
         # Create default configuration
@@ -133,8 +131,7 @@ class ConfigFactory:
         return [
             name
             for name in dir(ConfigPresets)
-            if not name.startswith("_")
-            and isinstance(getattr(ConfigPresets, name), dict)
+            if not name.startswith("_") and isinstance(getattr(ConfigPresets, name), dict)
         ]
 
 

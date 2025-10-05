@@ -2,9 +2,9 @@ import asyncio
 import logging
 from pathlib import Path
 import time
+from typing import Any
 
 from watchdog.events import FileSystemEventHandler
-from typing import Any
 from watchdog.observers import Observer
 
 logger = logging.getLogger(__name__)
@@ -113,10 +113,6 @@ class DebouncedGitHubRefresh:
         self.last_refresh_time = time.time()
         refresh_time = (self.last_refresh_time - start_time) * 1000
         logger.info("GitHub refresh completed in %.1fms", refresh_time)
-
-    # Deprecated: direct network fetch is not used; kept for reference
-    async def _fetch_origin_master(self) -> bool:  # pragma: no cover
-        return False
 
 
 class GitFileHandler(FileSystemEventHandler):

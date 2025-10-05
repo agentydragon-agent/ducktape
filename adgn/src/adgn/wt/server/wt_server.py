@@ -36,7 +36,6 @@ from ..shared.protocol import (
     create_error_response,
     parse_request,
 )
-from .discovery_scanner import DiscoveryScanner
 from .git_manager import GitManager
 from .github_client import GitHubInterface
 from .gitstatus_refresh import DebouncedGitstatusRefresh
@@ -61,6 +60,7 @@ from .services import (
     StatusService,
     WorktreeCoordinator,
     WorktreeIndexService,
+    scan_worktrees,
 )
 from .types import DiscoveredWorktree
 from .worktree_index import WorktreeIndex
@@ -75,6 +75,7 @@ def write_startup_handshake(
     error_message: str | None = None,
     *,
     redirect_after: bool = True,
+    daemon_log_path: Path | None = None,
     **extra_data,
 ):
     """Write startup handshake/progress JSON to dedicated pipe FD if provided.
@@ -112,7 +113,7 @@ def write_startup_handshake(
 
     if redirect_after:
         try:
-            daemon_log = load_config().wt_dir / "daemon.log"
+            daemon_log = daemon_log_path or (load_config().wt_dir / "daemon.log")
             log_fd = os.open(
                 daemon_log,
                 os.O_WRONLY | os.O_CREAT | os.O_APPEND,
@@ -232,7 +233,6 @@ class WtDaemon:
         self.running = False
         self.discovery_task: asyncio.Task | None = None
         self.discovery_scanning: bool = False
-        self.discovery_scanner = DiscoveryScanner()
         self.registry = WorktreeRegistry()
         self._startup_tasks: list[asyncio.Task] = []
 
@@ -280,8 +280,7 @@ class WtDaemon:
         if (
             self.daemon_health.status == DaemonHealthStatus.ERROR
             and self.daemon_health.last_error_time
-            and (datetime.now() - self.daemon_health.last_error_time)
-            > timedelta(seconds=60)
+            and (datetime.now() - self.daemon_health.last_error_time) > timedelta(seconds=60)
         ):
             self.daemon_health.status = DaemonHealthStatus.OK
             self.daemon_health.last_error = None
@@ -386,7 +385,7 @@ class WtDaemon:
             errors.append(
                 f"Cannot create daemon directory (permission denied): {self.config.wt_dir}",
             )
-        except Exception as e:
+        except OSError as e:
             errors.append(f"Cannot create daemon directory: {self.config.wt_dir} ({e})")
 
         # Validate GitHub configuration if enabled
@@ -470,7 +469,7 @@ class WtDaemon:
     async def _run_discovery_once(self) -> None:
         self.discovery_scanning = True
         try:
-            current = await self.discovery_scanner.scan(self.config.worktrees_dir)
+            current = await scan_worktrees(self.config.worktrees_dir)
             changes = self.registry.apply(current)
             async with self._state_lock:
                 self.known_worktrees = dict(self.registry.known)
@@ -541,9 +540,7 @@ class WtDaemon:
 
         except Exception:
             logger.exception("Error handling client request")
-            rid = (
-                request.id if ("request" in locals() and request) else uuid.UUID(int=0)
-            )
+            rid = request.id if ("request" in locals() and request) else uuid.UUID(int=0)
             with contextlib.suppress(Exception):
                 await self._send_response(
                     writer,
@@ -647,6 +644,7 @@ class WtDaemon:
                 success=False,
                 error_message=error_message,
                 protocol_version=1,
+                daemon_log_path=self.config.daemon_log_file,
             )
             logger.error("Daemon startup failed due to validation errors")
             return
@@ -671,6 +669,7 @@ class WtDaemon:
             discovered_worktrees=[],
             socket_path=str(self.socket_path),
             redirect_after=True,
+            daemon_log_path=self.config.daemon_log_file,
         )
 
         logger.info("wt daemon started, listening on %s", self.socket_path)
@@ -763,7 +762,7 @@ if __name__ == "__main__":
 
     # Configure logging to write only to daemon log file
     config.wt_dir.mkdir(exist_ok=True)
-    log_file = config.wt_dir / "daemon.log"
+    log_file = config.daemon_log_file
 
     logging.basicConfig(
         level=logging.INFO,

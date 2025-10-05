@@ -1,11 +1,9 @@
 from __future__ import annotations
 
+from mcp import types as mcp_types
 import pytest
 
-from mcp import types as mcp_types
-
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.handler import (
     AbortTurnDecision,
     BypassToolInjectOutput,
@@ -13,7 +11,9 @@ from adgn.agent.handler import (
 )
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import AutoHandler
 from adgn.openai_utils.model import FakeOpenAIModel
+from tests.agent.ws_helpers import assert_function_call_output_structured
 
 
 class InjectHandler(AutoHandler):
@@ -56,7 +56,9 @@ async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
         structuredContent={"ok": True, "injected": "yes"},
     )
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        for name, slot in specs.items():
+            await mcp.attach_server(name, slot)
         rec = RecordingHandler()
         inj = InjectHandler(result=injected_result)
 
@@ -74,11 +76,7 @@ async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
     assert counter == []
 
     # Verify the handler saw a function_call_output with our injected payload
-    fcos = [e for e in rec.records if e.get("kind") == "function_call_output"]
-    assert fcos, f"no function_call_output event found: {rec.records}"
-    payload = fcos[-1].get("result") or {}
-    structured = payload.get("structuredContent") or {}
-    assert structured == {"ok": True, "injected": "yes"}
+    assert_function_call_output_structured(rec.records, ok=True, injected="yes")
 
 
 @pytest.mark.asyncio
@@ -96,7 +94,9 @@ async def test_before_tool_call_abort_turn_synthesizes_denied_and_aborted_output
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        for name, slot in specs.items():
+            await mcp.attach_server(name, slot)
         rec = RecordingHandler()
         abort = AbortHandler()
 
@@ -111,13 +111,7 @@ async def test_before_tool_call_abort_turn_synthesizes_denied_and_aborted_output
         await agent.run("say hi")
 
     # Should have emitted a function_call_output indicating denial
-    fcos = [e for e in rec.records if e.get("kind") == "function_call_output"]
-    assert fcos, f"no function_call_output event found: {rec.records}"
-
-    # The denied payload should be the last emitted (only call)
-    payload = fcos[-1].get("result") or {}
-    structured = payload.get("structuredContent") or {}
-    assert structured == {"ok": False, "error": "test-deny"}
+    assert_function_call_output_structured(rec.records, ok=False, error="test-deny")
 
     # Underlying tool should not have been called
     assert counter == []

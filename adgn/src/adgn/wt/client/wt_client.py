@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from typing import TypeVar, cast, IO
+from typing import IO, TypeVar, cast
 import uuid
 
 import click
@@ -22,11 +22,13 @@ import psutil
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from ..shared.configuration import Configuration
+from ..shared.env import is_test_mode
 from ..shared.error_handling import validate_worktree_name
 from ..shared.protocol import (
     ErrorCodes,
     ErrorResponse,
     HookOutputEvent,
+    HookRunResult,
     ProgressEvent,
     Request,
     Response,
@@ -134,7 +136,7 @@ class WtClient:
 
             logger.info("Starting wt daemon for %s", self.config.main_repo)
             logger.debug("Daemon socket: %s", self.config.daemon_socket_path)
-            logger.debug("Daemon logs: %s", self.config.wt_dir / "daemon.log")
+            logger.debug("Daemon logs: %s", self.config.daemon_log_file)
             logger.info("wt: starting daemon … (%s)", self.config.daemon_socket_path)
 
             # Use handshake pipe to get immediate readiness without busy-wait
@@ -175,9 +177,7 @@ class WtClient:
             except (OSError, RuntimeError, ValueError) as e:
                 diag = self._collect_daemon_diagnostics()
                 raise RuntimeError(
-                    "Daemon startup failed.\n" + diag
-                    if diag
-                    else "Daemon startup failed.",
+                    "Daemon startup failed.\n" + diag if diag else "Daemon startup failed.",
                 ) from e
             finally:
                 self._handshake_pipe = None
@@ -204,8 +204,8 @@ class WtClient:
         stderr_dest: int | IO[bytes]
         try:
             # In test mode, capture daemon stdout/stderr to WT_DIR/daemon.log for diagnostics
-            if os.environ.get("WT_TEST_MODE") == "1":
-                log_path = Path(self.config.wt_dir) / "daemon.log"
+            if is_test_mode():
+                log_path = self.config.daemon_log_file
                 log_file = open(log_path, "ab", buffering=0)
                 stdout_dest = log_file
                 stderr_dest = log_file
@@ -337,9 +337,9 @@ class WtClient:
                 hook_ev: HookOutputEvent = HookOutputEvent.model_validate(obj)
                 if callable(hook_cb):
                     hook_cb(hook_ev)
-                (
-                    hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr
-                ).append(hook_ev.data)
+                (hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr).append(
+                    hook_ev.data
+                )
                 continue
             if ev == "progress":
                 prog_ev: ProgressEvent = ProgressEvent.model_validate(obj)
@@ -350,7 +350,7 @@ class WtClient:
             break
         return response_json, hook_stdout, hook_stderr
 
-    def _validate_post_hook(self, post) -> None:
+    def _validate_post_hook(self, post: HookRunResult) -> None:
         """Validate and surface post-creation hook outcome; raise RuntimeError on failure."""
 
         def _echo_io() -> None:
@@ -358,20 +358,23 @@ class WtClient:
             if out.strip():
                 click.echo(out)
 
+        streamed = bool(post.streamed)
+
         if (ec := post.exit_code) not in (None, 0):
-            _echo_io()
+            if not streamed:
+                _echo_io()
             raise RuntimeError(f"Post-creation script failed with exit code {ec}")
         if err := post.error:
-            _echo_io()
+            if not streamed:
+                _echo_io()
             if err == "timeout":
                 if (ts := post.timeout_secs) is not None:
-                    raise RuntimeError(
-                        f"Post-creation script timed out after {ts:.1f}s"
-                    )
+                    raise RuntimeError(f"Post-creation script timed out after {ts:.1f}s")
                 raise RuntimeError("Post-creation script timed out")
             raise RuntimeError(f"Post-creation script error: {err}")
         if not post.ran:
-            _echo_io()
+            if not streamed:
+                _echo_io()
             raise RuntimeError("Post-creation script did not run")
 
     async def create_worktree(
@@ -392,14 +395,10 @@ class WtClient:
             source_wtid=source_wtid,
             source_branch=source_branch,
         )
-        request = Request(
-            method="worktree_create", params=params.model_dump(), id=request_id
-        )
+        request = Request(method="worktree_create", params=params.model_dump(), id=request_id)
 
         try:
-            reader, writer = await asyncio.open_unix_connection(
-                self.config.daemon_socket_path
-            )
+            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_path)
             try:
                 # Send request
                 writer.write(request.model_dump_json().encode())
@@ -429,15 +428,11 @@ class WtClient:
                 return result
             except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as e:
                 logger.exception("Failed to parse daemon worktree_create response")
-                raise RuntimeError(
-                    "Failed to parse daemon worktree_create response"
-                ) from e
+                raise RuntimeError("Failed to parse daemon worktree_create response") from e
 
         except (TimeoutError, ConnectionError, FileNotFoundError, OSError) as e:
             if self.verbose:
-                logger.exception(
-                    "Failed to communicate with daemon for worktree_create"
-                )
+                logger.exception("Failed to communicate with daemon for worktree_create")
             raise RuntimeError("Daemon worktree_create communication failed") from e
 
     async def delete_worktree(
@@ -551,13 +546,13 @@ class WtClient:
         """
         lines: list[str] = []
         try:
-            daemon_log = self.config.wt_dir / "daemon.log"
+            daemon_log = self.config.daemon_log_file
             lines.append(f"daemon.log: {daemon_log}")
             if daemon_log.exists():
                 tail = daemon_log.read_text(errors="ignore").splitlines()[-50:]
                 lines.append("daemon.log (tail):\n" + "\n".join(tail))
-        except OSError:
-            pass
+        except OSError as e:
+            lines.append(f"daemon.log read failed: {e}")
         try:
             lines.append(f"pid file exists: {self.config.daemon_pid_path.exists()}")
             if self.config.daemon_pid_path.exists():
@@ -565,8 +560,8 @@ class WtClient:
                     f"pid file contents: {self.config.daemon_pid_path.read_text().strip()}"
                 )
             lines.append(f"socket exists: {self.config.daemon_socket_path.exists()}")
-        except OSError:
-            pass
+        except OSError as e:
+            lines.append(f"pid/socket stat failed: {e}")
         return "\n".join(lines).strip()
 
     async def teleport_target(

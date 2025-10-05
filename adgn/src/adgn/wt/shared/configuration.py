@@ -20,6 +20,7 @@ from pydantic import ValidationError
 import yaml
 
 from .config_file import ConfigFile
+from .env import is_test_mode
 
 MAX_SOCK_PATH_LEN = 100
 
@@ -95,6 +96,11 @@ class Configuration:
         """Path to PR cache file."""
         return self.wt_dir / "pr_cache.json"
 
+    @property
+    def daemon_log_file(self) -> Path:
+        """Path to daemon log file."""
+        return self.wt_dir / "daemon.log"
+
     @classmethod
     def resolve(cls, wt_dir: Path) -> Configuration:
         """Resolve configuration from WT_DIR - does all filesystem validation upfront."""
@@ -126,9 +132,7 @@ class Configuration:
 
         post_creation_script = None
         if config_file.post_creation_script:
-            post_creation_script = (
-                Path(config_file.post_creation_script).expanduser().resolve()
-            )
+            post_creation_script = Path(config_file.post_creation_script).expanduser().resolve()
 
         cfg = cls(
             wt_dir=wt_dir,
@@ -157,7 +161,7 @@ class Configuration:
             hydrate_worktrees=config_file.hydrate_worktrees,
         )
 
-        if os.environ.get("WT_TEST_MODE"):
+        if is_test_mode():
             temp_root = Path(tempfile.gettempdir()).resolve()
 
             def _under_tmp(p: Path) -> bool:

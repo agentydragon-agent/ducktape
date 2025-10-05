@@ -1,153 +1,146 @@
-import sys
-import shutil
-import os
+from __future__ import annotations
 
-import pytest
-from openai import AsyncOpenAI
-import docker
-from contextlib import asynccontextmanager
-from typing import AsyncIterator, Tuple
+from contextlib import AsyncExitStack, asynccontextmanager
+import os
+import platform
+
 from mcp.server.fastmcp import FastMCP
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp.testing.typed_stubs import TypedClient
-from adgn.agent.mcp_manager import McpManager
+from openai import AsyncOpenAI
+import pytest
+
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.docker_exec.server import make_container_exec_mcp
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+
+# Top-level imports for fixtures
+from adgn.mcp.testing.typed_stubs import TypedClient
+
+# Ensure shared fixtures from tests/fixtures are always registered, even when
+# running a subset of tests or in parallel workers where the module wouldn't be
+# imported implicitly.
+pytest_plugins = [
+    "tests.fixtures.responses",
+    # Ensure pytest-asyncio plugin is loaded in all workers so async tests run properly
+    "pytest_asyncio",
+]
 
 
-pytest_plugins = ["tests.fixtures.responses"]
+@pytest.fixture(autouse=True)
+def _per_test_agent_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    """Ensure each test gets an isolated agent SQLite DB path.
 
-
-def pytest_configure(config):
-    # Register custom markers to avoid PytestUnknownMarkWarning
-    config.addinivalue_line(
-        "markers",
-        "requires_docker: test requires Docker Engine (docker.from_env().ping())",
-    )
-    config.addinivalue_line("markers", "macos: macOS-only test")
-    config.addinivalue_line(
-        "markers",
-        "requires_sandbox_exec: test requires macOS seatbelt sandbox-exec present in PATH",
-    )
-
-
-def pytest_collection_modifyitems(config, items):
+    Many agent/server tests rely on ADGN_AGENT_DB_PATH. Setting it per-test
+    avoids cross-test interference when running in parallel.
     """
-    Auto-skip tests:
-    - @pytest.mark.macos when not running on macOS
-    - @pytest.mark.requires_docker when Docker Engine ping fails (or docker SDK missing)
-    """
-    # macOS gating
-    if sys.platform != "darwin":
-        skip_macos = pytest.mark.skip(reason="macOS-only test (macos marker)")
-        for item in items:
-            if "macos" in item.keywords:
-                item.add_marker(skip_macos)
-
-    # Docker gating (SDK is a hard dependency; only skip when ping fails)
-    docker_ok = True
-    try:
-        docker.from_env().ping()
-    except Exception:
-        docker_ok = False
-
-    if not docker_ok:
-        skip_docker = pytest.mark.skip(reason="requires Docker Engine (ping failed)")
-        for item in items:
-            if "requires_docker" in item.keywords:
-                item.add_marker(skip_docker)
-
-    # sandbox-exec gating (implies macOS)
-    for item in items:
-        if "requires_sandbox_exec" in item.keywords:
-            if sys.platform != "darwin":
-                item.add_marker(pytest.mark.skip(reason="macOS-only (sandbox-exec)"))
-            elif not shutil.which("sandbox-exec"):
-                item.add_marker(
-                    pytest.mark.skip(reason="sandbox-exec not found on PATH")
-                )
-
-
-@pytest.fixture()
-def require_sandbox_exec() -> None:
-    """Skip test unless running on macOS with sandbox-exec in PATH.
-
-    Shared fixture for seatbelt/sandboxer/MCP tests that depend on macOS seatbelt.
-    """
-    if sys.platform != "darwin":
-        pytest.skip("macOS-only (sandbox-exec)")
-    if not shutil.which("sandbox-exec"):
-        pytest.skip("sandbox-exec not found on PATH")
-
-
-# ---- Shared MCP typed client fixture ----------------------------------------
+    monkeypatch.setenv("ADGN_AGENT_DB_PATH", str(tmp_path / "agent.sqlite"))
 
 
 @pytest.fixture
 def make_typed_mcp():
-    """Factory that yields (TypedClient, session) for a single in-proc MCP server.
+    """Global typed MCP helper yielding (TypedClient, session) for a FastMCP server.
 
     Usage:
-        async with make_typed_mcp(server, "name") as (client, session):
-            Args = client.models["tool"].Input
-            out = await client.tool(Args(...))
+        async with make_typed_mcp(server, name) as (client, sess):
+            ...
     """
 
     @asynccontextmanager
-    async def _open(
-        server: FastMCP, name: str
-    ) -> AsyncIterator[Tuple[TypedClient, object]]:
-        spec = make_inproc_slot_spec(server)
-        async with McpManager({name: spec}) as mcp:
-            session = await mcp.get_session(name)
-            client = TypedClient.from_server(server, session)
-            yield client, session
+    async def _open(server: FastMCP, name: str):
+        async with AsyncExitStack() as stack:
+            spec = make_inproc_slot_spec(server)
+            slot = await spec.open(stack)
+            sess = slot.session
+            client = TypedClient.from_server(server, sess)
+            yield client, sess
 
     return _open
 
 
-# ---- Shared Docker/OpenAI fixtures (moved from tests/llm/conftest.py) ----
-
-
-@pytest.fixture(scope="session")
-def live_openai() -> AsyncOpenAI:
-    if not os.getenv("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY not set")
-    return AsyncOpenAI()
-
-
 @pytest.fixture
-def container_opts_py312() -> ContainerOptions:
-    return ContainerOptions(
-        image="python:3.12-slim", working_dir="/workspace", volumes=None, describe=False
+def docker_exec_server_alpine():
+    opts = ContainerOptions(
+        image="alpine:3.19",
+        working_dir="/workspace",
+        volumes=None,
+        describe=True,
     )
+    return make_container_exec_mcp(opts)
 
 
 @pytest.fixture
-def container_opts_alpine() -> ContainerOptions:
-    return ContainerOptions(image="alpine:3.19", describe=False)
+def docker_inproc_spec_alpine():
+    opts = ContainerOptions(
+        image="alpine:3.19",
+        working_dir="/workspace",
+        volumes=None,
+        describe=True,
+    )
+    server = make_container_exec_mcp(opts)
+    return make_inproc_slot_spec(server)
+
+
+# --- Compatibility / opt-in fixtures used across suites ---
 
 
 @pytest.fixture
-def docker_exec_server_py312(container_opts_py312) -> object:
-    return make_container_exec_mcp(container_opts_py312)
+def live_openai(request):
+    """Provide a live AsyncOpenAI client for tests marked with `live_llm`.
+
+    - For non-`live_llm` tests that include this fixture in the signature but
+      do not actually use it (e.g., parameterized tests with a mock branch),
+      return a lightweight no-op placeholder to avoid network work and keep
+      those tests running.
+    - For `live_llm` tests, require OPENAI_API_KEY and construct AsyncOpenAI;
+      skip if the key is not available.
+    """
+    if request.node.get_closest_marker("live_llm") is not None:
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OPENAI_API_KEY not set; skipping live LLM test")
+        return AsyncOpenAI()
+
+    class _Noop:
+        pass
+
+    return _Noop()
 
 
 @pytest.fixture
-def docker_exec_server_alpine(container_opts_alpine) -> object:
-    return make_container_exec_mcp(container_opts_alpine)
+def docker_inproc_spec_py312():
+    """Alias expected by some tests: in-proc spec backed by Python 3.12 image."""
+    opts = ContainerOptions(
+        image="python:3.12-alpine",
+        working_dir="/workspace",
+        volumes=None,
+        describe=True,
+    )
+    server = make_container_exec_mcp(opts)
+    return make_inproc_slot_spec(server)
 
 
 @pytest.fixture
-def docker_inproc_spec_py312(docker_exec_server_py312) -> object:
-    return make_inproc_slot_spec(docker_exec_server_py312)
+def require_sandbox_exec():
+    """Gate shell sandbox tests to supported platforms.
+
+    These tests exercise macOS sandbox profiles; skip on non-macOS hosts.
+    """
+    if platform.system() != "Darwin":
+        pytest.skip("sandboxer tests require macOS host")
+    return True
+
+
+# --- Shared lightweight fixtures used across agent and MCP tests ---
 
 
 @pytest.fixture
-def docker_inproc_spec_alpine(docker_exec_server_alpine) -> object:
-    return make_inproc_slot_spec(docker_exec_server_alpine)
+def make_echo_spec() -> callable:
+    """Return a factory that yields a typed, JSON-serializable inproc spec for echo MCP.
 
+    Using a typed InprocFactorySpec avoids needing TestClient.portal bridging in tests.
+    """
 
-@pytest.fixture
-def docker_specs_py312(docker_inproc_spec_py312) -> dict[str, object]:
-    return {"docker": docker_inproc_spec_py312}
+    def _spec() -> dict[str, object]:
+        from adgn.agent.runtime.specs import InprocFactorySpec
+
+        return {"echo": InprocFactorySpec(factory="adgn.mcp.echo.server:make_echo_mcp")}
+
+    return _spec

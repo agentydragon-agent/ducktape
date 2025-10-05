@@ -34,13 +34,13 @@ class Occurrence(BaseModel):
       Issue.rationale for the global explanation and acceptance criteria.
     """
 
-    files: dict[
-        Annotated[str, StringConstraints(pattern=r"^[^\n]+$")], list[LineRange] | None
-    ] = Field(
-        description=(
-            "Maps file paths -> list of LineRanges within that file or `None` to indicate an unspecified anchor in the file. "
-            + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
-        ),
+    files: dict[Annotated[str, StringConstraints(pattern=r"^[^\n]+$")], list[LineRange] | None] = (
+        Field(
+            description=(
+                "Maps file paths -> list of LineRanges within that file or `None` to indicate an unspecified anchor in the file. "
+                + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
+            ),
+        )
     )
     note: str | None = Field(
         default=None,
@@ -79,9 +79,7 @@ class SpecimenIssuesLoadError(Exception):
 
 
 # Strongly-typed identifiers with validation
-IssueId = Annotated[
-    str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{0,200}$", min_length=1)
-]
+IssueId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{0,200}$", min_length=1)]
 
 
 class IssueCore(BaseModel):

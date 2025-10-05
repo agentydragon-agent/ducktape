@@ -72,9 +72,7 @@ def iter_wire_lines(path: Path) -> Iterator[str]:
     def _plain_open(p: Path) -> TextIO:
         return p.open(encoding="utf-8", errors="ignore")
 
-    opener: Callable[[Path], TextIO] = (
-        _gzip_open if str(path).endswith(".gz") else _plain_open
-    )
+    opener: Callable[[Path], TextIO] = _gzip_open if str(path).endswith(".gz") else _plain_open
     with opener(path) as f:
         yield from f
 

@@ -4,12 +4,13 @@ from collections.abc import Callable
 import json
 import shlex
 from typing import Any
+
 from adgn.openai_utils.model import ReasoningItem
 
-from .reducer import BaseHandler
 from .handler import AssistantText, ToolCall, ToolCallOutput, UserText
 from .loop_control import NoLoopDecision
 from .mcp_manager import parse_mcp_function
+from .reducer import BaseHandler
 
 # Shared server/tool name constants
 DOCKER_SERVER_NAME = "docker"
@@ -54,15 +55,8 @@ class DisplayEventsHandler(BaseHandler):
             server, tool = "", ""
         if (server, tool) == (DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME):
             call_args = _parse_json_or_none(evt.args_json) or {}
-            if (
-                isinstance(call_args, dict)
-                and (cmd := call_args.get("cmd")) is not None
-            ):
-                cmd_line = (
-                    shlex.join([str(x) for x in cmd])
-                    if isinstance(cmd, list)
-                    else str(cmd)
-                )
+            if isinstance(call_args, dict) and (cmd := call_args.get("cmd")) is not None:
+                cmd_line = shlex.join([str(x) for x in cmd]) if isinstance(cmd, list) else str(cmd)
                 self._write(f"$ {cmd_line}")
             return
         s = self._render_tool_call(evt)
@@ -86,11 +80,7 @@ class DisplayEventsHandler(BaseHandler):
     def _render_tool_call(self, tc: ToolCall) -> str:
         name = tc.name or "<unknown>"
         parsed: Any | None = _parse_json_or_none(tc.args_json)
-        args = (
-            parsed
-            if parsed is not None
-            else ({"_raw": tc.args_json} if tc.args_json else {})
-        )
+        args = parsed if parsed is not None else ({"_raw": tc.args_json} if tc.args_json else {})
         header = f"▶ {name} input:"
         return f"{header}\n{self._pp_json(args)}"
 
@@ -153,10 +143,7 @@ class DisplayEventsHandler(BaseHandler):
         lines = s.splitlines()
         if len(lines) > self._max_lines:
             kept = lines[: self._max_lines]
-            s = (
-                "\n".join(kept)
-                + f"\n… truncated (+{len(lines) - self._max_lines} lines)"
-            )
+            s = "\n".join(kept) + f"\n… truncated (+{len(lines) - self._max_lines} lines)"
         return s
 
     def _pp_json(self, obj: object) -> str:

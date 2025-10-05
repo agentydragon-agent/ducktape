@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
 from pydantic import BaseModel, ConfigDict
+
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
+from mcp.server.fastmcp import FastMCP
 
 PYTHON_SUFFIXES = {".py", ".pyi"}
 
@@ -151,7 +152,7 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> SafeFastM
     state = EditorState(file_path=p, content=text, original=text)
 
     @asynccontextmanager
-    async def lifespan(_server: SafeFastMCP):  # yields EditorState
+    async def lifespan(_server: FastMCP):  # type: ignore[type-arg]  # yields EditorState
         try:
             yield state
         finally:
@@ -191,9 +192,7 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> SafeFastM
                 ok=False,
                 error=f"out of bounds: {input.start}-{end} (len={len(lines)})",
             )
-        body = "\n".join(
-            f"{i + 1:4d}: {lines[i]}" for i in range(start_idx, end_idx + 1)
-        )
+        body = "\n".join(f"{i + 1:4d}: {lines[i]}" for i in range(start_idx, end_idx + 1))
         return ReadLineRangeResult(ok=True, body=body)
 
     @mcp_flat_model(

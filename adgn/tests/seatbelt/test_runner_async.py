@@ -6,24 +6,25 @@ import shutil
 
 import pytest
 
-from adgn.seatbelt.model import FileRule, PathFilter, ProcessRule, SBPLPolicy
+from adgn.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from adgn.seatbelt.runner import apopen, run_sandboxed_async
 
 
 @pytest.mark.macos
 @pytest.mark.shell
+@pytest.mark.asyncio
 async def test_apopen_interactive_echo_with_trace(tmp_path: Path):
     if not shutil.which("sandbox-exec"):
         pytest.skip("sandbox-exec not found on PATH")
 
     # Allow reading/writing broadly enough for echo/cat
     policy = SBPLPolicy(
-        default_behavior="allow",
+        default_behavior=DefaultBehavior.ALLOW,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
         files=[
-            FileRule(op="file-map-executable", filters=[]),
-            FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value="/")]),
-            FileRule(op="file-write*", filters=[PathFilter(kind="subpath", value="/")]),
+            FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
+            FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
+            FileRule(op=FileOp.FILE_WRITE_STAR, filters=[Subpath(subpath="/")]),
         ],
     )
 
@@ -50,12 +51,12 @@ async def test_run_sandboxed_async_echo(tmp_path: Path):
         pytest.skip("sandbox-exec not found on PATH")
 
     policy = SBPLPolicy(
-        default_behavior="allow",
+        default_behavior=DefaultBehavior.ALLOW,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
         files=[
-            FileRule(op="file-map-executable", filters=[]),
-            FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value="/")]),
-            FileRule(op="file-write*", filters=[PathFilter(kind="subpath", value="/")]),
+            FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
+            FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
+            FileRule(op=FileOp.FILE_WRITE_STAR, filters=[Subpath(subpath="/")]),
         ],
     )
 

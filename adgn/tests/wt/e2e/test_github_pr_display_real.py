@@ -5,17 +5,17 @@ so the daemon imports our stub instead of the real PyGithub. This avoids network
 exercising the full daemon/CLI pipeline.
 """
 
+from datetime import timedelta
+import json
 import os
 import re
-import time
-import json
 import socket
+import time
 import uuid
 
-from datetime import timedelta
-from adgn.wt.shared.fixtures import PRFixtureEntry
-
 import pytest
+
+from adgn.wt.shared.fixtures import PRFixtureEntry
 
 # Global conftest disables gh token via get_github_token
 

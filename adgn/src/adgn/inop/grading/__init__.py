@@ -1,17 +1,4 @@
-"""Grading strategies for the optimizer."""
+"""Internal grading strategies package.
 
-from adgn.inop.grading.strategies import (
-    ComparisonGradingStrategy,
-    FileBasedGradingStrategy,
-    GradingStrategy,
-    MessageBasedGradingStrategy,
-    create_grading_strategy,
-)
-
-__all__ = [
-    "ComparisonGradingStrategy",
-    "FileBasedGradingStrategy",
-    "GradingStrategy",
-    "MessageBasedGradingStrategy",
-    "create_grading_strategy",
-]
+Import concrete classes/functions from `adgn.inop.grading.strategies` directly.
+"""

@@ -1,6 +1,6 @@
 # MCP Manager — Lifecycle, Sampling, and Tool/Resource Exposure
 
-Status: proposal (v1)
+Status: partially implemented (v1)
 
 ## Goals
 
@@ -11,7 +11,7 @@ Status: proposal (v1)
 
 ## TL;DR — tight plan
 
-- Single owner actor (one asyncio.Task) owns one AsyncExitStack and performs all opens/inits/closes.
+- Single owner actor (per agent) orchestrates per‑server workers. Each server has a worker task that owns its own AsyncExitStack and performs open/init/close in that task, enabling parallel enter.
 - Control plane (serialized by actor): AttachSpec (auto‑start), DetachSpec, RestartSpec, ListSpecs, ShutdownAll.
 - Data plane: EnsureOpen (idempotent), get_session, list_tools_namespaced, call_tool_namespaced, resources_*.
 - Sampling: one atomic snapshot per turn (banner + namespaced tools) from Running servers only; Failed excluded.
@@ -36,7 +36,7 @@ RuntimeError: Attempted to exit cancel scope in a different task than it was ent
 - Owner task (actor pattern): one `asyncio.Task` runs the lifecycle loop (we use this up‑front, not later).
 - One `AsyncExitStack` owned by the actor; never touched outside the actor task.
 - A command queue (`asyncio.Queue`) for lifecycle operations. `AttachSpec` automatically opens + initializes (auto‑start) in the owner; `EnsureOpen` is an idempotent accessor for callers that “just need it running.”
-- On `__aenter__`, the manager starts the owner and issues `AttachSpec` for all configured specs so everything desired‑enabled comes up under the actor immediately.
+- On `__aenter__`, the manager initializes control state. Workers are spawned on demand (attach/ensure_open) and open/init sessions in parallel.
 
 ### Server state (per name)
 
@@ -108,6 +108,8 @@ class NotificationsBatch(BaseModel):
 Manager APIs return these models:
 - `await mcp.sampling_snapshot()` → SamplingSnapshot
 - `await mcp.poll_notifications()` → NotificationsBatch (and clears the buffers in the owner actor)
+- `await mcp.resources_list(req)` / `await mcp.read_resource(server, uri, ...)` (aggregated resources)
+- `await mcp.resources_subscribe(server, uri)` / `await mcp.resources_unsubscribe(server, uri)`
 
 ## Sampling snapshot (what the model sees per turn)
 
@@ -345,25 +347,19 @@ We will add light-weight diagnostics routed through the owner (no external enter
   - `GetLogs(name, limit_bytes=4096)` → tail text from the log buffer.
 - None of these commands perform enter/exit; they only read actor-owned state, preserving the invariant.
 
-## Implementation status (as of now)
+## Implementation status (current)
 
-- [x] Structured models (Pydantic): InitializeView, ServerEntry, ToolDef, SamplingSnapshot, ResourceUpdateEvent, NotificationsBatch
-- [x] McpManager.sampling_snapshot() returning typed SamplingSnapshot (Running-only tools)
-- [x] McpManager tool namespacing facade: list_tools_namespaced(), call_tool_namespaced()
-- [x] Per-server tool cache + explicit invalidation API (invalidate_tools_cache_for)
-- [x] Notification buffering + per-(server, uri) version counters; poll_notifications() returns typed batch
-- [x] MiniCodex: uses sampling_snapshot() for tools; banner derived from structured snapshot (no getattr)
-- [x] MiniCodex: handler-based pre-turn notification delivery → JSON FYIs appended to transcript (system messages)
-- [ ] Owner actor (single task) managing all open/init/close; command queue with Attach/Detach/Restart/EnsureOpen/ListSpecs/ShutdownAll
-- [ ] Wire MCP server notifications → manager.notify_tools_list_changed/notify_resource_updated in the owner actor
-- [ ] Tools cache invalidation on notifications (currently API exists; auto-wiring pending)
-- [ ] Resource subscription exposure (subscribe_resource/unsubscribe_resource) with capability gating and error messages
-- [ ] Centralize namespacing usages (agent/event_renderer/approvals/helpers) to manager facade (migration plan section)
-- [x] Reducer support for Continue.inserts (typed OpenAI SDK message objects) and well-defined composition/ordering
-- [x] Optional handler-based notifications delivery (replace agent pre-turn poll with a handler that returns inserts)
-- [ ] Composability improvement (see Open TODO): sub-agent loop for “do work now” hooks; two-phase execute→insert pipeline/priorities
-- [ ] Tests: unit (manager caches/notifications), integration (in-proc servers, list_changed/updated), concurrency (ensure_open dedupe)
-- [ ] Decide on _build_effective_instructions banner: keep minimal banner behind a flag (include_mcp_banner) or remove; ensure no duplication with transcript FYIs and tool exposure
+- [x] Structured models: InitializeView, ServerEntry, SamplingSnapshot, ResourceUpdateEvent, NotificationsBatch
+- [x] sampling_snapshot() returns typed snapshot (Running-only servers; tools attached per server)
+- [x] Notification buffering + per-(server, uri) version counters; poll_notifications() returns typed batch; reducer injects system FYIs
+- [x] Resources server injected automatically (aggregates list/read)
+- [ ] Owner actor (single task) for McpManager; command queue (Attach/Detach/Restart/EnsureOpen/ListSpecs/ShutdownAll)
+- [ ] Tools cache invalidation on notifications (invalidate on tools/list_changed)
+- [x] Resource subscription exposure (subscribe_resource/unsubscribe_resource)
+- [ ] Centralize namespacing usages (agent/event_renderer/approvals/helpers) to the manager facade
+- [ ] Composability improvement (see Open TODO): sub-agent loop for “do work now” hooks; two‑phase execute→insert/priorities
+- [ ] Tests: unit (caches/notifications), integration (in‑proc servers, list_changed/updated), concurrency (ensure_open dedupe)
+- [ ] Decide on banner content policy: keep minimal banner behind a flag (include_mcp_banner) and avoid duplication with FYIs
 
 ## Notifications MCP server — instructions and JSON FYIs
 
@@ -444,6 +440,7 @@ Sources:
 Notes:
 - Neither library auto-refreshes local tool/resource lists on receipt of list_changed; consumers should refresh explicitly upon notification.
 - Resource subscription is supported in python-sdk’s client; fastmcp’s wrapper can use session.subscribe_resource/unsubscribe_resource even if convenience methods are not exported.
+- SSE transport spec field names (agent runtime): timeouts use explicit units — `timeout_secs` and `sse_read_timeout_secs`. Legacy keys `timeout` and `sse_read_timeout` are accepted on input for backward compatibility.
 
 ## Acceptance criteria
 

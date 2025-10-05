@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager, AsyncExitStack
 import functools
 import inspect
 import logging
@@ -15,17 +16,16 @@ from typing import (
     get_type_hints,
 )
 
-from pydantic import BaseModel, Field
-from pydantic_core import PydanticUndefined
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
-from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from mcp.server.fastmcp import FastMCP
 from mcp.server.lowlevel.server import InitializationOptions, Server
 from mcp.server.session import ServerSession
 from mcp.shared.message import SessionMessage
+from pydantic import BaseModel, Field
+from pydantic_core import PydanticUndefined
 
-logger = logging.getLogger("adgn.mcp")
+logger = logging.getLogger(__name__)
 
 # Intentionally no __all__; internal helpers are available for local imports.
 
@@ -69,9 +69,7 @@ def _make_flat_signature_from_model(
         ]
         # Parameter default mirrors model: required if no default/default_factory
         if df is not None or fld.default is not PydanticUndefined:
-            param_default = (
-                fld.default if fld.default is not PydanticUndefined else inspect._empty
-            )
+            param_default = fld.default if fld.default is not PydanticUndefined else inspect._empty
             # Note: default_factory cannot be expressed as a Python default; leave empty
         else:
             param_default = inspect._empty
@@ -109,16 +107,12 @@ def _flat_model_decorator(
         sig = inspect.signature(fn)
         params = list(sig.parameters.values())
         if len(params) != 1:
-            raise TypeError(
-                "@mcp_flat_model expects exactly one parameter (the Pydantic model)"
-            )
+            raise TypeError("@mcp_flat_model expects exactly one parameter (the Pydantic model)")
         param = params[0]
 
         # Resolve type hints with the function's globals for forward refs — but only if needed
         if input_model is None or output_model is None:
-            hints = get_type_hints(
-                fn, globalns=getattr(fn, "__globals__", {}), include_extras=True
-            )
+            hints = get_type_hints(fn, globalns=getattr(fn, "__globals__", {}), include_extras=True)
         else:
             hints = {}
 
@@ -153,8 +147,8 @@ def _flat_model_decorator(
             raise TypeError(
                 "Input model must be a Pydantic BaseModel with model_rebuild()"
             ) from exc
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("model_rebuild() on input failed: %s", e)
         # If model_out is Annotated[Model, Field(...)] or similar, extract the model for rebuild
         rt = model_out
         if get_origin(rt) is Annotated:
@@ -167,8 +161,8 @@ def _flat_model_decorator(
                 raise TypeError(
                     "Output model must expose model_rebuild(); ensure it is a Pydantic model"
                 ) from exc
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("model_rebuild() on output failed: %s", e)
 
         # Preserve async/sync nature to keep FastMCP is_async detection correct
         def _coerce_payload(kwargs: dict[str, Any]) -> InputModelT:
@@ -190,9 +184,7 @@ def _flat_model_decorator(
             @functools.wraps(fn)
             def _flat_wrapper(**kwargs: Any) -> Any:
                 payload = _coerce_payload(kwargs)
-                return cast(Callable[[InputModelT], Any], fn)(
-                    cast(InputModelT, payload)
-                )
+                return cast(Callable[[InputModelT], Any], fn)(cast(InputModelT, payload))
 
         # Advertise original input/output models for typed clients
         setattr(_flat_wrapper, "_mcp_flat_input_model", model_in)
@@ -210,8 +202,8 @@ def _flat_model_decorator(
             anns = dict(getattr(_flat_wrapper, "__annotations__", {}) or {})
             anns["return"] = model_out
             _flat_wrapper.__annotations__ = anns
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("failed to set return annotation: %s", e)
 
         # Register wrapper as a tool; FastMCP will introspect the flat signature
         tool_kwargs = dict(
@@ -247,9 +239,7 @@ class FlatModelToolMixin:
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Extend FastMCP.tool with ``flat_*`` keywords for Pydantic helpers."""
 
-        wants_flat = (
-            flat or flat_input_model is not None or flat_output_model is not None
-        )
+        wants_flat = flat or flat_input_model is not None or flat_output_model is not None
         if not wants_flat:
             base_tool = super().tool  # type: ignore[misc]
             return cast(
@@ -263,9 +253,7 @@ class FlatModelToolMixin:
                 ),
             )
 
-        effective_structured_output = (
-            structured_output if structured_output is not None else True
-        )
+        effective_structured_output = structured_output if structured_output is not None else True
 
         def _register(
             fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]
@@ -331,9 +319,7 @@ def mcp_flat_model(
             ),
         )
 
-    def _register(
-        fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]
-    ) -> Callable[..., Any]:
+    def _register(fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]) -> Callable[..., Any]:
         decorator = cast(
             Callable[[Callable[..., Any]], Callable[..., Any]],
             mcp.tool(**mcp_tool_kwargs),

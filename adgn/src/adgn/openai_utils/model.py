@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import singledispatch
 from typing import Any, Literal, Protocol, Self, cast
-from enum import Enum
-from adgn.openai_utils.retry import retry_decorator
 
 from openai import AsyncOpenAI
 from openai.types.responses import (
@@ -14,15 +12,10 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
-from openai.types.shared_params import Reasoning as ReasoningParams
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
-class ReasoningEffort(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
+from adgn.openai_utils.retry import retry_decorator
+from adgn.openai_utils.types import ReasoningEffort, ReasoningParams
 
 # ------------------------------
 # Typed, tolerant input items we compose into Responses API "input"
@@ -80,9 +73,7 @@ class ReasoningItem(BaseModel):
 
     type: Literal["reasoning"] = "reasoning"
     id: str | None = None
-    summary: list[ReasoningSummaryItem] = Field(
-        default_factory=list
-    )  # API requires this field
+    summary: list[ReasoningSummaryItem] = Field(default_factory=list)  # API requires this field
     model_config = ConfigDict(extra="allow")
 
 
@@ -125,6 +116,19 @@ class ToolChoiceFunction(BaseModel):
 ToolChoice = Literal["auto", "required", "none"] | ToolChoiceFunction
 
 
+class FunctionToolParam(BaseModel):
+    """Typed mirror of OpenAI Responses function tool schema.
+
+    Shape compatible with the Responses API tools list items.
+    """
+
+    type: Literal["function"] = "function"
+    name: str
+    description: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    strict: bool | None = None
+
+
 class ResponsesRequest(BaseModel):
     """Thin, tolerant request model for OpenAI Responses API calls we make."""
 
@@ -132,7 +136,7 @@ class ResponsesRequest(BaseModel):
 
     # Common options we actually use; others are passed through (extra=allow)
     instructions: str | None = None
-    tools: list[dict[str, object]] | None = None
+    tools: list[FunctionToolParam] | None = None
     tool_choice: ToolChoice | None = None
     parallel_tool_calls: bool | None = None
     stream: bool = False
@@ -220,15 +224,11 @@ class AssistantMessageOut(BaseModel):
         parts: list[OutputText] = []
         for block in item.content or []:
             if isinstance(block, InputTextPart):
-                parts.append(
-                    OutputText.model_validate(block.model_dump(exclude_none=True))
-                )
+                parts.append(OutputText.model_validate(block.model_dump(exclude_none=True)))
         return cls(parts=parts)
 
 
-ResponseOutItem = (
-    ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
-)
+ResponseOutItem = ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
 
 
 @singledispatch
@@ -369,8 +369,7 @@ class OpenAIModel:
                 summary_items = []
                 if item.summary:
                     summary_items = [
-                        ReasoningSummaryItem(text=s.text, type=s.type)
-                        for s in item.summary
+                        ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary
                     ]
                 out_items.append(ReasoningItem(id=item.id, summary=summary_items))
             elif isinstance(item, ResponseFunctionToolCall):
@@ -449,9 +448,7 @@ class OpenAIModelProto(Protocol):  # pragma: no cover - structural typing only
 
 
 class FakeOpenAIModel(OpenAIModelProto):
-    def __init__(
-        self, outputs: list[ResponsesResult] | tuple[ResponsesResult, ...]
-    ) -> None:
+    def __init__(self, outputs: list[ResponsesResult] | tuple[ResponsesResult, ...]) -> None:
         self._outputs: list[ResponsesResult] = list(outputs)
         self.calls = 0
         self.captured: list[ResponsesRequest] = []

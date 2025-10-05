@@ -1,6 +1,6 @@
 from collections.abc import Iterator
-from typing import Any
 import json
+from typing import Any
 
 import pytest
 
@@ -44,9 +44,7 @@ def _extract_payload(result):
         return result
     if isinstance(result, tuple) and len(result) == 2:
         blocks, payload = result
-        assert isinstance(blocks, list), (
-            f"Expected content blocks list, got {type(blocks)}"
-        )
+        assert isinstance(blocks, list), f"Expected content blocks list, got {type(blocks)}"
         assert payload is None or isinstance(payload, dict), (
             f"Expected dict payload, got {type(payload)}"
         )
@@ -59,9 +57,7 @@ def _extract_payload(result):
 
 
 @pytest.mark.asyncio
-async def test_tool_success_flow(
-    monkeypatch: pytest.MonkeyPatch, make_typed_mcp
-) -> None:
+async def test_tool_success_flow(monkeypatch: pytest.MonkeyPatch, make_typed_mcp) -> None:
     post_calls: list[tuple[str, dict, dict]] = []
     get_sequence = iter(
         [
@@ -122,9 +118,7 @@ async def test_tool_success_flow(
 
 
 @pytest.mark.asyncio
-async def test_tool_bubbles_mirror_error(
-    monkeypatch: pytest.MonkeyPatch, make_typed_mcp
-) -> None:
+async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch, make_typed_mcp) -> None:
     def fake_post(url: str, **kwargs: Any):
         if url.endswith("/repos/migrate"):
             return _DummyResponse(500, text="boom")

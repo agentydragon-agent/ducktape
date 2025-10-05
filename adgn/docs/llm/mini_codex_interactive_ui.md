@@ -10,9 +10,11 @@ Implemented
   - NotificationsHandler inserts compact system messages when approval_policy resources change.
 
 - HTTP UI (FastAPI + WebSocket)
-  - adgn/agent/ui/server.py serves a simple UI and a WS endpoint.
-  - Shows transcript, pending approvals, and supports sending messages.
+  - src/adgn/agent/server/app.py serves the UI and wires the WS endpoint.
+  - UI renders UiState (messages + tool groups) and pending approvals; supports send/abort.
+  - State arrives via `ui_state_snapshot` + `ui_state_updated` WS messages only (REST removed).
   - UI resolves approvals by signaling ApprovalHub (Allow/Deny) per pending call.
+  - Frontend: src/adgn/agent/web (built to src/adgn/agent/server/static/web).
 
 - MCP server: approval_policy (optional)
   - adgn/mcp/approval_policy/server.py exposes:
@@ -26,7 +28,7 @@ Usage (high level)
     - `engine = ApprovalPolicyEngine(); hub = ApprovalHub()`
     - `agent = await MiniCodex.create(..., approval_engine=engine, approval_hub=hub)`
   - Optionally expose `approval_policy` MCP: `ApprovalPolicyServer(engine)` via in-proc spec.
-  - Start the UI server (adgn/agent/ui/server.py) and connect the browser client.
+  - Start the UI server (src/adgn/agent/server/app.py) and connect the browser client.
 
 - Headless mode:
   - Omit approvals or auto-resolve via a small driver that resolves ApprovalHub with Continue.
@@ -44,7 +46,7 @@ References
 
 - Agent: `adgn/agent/agent.py`
 - Approvals: `adgn/agent/approvals.py`
-- UI server: `adgn/agent/ui/server.py`
+- UI server: `src/adgn/agent/server/app.py`
 - MCP approval policy server: `adgn/mcp/approval_policy/server.py`
 
 Component details
@@ -65,10 +67,13 @@ Component details
 - Minimal UX: When a tool call is "ask", the UI shows Pending Approvals from ApprovalHub with Allow/Deny controls. Deny resolves the hub with an Abort or an Injected structured error (policy-defined); Allow resolves with Continue.
 
 2) HTTP UI server
-- New package: src/adgn/agent/ui/
-  - server.py: FastAPI app + WebSocket; minimal single-session state for now.
-  - static/index.html: Simple page with:
-    - Transcript pane (append-only),
+- New modules: src/adgn/agent/server/
+  - app.py: FastAPI app; registers routes and WS
+  - ws.py: WebSocket handlers
+  - runtime.py: AgentSession and connection manager
+  - static/web/index.html: Built UI assets (output of Vite build)
+  - Simple page includes:
+    - Chat pane (UiState items),
     - Tool approvals list (checkbox per tool; sections per MCP server),
     - Textarea input and Send button,
     - Abort button.
@@ -134,8 +139,8 @@ class ApprovalPolicyHandler:
 - Agent uses manager-level call_tool/read_resource; approvals logic is isolated in ApprovalPolicyHandler and ApprovalHub.
 - New modules
   - src/adgn/agent/approvals.py (policy/state/manager)
-  - src/adgn/agent/ui/server.py (FastAPI app)
-  - src/adgn/agent/ui/static/index.html (dumb UI)
+  - src/adgn/agent/server/app.py (FastAPI app)
+  - src/adgn/agent/server/static/web/index.html (built UI)
 - No changes to Reducer/handlers in Phase 1.
 
 Data and event contracts
@@ -223,7 +228,7 @@ Progress log
 
 For local development, run Vite for the frontend and FastAPI for the backend, and proxy WebSocket traffic from Vite → FastAPI.
 
-1) Add a WS proxy in src/adgn/agent/ui/web/vite.config.ts:
+1) Add a WS proxy in src/adgn/agent/web/vite.config.ts:
 
 ```ts
 import { defineConfig } from 'vite'
@@ -232,7 +237,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 export default defineConfig({
   plugins: [svelte()],
   server: { proxy: { '/ws': { target: 'http://127.0.0.1:8765', ws: true, changeOrigin: true } } },
-  build: { outDir: '../static/web', emptyOutDir: true },
+  build: { outDir: '../server/static/web', emptyOutDir: true },
 })
 ```
 
@@ -245,8 +250,8 @@ direnv exec /Users/mpokorny/code/ducktape/adgn adgn-mini-codex serve --host 127.
 3) Start the frontend (Vite dev server):
 
 ```bash
-npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/ui/web install
-npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/ui/web run dev -- --host 127.0.0.1 --port 5173
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/web install
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/web run dev -- --host 127.0.0.1 --port 5173
 ```
 
 4) Open http://127.0.0.1:5173. The UI connects to ws://127.0.0.1:5173/ws, which Vite proxies to the backend at 127.0.0.1:8765.
@@ -257,8 +262,8 @@ If you prefer to serve the built UI from FastAPI (no Vite), build assets once an
 
 ```bash
 # Build once
-npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/ui/web install
-npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/ui/web run build
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/web install
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/agent/web run build
 
 # Start backend (serves /, /assets/*, /vite.svg from static/web)
 direnv exec /Users/mpokorny/code/ducktape/adgn adgn-mini-codex serve --host 127.0.0.1 --port 8765
@@ -266,6 +271,6 @@ direnv exec /Users/mpokorny/code/ducktape/adgn adgn-mini-codex serve --host 127.
 ```
 
 Notes
-- The backend serves static from src/adgn/agent/ui/static/web. Missing assets will 404 until you build.
+- The backend serves static from src/adgn/agent/server/static/web. Missing assets will 404 until you build.
 - Vite dev server gives fast HMR during UI work; use single-CLI after you’re happy with the build.
 - A future flag (e.g., `--build-web`) can auto-build assets on `serve` when missing.

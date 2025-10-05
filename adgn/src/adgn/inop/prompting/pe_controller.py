@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from adgn.agent.reducer import BaseHandler
 from adgn.agent.loop_control import Abort, Continue, RequireAny
+from adgn.agent.reducer import BaseHandler
 
 """Prompt Engineer loop controller(s).
 

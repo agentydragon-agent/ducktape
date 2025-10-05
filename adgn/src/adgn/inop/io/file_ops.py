@@ -21,8 +21,7 @@ def gather_agent_files(
             continue
         relative_path = file_path.relative_to(work_dir).as_posix()
         if any(
-            fnmatch.fnmatch(relative_path, pattern)
-            or fnmatch.fnmatch(file_path.name, pattern)
+            fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(file_path.name, pattern)
             for pattern in cfg.exclude_patterns
         ):
             continue

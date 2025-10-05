@@ -155,10 +155,15 @@ def coerce_prdata(src: Any) -> PRData:
 
 
 @runtime_checkable
-class HasBasicPR(Protocol):  # minimal protocol for PyGithub-like PR
-    number: int
-    state: str
-    title: str
+class HasBasicPR(Protocol):  # minimal protocol for PyGithub-like PR (read-only properties OK)
+    @property
+    def number(self) -> int: ...
+
+    @property
+    def state(self) -> str: ...
+
+    @property
+    def title(self) -> str: ...
 
 
 @dataclass

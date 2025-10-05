@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from adgn.agent.reducer import NotificationsHandler
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.mcp_manager import (
     McpManager,
     NotificationsBatch,
     ResourceUpdateEvent,
 )
+from adgn.agent.reducer import NotificationsHandler
 
 
 class _FakeMcp(McpManager):
@@ -48,15 +48,11 @@ def test_notifications_handler_batches_single_message():
     texts = [
         c.get("text")
         for c in contents
-        if isinstance(c, dict)
-        and c.get("type") == "input_text"
-        and isinstance(c.get("text"), str)
+        if isinstance(c, dict) and c.get("type") == "input_text" and isinstance(c.get("text"), str)
     ]
     assert texts, "expected an input_text content part"
     text = texts[0]
-    if text.startswith("<system notification>\n") and text.endswith(
-        "\n</system notification>"
-    ):
+    if text.startswith("<system notification>\n") and text.endswith("\n</system notification>"):
         text = text[len("<system notification>\n") : -len("\n</system notification>")]
     # Simple repr-snippet assertion: ensure server names are present
     assert "git-ro" in text

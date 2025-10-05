@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, TypeVar, Generic
 from dataclasses import dataclass
-from pydantic import BaseModel, TypeAdapter
+from typing import Any, Awaitable, Callable, Generic, TypeVar
+
 from mcp import types as mcp_types
+from pydantic import BaseModel, TypeAdapter
 
 
 # Minimal duck-typed MCP session interface we rely on in tests
@@ -45,9 +46,7 @@ async def call_tool_typed(
     Requires structuredContent from the server; raises otherwise.
     """
     args = (
-        payload.model_dump(exclude_none=exclude_none)
-        if isinstance(payload, BaseModel)
-        else payload
+        payload.model_dump(exclude_none=exclude_none) if isinstance(payload, BaseModel) else payload
     )
     resp = await session.call_tool(name=name, arguments=args)
     raw = _require_structured(resp, tool_name=name)
@@ -93,14 +92,16 @@ class ToolModels:
 
 def _extract_error_message(resp: Any) -> str:
     if isinstance(resp, mcp_types.CallToolResult):
+        nontext: list[str] = []
         for b in resp.content or []:
-            # CallToolResult.content contains typed content blocks; text blocks expose `.text`.
-            try:
-                txt = b.text  # type: ignore[attr-defined]
-            except Exception:
-                txt = None
-            if isinstance(txt, str) and txt:
-                return txt
+            if isinstance(b, mcp_types.TextContent):
+                txt = b.text
+                if isinstance(txt, str) and txt:
+                    return txt
+            nontext.append(type(b).__name__)
+        if nontext:
+            # Specific failure for unsupported non-text tool error content
+            raise NotImplementedError(f"Unsupported tool error content types: {', '.join(nontext)}")
     return "tool error"
 
 
@@ -181,7 +182,8 @@ class TypedClient:
                         ann = getattr(field_info, "annotation", None)
                         if isinstance(ann, type) and issubclass(ann, BaseModel):
                             input_type = ann
-                except Exception:
+                except (AttributeError, KeyError, TypeError):
+                    # Fallback to arg_model when field metadata is unavailable
                     pass
 
             # Final fallback: use arg_model
@@ -210,9 +212,7 @@ class TypedClient:
                     f"{name} expects {(models.Input.__name__ if models.Input else 'None')}, got {type(payload).__name__}"
                 )
             if models._wrapper_field and models._arg_model:
-                args_dict = {
-                    models._wrapper_field: payload.model_dump(exclude_none=exclude_none)
-                }
+                args_dict = {models._wrapper_field: payload.model_dump(exclude_none=exclude_none)}
             else:
                 args_dict = payload.model_dump(exclude_none=exclude_none)
             resp = await session.call_tool(name=name, arguments=args_dict)
@@ -237,9 +237,7 @@ class TypedClient:
                 )
             # If FastMCP wrapped the single argument under a field (e.g., 'payload'), rebuild the arg_model
             if models._wrapper_field and models._arg_model:
-                args_dict = {
-                    models._wrapper_field: payload.model_dump(exclude_none=exclude_none)
-                }
+                args_dict = {models._wrapper_field: payload.model_dump(exclude_none=exclude_none)}
             else:
                 args_dict = payload.model_dump(exclude_none=exclude_none)
             resp = await session.call_tool(name=name, arguments=args_dict)

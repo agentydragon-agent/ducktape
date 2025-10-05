@@ -1,8 +1,7 @@
+from datetime import timedelta
 import shutil
 
 import pytest
-
-from datetime import timedelta
 
 pytestmark = pytest.mark.integration
 

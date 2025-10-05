@@ -21,11 +21,29 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
 from pydantic import BaseModel, Field
 import pygit2
-from pygit2 import enums as git_enums
+from pygit2.enums import BranchType
+
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
+
+from .formatting import (
+    ChangedFilesPage,
+    DiffStatPage,
+    ListSlice,
+    StatusEntry,
+    StatusPage,
+    StringListPage,
+    TextPage,
+    TextSlice,
+    apply_list_slice,
+    apply_text_slice,
+    build_changed_files_page,
+    build_diff_stat_page,
+    build_status_page,
+    diff_to_changed_files,
+    diff_to_file_stats,
+)
 
 # Shared server name constant for clients/tests
 GIT_RO_SERVER_NAME = "git-ro"
@@ -33,38 +51,7 @@ GIT_RO_SERVER_NAME = "git-ro"
 # -------------------------- shared slicing -----------------------------------
 
 
-class TextSlice(BaseModel):
-    offset_chars: int = Field(
-        default=0,
-        ge=0,
-        description="Start offset into output (characters)",
-    )
-    max_chars: int = Field(
-        default=200_000,
-        gt=0,
-        le=500_000,
-        description="Maximum characters to return (cap 500k)",
-    )
-
-
-class TextPage(BaseModel):
-    body: str
-    truncated: bool
-    next_offset: int | None = None
-    total_chars: int
-
-
-def apply_text_slice(body: str, sl: TextSlice) -> TextPage:
-    start = max(0, int(sl.offset_chars))
-    end = max(start, start + int(sl.max_chars))
-    total = len(body)
-    sliced = body[start:end]
-    return TextPage(
-        body=sliced,
-        truncated=(total > end),
-        next_offset=(end if total > end else None),
-        total_chars=total,
-    )
+## moved to formatting.py
 
 
 # -------------------------- helpers -----------------------------------------
@@ -78,8 +65,8 @@ def _open_repo(root: Path) -> pygit2.Repository:
 
 
 def get_oid(obj: Any):
-    """Return a pygit2.Oid from an object that may have .oid or .id."""
-    return obj.oid if hasattr(obj, "oid") else obj.id
+    """Return object id (pygit2 >=1.18 provides .id consistently)."""
+    return obj.id
 
 
 # -------------------------- inputs ------------------------------------------
@@ -177,157 +164,7 @@ class RevParseInput(BaseModel):
     short: bool = Field(default=False, description="If true, shorten OIDs")
 
 
-class ListSlice(BaseModel):
-    offset: int = Field(
-        default=0,
-        ge=0,
-        description="Start index for list pagination (>=0)",
-    )
-    limit: int = Field(
-        default=1000,
-        gt=0,
-        le=5000,
-        description="Maximum number of items to return (cap 5000)",
-    )
-
-
-class StringListPage(BaseModel):
-    items: list[str]
-    truncated: bool
-    next_offset: int | None = None
-    total_count: int
-
-
-def apply_list_slice(all_items: list[str], sl: ListSlice) -> StringListPage:
-    total = len(all_items)
-    start = sl.offset
-    end = min(total, start + sl.limit)
-    items = all_items[start:end]
-    truncated = end < total
-    next_offset = end if truncated else None
-    return StringListPage(
-        items=items,
-        truncated=truncated,
-        next_offset=next_offset,
-        total_count=total,
-    )
-
-
-def paginate_items(
-    items_names: tuple[list[Any], list[str]],
-    sl: ListSlice,
-) -> tuple[list[Any], StringListPage]:
-    items, names = items_names
-    page = apply_list_slice(names, sl)
-    start = sl.offset
-    end = start + sl.limit
-    return items[start:end], page
-
-
-# Map pygit2 delta statuses -> single-letter codes (like git --name-status)
-STATUS_MAP: dict[int, str] = {
-    pygit2.GIT_DELTA_ADDED: "A",
-    pygit2.GIT_DELTA_MODIFIED: "M",
-    pygit2.GIT_DELTA_DELETED: "D",
-    pygit2.GIT_DELTA_RENAMED: "R",
-    pygit2.GIT_DELTA_TYPECHANGE: "T",
-}
-
-
-def delta_to_changed_file(d: pygit2.DiffDelta) -> ChangedFile:
-    status_char = STATUS_MAP.get(d.status, "?")
-    old_path = d.old_file.path or None
-    new_path = d.new_file.path or None
-    path = new_path or old_path or ""
-    return ChangedFile(
-        status=status_char,
-        path=path,
-        rename_from=old_path if status_char == "R" else None,
-        rename_to=new_path if status_char == "R" else None,
-    )
-
-
-def diff_to_changed_files(diff: pygit2.Diff) -> list[ChangedFile]:
-    """Convert a pygit2.Diff to a flat list of ChangedFile entries.
-
-    Shared between git_diff(format=name-status) and git_show(format=name-status).
-    """
-    return [delta_to_changed_file(patch.delta) for patch in diff]
-
-
-def diff_to_file_stats(diff: pygit2.Diff) -> list[DiffFileStat]:
-    """Convert a pygit2.Diff to per-file stat entries (additions/deletions).
-
-    Shared between git_diff(format=stat) and git_show(format=stat).
-
-    Note: pygit2's Patch objects may not expose per-file additions/deletions totals
-    reliably across versions. Compute counts by walking hunk lines and tallying
-    origins ('+' for insertions, '-' for deletions).
-    """
-    stats: list[DiffFileStat] = []
-    for patch in diff:
-        cf = delta_to_changed_file(patch.delta)
-        add = 0
-        delete = 0
-        try:
-            for h in getattr(patch, "hunks", []) or []:
-                for ln in getattr(h, "lines", []) or []:
-                    origin = getattr(ln, "origin", None)
-                    if origin == "+":
-                        add += 1
-                    elif origin == "-":
-                        delete += 1
-        except Exception:
-            # Fallback to any attributes if available
-            add = int(getattr(patch, "additions", 0) or 0)
-            delete = int(getattr(patch, "deletions", 0) or 0)
-        stats.append(
-            DiffFileStat(
-                status=cf.status,
-                path=cf.path,
-                additions=int(add),
-                deletions=int(delete),
-                rename_from=cf.rename_from,
-                rename_to=cf.rename_to,
-            ),
-        )
-    return stats
-
-
-def build_changed_files_page(
-    items: list[ChangedFile],
-    sl: ListSlice,
-) -> ChangedFilesPage:
-    """Paginate ChangedFile items into a ChangedFilesPage."""
-    sliced, page = paginate_items((items, [i.path for i in items]), sl)
-    return ChangedFilesPage(
-        items=sliced,
-        truncated=page.truncated,
-        next_offset=page.next_offset,
-        total_count=page.total_count,
-    )
-
-
-def build_diff_stat_page(stats: list[DiffFileStat], sl: ListSlice) -> DiffStatPage:
-    """Paginate DiffFileStat items into a DiffStatPage."""
-    sliced, page = paginate_items((stats, [s.path for s in stats]), sl)
-    return DiffStatPage(
-        items=sliced,
-        truncated=page.truncated,
-        next_offset=page.next_offset,
-        total_count=page.total_count,
-    )
-
-
-def build_status_page(entries: list[StatusEntry], sl: ListSlice) -> StatusPage:
-    """Paginate StatusEntry items into a StatusPage."""
-    sliced, page = paginate_items((entries, [e.path for e in entries]), sl)
-    return StatusPage(
-        entries=sliced,
-        truncated=page.truncated,
-        next_offset=page.next_offset,
-        total_count=page.total_count,
-    )
+## moved to formatting.py
 
 
 class RevParseResult(BaseModel):
@@ -377,34 +214,7 @@ class DiffListInput(BaseModel):
     )
 
 
-class DiffFileStat(BaseModel):
-    status: str  # A/M/D/R/C/T
-    path: str
-    additions: int
-    deletions: int
-    rename_from: str | None = None
-    rename_to: str | None = None
-
-
-class DiffStatPage(BaseModel):
-    items: list[DiffFileStat]
-    truncated: bool
-    next_offset: int | None = None
-    total_count: int
-
-
-class ChangedFile(BaseModel):
-    status: str
-    path: str
-    rename_from: str | None = None
-    rename_to: str | None = None
-
-
-class ChangedFilesPage(BaseModel):
-    items: list[ChangedFile]
-    truncated: bool
-    next_offset: int | None = None
-    total_count: int
+## moved to formatting.py
 
 
 class LogEntriesInput(BaseModel):
@@ -463,17 +273,7 @@ class WorktreeStatus(StrEnum):
     UNTRACKED = "?"
 
 
-class StatusEntry(BaseModel):
-    path: str
-    index: IndexStatus  # one of IndexStatus
-    worktree: WorktreeStatus  # one of WorktreeStatus
-
-
-class StatusPage(BaseModel):
-    entries: list[StatusEntry]
-    truncated: bool
-    next_offset: int | None = None
-    total_count: int
+## moved to formatting.py
 
 
 # -------------------------- server ------------------------------------------
@@ -496,9 +296,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
     configured root results in an error.
     """
     state = GitRoState(git_repo=git_repo.resolve())
-    mcp = SafeFastMCP(
-        name, instructions=f"Read-only Git tools scoped to repo: {git_repo}"
-    )
+    mcp = SafeFastMCP(name, instructions=f"Read-only Git tools scoped to repo: {git_repo}")
 
     @mcp_flat_model(
         mcp,
@@ -670,9 +468,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
             rev, path = objspec.split(":", 1)
             root_obj = repo.revparse_single(rev)
             tree = (
-                root_obj.tree
-                if isinstance(root_obj, pygit2.Commit)
-                else root_obj.peel(pygit2.Tree)
+                root_obj.tree if isinstance(root_obj, pygit2.Commit) else root_obj.peel(pygit2.Tree)
             )
             cur: pygit2.Tree = tree
             for part in filter(None, path.split("/")):
@@ -768,9 +564,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
         """List local or remote branches (short names) with offset/limit pagination (structured output)."""
         root = state.git_repo
         repo = _open_repo(root)
-        kind = (
-            git_enums.BranchType.REMOTE if input.remote else git_enums.BranchType.LOCAL
-        )
+        kind = BranchType.REMOTE if input.remote else BranchType.LOCAL
         names = repo.listall_branches(kind)
         return apply_list_slice(names, input.list_slice)
 

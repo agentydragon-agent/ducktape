@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.reducer import Reducer, BaseHandler
-from adgn.openai_utils.model import UserMessage, InputTextPart
 from adgn.agent.loop_control import Abort, Auto, Continue
+from adgn.agent.reducer import BaseHandler, Reducer
+from adgn.openai_utils.model import InputTextPart, UserMessage
 
 
 class _InsertsHandler(BaseHandler):
@@ -13,9 +13,7 @@ class _InsertsHandler(BaseHandler):
 
     def on_before_sample(self):  # type: ignore[override]
         # Insert as input message (user role), not output message
-        msg = UserMessage(
-            role="user", content=[InputTextPart(text=f"payload:{self._msg_id}")]
-        )
+        msg = UserMessage(role="user", content=[InputTextPart(text=f"payload:{self._msg_id}")])
         return Continue(Auto(), inserts_input=(msg,))
 
 

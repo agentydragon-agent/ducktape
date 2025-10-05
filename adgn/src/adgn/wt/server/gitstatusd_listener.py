@@ -182,9 +182,7 @@ class GitStatusdProtocol:
             try:
                 is_git_repository = int(fields[1]) == 1
             except (ValueError, IndexError) as e:
-                raise GitStatusdValidationError(
-                    f"Invalid git repository flag: {e}"
-                ) from e
+                raise GitStatusdValidationError(f"Invalid git repository flag: {e}") from e
 
             # If not a git repository, return minimal response
             if not is_git_repository:
@@ -290,9 +288,7 @@ class GitStatusdProtocol:
         try:
             return int(value)
         except ValueError as e:
-            raise GitStatusdValidationError(
-                f"Invalid integer in field {index}: {e}"
-            ) from e
+            raise GitStatusdValidationError(f"Invalid integer in field {index}: {e}") from e
 
     @staticmethod
     def _safe_get_commit_hash(fields: list[str], index: int) -> str | None:
@@ -302,9 +298,7 @@ class GitStatusdProtocol:
             return None
 
         # Validate commit hash format (40 hex characters)
-        if len(value) != SHA_HEX_LEN or not all(
-            c in "0123456789abcdef" for c in value.lower()
-        ):
+        if len(value) != SHA_HEX_LEN or not all(c in "0123456789abcdef" for c in value.lower()):
             raise GitStatusdValidationError(f"Invalid commit hash format: {value}")
 
         return value
@@ -415,6 +409,7 @@ class GitstatusdListener:
         self.cached_working_status: tuple[list[str], list[str]] | None = None
         self.last_updated_at: datetime | None = None
         self._status_updating: bool = False
+        self.last_error: str | None = None
 
     async def start(self) -> None:
         if self.process and self.process.returncode is None:
@@ -425,6 +420,7 @@ class GitstatusdListener:
             if self.error_callback:
                 with contextlib.suppress(Exception):
                     self.error_callback(err or "gitstatusd_missing")
+            self.last_error = err or "gitstatusd_missing"
             return
         self.process = await asyncio.create_subprocess_exec(
             gitstatusd_path,
@@ -459,8 +455,8 @@ class GitstatusdListener:
         if not self.process or self.process.returncode is not None:
             await self.start()
         if not self.process or not self.process.stdin or not self.process.stdout:
-            self.cached_working_status = ([], [])
-            self.last_updated_at = datetime.now()
+            # Process isn't ready; surface as error and return without mutating cache
+            self.last_error = "gitstatusd process not ready"
             return
         if self._status_updating:
             return
@@ -485,6 +481,7 @@ class GitstatusdListener:
             )
             self.cached_working_status = (dirty_files, untracked_files)
             self.last_updated_at = datetime.now()
+            self.last_error = None
         except Exception:
             logger.exception(
                 "gitstatusd update failed for %s",
@@ -494,17 +491,17 @@ class GitstatusdListener:
             if self.error_callback:
                 with contextlib.suppress(Exception):
                     self.error_callback("update_failed")
-            # On failure, record a safe empty cache to avoid 'unknown' UI churn
-            self.cached_working_status = ([], [])
-            if not self.last_updated_at:
-                self.last_updated_at = datetime.now()
+            # Do not write an empty cache on failure; keep last known values so callers
+            # can detect lack of fresh data and surface an error instead of downgrading.
+            if self.last_error is None:
+                self.last_error = "gitstatusd update failed"
         finally:
             self._status_updating = False
 
     def get_cached_working_status(
         self,
-    ) -> tuple[int, int, datetime | None, bool]:
+    ) -> tuple[int, int, datetime | None, bool, str | None]:
         if self.cached_working_status and self.last_updated_at:
             df, uf = self.cached_working_status
-            return len(df), len(uf), self.last_updated_at, True
-        return 0, 0, None, False
+            return len(df), len(uf), self.last_updated_at, True, self.last_error
+        return 0, 0, None, False, self.last_error

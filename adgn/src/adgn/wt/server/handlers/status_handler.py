@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 import time
-import os
 
 from ...shared.configuration import Configuration
+from ...shared.env import is_test_mode
 from ...shared.protocol import (
     CommitInfo,
     ComponentsStatus,
@@ -97,19 +97,14 @@ async def get_status(
             single_time = (time.time() - single_start) * 1000
             state = GitstatusdState.STOPPED
             dirty_count, untracked_count = 0, 0
-            commit_info_data, ahead_behind, branch_name, worktree_last_error = (
-                _compute_status(worktree_path)
-            )
+            # Surface explicit error to avoid silent downgrade
+            commit_info_data, ahead_behind, branch_name, _ = _compute_status(worktree_path)
             last_updated_at = datetime.now()
             pr_info = PRInfoDisabled()
             is_cached = False
             cache_age_ms = None
             is_stale = False
-            commit_info = (
-                CommitInfo.model_validate(commit_info_data)
-                if commit_info_data
-                else None
-            )
+            commit_info = CommitInfo.model_validate(commit_info_data) if commit_info_data else None
             wtid = make_worktree_id(worktree_path.name)
             return (
                 wtid,
@@ -133,18 +128,16 @@ async def get_status(
                     pr_info=pr_info,
                     gitstatusd_state=state,
                     restarts=0,
-                    last_error=worktree_last_error,
+                    last_error="gitstatusd client unavailable",
                 ),
                 single_time,
             )
         try:
-            dirty_count, untracked_count, last_updated_at, have_cache = (
+            dirty_count, untracked_count, last_updated_at, have_cache, gs_last_error = (
                 gs_client.get_cached_working_status()
             )
             cache_age_ms = (
-                (time.time() - last_updated_at.timestamp()) * 1000
-                if last_updated_at
-                else None
+                (time.time() - last_updated_at.timestamp()) * 1000 if last_updated_at else None
             )
             if not have_cache:
                 task = asyncio.create_task(gs_client.update_working_status())
@@ -153,9 +146,12 @@ async def get_status(
             if last_updated_at is None:
                 last_updated_at = datetime.now()
                 cache_age_ms = None
-            commit_info_data, ahead_behind, branch_name, worktree_last_error = (
-                _compute_status(worktree_path)
+            commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_status(
+                worktree_path
             )
+            # Prefer gitstatusd-reported last_error if present
+            if gs_last_error:
+                worktree_last_error = gs_last_error
             wt_info = index.get_by_path(worktree_path)
             if wt_info:
                 wtid_cached = wt_info.wtid
@@ -169,39 +165,28 @@ async def get_status(
                 wtid_cached = svc_wtid or make_worktree_id(worktree_path.name)
             pr_info = prs.get_pr_info_cached(wtid_cached)
             # In WT_TEST_MODE, synchronously refresh once if PR cache not ready yet
-            if (
-                isinstance(pr_info, PRInfoDisabled)
-                and os.environ.get("WT_TEST_MODE") == "1"
-            ):
+            if isinstance(pr_info, PRInfoDisabled) and is_test_mode():
                 await prs.refresh_now(wtid_cached)
                 pr_info = prs.get_pr_info_cached(wtid_cached)
             prs.schedule_pr_refresh(wtid_cached, branch_name)
             is_cached = have_cache
             is_stale = bool(
-                cache_age_ms
-                and timedelta(milliseconds=cache_age_ms) > config.cache_refresh_age,
+                cache_age_ms and timedelta(milliseconds=cache_age_ms) > config.cache_refresh_age,
             )
-            state = (
-                GitstatusdState.RUNNING
-                if gs_client.is_running
-                else GitstatusdState.STOPPED
-            )
+            state = GitstatusdState.RUNNING if gs_client.is_running else GitstatusdState.STOPPED
         except TimeoutError:
             single_time = (time.time() - single_start) * 1000
             state = GitstatusdState.STARTING
             dirty_count, untracked_count = 0, 0
-            commit_info_data, ahead_behind, branch_name, worktree_last_error = (
-                _compute_status(worktree_path)
-            )
+            commit_info_data, ahead_behind, branch_name, _ = _compute_status(worktree_path)
             last_updated_at = datetime.now()
             pr_info = PRInfoDisabled()
             is_cached = False
             cache_age_ms = None
             is_stale = False
+            worktree_last_error = "gitstatusd timeout"
 
-        commit_info = (
-            CommitInfo.model_validate(commit_info_data) if commit_info_data else None
-        )
+        commit_info = CommitInfo.model_validate(commit_info_data) if commit_info_data else None
         wtid = make_worktree_id(worktree_path.name)
         single_time = (time.time() - single_start) * 1000
         return (
@@ -240,9 +225,7 @@ async def get_status(
         total_time += proc_ms
     total_wt = len(worktree_paths)
     with_git = sum(
-        1
-        for p in (gitstat.get_client(pth) for pth in worktree_paths)
-        if p and p.is_running
+        1 for p in (gitstat.get_client(pth) for pth in worktree_paths) if p and p.is_running
     )
     any_wt_error = any(item.status.last_error for item in items.values())
     github_state = ComponentState.DISABLED
@@ -265,11 +248,7 @@ async def get_status(
 
     components = ComponentsStatus(
         discovery=ComponentStatus(
-            state=(
-                ComponentState.SCANNING
-                if discovery.is_scanning()
-                else ComponentState.OK
-            ),
+            state=(ComponentState.SCANNING if discovery.is_scanning() else ComponentState.OK),
         ),
         github=ComponentStatus(state=github_state),
         gitstatusd=ComponentStatus(

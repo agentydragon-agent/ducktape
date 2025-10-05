@@ -1,39 +1,19 @@
 Seatbelt Exec MCP Server (macOS sandbox-exec)
 
 Overview
-- Location: src/adgn/llm/mcp/seatbelt_exec/server.py
+- Location: src/adgn/mcp/seatbelt_exec/server.py
 - Server name: seatbelt_exec
-- Purpose: execute processes under the macOS seatbelt (sandbox-exec) with a policy that is held in-memory for the lifetime of the MCP session.
-- Platform: execution is macOS-only (NOT_DARWIN error otherwise). Policy CRUD tools work cross‑platform.
+- Purpose: execute processes under the macOS seatbelt (sandbox-exec). The caller must supply the full sandbox policy on each exec call. No server-side policy storage.
+- Platform: execution is macOS-only (NOT_DARWIN error otherwise).
 
-Policies
-- Policies are not persisted (in-memory only)
-- Keyed by policy_id matching ^[A-Za-z0-9._-]{1,128}$
+Policy
 - Schema: SBPLPolicy from adgn.seatbelt.model (Pydantic), with validation and extra="forbid"
+- The policy is provided inline on each sandbox_exec call.
 
-Tools (FastMCP)
-1) list_policies
-   - Input: none (no parameters)
-   - Return: list[str] of policy IDs (sorted)
-
-2) get_policy
-   - Input: policy_id: str
-   - Return: SBPLPolicy (JSON shape of Pydantic model)
-   - Errors: ToolError(code="POLICY_NOT_FOUND")
-
-3) set_policy
-   - Input: policy_id: str, policy: SBPLPolicy
-   - Behavior: upsert in-memory
-   - Return: {}
-
-4) delete_policy
-   - Input: policy_id: str
-   - Return: {}
-   - Errors: ToolError(code="POLICY_NOT_FOUND")
-
-5) sandbox_exec
+Tool (FastMCP)
+1) sandbox_exec
    - Input fields:
-     - policy_id: str
+     - policy: SBPLPolicy (required)
      - argv: list[str] (required; no shell)
      - cwd: str | null (optional)
      - env: {str: str} | null (optional)
@@ -46,11 +26,9 @@ Tools (FastMCP)
      - stdout_text: str | null (utf‑8 decode with replacement)
      - stderr_text: str | null (utf‑8 decode with replacement)
      - trace_text: str | null (present iff trace==true and trace captured)
-     - unified_sandbox_denies_text: str | null (present when exit_code != 0; collected from macOS unified logs; may incur small cost)
+     - unified_sandbox_denies_text: str | null (disabled by default)
    - Errors:
      - NOT_DARWIN (macOS only)
-     - INVALID_ID, INVALID_ARGV (shape/validation errors)
-     - POLICY_NOT_FOUND
      - SANDBOX_EXEC_MISSING (sandbox-exec not available on PATH)
      - LAUNCH_ERROR (unexpected failure running the process)
 
@@ -65,7 +43,7 @@ from contextlib import AsyncExitStack
 import anyio
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.mcp.seatbelt_exec.server import make_seatbelt_exec_mcp
-from adgn.seatbelt.model import SBPLPolicy, ProcessRule, FileRule, PathFilter
+from adgn.seatbelt.model import SBPLPolicy, ProcessRule, FileRule, FileOp, Subpath, DefaultBehavior
 
 async def main():
     server = make_seatbelt_exec_mcp()
@@ -75,22 +53,20 @@ async def main():
         session = slot.session
 
         # Create a minimal restrictive policy (allow exec mapping + read)
-        pid = "restrictive"
         policy = SBPLPolicy(
-            default_behavior="deny",
+            default_behavior=DefaultBehavior.DENY,
             process=ProcessRule(allow_process_star=True, allow_signal_self=True),
             files=[
-                FileRule(op="file-map-executable", filters=[]),
-                FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value="/")]),
+                FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
+                FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
             ],
         )
-        await session.call_tool(name="set_policy", arguments={"policy_id": pid, "policy": policy.model_dump()})
 
         # Echo command under sandbox
         res = await session.call_tool(
             name="sandbox_exec",
             arguments={
-                "policy_id": pid,
+                "policy": policy.model_dump(),
                 "argv": ["/bin/echo", "HELLO"],
                 "timeout_secs": 5,
                 "trace": False,
@@ -102,12 +78,11 @@ async def main():
 anyio.run(main)
 
 Development and tests
-- Integration tests live at tests/llm/mcp/test_seatbelt_exec_inproc.py
+- Integration tests live at tests/mcp/test_seatbelt_exec_inproc.py
   - Echo happy path
   - Write denied under restrictive policy
   - Timeout behavior
   - CWD and env propagation
-  - Policy CRUD (list/get/set/delete)
 - The test suite uses @pytest.mark.requires_sandbox_exec, which implies macOS and checks availability of sandbox-exec on PATH.
 
 Internal impl tips

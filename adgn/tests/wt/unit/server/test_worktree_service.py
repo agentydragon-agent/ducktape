@@ -1,6 +1,5 @@
 """Integration tests for WorktreeService with real git repositories."""
 
-import asyncio
 from pathlib import Path
 
 import pytest
@@ -23,10 +22,7 @@ class TestWorktreeService:
         )
 
         service = (
-            service_builder(config)
-            .with_real_git()
-            .with_mock_github()
-            .build_worktree_service()
+            service_builder(config).with_real_git().with_mock_github().build_worktree_service()
         )
         return service, config
 
@@ -45,10 +41,7 @@ class TestWorktreeService:
         config = factory.minimal(**minimal_kwargs)
 
         service = (
-            service_builder(config)
-            .with_real_git()
-            .with_mock_github()
-            .build_worktree_service()
+            service_builder(config).with_real_git().with_mock_github().build_worktree_service()
         )
         return service, config
 
@@ -82,7 +75,8 @@ class TestWorktreeService:
         assert path == worktree_path
         assert exists is True
 
-    def test_worktree_removal(self, service):
+    @pytest.mark.asyncio
+    async def test_worktree_removal(self, service):
         """Test removing a worktree."""
         worktree_service, config = service
 
@@ -92,7 +86,7 @@ class TestWorktreeService:
 
         # Remove it (using async method)
 
-        asyncio.run(worktree_service.remove_worktree(config, "to-remove", force=True))
+        await worktree_service.remove_worktree(config, "to-remove", force=True)
 
         # Verify it's gone
         assert not worktree_path.exists()
@@ -126,7 +120,8 @@ class TestWorktreeService:
         inside_path = config.worktrees_dir / "valid-worktree"
         assert worktree_service._is_managed_worktree(inside_path, config)
 
-    def test_post_creation_script_execution(
+    @pytest.mark.asyncio
+    async def test_post_creation_script_execution(
         self,
         repo_factory,
         config_factory,
@@ -163,9 +158,7 @@ echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
 
         worktree_path = service.create_worktree(config, "script-test")
 
-        result = asyncio.run(
-            WorktreeService.run_post_creation_script(str(script_path), worktree_path),
-        )
+        result = await WorktreeService.run_post_creation_script(str(script_path), worktree_path)
         assert result["ran"] is True
         assert result["exit_code"] == 0
 

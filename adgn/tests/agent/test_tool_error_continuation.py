@@ -6,21 +6,20 @@ the agent continues with the next phase instead of aborting the entire turn.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
+from hamcrest import assert_that, contains_string
 from mcp.server.fastmcp import FastMCP
 import pytest
-from adgn.openai_utils.model import FakeOpenAIModel
 
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import BaseHandler
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.mcp_manager import McpManager
-
-
-from typing import Literal
+from adgn.agent.reducer import BaseHandler
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.openai_utils.model import FakeOpenAIModel
+from tests.agent.ws_helpers import assert_function_call_output_structured
 
 
 def _make_validation_server() -> FastMCP:
@@ -50,7 +49,8 @@ async def test_tool_error_continues_turn(
     5. Successfully complete
     """
     spec = make_inproc_slot_spec(_make_validation_server())
-    async with McpManager({"validator": spec}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("validator", spec)
 
         class _AutoHandler(BaseHandler):
             def on_before_sample(self):  # type: ignore[override]
@@ -97,15 +97,14 @@ async def test_tool_error_continues_turn(
     first_output = outputs[0]
     assert first_output["result"].get("isError") is True
     error_content = first_output["result"]["content"][0]["text"]
-    assert "error" in error_content.lower()
-    # Should mention the literal constraint
+    # Hamcrest contains-string checks for clarity
+    assert_that(error_content.lower(), contains_string("error"))
     assert "text/markdown" in error_content or "literal" in error_content.lower()
 
     # Second call should succeed
     second_output = outputs[1]
     assert second_output["result"].get("isError") is False
-    structured = second_output["result"].get("structuredContent", {})
-    assert structured.get("ok") is True
+    assert_function_call_output_structured([second_output], ok=True)
 
     # Final result should contain the success message
-    assert "Successfully sent message" in result.text
+    assert_that(result.text, contains_string("Successfully sent message"))

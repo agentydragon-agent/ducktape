@@ -3,16 +3,16 @@
 Refactored to use wt_cli fixture for invoking the CLI.
 """
 
+from datetime import timedelta
 from pathlib import Path
 import time
 
 import pytest
 
-from adgn.wt.shared.git_utils import git_run
 from adgn.wt.shared.configuration import Configuration
+from adgn.wt.shared.git_utils import git_run
 
 from ..test_data import WATCHER_DEBOUNCE_SECS
-from datetime import timedelta
 
 
 def _status(wt_cli) -> str:
@@ -121,9 +121,7 @@ def test_path_watcher_full_lifecycle(wt_cli):
     )
 
     # Verify worktree was removed from filesystem
-    assert not worktree_path.exists(), (
-        f"Worktree still exists after removal: {worktree_path}"
-    )
+    assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
 
     # Wait for watcher to drop the worktree from status
     wait_for_status_not_contains(wt_cli, "feature-test")

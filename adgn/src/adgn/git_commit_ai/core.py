@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
+from typing import cast
 
 import pygit2
-from typing import cast, Any
 
 # Shared constants used by backends and CLI
 MAX_PROMPT_CONTEXT_BYTES = 100 * 1024  # 100 KiB cap for AI context block
@@ -130,14 +130,24 @@ def _format_status_porcelain(repo: pygit2.Repository) -> str:
 
 
 def _log_subjects(repo: pygit2.Repository, n: int = 10) -> list[str]:
+    """Return up to n commit subjects following the first-parent chain.
+
+    This avoids SortMode typing mismatches across pygit2 versions while still
+    producing a sensible, linear history for commit-context prompts.
+    """
     head = repo.revparse_single("HEAD").peel(pygit2.Commit)
     out: list[str] = []
-    for i, commit in enumerate(repo.walk(head.id, cast(Any, pygit2.GIT_SORT_TIME))):
-        msg = commit.message or ""
+    cur = head
+    i = 0
+    while True:
+        msg = cur.message or ""
         subj = msg.splitlines()[0] if msg else ""
         out.append(subj)
-        if i + 1 >= n:
+        i += 1
+        if i >= n or not cur.parents:
             break
+        # Follow first-parent to keep a linear chain
+        cur = cur.parents[0]
     return out
 
 
@@ -146,43 +156,27 @@ def _build_ai_context(repo: pygit2.Repository, include_all: bool) -> str:
 
     parts.append("$ git status --porcelain\n")
     status_out = _format_status_porcelain(repo) + "\n"
-    _cap_append(
-        parts, status_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]"
-    )
+    _cap_append(parts, status_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
 
-    ns_header = (
-        "git diff HEAD --name-status"
-        if include_all
-        else "git diff --cached --name-status"
-    )
+    ns_header = "git diff HEAD --name-status" if include_all else "git diff --cached --name-status"
     parts.append(f"$ {ns_header}\n")
     ns_out = _format_name_status(repo, include_all) + "\n"
-    _cap_append(
-        parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]"
-    )
+    _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
 
     parts.append(
         f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %s\n",
     )
     log_out = "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n"
-    _cap_append(
-        parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]"
-    )
+    _cap_append(parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
 
-    diff_header = (
-        "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
-    )
+    diff_header = "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
     parts.append(f"$ {diff_header}\n")
     diff_out = _format_unified_diff(repo, include_all) + "\n"
-    _cap_append(
-        parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]"
-    )
+    _cap_append(parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
 
     out = "".join(parts)
     if _len_bytes(out) > MAX_PROMPT_CONTEXT_BYTES:
-        out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode(
-            "utf-8", errors="ignore"
-        )
+        out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode("utf-8", errors="ignore")
         out += "\n[Context truncated to 100 KiB]\n"
     return out
 

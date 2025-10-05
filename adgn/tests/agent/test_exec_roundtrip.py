@@ -1,27 +1,29 @@
 from __future__ import annotations
 
 import os
+
 import pytest
 
+from adgn.agent.agent import AgentResult, MiniCodex
+from adgn.agent.mcp_manager import McpManager, build_mcp_function
+from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.types import ExecInput, ExecResult
 from adgn.mcp.docker_exec.server import (
     SERVER_NAME as DOCKER_SERVER_NAME,
     TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
     make_container_exec_mcp,
 )
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.agent.agent import AgentResult, MiniCodex
-from adgn.agent.reducer import AutoHandler
-from adgn.agent.mcp_manager import McpManager, build_mcp_function
 from adgn.mcp.testing.typed_stubs import TypedClient
-from adgn.mcp._shared.types import ExecInput, ExecResult
 from adgn.openai_utils.client_factory import build_client
 
-ECHO_CMD = ["sh", "-lc", "printf hello"]
+# Use /bin/echo -n for portability and to avoid trailing newline
+ECHO_CMD = ["/bin/echo", "-n", "hello"]
 
 
-def _build_specs():
-    spec = make_inproc_slot_spec(
+def _make_docker_slot():
+    return make_inproc_slot_spec(
         make_container_exec_mcp(
             ContainerOptions(
                 image="python:3.12-slim",
@@ -29,9 +31,8 @@ def _build_specs():
                 volumes=None,
                 describe=True,
             )
-        ),
+        )
     )
-    return {"docker": spec}
 
 
 async def _assert_exec_echo(mcp: McpManager) -> None:
@@ -52,7 +53,8 @@ async def _assert_exec_echo(mcp: McpManager) -> None:
 @pytest.mark.requires_docker
 async def test_exec_roundtrip_echo() -> None:
     """Spin up real Docker container and roundtrip an echo via exec."""
-    async with McpManager(_build_specs()) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("docker", _make_docker_slot())
         await _assert_exec_echo(mcp)
 
 
@@ -65,7 +67,8 @@ async def test_exec_roundtrip_echo() -> None:
 async def test_live_llm_exec_echo() -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
 
-    async with McpManager(_build_specs()) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("docker", _make_docker_slot())
         model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
         client = build_client(model_name)
         agent = await MiniCodex.create(

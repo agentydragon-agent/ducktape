@@ -6,15 +6,9 @@ from typing import Any
 
 from mcp import types as mcp_types
 from mcp.server.fastmcp import FastMCP
-from adgn.openai_utils.model import (
-    FunctionCallItem,
-    FakeOpenAIModel,
-)
 import pytest
 
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.handler import (
     BaseHandler,
     BypassToolInjectOutput,
@@ -24,6 +18,12 @@ from adgn.agent.handler import (
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import AutoHandler
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.openai_utils.model import (
+    FakeOpenAIModel,
+    FunctionCallItem,
+)
 
 
 def _make_spy_server(counter: list[str]) -> FastMCP:
@@ -64,9 +64,7 @@ class SyntheticInvoker(AutoHandler):
         fc = FunctionCallItem(
             name="mcp__spy__tool1",
             call_id="client:replace-1",
-            arguments=json.dumps(
-                {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"}
-            ),
+            arguments=json.dumps({"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"}),
         )
         return Continue(Auto(), inserts_input=(fc,), skip_sampling=True)
 
@@ -94,7 +92,8 @@ async def test_synthetic_action_executes_tool_via_mcp(responses_factory):
     seq = [responses_factory.make_assistant_message("done")]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({"spy": spec}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("spy", spec)
         rec = RecordingHandler()
         inv = SyntheticInvoker()
 
@@ -111,9 +110,7 @@ async def test_synthetic_action_executes_tool_via_mcp(responses_factory):
         await asyncio.wait_for(agent.run("execute"), timeout=30)
 
         # The inproc spy tool should have been called once for tool1
-        assert any(item.startswith("tool1:") for item in counter), (
-            f"tool not invoked: {counter}"
-        )
+        assert any(item.startswith("tool1:") for item in counter), f"tool not invoked: {counter}"
 
 
 @pytest.mark.asyncio
@@ -131,7 +128,8 @@ async def test_bypass_inject_preempts_mcp_call(responses_factory):
         structuredContent={"ok": True, "injected": "yes"},
     )
 
-    async with McpManager({"spy": spec}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("spy", spec)
         rec = RecordingHandler()
         inv = SyntheticInvoker()
         inj = BypassInjector(result=injected_result)

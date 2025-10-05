@@ -1,77 +1,67 @@
-# OpenAI isolation layer refactor — status and next steps
+# OpenAI isolation layer refactor — updated followups
+
+This list reflects current gaps after recent refactors. Removed items were completed (client factory adoption, Path typing, typed clients across flows).
 
 ## Quality/consistency
 
-- OpenAI client lifecycle (partially complete)
-  - Status: Properties CLI and Typer app construct a single `RetryingOpenAIModel(OpenAIModel(AsyncOpenAI()))` and pass it down. LLM edit does the same per invocation.
-  - Outstanding Where: src/adgn/agent/cli.py, src/adgn/props/prompt_eval/server.py, src/adgn/props/cluster_unknowns.py
-  - Next: Provide a module-level factory for a single `AsyncOpenAI` per process and inject the typed client everywhere; remove ad-hoc `AsyncOpenAI()` constructions.
-  - Acceptance: All CLIs/services use a single constructed client per process; no direct `AsyncOpenAI()` in branches.
-
-- Responses adapter streaming support (deprioritized)
-  - Where: src/adgn/openai_utils/model.py (ResponsesRequest.stream flag not wired)
-  - Decision: Keep non-streaming path only; streaming not needed for current CLIs.
-  - If needed later: add typed streaming surface or an aggregator to `ResponsesResult`.
-
-- Path typing for --output-final-message
-  - Where: src/adgn/props/cli.py (argparse string passed where Path is expected)
-  - Next: Parse to `Path` at argparse boundary; plumb `Path` through; normalize writes.
-  - Acceptance: Type is `Path` end-to-end; smoke test where possible.
-
-## Lint-issue path
-
-- DONE: Issue model migration
-  - Status: Lint flow operates on `IssueCore` + selected `Occurrence`; no direct legacy `Issue` dependency in CLI path.
-
-- Client typing insulation
-  - Where: src/adgn/props/lint_issue.py (functions typed `client: AsyncOpenAI`)
-  - Next: Change signatures to accept `ResponsesClient` (our provider interface) and pass typed client; remove SDK type from annotation/imports.
+## Lint-issue path (next)
 
 - BIG_THRESHOLD configurability + tests
-  - Where: src/adgn/props/lint_issue.py
-  - Next: Add env/flag (e.g., `--max-bootstrap-bytes`); test big-file bootstrap behavior.
+  - Where: `src/adgn/props/lint_issue.py` (constant `BIG_THRESHOLD = 20480`)
+  - Action: expose as CLI option/env (e.g., `--max-bootstrap-bytes`) and add tests for big-file bootstrap behavior.
 
 - Specimen id handling consistency
-  - Where: src/adgn/props/lint_issue.py (uses `Path(specimen).name`)
-  - Next: Accept slug or manifest path/dir; resolve via a helper when a path is provided.
+  - Where: `src/adgn/props/lint_issue.py` uses `Path(specimen).name` in one path and slug elsewhere.
+  - Action: accept slug or manifest path/dir; resolve via a small helper to keep UX flexible and consistent.
 
-## Loop control / agent
+## Seatbelt/sandbox
 
-- DONE: RequireSpecific policy
-  - Where: src/adgn/agent/loop_control.py
-  - Status: Implemented; agent maps single-name RequireSpecific to Responses `tool_choice`.
-  - Optional next: Consider multi-name support or keep single-name constraint explicit.
+- Tracking moved to `adgn/docs/seatbelt/TODO.md` (living list).
+  - Action: keep sandboxer docs/presets pointing to that file; avoid duplicating SBPL details here.
 
-- Event renderer refactor (optional)
-  - Where: src/adgn/agent/event_renderer.py; src/adgn/llm/rendering/rich_renderers.py
-  - Next: Extract formatting/adapters; keep ConsoleEventRenderer thin.
+## INOP/Optimizer
 
-- In-proc transport config (future)
-  - Where: src/adgn/agent/mcp_manager.py
-  - Next: Support dotted-path factory in config if/when required.
-
-## Sandboxer
-
-- Seatbelt named params (revisit later)
-  - Where: src/adgn/llm/sandboxer.py:187, 200
-  - Next: Restore macOS sandbox-exec named params once parsing issues are resolved; add regression test.
-
-## INOP/Optimizer and logging wrapper
-
-- Unify logging model surface
-  - Where: src/adgn/inop/clients/logging_openai_client.py
-  - Next: Add a tiny adapter to satisfy `ResponsesClient` (wrapping `responses.create(**kwargs)`) or migrate INOP paths to the typed request/response layer.
+Follow-ups (polish):
+  - Ensure grading configs are validated early with clear messages (already raises if missing; consider friendlier CLI surfacing).
+  - Optional: add debug logging toggles surfaced through CLI to pass `enable_debug_logging=True`.
 
 ## Docs and polish
 
-- DONE: Swept stale `src/adgn_llm` references in docs/specimens; updated to current `src/adgn/...` layout.
-- Remove duplicate helpers (e.g., `_detect_tools`) if duplicated across CLIs.
+- Remove duplicate helpers if any remain (e.g., tool-detection helpers across CLIs).
+- Update any lingering references to legacy specimen loader paths; prefer `adgn/src/adgn/props/specimens/registry.py`.
+
+## Loop control / agent (backlog)
+
+- Optional event rendering polish: keep DisplayEventsHandler thin and extract formatting helpers as needed.
 
 ---
 
-### Suggested order of execution
-1) Client lifecycle: shared factory + signatures to `ResponsesClient`
-2) Path typing cleanup for `--output-final-message`
-3) Lint-issue: BIG_THRESHOLD config + specimen-id handling
-4) INOP logging adapter to `ResponsesClient`
-5) Optional renderer/transport polish as needed
+### Suggested order
+1) Lint-issue: BIG_THRESHOLD option + tests; specimen id resolver helper
+2) Docs: references and helper dedupe
+3) INOP polish: config validation messages and debug toggle
+
+## Properties Cleanup — tracking
+
+- Scoped try/except and no swallow
+  - Narrow broad `except Exception` in boundary code where feasible and ensure logging context.
+  - Notable hotspots: `openai_utils/http_logging.py` send/append paths; matrix client sync loop backoff; UI websocket sender loop error path.
+
+- Clear units and naming
+  - Review `deadline` vs `timeout` naming in async waits for consistency.
+
+- Barrel imports / public API surfaces
+  - If `src/adgn/tana/tana_lib/__init__.py` and `src/adgn/inop/grading/__init__.py` are truly public: add short docstring markers; else avoid barrels.
+
+- Tests: pytest fixtures
+  - Continue preferring `tmp_path` for script files in helpers.
+
+## MiniCodex UI — next steps (prioritized)
+
+1) Runs History tab (high): list runs, resume context
+2) Degraded state dot (high): indicate failing MCP servers
+3) WS reconnect/backoff (med)
+4) Non-destructive lifecycle controls (med)
+5) Chat virtualization (med)
+6) A11y polish (low)
+7) CI smoke via Playwright (low)

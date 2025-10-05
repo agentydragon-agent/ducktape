@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.seatbelt.model import FileRule, PathFilter, ProcessRule, SBPLPolicy
-from adgn.seatbelt.runner import run_sandboxed
+from adgn.seatbelt.model import (
+    DefaultBehavior,
+    FileOp,
+    FileRule,
+    LiteralFilter,
+    ProcessRule,
+    SBPLPolicy,
+    Subpath,
+)
+from adgn.seatbelt.runner import run_sandboxed_async
 
 
 @pytest.mark.macos
@@ -27,19 +35,19 @@ from adgn.seatbelt.runner import run_sandboxed
     [
         (
             "A_map_only",
-            lambda: [FileRule(op="file-map-executable", filters=[])],
+            lambda: [FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[])],
             {"exit": -6},  # SIGABRT on this host
         ),
         (
             "B_plus_metadata_root_and_parents",
             lambda: [
-                FileRule(op="file-map-executable", filters=[]),
+                FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
                 FileRule(
-                    op="file-read-metadata",
+                    op=FileOp.FILE_READ_METADATA,
                     filters=[
-                        PathFilter(kind="literal", value="/"),
-                        PathFilter(kind="subpath", value="/System/Library"),
-                        PathFilter(kind="subpath", value="/usr/lib"),
+                        LiteralFilter(literal="/"),
+                        Subpath(subpath="/System/Library"),
+                        Subpath(subpath="/usr/lib"),
                     ],
                 ),
             ],
@@ -48,31 +56,22 @@ from adgn.seatbelt.runner import run_sandboxed
         (
             "C_plus_dyld_cache_paths",
             lambda: [
-                FileRule(op="file-map-executable", filters=[]),
+                FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
                 FileRule(
-                    op="file-read-metadata",
+                    op=FileOp.FILE_READ_METADATA,
                     filters=[
-                        PathFilter(kind="literal", value="/"),
-                        PathFilter(kind="subpath", value="/System/Library"),
-                        PathFilter(kind="subpath", value="/usr/lib"),
+                        LiteralFilter(literal="/"),
+                        Subpath(subpath="/System/Library"),
+                        Subpath(subpath="/usr/lib"),
                     ],
                 ),
                 FileRule(
-                    op="file-read*",
+                    op=FileOp.FILE_READ_STAR,
                     filters=[
-                        PathFilter(kind="subpath", value="/System/Library/dyld"),
-                        PathFilter(
-                            kind="subpath",
-                            value="/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld",
-                        ),
-                        PathFilter(
-                            kind="subpath",
-                            value="/private/preboot/Cryptexes/OS/System/Library/dyld",
-                        ),
-                        PathFilter(
-                            kind="subpath",
-                            value="/System/Cryptexes/OS/System/Library/dyld",
-                        ),
+                        Subpath(subpath="/System/Library/dyld"),
+                        Subpath(subpath="/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld"),
+                        Subpath(subpath="/private/preboot/Cryptexes/OS/System/Library/dyld"),
+                        Subpath(subpath="/System/Cryptexes/OS/System/Library/dyld"),
                     ],
                 ),
             ],
@@ -81,77 +80,57 @@ from adgn.seatbelt.runner import run_sandboxed
         (
             "D_plus_read_usr_lib",
             lambda: [
-                FileRule(op="file-map-executable", filters=[]),
+                FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
                 FileRule(
-                    op="file-read-metadata",
+                    op=FileOp.FILE_READ_METADATA,
                     filters=[
-                        PathFilter(kind="literal", value="/"),
-                        PathFilter(kind="subpath", value="/System/Library"),
-                        PathFilter(kind="subpath", value="/usr/lib"),
+                        LiteralFilter(literal="/"),
+                        Subpath(subpath="/System/Library"),
+                        Subpath(subpath="/usr/lib"),
                     ],
                 ),
                 FileRule(
-                    op="file-read*",
-                    filters=[PathFilter(kind="subpath", value="/usr/lib")],
+                    op=FileOp.FILE_READ_STAR,
+                    filters=[Subpath(subpath="/usr/lib")],
                 ),
                 FileRule(
-                    op="file-read*",
+                    op=FileOp.FILE_READ_STAR,
                     filters=[
-                        PathFilter(kind="subpath", value="/System/Library/dyld"),
-                        PathFilter(
-                            kind="subpath",
-                            value="/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld",
-                        ),
-                        PathFilter(
-                            kind="subpath",
-                            value="/private/preboot/Cryptexes/OS/System/Library/dyld",
-                        ),
-                        PathFilter(
-                            kind="subpath",
-                            value="/System/Cryptexes/OS/System/Library/dyld",
-                        ),
+                        Subpath(subpath="/System/Library/dyld"),
+                        Subpath(subpath="/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld"),
+                        Subpath(subpath="/private/preboot/Cryptexes/OS/System/Library/dyld"),
+                        Subpath(subpath="/System/Cryptexes/OS/System/Library/dyld"),
                     ],
                 ),
             ],
-            {
-                "exit": "nonzero"
-            },  # expected still failing on this host, but record outcome
+            {"exit": "nonzero"},  # expected still failing on this host, but record outcome
         ),
         (
             "E_plus_read_System_Library",
             lambda: [
-                FileRule(op="file-map-executable", filters=[]),
+                FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
                 FileRule(
-                    op="file-read-metadata",
+                    op=FileOp.FILE_READ_METADATA,
                     filters=[
-                        PathFilter(kind="literal", value="/"),
-                        PathFilter(kind="subpath", value="/System/Library"),
-                        PathFilter(kind="subpath", value="/usr/lib"),
+                        LiteralFilter(literal="/"),
+                        Subpath(subpath="/System/Library"),
+                        Subpath(subpath="/usr/lib"),
                     ],
                 ),
                 FileRule(
-                    op="file-read*",
+                    op=FileOp.FILE_READ_STAR,
                     filters=[
-                        PathFilter(kind="subpath", value="/usr/lib"),
-                        PathFilter(kind="subpath", value="/System/Library"),
+                        Subpath(subpath="/usr/lib"),
+                        Subpath(subpath="/System/Library"),
                     ],
                 ),
                 FileRule(
-                    op="file-read*",
+                    op=FileOp.FILE_READ_STAR,
                     filters=[
-                        PathFilter(kind="subpath", value="/System/Library/dyld"),
-                        PathFilter(
-                            kind="subpath",
-                            value="/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld",
-                        ),
-                        PathFilter(
-                            kind="subpath",
-                            value="/private/preboot/Cryptexes/OS/System/Library/dyld",
-                        ),
-                        PathFilter(
-                            kind="subpath",
-                            value="/System/Cryptexes/OS/System/Library/dyld",
-                        ),
+                        Subpath(subpath="/System/Library/dyld"),
+                        Subpath(subpath="/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld"),
+                        Subpath(subpath="/private/preboot/Cryptexes/OS/System/Library/dyld"),
+                        Subpath(subpath="/System/Cryptexes/OS/System/Library/dyld"),
                     ],
                 ),
             ],
@@ -160,20 +139,20 @@ from adgn.seatbelt.runner import run_sandboxed
         (
             "F_plus_read_System",
             lambda: [
-                FileRule(op="file-map-executable", filters=[]),
+                FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
                 FileRule(
-                    op="file-read-metadata",
+                    op=FileOp.FILE_READ_METADATA,
                     filters=[
-                        PathFilter(kind="literal", value="/"),
-                        PathFilter(kind="subpath", value="/System/Library"),
-                        PathFilter(kind="subpath", value="/usr/lib"),
+                        LiteralFilter(literal="/"),
+                        Subpath(subpath="/System/Library"),
+                        Subpath(subpath="/usr/lib"),
                     ],
                 ),
                 FileRule(
-                    op="file-read*",
+                    op=FileOp.FILE_READ_STAR,
                     filters=[
-                        PathFilter(kind="subpath", value="/usr/lib"),
-                        PathFilter(kind="subpath", value="/System"),
+                        Subpath(subpath="/usr/lib"),
+                        Subpath(subpath="/System"),
                     ],
                 ),
             ],
@@ -181,13 +160,14 @@ from adgn.seatbelt.runner import run_sandboxed
         ),
     ],
 )
-def test_incremental_widening(label: str, add_rules, expect: dict):
+@pytest.mark.asyncio
+async def test_incremental_widening(label: str, add_rules, expect: dict):
     pol = SBPLPolicy(
-        default_behavior="deny",
+        default_behavior=DefaultBehavior.DENY,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
         files=add_rules(),
     )
-    res = run_sandboxed(pol, ["/bin/echo", "OK"], trace=True)
+    res = await run_sandboxed_async(pol, ["/bin/echo", "OK"], trace=True)
     print(
         f"{label}: exit={res.exit_code} stderr_len={len(res.stderr or b'')} trace_len={len(res.trace_text or '')}"
     )

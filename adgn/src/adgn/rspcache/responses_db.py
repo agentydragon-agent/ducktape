@@ -153,9 +153,7 @@ class ResponsesDB:
         assert self._conn is not None, "DB not initialized"
         summary_json = json.dumps(summary_obj or response_obj or {}, ensure_ascii=False)
         await self._conn.execute(
-            (
-                "UPDATE responses SET status = 'complete', response_summary_json = ? WHERE key = ?"
-            ),
+            ("UPDATE responses SET status = 'complete', response_summary_json = ? WHERE key = ?"),
             (summary_json, key),
         )
         # In case the row didn't exist (race), ensure it's present

@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 import yaml
 
-from adgn.openai_utils.model import ReasoningEffort
+from adgn.openai_utils.types import ReasoningEffort
 
 
 class RolloutConfig(BaseModel):
@@ -180,9 +180,7 @@ class OptimizerConfig(BaseModel):
         Raises:
             FileNotFoundError: If config file doesn't exist
         """
-        config_path = (
-            Path.cwd() / "config.yaml" if config_path is None else Path(config_path)
-        )
+        config_path = Path.cwd() / "config.yaml" if config_path is None else Path(config_path)
 
         if not config_path.exists():
             raise FileNotFoundError(

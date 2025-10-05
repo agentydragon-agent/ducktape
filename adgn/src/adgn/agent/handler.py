@@ -9,7 +9,7 @@ string derived from the concrete type.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, TypedDict, TypeAlias
+from typing import Any, Literal, TypeAlias, TypedDict
 
 from mcp import types as mcp_types
 from pydantic import BaseModel

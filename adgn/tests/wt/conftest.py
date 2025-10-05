@@ -1,45 +1,61 @@
 import contextlib
-from datetime import datetime, timedelta
+from datetime import timedelta
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import shlex
 import shutil
-import subprocess
-import tempfile
-import time
-from unittest.mock import Mock
-import json
 import socket
+import subprocess
+import time
+from typing import Mapping
+from unittest.mock import Mock
 import uuid
 
-from click.testing import CliRunner
 import pygit2
 import pytest
+from typer.testing import CliRunner
 import yaml
 
-from .mock_factory import ServiceBuilder
-from .test_data import TestData
 from adgn.wt.server import github_client
 from adgn.wt.server.git_manager import GitManager
 from adgn.wt.server.worktree_service import WorktreeService
 from adgn.wt.shared.config_file import ConfigFile
 from adgn.wt.shared.configuration import Configuration
-from adgn.wt.shared.models import CommitInfo
+from adgn.wt.shared.fixtures import PRFixtureEntry, write_pr_fixtures_file
+from adgn.wt.shared.protocol import (
+    DaemonHealth,
+    DaemonHealthStatus,
+    StatusItem,
+    StatusResponse,
+)
 from adgn.wt.shell import install
-from .test_utils import run_cli_command
 
 from .config_factory import ConfigFactory
-from .mock_factory import MockFactory
+from .mock_factory import MockFactory, ServiceBuilder
 from .repo_factory import GitRepoFactory
-from typing import Mapping
-from adgn.wt.shared.fixtures import PRFixtureEntry, write_pr_fixtures_file
+from .test_data import TestData
+from .test_utils import run_cli_command
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _project_root_on_pythonpath():
+    """Set a global test-mode env var for the WT suite without monkeypatch.
+
+    Session-scoped fixtures cannot depend on the function-scoped monkeypatch fixture.
+    Use direct os.environ mutation with a restore on teardown instead.
+    """
+    prev = os.environ.get("WT_TEST_MODE")
     os.environ["WT_TEST_MODE"] = "1"
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("WT_TEST_MODE", None)
+        else:
+            os.environ["WT_TEST_MODE"] = prev
 
 
 @pytest.fixture
@@ -50,9 +66,7 @@ def write_pr_fixtures():
         write_pr_fixtures(config, {"feature-x": PRFixtureEntry(number=123, ...)})
     """
 
-    def _write(
-        config: Configuration, mapping: Mapping[str, PRFixtureEntry | dict]
-    ) -> Path:
+    def _write(config: Configuration, mapping: Mapping[str, PRFixtureEntry | dict]) -> Path:
         return write_pr_fixtures_file(config, mapping)
 
     return _write
@@ -154,15 +168,39 @@ def temp_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def sample_commit_info():
-    """Sample CommitInfo for testing."""
+def wt_env(cli_test_env, monkeypatch):
+    """Set WT_DIR to the per-test cli_test_env path and return it.
 
-    return CommitInfo(
-        last_commit="abc123def456",
-        last_commit_message="Add new feature",
-        last_commit_author="Test Author",
-        last_commit_date=datetime(2024, 1, 15, 10, 30, 0),
-    )
+    Use in CLI tests to avoid repeating monkeypatch code.
+    """
+    monkeypatch.setenv("WT_DIR", str(cli_test_env))
+    return cli_test_env
+
+
+@pytest.fixture
+def build_status_response():
+    """Factory: build a StatusResponse from a mapping of results.
+
+    Usage:
+        status = build_status_response({id1: StatusResult(...), ...})
+        empty = build_status_response({})
+    """
+
+    def _build(results_dict: dict | None = None) -> StatusResponse:
+        results_dict = results_dict or {}
+        items = {
+            k: StatusItem(status=v, processing_time_ms=v.processing_time_ms)
+            for k, v in results_dict.items()
+        }
+        return StatusResponse(
+            items=items,
+            total_processing_time_ms=(
+                sum(it.processing_time_ms for it in items.values()) if items else 0.0
+            ),
+            daemon_health=DaemonHealth(status=DaemonHealthStatus.OK),
+        )
+
+    return _build
 
 
 @pytest.fixture
@@ -177,9 +215,7 @@ def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = No
     if expected_branch:
         repo = pygit2.Repository(str(worktree_path))
         head_ref = repo.head.shorthand
-        assert head_ref == expected_branch, (
-            f"Expected branch {expected_branch}, got {head_ref}"
-        )
+        assert head_ref == expected_branch, f"Expected branch {expected_branch}, got {head_ref}"
 
 
 def assert_worktree_not_exists(worktree_path: Path):
@@ -323,9 +359,7 @@ class WtCLI:
         timeout: timedelta = timedelta(seconds=30),
         cwd: Path | None = None,
     ):
-        return run_cli_command(
-            ["create", "--yes", cmd], env=self.env, timeout=timeout, cwd=cwd
-        )
+        return run_cli_command(["create", "--yes", cmd], env=self.env, timeout=timeout, cwd=cwd)
 
     def status(
         self,
@@ -470,7 +504,7 @@ def _apply_isolated_git_env(tmp_path: Path, monkeypatch):
 
 
 @pytest.fixture
-def shell_runner():
+def shell_runner(tmp_path: Path):
     """Factory for running shell commands via the installed wt shell function."""
 
     class ShellRunner:
@@ -500,18 +534,17 @@ def shell_runner():
 # Original script content
 {script_content}
 """
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as f:
-                f.write(full_script)
-                f.flush()
-                Path(f.name).chmod(0o755)
-                return subprocess.run(
-                    ["/bin/bash", f.name],
-                    capture_output=True,
-                    text=True,
-                    cwd=str(cwd),
-                    env=env,
-                    check=False,
-                )
+            script_path = tmp_path / f"script_{uuid.uuid4().hex}.sh"
+            script_path.write_text(full_script, encoding="utf-8")
+            script_path.chmod(0o755)
+            return subprocess.run(
+                ["/bin/bash", str(script_path)],
+                capture_output=True,
+                text=True,
+                cwd=str(cwd),
+                env=env,
+                check=False,
+            )
 
         def run_argv(
             self,

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.agent.ui.shared_bus import UiMessage, UiEndTurn, UiBus, MimeType
+from adgn.agent.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
+
 # UI MCP server: lightweight tools to instruct the HTML UI rendering layer.
 # Tools are declarative; the agent can call them to emit UI messages and to
 # explicitly end a turn (as a bus message).
@@ -36,7 +36,7 @@ class EndTurnInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def make_ui_mcp(name: str, bus: UiBus) -> SafeFastMCP:
+def make_ui_mcp(name: str, bus: ServerBus) -> SafeFastMCP:
     mcp = SafeFastMCP(
         name,
         instructions=(
@@ -70,6 +70,5 @@ def make_ui_mcp(name: str, bus: UiBus) -> SafeFastMCP:
         bus.push_end_turn()
         return UiEndTurn()
 
-    # Expose the bus for wiring (agent factory can stash it)
-    setattr(mcp, "_ui_bus", bus)
+    # Return the server; callers keep their own reference to the bus.
     return mcp

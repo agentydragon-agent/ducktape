@@ -1,7 +1,6 @@
-exclude: ".*/testdata/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$"  # Cronomix overwrites these JSON files
-
+exclude: ".*/testdata/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$"
 repos:
-  - repo: git@github.com:pre-commit/pre-commit-hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       # Safety guard: block pushes to protected branches.
@@ -30,7 +29,7 @@ repos:
       # - check-shebang-scripts-are-executable
 
   # Ruff = linter + import sorter + formatter
-  - repo: git@github.com:astral-sh/ruff-pre-commit
+  - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.10
     hooks:
       - id: ruff-check
@@ -43,8 +42,8 @@ repos:
 
 
   # Static type checking
-  - repo: git@github.com:pre-commit/mirrors-mypy
-    rev: v1.10.0
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
     hooks:
       - id: mypy
         name: mypy (generic)
@@ -78,17 +77,35 @@ repos:
           - types-docker
 
   # Buildifier for Bazel files
-  - repo: git@github.com:keith/pre-commit-buildifier
+  - repo: https://github.com/keith/pre-commit-buildifier
     rev: 6.4.0
     hooks:
       - id: buildifier
       - id: buildifier-lint
 
   # Jsonnet formatter for specimen .libsonnet files (adgn_llm)
-  # - repo: git@github.com:serokell/jsonnet-pre-commit
+  # - repo: https://github.com/serokell/jsonnet-pre-commit
   #   rev: v0.2.0
   #   hooks:
   #     - id: jsonnetfmt
   #       name: jsonnetfmt (format adgn_llm specimen .libsonnet files)
   #       files: "^llm/adgn_llm/src/adgn_llm/properties/specimens/.*\\.libsonnet$"
   #       args: ["-i"]
+
+  # TODO: Svelte UI typecheck (MiniCodex UI)
+  #- repo: local
+  #  hooks:
+  #    - id: svelte-check
+  #      name: svelte-check (UI)
+  #      language: node
+  #      entry: svelte-check --tsconfig adgn/src/adgn/agent/ui/web/tsconfig.app.json
+  #      files: ^adgn/src/adgn/agent/ui/web/
+  #      pass_filenames: false
+  #      additional_dependencies:
+  #        - svelte@^5.38.1
+  #        - svelte-check@^4.3.1
+  #        - typescript@~5.8.3
+  #        - tsconfig/svelte@^5.0.4
+  #        - dompurify@^3.0.9
+  #        - json-formatter-js@^2.5.1
+  #        - marked@^12.0.2

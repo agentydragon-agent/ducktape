@@ -78,10 +78,7 @@ class WorkspaceFileProvider:
 
             for filename in filenames:
                 # Skip certain file extensions
-                if any(
-                    filename.endswith(ext)
-                    for ext in FileCollectionConfig.SKIP_EXTENSIONS
-                ):
+                if any(filename.endswith(ext) for ext in FileCollectionConfig.SKIP_EXTENSIONS):
                     continue
 
                 filepath = Path(root) / filename
@@ -135,9 +132,7 @@ class DockerFileProvider:
                 return False
 
         # Skip files with excluded extensions
-        return not any(
-            path.endswith(ext) for ext in FileCollectionConfig.SKIP_EXTENSIONS
-        )
+        return not any(path.endswith(ext) for ext in FileCollectionConfig.SKIP_EXTENSIONS)
 
 
 class FileCollector:

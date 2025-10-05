@@ -7,21 +7,22 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from hamcrest import assert_that, has_item
-from adgn.openai_utils.model import (
-    OpenAIModelProto,
-    ResponsesRequest,
-    FunctionCallItem,
-    UserMessage,
-    ToolChoiceFunction,
-)
 from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 from rich.table import Table
 
 from adgn.agent.agent_progress import OneLineProgressHandler
-from adgn.props.models.issue import IssueCore, IssueId, LineRange, Occurrence
-from adgn.props.models.lint import PropertyIncorrectlyAssigned
 from adgn.llm.rendering.rich_renderers import render_to_rich
+from adgn.openai_utils.model import (
+    FunctionCallItem,
+    FunctionToolParam,
+    OpenAIModelProto,
+    ResponsesRequest,
+    ToolChoiceFunction,
+    UserMessage,
+)
+from adgn.props.models.issue import IssueCore, IssueId, LineRange, Occurrence
+from adgn.props.models.lint import AnchorIncorrect, PropertyIncorrectlyAssigned
 
 from .lint_issue import lint_issue_run
 
@@ -181,14 +182,13 @@ async def _grade_rationale_with_llm(
     """Force a tool call that returns verdict: YES | PARTIALLY | NO, with reason."""
     if not proposed or not proposed.strip():
         return {"verdict": "NO", "reason": "No suggested rationale provided by linter."}
-    tools: list[dict[str, Any]] = [
-        {
-            "type": "function",
-            "name": "grade_rationale",
-            "description": "Return verdict and brief reason.",
-            "parameters": GradeRationaleArgs.model_json_schema(),
-            "strict": True,
-        },
+    tools: list[FunctionToolParam] = [
+        FunctionToolParam(
+            name="grade_rationale",
+            description="Return verdict and brief reason.",
+            parameters=GradeRationaleArgs.model_json_schema(),
+            strict=True,
+        )
     ]
     prompt = (
         "Original issue description:\n"
@@ -201,7 +201,7 @@ async def _grade_rationale_with_llm(
     )
     req = ResponsesRequest(
         input=[UserMessage.text(prompt)],
-        tools=tools,  # passthrough dicts are accepted
+        tools=tools,
         tool_choice=ToolChoiceFunction(name="grade_rationale"),
     )
     resp = await client.responses_create(req)
@@ -274,9 +274,7 @@ async def eval_issue_spec(
     base = (
         Path(out_dir)
         if out_dir is not None
-        else (
-            Path.cwd() / "runs" / "evals" / f"{spec.specimen}_{effective_issue.id}_{ts}"
-        )
+        else (Path.cwd() / "runs" / "evals" / f"{spec.specimen}_{effective_issue.id}_{ts}")
     )
     base.mkdir(parents=True, exist_ok=True)
 
@@ -322,10 +320,6 @@ async def eval_issue_spec(
         # Effective ranges: derive corrections from AnchorIncorrect findings when present
         corrections: dict[str, list[LineRange]] = {}
         if payload.findings:
-            from adgn.props.models.lint import (
-                AnchorIncorrect,
-            )  # local import to avoid cycles
-
             for fr in payload.findings:
                 f = fr.finding
                 if isinstance(f, AnchorIncorrect):
@@ -345,11 +339,7 @@ async def eval_issue_spec(
             if isinstance(exp, AnchorExpectation):
                 smin, smax = exp.start_window
                 emin, emax = exp.end_window
-                ok = (
-                    (eend is not None)
-                    and (smin <= estart <= smax)
-                    and (emin <= eend <= emax)
-                )
+                ok = (eend is not None) and (smin <= estart <= smax) and (emin <= eend <= emax)
                 exp_results.append(
                     {
                         "kind": "anchor",
@@ -666,20 +656,14 @@ async def run_all_evals(
 ) -> EvalIndex:
     """Run all samples concurrently (bounded), print a Rich summary, and return EvalIndex."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = (
-        Path(root_out)
-        if root_out is not None
-        else (Path.cwd() / "runs" / "evals" / f"all_{ts}")
-    )
+    root = Path(root_out) if root_out is not None else (Path.cwd() / "runs" / "evals" / f"all_{ts}")
     root.mkdir(parents=True, exist_ok=True)
 
     sem = asyncio.Semaphore(max(1, concurrency))
 
     async def _run_one(sample: IssueEvalSpec) -> SampleIndexEntry:
         async with sem:
-            effective_id = (
-                f"{id_prefix}{sample.issue.id}" if id_prefix else sample.issue.id
-            )
+            effective_id = f"{id_prefix}{sample.issue.id}" if id_prefix else sample.issue.id
             out_dir = root / effective_id
             summary = await eval_issue_spec(
                 spec=sample,

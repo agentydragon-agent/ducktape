@@ -1,0 +1,157 @@
+# Gitea Helm Chart Configuration
+# https://gitea.com/gitea/helm-chart
+
+replicaCount: 1
+
+image:
+  repository: gitea/gitea
+  registry: docker.io  # Use Docker Hub instead of docker.gitea.com
+  tag: 1.22.3  # Stable version available on Docker Hub
+  pullPolicy: IfNotPresent
+  rootless: false  # Use regular image, not rootless
+
+service:
+  http:
+    type: ClusterIP
+    port: 3000
+  ssh:
+    type: LoadBalancer  # Or NodePort if you prefer
+    port: 22
+    # If using NodePort:
+    # nodePort: 30022
+
+ingress:
+  enabled: true
+  className: nginx  # Adjust if using different ingress controller
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # For Authentik forward auth (optional initial setup)
+    # nginx.ingress.kubernetes.io/auth-url: "https://auth.k3s.agentydragon.com/outpost.goauthentik.io/auth/nginx"
+    # nginx.ingress.kubernetes.io/auth-signin: "https://auth.k3s.agentydragon.com/outpost.goauthentik.io/start?rd=$escaped_request_uri"
+  hosts:
+    - host: git.k3s.agentydragon.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: gitea-tls
+      hosts:
+        - git.k3s.agentydragon.com
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: ""  # Use default storage class
+  accessModes:
+    - ReadWriteOnce
+
+gitea:
+  admin:
+    username: agentydragon
+    email: agentydragon@gmail.com
+    # Password will be auto-generated, retrieve with:
+    # kubectl get secret gitea-admin-secret -n gitea -o jsonpath='{.data.password}' | base64 -d
+
+  config:
+    APP_NAME: "agentydragon Gitea"
+
+    server:
+      DOMAIN: git.k3s.agentydragon.com
+      ROOT_URL: https://git.k3s.agentydragon.com/
+      SSH_DOMAIN: git.k3s.agentydragon.com
+      SSH_PORT: 22
+      LANDING_PAGE: login  # Go straight to login
+
+    service:
+      DISABLE_REGISTRATION: true  # Private instance
+      REQUIRE_SIGNIN_VIEW: true   # Require login to view
+      DEFAULT_PRIVATE: true        # Repos private by default
+
+    database:
+      DB_TYPE: sqlite3  # Simple for small instance
+      # Or use PostgreSQL:
+      # DB_TYPE: postgres
+      # HOST: gitea-postgresql:5432
+
+    security:
+      INSTALL_LOCK: true
+      SECRET_KEY: # Will be auto-generated
+
+    # OAuth2 and OpenID for Authentik integration
+    oauth2:
+      ENABLE: true
+
+    openid:
+      ENABLE_OPENID_SIGNIN: true
+      ENABLE_OPENID_SIGNUP: true  # Allow signup but control in Authentik
+      WHITELISTED_URIS: "auth.k3s.agentydragon.com"
+
+    repository:
+      DEFAULT_PRIVATE: last  # Use last setting
+      ENABLE_PUSH_CREATE_USER: true
+      ENABLE_PUSH_CREATE_ORG: true
+
+    indexer:
+      REPO_INDEXER_ENABLED: true  # Enable code search
+
+    cache:
+      ADAPTER: memory  # Simple for small instance
+
+    session:
+      PROVIDER: memory  # Or use redis for production
+
+    queue:
+      TYPE: level  # Simple embedded queue
+
+    log:
+      LEVEL: Info
+      MODE: console
+
+# PostgreSQL sub-chart (optional, only if not using SQLite)
+postgresql:
+  enabled: false
+  # If enabling PostgreSQL:
+  # enabled: true
+  # auth:
+  #   database: gitea
+  #   username: gitea
+  #   password: gitea-password  # Change in production
+  # persistence:
+  #   size: 8Gi
+
+# Redis sub-chart (optional, for better performance)
+redis:
+  enabled: false
+  # If enabling Redis:
+  # enabled: true
+  # auth:
+  #   enabled: false  # Or set password
+
+# Disable Valkey cluster (new Redis replacement) - Gitea works fine without it
+valkey-cluster:
+  enabled: false
+
+valkey:
+  enabled: false
+
+# Disable PostgreSQL HA - using SQLite for simplicity
+postgresql-ha:
+  enabled: false
+
+resources:
+  limits:
+    memory: 512Mi
+    cpu: 500m
+  requests:
+    memory: 256Mi
+    cpu: 100m
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Gitea metrics for Prometheus (optional)
+metrics:
+  enabled: false
+  serviceMonitor:
+    enabled: false

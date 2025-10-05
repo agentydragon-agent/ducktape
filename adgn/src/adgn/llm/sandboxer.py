@@ -13,12 +13,16 @@ import yaml
 
 from adgn.seatbelt.compile import compile_sbpl
 from adgn.seatbelt.model import (
+    DefaultBehavior,
+    FileOp,
     FileRule,
+    LiteralFilter,
     MachLookupRule,
+    NetworkOp,
     NetworkRule,
-    PathFilter,
     ProcessRule,
     SBPLPolicy,
+    Subpath,
     SystemRule,
     TraceConfig,
 )
@@ -118,11 +122,18 @@ def _abs(p: str | Path) -> Path:
 def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
     """Translate sandboxer.Policy -> SBPLPolicy and compile to SBPL text."""
     sp = SBPLPolicy(
-        default_behavior="deny",
-        process=ProcessRule(allow_process_star=True, allow_signal_self=True),
+        default_behavior=DefaultBehavior.DENY,
+        process=ProcessRule(
+            allow_process_star=True,
+            allow_signal_self=True,
+            allow_process_exec=True,  # allow exec of binaries under allowed FS roots
+            allow_process_fork=True,  # allow fork for pipelines/shell
+            allow_process_info_same_sandbox=True,  # allow process-info* for same sandbox
+        ),
         system=SystemRule(
             system_socket=bool(policy.platform.seatbelt.extra_allow.system_socket),
             sysctl_read=bool(policy.platform.seatbelt.extra_allow.sysctl_read),
+            user_preference_read=True,
         ),
         mach=MachLookupRule(
             global_names=list(policy.platform.seatbelt.extra_allow.mach_lookup or [])
@@ -136,28 +147,18 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
     dev_read_literals = ["/dev/null", "/dev/urandom", "/dev/random"]
     sp.files.append(
         FileRule(
-            op="file-read*",
-            filters=[PathFilter(kind="literal", value=p) for p in dev_read_literals],
+            op=FileOp.FILE_READ_STAR,
+            filters=[LiteralFilter(literal=p) for p in dev_read_literals],
         )
     )
     sp.files.append(
-        FileRule(
-            op="file-write*", filters=[PathFilter(kind="literal", value="/dev/null")]
-        )
+        FileRule(op=FileOp.FILE_WRITE_STAR, filters=[LiteralFilter(literal="/dev/null")])
     )
-    sp.files.append(
-        FileRule(
-            op="file-read*", filters=[PathFilter(kind="subpath", value="/dev/tty")]
-        )
-    )
-    sp.files.append(
-        FileRule(
-            op="file-write*", filters=[PathFilter(kind="subpath", value="/dev/tty")]
-        )
-    )
+    sp.files.append(FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/dev/tty")]))
+    sp.files.append(FileRule(op=FileOp.FILE_WRITE_STAR, filters=[Subpath(subpath="/dev/tty")]))
 
     # Exec mapping and dyld/system roots
-    sp.files.append(FileRule(op="file-map-executable", filters=[]))
+    sp.files.append(FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]))
     for root in (
         "/System",
         "/usr/lib",
@@ -166,16 +167,14 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
         "/System/Cryptexes",
         "/System/Volumes/Preboot/Cryptexes",
     ):
-        sp.files.append(
-            FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value=root)])
-        )
+        sp.files.append(FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath=root)]))
 
     # Extra file read allowances from platform extras
     for extra_path in policy.platform.seatbelt.extra_allow.file_read_extra or []:
         sp.files.append(
             FileRule(
-                op="file-read*",
-                filters=[PathFilter(kind="subpath", value=_abs(extra_path).as_posix())],
+                op=FileOp.FILE_READ_STAR,
+                filters=[Subpath(subpath=_abs(extra_path).as_posix())],
             )
         )
 
@@ -213,19 +212,15 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
     if write_dirs:
         sp.files.append(
             FileRule(
-                op="file-write*",
-                filters=[
-                    PathFilter(kind="subpath", value=p.as_posix()) for p in write_dirs
-                ],
+                op=FileOp.FILE_WRITE_STAR,
+                filters=[Subpath(subpath=p.as_posix()) for p in write_dirs],
             )
         )
     if read_dirs:
         sp.files.append(
             FileRule(
-                op="file-read*",
-                filters=[
-                    PathFilter(kind="subpath", value=p.as_posix()) for p in read_dirs
-                ],
+                op=FileOp.FILE_READ_STAR,
+                filters=[Subpath(subpath=p.as_posix()) for p in read_dirs],
             )
         )
 
@@ -249,9 +244,9 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
     if meta_parents:
         sp.files.append(
             FileRule(
-                op="file-read-metadata",
+                op=FileOp.FILE_READ_METADATA,
                 filters=[
-                    PathFilter(kind="literal", value=p.as_posix())
+                    LiteralFilter(literal=p.as_posix())
                     for p in sorted(meta_parents, key=lambda q: q.as_posix())
                 ],
             )
@@ -262,17 +257,17 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
     if mode == "open":
         sp.network.extend(
             [
-                NetworkRule(op="network-inbound"),
-                NetworkRule(op="network-outbound"),
-                NetworkRule(op="network-bind"),
+                NetworkRule(op=NetworkOp.NETWORK_INBOUND),
+                NetworkRule(op=NetworkOp.NETWORK_OUTBOUND),
+                NetworkRule(op=NetworkOp.NETWORK_BIND),
             ]
         )
     elif mode == "loopback":
         sp.network.extend(
             [
-                NetworkRule(op="network-inbound", local_only=True),
-                NetworkRule(op="network-outbound", local_only=True),
-                NetworkRule(op="network-bind", local_only=True),
+                NetworkRule(op=NetworkOp.NETWORK_INBOUND, local_only=True),
+                NetworkRule(op=NetworkOp.NETWORK_OUTBOUND, local_only=True),
+                NetworkRule(op=NetworkOp.NETWORK_BIND, local_only=True),
             ]
         )
     # mode == "none": no network rules

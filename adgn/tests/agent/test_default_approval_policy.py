@@ -2,7 +2,7 @@
 
 import pytest
 
-from adgn.agent.approvals import ApprovalPolicyEngine, ApprovalContext
+from adgn.agent.approvals import ApprovalContext, ApprovalPolicyEngine
 
 
 class TestDefaultApprovalPolicy:
@@ -22,9 +22,7 @@ class TestDefaultApprovalPolicy:
 
         for ctx in ui_tools:
             result = engine.decide(ctx)
-            assert result == "allow", (
-                f"UI tool {ctx.server}.{ctx.tool} should be allowed"
-            )
+            assert result == "allow", f"UI tool {ctx.server}.{ctx.tool} should be allowed"
 
     def test_approval_policy_tools_allowed(self, engine):
         """Approval policy management tools should always be allowed."""
@@ -36,9 +34,7 @@ class TestDefaultApprovalPolicy:
 
         for ctx in policy_tools:
             result = engine.decide(ctx)
-            assert result == "allow", (
-                f"Policy tool {ctx.server}.{ctx.tool} should be allowed"
-            )
+            assert result == "allow", f"Policy tool {ctx.server}.{ctx.tool} should be allowed"
 
     def test_resource_operations_allowed(self, engine):
         """All resource operations should be allowed."""
@@ -58,9 +54,7 @@ class TestDefaultApprovalPolicy:
         """Any operation on approval_policy server should be allowed."""
         approval_server_ops = [
             ApprovalContext(server="approval_policy", tool="custom_tool", arguments={}),
-            ApprovalContext(
-                server="approval_policy", tool="some_future_tool", arguments={}
-            ),
+            ApprovalContext(server="approval_policy", tool="some_future_tool", arguments={}),
         ]
 
         for ctx in approval_server_ops:
@@ -80,9 +74,7 @@ class TestDefaultApprovalPolicy:
 
         for ctx in other_tools:
             result = engine.decide(ctx)
-            assert result == "ask", (
-                f"Other tool {ctx.server}.{ctx.tool} should require approval"
-            )
+            assert result == "ask", f"Other tool {ctx.server}.{ctx.tool} should require approval"
 
     def test_missing_keys_handled_gracefully(self, engine):
         """Policy should handle missing context keys gracefully."""
@@ -96,9 +88,17 @@ class TestDefaultApprovalPolicy:
         assert initial_version == 1, "Initial version should be 1"
 
         # Update policy
-        new_policy = """def decide(ctx):
-    return "allow"
+        imports = "from adgn.agent.approvals import PolicyDecision, WellKnownServers, WellKnownTools, ApprovalContext\n"
+        new_policy = (
+            imports
+            + """
+TEST_CASES = [
+  (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW),
+]
+def decide(ctx):
+    return (PolicyDecision.ALLOW, 'ok')
 """
+        )
         new_version = engine.set_policy(new_policy)
 
         assert new_version == initial_version + 1, "Version should increment"
@@ -107,62 +107,106 @@ class TestDefaultApprovalPolicy:
     def test_custom_policy_overrides_default(self, engine):
         """Custom policy should override default behavior."""
         # Set a custom policy that allows everything
-        allow_all_policy = """def decide(ctx):
-    return "allow"
+        imports = "from adgn.agent.approvals import PolicyDecision, WellKnownServers, WellKnownTools, ApprovalContext\n"
+        allow_all_policy = (
+            imports
+            + """
+TEST_CASES = [
+  (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW),
+]
+def decide(ctx):
+    return (PolicyDecision.ALLOW, 'ok')
 """
+        )
         engine.set_policy(allow_all_policy)
 
         # Now even non-allowed tools should be allowed
-        result = engine.decide(
-            ApprovalContext(server="echo", tool="echo", arguments={})
-        )
+        result = engine.decide(ApprovalContext(server="echo", tool="echo", arguments={}))
         assert result == "allow", "Custom policy should override default"
 
     @pytest.mark.parametrize(
-        "decision", ["allow", "ask", "deny_continue", "deny_abort"]
+        "decision",
+        [
+            "PolicyDecision.ALLOW",
+            "PolicyDecision.ASK",
+            "PolicyDecision.DENY_CONTINUE",
+            "PolicyDecision.DENY_ABORT",
+        ],
     )
     def test_valid_decision_values(self, engine, decision):
         """Policy should accept all valid decision values."""
-        custom_policy = f'''def decide(ctx):
-    return "{decision}"
-'''
+        imports = "from adgn.agent.approvals import PolicyDecision, WellKnownServers, WellKnownTools, ApprovalContext\n"
+        custom_policy = imports + (
+            """
+TEST_CASES = [
+  (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), %s),
+]
+def decide(ctx):
+    return (%s, 'ok')
+"""
+            % (decision, decision)
+        )
         engine.set_policy(custom_policy)
 
-        result = engine.decide(
-            ApprovalContext(server="test", tool="tool", arguments={})
-        )
-        assert result == decision, f"Policy should return {decision}"
+        result = engine.decide(ApprovalContext(server="test", tool="tool", arguments={}))
+        expected = decision.split(".")[-1].lower()
+        assert result == expected, f"Policy should return {expected}"
 
     def test_invalid_policy_syntax_raises_exception(self, engine):
         """Invalid policy syntax should raise an exception."""
         # Use actual syntax error
         invalid_policy = """def decide(ctx):
     if True
-        return "allow"  # Missing colon after if
+        return PolicyDecision.ALLOW  # Missing colon after if
 """
         with pytest.raises(Exception):
             engine.set_policy(invalid_policy)
 
     def test_policy_function_receives_context(self, engine):
         """Policy function should receive the full context."""
-        context_checking_policy = """def decide(ctx):
+        imports = "from adgn.agent.approvals import PolicyDecision, WellKnownServers, WellKnownTools, ApprovalContext\n"
+        context_checking_policy = (
+            imports
+            + """
+TEST_CASES = [
+  (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW),
+]
+def decide(ctx):
     # Verify we get the expected context structure without relying on builtins
     try:
         _ = ctx.server
         _ = ctx.tool
         _ = ctx.arguments
-        return "allow"
+        return (PolicyDecision.ALLOW, 'ok')
     except Exception:
-        return "deny_abort"
+        return (PolicyDecision.DENY_ABORT, 'error')
 """
+        )
         engine.set_policy(context_checking_policy)
 
-        full_context = ApprovalContext(
-            server="test", tool="tool", arguments={"param": "value"}
-        )
+        full_context = ApprovalContext(server="test", tool="tool", arguments={"param": "value"})
 
         result = engine.decide(full_context)
         assert result == "allow", "Policy should receive complete context"
+
+    def test_policy_top_level_constants_available(self, engine):
+        """Policy should be able to reference its own top-level constants."""
+        imports = "from adgn.agent.approvals import PolicyDecision, WellKnownServers, WellKnownTools, ApprovalContext\n"
+        policy = (
+            imports
+            + """
+FOO = 123
+TEST_CASES = [
+  (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW),
+]
+def decide(ctx):
+    # Reference FOO defined at top-level
+    return (PolicyDecision.ALLOW, 'ok') if FOO == 123 else (PolicyDecision.DENY_ABORT, 'no')
+"""
+        )
+        engine.set_policy(policy)
+        result = engine.decide(ApprovalContext(server="x", tool="y", arguments={}))
+        assert result == "allow"
 
 
 if __name__ == "__main__":

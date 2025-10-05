@@ -7,7 +7,7 @@ import inspect
 import logging
 from pathlib import Path
 import shutil
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import psutil
 import pygit2
@@ -67,9 +67,7 @@ class WorktreeService:
             return False
 
         # Filter out hidden worktrees using configurable patterns
-        return not any(
-            path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns
-        )
+        return not any(path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns)
 
     def _require_post_creation_script_valid(self, config: "Configuration") -> None:
         if config.post_creation_script:
@@ -127,10 +125,10 @@ class WorktreeService:
                     )
                     repo: Any = pygit2.Repository(str(worktree_path))
                     repo.set_head(f"refs/heads/{branch_name}")
-                    repo.checkout_head(strategy=cast(Any, pygit2).GIT_CHECKOUT_FORCE)
+                    repo.checkout_head(strategy=pygit2.GIT_CHECKOUT_FORCE)
             else:
                 logger.info("Not hydrating worktree.")
-            return cast(Path, worktree_path)
+            return worktree_path
 
     def get_worktree_path(self, config: "Configuration", name: str) -> Path:
         """Get path for a worktree by name."""
@@ -166,9 +164,7 @@ class WorktreeService:
     async def run_post_creation_script(
         script_path: str,
         worktree_path: Path,
-        sink: (
-            Callable[[str, str], Awaitable[None]] | Callable[[str, str], None] | None
-        ) = None,
+        sink: (Callable[[str, str], Awaitable[None]] | Callable[[str, str], None] | None) = None,
         deadline: float = 60.0,
     ) -> dict:
         script = Path(script_path).expanduser().resolve()
@@ -225,9 +221,9 @@ class WorktreeService:
             stream,
             name,
         ):  # Streams stdout/stderr; expensive O(stream size)
-            chunk_size = 4096
+            chunk_size_bytes = 4096
             while True:
-                data = await stream.read(chunk_size)
+                data = await stream.read(chunk_size_bytes)
                 if not data:
                     break
                 text = data.decode(errors="replace")
@@ -242,16 +238,8 @@ class WorktreeService:
                 except Exception:
                     logger.debug("hook sink failed", exc_info=True)
 
-        t1 = (
-            asyncio.create_task(_forward(proc.stdout, "stdout"))
-            if proc.stdout
-            else None
-        )
-        t2 = (
-            asyncio.create_task(_forward(proc.stderr, "stderr"))
-            if proc.stderr
-            else None
-        )
+        t1 = asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
+        t2 = asyncio.create_task(_forward(proc.stderr, "stderr")) if proc.stderr else None
         try:
             await asyncio.wait_for(proc.wait(), timeout=deadline)
         except TimeoutError:
@@ -270,12 +258,19 @@ class WorktreeService:
             await t1
         if t2:
             await t2
+        # Include truncated previews to aid diagnostics while avoiding duplication in client
+        PREVIEW_MAX = 8192
+        out_text = "".join(stdout_buf)
+        err_text = "".join(stderr_buf)
+        out_preview = out_text[-PREVIEW_MAX:] if len(out_text) > PREVIEW_MAX else out_text
+        err_preview = err_text[-PREVIEW_MAX:] if len(err_text) > PREVIEW_MAX else err_text
         return {
             "ran": True,
             "exit_code": proc.returncode,
-            "stdout": None,
-            "stderr": None,
+            "stdout": out_preview or None,
+            "stderr": err_preview or None,
             "error": None,
+            "streamed": True,
         }
 
     def _get_processes_in_directory(self, directory: Path) -> list:

@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import BaseHandler
-from adgn.agent.loop_control import Abort, Continue, Auto
+from adgn.agent.loop_control import Abort, Auto, Continue
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import BaseHandler
 
 
 class SyntheticOnceHandler(BaseHandler):

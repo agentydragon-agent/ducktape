@@ -60,9 +60,7 @@ class TruncationManager:
         return self.count_tokens(json.dumps(payload, indent=2))
 
     def _single_file_tokens(self, path: str, content: str) -> int:
-        return self.count_tokens(
-            json.dumps([{"path": path, "content": content}], indent=2)
-        )
+        return self.count_tokens(json.dumps([{"path": path, "content": content}], indent=2))
 
     def _normalize_files(
         self,
@@ -174,15 +172,9 @@ class TruncationManager:
             remaining -= used
 
         result: list[dict[str, str]] | list[FileInfo]
-        result = (
-            model_out
-            if (files_info and isinstance(files_info[0], FileInfo))
-            else dict_out
-        )
+        result = model_out if (files_info and isinstance(files_info[0], FileInfo)) else dict_out
         final = self._count_files_tokens(result)
-        assert final <= max_tokens, (
-            f"File truncation failed: {final} tokens > {max_tokens} limit"
-        )
+        assert final <= max_tokens, f"File truncation failed: {final} tokens > {max_tokens} limit"
         return result
 
     def truncate_file_by_bytes(

@@ -19,14 +19,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TypeAlias
+
 from adgn.openai_utils.model import (
-    InputItem,
-    ReasoningItem,
+    AssistantMessageOut,
     FunctionCallItem,
     FunctionCallOutputItem,
-    AssistantMessageOut,
+    InputItem,
 )
-
 
 # ---------------------------------------------------------------------------
 # Tool policy algebraic types (what the model is allowed/required to do next)
@@ -102,15 +101,12 @@ class Continue:
     tool_policy: ToolPolicy
     # Input-side items to add to the next request (adapter-only).
     # Normal path: accept InputItem (UserMessage, AssistantMessage, SystemMessage,
-    # ReasoningItem, FunctionCallItem, FunctionCallOutputItem).
-    # Skip-sampling path: accept adapter ResponseOut items (ReasoningItem,
-    # FunctionCallItem, AssistantMessageOut).
+    # FunctionCallItem, FunctionCallOutputItem).
+    # Skip-sampling path: accept adapter ResponseOut items (FunctionCallItem,
+    # FunctionCallOutputItem, AssistantMessageOut). ReasoningItem MUST be produced
+    # by the SDK/model, not injected here.
     inserts_input: tuple[
-        InputItem
-        | ReasoningItem
-        | FunctionCallItem
-        | FunctionCallOutputItem
-        | AssistantMessageOut,
+        InputItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut,
         ...,
     ] = ()
     # When True: do NOT call the model this phase; execute directly from inserts_input

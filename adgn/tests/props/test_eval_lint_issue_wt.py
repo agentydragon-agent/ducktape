@@ -3,9 +3,9 @@ import shutil
 
 import pytest
 
+from adgn.openai_utils.client_factory import build_client
 from adgn.props.lint_issue import lint_issue_run
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
-from adgn.openai_utils.client_factory import build_client
 
 
 @pytest.mark.live_llm
@@ -80,13 +80,9 @@ async def test_iss014_anchor_windows(
         )
         effective = [(r.start_line, r.end_line) for r in (ca.get(path) or [])]
 
-    assert len(effective) == 1, (
-        f"Expected exactly one effective range for {path}, got: {effective}"
-    )
+    assert len(effective) == 1, f"Expected exactly one effective range for {path}, got: {effective}"
     estart, eend = effective[0]
-    assert eend is not None, (
-        "Expected a closed interval (start,end), not a single-line anchor"
-    )
+    assert eend is not None, "Expected a closed interval (start,end), not a single-line anchor"
 
     (smin, smax), (emin, emax) = allowed_window
     assert smin <= estart <= smax, (

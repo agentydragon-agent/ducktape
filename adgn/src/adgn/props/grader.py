@@ -12,16 +12,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
 from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from adgn.llm.rendering.rich_renderers import render_to_rich
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
 from adgn.props.critic import CriticSubmitPayload
 from adgn.props.specimens.registry import IssueRecord, SpecimenRecord
-from adgn.llm.rendering.rich_renderers import render_to_rich
 
 # Shared ID prefix constants (single source of truth)
 CANON_TP_PREFIX = "canon_tp_"
@@ -171,17 +171,13 @@ def make_grader_submit_server(
         # Optional validation of ID sets
         if allowed_canon_ids is not None:
             bad_tp = [i for i in result.true_positive_ids if i not in allowed_canon_ids]
-            bad_fp = [
-                i for i in result.false_positive_ids if i not in allowed_canon_ids
-            ]
+            bad_fp = [i for i in result.false_positive_ids if i not in allowed_canon_ids]
             if bad_tp or bad_fp:
                 raise ValueError(
                     f"grader returned non-canonical IDs: tp={bad_tp} fp={bad_fp}",
                 )
         if allowed_critique_ids is not None:
-            bad_unk = [
-                i for i in result.unknown_critique_ids if i not in allowed_critique_ids
-            ]
+            bad_unk = [i for i in result.unknown_critique_ids if i not in allowed_critique_ids]
             if bad_unk:
                 raise ValueError(
                     f"grader returned non-critique IDs in unknown_critique_ids: {bad_unk}",

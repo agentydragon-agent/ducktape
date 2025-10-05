@@ -78,9 +78,7 @@ def _extract_input_messages(
     for item in inp:
         if not isinstance(item, dict):
             continue
-        role = (
-            item.get("role") or item.get("message_role") or item.get("Role") or ""
-        ).lower()
+        role = (item.get("role") or item.get("message_role") or item.get("Role") or "").lower()
         content = item.get("content")
         # Extract text from either string or list-of-parts
         if isinstance(content, str):
@@ -96,11 +94,7 @@ def _extract_input_messages(
             text = "\n".join(texts) if texts else ""
         # Heuristic: if role missing, assume leading items are system until we see a 'user' later
         if not role:
-            role = (
-                "system"
-                if not any(m.get("role") == "user" for m in msgs)
-                else "assistant"
-            )
+            role = "system" if not any(m.get("role") == "user" for m in msgs) else "assistant"
         if role in ("system", "user", "assistant") and text:
             if role == "system" and sys_has_tools_header(text):
                 has_header = True

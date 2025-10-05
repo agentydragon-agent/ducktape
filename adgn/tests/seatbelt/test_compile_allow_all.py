@@ -1,11 +1,14 @@
 from adgn.seatbelt.compile import compile_sbpl
 from adgn.seatbelt.model import (
+    DefaultBehavior,
+    FileOp,
     FileRule,
     MachLookupRule,
+    NetworkOp,
     NetworkRule,
-    PathFilter,
     ProcessRule,
     SBPLPolicy,
+    Subpath,
     SystemRule,
     TraceConfig,
 )
@@ -13,17 +16,17 @@ from adgn.seatbelt.model import (
 
 def test_compile_allow_all_effectively_no_sandbox():
     policy = SBPLPolicy(
-        default_behavior="allow",
+        default_behavior=DefaultBehavior.ALLOW,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
         files=[
-            FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value="/")]),
-            FileRule(op="file-write*", filters=[PathFilter(kind="subpath", value="/")]),
-            FileRule(op="file-map-executable", filters=[]),
+            FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
+            FileRule(op=FileOp.FILE_WRITE_STAR, filters=[Subpath(subpath="/")]),
+            FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
         ],
         network=[
-            NetworkRule(op="network-inbound", local_only=False),
-            NetworkRule(op="network-outbound", local_only=False),
-            NetworkRule(op="network-bind", local_only=False),
+            NetworkRule(op=NetworkOp.NETWORK_INBOUND, local_only=False),
+            NetworkRule(op=NetworkOp.NETWORK_OUTBOUND, local_only=False),
+            NetworkRule(op=NetworkOp.NETWORK_BIND, local_only=False),
         ],
         mach=MachLookupRule(global_names=[]),
         system=SystemRule(system_socket=True, sysctl_read=True),

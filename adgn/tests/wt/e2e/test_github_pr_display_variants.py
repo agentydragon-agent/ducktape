@@ -1,5 +1,6 @@
 """E2E: real daemon/client + shadowed PyGithub; PR variants: open(can merge), merged, closed, no PR."""
 
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -8,7 +9,6 @@ import socket
 import uuid
 
 import pytest
-from datetime import timedelta, datetime
 
 from adgn.wt.shared.fixtures import PRFixtureEntry
 

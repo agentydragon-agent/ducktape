@@ -30,6 +30,7 @@ spec:
             - --providers.kubernetesingress.ingressclass=traefik
             - --providers.kubernetescrd
             - --entrypoints.web.address=:80
+            - --entrypoints.web.forwardedHeaders.insecure=true
             - --entrypoints.websecure.address=:443
             - --log.level=INFO
           ports:

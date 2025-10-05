@@ -42,8 +42,9 @@ from pathlib import Path
 import signal
 import sys
 
-from adgn.inop.clients.logging_openai_client import LoggingOpenAIClient
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.agent.agent import MiniCodex
+from adgn.agent.loggers import TranscriptLoggerHandler
+from adgn.agent.mcp_manager import McpManager
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import (
     AgentTaskType,
@@ -51,7 +52,7 @@ from adgn.inop.engine.models import (
     GradedRollout,
     TaskDefinition,
 )
-from adgn.inop.engine import runner_factory
+import adgn.inop.engine.runner_factory
 from adgn.inop.grading.grader import grade_rollout
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.io.logging_utils import DualOutputLogging
@@ -64,6 +65,7 @@ from adgn.inop.io.yaml_loader import load_yaml_files
 from adgn.inop.mcp.prompt_feedback_server import (
     make_prompt_feedback_server_with_handle,
 )
+from adgn.inop.model_factory import create_optimizer_models
 from adgn.inop.plots import ScoreEvolutionTracker
 from adgn.inop.prompting.pe_controller import ProposePromptNTimes
 from adgn.inop.prompting.prompt_engineer import (
@@ -75,11 +77,7 @@ from adgn.inop.prompting.prompt_engineer import (
 from adgn.inop.prompting.summarizer import PatternSummarizer
 from adgn.inop.prompting.truncation_utils import TruncationManager
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.agent.agent import MiniCodex
-from adgn.agent.loggers import TranscriptLoggerHandler
-from adgn.agent.mcp_manager import McpManager
-from adgn.inop.model_factory import create_optimizer_models
-from openai import AsyncOpenAI
+from adgn.openai_utils.model import OpenAIModelProto
 
 # TODO: consider showing grader text Assistant messages, not just code
 # TODO: track exact OpenAI & Anthropic model used in database tables
@@ -124,8 +122,7 @@ class CostTracker:
             extra={
                 "total_cost_usd": self.total_cost_usd,
                 "rollout_count": self.rollout_count,
-                "avg_cost_per_rollout_usd": self.total_cost_usd
-                / max(1, self.rollout_count),
+                "avg_cost_per_rollout_usd": self.total_cost_usd / max(1, self.rollout_count),
             },
         )
 
@@ -157,7 +154,6 @@ def setup_signal_handlers():
 @dataclass
 class OptimizeMcpArgs:
     anthropic_log: JSONLLogger
-    openai_client: LoggingOpenAIClient
     pe_model: OpenAIModelProto
     runner_model: OpenAIModelProto
     grader_model: OpenAIModelProto
@@ -186,6 +182,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
     if feedback_mode == FeedbackMode.SUMMARY:
         feedback_provider: FeedbackProvider = PatternSummarizer(
             model=args.summarizer_model,
+            context_model_id=args.cfg.summarizer.model,
             truncation_manager=TruncationManager(args.cfg),
             max_file_size_pattern_analysis=args.cfg.truncation.max_file_size_pattern_analysis,
         )
@@ -209,18 +206,14 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             prompt: str,
             tasks: list[TaskDefinition],
         ) -> list[GradedRollout]:
-            print(
-                f"[_Deps.run_rollouts_with_prompt] start, tasks={len(tasks)} prompt={prompt}"
-            )
+            print(f"[_Deps.run_rollouts_with_prompt] start, tasks={len(tasks)} prompt={prompt}")
             # Minimal serial implementation (can parallelize later)
             results: list[GradedRollout] = []
             for t in tasks:
-                print(
-                    f"[_Deps.run_rollouts_with_prompt] setting up runner for task {t.id}"
-                )
+                print(f"[_Deps.run_rollouts_with_prompt] setting up runner for task {t.id}")
                 # Create runner with the configured OpenAI model
                 runner_model = args.runner_model
-                runner = runner_factory.create_runner(
+                runner = adgn.inop.engine.runner_factory.create_runner(
                     args.runner_name,
                     args.runner_configs,
                     openai_model=runner_model,
@@ -251,9 +244,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 # Package graded rollout (include task per model schema)
                 results.append(GradedRollout(rollout=rollout, grade=grade, task=t))
                 await runner.cleanup()
-                print(
-                    f"[_Deps.run_rollouts_with_prompt] cleaned up runner for task {t.id}"
-                )
+                print(f"[_Deps.run_rollouts_with_prompt] cleaned up runner for task {t.id}")
             return results
 
         def persist_all(
@@ -264,6 +255,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             rollouts: list[GradedRollout],
             feedback: str,
         ) -> None:
+            print(f"[persist_all] iter={iteration} base_dir={args.base_dir}")
             it_dir = args.base_dir / f"iter_{iteration:03d}"
             it_dir.mkdir(parents=True, exist_ok=True)
             (it_dir / "CLAUDE.md").write_text(prompt)
@@ -280,9 +272,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
 
             # Update prompts.json as a list built in-memory (no file read)
             self._prompts.append(prompt)
-            (args.base_dir / "prompts.json").write_text(
-                json.dumps(self._prompts, indent=2)
-            )
+            (args.base_dir / "prompts.json").write_text(json.dumps(self._prompts, indent=2))
 
             # Persist each rollout and its grading under task/agent_0
             for gr in rollouts:
@@ -323,11 +313,8 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
     )
 
     # Build ServerSlotSpecs via the in-proc JSON-RPC utility
-    specs = {
-        "prompt_feedback": make_inproc_slot_spec(mcp_server),
-    }
-
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("prompt_feedback", make_inproc_slot_spec(mcp_server))
         # Session will be initialized on first access via McpManager ensure_open
 
         # Create MiniCodex PE with system prompt at init
@@ -363,7 +350,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         pe = await MiniCodex.create(
             model=args.cfg.prompt_engineer.model,
             mcp=mcp,
-            client=model,  # LoggingOpenAIModel implements OpenAIModelProto
+            client=model,
             system=system_message,
             handlers=[
                 ProposePromptNTimes(args.iterations),
@@ -398,7 +385,6 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
 @dataclass
 class OptimizeArgs:
     anthropic_log: JSONLLogger
-    openai_client: LoggingOpenAIClient
     # Required DI: adapter model instances for specific roles.
     pe_model: OpenAIModelProto
     runner_model: OpenAIModelProto
@@ -456,7 +442,6 @@ async def optimize_prompts(args: OptimizeArgs) -> Path:
     return await optimize_prompts_mcp(
         OptimizeMcpArgs(
             anthropic_log=args.anthropic_log,
-            openai_client=args.openai_client,
             pe_model=args.pe_model,
             runner_model=args.runner_model,
             grader_model=args.grader_model,
@@ -609,16 +594,12 @@ Examples:
 
     # Create OpenAI client and DI models
     anthropic_log = JSONLLogger(base_dir / "anthropic_api_log.jsonl")
-    openai_client = LoggingOpenAIClient(
-        openai_client=AsyncOpenAI(),
-        jsonl_logger=JSONLLogger(base_dir / "openai_api_log.jsonl"),
-    )
-    models = create_optimizer_models(cfg, openai_client)
+    # Build OpenAI models with debug logging enabled (HTTP frames captured to logger)
+    models = create_optimizer_models(cfg, enable_debug_logging=True)
     run_dir = asyncio.run(
         optimize_prompts(
             OptimizeArgs(
                 anthropic_log=anthropic_log,
-                openai_client=openai_client,
                 pe_model=models.pe_model,
                 runner_model=models.runner_model,
                 grader_model=models.grader_model,

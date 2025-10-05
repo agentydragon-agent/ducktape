@@ -6,17 +6,18 @@ from datetime import datetime
 import logging
 from typing import cast
 
-import os
-from ..shared.error_handling import GitHubUnavailableError
-
 import pygit2
-from ..shared.configuration import Configuration
-from ..shared.github_models import PRData, PRState
+
 from adgn.wt.shared.fixtures import load_pr_fixture
+
+from ..shared.configuration import Configuration
+from ..shared.env import is_test_mode
+from ..shared.error_handling import GitHubUnavailableError
+from ..shared.github_models import PRData, PRState
+from .git_manager import GitManager
 from .github_client import GitHubInterface
 from .github_refresh import DebouncedGitHubRefresh
 from .types import DiscoveredWorktree
-from .git_manager import GitManager
 
 PR_CACHE_FRESH_SECS = 60
 
@@ -116,8 +117,8 @@ class PRService:
                 return self.cached.data
             # When cache holds a non-OK state, treat as missing PR
             return None
-        # WT_TEST_MODE: optional PR fixture support, avoids PYTHONPATH/mock imports in tests
-        if os.environ.get("WT_TEST_MODE") == "1":
+        # Test mode: optional PR fixture support, avoids PYTHONPATH/mock imports in tests
+        if is_test_mode():
             fixture_pr = load_pr_fixture(self.config, branch_name)
             if fixture_pr is not None:
                 self.cached = PRCacheOk(data=fixture_pr, fetched_at=now)

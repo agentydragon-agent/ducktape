@@ -13,9 +13,7 @@ class ExecInput(BaseModel):
     cmd: list[str] = Field(
         description="Command to run; pass list to avoid shell quoting issues",
     )
-    cwd: str | None = Field(
-        default=None, description="Working directory inside container"
-    )
+    cwd: str | None = Field(default=None, description="Working directory inside container")
     env: dict[str, str] | None = Field(
         default=None,
         description="Environment variables for the process",

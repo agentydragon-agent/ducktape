@@ -45,6 +45,4 @@ def test_specimen_issues_and_false_positives_load(specimen: str) -> None:
                             print(f"{i:>4}: {src_lines[i - 1]}", flush=True)
             except Exception:
                 pass
-    assert not errors, (
-        f"Specimen '{specimen}' has invalid Jsonnet files (count={len(errors)})"
-    )
+    assert not errors, f"Specimen '{specimen}' has invalid Jsonnet files (count={len(errors)})"

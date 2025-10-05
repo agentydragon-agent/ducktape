@@ -22,9 +22,7 @@ def props_definitions_root() -> Path:
 def find_property_files(property_ids: list[str]) -> list[Path]:
     """Resolve property definition Markdown files by ID (filename stem)."""
     props_root = props_definitions_root()
-    found: list[Path] = [
-        md for md in props_root.rglob("*.md") if md.stem in set(property_ids)
-    ]
+    found: list[Path] = [md for md in props_root.rglob("*.md") if md.stem in set(property_ids)]
     return sorted(found, key=lambda p: p.as_posix())
 
 

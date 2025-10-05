@@ -9,45 +9,43 @@ import pytest
 
 from adgn.llm.llm_edit import _execute
 from adgn.openai_utils.model import ResponsesRequest
-
 from tests.fixtures.responses import ResponsesFactory
+
 from ..support.openai_mock import LIVE
 
 
 def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
     """Behavior that drives editor: replace_text -> save -> done(success)."""
     step = {"i": 0}
-    rf = ResponsesFactory(os.getenv("OPENAI_MODEL", "o4-mini"))
+    responses_factory = ResponsesFactory(os.getenv("OPENAI_MODEL", "o4-mini"))
 
     async def behavior(req: Any) -> Any:
         # Accept either raw dicts (legacy) or our typed ResponsesRequest
-        assert isinstance(req, (dict, ResponsesRequest)), (
-            f"unexpected request type: {type(req)!r}"
-        )
+        assert isinstance(req, (dict, ResponsesRequest)), f"unexpected request type: {type(req)!r}"
         i = step["i"]
         step["i"] = i + 1
         if i == 0:
-            return rf.make(
-                rf.tool_call(
+            return responses_factory.make(
+                responses_factory.tool_call(
                     "mcp__editor__replace_text",
                     {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"},
                 )
             )
         if i == 1:
-            return rf.make(rf.tool_call("mcp__editor__save", {}))
+            return responses_factory.make(responses_factory.tool_call("mcp__editor__save", {}))
         if i == 2:
             # Inspect buffer to verify content before done
-            return rf.make(
-                rf.tool_call("mcp__editor__read_line_range", {"start": 1, "end": 1})
+            return responses_factory.make(
+                responses_factory.tool_call("mcp__editor__read_line_range", {"start": 1, "end": 1})
             )
         if i == 3:
-            return rf.make(
-                rf.tool_call(
+            return responses_factory.make(
+                responses_factory.tool_call(
                     "mcp__editor__done",
                     {"payload": {"outcome": "success", "summary": "ok"}},
                 )
             )
-        return rf.make_assistant_message("done")
+        return responses_factory.make_assistant_message("done")
 
     return behavior
 

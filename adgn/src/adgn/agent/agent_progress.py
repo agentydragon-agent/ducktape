@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from itertools import cycle
 from time import monotonic
-from adgn.openai_utils.model import ReasoningItem
 
 from rich.console import Console
 from rich.text import Text
+
+from adgn.openai_utils.model import ReasoningItem
 
 from .handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
 from .loop_control import NoLoopDecision

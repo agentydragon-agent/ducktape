@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-import importlib.metadata as importlib_metadata
+from importlib.metadata import entry_points
 import logging
 
 import pluggy
@@ -45,7 +45,7 @@ def get_manager(config) -> pluggy.PluginManager:
     pm.add_hookspecs(_Spec)
     pm.register(_Impl())
 
-    for ep in importlib_metadata.entry_points(group=ENTRYPOINT_GROUP):
+    for ep in entry_points(group=ENTRYPOINT_GROUP):
         # Only catch expected plugin loading errors; let programming errors crash
         try:
             pm.register(ep.load())

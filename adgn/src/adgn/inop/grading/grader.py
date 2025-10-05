@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 import json
 from typing import Any
 
-from adgn.inop.clients.logging_openai_client import LoggingOpenAIModel
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import (
     ComparisonGrading,
@@ -26,6 +25,8 @@ from adgn.inop.grading.strategies import (
 from adgn.inop.io.logging_utils import DualOutputLogging
 from adgn.openai_utils.model import (
     FunctionCallItem,
+    FunctionToolParam,
+    OpenAIModelProto,
     ResponsesRequest,
     ToolChoiceFunction,
 )
@@ -38,7 +39,7 @@ async def grade_rollout(
     rollout: Rollout,
     task: TaskDefinition,
     grading_config: FileBasedGrading | ComparisonGrading | MessageBasedGrading,
-    model: LoggingOpenAIModel,
+    model: OpenAIModelProto,
     cfg: OptimizerConfig,
     environment: RunnerEnvironment | None = None,
 ) -> Grade:
@@ -98,7 +99,7 @@ async def grade_rollout(
 async def _grade_comparison(
     task: TaskDefinition,
     prepared: dict[str, Any],
-    model: LoggingOpenAIModel,
+    model: OpenAIModelProto,
     cfg: OptimizerConfig,
     rollout: Rollout,
 ) -> Grade:
@@ -132,11 +133,10 @@ Return a JSON object with:
 """
 
     # Define the grading tool for comparison
-    grading_tool = {
-        "type": "function",
-        "name": "submit_comparison_grade",
-        "description": "Submit the coverage comparison results",
-        "parameters": {
+    grading_tool = FunctionToolParam(
+        name="submit_comparison_grade",
+        description="Submit the coverage comparison results",
+        parameters={
             "type": "object",
             "properties": {
                 "covered_percent": {
@@ -153,8 +153,8 @@ Return a JSON object with:
             "required": ["covered_percent", "rationale"],
             "additionalProperties": False,
         },
-        "strict": True,
-    }
+        strict=True,
+    )
 
     req = ResponsesRequest(
         input=prompt,
@@ -212,7 +212,7 @@ async def _grade_with_criteria(
     task: TaskDefinition,
     prepared: dict[str, Any],
     criteria: list[Criterion],
-    model: LoggingOpenAIModel,
+    model: OpenAIModelProto,
     cfg: OptimizerConfig,
     rollout: Rollout,
     strategy: GradingStrategy,
@@ -251,18 +251,17 @@ async def _grade_with_criteria(
     }
     required_keys.append("overall")
 
-    grading_tool = {
-        "type": "function",
-        "name": "submit_grades",
-        "description": "Return scores and rationales for each grading criterion",
-        "parameters": {
+    grading_tool = FunctionToolParam(
+        name="submit_grades",
+        description="Return scores and rationales for each grading criterion",
+        parameters={
             "type": "object",
             "properties": properties,
             "required": required_keys,
             "additionalProperties": False,
         },
-        "strict": True,
-    }
+        strict=True,
+    )
 
     # Generate the grading prompt using the strategy
     prompt = strategy.get_grading_prompt(prepared, task)

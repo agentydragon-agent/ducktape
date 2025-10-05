@@ -5,14 +5,13 @@
 - Decoupled from any one agent or prompt; this is durable input data for systems that enforce and improve agent quality.
 - Some overlap is fine — favor covering everything that should be covered over minimizing entries.
 
-## Repository layout
-- `llm/properties/`
-  - `properties/` — property files; supports nested categories:
-    - `properties/python/` — Python-specific properties
-    - `properties/markdown/` — Markdown-specific properties
-    - `properties/` (root) — language-agnostic properties
-  - `specimens/` — real cases, named `specimens/YYYY-MM-DD-<slug>.md`
-  - `TODO.md` — open questions and planned extensions
+## Repository layout (package)
+- `props/` — property files (Markdown), supports nested categories:
+  - `props/python/` — Python-specific properties
+  - `props/markdown/` — Markdown-specific properties
+  - `props/` (root) — language-agnostic properties
+- `specimens/` — specimen manifests and per-issue Jsonnet files
+- `TODO.md` — open questions and planned extensions
 
 ## Conventions
 - Property IDs are kebab-case and derived from filenames; evolve content rather than renaming IDs when possible.
@@ -67,7 +66,7 @@ Specimens are now expressed as a manifest YAML plus a directory of per-issue Jso
       include:
         - 'wt/**'
     ```
-  - The loader (src/adgn_llm/properties/specimen_registry.py) reads this manifest and materializes a deterministic archive for inspection.
+  - The loader (src/adgn/props/specimens/registry.py) reads this manifest and materializes a deterministic archive for inspection.
 
 - issues/ (required for tooling)
   - Per-issue Jsonnet files: `issues/<issue-id>.libsonnet`.

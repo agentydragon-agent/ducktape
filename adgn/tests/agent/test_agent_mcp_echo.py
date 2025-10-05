@@ -5,19 +5,17 @@ from typing import Any
 
 from mcp import types as mcp_types
 import pytest
-from adgn.openai_utils.model import FakeOpenAIModel
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler, BaseHandler
 from adgn.agent.mcp_manager import McpManager, parse_mcp_function
+from adgn.agent.reducer import AutoHandler, BaseHandler
+from adgn.openai_utils.model import FakeOpenAIModel
 
 
 class DummyClient:
     @property
     def responses(self):  # pragma: no cover
-        raise AssertionError(
-            "responses.create should not be called directly in this test"
-        )
+        raise AssertionError("responses.create should not be called directly in this test")
 
 
 @dataclass
@@ -34,9 +32,7 @@ class RecordingHandler(BaseHandler):
         self.rec.assistant_text.append(getattr(evt, "text", ""))
 
     def on_tool_result_event(self, evt) -> None:
-        self.rec.tool_outputs.append(
-            evt.result.model_dump(mode="json", exclude_none=True)
-        )
+        self.rec.tool_outputs.append(evt.result.model_dump(mode="json", exclude_none=True))
 
 
 @pytest.mark.asyncio
@@ -61,7 +57,9 @@ async def test_agent_mcp_echo_tool_use(
 
     rec = Record(assistant_text=[], tool_outputs=[])
 
-    async with McpManager(specs) as mgr:
+    async with McpManager({}) as mgr:
+        for name, slot in specs.items():
+            await mgr.attach_server(name, slot)
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mgr,

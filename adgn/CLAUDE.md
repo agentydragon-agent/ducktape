@@ -96,20 +96,20 @@ MiniCodex (CLI + local UI)
   - In-proc servers via .mcp.json: use transport: "inproc" with either:
     - server: a FastMCP instance (Python-only wiring), or
     - factory: dotted path "pkg.mod:make_server" (or "pkg.mod.make_server"), plus optional args/kwargs
-    Example file at src/adgn/llm/mini_codex/example.mcp.json wires the seatbelt exec MCP in-process.
+    Example file at src/adgn/agent/example.mcp.json wires the seatbelt exec MCP in-process.
 - Behavior:
   - On connect, server emits accepted followed by a Snapshot; Snapshot includes MCP server names and any transcript from the current process.
   - Approvals are protocol‑native: approval_pending → approval_decision (approve | deny_continue | deny_abort); server maps them to handler decisions.
   - Serve constructs the agent and MCP on the uvicorn loop (app.state.agent_factory) to avoid cross‑loop hangs.
 - UI dev/build:
   - Dev (recommended): adgn-mini-codex dev — starts FastAPI backend and Vite (frontend HMR), picks free ports; Vite proxies /ws (and /transcript)
-  - Split dev: adgn-mini-codex serve (backend) + npm --prefix src/adgn/llm/mini_codex/ui/web run dev (optionally export VITE_BACKEND_ORIGIN=http://127.0.0.1:8765)
+  - Split dev: adgn-mini-codex serve (backend) + npm --prefix src/adgn/agent/web run dev (optionally export VITE_BACKEND_ORIGIN=http://127.0.0.1:8765)
   - Build UI (REQUIRED before running serve):
     ```bash
-    npm --prefix src/adgn/llm/mini_codex/ui/web install
-    npm --prefix src/adgn/llm/mini_codex/ui/web run build
+    npm --prefix src/adgn/agent/web install
+    npm --prefix src/adgn/agent/web run build
     ```
-  - Assets are published to src/adgn/llm/mini_codex/ui/static/web; FastAPI serves /static/web and /assets
+  - Assets are published to src/adgn/agent/server/static/web; FastAPI serves /static/web and /assets
   - Note: The UI assets MUST be built before running `adgn-mini-codex serve` or you'll get a RuntimeError about missing static directory
   - Layout: full‑page chat (left, bottom‑docked composer) + sidebar (WS status dot, run status, servers, approvals)
   - Snapshot on hello restores transcript in the UI on reload
@@ -130,7 +130,7 @@ Core CLIs (installed via adgn [project.scripts])
 - adgn-sysrw → adgn.llm.sysrw.cli:app
 - adgn-properties → adgn.props.cli:main (and adgn-properties2 → adgn.props.cli_app.main:app)
 - git-commit-ai → adgn.git_commit_ai.cli:main
-- sandbox-jupyter-mcp → adgn.mcp.sandboxed_jupyter_mcp.wrapper:main
+- sandbox-jupyter → adgn.mcp.sandboxed_jupyter.wrapper:main
 - adgn-sandboxer, adgn-mcp-* as needed by workflows
 
 Specimen inspection (properties)
@@ -144,7 +144,7 @@ Testing
 - LLM tests live under repo-root: adgn/tests/llm/** (mirrors src/adgn/llm/**)
 - Typical invocations:
   - `direnv exec adgn pytest -q -m "not live_llm"`
-  - `direnv exec adgn pytest -q -m "not live_llm" -k "not sandboxed_jupyter_mcp"`
+  - `direnv exec adgn pytest -q -m "not live_llm" -k "not sandboxed_jupyter"`
 
 Quick usage examples
 - System rewriter (Node required for apply step):

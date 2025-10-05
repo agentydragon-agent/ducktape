@@ -15,19 +15,12 @@ from datetime import datetime
 import html
 from pathlib import Path
 
-from .tana_lib import (
+from .tana_lib.constants import (
     CHECKBOX_CHECKED_ID,
     CHECKBOX_KEY_ID,
     CHECKBOX_UNCHECKED_ID,
     SUPERTAG_KEY_ID,
     URL_KEY_ID,
-    BaseNode,
-    CodeBlockNode,
-    NodeId,
-    NodeStore,
-    TupleNode,
-    VisualNode,
-    get_tuple_value,
 )
 from .tana_lib.html_utils import (
     DATE_SPAN_PATTERN,
@@ -36,6 +29,15 @@ from .tana_lib.html_utils import (
     html_to_markdown,
     parse_inline_date,
 )
+from .tana_lib.models import (
+    BaseNode,
+    CodeBlockNode,
+    NodeId,
+    NodeStore,
+    TupleNode,
+    VisualNode,
+)
+from .tana_lib.query_core import get_tuple_value
 
 # Small constants to clarify tuple arity checks
 MIN_TUPLE_CHILDREN = 2
@@ -50,7 +52,7 @@ def _journal_headline(name: str) -> str:
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         # TODO: detect day more robustly
         return dt.strftime("%a, %b %-d")  # "Tue, May 6"
-    except Exception:
+    except (ValueError, IndexError):
         return name
 
 
@@ -178,13 +180,9 @@ class RenderContext:
     def render_tuple(self, t: TupleNode):
         """Render a tuple node with its key and value(s)."""
         # need at least key + value
-        if len(t.children) < MIN_TUPLE_CHILDREN or not (
-            key_node := self.store.get(t.children[0])
-        ):
+        if len(t.children) < MIN_TUPLE_CHILDREN or not (key_node := self.store.get(t.children[0])):
             return
-        prefix = (
-            f"{self.indent}- {self._inline_to_text(key_node.name or key_node.id)}::"
-        )
+        prefix = f"{self.indent}- {self._inline_to_text(key_node.name or key_node.id)}::"
 
         # Handle multi-value tuples (more than 2 children)
         if len(t.children) > MIN_TUPLE_CHILDREN:
@@ -194,11 +192,7 @@ class RenderContext:
                 # For tana style, render as reference if the value is not owned by this tuple
                 # (i.e., it's a reference to an existing node)
                 with self.add_indent():
-                    if (
-                        self.style == "tana"
-                        and val_node.name
-                        and val_node.props.owner_id != t.id
-                    ):
+                    if self.style == "tana" and val_node.name and val_node.props.owner_id != t.id:
                         name = self._inline_to_text(val_node.name)
                         name = self._strip_md_formatting(name)
                         yield f"{self.indent}- [[{name}^{val_node.id}]]"
@@ -297,9 +291,7 @@ class RenderContext:
                     # include associated data tuples for that child.
                     if isinstance(c, TupleNode):
                         continue
-                    name = self._strip_md_formatting(
-                        self._inline_to_text(c.name or c.id)
-                    )
+                    name = self._strip_md_formatting(self._inline_to_text(c.name or c.id))
                     yield f"{self.indent}- [[{name}^{c.id}]]"
                     if n.association_map and c.id in n.association_map:
                         assoc_node = self.store.get(n.association_map[c.id])
@@ -316,17 +308,13 @@ class RenderContext:
                     # In a search node (tana style), render every non-tuple child as a plain reference once
                     if n.props.doc_type == "search" and self.style == "tana":
                         if c.id not in emitted:
-                            name = self._strip_md_formatting(
-                                self._inline_to_text(c.name or c.id)
-                            )
+                            name = self._strip_md_formatting(self._inline_to_text(c.name or c.id))
                             yield f"{self.indent}- [[{name}^{c.id}]]"
                             emitted.add(c.id)
                         continue
                     # Otherwise: render as reference if non-owned AND already visited; else recurse
                     if c.props.owner_id != n.id and c.id in self.visited:
-                        name = self._strip_md_formatting(
-                            self._inline_to_text(c.name or c.id)
-                        )
+                        name = self._strip_md_formatting(self._inline_to_text(c.name or c.id))
                         yield f"{self.indent}- [[{name}^{c.id}]]"
                         emitted.add(c.id)
                     else:

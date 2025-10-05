@@ -155,9 +155,7 @@ class FileBasedGradingStrategy(GradingStrategy):
         t_mgr = TruncationManager(config)
 
         # Convert to list format for truncation
-        file_list = [
-            {"path": path, "content": content} for path, content in files.items()
-        ]
+        file_list = [{"path": path, "content": content} for path, content in files.items()]
 
         # Truncate individual files
         truncated_files = []
@@ -187,9 +185,7 @@ class FileBasedGradingStrategy(GradingStrategy):
             ]
         else:
             td = cast(list[dict[str, str]], truncated_union)
-            normalized_files = [
-                {"path": d["path"], "content": d["content"]} for d in td
-            ]
+            normalized_files = [{"path": d["path"], "content": d["content"]} for d in td]
 
         return {
             "type": "file_based",
@@ -334,10 +330,7 @@ class ComparisonGradingStrategy(GradingStrategy):
         agent_output = prepared_artifacts["agent_output"]
         reference = prepared_artifacts["reference"]
         criteria_desc = "\n".join(
-            [
-                f"- {c['name']}: {c['description']}"
-                for c in prepared_artifacts["criteria"]
-            ],
+            [f"- {c['name']}: {c['description']}" for c in prepared_artifacts["criteria"]],
         )
 
         return (
@@ -378,8 +371,7 @@ def create_grading_strategy(
                     str(criteria_file),
                 )
                 criteria = [
-                    Criterion(name=g.id, description=g.description)
-                    for g in gl_file.graders_data
+                    Criterion(name=g.id, description=g.description) for g in gl_file.graders_data
                 ]
         return FileBasedGradingStrategy(criteria)
 
@@ -397,8 +389,7 @@ def create_grading_strategy(
                     str(criteria_file),
                 )
                 criteria = [
-                    Criterion(name=g.id, description=g.description)
-                    for g in gl2.graders_data
+                    Criterion(name=g.id, description=g.description) for g in gl2.graders_data
                 ]
         return MessageBasedGradingStrategy(criteria)
 

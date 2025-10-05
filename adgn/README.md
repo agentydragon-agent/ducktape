@@ -22,12 +22,28 @@ Environment and setup (direnv + devenv)
 - Pre-commit: `pre-commit install`, `pre-commit run -a`
 - Optional extras: `python -m pip install -e '.[gnome]'` (GNOME console script deps - system libs required)
 
+## Agent Presets (MiniCodex UI)
+- Agents are created from presets (YAML) discovered via platformdirs:
+  - `platformdirs.user_config_dir('adgn')/presets`
+  - Examples: Linux `~/.config/adgn/presets`, macOS `~/Library/Application Support/adgn/presets`
+  - Override via `ADGN_AGENT_PRESETS_DIR=/path/to/presets`
+- Generic example preset (no organization-specific details) is provided here:
+  - `examples/presets/generic-sandbox.yaml`
+  - Copy it into your presets directory (above) or set `ADGN_AGENT_PRESETS_DIR` to the `examples/presets` folder to try it.
+- See the in-repo example for a concrete template you can copy and adapt: `examples/presets/generic-sandbox.yaml`.
+
+- API endpoints:
+  - `GET /api/presets` → list available presets
+  - `POST /api/agents {"preset":"dev-echo"}` → create a new agent from a preset
+  - UI: Agents sidebar offers a Preset dropdown + Create button
+  - System prompt in the preset is combined with an MCP servers header at agent start
+
 ## Console scripts
 - wt → adgn.wt.cli:main
 - wt-install → adgn.wt.shell.install:main
 - rspcache → adgn.rspcache.cli:main
 - switch_gnome_terminal_profile → adgn.gnome.switch_gnome_terminal_profile:run
-- LLM: adgn-mini-codex, adgn-llm-edit, adgn-sysrw, adgn-properties, sandbox-jupyter-mcp
+- LLM: adgn-mini-codex, adgn-llm-edit, adgn-sysrw, adgn-properties, sandbox-jupyter
 
 ## More details
 - See ./CLAUDE.md for a deeper guide (test config, module map, LLM toolkit notes).

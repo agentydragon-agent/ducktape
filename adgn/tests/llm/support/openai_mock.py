@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, Protocol
+
 from pydantic import BaseModel, ConfigDict
+
 from adgn.openai_utils.model import (
     OpenAIModelProto,
     ResponsesRequest,
     ResponsesResult,
 )
-
 
 # Sentinel for selecting a real AsyncOpenAI client in parameterized tests
 LIVE = object()

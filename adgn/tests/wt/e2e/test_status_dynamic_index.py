@@ -1,3 +1,4 @@
+from datetime import timedelta
 import time
 
 import pytest
@@ -5,7 +6,6 @@ import pytest
 from adgn.wt.shared.git_utils import git_run
 
 from ..test_utils import run_cli_command
-from datetime import timedelta
 
 pytestmark = pytest.mark.timeout(20)
 
@@ -18,9 +18,7 @@ def test_worktree_add_then_remove_reflected_in_status(real_env, real_temp_repo):
 
     # Create a worktree via CLI
     name = "dyn-x"
-    r1 = run_cli_command(
-        ["create", "--yes", name], env=real_env, timeout=timedelta(seconds=10.0)
-    )
+    r1 = run_cli_command(["create", "--yes", name], env=real_env, timeout=timedelta(seconds=10.0))
     assert r1.returncode == 0
 
     # Poll until it appears
@@ -35,9 +33,7 @@ def test_worktree_add_then_remove_reflected_in_status(real_env, real_temp_repo):
     assert appeared, "newly created worktree did not appear in status output"
 
     # Remove the worktree via CLI
-    r2 = run_cli_command(
-        ["rm", name, "--force"], env=real_env, timeout=timedelta(seconds=15.0)
-    )
+    r2 = run_cli_command(["rm", name, "--force"], env=real_env, timeout=timedelta(seconds=15.0))
     assert r2.returncode == 0
 
     # Ensure git no longer lists the worktree (verifies git worktree remove)

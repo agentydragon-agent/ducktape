@@ -103,8 +103,9 @@ class VisualNode(BaseNode):
         # a raw resolved node when callers pass a NodeStore; ensure we return
         # a string name if available.
         val_node = get_tuple_value(metanode, MEDIA_KEY_ID)
-        if val_node:
-            return getattr(val_node, "name", None)
+        if isinstance(val_node, BaseNode):
+            return val_node.name
+        return None
 
         return None
 
@@ -128,7 +129,9 @@ class CodeBlockNode(BaseNode):
                 if key_id == LANGUAGE_KEY_ID:
                     # First value child carries the language name
                     val = child.child_nodes[1]
-                    return getattr(val, "name", "") or ""
+                    if isinstance(val, BaseNode) and val.name:
+                        return val.name
+                    return ""
         return ""
 
 
@@ -146,7 +149,7 @@ _DOC_CLASS: Mapping[str | None, type[BaseNode]] = {
 
 class NodeStore(Mapping[NodeId, BaseNode]):
     def __init__(self, mapping: Mapping[NodeId, BaseNode]):
-        self._m = dict(mapping)
+        self._m: dict[NodeId, BaseNode] = dict(mapping)
         self._supertag_index: dict[NodeId, list[str]] = {}
         # Set store reference on each node
         for node in self._m.values():
@@ -221,10 +224,8 @@ class NodeStore(Mapping[NodeId, BaseNode]):
 
         def _make_node(raw: dict[str, Any]) -> BaseNode:
             # There are some nodes with no _docType, e.g. hN3mU6IQqe.
-            return _DOC_CLASS.get(
-                raw["props"].get("_docType"),
-                UnknownNode,
-            ).model_validate(raw)
+            node_model = _DOC_CLASS.get(raw["props"].get("_docType"), UnknownNode)
+            return node_model.model_validate(raw)  # type: ignore[return-value]
 
         nodes = {NodeId(n.id): n for n in (_make_node(doc) for doc in data["docs"])}
         return cls(nodes)

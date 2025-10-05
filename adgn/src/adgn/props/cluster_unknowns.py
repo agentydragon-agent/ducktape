@@ -5,17 +5,17 @@ import json
 from pathlib import Path
 from typing import cast
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP  # type: ignore
-from adgn.openai_utils.model import OpenAIModelProto
-from adgn.openai_utils.client_factory import build_client
 from pydantic import BaseModel, Field
 import yaml
 
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import GateUntil
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP  # type: ignore
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.openai_utils.client_factory import build_client
+from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.prop_utils import pkg_dir
 
 
@@ -123,9 +123,8 @@ async def cluster_unknowns_async(
         state.result = payload.clusters
         return "ok"
 
-    specs = {"cluster_submit": make_inproc_slot_spec(mcp)}
-
-    async with McpManager(specs) as mcp_mgr:
+    async with McpManager({}) as mcp_mgr:
+        await mcp_mgr.attach_server("cluster_submit", make_inproc_slot_spec(mcp))
         system = (
             "You cluster semantically equivalent issues. You MUST call cluster_submit.submit_result exactly once with: "
             "[{name:string, issues:[string,...]}]."
@@ -149,8 +148,7 @@ async def cluster_unknowns_async(
             parallel_tool_calls=True,
         )
         user = (
-            "Cluster the following issues. Every uid must appear in >=1 cluster.\n\n"
-            + input_lines
+            "Cluster the following issues. Every uid must appear in >=1 cluster.\n\n" + input_lines
         )
         await agent.run(user)
         if state.result is None:
@@ -200,9 +198,7 @@ def cluster_unknowns(
             out_spec = root / spec
             out_spec.mkdir(parents=True, exist_ok=True)
             tasks.append(
-                cluster_unknowns_async(
-                    items, model=model, out_root=out_spec, client=typed_client
-                )
+                cluster_unknowns_async(items, model=model, out_root=out_spec, client=typed_client)
             )
         # Run in parallel; await all
         await asyncio.gather(*tasks)

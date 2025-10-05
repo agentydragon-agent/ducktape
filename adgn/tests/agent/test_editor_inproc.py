@@ -6,9 +6,9 @@ import pytest
 
 from adgn.mcp.editor_server import (
     DoneInput,
-    Success,
     ReadInfoResult,
     ReplaceTextResult,
+    Success,
 )
 
 

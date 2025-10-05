@@ -4,19 +4,27 @@ import asyncio
 
 import pytest
 
-from adgn.seatbelt.model import FileRule, PathFilter, ProcessRule, SBPLPolicy
-from adgn.seatbelt.runner import apopen, run_sandboxed, run_sandboxed_async
+from adgn.seatbelt.model import (
+    Action,
+    DefaultBehavior,
+    FileOp,
+    FileRule,
+    ProcessRule,
+    SBPLPolicy,
+    Subpath,
+)
+from adgn.seatbelt.runner import apopen, run_sandboxed_async
 
 
 @pytest.fixture
 def allow_all_policy() -> SBPLPolicy:
     return SBPLPolicy(
-        default_behavior="allow",
+        default_behavior=DefaultBehavior.ALLOW,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
         files=[
-            FileRule(op="file-map-executable", filters=[]),
-            FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value="/")]),
-            FileRule(op="file-write*", filters=[PathFilter(kind="subpath", value="/")]),
+            FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
+            FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
+            FileRule(op=FileOp.FILE_WRITE_STAR, filters=[Subpath(subpath="/")]),
         ],
     )
 
@@ -25,11 +33,11 @@ def allow_all_policy() -> SBPLPolicy:
 def restrictive_echo_policy() -> SBPLPolicy:
     # Default-deny + minimal read needed to exec echo on this host
     return SBPLPolicy(
-        default_behavior="deny",
+        default_behavior=DefaultBehavior.DENY,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
         files=[
-            FileRule(op="file-map-executable", filters=[]),
-            FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value="/")]),
+            FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
+            FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
         ],
     )
 
@@ -39,14 +47,14 @@ def policy_deny_users(allow_all_policy: SBPLPolicy) -> SBPLPolicy:
     p = allow_all_policy.model_copy(deep=True)
     p.files += [
         FileRule(
-            op="file-read*",
-            action="deny",
-            filters=[PathFilter(kind="subpath", value="/Users")],
+            op=FileOp.FILE_READ_STAR,
+            action=Action.DENY,
+            filters=[Subpath(subpath="/Users")],
         ),
         FileRule(
-            op="file-read-metadata",
-            action="deny",
-            filters=[PathFilter(kind="subpath", value="/Users")],
+            op=FileOp.FILE_READ_METADATA,
+            action=Action.DENY,
+            filters=[Subpath(subpath="/Users")],
         ),
     ]
     return p
@@ -69,31 +77,6 @@ async def cat_process(require_sandbox_exec, allow_all_policy: SBPLPolicy):
 
 
 @pytest.fixture
-def run_sync(require_sandbox_exec):
-    def _run(policy: SBPLPolicy, argv: list[str], *, trace: bool = False):
-        rr = run_sandboxed(policy, argv, trace=trace)
-        if rr.exit_code != 0:
-            print("\n=== seatbelt diagnostics (sync) ===")
-            print(f"cmd: {' '.join(rr.cmd)}")
-            print(
-                "-- policy.sb (head) --\n" + "\n".join(rr.policy_text.splitlines()[:25])
-            )
-            if rr.unified_sandbox_denies_text:
-                tail = "\n".join(
-                    (rr.unified_sandbox_denies_text or "").splitlines()[-120:]
-                )
-                print("-- unified sandbox denies (tail) --\n" + tail)
-            if rr.trace_text:
-                print(
-                    "-- seatbelt trace (tail) --\n"
-                    + "\n".join((rr.trace_text or "").splitlines()[-120:])
-                )
-        return rr
-
-    return _run
-
-
-@pytest.fixture
 def run_async(require_sandbox_exec):
     async def _run(policy: SBPLPolicy, argv: list[str], *, trace: bool = False):
         rr = await run_sandboxed_async(
@@ -106,13 +89,9 @@ def run_async(require_sandbox_exec):
         if rr.exit_code != 0:
             print("\n=== seatbelt diagnostics (async) ===")
             print(f"cmd: {' '.join(rr.cmd)}")
-            print(
-                "-- policy.sb (head) --\n" + "\n".join(rr.policy_text.splitlines()[:25])
-            )
+            print("-- policy.sb (head) --\n" + "\n".join(rr.policy_text.splitlines()[:25]))
             if rr.unified_sandbox_denies_text:
-                tail = "\n".join(
-                    (rr.unified_sandbox_denies_text or "").splitlines()[-120:]
-                )
+                tail = "\n".join((rr.unified_sandbox_denies_text or "").splitlines()[-120:])
                 print("-- unified sandbox denies (tail) --\n" + tail)
             if rr.trace_text:
                 print(
@@ -122,3 +101,10 @@ def run_async(require_sandbox_exec):
         return rr
 
     return _run
+
+
+# For tests marked with @pytest.mark.anyio (e.g., python_basic), prefer trio backend to avoid
+# nested runner conflicts occasionally seen with pytest-asyncio + asyncio runners on some hosts.
+@pytest.fixture
+def anyio_backend() -> str:
+    return "trio"

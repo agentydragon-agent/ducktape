@@ -16,17 +16,11 @@ async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen() -> No
     rec = SpecimenRegistry.load_strict("2025-08-29-pyright_watch_report")
 
     async with rec.hydrated_copy() as content_root:
-        assert content_root.is_dir(), (
-            f"hydrated content root not a directory: {content_root}"
-        )
-
-        # Only count files directly under the working dir (ignore subdirectories)
+        assert content_root.is_dir(), f"hydrated content root not a directory: {content_root}"
         files = [p.name for p in content_root.iterdir() if p.is_file()]
-
-        # Helpful assertion message to show unexpected contents
-        assert files == ["pyright_watch_report.py"], (
-            f"Expected exactly one file ['pyright_watch_report.py'] in {content_root}, got: {files}"
-        )
+    assert files == ["pyright_watch_report.py"], (
+        f"Expected exactly one file ['pyright_watch_report.py'] in {content_root}, got: {files}"
+    )
 
 
 @pytest.mark.asyncio

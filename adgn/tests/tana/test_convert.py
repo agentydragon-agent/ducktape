@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from adgn.tana.convert import export_node_as_tanapaste
-from adgn.tana.tana_lib import NodeStore
+from adgn.tana.tana_lib.models import NodeStore
 
 # Testdata lives alongside this test under tests/adgn/tana_export/testdata
 TESTDATA_PATH = Path(__file__).parent / "testdata"
@@ -33,9 +33,7 @@ def test_node_export(node_id):
     # TODO(mpokorny): b9AZZEuj42vC golden includes workspace-level sibling refs after search rows.
     # Converter intentionally emits only search results; review and update the golden or converter rule.
     if node_id == "b9AZZEuj42vC":
-        pytest.skip(
-            "Pending golden review for search-table node; converter emits only search rows"
-        )
+        pytest.skip("Pending golden review for search-table node; converter emits only search rows")
     store = NodeStore.from_file(TESTDATA_PATH / "test_workspace.json")
     actual = export_node_as_tanapaste(store, store[node_id])
     expected = (TESTDATA_PATH / f"{node_id}.tanapaste").read_text()

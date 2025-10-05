@@ -1,0 +1,89 @@
+# Post-install Job to configure OAuth2 in Gitea
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitea-oauth-setup
+  namespace: gitea
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        # Wait for Gitea to be ready
+        - name: wait-for-gitea
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for Gitea to be ready..."
+              # Just check if the port is open since API requires auth
+              until nc -z gitea-http 3000; do
+                echo "Gitea not ready yet, waiting..."
+                sleep 5
+              done
+              echo "Gitea is ready!"
+      containers:
+        - name: configure-oauth
+          image: gitea/gitea:1.22.3
+          securityContext:
+            runAsUser: 1000  # Run as git user (UID 1000)
+            runAsGroup: 1000
+          env:
+            - name: USER_UID
+              value: "1000"
+            - name: USER_GID
+              value: "1000"
+            - name: GITEA_WORK_DIR
+              value: "/data"
+            - name: GITEA_CUSTOM
+              value: "/data/gitea"
+            - name: OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-oauth-shared
+                  key: client_id
+            - name: OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-oauth-shared
+                  key: client_secret
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "Configuring OAuth2 provider..."
+
+              # Set up environment for gitea command
+              export HOME=/data/git
+              cd /data
+
+              # Check if OAuth2 provider already exists
+              if /app/gitea/gitea admin auth list | grep -q "Authentik"; then
+                echo "OAuth2 provider 'Authentik' already exists, skipping..."
+              else
+                /app/gitea/gitea admin auth add-oauth \
+                  --name "Authentik" \
+                  --provider "openidConnect" \
+                  --key "${OAUTH_CLIENT_ID}" \
+                  --secret "${OAUTH_CLIENT_SECRET}" \
+                  --auto-discover-url "https://auth.k3s.agentydragon.com/application/o/gitea/.well-known/openid-configuration" \
+                  --scopes "openid profile email groups" \
+                  --group-claim-name "groups" \
+                  --admin-group "gitea-admins" \
+                  --restricted-group "gitea-users"
+
+                echo "OAuth2 provider configured successfully!"
+              fi
+          volumeMounts:
+            - name: gitea-config
+              mountPath: /data
+      volumes:
+        - name: gitea-config
+          persistentVolumeClaim:
+            claimName: gitea-shared-storage

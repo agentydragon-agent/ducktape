@@ -1,31 +1,39 @@
 import pytest
 
-from adgn.seatbelt.model import FileRule, PathFilter, ProcessRule, SBPLPolicy
-from adgn.seatbelt.runner import run_sandboxed
+from adgn.seatbelt.model import (
+    Action,
+    DefaultBehavior,
+    FileOp,
+    FileRule,
+    ProcessRule,
+    SBPLPolicy,
+    Subpath,
+)
+from adgn.seatbelt.runner import run_sandboxed_async
 
 
 @pytest.fixture
 def policy_deny_users() -> SBPLPolicy:
     base = SBPLPolicy(
-        default_behavior="allow",
+        default_behavior=DefaultBehavior.ALLOW,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
         files=[
-            FileRule(op="file-map-executable", filters=[]),
-            FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value="/")]),
-            FileRule(op="file-write*", filters=[PathFilter(kind="subpath", value="/")]),
+            FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
+            FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
+            FileRule(op=FileOp.FILE_WRITE_STAR, filters=[Subpath(subpath="/")]),
         ],
     )
     # Carve-out deny /Users
     base.files += [
         FileRule(
-            op="file-read*",
-            action="deny",
-            filters=[PathFilter(kind="subpath", value="/Users")],
+            op=FileOp.FILE_READ_STAR,
+            action=Action.DENY,
+            filters=[Subpath(subpath="/Users")],
         ),
         FileRule(
-            op="file-read-metadata",
-            action="deny",
-            filters=[PathFilter(kind="subpath", value="/Users")],
+            op=FileOp.FILE_READ_METADATA,
+            action=Action.DENY,
+            filters=[Subpath(subpath="/Users")],
         ),
     ]
     return base
@@ -33,9 +41,10 @@ def policy_deny_users() -> SBPLPolicy:
 
 @pytest.mark.macos
 @pytest.mark.shell
-def test_exec_allow_root_deny_users(policy_deny_users: SBPLPolicy):
-    ok = run_sandboxed(policy_deny_users, ["/bin/sh", "-c", "ls /System"])
+@pytest.mark.asyncio
+async def test_exec_allow_root_deny_users(policy_deny_users: SBPLPolicy):
+    ok = await run_sandboxed_async(policy_deny_users, ["/bin/sh", "-c", "ls /System"])
     assert ok.exit_code == 0
 
-    deny = run_sandboxed(policy_deny_users, ["/bin/sh", "-c", "ls /Users"])
+    deny = await run_sandboxed_async(policy_deny_users, ["/bin/sh", "-c", "ls /Users"])
     assert deny.exit_code != 0

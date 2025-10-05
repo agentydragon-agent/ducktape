@@ -5,7 +5,7 @@
 
 Behavior:
 - On each call, iterates all known specimens (SpecimenRegistry), runs the critic and grader, and returns only metrics.
-- Persists artifacts under adgn_llm/properties/runs/prompt_optimize/<ts>/<round>/<specimen>/ including critic.json, grade.json, and transcripts.
+- Persists artifacts under props/runs/prompt_optimize/<ts>/<round>/<specimen>/ including critic.json, grade.json, and transcripts.
 """
 
 from __future__ import annotations
@@ -18,24 +18,21 @@ import logging
 from pathlib import Path
 import traceback
 from typing import Annotated, Any, Literal
-# No local AsyncOpenAI construction here; entrypoints provide a typed client
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
 from pydantic import BaseModel, ConfigDict, Field
-from adgn.openai_utils.model import OpenAIModelProto
 
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import GateUntil
 from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import Continue, RequireAny, NoLoopDecision
 from adgn.agent.loggers import TranscriptLoggerHandler
+from adgn.agent.loop_control import Continue, NoLoopDecision, RequireAny
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
-from adgn.props.lint_issue import (
-    make_container_info_call,
-    make_ls_workspace_call,
-)
+
+# No local AsyncOpenAI construction here; entrypoints provide a typed client
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic import (
     CriticSubmitPayload,
     CriticSubmitState,
@@ -43,6 +40,10 @@ from adgn.props.critic import (
 )
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grade_runner import _metrics_row, grade_critic_output
+from adgn.props.lint_issue import (
+    make_container_info_call,
+    make_ls_workspace_call,
+)
 from adgn.props.prompts.util import build_scope_text, render_prompt_template
 from adgn.props.prop_utils import pkg_dir
 from adgn.props.specimens.registry import (
@@ -80,11 +81,10 @@ async def _run_critic_for_specimen(
     async with rec.hydrated_copy(gitconfig=None) as content_root:
         wiring = properties_docker_spec(content_root, mount_properties=False)
         critic_server = make_critic_submit_server(critic_state, name="critic_submit")
-        specs = {
-            wiring.server_name: wiring.server_spec,
-            "critic_submit": make_inproc_slot_spec(critic_server),
-        }
-        async with McpManager(specs) as mcp:
+        async with McpManager({}) as mcp:
+            await mcp.attach_server(wiring.server_name, wiring.server_spec)
+            await mcp.attach_server("critic_submit", make_inproc_slot_spec(critic_server))
+
             # Bootstrap handler: emit synthetic function_calls without sampling to inspect mounts
             class BootstrapInspectHandler(BaseHandler):
                 def __init__(self) -> None:
@@ -113,8 +113,7 @@ async def _run_critic_for_specimen(
                 TranscriptLoggerHandler(run_dir / specimen / "critic"),
                 # Defer gating during first bootstrap phase to avoid Continue conflicts
                 GateUntil(
-                    lambda: (critic_state.result is not None)
-                    or (critic_state.error is not None),
+                    lambda: (critic_state.result is not None) or (critic_state.error is not None),
                     defer_when=lambda: not bootstrap._done,
                 ),
             ]

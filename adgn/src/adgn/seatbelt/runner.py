@@ -1,5 +1,5 @@
 """
-Seatbelt runner: execute commands under an SBPLPolicy with subprocess-like sync/async APIs.
+Seatbelt runner: execute commands under an SBPLPolicy with async subprocess-like APIs.
 - No magic rule injection. The policy you pass is the policy used.
 - Trace paths are managed internally when trace=True (on a deep copy of the policy).
 - Outputs are bytes (no implicit decoding). Durations are datetime.timedelta.
@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
 import sys
+import tempfile
 
 from .compile import compile_sbpl
 from .model import SBPLPolicy, TraceConfig
@@ -149,54 +149,8 @@ def _finalize_result(
     )
 
 
-def run_sandboxed(
-    policy: SBPLPolicy,
-    argv: list[str],
-    *,
-    cwd: Path | None = None,
-    env: dict[str, str] | None = None,
-    trace: bool = False,
-    trace_dir: Path | None = None,
-    read_trace: bool = True,
-    keep_files: bool = True,
-    sandbox_exec: str | None = None,
-) -> RunResult:
-    """Synchronous one-shot runner (captures stdout/stderr as bytes)."""
-    sx = sandbox_exec or shutil.which("sandbox-exec")
-    if not sx:
-        raise FileNotFoundError("sandbox-exec not found on PATH; macOS-only")
-
-    artifacts_dir = Path(tempfile.mkdtemp(prefix="seatbelt-run-"))
-    _policy, policy_file, trace_file, policy_text = _prepare_policy(
-        policy, artifacts_dir=artifacts_dir, trace=trace, trace_dir=trace_dir
-    )
-
-    cmd = [sx, "-f", str(policy_file), *argv]
-    started = datetime.now(timezone.utc)
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        text=False,
-        capture_output=True,
-        check=False,
-    )
-    ended = datetime.now(timezone.utc)
-    return _finalize_result(
-        returncode=proc.returncode,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
-        started=started,
-        ended=ended,
-        policy_file=policy_file,
-        policy_text=policy_text,
-        trace_file=trace_file,
-        read_trace=read_trace,
-        keep_files=keep_files,
-        artifacts_dir=artifacts_dir,
-        cmd=cmd,
-        sandbox_exec_path=sx,
-    )
+# NOTE: The synchronous runner has been removed.
+# Seatbelt now provides async-only APIs (run_sandboxed_async, apopen).
 
 
 async def run_sandboxed_async(
@@ -208,7 +162,7 @@ async def run_sandboxed_async(
     trace: bool = False,
     trace_dir: Path | None = None,
     read_trace: bool = True,
-    keep_files: bool = True,
+    keep_files: bool | None = None,
     sandbox_exec: str | None = None,
     stdin: int | None = asyncio.subprocess.PIPE,
     stdout: int | None = asyncio.subprocess.PIPE,
@@ -240,6 +194,7 @@ async def run_sandboxed_async(
         await proc.wait()
         out_b, err_b = None, None
     ended = datetime.now(timezone.utc)
+    keep = trace if keep_files is None else keep_files
     return _finalize_result(
         returncode=proc.returncode,
         stdout=out_b,
@@ -250,7 +205,7 @@ async def run_sandboxed_async(
         policy_text=policy_text,
         trace_file=trace_file,
         read_trace=read_trace,
-        keep_files=keep_files,
+        keep_files=keep,
         artifacts_dir=artifacts_dir,
         cmd=cmd,
         sandbox_exec_path=sx,
@@ -326,9 +281,7 @@ class AsyncSeatbeltPopen:
     async def wait(self) -> int:
         return await self._proc.wait()
 
-    async def communicate(
-        self, input: bytes | None = None, timeout: float | None = None
-    ):
+    async def communicate(self, input: bytes | None = None, timeout: float | None = None):
         if timeout is None:
             return await self._proc.communicate(input)
         return await asyncio.wait_for(self._proc.communicate(input), timeout)

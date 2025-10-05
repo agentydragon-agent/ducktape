@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Mapping
-import json
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
@@ -34,9 +34,7 @@ def write_pr_fixtures_file(
     }
     path = Path(config.wt_dir) / "pr_fixtures.json"
     # Serialize via Pydantic TypeAdapter for stable ordering/shape under tests
-    content_bytes = TypeAdapter(dict[str, PRFixtureEntry]).dump_json(
-        validated, by_alias=False
-    )
+    content_bytes = TypeAdapter(dict[str, PRFixtureEntry]).dump_json(validated, by_alias=False)
     path.write_bytes(content_bytes)
     return path
 

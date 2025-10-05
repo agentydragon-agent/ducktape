@@ -17,9 +17,8 @@ import re
 import subprocess
 import tempfile
 import time
-from typing import Literal, Any
+from typing import Any, Literal
 
-import docker
 import matplotlib
 import matplotlib.pyplot as plt
 from rich.console import Console
@@ -27,23 +26,21 @@ from rich.traceback import install as rich_traceback_install
 import tiktoken
 import typer
 
-from adgn.llm.logging_config import configure_logging
-from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
-from adgn.openai_utils.model import OpenAIModelProto
-from adgn.agent.reducer import GateUntil
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
-from adgn.props.cli import (
-    BuildOptions,
-    _detect_tools,
-    _run_check_minicodex_async,
-    build_cmd,
-)
+from adgn.llm.logging_config import configure_logging
+from adgn.llm.rendering.rich_renderers import render_to_rich
+from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.openai_utils.client_factory import build_client
+from adgn.openai_utils.model import OpenAIModelProto
+from adgn.props.cli_shared import BuildOptions, build_cmd, detect_tools, run_check_minicodex_async
 from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic import (
+    CRITIC_MCP_INSTRUCTIONS,
     CriticSubmitPayload,
     CriticSubmitState,
     make_critic_submit_server,
@@ -57,7 +54,6 @@ from adgn.props.docker_env import (
     properties_docker_spec,
 )
 from adgn.props.eval_harness import run_all_evals
-from adgn.openai_utils.client_factory import build_client
 from adgn.props.grade_runner import _metrics_row, grade_critic_output
 from adgn.props.lint_issue import run_specimen_lint_issue_async
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
@@ -78,14 +74,12 @@ from adgn.props.specimens.registry import (
     find_specimens_base,
     list_specimen_names,
 )
-from adgn.llm.rendering.rich_renderers import render_to_rich
+import docker
 
 # Reduce Rich traceback verbosity for CLI errors
 rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
 
-app = typer.Typer(
-    help="adgn-properties (Typer) — properties tooling", add_completion=False
-)
+app = typer.Typer(help="adgn-properties (Typer) — properties tooling", add_completion=False)
 
 # Typer parameter singletons to avoid function-call defaults in signatures (ruff B008)
 ARG_WORKDIR = typer.Argument(..., exists=True, file_okay=False, resolve_path=True)
@@ -129,9 +123,7 @@ OPT_OUTPUT_DIR = typer.Option(
 )
 OPT_CONTEXT = typer.Option(
     "minimal",
-    help=(
-        "Agent context: minimal (no extra servers) or props (mount /props via docker MCP)"
-    ),
+    help=("Agent context: minimal (no extra servers) or props (mount /props via docker MCP)"),
 )
 OPT_CRITIQUE = typer.Option(
     ...,
@@ -147,9 +139,7 @@ OPT_WORKDIR_CRITIC = typer.Option(
     help="Container working dir (default: /workspace)",
 )
 # Shared option for iteration budget
-OPT_MAX_ITERS = typer.Option(
-    10, help="Maximum number of prompt evaluations (tool calls)"
-)
+OPT_MAX_ITERS = typer.Option(10, help="Maximum number of prompt evaluations (tool calls)")
 OPT_SKIP_GIT_REPO_CHECK = typer.Option(
     False,
     help="Pass --skip-git-repo-check to codex exec",
@@ -237,17 +227,15 @@ async def cmd_check(
         return
 
     wiring = properties_docker_spec(workdir, mount_properties=True)
-    role_mode: Literal["find", "open", "discover"] = (
-        "open" if allow_general_findings else "find"
-    )
+    role_mode: Literal["find", "open", "discover"] = "open" if allow_general_findings else "find"
     prompt_text = build_role_prompt(
         role_mode,
         scope,
         wiring=wiring,
         supplemental_text=None,
-        available_tools=_detect_tools(),
+        available_tools=detect_tools(),
     )
-    rc = await _run_check_minicodex_async(
+    rc = await run_check_minicodex_async(
         workdir,
         prompt_text,
         model=model,
@@ -286,9 +274,7 @@ async def _run_specimen_minicodex_async(
     man = rec.manifest
 
     supplemental_text = (
-        read_embedded_paths([Path(p) for p in (embed_paths or [])])
-        if embed_paths
-        else None
+        read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
     )
 
     # Build prompt according to mode
@@ -310,7 +296,7 @@ async def _run_specimen_minicodex_async(
             scope_text,
             wiring=wiring,
             supplemental_text=supplemental_text,
-            available_tools=_detect_tools(),
+            available_tools=detect_tools(),
         )
         tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
         tmpdir.mkdir(parents=True, exist_ok=True)
@@ -328,17 +314,15 @@ async def _run_specimen_minicodex_async(
             scope_text,
             wiring=wiring,
             supplemental_text=supplemental_text,
-            available_tools=_detect_tools(),
+            available_tools=detect_tools(),
         )
 
         # Critic flow via MiniCodex: agent must call critic_submit.submit_result
         submit_state = CriticSubmitState()
         critic_server = make_critic_submit_server(submit_state, name="critic_submit")
-        specs = {
-            wiring.server_name: wiring.server_spec,
-            "critic_submit": make_inproc_slot_spec(critic_server),
-        }
-        async with McpManager(specs) as mcp:
+        async with McpManager({}) as mcp:
+            await mcp.attach_server(wiring.server_name, wiring.server_spec)
+            await mcp.attach_server("critic_submit", make_inproc_slot_spec(critic_server))
             agent = await MiniCodex.create(
                 model=model,
                 mcp=mcp,
@@ -365,9 +349,7 @@ async def _run_specimen_minicodex_async(
         if submit_state.error is not None:
             Console().print(render_to_rich(submit_state.error))
             return 2
-        assert submit_state.result is not None, (
-            "Critic did not call submit_result or submit_error?"
-        )
+        assert submit_state.result is not None, "Critic did not call submit_result or submit_error?"
         Console().print(render_to_rich(submit_state.result))
         # Write critique JSON for specimen-check runs (find/open modes)
         if mode in ("find", "open"):
@@ -404,9 +386,7 @@ async def cmd_specimen_check(
         raise typer.Exit(2)
 
     git_path = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
-    mode: Literal["discover", "open", "find"] = (
-        "open" if allow_general_findings else "find"
-    )
+    mode: Literal["discover", "open", "find"] = "open" if allow_general_findings else "find"
 
     rc = await _run_specimen_minicodex_async(
         specimen,
@@ -442,9 +422,7 @@ async def cmd_specimen_discover(
         raise typer.Exit(2)
     spec_dir = base / specimen
     embed_paths = [
-        str(p)
-        for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"]
-        if p.exists()
+        str(p) for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()
     ]
     git_path = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
     rc = await _run_specimen_minicodex_async(
@@ -487,7 +465,7 @@ async def prompt_optimize(
         agent_model=model,
         client=build_client(model),
     )
-    specs = {"prompt_eval": make_inproc_slot_spec(pe_server)}
+    pe_spec = make_inproc_slot_spec(pe_server)
 
     system = (
         "You are an expert LLM prompt engineer.\n\n"
@@ -495,7 +473,7 @@ async def prompt_optimize(
         "You will have a given maximum budget of prompt_eval.test_prompt calls. Wisely trade off exploration and exploitation.\n\n"
         "Context: The critic uses an MCP server 'critic_submit'. The critic already receives the following tool instructions at runtime (no need to repeat):\n"
         "<critic mcp instructions>\n"
-        f"{__import__('adgn.props.critic', fromlist=['CRITIC_MCP_INSTRUCTIONS']).CRITIC_MCP_INSTRUCTIONS}"
+        f"{CRITIC_MCP_INSTRUCTIONS}"
         "</critic mcp instructions>\n\n"
         "Keep your prompt focused on search/analysis strategy and guardrails; avoid restating tool schemas.\n"
     )
@@ -504,18 +482,17 @@ async def prompt_optimize(
     props_dir = None
     if context == "props":
         wiring = properties_docker_spec(pkg_dir(), mount_properties=True)
-        specs["docker"] = wiring.server_spec
+        docker_spec = wiring.server_spec
         props_dir = wiring.definitions_container_dir
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = (
-        out_dir
-        if out_dir is not None
-        else (pkg_dir() / "runs" / "prompt_optimize" / ts)
-    )
+    root = out_dir if out_dir is not None else (pkg_dir() / "runs" / "prompt_optimize" / ts)
     root.mkdir(parents=True, exist_ok=True)
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("prompt_eval", pe_spec)
+        if context == "props":
+            await mcp.attach_server("docker", docker_spec)
         agent = await MiniCodex.create(
             model=model,
             mcp=mcp,
@@ -575,9 +552,7 @@ async def prompt_optimize(
             recs = []
             for x in data:
                 val = (
-                    x.get("fuzzy_recall")
-                    if x.get("fuzzy_recall") is not None
-                    else x.get("recall")
+                    x.get("fuzzy_recall") if x.get("fuzzy_recall") is not None else x.get("recall")
                 )
                 if isinstance(val, int | float):
                     recs.append(float(val))
@@ -646,21 +621,15 @@ async def prompt_eval(
     ),
     out_dir: Path | None = OPT_OUTPUT_DIR,
     model: str = OPT_MODEL,
-    debug: bool = typer.Option(
-        False, help="Log raw OpenAI HTTP to JSONL for diagnostics"
-    ),
+    debug: bool = typer.Option(False, help="Log raw OpenAI HTTP to JSONL for diagnostics"),
 ) -> None:
     """Evaluate a critic system prompt across all known specimens and emit metrics list."""
 
     # Compute run root early to route HTTP logging for a single client per run
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = (
-        out_dir if out_dir is not None else (pkg_dir() / "runs" / "prompt_eval")
-    ) / ts
+    root = (out_dir if out_dir is not None else (pkg_dir() / "runs" / "prompt_eval")) / ts
     root.mkdir(parents=True, exist_ok=True)
-    client = build_client(
-        model, log_http_path=(root / "openai_http.jsonl") if debug else None
-    )
+    client = build_client(model, log_http_path=(root / "openai_http.jsonl") if debug else None)
     _pe_server, _state = build_prompt_eval_server(
         agent_model=model,
         client=client,
@@ -802,7 +771,7 @@ async def cmd_lint_issue(
 @app.command("eval-all")
 @async_run
 async def cmd_eval_all() -> None:
-    await run_all_evals(model="gpt-5", gitconfig=None, client=build_client())
+    await run_all_evals(model="gpt-5", gitconfig=None, client=build_client("gpt-5"))
 
 
 @app.command("specimen-exec")

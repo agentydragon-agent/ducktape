@@ -8,38 +8,37 @@ import tempfile
 import time
 from typing import Any, cast
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
-from adgn.openai_utils.builders import make_item_tool_call
-from adgn.openai_utils.model import FunctionCallItem
 from rich.console import Console, ConsoleRenderable, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from adgn.agent.agent import MiniCodex
+from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.loggers import TranscriptLoggerHandler
+from adgn.agent.loop_control import (
+    Abort,
+    Auto,
+    Continue,
+    RequireAny,
+)
+from adgn.agent.mcp_manager import McpManager, build_mcp_function
+from adgn.agent.reducer import BaseHandler
+from adgn.llm.rendering.rich_renderers import render_to_rich
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.mcp._shared.types import ExecInput
 from adgn.mcp.docker_exec.server import (
     SERVER_NAME as DOCKER_SERVER_NAME,
     TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
 )
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp._shared.types import ExecInput
-from adgn.mcp.types import ServerSlotSpec
-from adgn.agent.agent import MiniCodex
-from adgn.openai_utils.model import OpenAIModelProto
-from adgn.agent.reducer import BaseHandler
-from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loggers import TranscriptLoggerHandler
-from adgn.agent.loop_control import (
-    Abort,
-    Continue,
-    RequireAny,
-    Auto,
-)
-from adgn.agent.mcp_manager import McpManager, build_mcp_function
+from adgn.openai_utils.builders import make_item_tool_call
+from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.props.models.issue import IssueCore, IssueId, LineRange, Occurrence
 from adgn.props.models.lint import (
+    AnchorIncorrect,
     IssueLintFindingRecord,
     LintSubmitPayload,
-    AnchorIncorrect,
 )
 from adgn.props.prompts.util import (
     build_input_schemas_json,
@@ -47,7 +46,6 @@ from adgn.props.prompts.util import (
 )
 from adgn.props.prop_utils import pkg_dir, props_definitions_root
 from adgn.props.specimens.registry import SpecimenRegistry
-from adgn.llm.rendering.rich_renderers import render_to_rich
 
 from .docker_env import PropertiesDockerWiring, properties_docker_spec
 
@@ -167,9 +165,7 @@ def make_nl_tool_call(
     return make_item_tool_call(
         call_id=call_id,
         name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
-        arguments=ExecInput(
-            cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)]
-        ).model_dump(),
+        arguments=ExecInput(cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)]).model_dump(),
     )
 
 
@@ -344,21 +340,13 @@ class LinterController(BaseHandler):
         # Bootstrap synthetic steps
         self._step += 1
         if self._step == 1:
-            return Continue(
-                Auto(), inserts_input=tuple(self._step1), skip_sampling=True
-            )
+            return Continue(Auto(), inserts_input=tuple(self._step1), skip_sampling=True)
         if self._step == 2 and self._step2:
-            return Continue(
-                Auto(), inserts_input=tuple(self._step2), skip_sampling=True
-            )
+            return Continue(Auto(), inserts_input=tuple(self._step2), skip_sampling=True)
         if self._step == 3 and self._files and not self._big_detected:
-            return Continue(
-                Auto(), inserts_input=tuple(self._step3), skip_sampling=True
-            )
+            return Continue(Auto(), inserts_input=tuple(self._step3), skip_sampling=True)
         if self._step == 4 and self._prop_calls:
-            return Continue(
-                Auto(), inserts_input=tuple(self._prop_calls), skip_sampling=True
-            )
+            return Continue(Auto(), inserts_input=tuple(self._prop_calls), skip_sampling=True)
         # After bootstrap, always require a tool call until submit_result flips the switch
         return Continue(RequireAny())
 
@@ -404,10 +392,6 @@ async def lint_issue_run(
         submit_spec = make_inproc_slot_spec(submit_server)
 
         wiring = properties_docker_spec(content_root, mount_properties=True)
-        specs: dict[str, ServerSlotSpec] = {
-            wiring.server_name: wiring.server_spec,
-            "lint_submit": submit_spec,
-        }
 
         props: list[Path] = []
         prompt = _build_prompt(
@@ -426,7 +410,9 @@ async def lint_issue_run(
             prop_host_paths=props,
         )
 
-        async with McpManager(specs) as mcp:
+        async with McpManager({}) as mcp:
+            await mcp.attach_server(wiring.server_name, wiring.server_spec)
+            await mcp.attach_server("lint_submit", submit_spec)
             # Register LinterController instance (ctrl) first so it provides loop decisions,
             # then register the display handler for rendering events.
             agent = await MiniCodex.create(

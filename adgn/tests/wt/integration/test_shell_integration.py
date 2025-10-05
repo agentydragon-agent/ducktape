@@ -15,69 +15,15 @@ exit code semantics, and process boundary interactions.
 # - click.echo() outputs to stdout by default, not stderr
 # - DON'T mock across process boundaries - create real error conditions instead
 
-import contextlib
-import io
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
 
 import pytest
-
-from adgn.wt.shell import install
 
 # Global constants for paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
-def run_shell_script(
-    script_content: str,
-    cwd: str,
-    env: dict | None = None,
-) -> subprocess.CompletedProcess:
-    """Execute a shell script with wt function setup and return the result."""
-    # Explicit requirement checks
-    import importlib
-
-    importlib.import_module("adgn.wt")
-    ("wt package not installed - required for shell integration tests")
-    assert shutil.which("wt"), (
-        "wt CLI not found on PATH - required for shell integration tests"
-    )
-
-    # Use provided environment or create a new one
-    env = os.environ.copy() if env is None else env.copy()
-    # PYTHONPATH handled by session autouse fixture
-
-    # Create script with wt function setup using builtin installer
-
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        install.main()
-    wt_fn = buf.getvalue()
-
-    full_script = f"""#!/bin/bash
-# Install wt function via builtin
-{wt_fn}
-
-# Original script content
-{script_content}
-"""
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as f:
-        f.write(full_script)
-        f.flush()  # Ensure content is written before execution
-
-        Path(f.name).chmod(0o755)
-        return subprocess.run(
-            ["/bin/bash", f.name],
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            env=env,
-            check=False,
-        )
+## tests use shell_runner; legacy helper removed
 
 
 @pytest.mark.integration
@@ -95,18 +41,6 @@ class TestShellIntegration:
         assert result.returncode == 0, f"Help command failed: {result.stderr}"
         # Click default help prints 'Usage:' for subcommands
         assert "Usage:" in result.stdout
-
-    def test_wt_help_lists_examples(self, test_config, shell_runner):
-        """Test that wt help shows example usage."""
-        result = shell_runner.run_wt(
-            main_repo=test_config.main_repo,
-            wt_args=["help"],
-        )
-
-        # Basic test that it doesn't crash
-        # Note: May fail if it tries to access real daemon/git, but should show some output
-        if result.returncode == 0:
-            assert len(result.stdout) > 0
 
     def test_shell_script_execution_basic(self, test_config, shell_runner):
         """Test that shell script can execute basic wt commands."""

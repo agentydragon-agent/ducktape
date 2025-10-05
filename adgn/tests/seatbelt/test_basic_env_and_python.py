@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from adgn.seatbelt.runner import run_sandboxed
+from adgn.seatbelt.runner import run_sandboxed_async
 
 
 @pytest.mark.macos
@@ -27,14 +27,13 @@ from adgn.seatbelt.runner import run_sandboxed
         ),
     ],
 )
-def test_basic_env_and_python(
-    allow_all_policy, cmd, set_env, passthrough, expect_substring
-):
+@pytest.mark.asyncio
+async def test_basic_env_and_python(allow_all_policy, cmd, set_env, passthrough, expect_substring):
     # Build env passthrough + set
     env = {k: os.environ[k] for k in passthrough if k in os.environ}
     env.update(set_env)
 
-    res = run_sandboxed(allow_all_policy, cmd, env=env, trace=True)
+    res = await run_sandboxed_async(allow_all_policy, cmd, env=env, trace=True)
     assert res.exit_code == 0
     out = res.stdout or b""
     assert expect_substring in out

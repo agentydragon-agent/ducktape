@@ -9,7 +9,7 @@ import argparse
 from pathlib import Path
 import sys
 
-from .tana_lib import NodeStore
+from .tana_lib.models import NodeStore
 from .tana_lib.search_materializer import compare_search_results
 from .tana_lib.search_parser import parse_search_expression
 from .tana_lib.types import NodeId

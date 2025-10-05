@@ -1,1 +1,1 @@
-# Package marker for adgn_llm.mcp
+# Package marker for adgn.mcp

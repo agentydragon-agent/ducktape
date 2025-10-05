@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from adgn.inop.clients.logging_openai_client import LoggingOpenAIClient
+
 from adgn.inop.config import OptimizerConfig
+from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.types import ReasoningEffort
 
 
 @dataclass
@@ -22,7 +24,7 @@ class OptimizerModels:
 
 
 def create_optimizer_models(
-    cfg: OptimizerConfig, client: LoggingOpenAIClient
+    cfg: OptimizerConfig, *, enable_debug_logging: bool = False
 ) -> OptimizerModels:
     """Build standard adapter model instances from OptimizerConfig.
 
@@ -33,26 +35,25 @@ def create_optimizer_models(
     """
     pe_effort = cfg.prompt_engineer.reasoning_effort
     grader_effort = cfg.grader.reasoning_effort
-    ctx = cfg.tokens.max_context_tokens
 
-    pe_model = client.make_model(
-        model=cfg.prompt_engineer.model,
-        context_window_tokens=ctx,
-        reasoning_effort=pe_effort,
+    pe_model = build_client(
+        cfg.prompt_engineer.model,
+        enable_debug_logging=enable_debug_logging,
+        reasoning_effort=ReasoningEffort(pe_effort) if pe_effort else None,
     )
-    runner_model = client.make_model(
-        model=cfg.prompt_engineer.model,
-        context_window_tokens=ctx,
-        reasoning_effort=pe_effort,
+    runner_model = build_client(
+        cfg.prompt_engineer.model,
+        enable_debug_logging=enable_debug_logging,
+        reasoning_effort=ReasoningEffort(pe_effort) if pe_effort else None,
     )
-    grader_model = client.make_model(
-        model=cfg.grader.model,
-        context_window_tokens=ctx,
-        reasoning_effort=grader_effort,
+    grader_model = build_client(
+        cfg.grader.model,
+        enable_debug_logging=enable_debug_logging,
+        reasoning_effort=ReasoningEffort(grader_effort) if grader_effort else None,
     )
-    summarizer_model = client.make_model(
-        model=cfg.summarizer.model,
-        context_window_tokens=ctx,
+    summarizer_model = build_client(
+        cfg.summarizer.model,
+        enable_debug_logging=enable_debug_logging,
     )
 
     return OptimizerModels(

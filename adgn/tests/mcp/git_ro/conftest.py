@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pygit2
 import pytest
 
-from adgn.mcp.git_ro.server import make_git_ro_server, GIT_RO_SERVER_NAME
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp.git_ro.server import GIT_RO_SERVER_NAME, make_git_ro_server
 
 
 def _ensure_identity(repo: pygit2.Repository) -> None:
@@ -64,26 +63,6 @@ def repo_git_ro(tmp_path: Path) -> Path:
     idx.write()
 
     return repo_path
-
-
-@pytest.fixture
-def git_ro_session(repo_git_ro: Path):
-    """Factory fixture returning an async context manager that yields an initialized ClientSession.
-
-    Usage in tests:
-        async with git_ro_session() as session:
-            ...
-    Ensures enter/exit occur in the same task to satisfy anyio cancel-scope rules.
-    """
-    spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
-
-    @asynccontextmanager
-    async def _open():
-        async with AsyncExitStack() as stack:
-            slot = await spec.open(stack)
-            yield slot.session
-
-    return _open
 
 
 @pytest.fixture

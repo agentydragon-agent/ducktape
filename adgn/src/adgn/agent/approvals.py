@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import builtins as _builtins
 from collections.abc import Callable
-import json
-import logging
-from typing import Any, Literal, Optional, cast
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum, StrEnum
+import json
+import logging
+from typing import Any, Awaitable, Literal
+import uuid
 
 # Control-plane exception raised when an approval decision requests aborting the turn
 from mcp import types as mcp_types
@@ -16,15 +18,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.handler import (
     AbortTurnDecision,
+    BaseHandler,
     BeforeToolCallDecision,
     BypassToolInjectOutput,
     ContinueDecision,
-    BaseHandler,
     ToolCall,
 )
+from adgn.agent.persist import ApprovalOutcome
+
 from .mcp_manager import build_mcp_function, parse_mcp_function
 
-logger = logging.getLogger("mini_codex.approvals")
+logger = logging.getLogger(__name__)
 
 
 class TurnAbortRequested(Exception):
@@ -98,16 +102,37 @@ def default_allow_all_policy(_: dict[str, Any]) -> ApprovalMode:
 
 
 def validate_policy_python(source: str) -> None:
-    """Validate that policy source is valid Python code.
+    """Validate that policy source is valid Python and includes required top-level symbols.
 
-    Raises ValueError if the source cannot be compiled as Python.
+    Compile-only checks (no execution):
+    - Source parses as valid Python
+    - A top-level function named 'decide' exists
+    - A top-level constant/variable named 'TEST_CASES' is defined
     """
     try:
-        ast.parse(source)
+        tree = ast.parse(source)
     except SyntaxError as e:
         raise ValueError(f"Policy contains invalid Python syntax: {e}")
     except Exception as e:
         raise ValueError(f"Policy validation failed: {e}")
+
+    has_decide = False
+    has_tests = False
+    for node in getattr(tree, "body", []) or []:
+        if isinstance(node, ast.FunctionDef) and node.name == "decide":
+            has_decide = True
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id == "TEST_CASES":
+                    has_tests = True
+        elif isinstance(node, ast.AnnAssign):
+            target = node.target
+            if isinstance(target, ast.Name) and target.id == "TEST_CASES":
+                has_tests = True
+    if not has_decide:
+        raise ValueError("policy missing top-level decide(ctx) function")
+    if not has_tests:
+        raise ValueError("policy missing top-level TEST_CASES constant")
 
 
 @dataclass
@@ -116,8 +141,8 @@ class Proposal:
     source: str  # Python code defining the approval policy
     status: Literal["open", "approved", "rejected", "withdrawn"]
     created_at: datetime
-    decided_at: Optional[datetime] = None
-    rationale: Optional[str] = None  # Human-readable explanation for the policy change
+    decided_at: datetime | None = None
+    rationale: str | None = None  # Human-readable explanation for the policy change
 
 
 class ProposalSnapshot(BaseModel):
@@ -133,52 +158,89 @@ class ProposalSnapshot(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProposalMeta(BaseModel):
+    id: str
+    status: Literal["open", "withdrawn", "approved", "rejected"]
+    rationale: str | None = None
+
+    # Allow validation from Proposal dataclass without requiring extra fields
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ApprovalStatus(BaseModel):
     version: int
     open_proposal: str | None
-    proposals: list[ProposalSnapshot]
+    proposals: list[ProposalMeta]
 
     model_config = ConfigDict(from_attributes=True)
 
 
-DEFAULT_APPROVAL_POLICY = '''def decide(ctx):
-    """Default approval policy.
+# Decision enum exposed to policy code
+class PolicyDecision(str, Enum):
+    ALLOW = "allow"
+    ASK = "ask"
+    DENY_CONTINUE = "deny_continue"
+    DENY_ABORT = "deny_abort"
 
-    Always allows:
-    - UI communication tools (send_message, end_turn)
-    - Approval policy management (get_status, propose, withdraw)
-    - All resource operations (list, read) including policy.py and proposals
-    - All operations on the approval_policy server
 
-    Asks for approval on everything else.
+class WellKnownServers(StrEnum):
+    UI = "ui"
+    APPROVAL_POLICY = "approval_policy"
+    RESOURCES = "resources"
+    # Exec backends
+    SEATBELT_EXEC = "seatbelt_exec"
 
-    Args:
-        ctx: ApprovalContext with attributes: server, tool, tool_key, arguments
 
-    Returns:
-        "allow" | "ask" | "deny_continue" | "deny_abort"
+class WellKnownTools(StrEnum):
+    SEND_MESSAGE = "send_message"
+    END_TURN = "end_turn"
+    GET_STATUS = "get_status"
+    PROPOSE = "propose"
+    WITHDRAW = "withdraw"
+    # Common MCP tool identifiers for convenience in policies
+    SANDBOX_EXEC = "sandbox_exec"  # adgn.mcp.seatbelt_exec.server
+
+
+DEFAULT_APPROVAL_POLICY = '''# Default approval policy using canonical imports (no magic names)
+from adgn.agent.approvals import PolicyDecision, WellKnownServers, WellKnownTools, ApprovalContext
+
+def decide(ctx):
+    """Return (PolicyDecision, rationale:str) for clarity.
+
+    - Always ALLOW UI communication tools
+    - Always ALLOW approval_policy management ops
+    - Always ALLOW all resource operations
+    - Default to ASK for everything else
     """
     server = ctx.server
     tool = ctx.tool
 
-    # Always allow UI communication
-    if server == "ui" and tool in ("send_message", "end_turn"):
-        return "allow"
+    if server == WellKnownServers.UI and tool in (WellKnownTools.SEND_MESSAGE, WellKnownTools.END_TURN):
+        return (PolicyDecision.ALLOW, "UI communication")
 
-    # Always allow approval policy management operations
-    if server == "approval_policy" and tool in ("get_status", "propose", "withdraw"):
-        return "allow"
+    if server == WellKnownServers.APPROVAL_POLICY and tool in (WellKnownTools.GET_STATUS, WellKnownTools.PROPOSE, WellKnownTools.WITHDRAW):
+        return (PolicyDecision.ALLOW, "Approval management")
 
-    # Always allow reading and listing resources (including policy.py and proposals)
-    if server == "resources":
-        return "allow"
+    if server == WellKnownServers.RESOURCES:
+        return (PolicyDecision.ALLOW, "Resource operations allowed")
 
-    # Allow reading resources directly from approval_policy server
-    if server == "approval_policy":
-        return "allow"
+    if server == WellKnownServers.APPROVAL_POLICY:
+        return (PolicyDecision.ALLOW, "All approval_policy server ops allowed")
 
-    # Ask for everything else by default
-    return "ask"
+    return (PolicyDecision.ASK, "Default: ask for approval")
+
+# Minimal self-checks for the default policy. Policies must define TEST_CASES
+# as a list of (ApprovalContext, expected PolicyDecision) tuples.
+TEST_CASES = [
+    (
+        ApprovalContext(
+            server=WellKnownServers.UI,
+            tool=WellKnownTools.SEND_MESSAGE,
+            arguments={},
+        ),
+        PolicyDecision.ALLOW,
+    ),
+]
 '''
 
 
@@ -209,32 +271,174 @@ class ApprovalPolicyEngine:
         return self._policy_source, self._policy_version
 
     def set_policy(self, source: str) -> int:
-        # Validate policy is valid Python before applying
+        # Validate policy is valid Python and tests pass before applying
         validate_policy_python(source)
+        env = self._make_policy_globals()
+        exec(source, env)
+        self._run_tests(env)
         self._policy_source = source
         self._policy_version += 1
         if self._notify:
             self._notify("approval-policy://policy.py")
         return self._policy_version
 
-    def decide(self, ctx: "ApprovalContext") -> str:
+    # Internal load used on startup to hydrate content/version from persistence
+    def load_policy(self, source: str, *, version: int) -> None:
+        # Validate tests when hydrating from persistence
+        env = self._make_policy_globals()
+        exec(source, env)
+        self._run_tests(env)
+        self._policy_source = source
+        self._policy_version = version
+
+    def load_proposals(self, proposals: list[Proposal]) -> None:
+        """Hydrate proposals from persistence without emitting notifications.
+
+        If multiple 'open' proposals exist, the last one by created_at becomes open.
+        """
+        self._proposals = {p.id: p for p in proposals}
+        # Pick the most recent open, if any
+        open_ids = [p.id for p in proposals if p.status == "open"]
+        self._open_id = open_ids[-1] if open_ids else None
+
+    def _make_policy_globals(self) -> dict[str, Any]:
+        """Return a safe globals dict for policy exec with curated builtins and whitelisted symbols.
+
+        Policy authoring expectations (documented in the UI and tests):
+        - Policies must import all symbols explicitly, including:
+          ApprovalContext, PolicyDecision, WellKnownServers, WellKnownTools.
+        - Policies must import any stdlib or seatbelt symbols explicitly.
+        - Imports are restricted to a curated allowlist to keep execution safe.
+        """
+        safe_builtin_names = (
+            "None",
+            "True",
+            "False",
+            "len",
+            "any",
+            "all",
+            "sum",
+            "min",
+            "max",
+            "sorted",
+            "map",
+            "filter",
+            "enumerate",
+            "zip",
+            "set",
+            "list",
+            "dict",
+            "tuple",
+            "range",
+            "isinstance",
+            "issubclass",
+            "str",
+            "int",
+            "float",
+            "bool",
+            "abs",
+            "round",
+        )
+        safe_builtins: dict[str, Any] = {
+            name: getattr(_builtins, name)
+            for name in safe_builtin_names
+            if hasattr(_builtins, name)
+        }
+        # Do not pre-bind stdlib modules; require explicit imports in policy code
+        # Restricted import hook
+        allowed_modules = {
+            "adgn.agent.approvals",
+            "adgn.seatbelt.model",
+            # Allow standard URL parsing in policies
+            "urllib",
+            "urllib.parse",
+            # Allow limited filesystem path utilities in policies when needed
+            "os",
+            "pathlib",
+            # Allow getopt for simple arg parsing in policies/tests
+            "getopt",
+            # Allow curated stdlib modules; policy must import explicitly
+            "re",
+            "json",
+            "fnmatch",
+            "math",
+            "datetime",
+            "ipaddress",
+        }
+
+        def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+            # Resolve absolute module name when relative imports attempted
+            name.split(".")[0]
+            if level and globals and globals.get("__name__"):
+                # Disallow relative imports in policies
+                raise ImportError("relative imports are not allowed in approval policy")
+            # Allow submodules of whitelisted modules
+            ok = name in allowed_modules or any(
+                name.startswith(mod + ".") for mod in allowed_modules
+            )
+            if not ok:
+                raise ImportError(f"import not allowed: {name}")
+            return __import__(name, globals, locals, fromlist, level)
+
+        safe_builtins_with_import = dict(safe_builtins)
+        safe_builtins_with_import["__import__"] = _safe_import
+
+        env: dict[str, Any] = {"__builtins__": safe_builtins_with_import}
+
+        return env
+
+    def _run_tests(self, env: dict[str, Any]) -> None:
+        fn = env.get("decide")
+        if not callable(fn):
+            raise ValueError("policy missing decide(ctx) function")
+        tests = env.get("TEST_CASES")
+        if not isinstance(tests, (list, tuple)) or len(tests) < 1:
+            raise ValueError("policy must define TEST_CASES with at least one test")
+        for idx, tc in enumerate(tests):
+            if not (isinstance(tc, (list, tuple)) and len(tc) == 2):
+                raise ValueError(f"TEST_CASES[{idx}] must be a 2-tuple (ctx, expected)")
+            ctx, expected = tc
+            if not isinstance(ctx, ApprovalContext):
+                raise ValueError(f"TEST_CASES[{idx}]: ctx must be ApprovalContext")
+            if not isinstance(expected, PolicyDecision):
+                raise ValueError(f"TEST_CASES[{idx}]: expected must be PolicyDecision enum")
+            out = fn(ctx)
+            # Enforce strict return format: (PolicyDecision, rationale:str)
+            if not (isinstance(out, (tuple, list)) and len(out) == 2):
+                raise ValueError(
+                    f"TEST_CASES[{idx}]: decide() must return a 2-tuple (PolicyDecision, rationale:str)"
+                )
+            decision_val, rationale_val = out[0], out[1]
+            if not isinstance(decision_val, PolicyDecision):
+                raise ValueError(
+                    f"TEST_CASES[{idx}]: first element of decide() return must be PolicyDecision enum"
+                )
+            if not isinstance(rationale_val, str):
+                raise ValueError(
+                    f"TEST_CASES[{idx}]: second element of decide() return must be str rationale"
+                )
+            if decision_val != expected:
+                raise ValueError(
+                    f"TEST_CASES[{idx}] failed: expected {expected.value}, got {decision_val.value}"
+                )
+
+    def decide_with_info(self, ctx: "ApprovalContext") -> tuple[str, str | None]:
         """Evaluate policy; returns one of: allow|deny_continue|deny_abort|ask.
 
-        Executes the current policy if present, otherwise returns "ask".
+        Executes the current policy if present, otherwise returns ("ask", None).
         """
         src = (self._policy_source or "").strip()
         if not src:
-            logger.debug(
-                "ApprovalPolicyEngine.decide: no policy source, returning 'ask'"
-            )
-            return "ask"
+            logger.debug("ApprovalPolicyEngine.decide: no policy source, returning 'ask'")
+            return ("ask", None)
         # Context must be an ApprovalContext (no dict backcompat)
         ctx_obj = ctx
 
-        ns: dict[str, Any] = {}
+        # Execute policy in a curated sandbox: safe builtins + safe stdlib modules
+        env = self._make_policy_globals()
         try:
-            exec(src, {"__builtins__": {"__import__": __import__}}, ns)
-            fn = ns.get("decide")
+            exec(src, env)
+            fn = env.get("decide")
             if callable(fn):
                 # Provide an object with attribute access; also supports dict-like .get
                 out = fn(ctx_obj)
@@ -244,20 +448,40 @@ class ApprovalPolicyEngine:
                     ctx_obj.tool,
                     out,
                 )
-                if out in {"allow", "deny_continue", "deny_abort", "ask"}:
-                    return cast(str, out)
+                # Enforce strict outputs: (PolicyDecision, rationale:str)
+                if not (isinstance(out, (tuple, list)) and len(out) == 2):
+                    raise ValueError(
+                        "Policy decide(ctx) must return a 2-tuple (PolicyDecision, rationale:str)"
+                    )
+                decision_val, rationale_val = out[0], out[1]
+                if not isinstance(decision_val, PolicyDecision):
+                    raise ValueError("Policy decide(ctx) first element must be PolicyDecision enum")
+                if not isinstance(rationale_val, str):
+                    raise ValueError("Policy decide(ctx) second element must be a str rationale")
+                return (decision_val.value, rationale_val)
         except Exception:
             # Fail fast so tests surface policy errors instead of hanging in ask-mode
             raise
-        return "ask"
+        return ("ask", None)
+
+    def decide(self, ctx: "ApprovalContext") -> str:
+        """Compatibility wrapper returning only the decision string."""
+        d, _ = self.decide_with_info(ctx)
+        return d
 
     # --- Proposals ---
-    def create_proposal(self, source: str, rationale: str | None = None) -> str:
-        """Create a new open proposal for a policy change and return its id."""
+    def create_proposal(
+        self, source: str, rationale: str | None = None, *, proposal_id: str | None = None
+    ) -> str:
+        """Create a new open proposal for a policy change and return its id.
+
+        If proposal_id is provided (e.g., by a server wanting sequential IDs), it is used as-is.
+        Otherwise a random id is generated.
+        """
         validate_policy_python(source)
         if self._open_id is not None:
             raise RuntimeError("a proposal is already open")
-        pid = f"p-{uuid.uuid4().hex}"
+        pid = proposal_id or f"p-{uuid.uuid4().hex}"
         now = datetime.now(timezone.utc)
         self._proposals[pid] = Proposal(
             id=pid, source=source, status="open", created_at=now, rationale=rationale
@@ -285,20 +509,40 @@ class ApprovalPolicyEngine:
             raise KeyError(pid)
         if p.status != "open":
             return
-        p.status = "approved" if decision == "approve" else "rejected"
-        p.decided_at = datetime.now(timezone.utc)
-        if self._open_id == pid:
-            self._open_id = None
-        # Apply approved proposal to policy (emits policy.py notify)
-        if p.status == "approved":
+        now = datetime.now(timezone.utc)
+        if decision == "reject":
+            p.status = "rejected"
+            p.decided_at = now
+            if self._open_id == pid:
+                self._open_id = None
+            if self._notify:
+                self._notify(f"approval-policy://proposals/{pid}.json")
+            return
+
+        # decision == "approve": attempt to apply; on failure, mark rejected and raise ValueError
+        try:
+            # Validate + run tests; set_policy increments version and notifies policy.py
             self.set_policy(p.source)
-        if self._notify:
-            self._notify(f"approval-policy://proposals/{pid}.json")
+        except Exception as e:
+            # Reject the proposal on any failure during apply
+            p.status = "rejected"
+            p.decided_at = now
+            if self._open_id == pid:
+                self._open_id = None
+            if self._notify:
+                self._notify(f"approval-policy://proposals/{pid}.json")
+            raise ValueError(f"Policy approval failed: {e}") from e
+        else:
+            # Successful apply → mark proposal approved and notify
+            p.status = "approved"
+            p.decided_at = now
+            if self._open_id == pid:
+                self._open_id = None
+            if self._notify:
+                self._notify(f"approval-policy://proposals/{pid}.json")
 
     def get_status(self) -> ApprovalStatus:
-        proposals = [
-            ProposalSnapshot.model_validate(p) for p in self._proposals.values()
-        ]
+        proposals = [ProposalMeta.model_validate(p) for p in self._proposals.values()]
         return ApprovalStatus(
             version=self._policy_version,
             open_proposal=self._open_id,
@@ -386,9 +630,36 @@ class ApprovalPolicyHandler(BaseHandler):
     ) -> None:
         self._engine = engine
         self._hub = hub
+        self._recorder: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None
+        self._get_run_id: Callable[[], str | None] | None = None
+        self._pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None
         # Handler requires a live ApprovalHub to gate ask-mode decisions
         if self._hub is None:
             raise ValueError("ApprovalPolicyHandler requires a non-None ApprovalHub")
+
+    def set_policy_outcome_recorder(
+        self,
+        recorder: Callable[[str, str, ApprovalOutcome], Awaitable[None]],
+        get_run_id: Callable[[], str | None] | None = None,
+    ) -> None:
+        """Install a recorder for policy outcomes.
+
+        recorder is called with (call_id, tool_key, outcome) where outcome is one of
+        policy_allow | policy_deny_continue | policy_deny_abort. get_run_id can be used
+        by the recorder to associate outcomes with the active run.
+        """
+        self._recorder = recorder
+        self._get_run_id = get_run_id
+
+    def set_pending_notifier(
+        self, notifier: Callable[[str, str, str | None], Awaitable[None]]
+    ) -> None:
+        """Install a notifier to emit 'approval_pending' to UIs when gating.
+
+        Called with (call_id, tool_key, args_json) immediately after the request
+        is registered and before awaiting a decision.
+        """
+        self._pending_notifier = notifier
 
     async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
         # If no engine configured, pass through
@@ -407,25 +678,37 @@ class ApprovalPolicyHandler(BaseHandler):
             arguments=json.loads(evt.args_json or "{}"),
         )
 
-        mode = self._engine.decide(ctx)
+        mode, rationale = self._engine.decide_with_info(ctx)
         logger.debug(
             "ApprovalPolicyHandler decision: server=%s tool=%s mode=%s",
             server,
             tool,
             mode,
         )
+        tool_key = build_mcp_function(server, tool)
         if mode == "allow":
+            if self._recorder is not None:
+                await self._recorder(evt.call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
             return ContinueDecision()
         if mode == "deny_abort":
+            if self._recorder is not None:
+                await self._recorder(evt.call_id, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
             return AbortTurnDecision(reason="policy_denied")
         if mode == "deny_continue":
+            if self._recorder is not None:
+                await self._recorder(evt.call_id, tool_key, ApprovalOutcome.POLICY_DENY_CONTINUE)
+            # Build informative error message with rationale when provided
+            err_msg = f"policy denied: {server}.{tool}"
+            if rationale:
+                err_msg = f"{err_msg} ({rationale})"
             return BypassToolInjectOutput(
                 result=mcp_types.CallToolResult(
                     content=[],
                     isError=True,
                     structuredContent={
                         "ok": False,
-                        "error": f"policy denied: {server}.{tool}",
+                        "error": err_msg,
+                        "rationale": rationale,
                     },
                 )
             )
@@ -437,12 +720,17 @@ class ApprovalPolicyHandler(BaseHandler):
         # Use the real model-provided call_id to keep flows consistent end-to-end
         call_id = evt.call_id
         req = ApprovalRequest(
-            tool_key=build_mcp_function(server, tool),
+            tool_key=tool_key,
             tool_call=ApprovalToolCall(
                 name=tool,
                 call_id=call_id,
                 args_json=json.dumps(ctx.arguments, ensure_ascii=False),
             ),
         )
-        decision = await self._hub.await_decision(call_id, req)
+        # Register the request and notify UIs before awaiting resolution
+        decision_coro = self._hub.await_decision(call_id, req)
+        if self._pending_notifier is not None:
+            # Do not swallow exceptions: propagate to surface programming errors
+            await self._pending_notifier(call_id, tool_key, evt.args_json)
+        decision = await decision_coro
         return decision

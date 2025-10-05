@@ -1,4 +1,4 @@
-"""Thin CLI layer - just argument parsing and handler coordination."""
+"""Thin CLI layer - just argument parsing and handler coordination (async Typer commands)."""
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -6,8 +6,11 @@ import inspect
 import logging
 import sys
 
+import anyio
 import click
 from colorama import init
+import typer
+from typer.main import get_command
 
 from .client.cd_utils import emit_cd_command
 from .client.handlers import (
@@ -92,57 +95,50 @@ def show_help() -> None:
         click.echo(f"  {cmd:<{max_ex}}  # {desc}")
 
 
-@click.group(
-    invoke_without_command=True,
+app = typer.Typer(
+    add_completion=False,
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
-@click.option(
-    "--verbose",
-    is_flag=True,
-    help="Show client progress and daemon startup info",
-)
-@click.pass_context
-def main(ctx, verbose):
-    """Main CLI entry point."""
-    init()  # colorama
 
-    # Accept --verbose anywhere (even after args like 'status')
+
+@app.callback(invoke_without_command=True)
+def _root(
+    ctx: typer.Context,
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Show client progress and daemon startup info"
+    ),
+) -> None:
+    """Root Typer entry point.
+
+    - If no subcommand and extra args present, dispatch via sh-style handler
+    - If no subcommand and no extra args, show status
+    """
+    init()
     effective_verbose = bool(verbose) or ("--verbose" in (ctx.args or []))
-
-    # Stash verbose in context for later
     ctx.obj = ctx.obj or {}
     ctx.obj["verbose"] = effective_verbose
-
     if ctx.invoked_subcommand is None:
-        try:
-            # If positional args were provided, treat them as a command in sh-dispatch mode
-            if ctx.args:
-                config, formatter, daemon_client, plugin_manager = (
-                    _create_cli_dependencies(verbose=effective_verbose)
-                )
-                asyncio.run(
-                    _async_sh_main(
-                        daemon_client,
-                        formatter,
-                        config,
-                        plugin_manager,
-                        ctx.args,
-                        ctx,
-                    )
-                )
-            else:
-                asyncio.run(_async_main(verbose=effective_verbose))
-        except Exception as e:
-            if effective_verbose:
-                raise
-            raise click.ClickException(str(e)) from e
-        return
+        if ctx.args:
+            config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
+                verbose=effective_verbose
+            )
+            anyio.run(
+                _async_sh_main,
+                daemon_client,
+                formatter,
+                config,
+                plugin_manager,
+                list(ctx.args or []),
+                ctx,
+            )
+        else:
+            anyio.run(_async_main, effective_verbose)
 
 
 def _create_cli_dependencies(verbose: bool = False):
     """Create common CLI dependencies."""
     config = load_config()
-    formatter = ViewFormatter()
+    formatter = ViewFormatter(daemon_log_path=config.daemon_log_file)
     # Route verbose flag into logging: show INFO logs when verbose, else WARNING
     logging_level = logging.INFO if verbose else logging.WARNING
     logging.basicConfig(level=logging_level)
@@ -291,25 +287,18 @@ async def _async_sh_main(
     await handle_navigate_to_worktree(config, cmd)
 
 
-@main.command("create", context_settings={"help_option_names": ["-h", "--help"]})
-@click.argument("name")
-@click.option(
-    "--from-branch",
-    "from_branch",
-    "-b",
-    required=False,
-    help="Base branch to create from",
-)
-@click.option(
-    "--from-worktree",
-    "from_worktree",
-    "-w",
-    required=False,
-    help="Hydrate from existing worktree",
-)
-@click.option("--yes", "yes", "-y", is_flag=True, help="Skip confirmation prompt")
-@click.pass_context
-def cmd_create(ctx, name, from_branch, from_worktree, yes):
+@app.command("create")
+def cmd_create(
+    name: str = typer.Argument(..., help="New worktree name"),
+    from_branch: str | None = typer.Option(
+        None, "--from-branch", "-b", help="Base branch to create from"
+    ),
+    from_worktree: str | None = typer.Option(
+        None, "--from-worktree", "-w", help="Hydrate from existing worktree"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    ctx: typer.Context = typer.Option(None, hidden=True),
+):
     """Create a new worktree.
 
     Examples:
@@ -317,127 +306,87 @@ def cmd_create(ctx, name, from_branch, from_worktree, yes):
       wt create foo -w dev
     """
     verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, _daemon_client, _plugin_manager = _create_cli_dependencies(
-        verbose=verbose
-    )
-    try:
-        asyncio.run(
-            handle_create_worktree(
-                config,
-                name,
-                from_default=from_worktree is None,
-                from_branch=from_branch,
-                from_worktree=from_worktree,
-                confirm=not yes,
-            )
+    config, formatter, _daemon_client, _plugin_manager = _create_cli_dependencies(verbose=verbose)
+    asyncio.run(
+        handle_create_worktree(
+            config,
+            name,
+            from_default=from_worktree is None,
+            from_branch=from_branch,
+            from_worktree=from_worktree,
+            confirm=not yes,
         )
-    except Exception as e:
-        if verbose:
-            raise
-        raise click.ClickException(str(e)) from e
+    )
 
 
-@main.command("ls", context_settings={"help_option_names": ["-h", "--help"]})
-@click.pass_context
-def cmd_ls(ctx):
+@app.command("ls")
+def cmd_ls(ctx: typer.Context):
     """List all worktrees."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
     config, formatter, daemon_client, _ = _create_cli_dependencies(verbose=verbose)
-    try:
-        asyncio.run(handle_list_worktrees(daemon_client, formatter))
-    except Exception as e:
-        if verbose:
-            raise
-        raise click.ClickException(str(e)) from e
+    asyncio.run(handle_list_worktrees(daemon_client, formatter))
 
 
-@main.command("status", context_settings={"help_option_names": ["-h", "--help"]})
-@click.argument("name", required=False)
-@click.pass_context
-def cmd_status(ctx, name):
+@app.command("status")
+def cmd_status(ctx: typer.Context, name: str | None = typer.Argument(None)):
     """Show status for all worktrees or a single worktree."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
     config, formatter, daemon_client, _ = _create_cli_dependencies(verbose=verbose)
-    try:
-        if name:
-            asyncio.run(handle_status_single(daemon_client, formatter, name))
-        else:
-            asyncio.run(handle_status(daemon_client, formatter))
-    except Exception as e:
-        if verbose:
-            raise
-        raise click.ClickException(str(e)) from e
+    if name:
+        asyncio.run(handle_status_single(daemon_client, formatter, name))
+    else:
+        asyncio.run(handle_status(daemon_client, formatter))
 
 
-@main.command("cp", context_settings={"help_option_names": ["-h", "--help"]})
-@click.argument("source")
-@click.argument("dest", required=False)
-@click.pass_context
-def cmd_cp(ctx, source, dest):
+@app.command("cp")
+def cmd_cp(
+    ctx: typer.Context, source: str = typer.Argument(...), dest: str | None = typer.Argument(None)
+):
     """Copy current or named worktree to a new worktree."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
     config, *_ = _create_cli_dependencies(verbose=verbose)
-    try:
-        asyncio.run(handle_copy_worktree(config, source, dest))
-    except Exception as e:
-        if verbose:
-            raise
-        raise click.ClickException(str(e)) from e
+    asyncio.run(handle_copy_worktree(config, source, dest))
 
 
-@main.command("rm", context_settings={"help_option_names": ["-h", "--help"]})
-@click.argument("name")
-@click.option("--force", is_flag=True, help="Force removal without confirmation")
-@click.pass_context
-def cmd_rm(ctx, name, force):
+@app.command("rm")
+def cmd_rm(
+    ctx: typer.Context,
+    name: str = typer.Argument(...),
+    force: bool = typer.Option(False, "--force", help="Force removal without confirmation"),
+):
     """Remove a worktree."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
     config, *_ = _create_cli_dependencies(verbose=verbose)
-    try:
-        asyncio.run(handle_remove_worktree(config, name, force))
-    except Exception as e:
-        if verbose:
-            raise
-        raise click.ClickException(str(e)) from e
+    asyncio.run(handle_remove_worktree(config, name, force))
 
 
-@main.command("path", context_settings={"help_option_names": ["-h", "--help"]})
-@click.argument("worktree", required=False)
-@click.argument("subpath", required=False)
-@click.pass_context
-def cmd_path(ctx, worktree, subpath):
+@app.command("path")
+def cmd_path(
+    ctx: typer.Context,
+    worktree: str | None = typer.Argument(None),
+    subpath: str | None = typer.Argument(None),
+):
     """Resolve a path under a worktree (or the current one)."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
     config, *_ = _create_cli_dependencies(verbose=verbose)
-    try:
-        asyncio.run(handle_path_command(config, worktree, subpath))
-    except Exception as e:
-        if verbose:
-            raise
-        raise click.ClickException(str(e)) from e
+    asyncio.run(handle_path_command(config, worktree, subpath))
 
 
-@main.command("kill-daemon", context_settings={"help_option_names": ["-h", "--help"]})
-@click.pass_context
-def cmd_kill(ctx):
+@app.command("kill-daemon")
+def cmd_kill(ctx: typer.Context):
     """Stop the wt daemon and clean up its files."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
     config, *_ = _create_cli_dependencies(verbose=verbose)
-    try:
-        asyncio.run(handle_kill_daemon(config))
-    except Exception as e:
-        if verbose:
-            raise
-        raise click.ClickException(str(e)) from e
+    asyncio.run(handle_kill_daemon(config))
 
 
-@main.command("help", context_settings={"help_option_names": ["-h", "--help"]})
+@app.command("help")
 def cmd_help():
     """Show extended wt help with examples."""
     show_help()
 
 
-@main.command(
+@app.command(
     "sh",
     context_settings={
         "ignore_unknown_options": True,
@@ -445,32 +394,27 @@ def cmd_help():
         "help_option_names": ["-h", "--help"],
     },
 )
-@click.pass_context
-def cmd_sh(ctx):
+def cmd_sh(ctx: typer.Context):
     """Compatibility dispatcher for shell function and legacy tests.
 
     Interprets arbitrary arguments using the internal sh-style dispatcher.
     """
     verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
-        verbose=verbose
-    )
-    try:
-        asyncio.run(
-            _async_sh_main(
-                daemon_client,
-                formatter,
-                config,
-                plugin_manager,
-                list(ctx.args or []),
-                ctx,
-            )
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
+    asyncio.run(
+        _async_sh_main(
+            daemon_client,
+            formatter,
+            config,
+            plugin_manager,
+            list(ctx.args or []),
+            ctx,
         )
-    except Exception as e:
-        if verbose:
-            raise
-        raise click.ClickException(str(e)) from e
+    )
 
 
+main = get_command(app)
+
+# Enable `python -m adgn.wt.cli ...` execution
 if __name__ == "__main__":
-    main()
+    app()

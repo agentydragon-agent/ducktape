@@ -4,15 +4,17 @@ import asyncio
 import json
 
 import pytest
-from tests.fixtures.responses import ResponsesFactory
+
 from adgn.agent.agent import MiniCodex
-from adgn.agent.ui.server import ConnectionManager, AgentSession
-from adgn.agent.ui.ui_handler import UiModeHandler
-from adgn.agent.ui.shared_bus import UiBus
 from adgn.agent.handler import ContinueDecision
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.server.bus import ServerBus
+from adgn.agent.server.mode_handler import ServerModeHandler
+from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.mcp.ui.server import make_ui_mcp
+from tests.agent.ui.typed_asserts import assert_typed_items_have_one, is_assistant_markdown
+from tests.fixtures.responses import ResponsesFactory
 from tests.llm.support.openai_mock import make_mock
 
 
@@ -46,14 +48,21 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
     responses_factory: ResponsesFactory,
 ):
     # Per-agent bus and UI MCP server
-    bus = UiBus()
+    bus = ServerBus()
     ui_server = make_ui_mcp("ui", bus)
-    specs = {"ui": make_inproc_slot_spec(ui_server)}
+    # no server specs required for this test
 
     captured: list[dict] = []
 
+    class _NoopPersist:
+        async def start_run(self, **kwargs):
+            return None
+
+        async def finish_run(self, *args, **kwargs):
+            return None
+
     mgr = ConnectionManager()
-    sess = AgentSession(mgr)
+    sess = AgentSession(mgr, persistence=_NoopPersist())
     # Wire the per-agent bus so manager drains it on function outputs
     sess.ui_bus = bus
 
@@ -76,12 +85,11 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
             pass
         await orig_send_json(payload)
 
-    setattr(mgr, "send_json", _capture)
+    mgr.send_json = _capture  # type: ignore[assignment]
 
-    async with McpManager(specs) as mcp:
-        handlers = [
-            UiModeHandler(bus=bus, poll_notifications=lambda: mcp.poll_notifications())
-        ]
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("ui", make_inproc_slot_spec(ui_server))
+        handlers = [ServerModeHandler(bus=bus, poll_notifications=lambda: mcp.poll_notifications())]
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
@@ -101,12 +109,6 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
         await mgr.flush()
         await mgr._emit_ui_bus_messages()
 
-    # Verify directly on session state: AssistantMarkdown '**hello**' present
+    # Verify directly on session state using typed matcher
     items = sess.ui_state.items
-    assert any(
-        getattr(it, "kind", None) == "AssistantMarkdown"
-        and getattr(it, "md", None) == "**hello**"
-        for it in items
-    ), (
-        f"expected AssistantMarkdown '**hello**' in UiState; got {[getattr(it, 'kind', None) for it in items]}"
-    )
+    assert_typed_items_have_one(items, is_assistant_markdown("**hello**"))

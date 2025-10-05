@@ -6,6 +6,7 @@ authentik:
   blueprints:
     configMaps:
       - authentik-blueprint-grafana
+      - authentik-blueprints-gitea
 
   # Secret key for signing cookies and JWT tokens
   authentik:
@@ -39,6 +40,7 @@ authentik:
       pathType: Prefix
       annotations:
         traefik.ingress.kubernetes.io/router.entrypoints: web
+        ingress.kubernetes.io/force-ssl-redirect: "false"
 
   # Worker (background tasks)
   worker:
@@ -77,11 +79,23 @@ authentik:
             key: bootstrap-token
       - name: AUTHENTIK_LOG_LEVEL
         value: "info"
+      - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
+        value: "10.42.0.0/16,10.43.0.0/16"
       - name: GRAFANA_OAUTH_SECRET
         valueFrom:
           secretKeyRef:
             name: authentik-secrets
             key: grafana-oauth-secret
+      - name: GITEA_CLIENT_ID
+        valueFrom:
+          secretKeyRef:
+            name: gitea-oauth-shared
+            key: client_id
+      - name: GITEA_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: gitea-oauth-shared
+            key: client_secret
 
   # Prometheus metrics
   monitoring:

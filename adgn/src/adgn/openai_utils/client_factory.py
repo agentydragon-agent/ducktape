@@ -16,15 +16,16 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-from adgn.openai_utils.model import (
-    BoundOpenAIModel,
-    RetryingOpenAIModel,
-    OpenAIModelProto,
-)
 from adgn.openai_utils.http_logging import (
     make_logged_async_openai,
     make_logger_logged_async_openai,
 )
+from adgn.openai_utils.model import (
+    BoundOpenAIModel,
+    OpenAIModelProto,
+    RetryingOpenAIModel,
+)
+from adgn.openai_utils.types import ReasoningEffort
 
 
 def _get_async_openai(*, log_path: Path | str | None = None) -> AsyncOpenAI:
@@ -51,6 +52,7 @@ def build_client(
     *,
     log_http_path: Path | str | None = None,
     enable_debug_logging: bool = False,
+    reasoning_effort: ReasoningEffort | None = None,
 ) -> OpenAIModelProto:
     """Create a typed, retrying Responses client for the given model.
 
@@ -67,5 +69,5 @@ def build_client(
             inner = _get_async_openai()
     else:
         inner = _get_async_openai(log_path=log_http_path)
-    base = BoundOpenAIModel(client=inner, model=model)
+    base = BoundOpenAIModel(client=inner, model=model, reasoning_effort=reasoning_effort)
     return RetryingOpenAIModel(base=base)

@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from inspect import signature
 import logging
-from typing import Any, Protocol, TypeVar, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, get_origin, get_type_hints
 
 from punq import Container
 from pydantic import BaseModel, ValidationError
@@ -29,7 +29,6 @@ from .services import (
     WorktreeIndexService,
 )
 from .worktree_service import WorktreeService
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .wt_server import WtDaemon
@@ -108,9 +107,7 @@ class RpcRegistry:
         type_hints = get_type_hints(fn)
         for p in sig.parameters.values():
             anno = type_hints.get(p.name, p.annotation)
-            if stream_obj is not None and (
-                anno is Stream or get_origin(anno) is Stream
-            ):
+            if stream_obj is not None and (anno is Stream or get_origin(anno) is Stream):
                 args.append(stream_obj)
             elif params_obj is not None and anno is type(params_obj):
                 args.append(params_obj)
@@ -133,9 +130,7 @@ class RpcRegistry:
         ) -> Response | ErrorResponse:
             try:
                 params = (
-                    params_model.model_validate(req.params)
-                    if params_model is not None
-                    else None
+                    params_model.model_validate(req.params) if params_model is not None else None
                 )
             except ValidationError as e:
                 return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)

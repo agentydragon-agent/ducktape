@@ -9,7 +9,8 @@ from pathlib import Path
 import sys
 
 from .convert import RenderContext
-from .tana_lib import filter_open_issues, load_tana_export
+from .tana_lib.filters import filter_open_issues
+from .tana_lib.models import load_tana_export
 from .tana_lib.types import NodeId
 
 EXPECTED_ARGS = 2

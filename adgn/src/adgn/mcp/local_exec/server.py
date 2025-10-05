@@ -6,23 +6,20 @@ from shutil import which
 import subprocess
 import sys
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
 from mcp.server.fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
 from adgn.mcp.exec_common.io_limits import (
-    validate_max_bytes,
     clamp_stdin_bytes,
+    validate_max_bytes,
 )
 from adgn.mcp.exec_common.models import StreamOut
 
 DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
-ALLOW_UNSANDBOXED = (
-    os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"
-)  # dev override on non-Linux
+ALLOW_UNSANDBOXED = os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"  # dev override on non-Linux
 
 
 def _emit_stream(out_b: bytes, limit: int) -> str | StreamOut:

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-import os
 from pathlib import Path
 from typing import Any, cast
 
 import openai
-from openai import AsyncOpenAI
 import pytest
 
 from .support.openai_mock import LIVE, OpenAIClient, make_mock
@@ -39,9 +37,7 @@ def _raising_async(*args, **kwargs):
 
 
 @pytest.fixture(autouse=True)
-def fail_openai_by_default(
-    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
-) -> None:
+def fail_openai_by_default(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
     """Autouse fixture that replaces openai.AsyncOpenAI with a raising stub.
 
     Tests that need access must explicitly use the `openai_client` fixture which
@@ -111,12 +107,7 @@ def openai_client_mock(responses_create_fn: ResponsesCreateFn):
     return _Client()
 
 
-# Live AsyncOpenAI for tests that opt into LIVE sentinel
-@pytest.fixture(scope="session")
-def live_openai() -> AsyncOpenAI:
-    if not os.getenv("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY not set")
-    return AsyncOpenAI()
+# Live AsyncOpenAI provided at top-level tests/conftest.py
 
 
 # --- Single-param OpenAI fixture (mock OR live via sentinel) ---
@@ -131,9 +122,7 @@ def live_openai() -> AsyncOpenAI:
 
 
 @pytest.fixture
-def openai_client_param(
-    request, live_openai
-) -> OpenAIClient:  # provided via indirect parametrize
+def openai_client_param(request, live_openai) -> OpenAIClient:  # provided via indirect parametrize
     val = request.param
     if callable(val):  # behavior function → mock
         return make_mock(val)

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-import tempfile
 from unittest.mock import patch
 
 import pygit2
@@ -68,11 +67,12 @@ def _commit(repo: pygit2.Repository, message: str) -> None:
 
 
 @pytest.fixture
-def temp_repo(author_name: str, author_email: str) -> pygit2.Repository:
+def temp_repo(author_name: str, author_email: str, tmp_path: Path) -> pygit2.Repository:
     """Create a temporary git repository for testing (pygit2)."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        repo = _init_repo(tmpdir, name=author_name, email=author_email)
-        yield repo
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    repo = _init_repo(str(repo_dir), name=author_name, email=author_email)
+    yield repo
 
 
 # ----------------------------- tests --------------------------------
@@ -204,113 +204,98 @@ def test_build_prompt_with_amend(temp_repo: pygit2.Repository):
 
 
 @pytest.mark.asyncio
-async def test_full_amend_flow_integration(monkeypatch):
+async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path):
     """Integration test of the full amend flow with mocked AI."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        repo = _init_repo(tmpdir, name="Test", email="test@test.com")
-        # Ensure the CLI runs inside this temporary repository
-        monkeypatch.chdir(tmpdir)
+    tmpdir = tmp_path / "repo"
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    repo = _init_repo(str(tmpdir), name="Test", email="test@test.com")
+    # Ensure the CLI runs inside this temporary repository
+    monkeypatch.chdir(str(tmpdir))
+    # Create initial commit
+    test_file = Path(repo.workdir) / "file.txt"
+    test_file.write_text("version 1\n")
+    _stage(repo, "file.txt")
+    _commit(repo, "Initial implementation")
 
-        # Create initial commit
-        test_file = Path(repo.workdir) / "file.txt"
-        test_file.write_text("version 1\n")
-        _stage(repo, "file.txt")
-        _commit(repo, "Initial implementation")
+    # Make changes for amend
+    test_file.write_text("version 1\nversion 2\n")
+    _stage(repo, "file.txt")
 
-        # Make changes for amend
-        test_file.write_text("version 1\nversion 2\n")
-        _stage(repo, "file.txt")
+    # Get previous message
+    previous_message = repo.revparse_single("HEAD").peel(pygit2.Commit).message.strip()
+    assert previous_message == "Initial implementation"
 
-        # Get previous message
-        previous_message = (
-            repo.revparse_single("HEAD").peel(pygit2.Commit).message.strip()
+    # Get the diff that would be shown to AI
+    diff = get_commit_diff(repo, [], previous_message=previous_message)
+
+    # Verify diff contains both original and new changes
+    assert "=== Original commit" in diff
+    assert "=== New changes being added ===" in diff
+    assert "version 1" in diff
+    assert "version 2" in diff
+
+    # Build prompt as the tool would
+    prompt = build_prompt(repo, diff, [], previous_message=previous_message)
+
+    # Verify prompt is for amending
+    assert "Update and refine" in prompt
+    assert "Initial implementation" in prompt
+
+    # Mock AI would generate updated message
+    new_message = "Updated: Initial implementation\n\n- Added more changes"
+
+    # Patch provider generate and cache so it uses cached message
+    async def _fake_generate(self, include_all: bool, model: str | None = None) -> str:
+        return new_message
+
+    monkeypatch.setattr(
+        "adgn.git_commit_ai.minicodex_backend.generate_commit_message_minicodex",
+        _fake_generate,
+    )
+    monkeypatch.setattr(
+        "adgn.git_commit_ai.cli.Cache.get",
+        lambda self, key: new_message,
+    )
+
+    # Patch _get_editor to return a placeholder editor command
+    async def _fake_get_editor():
+        return "fake-editor"
+
+    monkeypatch.setattr("adgn.git_commit_ai.cli._get_editor", _fake_get_editor)
+
+    # Intercept the editor subprocess shell call and append comments + scissors
+    class _Proc:
+        def __init__(self, code=0):
+            self._code = code
+
+        async def wait(self):
+            return self._code
+
+    async def _fake_shell(cmd, *args, **kwargs):
+        # Extract COMMIT_EDITMSG path (last token)
+        commit_path = cmd.rsplit(" ", 1)[-1]
+        msg = (
+            "\n# editor-added comment (should be stripped)\n"
+            "# ------------------------ >8 ------------------------\n"
+            "# diff line (commented)\n"
         )
-        assert previous_message == "Initial implementation"
+        Path(commit_path).write_text(Path(commit_path).read_text() + msg)
+        return _Proc(0)
 
-        # Get the diff that would be shown to AI
-        diff = get_commit_diff(repo, [], previous_message=previous_message)
+    monkeypatch.setattr("asyncio.create_subprocess_shell", _fake_shell)
 
-        # Verify diff contains both original and new changes
-        assert "=== Original commit" in diff
-        assert "=== New changes being added ===" in diff
-        assert "version 1" in diff
-        assert "version 2" in diff
+    # Run the tool; patch argv to avoid pytest args leaking
+    with patch("sys.exit") as mock_exit:
+        await cli.async_main([])
+        mock_exit.assert_called_with(0)
 
-        # Build prompt as the tool would
-        prompt = build_prompt(repo, diff, [], previous_message=previous_message)
-
-        # Verify prompt is for amending
-        assert "Update and refine" in prompt
-        assert "Initial implementation" in prompt
-
-        # Mock AI would generate updated message
-        class MockClaudeAI:
-            def __init__(self, repo, diff, passthru, previous_message=None, **_):
-                self.previous_message = previous_message
-
-            async def generate(
-                self, include_all: bool, model: str | None = None
-            ) -> str:
-                return f"Updated: {previous_message}\n\n- Added more changes"
-
-        previous_message = previous_message  # for closure
-
-        new_message = "Updated: Initial implementation\n\n- Added more changes"
-
-        # Patch provider generate and cache so it uses cached message
-        async def _fake_generate(
-            self, include_all: bool, model: str | None = None
-        ) -> str:
-            return new_message
-
-        monkeypatch.setattr(
-            "adgn.git_commit_ai.minicodex_backend.generate_commit_message_minicodex",
-            _fake_generate,
-        )
-        monkeypatch.setattr(
-            "adgn.git_commit_ai.cli.Cache.get",
-            lambda self, key: new_message,
-        )
-
-        # Patch _get_editor to return a placeholder editor command
-        async def _fake_get_editor():
-            return "fake-editor"
-
-        monkeypatch.setattr("adgn.git_commit_ai.cli._get_editor", _fake_get_editor)
-
-        # Intercept the editor subprocess shell call and append comments + scissors
-        class _Proc:
-            def __init__(self, code=0):
-                self._code = code
-
-            async def wait(self):
-                return self._code
-
-        async def _fake_shell(cmd, *args, **kwargs):
-            # Extract COMMIT_EDITMSG path (last token)
-            commit_path = cmd.rsplit(" ", 1)[-1]
-            msg = (
-                "\n# editor-added comment (should be stripped)\n"
-                "# ------------------------ >8 ------------------------\n"
-                "# diff line (commented)\n"
-            )
-            Path(commit_path).write_text(Path(commit_path).read_text() + msg)
-            return _Proc(0)
-
-        monkeypatch.setattr("asyncio.create_subprocess_shell", _fake_shell)
-
-        # Run the tool; patch argv to avoid pytest args leaking
-        with patch("sys.argv", ["git-commit-ai"]), patch("sys.exit") as mock_exit:
-            await cli.async_main()
-            mock_exit.assert_called_with(0)
-
-        # Verify the committed message contains only the AI message
-        fresh = pygit2.Repository(tmpdir)
-        committed = fresh.revparse_single("HEAD").peel(pygit2.Commit).message.strip()
-        assert committed.startswith("Subject line") or committed.startswith("Updated:")
-        assert "editor-added comment" not in committed
-        assert ">8" not in committed
-        assert "diff line (commented)" not in committed
+    # Verify the committed message contains only the AI message
+    fresh = pygit2.Repository(str(tmpdir))
+    committed = fresh.revparse_single("HEAD").peel(pygit2.Commit).message.strip()
+    assert committed.startswith("Subject line") or committed.startswith("Updated:")
+    assert "editor-added comment" not in committed
+    assert ">8" not in committed
+    assert "diff line (commented)" not in committed
 
 
 def test_cache_key_includes_amend_status():

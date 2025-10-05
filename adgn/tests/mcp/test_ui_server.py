@@ -1,27 +1,29 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+
 import pytest
 
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.agent.loop_control import Abort, Continue, RequireAny
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
+from adgn.agent.server.mode_handler import ServerModeHandler
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.mcp.testing.typed_stubs import TypedClient
 from adgn.mcp.ui.server import make_ui_mcp
-from adgn.agent.ui.shared_bus import UiBus, UiMessage, UiEndTurn
-from adgn.agent.ui.ui_handler import UiModeHandler
-from adgn.agent.loop_control import Abort, Continue, RequireAny
 
 
 @pytest.fixture
 def bus():
-    return UiBus()
+    return ServerBus()
 
 
 @pytest.mark.asyncio
 async def test_ui_send_message_and_end_turn_bus(bus) -> None:
     server = make_ui_mcp("ui", bus)
 
-    async with McpManager({"ui": make_inproc_slot_spec(server)}) as m:
+    async with McpManager({}) as m:
+        await m.attach_server("ui", make_inproc_slot_spec(server))
         sess = await m.get_session("ui")
         client = TypedClient.from_server(server, sess)
 
@@ -51,7 +53,7 @@ def test_ui_handler_abort_on_end_turn(bus) -> None:
     def dummy_poll():
         return SimpleNamespace(resources_updated=[])
 
-    h = UiModeHandler(bus=bus, poll_notifications=dummy_poll)
+    h = ServerModeHandler(bus=bus, poll_notifications=dummy_poll)
 
     # No end_turn pending -> RequireAny tool usage
     dec = h.on_before_sample()

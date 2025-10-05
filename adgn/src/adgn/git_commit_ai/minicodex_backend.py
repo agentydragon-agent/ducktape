@@ -5,12 +5,20 @@ import logging
 from pathlib import Path
 import sys
 
-import pygit2
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
-from adgn.openai_utils.client_factory import build_client
 from pydantic import BaseModel, Field
+import pygit2
 
+from adgn.agent.agent import MiniCodex
+from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.loop_control import (
+    Abort,
+    Continue,
+    RequireAny,
+)
+from adgn.agent.mcp_manager import McpManager, build_mcp_function
+from adgn.agent.reducer import BaseHandler
 from adgn.llm.logging_config import configure_logging
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
 from adgn.mcp.git_ro.server import (
     GIT_RO_SERVER_NAME,
     DiffFormat,
@@ -22,16 +30,8 @@ from adgn.mcp.git_ro.server import (
     make_git_ro_server,
 )
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import BaseHandler
-from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import (
-    Abort,
-    Continue,
-    RequireAny,
-)
-from adgn.agent.mcp_manager import McpManager, build_mcp_function
 from adgn.openai_utils.builders import ItemFactory
+from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem
 
 
@@ -50,9 +50,7 @@ def _default_bootstrap(
     return [
         f.tool_call(
             name=build_mcp_function(server, "git_status"),
-            arguments=StatusInput(
-                list_slice=ListSlice(offset=0, limit=1000)
-            ).model_dump(),
+            arguments=StatusInput(list_slice=ListSlice(offset=0, limit=1000)).model_dump(),
             call_id="bootstrap:status",
         ),
         f.tool_call(
@@ -192,10 +190,8 @@ async def generate_commit_message_minicodex(
 
     submit_state = SubmitState()
     submit_server = make_submit_server(submit_state)
-    specs = {
-        GIT_RO_SERVER_NAME: make_inproc_slot_spec(make_git_ro_server(repo_root)),
-        "submit_commit_message": make_inproc_slot_spec(submit_server),
-    }
+    git_ro_spec = make_inproc_slot_spec(make_git_ro_server(repo_root))
+    submit_spec = make_inproc_slot_spec(submit_server)
 
     def _build_commit_prompt(is_amend: bool) -> str:
         base = "You are an expert at writing high-quality git commit messages.\n\n"
@@ -232,7 +228,9 @@ async def generate_commit_message_minicodex(
             DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)),
         )
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server(GIT_RO_SERVER_NAME, git_ro_spec)
+        await mcp.attach_server("submit_commit_message", submit_spec)
         agent = await MiniCodex.create(
             model=model,
             mcp=mcp,

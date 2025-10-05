@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
-from adgn.llm.llm_edit import app
+from adgn.llm.llm_edit import main
 from adgn.openai_utils import client_factory
+from adgn.openai_utils.model import FakeOpenAIModel
 
 
 def test_typer_cli_invokes_execute_without_sys(
@@ -23,15 +23,17 @@ def test_typer_cli_invokes_execute_without_sys(
 
     def _mk_client(model: str):
         called.update({"client_model": model})
-        from adgn.openai_utils.model import FakeOpenAIModel
-
         return FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
 
     monkeypatch.setattr(client_factory, "build_client", _mk_client, raising=True)
 
-    runner = CliRunner()
-    result = runner.invoke(app, [str(p), prompt, "--model", "o4-mini"])  # type: ignore[list-item]
+    # Invoke the CLI entrypoint directly to avoid Click/Typer internals
+    exit_code = 0
+    try:
+        main([str(p), prompt, "--model", "o4-mini"])  # type: ignore[list-item]
+    except SystemExit as e:  # Typer raises Exit to signal return code
+        exit_code = e.code or 0
 
-    assert result.exit_code == 0, result.output
+    assert exit_code == 0
     # Ensure arguments were parsed correctly (no extra kwargs expected)
     assert p.exists()

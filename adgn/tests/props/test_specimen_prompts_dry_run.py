@@ -6,7 +6,7 @@ import re
 import pytest
 from typer.testing import CliRunner
 
-from adgn.props.cli_app.main import app as props_app
+from adgn.props.cli_app.main import app
 
 SPECIMEN_NAME = "2025-09-02-ducktape_wt"
 
@@ -37,7 +37,7 @@ def test_specimen_check_dry_run_renders(allow_general):
     if allow_general:
         argv.append("--allow-general-findings")
     runner = CliRunner()
-    result = runner.invoke(props_app, argv)
+    result = runner.invoke(app, argv)
     assert result.exit_code == 0, result.output
     out = result.output
     saved = _extract_saved_prompt_path(out)
@@ -52,7 +52,7 @@ def test_specimen_check_dry_run_renders(allow_general):
 
 def test_specimen_discover_dry_run_renders():
     runner = CliRunner()
-    result = runner.invoke(props_app, ["specimen-discover", SPECIMEN_NAME, "--dry-run"])
+    result = runner.invoke(app, ["specimen-discover", SPECIMEN_NAME, "--dry-run"])
     assert result.exit_code == 0, result.output
     out = result.output
     saved = _extract_saved_prompt_path(out)
@@ -67,7 +67,7 @@ def test_specimen_grade_dry_run_renders(tmp_path: Path):
     # For prompt rendering checks, validate that specimen-check --dry-run composes schemas.
     runner = CliRunner()
     result = runner.invoke(
-        props_app,
+        app,
         [
             "specimen-check",
             SPECIMEN_NAME,

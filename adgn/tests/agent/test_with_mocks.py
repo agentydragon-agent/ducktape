@@ -3,10 +3,11 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.mcp_manager import McpManager
-from adgn.openai_utils.model import FakeOpenAIModel, BoundOpenAIModel
+from adgn.agent.reducer import AutoHandler
+from adgn.openai_utils.model import BoundOpenAIModel, FakeOpenAIModel
+from tests.agent.ws_helpers import assert_function_call_output_structured
 from tests.llm.support.openai_mock import LIVE
 
 
@@ -40,7 +41,9 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     else:
         client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        for name, slot in specs.items():
+            await mcp.attach_server(name, slot)
         # Minimal handler stack: use a RecordingHandler to capture function_call_output events
 
         rec = RecordingHandler()
@@ -57,9 +60,5 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
 
     # Verify final text returned
     assert res.text.strip() == "done"
-    # Verify the handler saw a function_call_output
-    fcos = [e for e in rec.records if e.get("kind") == "function_call_output"]
-    assert fcos, f"no function_call_output event found: {rec.records}"
-    payload = fcos[-1].get("result") or {}
-    structured = payload.get("structuredContent") or {}
-    assert structured == {"ok": True, "echo": "hi"}
+    # Verify the handler saw a function_call_output with the expected structuredContent
+    assert_function_call_output_structured(rec.records, ok=True, echo="hi")

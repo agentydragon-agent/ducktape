@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-import logging
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
+import logging
 from typing import Any, Protocol, cast
 
 from mcp.server.fastmcp import FastMCP

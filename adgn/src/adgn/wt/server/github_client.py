@@ -7,16 +7,17 @@ No subprocess JSON parsing is used for API calls.
 import logging
 import os
 import subprocess
-from typing import Any
 
 from github import Github
+from github.Repository import Repository
 
+from ..shared.env import is_test_mode
 from ..shared.error_handling import GitHubUnavailableError, handle_github_errors
 from ..shared.github_models import (
     GitHubPRResponse,
+    HasBasicPR,
     PRState,
     PullRequestList,
-    HasBasicPR,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ def get_github_token(
         return token_arg
     if env_tok := os.environ.get("GITHUB_TOKEN"):
         return env_tok
-    if os.environ.get("WT_TEST_MODE") == "1":
+    if is_test_mode():
         return None
     try:
         cp = subprocess.run(
@@ -64,10 +65,10 @@ class GitHubInterface:
         token = get_github_token(token)
         self.github_repo = github_repo
         self._gh = Github(token) if token else Github()
-        self._repo: Any | None = None  # Lazy initialization
+        self._repo: Repository | None = None  # Lazy initialization
 
     @property
-    def repo(self):
+    def repo(self) -> Repository:
         """Lazy initialization of the GitHub repository object."""
         if self._repo is None:
             try:
@@ -89,9 +90,7 @@ class GitHubInterface:
                 headRefName=pr.head.ref,
                 state=PRState(pr.state),
                 title=pr.title,
-                mergedAt=(
-                    pr.merged_at.isoformat() if getattr(pr, "merged_at", None) else None
-                ),
+                mergedAt=(pr.merged_at.isoformat() if pr.merged_at else None),
             )
             for pr in pulls
         ]

@@ -118,9 +118,7 @@ def _process_complete_lines(text_buffer: str, frames: list[dict]) -> str:
         line = part.strip()
         if not line:
             continue
-        content = (
-            line[len(SSE_PREFIX) :].lstrip() if line.startswith(SSE_PREFIX) else line
-        )
+        content = line[len(SSE_PREFIX) :].lstrip() if line.startswith(SSE_PREFIX) else line
         if content == "[DONE]":
             # Sentinel; skip storing
             continue
@@ -163,9 +161,7 @@ async def _proxy_stream(
     frames: list[dict] = []
     async with httpx.AsyncClient(timeout=None) as client:
         try:
-            async with client.stream(
-                "POST", upstream_url, json=body, headers=headers
-            ) as resp:
+            async with client.stream("POST", upstream_url, json=body, headers=headers) as resp:
                 if resp.status_code >= HTTP_ERROR_MIN:
                     t = await resp.aread()
                     raise HTTPException(
@@ -269,9 +265,7 @@ async def responses_endpoint(
         try:
             resp = await client.post(upstream_url, json=body, headers=headers)
         except Exception as e:
-            raise HTTPException(
-                status_code=502, detail=f"Upstream request failed: {e}"
-            ) from e
+            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}") from e
 
     try:
         resp_json = resp.json()

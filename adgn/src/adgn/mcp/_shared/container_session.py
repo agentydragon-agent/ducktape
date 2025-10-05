@@ -4,17 +4,17 @@ from collections.abc import Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
-import shlex
 import math
+import shlex
 from typing import Any, cast
 
-import docker
-from docker.models.containers import Container
 from mcp.server.fastmcp import FastMCP
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
 
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
+from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
 from adgn.mcp._shared.types import ExecInput, ExecResult
+import docker
+from docker.models.containers import Container
 
 # Exit code returned by `timeout -s TERM` on termination
 EXIT_CODE_SIGTERM = 143
@@ -67,9 +67,7 @@ def _session_state_from_ctx(ctx: Any) -> ContainerSessionState:
     return cast(ContainerSessionState, ctx.request_context.lifespan_context)
 
 
-def _start_container(
-    *, client: docker.DockerClient, opts: ContainerOptions
-) -> Container:
+def _start_container(*, client: docker.DockerClient, opts: ContainerOptions) -> Container:
     return client.containers.run(
         image=opts.image,
         command=SLEEP_FOREVER_CMD,
@@ -175,9 +173,7 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
         exec_cmd: list[str] | str
         if (
             input.shell
-            and not (
-                isinstance(prepared_cmd, list) and prepared_cmd[:2] == ["sh", "-lc"]
-            )
+            and not (isinstance(prepared_cmd, list) and prepared_cmd[:2] == ["sh", "-lc"])
             and not isinstance(prepared_cmd, list)
         ):
             exec_cmd_list: list[str] = ["sh", "-lc", prepared_cmd]

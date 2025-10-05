@@ -165,9 +165,7 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     # Derive ci95 half-width if missing but bounds present
     if ci95_val is None:
         ci95_val = (
-            max(abs(mean - lcb), abs(ucb - mean))
-            if lcb is not None and ucb is not None
-            else 0.0
+            max(abs(mean - lcb), abs(ucb - mean)) if lcb is not None and ucb is not None else 0.0
         )
 
     tooling = summ.get("tooling") or {}
@@ -216,9 +214,7 @@ def format_text(rows: list[Row]) -> str:
 
 
 def format_md(rows: list[Row]) -> str:
-    header = (
-        "| mean | ci95 | n | tools% | run | template |\n|---:|---:|---:|---:|:---|:---|"
-    )
+    header = "| mean | ci95 | n | tools% | run | template |\n|---:|---:|---:|---:|:---|:---|"
     lines = [header]
     for r in rows:
         lines.append(
@@ -319,9 +315,7 @@ def generate(
         by_hash.setdefault(row.template_hash, []).append(row)
 
     # Determine which packaged templates have no eval runs
-    known_hash_to_name: dict[str, str] = {
-        sha1_text(text): name for text, name in known.items()
-    }
+    known_hash_to_name: dict[str, str] = {sha1_text(text): name for text, name in known.items()}
     missing_templates: list[str] = [
         name for h, name in known_hash_to_name.items() if h not in by_hash
     ]
@@ -396,8 +390,7 @@ def main() -> int:
     console.print(table)
     if missing:
         console.print(
-            "Templates not yet evaluated:\n"
-            + "\n".join(f"- {name}" for name in sorted(missing)),
+            "Templates not yet evaluated:\n" + "\n".join(f"- {name}" for name in sorted(missing)),
         )
     for err in errors:
         console.print(f"[red]{err}[/]")

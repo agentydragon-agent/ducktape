@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .model import FileRule, NetworkRule, PathFilter, SBPLPolicy
+from .model import FileRule, LiteralFilter, NetworkRule, SBPLPolicy, Subpath
 
 
 def _q(s: str) -> str:
@@ -17,27 +17,27 @@ def _q(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _render_path_filter(pf: PathFilter) -> str:
-    if pf.kind == "literal":
-        return f'(literal "{_q(pf.value)}")'
-    if pf.kind == "subpath":
-        return f'(subpath "{_q(pf.value)}")'
+def _render_path_filter(pf) -> str:
+    if isinstance(pf, LiteralFilter):
+        return f'(literal "{_q(pf.literal)}")'
+    if isinstance(pf, Subpath):
+        return f'(subpath "{_q(pf.subpath)}")'
     # Should be unreachable due to typing
-    raise ValueError(f"unsupported PathFilter kind: {pf.kind}")
+    raise ValueError(f"unsupported PathFilter type: {type(pf).__name__}")
 
 
 def _render_file_rule(fr: FileRule) -> Iterable[str]:
     # file-map-executable typically has no filters; if none, emit a bare allow/deny line.
     if not fr.filters:
-        yield f"({fr.action} {fr.op})"
+        yield f"({fr.action.value} {fr.op.value})"
         return
     for pf in fr.filters:
-        yield f"({fr.action} {fr.op} {_render_path_filter(pf)})"
+        yield f"({fr.action.value} {fr.op.value} {_render_path_filter(pf)})"
 
 
 def _render_network_rule(nr: NetworkRule) -> str:
     pred = " (local ip)" if nr.local_only else ""
-    return f"({nr.action} {nr.op}{pred})"
+    return f"({nr.action.value} {nr.op.value}{pred})"
 
 
 def compile_sbpl(policy: SBPLPolicy) -> str:
@@ -49,7 +49,7 @@ def compile_sbpl(policy: SBPLPolicy) -> str:
 
     # Header
     lines.append("(version 1)")
-    lines.append(f"({policy.default_behavior} default)")
+    lines.append(f"({policy.default_behavior.value} default)")
 
     # Trace
     if policy.trace.enabled and policy.trace.path:
@@ -67,6 +67,14 @@ def compile_sbpl(policy: SBPLPolicy) -> str:
         lines.append("(allow signal (target self))")
     else:
         lines.append("(deny signal (target self))")
+    if policy.process.allow_signal_same_sandbox:
+        lines.append("(allow signal (target same-sandbox))")
+    if policy.process.allow_process_exec:
+        lines.append("(allow process-exec)")
+    if policy.process.allow_process_fork:
+        lines.append("(allow process-fork)")
+    if policy.process.allow_process_info_same_sandbox:
+        lines.append("(allow process-info* (target same-sandbox))")
 
     # File rules (in given order)
     for fr in policy.files:
@@ -79,12 +87,39 @@ def compile_sbpl(policy: SBPLPolicy) -> str:
     # System toggles
     if policy.system.system_socket:
         lines.append("(allow system-socket)")
-    if policy.system.sysctl_read:
+    if getattr(policy.system, "user_preference_read", False):
+        lines.append("(allow user-preference-read)")
+    if getattr(policy.system, "ipc_posix_sem", False):
+        lines.append("(allow ipc-posix-sem)")
+    # sysctl-read: allow unrestricted if sysctl_read is True and no filters.
+    # Otherwise, when names/prefixes provided, emit a filtered clause.
+    if (
+        policy.system.sysctl_read
+        and not policy.system.sysctl_names
+        and not policy.system.sysctl_prefixes
+    ):
         lines.append("(allow sysctl-read)")
+    elif policy.system.sysctl_names or policy.system.sysctl_prefixes:
+        lines.append("(allow sysctl-read")
+        for name in policy.system.sysctl_names:
+            lines.append(f'  (sysctl-name "{_q(name)}")')
+        for pfx in policy.system.sysctl_prefixes:
+            lines.append(f'  (sysctl-name-prefix "{_q(pfx)}")')
+        lines.append(")")
 
     # Mach lookup
     for name in policy.mach.global_names:
         lines.append(f'(allow mach-lookup (global-name "{_q(name)}"))')
+
+    # IOKit open
+    for io in policy.iokit:
+        if not io.registry_entry_classes:
+            lines.append(f"({io.action.value} iokit-open)")
+        else:
+            for cls in io.registry_entry_classes:
+                lines.append(
+                    f'({io.action.value} iokit-open (iokit-registry-entry-class "{_q(cls)}"))'
+                )
 
     lines.append("")
     return "\n".join(lines)

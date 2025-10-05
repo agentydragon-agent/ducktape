@@ -8,6 +8,7 @@ import click
 import psutil
 
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME, RESERVED_NAMES
+from ..shared.env import is_test_mode
 from ..shared.protocol import (
     HookOutputEvent,
     HookStream,
@@ -50,11 +51,7 @@ async def handle_status(daemon_client, formatter) -> None:
     components = all_status.components
     if components:
         msgs = []
-        if (
-            components.github
-            and components.github.state
-            and components.github.state.value != "ok"
-        ):
+        if components.github and components.github.state and components.github.state.value != "ok":
             last_err = components.github.last_error or ""
             msgs.append(f"github: {last_err}".strip())
         if components.gitstatusd and components.gitstatusd.metrics:
@@ -76,23 +73,19 @@ async def handle_list_worktrees(daemon_client, formatter) -> None:
 
 
 async def handle_status_single(daemon_client, formatter, worktree_name: str) -> None:
-    """Handle status command for a single worktree."""
-    # Get all status and find the specific worktree
-    all_status = await daemon_client.get_status([])
-
-    # Find the worktree by name using daemon lookups via an identify call if needed
-    status = None
-    # Prefer client-side filtering of items
-    for item in all_status.items.values():
-        if item.status.name == worktree_name:
-            status = item.status
-            break
-
-    if not status:
+    """Handle status command for a single worktree using server-side filtering."""
+    # Resolve name -> wtid via daemon API, then request status for only that worktree
+    info = await daemon_client.get_worktree_by_name(worktree_name)
+    if not info.exists or not info.wtid:
         click.echo(f"❌ No status available for '{worktree_name}'")
         return
-
-    formatter.render_worktree_status_single(worktree_name, status, status.pr_info)
+    resp = await daemon_client.get_status([info.wtid])
+    if not resp.items:
+        click.echo(f"❌ No status available for '{worktree_name}'")
+        return
+    item = next(iter(resp.items.values()))
+    status = item.status
+    formatter.render_worktree_status_single(status.name, status, status.pr_info)
 
 
 async def handle_create_worktree(
@@ -247,8 +240,8 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         emit_cd_command(Path(tt.cd_path), main_repo=config.main_repo)
         return
 
-    # Test-mode auto-create (Option B): respect WT_TEST_MODE=1 to avoid prompts in tests
-    if os.environ.get("WT_TEST_MODE") == "1":
+    # Test-mode auto-create (Option B): avoid prompts in tests
+    if is_test_mode():
         await handle_create_worktree(
             config,
             worktree_name,

@@ -49,9 +49,7 @@ def _decode_prefix(prefix: bytes) -> str:
     return prefix.decode("utf-8", errors="replace")
 
 
-def read_stream_limited_sync(
-    fh, store_limit: int, chunk_size: int = 8192
-) -> StreamReadResult:
+def read_stream_limited_sync(fh, store_limit: int, chunk_size: int = 8192) -> StreamReadResult:
     """Read a blocking binary stream to EOF, storing at most store_limit bytes.
 
     - Always drains to EOF to compute total_bytes

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import Enum, StrEnum
 from typing import Literal, cast
 
-from adgn.openai_utils.model import (
-    ReasoningEffort,
-    ReasoningParams,
-)
+from typing_extensions import TypedDict
 
 
 def to_reasoning_effort(value: ReasoningEffort | str | None) -> str | None:
@@ -24,7 +21,18 @@ def to_reasoning_effort(value: ReasoningEffort | str | None) -> str | None:
     return cast(str, effort.value)
 
 
+class ReasoningEffort(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 ReasoningEffortLiteral = Literal["low", "medium", "high"]
+
+
+class ReasoningParams(TypedDict, total=False):
+    effort: ReasoningEffortLiteral
+    summary: str
 
 
 def build_reasoning_params(

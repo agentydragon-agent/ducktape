@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-import importlib.resources as res
+from importlib import resources
 from pathlib import Path
 import re
 
@@ -30,8 +30,7 @@ def validate_template_text(text: str) -> None:
     dups = [m for m in required if text.count(m) > 1]
     if dups:
         raise RuntimeError(
-            "Invalid template: duplicate placeholders (>1 occurrence): "
-            + ", ".join(dups),
+            "Invalid template: duplicate placeholders (>1 occurrence): " + ", ".join(dups),
         )
     # Unsupported tokens
     tokens = _TOKEN_RE.findall(text)
@@ -58,10 +57,10 @@ def validate_template_file(template_path: Path) -> None:
 def iter_templates() -> Iterator[tuple[str, str]]:
     """Yield (relative_name, text) for all packaged templates/*.txt files.
 
-    Traverses the installed package resources under adgn_llm.sysrw.templates
+    Traverses the installed package resources under adgn.llm.sysrw.templates
     so it works from sdist/wheel installs and zipped packages.
     """
-    root = res.files(__name__)
+    root = resources.files(__name__)
 
     def _walk(dir_entry, prefix: str = "") -> Iterator[tuple[str, str]]:
         for child in dir_entry.iterdir():

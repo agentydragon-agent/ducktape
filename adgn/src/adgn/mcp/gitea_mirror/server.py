@@ -22,10 +22,10 @@ import time
 from typing import Any, cast
 from urllib.parse import urlparse
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
 from pydantic import BaseModel, ConfigDict
 import requests
+
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
 
 
 @dataclass
@@ -137,9 +137,7 @@ def _wait_for_update(cfg: MirrorConfig, owner: str, repo: str) -> dict[str, Any]
         else:
             mirror_flag = data.get("mirror")
             if not isinstance(mirror_flag, bool) or not mirror_flag:
-                raise MirrorError(
-                    "repository is not marked as a mirror (mirror: boolean expected)"
-                )
+                raise MirrorError("repository is not marked as a mirror (mirror: boolean expected)")
             updated_val = data.get("mirror_updated")
             if not isinstance(updated_val, str):
                 raise MirrorError(
@@ -210,9 +208,7 @@ def make_gitea_mirror_mcp(
         repo_data = _wait_for_update(cfg, owner, repo)
         mu = repo_data.get("mirror_updated")
         if not isinstance(mu, str) or not mu:
-            raise MirrorError(
-                "unexpected shape: Repository.mirror_updated (string) required"
-            )
+            raise MirrorError("unexpected shape: Repository.mirror_updated (string) required")
         return EnsureMirrorAndSyncResponse(
             owner=owner,
             repo=repo,

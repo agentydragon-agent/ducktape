@@ -1,30 +1,20 @@
-"""Core query helpers for Tana export logic that do NOT depend on models.
+"""Core query helpers for Tana export logic.
 
-This module is intentionally model-agnostic to avoid import cycles: it operates on
-either raw node mappings (dict-like) or on objects exposing minimal attributes
-(called duck-typed "node" below). Callers in models.py or query.py should adapt
-results to BaseNode when needed.
+Typed to the minimal node protocol used in production (NodeProto). This avoids
+speculative multi-shape inputs and keeps a single rational path.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING
+
+from .types import NodeId
+
+if TYPE_CHECKING:
+    from .models import BaseNode
 
 
-def _get_attr(node: Any, attr: str):
-    """Helper to fetch attributes from either mapping or object with attribute.
-
-    Returns None if attribute missing.
-    """
-    if node is None:
-        return None
-    if isinstance(node, Mapping):
-        return node.get(attr)
-    return getattr(node, attr, None)
-
-
-def get_tuple_value(node: Any, key: Any) -> Any | None:
+def get_tuple_value(node: "BaseNode", key: NodeId | str) -> "BaseNode | None":
     """Return the first value node from a tuple keyed by `key`.
 
     Supports two shapes:
@@ -38,37 +28,33 @@ def get_tuple_value(node: Any, key: Any) -> Any | None:
     # Normalize for comparison
     key_str = str(key)
 
-    children = _get_attr(node, "children") or []
+    children = list(node.children)
 
     # Case 1: node itself is a tuple — check its key
     if children:
         first = children[0]
         if str(first) == key_str:
             # Return first value if present and resolvable via store
-            if (
-                hasattr(node, "_store")
-                and node._store is not None
-                and len(children) >= 2
-            ):
+            store = node._store
+            if store is not None and len(children) >= 2:
                 try:
-                    return node._store[children[1]]
-                except Exception:
+                    return store[children[1]]
+                except KeyError:
                     return None
-            # Without a store, return the raw child id
-            return children[1] if len(children) >= 2 else None
+            return None
 
     # Case 2: search child tuples under this node
     # We need a store to inspect child tuple keys/values
-    store = getattr(node, "_store", None)
+    store = node._store
     if store is None:
         return None
 
     for cid in children:
         try:
             t = store[cid]
-        except Exception:
+        except KeyError:
             continue
-        t_children = getattr(t, "children", None)
+        t_children = list(t.children)
         if not t_children:
             continue
         if str(t_children[0]) != key_str:
@@ -77,6 +63,6 @@ def get_tuple_value(node: Any, key: Any) -> Any | None:
         if len(t_children) >= 2:
             try:
                 return store[t_children[1]]
-            except Exception:
+            except KeyError:
                 return None
     return None

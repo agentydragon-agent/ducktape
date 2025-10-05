@@ -30,11 +30,11 @@ from typing import Any
 import claude_code_sdk
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
-import docker
-from docker.models.containers import Container
 import pathspec
 
 from adgn.inop.engine.models import SeedTask
+import docker
+from docker.models.containers import Container
 
 
 @contextmanager
@@ -73,8 +73,8 @@ def _monkey_patch_claude_sdk_for_containerization():
     """
     # Override _find_cli to use claude_binary from options
     # Replace the options class so we can pass claude_binary
-    claude_code_sdk.types.ClaudeCodeOptions = ContainerizedClaudeCodeOptions
-    claude_code_sdk.ClaudeCodeOptions = ContainerizedClaudeCodeOptions
+    claude_code_sdk.types.ClaudeCodeOptions = ContainerizedClaudeCodeOptions  # type: ignore[misc]
+    claude_code_sdk.ClaudeCodeOptions = ContainerizedClaudeCodeOptions  # type: ignore[misc]
 
     def _patched_find_cli(self) -> str:
         if not isinstance(self._options, ContainerizedClaudeCodeOptions):
@@ -84,7 +84,7 @@ def _monkey_patch_claude_sdk_for_containerization():
             raise RuntimeError("claude_binary not set in options")
         return bin_path
 
-    SubprocessCLITransport._find_cli = _patched_find_cli
+    SubprocessCLITransport._find_cli = _patched_find_cli  # type: ignore[method-assign]
 
 
 # Apply monkeypatch once at module level
@@ -278,9 +278,7 @@ class TaskClaude:
             wrapper_env["CLAUDE_STRACE"] = "1"
         if self.config.get("wrapper_env"):
             wrapper_env.update(self.config.get("wrapper_env"))
-        pass_keys = [
-            k for k in wrapper_env if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")
-        ]
+        pass_keys = [k for k in wrapper_env if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")]
         if pass_keys:
             wrapper_env["CLAUDE_WRAPPER_PASS_ENV"] = ",".join(pass_keys)
 
@@ -352,9 +350,7 @@ class TaskClaude:
 
         # Use committed wrapper script from repo
         wrapper_script = (
-            Path(__file__).parent.parent.parent.parent
-            / "scripts"
-            / "claude_docker_wrapper"
+            Path(__file__).parent.parent.parent.parent / "scripts" / "claude_docker_wrapper"
         )
         if not wrapper_script.exists():
             raise RuntimeError(
@@ -704,9 +700,7 @@ class TaskClaude:
                 debug_hint=f"Run: docker logs {c.id}",
             )
             raise RuntimeError(
-                (
-                    f"Remounted container {c.id} failed to start within {max_wait}s: {c.status}"
-                ),
+                (f"Remounted container {c.id} failed to start within {max_wait}s: {c.status}"),
             )
 
         self._logger.info(

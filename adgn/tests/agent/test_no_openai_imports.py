@@ -35,9 +35,7 @@ def _assert_no_openai_imports(root: Path) -> None:
         for lineno, what in _find_openai_imports(py):
             offenders_all.append((py, lineno, what))
     if offenders_all:
-        details = "\n".join(
-            f"{p}:{lineno}: {what}" for p, lineno, what in offenders_all
-        )
+        details = "\n".join(f"{p}:{lineno}: {what}" for p, lineno, what in offenders_all)
         raise AssertionError(
             (
                 "Layering violation: OpenAI SDK must not be imported directly in this layer.\n"

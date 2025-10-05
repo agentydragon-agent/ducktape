@@ -10,9 +10,18 @@ import tempfile
 
 from ..shared.configuration import CowMethod
 
+# Unified list of top-level entries to exclude when copying a worktree directory
+# Keep in sync with rsync excludes
+EXCLUDE_NAMES: tuple[str, ...] = (".git", ".worktrees")
+
 
 def _get_copyable_entries(src: Path) -> list[Path]:
-    return [src / p.name for p in src.iterdir() if p.name != ".git"]
+    """List top-level entries to copy from src, excluding repo internals.
+
+    Excludes items in EXCLUDE_NAMES for all strategies to keep behavior consistent
+    across platforms and tools.
+    """
+    return [child for child in src.iterdir() if child.name not in EXCLUDE_NAMES]
 
 
 class StrategyType(StrEnum):
@@ -83,16 +92,9 @@ class ReflinkCopyStrategy(CopyStrategy):
 
 class RsyncCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
+        exclude_args = [f"--exclude={name}/" for name in EXCLUDE_NAMES]
         subprocess.run(
-            [
-                "rsync",
-                "-a",
-                "--delete",
-                "--exclude=.git/",
-                "--exclude=.worktrees/",
-                f"{src}/",
-                f"{dst}/",
-            ],
+            ["rsync", "-a", "--delete", *exclude_args, f"{src}/", f"{dst}/"],
             check=True,
         )
 

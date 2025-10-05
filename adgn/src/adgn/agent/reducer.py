@@ -6,7 +6,6 @@ import logging
 from typing import Literal
 
 from mcp import types as mcp_types
-from adgn.openai_utils.model import UserMessage
 from pydantic import BaseModel
 
 # TODO(mpokorny): Consider supporting ResponseFunctionWebSearch (type="function_web_search")
@@ -23,7 +22,6 @@ from adgn.agent.handler import (
     ToolCallOutput,
     UserText,
 )
-from adgn.openai_utils.model import ReasoningItem
 from adgn.agent.loop_control import (
     Abort,
     Auto,
@@ -32,10 +30,18 @@ from adgn.agent.loop_control import (
     NoLoopDecision,
     RequireAny,
 )
+from adgn.openai_utils.model import (
+    AssistantMessageOut,
+    FunctionCallItem,
+    FunctionCallOutputItem,
+    InputItem,
+    ReasoningItem,
+    UserMessage,
+)
 
 from .mcp_manager import McpManager
 
-logger = logging.getLogger("adgn.mcp")
+logger = logging.getLogger(__name__)
 
 
 class AutoHandler(BaseHandler):
@@ -92,7 +98,9 @@ class Reducer:
     def on_before_sample(self) -> LoopDecision:
         # Collect concrete decisions (non-NoLoopDecision) from handlers in order.
         decisions: list[LoopDecision] = []
-        collected_inserts: list[UserMessage] = []
+        collected_inserts: list[
+            InputItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
+        ] = []
         skip_value: bool | None = None
         for h in self._handlers:
             dec = h.on_before_sample()
@@ -163,9 +171,7 @@ class Reducer:
         if len(non_continue) == 0:
             # Fallback: return the first (attach inserts if winning decision is Continue)
             if isinstance(first, Continue) and collected_inserts:
-                return Continue(
-                    first.tool_policy, inserts_input=tuple(collected_inserts)
-                )
+                return Continue(first.tool_policy, inserts_input=tuple(collected_inserts))
             return first
         if len(non_continue) == 1:
             return non_continue[0]
@@ -289,12 +295,7 @@ def format_notifications_message(batch) -> UserMessage | None:
         resmap[ev.uri] = ev.version
 
     payload = json.dumps(
-        {
-            "servers": {
-                server: {"resource_versions": resmap}
-                for server, resmap in grouped.items()
-            }
-        }
+        {"servers": {server: {"resource_versions": resmap} for server, resmap in grouped.items()}}
     )
 
     # Insert as input-side user message, clearly tagged as a system notification

@@ -11,13 +11,13 @@ import subprocess
 import sys
 import time
 from typing import Any, cast
-from openai import AsyncOpenAI
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from adgn.openai_utils.client_factory import get_async_openai
+from openai import AsyncOpenAI
 from pydantic import TypeAdapter
 import tiktoken
 
+from adgn.openai_utils.client_factory import get_async_openai
 from adgn.openai_utils.retry import (
     chat_create_with_retries,
     responses_create_with_retries,
@@ -231,9 +231,7 @@ def map_tools_for_chat(tools_val):
         # Remove unsupported keys
         fn.pop("strict", None)
         # Keep only standard Chat function keys
-        out_fn = {
-            k: v for k, v in fn.items() if k in ("name", "description", "parameters")
-        }
+        out_fn = {k: v for k, v in fn.items() if k in ("name", "description", "parameters")}
         if not isinstance(out_fn.get("name"), str):
             return None
         if "parameters" not in out_fn:
@@ -262,11 +260,7 @@ def anthro_to_openai_messages(
     def _join_text_parts(parts: list[dict[str, Any]]) -> str:
         texts: list[str] = []
         for p in parts:
-            if (
-                isinstance(p, dict)
-                and p.get("type") == "text"
-                and isinstance(p.get("text"), str)
-            ):
+            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str):
                 texts.append(p["text"])
         return "\n".join(texts)
 
@@ -334,9 +328,7 @@ def anthro_to_openai_messages(
                     if text_buf:
                         msg["content"] = "\n".join(text_buf)
                     else:
-                        msg["content"] = (
-                            None  # no empty-string content when only tool_calls
-                        )
+                        msg["content"] = None  # no empty-string content when only tool_calls
                     if tool_calls:
                         msg["tool_calls"] = tool_calls
                     out.append(msg)
@@ -383,11 +375,7 @@ def anthro_to_openai_messages(
                         # If tcid missing, drop the tool message to avoid invalid Chat linkage
                 # Order: tool messages first (to mirror CCR), then user text (if any)
                 out.extend(
-                    [
-                        tm
-                        for tm in tool_msgs
-                        if (tm.get("content") or tm.get("tool_call_id"))
-                    ],
+                    [tm for tm in tool_msgs if (tm.get("content") or tm.get("tool_call_id"))],
                 )
                 txt = _join_text_parts(text_parts)
                 if txt.strip():
@@ -429,11 +417,7 @@ def anthro_to_responses_input(
     def _join_text_parts(parts: list[dict[str, Any]]) -> str:
         texts: list[str] = []
         for p in parts:
-            if (
-                isinstance(p, dict)
-                and p.get("type") == "text"
-                and isinstance(p.get("text"), str)
-            ):
+            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str):
                 texts.append(p["text"])
         return "\n".join(texts)
 
@@ -689,11 +673,7 @@ async def run_eval(
                     ar.system
                     if isinstance(ar.system, str)
                     else "\n\n".join(
-                        [
-                            p.get("text", "")
-                            for p in (ar.system or [])
-                            if isinstance(p, dict)
-                        ],
+                        [p.get("text", "") for p in (ar.system or []) if isinstance(p, dict)],
                     )
                 )
                 new_sys = rewrite_system_with_template(sys_val, template_path)
@@ -787,9 +767,7 @@ async def run_eval(
                     },
                     *input_prefix,
                 ]
-                base_req: dict[str, Any] = (
-                    dict(payload) if isinstance(payload, dict) else {}
-                )
+                base_req: dict[str, Any] = dict(payload) if isinstance(payload, dict) else {}
                 base_req["input"] = resp_input
                 if not base_req.get("model"):
                     base_req["model"] = SAMPLER_MODEL
@@ -816,9 +794,7 @@ async def run_eval(
             # 4) Build grading inputs
             msgs = msgs_for_grader
             raw_new_asst_obj = (
-                new_asst_obj
-                if isinstance(new_asst_obj, dict)
-                else new_asst_obj.model_dump()
+                new_asst_obj if isinstance(new_asst_obj, dict) else new_asst_obj.model_dump()
             )
             base_prefix = msgs[:-2] if len(msgs) >= 2 else []
             base_prefix = [m for m in base_prefix if m.get("role") != "system"]
@@ -828,11 +804,7 @@ async def run_eval(
             # Keep first 5 and last 5; truncate middle to fit token budget
             first = base_prefix[:5]
             tail = base_prefix[-5:] if len(base_prefix) > 5 else []
-            middle = (
-                base_prefix[5 : len(base_prefix) - len(tail)]
-                if len(base_prefix) > 10
-                else []
-            )
+            middle = base_prefix[5 : len(base_prefix) - len(tail)] if len(base_prefix) > 10 else []
 
             # Build a provisional grader input to compute tokens; start from minimal
             def mk_grader_input(
@@ -1000,11 +972,7 @@ async def run_eval(
 
         # Compute mean and 95% CI (normal approx)
         mean = sum(scores) / len(scores) if scores else 0.0
-        var = (
-            sum((x - mean) ** 2 for x in scores) / (len(scores) - 1)
-            if len(scores) > 1
-            else 0.0
-        )
+        var = sum((x - mean) ** 2 for x in scores) / (len(scores) - 1) if len(scores) > 1 else 0.0
         se = math.sqrt(var / len(scores)) if len(scores) > 0 else 0.0
         ci95 = 1.96 * se
         lcb = mean - ci95
@@ -1016,8 +984,7 @@ async def run_eval(
         fc = cast(dict[str, int], tool_stats.get("function_counts", {}))
         total_tool_calls = sum(fc.values()) if fc else 0
         function_pct = {
-            k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0
-            for k, v in fc.items()
+            k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in fc.items()
         }
 
         # Per-source summaries
@@ -1051,12 +1018,8 @@ async def run_eval(
                 "ci95": {"lcb": l_s, "ucb": u_s},
                 "tooling": {
                     "total_samples": total_s,
-                    "text_only_pct": (
-                        (ts_s["text_only"] / total_s) if total_s else 0.0
-                    ),
-                    "with_tools_pct": (
-                        (ts_s["with_tools"] / total_s) if total_s else 0.0
-                    ),
+                    "text_only_pct": ((ts_s["text_only"] / total_s) if total_s else 0.0),
+                    "with_tools_pct": ((ts_s["with_tools"] / total_s) if total_s else 0.0),
                     "function_counts": ts_s["function_counts"],
                     "function_pct": func_pct_s,
                 },
@@ -1069,12 +1032,8 @@ async def run_eval(
             "models": {"sampler": SAMPLER_MODEL, "evaluator": GRADER_MODEL},
             "tooling": {
                 "total_samples": total_samples,
-                "text_only_pct": (
-                    (text_only / total_samples) if total_samples > 0 else 0.0
-                ),
-                "with_tools_pct": (
-                    (with_tools / total_samples) if total_samples > 0 else 0.0
-                ),
+                "text_only_pct": ((text_only / total_samples) if total_samples > 0 else 0.0),
+                "with_tools_pct": ((with_tools / total_samples) if total_samples > 0 else 0.0),
                 "function_counts": fc,
                 "function_pct": function_pct,
             },
@@ -1095,18 +1054,12 @@ async def run_eval(
             src = None
             if isinstance(samp_rec, dict):
                 na = samp_rec.get("new_assistant_message") or {}
-                src = (
-                    "crush"
-                    if isinstance(na, dict) and "responses_output" in na
-                    else "ccr"
-                )
+                src = "crush" if isinstance(na, dict) and "responses_output" in na else "ccr"
             if samp_rec:
                 rec_obj = EvalSampleRecord.model_validate(samp_rec)
                 s_out.write(json.dumps(rec_obj.model_dump(), sort_keys=True) + "\n")
                 # Update tool usage stats
-                tool_stats["total_samples"] = (
-                    _as_int(tool_stats.get("total_samples")) + 1
-                )
+                tool_stats["total_samples"] = _as_int(tool_stats.get("total_samples")) + 1
                 nmsg = samp_rec.get("new_assistant_message") or {}
                 tcs = nmsg.get("tool_calls") or []
                 if not tcs:
@@ -1120,15 +1073,11 @@ async def run_eval(
                 # Per-source tool stats
                 if src in tool_stats_by_source:
                     src_stats = tool_stats_by_source[src]
-                    src_stats["total_samples"] = (
-                        _as_int(src_stats.get("total_samples")) + 1
-                    )
+                    src_stats["total_samples"] = _as_int(src_stats.get("total_samples")) + 1
                     if not tcs:
                         src_stats["text_only"] = _as_int(src_stats.get("text_only")) + 1
                     else:
-                        src_stats["with_tools"] = (
-                            _as_int(src_stats.get("with_tools")) + 1
-                        )
+                        src_stats["with_tools"] = _as_int(src_stats.get("with_tools")) + 1
                         ts_fc = cast(dict[str, int], src_stats["function_counts"])  # type: ignore[index]
                         for tc in tcs:
                             fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
@@ -1223,9 +1172,7 @@ async def run_eval(
                         shared_prefix = msgs_disp
                         bad_branch = []
                     else:
-                        shared_prefix = [
-                            m for m in (msgs_disp[:idx]) if m.get("role") != "system"
-                        ]
+                        shared_prefix = [m for m in (msgs_disp[:idx]) if m.get("role") != "system"]
                         bad_branch = msgs_disp[idx:]
                 else:
                     # CCR item
@@ -1241,9 +1188,7 @@ async def run_eval(
                         shared_prefix = msgs
                         bad_branch = []
                     else:
-                        shared_prefix = [
-                            m for m in (msgs[:idx]) if m.get("role") != "system"
-                        ]
+                        shared_prefix = [m for m in (msgs[:idx]) if m.get("role") != "system"]
                         bad_branch = msgs[idx:]
                 grade = grades_map.get(cid) or {}
                 rows.append(

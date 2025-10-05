@@ -41,11 +41,7 @@ def parse_setup_config(config: dict[str, Any]) -> TaskSetup | None:
             network_enabled=docker_data.get("network_enabled", True),
         )
 
-    if (
-        (git_data := config.get("git_clone"))
-        and git_data.get("repo")
-        and git_data.get("commit")
-    ):
+    if (git_data := config.get("git_clone")) and git_data.get("repo") and git_data.get("commit"):
         git_cfg = GitCloneConfig(
             repo=git_data["repo"],
             commit=git_data["commit"],

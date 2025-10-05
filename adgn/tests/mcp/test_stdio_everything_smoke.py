@@ -7,6 +7,7 @@ from mcp.client.stdio import StdioServerParameters
 import pytest
 
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.runtime.specs import StdioSpec
 
 
 @pytest.mark.asyncio
@@ -39,15 +40,10 @@ async def test_stdio_server_everything_lists_tools() -> None:
         command="npx",
         args=["--yes", "@modelcontextprotocol/server-everything", "stdio"],
     )
-    spec = McpManager.slot_from_spec(
-        "everything",
-        {"transport": "stdio", **params.model_dump()},
-    )
+    spec = StdioSpec(**params.model_dump())
 
     async with McpManager({"everything": spec}) as mcp:
         tools = await mcp.list_tools()
         assert isinstance(tools, list), "tools is not a list"
         assert tools, "No tools returned"
-        assert any(t.get("type") == "function" for t in tools), (
-            "No function tools discovered"
-        )
+        assert any(t.server == "everything" for t in tools), "No tools under 'everything' server"

@@ -1,5 +1,6 @@
 """Real integration tests for actual CLI."""
 
+from datetime import timedelta
 import os
 from pathlib import Path
 import time
@@ -7,8 +8,6 @@ import time
 import pytest
 
 from adgn.wt.shared.git_utils import git_run
-
-from datetime import timedelta
 
 pytestmark = pytest.mark.timeout(10)
 
@@ -34,9 +33,7 @@ def test_real_program_workflow(real_temp_repo, wt_cli):
     # Status shows both (allow brief propagation)
     def _both_present() -> bool:
         r = wt_cli.status(timeout=timedelta(seconds=10.0))
-        return (
-            r.returncode == 0 and ("feature1" in r.stdout) and ("feature2" in r.stdout)
-        )
+        return r.returncode == 0 and ("feature1" in r.stdout) and ("feature2" in r.stdout)
 
     assert wt_cli.wait_for(_both_present, timeout=timedelta(seconds=5.0))
 

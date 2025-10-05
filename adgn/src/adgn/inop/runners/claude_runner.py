@@ -48,9 +48,7 @@ class ClaudeRunner(AgentRunner):
                 - strace_enabled: Whether to enable strace debugging
         """
         super().__init__(runner_id, config)
-        self.workspace_path: Path | None = (
-            None  # explicit for mypy when base not resolved
-        )
+        self.workspace_path: Path | None = None  # explicit for mypy when base not resolved
         self.task_claude: TaskClaude | None = None
         self.current_task: TaskDefinition | None = None
         # Docker image will be set from task setup during setup()
@@ -207,9 +205,7 @@ class ClaudeRunner(AgentRunner):
                             # Prefer 'error_message' if present; fallback to generic string
                             err = getattr(message, "error_message", None)
                             error_message = (
-                                str(err)
-                                if err is not None
-                                else "Claude reported an error"
+                                str(err) if err is not None else "Claude reported an error"
                             )
 
                         # total_cost_usd may be Optional; coerce to float

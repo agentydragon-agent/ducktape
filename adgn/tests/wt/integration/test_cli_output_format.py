@@ -3,52 +3,25 @@
 from datetime import datetime
 from unittest.mock import patch
 
-from click.testing import CliRunner
+from hamcrest import assert_that, contains_string
 import pytest
 
-from adgn.wt.cli import main
+from adgn.wt.cli import app
 from adgn.wt.shared.protocol import (
     CommitInfo,
-    StatusItem,
-    StatusResponse,
     StatusResult,
     WorktreeID,
 )
 
 
-def create_test_status_response(results_dict=None):
-    """Helper to create StatusResponse for testing."""
-    if results_dict is None:
-        results_dict = {}
-
-    items = {
-        k: StatusItem(status=v, processing_time_ms=v.processing_time_ms)
-        for k, v in results_dict.items()
-    }
-    return StatusResponse(
-        items=items,
-        total_processing_time_ms=sum(it.processing_time_ms for it in items.values())
-        if items
-        else 0.0,
-        daemon_health={
-            "status": "ok",
-            "last_error": None,
-            "last_error_time": None,
-            "github_errors": 0,
-            "gitstatusd_errors": 0,
-        },
-    )
-
-
 @pytest.fixture
-def cli_runner_with_env(cli_runner, cli_test_env, monkeypatch):
+def cli_runner_with_env(cli_runner, wt_env):
     """Factory fixture for running CLI with mocked environment."""
 
     def _run_with_mocked_status(status_response, cli_args, mock_get_status):
         """Run CLI with mocked status response and proper environment setup."""
-        monkeypatch.setenv("WT_DIR", str(cli_test_env))
         mock_get_status.return_value = status_response
-        return cli_runner.invoke(main, cli_args)
+        return cli_runner.invoke(app, cli_args)
 
     return _run_with_mocked_status
 
@@ -60,6 +33,7 @@ class TestCLIOutputFormat:
         self,
         mock_get_status,
         cli_runner_with_env,
+        build_status_response,
     ):
         """Test that the status table renders correctly with real formatting."""
         # Create status data
@@ -105,87 +79,20 @@ class TestCLIOutputFormat:
             ),
         }
 
-        status_response = create_test_status_response(results)
+        status_response = build_status_response(results)
         result = cli_runner_with_env(status_response, [], mock_get_status)
 
-        print("Exit code:", result.exit_code)
-        print("Output:", repr(result.output))
-        print("Exception:", result.exception if result.exception else "None")
         assert result.exit_code == 0
         output = result.output
 
         # Verify content appears in output
-        assert "main" in output
-        assert "feature-branch" in output
+        assert_that(output, contains_string("main"))
+        assert_that(output, contains_string("feature-branch"))
 
     @patch("adgn.wt.client.wt_client.WtClient.get_status")
-    def test_list_worktrees_empty(self, mock_get_status, cli_runner_with_env):
-        """Test ls command with no worktrees."""
-        status_response = create_test_status_response({})
-        result = cli_runner_with_env(status_response, ["ls"], mock_get_status)
-
-        assert result.exit_code == 0
-        assert "No worktrees found" in result.output
-
-    @patch("adgn.wt.client.wt_client.WtClient.get_status")
-    def test_list_worktrees_with_data(
-        self,
-        mock_get_status,
-        cli_runner_with_env,
+    def test_status_unknown_when_not_cached(
+        self, mock_get_status, cli_runner_with_env, build_status_response
     ):
-        """Test ls command with actual worktree data."""
-        # Create test results
-        results = {
-            WorktreeID("wtid:test1"): StatusResult(
-                wtid=WorktreeID("wtid:test1"),
-                name="test1",
-                absolute_path="/test/test1",
-                branch_name="test/test1",
-                has_dirty_files=False,
-                has_untracked_files=False,
-                processing_time_ms=5.0,
-                last_updated_at=datetime.now(),
-                commit_info=CommitInfo(
-                    hash="abc123",
-                    short_hash="abc123",
-                    message="Test commit",
-                    author="Test Author",
-                    date="2024-01-01T00:00:00",
-                ),
-                ahead_count=0,
-                behind_count=0,
-                is_main=False,
-                upstream_branch="master",
-            ),
-        }
-
-        status_response = create_test_status_response(results)
-        result = cli_runner_with_env(status_response, ["ls"], mock_get_status)
-
-        assert result.exit_code == 0
-        # Should show some worktree content
-        assert len(result.output.strip()) > 0
-
-    def test_help_command(self, cli_runner_with_env, monkeypatch, cli_test_env):
-        """Test help command works with new CLI."""
-        monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        result = CliRunner().invoke(main, ["help"])
-
-        assert result.exit_code == 0
-        assert "wt - Enhanced worktree management" in result.output
-        assert "USAGE:" in result.output
-
-    def test_help_flag(self, cli_runner_with_env, monkeypatch, cli_test_env):
-        """Test --help flag works with new CLI."""
-        monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        result = CliRunner().invoke(main, ["--help"])
-
-        assert result.exit_code == 0
-        # Click default help uses 'Usage:'; keep strict
-        assert "Usage:" in result.output
-
-    @patch("adgn.wt.client.wt_client.WtClient.get_status")
-    def test_status_unknown_when_not_cached(self, mock_get_status, cli_runner_with_env):
         """When status isn't cached yet, show 'unknown' instead of 'clean'."""
         commit_info = CommitInfo(
             hash="abcdef1234567890abcdef1234567890abcdef12",
@@ -212,7 +119,7 @@ class TestCLIOutputFormat:
                 is_cached=False,
             ),
         }
-        status_response = create_test_status_response(results)
+        status_response = build_status_response(results)
         result = cli_runner_with_env(status_response, [], mock_get_status)
         assert result.exit_code == 0
-        assert "unknown" in result.output
+        assert_that(result.output, contains_string("unknown"))

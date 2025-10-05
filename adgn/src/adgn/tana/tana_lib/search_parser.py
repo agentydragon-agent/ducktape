@@ -152,9 +152,7 @@ def _parse_expression_components(
         return None
 
     expressions = [
-        expr
-        for comp_id in component_ids
-        if (expr := _parse_single_component(store, comp_id))
+        expr for comp_id in component_ids if (expr := _parse_single_component(store, comp_id))
     ]
 
     if not expressions:
@@ -259,7 +257,5 @@ def _parse_boolean_expression(
     Returns:
         The parsed boolean expression or None
     """
-    operands = [
-        expr for op_id in operand_ids if (expr := _parse_single_component(store, op_id))
-    ]
+    operands = [expr for op_id in operand_ids if (expr := _parse_single_component(store, op_id))]
     return BooleanSearch(operator, operands) if operands else None

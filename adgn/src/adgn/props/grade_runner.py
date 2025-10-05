@@ -4,15 +4,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from adgn.openai_utils.model import OpenAIModelProto
 import yaml
 
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import BaseHandler, GateUntil
 from adgn.agent.loggers import TranscriptLoggerHandler
 from adgn.agent.mcp_manager import McpManager, build_mcp_function
+from adgn.agent.reducer import BaseHandler, GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic import CriticSubmitPayload, ReportedIssue
 from adgn.props.docker_env import PropertiesDockerWiring
 from adgn.props.grader import (
@@ -28,9 +28,7 @@ from adgn.props.prompts.builder import build_grade_from_json_prompt
 from adgn.props.specimens.registry import SpecimenRegistry
 
 
-def _metrics_row(
-    grade: GradeSubmitPayload, *, specimen: str | None = None
-) -> dict[str, Any]:
+def _metrics_row(grade: GradeSubmitPayload, *, specimen: str | None = None) -> dict[str, Any]:
     m = grade.metrics
     row: dict[str, Any] = m.model_dump()
     if specimen is not None:
@@ -77,29 +75,17 @@ async def grade_critic_output(
     def _issue_with_id_prefix(ri: ReportedIssue, prefix: str) -> ReportedIssue:
         nid = ri.id
         new_id = f"{prefix}{nid}" if nid else nid
-        return ReportedIssue(
-            id=new_id, rationale=ri.rationale, occurrences=list(ri.occurrences)
-        )
+        return ReportedIssue(id=new_id, rationale=ri.rationale, occurrences=list(ri.occurrences))
 
-    canonical_prefixed = [
-        _issue_with_id_prefix(ri, CANON_TP_PREFIX) for ri in canonical_ri
-    ]
-    known_fp_prefixed = [
-        _issue_with_id_prefix(ri, CANON_FP_PREFIX) for ri in known_fp_ri
-    ]
+    canonical_prefixed = [_issue_with_id_prefix(ri, CANON_TP_PREFIX) for ri in canonical_ri]
+    known_fp_prefixed = [_issue_with_id_prefix(ri, CANON_FP_PREFIX) for ri in known_fp_ri]
 
     # Critique (for prompt rendering and unknown YAML): build a typed copy with prefixed IDs
-    critique_prefixed = CriticSubmitPayload.model_validate_json(
-        critic_obj.model_dump_json()
-    )
+    critique_prefixed = CriticSubmitPayload.model_validate_json(critic_obj.model_dump_json())
     new_issues: list[ReportedIssue] = []
     for it in critique_prefixed.issues:
         nid = it.id
-        new_id = (
-            f"{CRIT_PREFIX}{nid}"
-            if nid and not str(nid).startswith(CRIT_PREFIX)
-            else nid
-        )
+        new_id = f"{CRIT_PREFIX}{nid}" if nid and not str(nid).startswith(CRIT_PREFIX) else nid
         new_issues.append(it.model_copy(update={"id": new_id}))
     critique_prefixed = critique_prefixed.model_copy(update={"issues": new_issues})
 
@@ -150,9 +136,8 @@ async def grade_critic_output(
         wiring=wiring,
     )
 
-    async with McpManager(
-        {"grader_submit": make_inproc_slot_spec(grader_server)},
-    ) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("grader_submit", make_inproc_slot_spec(grader_server))
         handlers: list[BaseHandler] = [
             GateUntil(lambda: grader_state.result is not None),
             TranscriptHandler(dest_dir=transcript_out_dir / "grader"),
@@ -183,11 +168,11 @@ async def grade_critic_output(
             if it.id:
                 crit_idx[str(it.id)] = it
         for cid in grader_state.result.unknown_critique_ids:
-            it = crit_idx.get(cid)
-            if not it:
+            pr_it = crit_idx.get(cid)
+            if not pr_it:
                 continue
-            orig_id = str(it.id or "").removeprefix(CRIT_PREFIX)
-            for i, occ in enumerate(it.occurrences or []):
+            orig_id = str(pr_it.id or "").removeprefix(CRIT_PREFIX)
+            for i, occ in enumerate(pr_it.occurrences or []):
                 core_dump = {"id": orig_id, "rationale": it.rationale}
                 data = {
                     "core": core_dump,

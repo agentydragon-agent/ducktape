@@ -3,11 +3,12 @@ import shutil
 
 import pytest
 
+from adgn.agent.mcp_manager import McpManager
+from adgn.agent.runtime.specs import StdioSpec
+from adgn.mcp.exec_common.models import StreamOut
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.mcp.local_exec.server import make_local_exec_mcp
 from adgn.mcp.testing.typed_stubs import TypedClient
-from adgn.mcp.exec_common.models import StreamOut
-from adgn.agent.mcp_manager import McpManager
 
 # FastMCP stdio client (hard import)
 
@@ -38,21 +39,12 @@ async def test_stdio_server_list_tools() -> None:
     if proc.returncode != 0:
         pytest.skip(f"server-everything stdio help failed (rc={proc.returncode})")
 
-    spec = McpManager.slot_from_spec(
-        "everything",
-        {
-            "transport": "stdio",
-            "command": "npx",
-            "args": ["@modelcontextprotocol/server-everything", "stdio"],
-        },
-    )
+    spec = StdioSpec(command="npx", args=["@modelcontextprotocol/server-everything", "stdio"])
 
     async with McpManager({"everything": spec}) as mcp:
-        specs = await mcp.list_tools()
-        assert isinstance(specs, list)
-        assert any(s.get("type") == "function" for s in specs)
-        # At least one tool is namespaced under everything
-        assert any((s.get("name") or "").startswith("mcp__everything__") for s in specs)
+        tools = await mcp.list_tools()
+        assert isinstance(tools, list)
+        assert any(t.server == "everything" for t in tools)
 
 
 @pytest.mark.asyncio
@@ -65,22 +57,18 @@ async def test_local_inprocess_server() -> None:
         "local", sandbox_enabled=False
     )  # run unsandboxed for portability in CI/macOS
     spec = make_inproc_slot_spec(srv)
-    async with McpManager({"local": spec}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("local", spec)
         specs = await mcp.list_tools()
-        names = [s.get("name") for s in specs]
-        assert "mcp__local__exec" in names
+        assert any(t.server == "local" and t.tool.name == "exec" for t in specs)
 
         # Typed client sanity call
         session = await mcp.get_session("local")
         client = TypedClient.from_server(srv, session)
         Args = client.models["exec"].Input
-        res = await client.exec(
-            Args(cmd=["/bin/echo", "hello"], max_bytes=100000, timeout_ms=5000)
-        )
+        res = await client.exec(Args(cmd=["/bin/echo", "hello"], max_bytes=100000, timeout_ms=5000))
         assert res.exit == 0
-        out = (
-            res.stdout.text if isinstance(res.stdout, StreamOut) else (res.stdout or "")
-        )
+        out = res.stdout.text if isinstance(res.stdout, StreamOut) else (res.stdout or "")
         assert "hello" in out
 
 
@@ -91,6 +79,7 @@ async def test_inproc_container_exec_exposes_container_info_resource(
 ) -> None:
     """in-proc container exec exposes a container.info resource."""
 
-    async with McpManager({"docker": docker_inproc_spec_py312}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("docker", docker_inproc_spec_py312)
         res = await mcp.read_resource("docker", "resource://container.info")
         assert res.contents, "container.info returned no contents"

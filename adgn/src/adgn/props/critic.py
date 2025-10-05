@@ -11,17 +11,17 @@ Critic agent MUST call submit_result(result) where result conforms to CriticSubm
 
 from __future__ import annotations
 
-from typing import Any, Annotated
+from typing import Annotated, Any
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from adgn.props.models.issue import IssueId, Occurrence, LineRange
 from adgn.llm.rendering.rich_renderers import render_to_rich
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.props.models.issue import IssueId, LineRange, Occurrence
 
 
 class ReportedIssue(BaseModel):
@@ -101,9 +101,7 @@ class AddOccurrenceInput(BaseModel):
     file: Annotated[str, StringConstraints(pattern=r"^[^\n]+$")]
     ranges: Annotated[
         list[RangeAtom],
-        Field(
-            min_items=1, description="List of single lines (int) or spans [start,end]"
-        ),
+        Field(min_items=1, description="List of single lines (int) or spans [start,end]"),
     ]
 
     model_config = ConfigDict(extra="forbid")
@@ -112,9 +110,7 @@ class AddOccurrenceInput(BaseModel):
 class SubmitInput(BaseModel):
     """Finalize: the model must state the number of issues it believes it created."""
 
-    issues: int = Field(
-        ge=0, description="Count of issues in the critique at submit time"
-    )
+    issues: int = Field(ge=0, description="Count of issues in the critique at submit time")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -191,11 +187,7 @@ def make_critic_submit_server(
         for a in atoms:
             if isinstance(a, int):
                 out.append(LineRange(start_line=int(a)))
-            elif (
-                isinstance(a, list)
-                and len(a) == 2
-                and all(isinstance(x, int) for x in a)
-            ):
+            elif isinstance(a, list) and len(a) == 2 and all(isinstance(x, int) for x in a):
                 start, end = int(a[0]), int(a[1])
                 out.append(LineRange(start_line=start, end_line=end))
             else:
@@ -219,9 +211,7 @@ def make_critic_submit_server(
                 break
         else:
             work.issues.append(
-                ReportedIssue(
-                    id=payload.issue_id, rationale=payload.description, occurrences=[]
-                )
+                ReportedIssue(id=payload.issue_id, rationale=payload.description, occurrences=[])
             )
         return {
             "ok": True,
@@ -247,9 +237,10 @@ def make_critic_submit_server(
         # Find issue
         for it in work.issues:
             if it.id == payload.issue_id:
-                occ = Occurrence(
-                    files={payload.file: _normalize_ranges(payload.ranges)}
-                )
+                files_map: dict[str, list[LineRange] | None] = {
+                    payload.file: _normalize_ranges(payload.ranges)
+                }
+                occ = Occurrence(files=files_map)
                 it.occurrences.append(occ)
                 total_occs = sum(len(i.occurrences) for i in work.issues)
                 return {
@@ -275,7 +266,7 @@ def make_critic_submit_server(
         work = _ensure_work_payload()
         for it in work.issues:
             if it.id == payload.issue_id:
-                files_map = {
+                files_map: dict[str, list[LineRange] | None] = {
                     path: _normalize_ranges(ranges)
                     for path, ranges in (payload.files or {}).items()
                 }
@@ -376,8 +367,7 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):  # type: ignore[mis
                         files.append(f"{p}: (unspecified)")
                     else:
                         spans = ", ".join(
-                            f"{r.start_line}"
-                            + (f"-{r.end_line}" if r.end_line is not None else "")
+                            f"{r.start_line}" + (f"-{r.end_line}" if r.end_line is not None else "")
                             for r in ranges
                         )
                         files.append(f"{p}: {spans}")

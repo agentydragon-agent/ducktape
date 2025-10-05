@@ -604,6 +604,41 @@ in
     '';
   };
 
+  # Google Drive setup (migrated from Ansible google-drive-client role)
+  systemd.user.services.google-drive = {
+    Unit = {
+      Description = "Google Drive service";
+      After = [ "network.target" ];
+    };
+    Service = {
+      Type = "simple";
+      Restart = "no";
+      ExecStart = "/opt/google/drive-file-stream/drive %h/.google-drive";
+      StandardOutput = "journal";
+      StandardError = "journal";
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
+  };
+
+  # Create symlinks for Google Drive
+  # Note: The actual .google-drive mount directory will be created by the drive binary
+  home.file = {
+    # Symlink ~/drive -> ~/.google-drive/My Drive
+    "drive" = {
+      source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.google-drive/My Drive";
+    };
+
+    # Create Worthy config directory
+    ".config/worthy/.keep".text = "";
+
+    # Symlink Worthy config from Drive
+    ".config/worthy/config.yaml" = {
+      source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/drive/finance/worthy-config.yaml";
+    };
+  };
+
   # Claude Code MCP configuration - SKIPPED
   # TODO: .claude.json contains other Claude configuration beyond MCP servers
   # We can't replace the entire file. Need to figure out how to merge MCP config

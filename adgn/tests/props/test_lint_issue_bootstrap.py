@@ -3,36 +3,39 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 import uuid
-from platformdirs import user_cache_dir
 
-from adgn.openai_utils.model import (
-    FakeOpenAIModel,
-)
-from tests.fixtures.responses import ResponsesFactory
+from platformdirs import user_cache_dir
 import pytest
 
-from adgn.mcp.docker_exec.server import make_container_exec_mcp
-from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp._shared.types import ExecInput
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.mcp_manager import McpManager
+from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.types import ExecInput
+from adgn.mcp.docker_exec.server import make_container_exec_mcp
+from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.openai_utils.model import (
+    AssistantMessage,
+    FakeOpenAIModel,
+    FunctionCallOutputItem,
+    InputTextPart,
+)
 from adgn.props.docker_env import PropertiesDockerWiring
 from adgn.props.lint_issue import LinterController, LintSubmitState
 from adgn.props.models.issue import Occurrence
+from tests.fixtures.responses import ResponsesFactory
 
 
 def _make_seq() -> list:
-    rf = ResponsesFactory("gpt-5-nano")
+    responses_factory = ResponsesFactory("gpt-5-nano")
     return [
-        rf.make(
-            rf.tool_call(
+        responses_factory.make(
+            responses_factory.tool_call(
                 "mcp__docker__docker_exec",
                 ExecInput(cmd=["bash", "-lc", "echo from_llm"]).model_dump(),
             )
         ),
-        rf.make_assistant_message("FINAL"),
+        responses_factory.make_assistant_message("FINAL"),
     ]
 
 
@@ -94,7 +97,8 @@ async def test_lint_issue_bootstrap_small_files(content_root: Path):
         docker_wiring=wiring,
     )
 
-    async with McpManager({"docker": spec}) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("docker", spec)
         agent = await MiniCodex.create(
             model="gpt-5",
             mcp=mcp,
@@ -112,12 +116,6 @@ async def test_lint_issue_bootstrap_small_files(content_root: Path):
     # Inspect transcript for bootstrap then LLM tool call then final text
     messages = agent.messages
     # Function call outputs we expect: resources.read (bootstrap:res), ls (bootstrap:ls), nl for each file (bootstrap:show:*)
-    from adgn.openai_utils.model import (
-        FunctionCallOutputItem,
-        AssistantMessage,
-        InputTextPart,
-    )
-
     fco = [m for m in messages if isinstance(m, FunctionCallOutputItem)]
     by_id = {m.call_id: m for m in fco}
     # At least 3 bootstrap outputs + 1 LLM tool output
@@ -126,9 +124,7 @@ async def test_lint_issue_bootstrap_small_files(content_root: Path):
     # Verify expected bootstrap call_ids are present; transcript may not embed structuredContent here
     assert by_id.get("bootstrap:res") is not None
     assert by_id.get("bootstrap:ls") is not None
-    show_ids = [
-        k for k in by_id if isinstance(k, str) and k.startswith("bootstrap:show:")
-    ]
+    show_ids = [k for k in by_id if isinstance(k, str) and k.startswith("bootstrap:show:")]
     assert len(show_ids) >= 2
 
     # Ensure we saw a final assistant emission with text "FINAL"

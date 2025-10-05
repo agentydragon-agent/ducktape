@@ -1,9 +1,14 @@
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
-from pydantic import BaseModel, ConfigDict, Field
 from mcp import types as mcp_types
+from pydantic import BaseModel, ConfigDict, Field
+
+from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
+
+
+class ResourceEntry(BaseModel):
+    server: str = Field(description="Origin MCP server name")
+    resource: mcp_types.Resource
 
 
 class ResourcesBackend(Protocol):
@@ -13,16 +18,12 @@ class ResourcesBackend(Protocol):
     This server performs filtering and windowing.
     """
 
-    async def list_resources(
-        self, only: list[str] | None = None
-    ) -> list[dict[str, Any]]: ...
+    async def list_resources(self, only: list[str] | None = None) -> list[ResourceEntry]: ...
     async def read_resource(self, server: str, uri: str) -> Any: ...
 
 
 class ResourcesListArgs(BaseModel):
-    server: str | None = Field(
-        default=None, description="Filter by server name (optional)"
-    )
+    server: str | None = Field(default=None, description="Filter by server name (optional)")
     uri_prefix: str | None = Field(
         default=None,
         description="Restrict to URIs starting with this prefix (optional)",
@@ -31,32 +32,32 @@ class ResourcesListArgs(BaseModel):
 
 
 class ResourcesListResult(BaseModel):
-    resources: list[dict[str, Any]]
+    resources: list[ResourceEntry] = Field(
+        description="Aggregated resources across servers (each item includes origin server)"
+    )
     model_config = ConfigDict(extra="forbid")
 
 
 class ResourceWindowInfo(BaseModel):
-    start_offset: int
-    max_bytes: int
+    start_offset: int = Field(description="Start byte offset used for this window")
+    max_bytes: int = Field(description="Max bytes requested for this window (0 means unbounded)")
     model_config = ConfigDict(extra="forbid")
 
 
 class ResourceReadResult(BaseModel):
-    window: ResourceWindowInfo
-    parts: list[dict[str, Any]]
-    total_parts: int
+    window: ResourceWindowInfo = Field(description="Windowing parameters reflected back")
+    parts: list[dict[str, Any]] = Field(
+        description="Windowed parts (text/base64). For text, bytes are decoded as UTF‑8 with replacement."
+    )
+    total_parts: int = Field(description="Total number of parts reported by the origin server")
     model_config = ConfigDict(extra="forbid")
 
 
 class ResourcesReadArgs(BaseModel):
-    server: str
-    uri: str
-    start_offset: int = Field(
-        default=0, ge=0, description="Start byte offset for windowed reads"
-    )
-    max_bytes: int = Field(
-        default=0, ge=0, description="Max bytes to return (0 means no limit)"
-    )
+    server: str = Field(description="Origin MCP server name that owns the resource")
+    uri: str = Field(description="Resource URI as reported by the origin server's list")
+    start_offset: int = Field(default=0, ge=0, description="Start byte offset for windowed reads")
+    max_bytes: int = Field(default=0, ge=0, description="Max bytes to return (0 means no limit)")
     model_config = ConfigDict(extra="forbid")
 
 
@@ -83,7 +84,7 @@ def _normalize_parts(
             )
             continue
         if isinstance(p, mcp_types.BlobResourceContents):
-            base = p.data  # base64 string per MCP spec
+            base = p.blob  # base64 string per MCP spec
             norm.append({"kind": "base64", "mime": p.mimeType, "raw_str": str(base)})
             continue
         raise TypeError(f"Unsupported resource content type: {type(p).__name__}")
@@ -95,9 +96,7 @@ def _iter_window_parts(
     start_offset: int,
     max_bytes: int | None,
 ):
-    remaining: int | None = (
-        max_bytes if isinstance(max_bytes, int) and max_bytes > 0 else None
-    )
+    remaining: int | None = max_bytes if isinstance(max_bytes, int) and max_bytes > 0 else None
     cursor = 0
     for part in _normalize_parts(contents):
         mime = part.get("mime")
@@ -151,8 +150,7 @@ def _build_window_payload(
             {
                 k: v
                 for k, v in part.items()
-                if k
-                in {"kind", "mime", "text", "base64", "total_bytes", "bytes_returned"}
+                if k in {"kind", "mime", "text", "base64", "total_bytes", "bytes_returned"}
             }
         )
     return ResourceReadResult(
@@ -168,41 +166,76 @@ def make_resources_server(
 ) -> SafeFastMCP:
     """Create a lightweight MCP server that aggregates resources across servers.
 
-    Exposes two tools with server-side filtering and windowing:
-      - list(server?: string, uri_prefix?: string) -> { resources: [...] }
-      - read(server: string, uri: string, start_offset?: int = 0, max_bytes?: int) -> windowed payload
+    Summary
+    - Synthetic server injected by the runtime; reserved name is ``resources``.
+    - Provides a uniform API to discover and read resources exposed by other servers.
 
-    Backend is supplied directly as an argument (e.g., McpManager).
+    Tools
+    - ``list(server?: string, uri_prefix?: string) -> { resources: [...] }``
+      Server-side filters by server name and URI prefix.
+    - ``read(server: string, uri: string, start_offset?: int = 0, max_bytes?: int)``
+      Returns a windowed payload for large text/base64 resources.
+
+    Window semantics
+    - Windowing is byte-based across the concatenation of all parts reported by the
+      underlying server. Text is sliced by UTF-8 bytes and decoded with
+      ``errors="replace"`` if a multi-byte character is split at the boundary.
+    - Base64 parts are sliced as base64 text; decoding is the caller's responsibility.
+
+    Capability gating
+    - Only servers that advertise ``initialize.capabilities.resources`` are queried
+      by the backend (see ``McpManager.list_resources``).
+
+    Backend contract
+    - ``backend`` must implement ``list_resources()`` and ``read_resource()``; the
+      latter must return a typed ``ReadResourceResult`` from the python SDK.
     """
     mcp = SafeFastMCP(
         name,
-        instructions="Aggregates MCP resources and provides read with windowing",
+        instructions=(
+            "Resources aggregator. Use these tools to discover and read resources "
+            "exposed by attached MCP servers.\n\n"
+            "Tools:\n"
+            "- list(server?: string, uri_prefix?: string) → { resources: [...] }\n"
+            "  • Discover resources across servers.\n"
+            "  • Filter by a single server name and/or a URI prefix.\n"
+            "- read(server: string, uri: string, start_offset?: int = 0, max_bytes?: int = 0)\n"
+            "  • Read a window of the resource. Text is sliced by UTF‑8 bytes and decoded with replacement.\n"
+            "  • Base64 blobs are returned as base64 text; decode on the client if needed.\n\n"
+            "Guidance:\n"
+            "- Prefer windowed reads for large content (16–64 KiB).\n"
+            "- To continue, call read again with start_offset advanced by the bytes returned.\n"
+            "- Always qualify reads with the origin 'server' and the exact 'uri' from list().\n"
+        ),
     )
 
     @mcp_flat_model(
         mcp,
         name="list",
         title="List resources",
-        description="List MCP resources with optional filtering",
+        description=(
+            "List MCP resources with optional filtering. Returns an aggregated list; "
+            "each item includes the origin server name and the resource descriptor."
+        ),
         structured_output=True,
     )
     async def list_resources_tool(input: ResourcesListArgs) -> ResourcesListResult:
-        items = await backend.list_resources(
-            only=[input.server] if input.server else None
-        )
+        items = await backend.list_resources(only=[input.server] if input.server else None)
         if input.uri_prefix:
             items = [
                 it
                 for it in items
-                if isinstance(it.get("uri"), str)
-                and cast(str, it["uri"]).startswith(input.uri_prefix)
+                if it.resource.uri and str(it.resource.uri).startswith(input.uri_prefix)
             ]
         return ResourcesListResult(resources=items)
 
     @mcp_flat_model(
         mcp,
         title="Read resource",
-        description="Read a resource with optional windowing",
+        description=(
+            "Read a resource with optional windowing. Text parts are returned as UTF‑8 strings; "
+            "base64 parts are returned as base64 text."
+        ),
         structured_output=True,
     )
     async def read(input: ResourcesReadArgs) -> ResourceReadResult:

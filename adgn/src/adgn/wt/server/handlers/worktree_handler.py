@@ -210,9 +210,7 @@ async def worktree_identify(
     if absolute_path.is_relative_to(config.worktrees_dir):
         rel_path = absolute_path.relative_to(config.worktrees_dir)
         worktree_name = rel_path.parts[0] if rel_path.parts else None
-        relative_path = (
-            str(Path(*rel_path.parts[1:])) if len(rel_path.parts) > 1 else ""
-        )
+        relative_path = str(Path(*rel_path.parts[1:])) if len(rel_path.parts) > 1 else ""
     elif absolute_path.is_relative_to(config.main_repo):
         worktree_name = MAIN_WORKTREE_DISPLAY_NAME
         relative_path = str(absolute_path.relative_to(config.main_repo))

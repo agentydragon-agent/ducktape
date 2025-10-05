@@ -59,9 +59,7 @@ class ProfileDConf:
 
     def _path(self, property_name: str) -> str:
         """Construct the dconf path for the given property."""
-        return (
-            f"/org/gnome/terminal/legacy/profiles:/:{self.profile_uuid}/{property_name}"
-        )
+        return f"/org/gnome/terminal/legacy/profiles:/:{self.profile_uuid}/{property_name}"
 
     def read_property(self, property_name: str) -> str | bool:
         try:
@@ -153,7 +151,7 @@ def get_profile_uuid_by_name_mapping() -> dict[str, UUID]:
     for profile_uuid in GSettingsProfiles().profile_uuids:
         try:
             name = ProfileDConf(profile_uuid).visible_name
-        except Exception as e:
+        except (KeyError, AssertionError, ValueError) as e:
             logging.warning(f"Failed to get name for profile {profile_uuid}: {e}")
             continue
         if name in uuid_by_name:

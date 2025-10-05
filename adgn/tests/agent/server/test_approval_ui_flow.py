@@ -1,0 +1,62 @@
+"""Test that approval prompts auto-appear in UI without refresh."""
+
+from __future__ import annotations
+
+from concurrent.futures import CancelledError
+
+from hamcrest import assert_that, has_items, has_properties
+import pytest
+
+from adgn.agent.server import protocol
+from tests.agent.ws_helpers import (
+    is_function_call_output_end_turn,
+)
+from tests.llm.support.openai_mock import make_mock
+
+Envelope = protocol.Envelope
+
+
+@pytest.mark.timeout(10)
+def test_approval_prompt_auto_appears(
+    responses_factory,
+    make_echo_spec,
+    ws_session,
+) -> None:
+    """Test that approval prompts appear immediately in UI without manual refresh."""
+
+    state = {"step": 0}
+
+    async def responses_create(_req):
+        step = state["step"]
+        state["step"] += 1
+        if step == 0:
+            # Agent tries to call echo tool - should trigger approval prompt
+            return responses_factory.make_tool_call(
+                "mcp__echo__echo", {"text": "hello"}, call_id="call_echo"
+            )
+        # After approval, agent should end turn
+        return responses_factory.make_tool_call("mcp__ui__end_turn", {}, call_id="call_ui_end")
+
+    client = make_mock(responses_create)
+    specs = make_echo_spec()
+
+    try:
+        with ws_session(client, specs=specs, auto_approve=True) as (
+            client_ws,
+            ws,
+            collect,
+            agent_id,
+        ):
+            ws.send_json({"type": "send", "text": "use echo tool to say hello"})
+            payloads = collect(limit=100)
+            assert_that(
+                payloads,
+                has_items(
+                    has_properties(type="approval_pending", call_id="call_echo"),
+                    has_properties(type="approval_decision"),
+                    is_function_call_output_end_turn(call_id="call_ui_end"),
+                    has_properties(type="run_status", run_state=has_properties(status="finished")),
+                ),
+            )
+    except CancelledError:
+        pass

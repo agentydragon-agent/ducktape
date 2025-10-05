@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pygit2
@@ -18,7 +17,7 @@ class DummyGitManager:
         raise pygit2.GitError(f"Repository not found at {path}")
 
 
-def _make_real_config(tmp_path: Path) -> Configuration:
+def _make_real_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Configuration:
     wt_dir = tmp_path / "wt"
     wt_dir.mkdir()
 
@@ -41,13 +40,15 @@ def _make_real_config(tmp_path: Path) -> Configuration:
     }
     (wt_dir / "config.yaml").write_text(yaml.safe_dump(config_data, sort_keys=False))
 
-    os.environ["WT_TEST_MODE"] = "1"
+    monkeypatch.setenv("WT_TEST_MODE", "1")
     return Configuration.resolve(wt_dir)
 
 
 @pytest.mark.asyncio
-async def test_pr_service_handles_missing_worktree_without_crashing(tmp_path: Path):
-    cfg = _make_real_config(tmp_path)
+async def test_pr_service_handles_missing_worktree_without_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    cfg = _make_real_config(tmp_path, monkeypatch)
 
     prsvc = PRService(
         github_interface=None,  # GitHub disabled is fine for this unit test

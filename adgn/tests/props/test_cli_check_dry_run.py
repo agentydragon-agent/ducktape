@@ -5,7 +5,7 @@ import re
 
 from typer.testing import CliRunner
 
-from adgn.props.cli_app.main import app as props_app
+from adgn.props.cli_app.main import app
 
 
 def _extract_saved_prompt_path(stdout: str) -> Path:
@@ -20,7 +20,7 @@ def test_cli_check_dry_run_tmp_workdir(tmp_path):
     # Minimal run: check --dry-run on a temp dir
     runner = CliRunner()
     result = runner.invoke(
-        props_app,
+        app,
         [
             "check",
             str(tmp_path),

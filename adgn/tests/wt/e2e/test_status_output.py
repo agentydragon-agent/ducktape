@@ -4,13 +4,16 @@ Uses the real CLI via subprocess with completely isolated WT_DIR per test
 through the existing `real_env` fixture and helpers.
 """
 
+from datetime import timedelta
 from pathlib import Path
 import time
 
+from hamcrest import assert_that, contains_string
 import pytest
 
+from tests.wt.asserts import extract_status_rows, status_row_ok
+
 from ..test_utils import run_cli_command
-from datetime import timedelta
 
 pytestmark = pytest.mark.timeout(10)
 
@@ -22,7 +25,7 @@ def test_status_lists_multiple_worktrees(real_temp_repo, real_env):
     # Initial status should succeed; header should include component summary
     result = run_cli_command([], env=real_env, timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
-    assert "gitstatusd" in result.stdout
+    assert_that(result.stdout, contains_string("gitstatusd"))
 
     # Create first worktree
     result = run_cli_command(
@@ -51,37 +54,11 @@ def test_status_lists_multiple_worktrees(real_temp_repo, real_env):
     while time.time() < deadline:
         result = run_cli_command([], env=real_env, timeout=timedelta(seconds=3.0))
         assert result.returncode == 0
-        out = result.stdout
-        last_out = out
-        # Find lines for each worktree
-        lines = [ln for ln in out.splitlines() if ln and not ln.startswith(("✓", "⟳"))]
-
-        def line_for(name: str, lines=lines) -> str | None:
-            prefix = f"{name} "
-            for ln in lines:
-                if ln.startswith(prefix):
-                    return ln
-            return None
-
-        l1 = line_for("alpha")
-        l2 = line_for("beta")
-
-        def commit_ok(line: str) -> bool:
-            import re
-
-            # Full-line regex: name, spaces, 8-hex, spaces, rest
-            return re.match(r"^[a-zA-Z0-9._/-]+\s+[0-9a-f]{8}\b", line) is not None
-
-        if (
-            l1
-            and l2
-            and ("clean" in l1)
-            and (" running" in l1)
-            and ("clean" in l2)
-            and (" running" in l2)
-            and commit_ok(l1)
-            and commit_ok(l2)
-        ):
+        last_out = result.stdout
+        rows = extract_status_rows(last_out)
+        l1 = rows.get("alpha")
+        l2 = rows.get("beta")
+        if l1 and l2 and status_row_ok(l1) and status_row_ok(l2):
             break
         time.sleep(0.2)
     else:

@@ -2,24 +2,24 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+import pytest
 
-from adgn.agent.reducer import AutoHandler, NotificationsHandler
 from adgn.agent.agent import MiniCodex
 from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import AutoHandler, NotificationsHandler
+from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.testing.typed_stubs import TypedClient
-from tests.llm.support.openai_mock import make_mock
 from adgn.openai_utils.model import (
-    ResponsesRequest as Req,
+    InputTextPart,
+    ResponsesRequest,
     ResponsesResult,
     UserMessage,
-    InputTextPart,
 )
+from tests.llm.support.openai_mock import make_mock
 
 
 class NotifyPolicyInput(BaseModel):
@@ -69,8 +69,8 @@ async def test_notifications_pre_sampling_out_of_band(
     responses_factory,
 ):
     # Build notifier server and manager
-    specs = {"notifier": make_inproc_slot_spec(server)}
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("notifier", make_inproc_slot_spec(server))
         # Prime a protocol-level notification before sampling by calling the server tool once
         # (establishes session and emits ResourceUpdatedNotification)
         sess = await mcp.get_session("notifier")
@@ -78,9 +78,9 @@ async def test_notifications_pre_sampling_out_of_band(
         client = TypedClient.from_server(server, sess)
         await client.notify_policy(NotifyPolicyInput())
 
-        captured: list[Req] = []
+        captured: list[ResponsesRequest] = []
 
-        async def _create(req: Req) -> ResponsesResult:
+        async def _create(req: ResponsesRequest) -> ResponsesResult:
             captured.append(req)
             # Minimal assistant response; we only care about the input we sent
             return responses_factory.make_assistant_message("ok")
@@ -98,15 +98,12 @@ async def test_notifications_pre_sampling_out_of_band(
         # Inspect the input passed to Responses.create; expect a system notification insert
         assert captured, "expected at least one responses.create call"
 
-        def _has_sysfyi(req: Req) -> bool:
+        def _has_sysfyi(req: ResponsesRequest) -> bool:
             inp = req.input or []
             for msg in inp:
                 if isinstance(msg, UserMessage):
                     for c in msg.content or []:
-                        if (
-                            isinstance(c, InputTextPart)
-                            and "<system notification>" in c.text
-                        ):
+                        if isinstance(c, InputTextPart) and "<system notification>" in c.text:
                             payload = c.text.split("\n", 1)[-1]
                             if "notifier" in payload and "policy.py" in payload:
                                 return True
@@ -123,12 +120,10 @@ async def test_notifications_within_turn_from_tool(
     responses_factory,
 ):
     # Build notifier server and manager
-    specs = {"notifier": make_inproc_slot_spec(server)}
-
     stage = {"n": 0}
-    captured: list[Req] = []
+    captured: list[ResponsesRequest] = []
 
-    async def _create(req: Req) -> ResponsesResult:
+    async def _create(req: ResponsesRequest) -> ResponsesResult:
         captured.append(req)
         stage["n"] += 1
         if stage["n"] == 1:
@@ -137,7 +132,8 @@ async def test_notifications_within_turn_from_tool(
         # Second (and later) model output: nothing else to do
         return responses_factory.make_assistant_message("done")
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("notifier", make_inproc_slot_spec(server))
         client = make_mock(_create)
         agent = await MiniCodex.create(
             model="test-model",
@@ -155,10 +151,7 @@ async def test_notifications_within_turn_from_tool(
         for msg in second.input or []:
             if isinstance(msg, UserMessage):
                 for c in msg.content or []:
-                    if (
-                        isinstance(c, InputTextPart)
-                        and "<system notification>" in c.text
-                    ):
+                    if isinstance(c, InputTextPart) and "<system notification>" in c.text:
                         found = True
                         break
             if found:
@@ -175,14 +168,15 @@ async def test_notifications_broadcast_outside_tool(responses_factory):
     async def prime() -> dict[str, Any]:
         return {"ok": True}
 
-    specs = {"notifier": make_inproc_slot_spec(server)}
-    captured: list[Req] = []
+    # no server specs needed for this test
+    captured: list[ResponsesRequest] = []
 
-    async def _create(req: Req) -> ResponsesResult:
+    async def _create(req: ResponsesRequest) -> ResponsesResult:
         captured.append(req)
         return responses_factory.make_assistant_message("ok")
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        await mcp.attach_server("notifier", make_inproc_slot_spec(server))
         # Establish a session (prime capture) then broadcast outside any tool handler
         sess = await mcp.get_session("notifier")
         await sess.call_tool(name="prime", arguments={})
@@ -199,14 +193,11 @@ async def test_notifications_broadcast_outside_tool(responses_factory):
         await agent.run("hello")
 
         # Expect notification inserted before sampling
-        def _has_sysfyi(req: Req) -> bool:
+        def _has_sysfyi(req: ResponsesRequest) -> bool:
             for msg in req.input or []:
                 if isinstance(msg, UserMessage):
                     for c in msg.content or []:
-                        if (
-                            isinstance(c, InputTextPart)
-                            and "<system notification>" in c.text
-                        ):
+                        if isinstance(c, InputTextPart) and "<system notification>" in c.text:
                             payload = c.text.split("\n", 1)[-1]
                             if "notifier" in payload and "policy.py" in payload:
                                 return True

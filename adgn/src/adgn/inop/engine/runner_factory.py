@@ -2,23 +2,23 @@
 
 from typing import Any
 
-from adgn.inop.clients.logging_openai_client import LoggingOpenAIModel
 from adgn.inop.runners.base import AgentRunner
 from adgn.inop.runners.claude_runner import ClaudeRunner
 from adgn.inop.runners.minicodex_runner import MiniCodexRunner
+from adgn.openai_utils.model import OpenAIModelProto
 
 
 def create_runner(
     runner_name: str,
     runner_configs: dict[str, dict[str, Any]],
-    openai_model: LoggingOpenAIModel | None = None,
+    openai_model: OpenAIModelProto | None = None,
 ) -> AgentRunner:
     """Create an agent runner based on configuration.
 
     Args:
         runner_name: Name of the runner (e.g., "claude", "mini_codex")
         runner_configs: Dictionary of runner configurations from runners.yaml
-        openai_client: Optional LoggingOpenAIClient for minicodex
+        openai_client: (deprecated) removed; pass OpenAIModelProto via openai_model
 
     Returns:
         Instantiated runner

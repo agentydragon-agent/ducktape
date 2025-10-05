@@ -143,9 +143,7 @@ class GitRepoFactory:
         """Create worktrees for branches."""
         if isinstance(with_worktrees, bool) and with_worktrees:
             # Create worktrees for all non-main branches
-            worktree_names = [
-                b for b in (branches or []) if b != TestData.Branches.MAIN
-            ]
+            worktree_names = [b for b in (branches or []) if b != TestData.Branches.MAIN]
         elif isinstance(with_worktrees, list):
             # Create worktrees with specified names
             worktree_names = with_worktrees

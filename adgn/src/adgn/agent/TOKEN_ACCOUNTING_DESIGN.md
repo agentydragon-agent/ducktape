@@ -317,7 +317,7 @@ Callsite switch checklist (replace legacy logger with handler)
 
 Change pattern per callsite (once typed events are wired):
 ```python
-from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
+from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
 
 # existing handlers
 handlers = [AutoHandler(), DisplayEventsHandler(), TranscriptLoggerHandler(run_dir)]

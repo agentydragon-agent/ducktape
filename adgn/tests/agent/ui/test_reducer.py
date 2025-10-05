@@ -4,16 +4,22 @@ import json
 
 from mcp import types as mcp_types
 
-from adgn.agent.ui.reducer import reduce_ui_state
-from adgn.agent.ui.state import UiState, new_state
-from adgn.agent.ui.protocol import (
-    UserText,
-    ToolCall,
-    FunctionCallOutput,
-    ApprovalDecisionEvt,
+from adgn.agent.server.protocol import (
     ApprovalApprove,
+    ApprovalDecisionEvt,
+    FunctionCallOutput,
+    ToolCall,
     UiMessageEvt,
     UiMessagePayload,
+    UserText,
+)
+from adgn.agent.server.reducer import reduce_ui_state
+from adgn.agent.server.state import UiState, new_state
+from tests.agent.ui.typed_asserts import (
+    assert_typed_items_have_one,
+    is_assistant_markdown,
+    is_tool_item,
+    is_user_message,
 )
 
 
@@ -21,10 +27,7 @@ def test_user_text_appends_user_message():
     s: UiState = new_state()
     s2 = reduce_ui_state(s, UserText(text="hello"))
     assert s2.seq == 1
-    assert len(s2.items) == 1
-    it = s2.items[0]
-    assert it.kind == "UserMessage"
-    assert it.text == "hello"
+    assert_typed_items_have_one(s2.items, is_user_message("hello"))
 
 
 def test_tool_call_exec_starts_exec_content_with_cmd():
@@ -32,16 +35,13 @@ def test_tool_call_exec_starts_exec_content_with_cmd():
     args = {"argv": ["echo", "hi there"]}
     s2 = reduce_ui_state(
         s,
-        ToolCall(
-            name="mcp__seatbelt__sandbox_exec", args_json=json.dumps(args), call_id="c1"
-        ),
+        ToolCall(name="mcp__seatbelt__sandbox_exec", args_json=json.dumps(args), call_id="c1"),
     )
     assert s2.seq == 1
-    assert len(s2.items) == 1
+    assert_typed_items_have_one(
+        s2.items, is_tool_item(tool="mcp__seatbelt__sandbox_exec", call_id="c1")
+    )
     it = s2.items[0]
-    assert it.kind == "Tool"
-    assert it.tool == "mcp__seatbelt__sandbox_exec"
-    assert it.call_id == "c1"
     assert it.decision is None
     assert it.content.content_kind == "Exec"
     # command assembled with conservative quoting
@@ -55,20 +55,16 @@ def test_tool_call_json_starts_json_content_with_args():
         s, ToolCall(name="mcp__demo__inspect", args_json=json.dumps(args), call_id="c2")
     )
     assert s2.seq == 1
+    assert_typed_items_have_one(s2.items, is_tool_item(call_id="c2"))
     it = s2.items[0]
-    assert it.kind == "Tool"
     assert it.content.content_kind == "Json"
     assert it.content.args == args
 
 
 def test_approval_sets_single_decision():
     s = new_state()
-    s1 = reduce_ui_state(
-        s, ToolCall(name="mcp__ui__noop", args_json="{}", call_id="c3")
-    )
-    s2 = reduce_ui_state(
-        s1, ApprovalDecisionEvt(call_id="c3", decision=ApprovalApprove())
-    )
+    s1 = reduce_ui_state(s, ToolCall(name="mcp__ui__noop", args_json="{}", call_id="c3"))
+    s2 = reduce_ui_state(s1, ApprovalDecisionEvt(call_id="c3", decision=ApprovalApprove()))
     it = s2.items[0]
     assert it.kind == "Tool"
     assert it.decision == "approve"
@@ -91,9 +87,7 @@ def test_function_output_updates_exec_stream():
     )
     s2 = reduce_ui_state(
         s1,
-        FunctionCallOutput(
-            call_id="c4", result=result.model_dump(mode="json", exclude_none=True)
-        ),
+        FunctionCallOutput(call_id="c4", result=result.model_dump(mode="json", exclude_none=True)),
     )
     it = s2.items[0]
     assert it.kind == "Tool"
@@ -126,6 +120,4 @@ def test_ui_message_becomes_assistant_markdown():
         UiMessageEvt(message=UiMessagePayload(mime="text/markdown", content="**hi**")),
     )
     assert s2.seq == 1
-    it = s2.items[0]
-    assert it.kind == "AssistantMarkdown"
-    assert it.md == "**hi**"
+    assert_typed_items_have_one(s2.items, is_assistant_markdown("**hi**"))

@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from dataclasses import dataclass, field
+import logging
 
 from mcp.client.session import ClientSession
 from mcp.types import InitializeResult
@@ -54,13 +55,52 @@ class ServerSlotSpec:
 
     open_uninitialized: OpenFn
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Optional per-slot initialize timeout (seconds). None uses default; <= 0 disables timeout.
+    init_timeout_secs: float | None = None
 
     async def open(self, stack: AsyncExitStack) -> ServerSlot:
+        logger = logging.getLogger(__name__)
         async with self.lock:
+            logger.info(
+                "[SlotSpec] open: about to enter open_uninitialized; timeout=%s",
+                self.init_timeout_secs,
+            )
             # open_uninitialized follows the canonical protocol and returns an
             # async context manager that yields an UNINITIALIZED ClientSession when
             # entered. Enter it via the provided AsyncExitStack so the same lifetime
             # boundary manages session teardown.
             sess = await stack.enter_async_context(self.open_uninitialized(stack))
-            init = await sess.initialize()
+            # Initialize timeout: configurable only via slot spec. When None or <= 0, no timeout is applied.
+            try:
+                if self.init_timeout_secs is None or self.init_timeout_secs <= 0:
+                    logger.info("[SlotSpec] calling initialize (no timeout)")
+                    try:
+                        print("[SlotSpec] initialize start (no-timeout)")
+                    except Exception:
+                        pass
+                    init = await sess.initialize()
+                else:
+                    logger.info(
+                        "[SlotSpec] calling initialize with timeout=%s",
+                        self.init_timeout_secs,
+                    )
+                    try:
+                        print(f"[SlotSpec] initialize start (timeout={self.init_timeout_secs})")
+                    except Exception:
+                        pass
+                    init = await asyncio.wait_for(
+                        sess.initialize(), timeout=float(self.init_timeout_secs)
+                    )
+                logger.info("[SlotSpec] initialize ok")
+                try:
+                    print("[SlotSpec] initialize ok")
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.exception("[SlotSpec] initialize failed: %s", e)
+                try:
+                    print(f"[SlotSpec] initialize failed: {type(e).__name__}: {e}")
+                except Exception:
+                    pass
+                raise
             return ServerSlot(session=sess, init_result=init)

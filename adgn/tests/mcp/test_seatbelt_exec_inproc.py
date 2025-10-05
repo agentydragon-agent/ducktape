@@ -4,27 +4,23 @@ from contextlib import AsyncExitStack, asynccontextmanager
 import os
 from pathlib import Path
 
-import anyio
-from mcp.server.fastmcp.exceptions import ToolError
 import pytest
-from adgn.mcp.testing.typed_stubs import TypedClient
 
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.mcp.seatbelt_exec.server import (
-    make_seatbelt_exec_mcp,
-    StreamOut,
     SandboxExecArgs,
-    ListPoliciesArgs,
-    GetPolicyArgs,
-    SetPolicyArgs,
-    DeletePolicyArgs,
+    StreamOut,
+    make_seatbelt_exec_mcp,
 )
+from adgn.mcp.testing.typed_stubs import TypedClient
 from adgn.seatbelt.model import (
-    SBPLPolicy,
-    ProcessRule,
+    DefaultBehavior,
+    FileOp,
     FileRule,
-    PathFilter,
     MachLookupRule,
+    ProcessRule,
+    SBPLPolicy,
+    Subpath,
     SystemRule,
     TraceConfig,
 )
@@ -45,11 +41,11 @@ async def open_inproc_session():
 
 def make_default_restrictive_policy(trace: bool = False) -> SBPLPolicy:
     return SBPLPolicy(
-        default_behavior="deny",
+        default_behavior=DefaultBehavior.DENY,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),
         files=[
-            FileRule(op="file-map-executable", filters=[]),
-            FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value="/")]),
+            FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
+            FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
         ],
         network=[],
         mach=MachLookupRule(global_names=[]),
@@ -75,206 +71,109 @@ def _extract_payload(resp):
 
 @pytest.mark.requires_sandbox_exec
 @pytest.mark.shell
-def test_sandbox_exec_echo_roundtrip() -> None:
-    async def inner() -> None:
-        async with open_inproc_session() as (_server, session):
-            # Tools available
-            tools = await session.list_tools()
-            names = {t.name for t in tools.tools}
-            assert {
-                "list_policies",
-                "set_policy",
-                "get_policy",
-                "delete_policy",
-                "sandbox_exec",
-            }.issubset(names)
-
-            # Write restrictive echo policy (allow exec + read subpath /)
-            policy_id = "restrictive"
-            # Build policy with Pydantic model to match server's expected schema
-            policy_payload = make_default_restrictive_policy(trace=False).model_dump()
-            resp = await session.call_tool(
-                name="set_policy",
-                arguments={"policy_id": policy_id, "policy": policy_payload},
+@pytest.mark.asyncio
+async def test_sandbox_exec_echo_roundtrip() -> None:
+    async with open_inproc_session() as (_server, session):
+        # Execute echo under sandbox (typed client)
+        client = TypedClient.from_server(_server, session)
+        res = await client.sandbox_exec(
+            SandboxExecArgs(
+                policy=make_default_restrictive_policy(trace=False),
+                argv=["/bin/echo", "HELLO_MINIMAL"],
+                max_bytes=100000,
+                timeout_secs=10,
+                trace=False,
             )
-            assert _extract_payload(resp) == {}  # empty object
-
-            # Execute echo under sandbox (typed client)
-            client = TypedClient.from_server(_server, session)
-            res = await client.sandbox_exec(
-                SandboxExecArgs(
-                    policy_id=policy_id,
-                    argv=["/bin/echo", "HELLO_MINIMAL"],
-                    max_bytes=100000,
-                    timeout_secs=10,
-                    trace=False,
-                )
-            )
-            assert res.timeout is False
-            assert res.exit_code == 0
-            out_val = (
-                res.stdout.text
-                if isinstance(res.stdout, StreamOut)
-                else (res.stdout or "")
-            )
-            assert out_val == "HELLO_MINIMAL\n"
-            # stderr should be empty or None
-            err_val = (
-                res.stderr.text
-                if isinstance(res.stderr, StreamOut)
-                else (res.stderr or "")
-            )
-            assert err_val in ("", None)
-            # duration exists and is a non-negative int
-            assert isinstance(res.duration_ms, int) and res.duration_ms >= 0
-
-    anyio.run(inner)
+        )
+        assert res.timeout is False
+        assert res.exit_code == 0
+        out_val = res.stdout.text if isinstance(res.stdout, StreamOut) else (res.stdout or "")
+        assert out_val == "HELLO_MINIMAL\n"
+        # stderr should be empty or None
+        err_val = res.stderr.text if isinstance(res.stderr, StreamOut) else (res.stderr or "")
+        assert err_val in ("", None)
+        # duration exists and is a non-negative int
+        assert isinstance(res.duration_ms, int) and res.duration_ms >= 0
 
 
 @pytest.mark.requires_sandbox_exec
 @pytest.mark.shell
-def test_sandbox_exec_write_denied() -> None:
+@pytest.mark.asyncio
+async def test_sandbox_exec_write_denied() -> None:
     """Attempt a file write that should be denied by the sandbox policy."""
     import secrets
 
-    async def inner() -> None:
-        async with open_inproc_session() as (_server, session):
-            # Install a restrictive policy: allow exec + read, deny writes by default
-            policy_id = "restrictive"
-
-            await session.call_tool(
-                name="set_policy",
-                arguments={
-                    "policy_id": policy_id,
-                    "policy": make_default_restrictive_policy(trace=True).model_dump(),
-                },
+    async with open_inproc_session() as (_server, session):
+        # Attempt to write to /tmp (normally allowed for a user; should be denied by sandbox)
+        token = secrets.token_hex(6)
+        out_path = f"/tmp/seatbelt_denied_{token}.txt"
+        client = TypedClient.from_server(_server, session)
+        res = await client.sandbox_exec(
+            SandboxExecArgs(
+                policy=make_default_restrictive_policy(trace=True),
+                argv=["/bin/sh", "-lc", f"echo DENIED > {out_path}"],
+                max_bytes=100000,
+                timeout_secs=5,
+                trace=True,
             )
-
-            # Attempt to write to /tmp (normally allowed for a user; should be denied by sandbox)
-            token = secrets.token_hex(6)
-            out_path = f"/tmp/seatbelt_denied_{token}.txt"
-            client = TypedClient.from_server(_server, session)
-            res = await client.sandbox_exec(
-                SandboxExecArgs(
-                    policy_id=policy_id,
-                    argv=["/bin/sh", "-lc", f"echo DENIED > {out_path}"],
-                    max_bytes=100000,
-                    timeout_secs=5,
-                    trace=True,
-                )
-            )
-            assert res.timeout is False
-            # Expect non-zero exit due to sandbox denial
-            assert isinstance(res.exit_code, int) and res.exit_code != 0
-            # Stderr should have some diagnostic
-            err_val = (
-                res.stderr.text
-                if isinstance(res.stderr, StreamOut)
-                else (res.stderr or "")
-            )
-            assert (err_val or "").strip() != ""
-            # File should not exist (write was denied)
-            assert not os.path.exists(out_path)
-            # Trace collection remains flaky across versions; rely on stderr for now
-            # TODO(mpokorny): Revisit trace enablement and policy for reliable capture
-
-    anyio.run(inner)
+        )
+        assert res.timeout is False
+        # Expect non-zero exit due to sandbox denial
+        assert isinstance(res.exit_code, int) and res.exit_code != 0
+        # Stderr should have some diagnostic
+        err_val = res.stderr.text if isinstance(res.stderr, StreamOut) else (res.stderr or "")
+        assert (err_val or "").strip() != ""
+        # File should not exist (write was denied)
+        assert not os.path.exists(out_path)
+        # Trace collection remains flaky across versions; rely on stderr for now
+        # TODO(mpokorny): Revisit trace enablement and policy for reliable capture
 
 
 @pytest.mark.requires_sandbox_exec
 @pytest.mark.shell
-def test_sandbox_exec_timeout() -> None:
+@pytest.mark.asyncio
+async def test_sandbox_exec_timeout() -> None:
     """Command exceeding timeout should return timeout=True and no exit_code."""
 
-    async def inner() -> None:
-        async with open_inproc_session() as (_server, session):
-            policy_id = "restrictive"
-            policy = make_default_restrictive_policy()
-            client = TypedClient.from_server(_server, session)
-            await client.set_policy(
-                SetPolicyArgs(policy_id=policy_id, policy=policy.model_dump())
+    async with open_inproc_session() as (_server, session):
+        policy = make_default_restrictive_policy()
+        client = TypedClient.from_server(_server, session)
+        res = await client.sandbox_exec(
+            SandboxExecArgs(
+                policy=policy,
+                argv=["/bin/sh", "-lc", "sleep 2"],
+                max_bytes=100000,
+                timeout_secs=0.5,
+                trace=False,
             )
-            res = await client.sandbox_exec(
-                SandboxExecArgs(
-                    policy_id=policy_id,
-                    argv=["/bin/sh", "-lc", "sleep 2"],
-                    max_bytes=100000,
-                    timeout_secs=0.5,
-                    trace=False,
-                )
-            )
-            assert res.timeout is True
-            assert res.exit_code is None
-            assert isinstance(res.duration_ms, int) and res.duration_ms >= 0
-
-    anyio.run(inner)
+        )
+        assert res.timeout is True
+        assert res.exit_code is None
+        assert isinstance(res.duration_ms, int) and res.duration_ms >= 0
 
 
 @pytest.mark.requires_sandbox_exec
 @pytest.mark.shell
-def test_sandbox_exec_cwd_and_env(tmp_path: Path) -> None:
-    """Verify cwd and env injection."""
-
-    async def inner() -> None:
-        async with open_inproc_session() as (_server, session):
-            policy_id = "restrictive"
-            policy = make_default_restrictive_policy()
-            client = TypedClient.from_server(_server, session)
-            await client.set_policy(
-                SetPolicyArgs(policy_id=policy_id, policy=policy.model_dump())
+@pytest.mark.asyncio
+async def test_sandbox_exec_cwd_and_env(tmp_path: Path) -> None:
+    """Verify cwd and env injection (async)."""
+    async with open_inproc_session() as (_server, session):
+        policy = make_default_restrictive_policy()
+        client = TypedClient.from_server(_server, session)
+        res = await client.sandbox_exec(
+            SandboxExecArgs(
+                policy=policy,
+                argv=["/bin/sh", "-lc", "pwd; echo $FOO"],
+                cwd=str(tmp_path),
+                env={"FOO": "BAR"},
+                max_bytes=100000,
+                timeout_secs=5,
+                trace=False,
             )
-            res = await client.sandbox_exec(
-                SandboxExecArgs(
-                    policy_id=policy_id,
-                    argv=["/bin/sh", "-lc", "pwd; echo $FOO"],
-                    cwd=str(tmp_path),
-                    env={"FOO": "BAR"},
-                    max_bytes=100000,
-                    timeout_secs=5,
-                    trace=False,
-                )
-            )
-            assert res.timeout is False
-            assert res.exit_code == 0
-            out_val = (
-                res.stdout.text
-                if isinstance(res.stdout, StreamOut)
-                else (res.stdout or "")
-            )
-            assert out_val.splitlines()[:2] == [str(tmp_path), "BAR"]
+        )
+        assert res.timeout is False
+        assert res.exit_code == 0
+        out_val = res.stdout.text if isinstance(res.stdout, StreamOut) else (res.stdout or "")
+        assert out_val.splitlines()[:2] == [str(tmp_path), "BAR"]
 
-    anyio.run(inner)
-
-
-@pytest.mark.requires_sandbox_exec
-@pytest.mark.shell
-def test_policy_crud() -> None:
-    async def inner() -> None:
-        async with open_inproc_session() as (_server, session):
-            client = TypedClient.from_server(_server, session)
-            # list should start empty
-            lst = await client.list_policies(ListPoliciesArgs())
-            assert lst == []
-
-            # set one policy
-            pid = "p1"
-            policy = make_default_restrictive_policy()
-            await client.set_policy(
-                SetPolicyArgs(policy_id=pid, policy=policy.model_dump())
-            )
-
-            # list includes it
-            lst2 = await client.list_policies(ListPoliciesArgs())
-            assert lst2 == [pid]
-
-            # get returns the policy
-            gp = await client.get_policy(GetPolicyArgs(policy_id=pid))
-            assert gp.model_dump() == policy.model_dump()
-
-            # delete and get should fail
-            await client.delete_policy(DeletePolicyArgs(policy_id=pid))
-            with pytest.raises(ToolError):
-                # Use server.call_tool to assert tool error raising behavior
-                await _server.call_tool("get_policy", {"policy_id": pid})
-
-    anyio.run(inner)
+    # No policy CRUD tests; server no longer stores policies.

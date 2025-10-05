@@ -40,6 +40,7 @@ The tests run the actual CLI binary end-to-end, making them true integration tes
 that catch real-world deployment issues like this socket path problem.
 """
 
+from datetime import timedelta
 import os
 from pathlib import Path
 import subprocess
@@ -49,7 +50,6 @@ import pygit2
 import pytest
 
 from ..test_utils import run_cli_command
-from datetime import timedelta
 
 pytestmark = pytest.mark.timeout(10)
 
@@ -127,9 +127,7 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     assert "feature2" in result.stdout
 
     # Step 5: Navigate to feature1 (test cd command emission)
-    result = run_cli_command(
-        ["sh", "feature1"], env=real_env, timeout=timedelta(seconds=10.0)
-    )
+    result = run_cli_command(["sh", "feature1"], env=real_env, timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
     # Note: cd command is emitted to fd3, we can't easily verify it here
 

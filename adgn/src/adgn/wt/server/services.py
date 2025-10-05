@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
-import pygit2
 import contextlib
 from datetime import datetime
 from pathlib import Path
+import time
+from weakref import WeakSet
+
+import pygit2
 
 from ..shared.protocol import (
     DaemonHealth,
@@ -21,6 +24,7 @@ from .gitstatusd_listener import GitstatusdListener
 from .pr_service import PRCacheError, PRCacheOk, PRService
 from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
+from .worktree_ids import make_worktree_id
 from .worktree_index import WorktreeIndex
 
 
@@ -113,10 +117,10 @@ class GitstatusdService:
     def get_cached_status(
         self,
         path: Path,
-    ) -> tuple[int, int, datetime | None, bool]:
+    ) -> tuple[int, int, datetime | None, bool, str | None]:
         client = self._get_client(path)
         if not client:
-            return 0, 0, None, False
+            return 0, 0, None, False, None
         return client.get_cached_working_status()
 
     def is_running(self, path: Path) -> bool:
@@ -143,7 +147,10 @@ class GitstatusdService:
 class PRServiceProvider:
     def __init__(self, services: dict[WorktreeID, PRService]) -> None:
         self._services = services
-        self._tasks: list[asyncio.Task] = []
+        self._tasks: WeakSet[asyncio.Task] = WeakSet()
+        self._inflight: set[tuple[WorktreeID, str]] = set()
+        self._recent: dict[tuple[WorktreeID, str], float] = {}
+        self._recent_ttl_s: float = 3.0
 
     async def start(self) -> None:
         for svc in self._services.values():
@@ -171,9 +178,26 @@ class PRServiceProvider:
         prsvc = self._services.get(wtid)
         if not prsvc:
             return
-        task = asyncio.create_task(prsvc.get_pr_info(branch, force_refresh=True))
-        self._tasks.append(task)
-        task.add_done_callback(lambda t: self._tasks.remove(t))
+        key = (wtid, branch)
+        now = time.monotonic()
+        # Skip if already running or completed very recently
+        if key in self._inflight or (now - self._recent.get(key, 0.0)) < self._recent_ttl_s:
+            return
+
+        async def _run() -> None:
+            try:
+                await prsvc.get_pr_info(branch, force_refresh=True)
+            finally:
+                self._inflight.discard(key)
+                # Record completion time and drop stale entries occasionally
+                self._recent[key] = time.monotonic()
+                if len(self._recent) > 1024:
+                    cutoff = time.monotonic() - self._recent_ttl_s
+                    self._recent = {k: t for k, t in self._recent.items() if t >= cutoff}
+
+        self._inflight.add(key)
+        task = asyncio.create_task(_run())
+        self._tasks.add(task)
 
     async def refresh_now(self, wtid: WorktreeID) -> None:
         """Synchronously refresh PR cache for a given worktree.
@@ -228,6 +252,25 @@ class DiscoveryService:
     async def stop(self) -> None:
         if self._cancel:
             self._cancel()
+
+
+async def scan_worktrees(worktrees_dir: Path) -> set[DiscoveredWorktree]:
+    """Discover worktrees under a directory.
+
+    Keeps a simple rule: include direct subdirectories that contain a `.git/`.
+    Returns a set of DiscoveredWorktree with ids derived from directory names.
+    """
+    if not worktrees_dir.exists():
+        return set()
+    current: set[DiscoveredWorktree] = set()
+    for path in worktrees_dir.iterdir():
+        if not path.is_dir():
+            continue
+        if (path / ".git").exists():
+            current.add(
+                DiscoveredWorktree(path, path.name, make_worktree_id(path.name)),
+            )
+    return current
 
 
 class HealthService:

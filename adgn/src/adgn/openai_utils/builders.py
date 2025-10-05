@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # ruff: noqa: E402
 
 """Adapter-level item builders for production code.
@@ -8,14 +9,14 @@ create directly (not full ResponsesResult objects, and not reasoning items).
 Reasoning items originate from the model and should never be synthesized in prod.
 """
 
-from typing import Any
 import json
+from typing import Any
 
 from .model import (
     AssistantMessageOut,
-    OutputText,
     FunctionCallItem,
     FunctionCallOutputItem,
+    OutputText,
 )
 
 

@@ -3,11 +3,11 @@ from __future__ import annotations
 import pytest
 
 from adgn.mcp.git_ro.server import (
+    ChangedFilesPage,
     DiffFormat,
+    DiffStatPage,
     ListSlice,
     ShowInput,
-    ChangedFilesPage,
-    DiffStatPage,
     TextPage,
 )
 
@@ -43,8 +43,6 @@ async def test_git_show_stat(typed_git_ro) -> None:
 @pytest.mark.asyncio
 async def test_git_show_patch(typed_git_ro) -> None:
     async with typed_git_ro() as (client, session):
-        pt_union = await client.git_show(
-            ShowInput(object="HEAD", format=DiffFormat.PATCH)
-        )
+        pt_union = await client.git_show(ShowInput(object="HEAD", format=DiffFormat.PATCH))
         assert isinstance(pt_union, TextPage)
         assert isinstance(pt_union.body, str)

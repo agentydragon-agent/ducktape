@@ -5,14 +5,14 @@ from typing import Any
 
 import pytest
 
+from adgn.openai_utils import builders
 from adgn.openai_utils.model import (
-    ResponsesResult,
     AssistantMessageOut,
     FunctionCallItem,
     ReasoningItem,
-    Usage as PUsage,
+    ResponsesResult,
+    Usage,
 )
-from adgn.openai_utils import builders
 
 
 @pytest.fixture(scope="session")
@@ -39,7 +39,7 @@ class ResponsesFactory(builders.ItemFactory):
     def make_assistant_message(self, text: str) -> ResponsesResult:
         return ResponsesResult(
             id="resp_msg",
-            usage=PUsage(input_tokens=0, output_tokens=1, total_tokens=1),
+            usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
             output=[self.assistant_text(text)],
         )
 
@@ -53,9 +53,7 @@ class ResponsesFactory(builders.ItemFactory):
     def make_item_reasoning(self, id: str | None = None) -> ReasoningItem:
         return ReasoningItem(id=id or f"rs_{self._next_reasoning_id()}")
 
-    def make_item_tool_call_auto(
-        self, name: str, arguments: dict | str
-    ) -> FunctionCallItem:
+    def make_item_tool_call_auto(self, name: str, arguments: dict | str) -> FunctionCallItem:
         return self.tool_call(name, arguments)
 
     # ---- Message/response constructors (compose items) ----
@@ -66,7 +64,7 @@ class ResponsesFactory(builders.ItemFactory):
         for it in items:
             if isinstance(it, AssistantMessageOut):
                 out_tokens += max(1, len(it.text))
-        usage = PUsage(
+        usage = Usage(
             input_tokens=0,
             output_tokens=(1 if out_tokens else 0),
             total_tokens=(1 if out_tokens else 0),

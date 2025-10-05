@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping, MutableMapping
 import logging
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, cast
 
 import structlog
 
@@ -133,7 +133,7 @@ class DualOutputLogging:
             minicodx_logger.setLevel(logging.DEBUG)
 
     @staticmethod
-    def get_logger(name: str | None = None) -> Any:
+    def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
         """Get a structured logger instance.
 
         Args:
@@ -142,4 +142,5 @@ class DualOutputLogging:
         Returns:
             Structured logger instance
         """
-        return structlog.get_logger(name)
+        # structlog.get_logger returns an stdlib BoundLogger when configured accordingly
+        return cast(structlog.stdlib.BoundLogger, structlog.get_logger(name))

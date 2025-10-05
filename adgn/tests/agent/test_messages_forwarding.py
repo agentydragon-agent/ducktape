@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from typing import Any
+
+from hamcrest import assert_that, has_item, has_items, instance_of, is_not
 import pytest
 
+from adgn.agent.agent import MiniCodex
+from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import AutoHandler
 from adgn.openai_utils.model import (
     AssistantMessage,
     FakeOpenAIModel,
@@ -11,10 +16,8 @@ from adgn.openai_utils.model import (
     ReasoningItem,
     ResponsesResult,
 )
-from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler
-from adgn.agent.mcp_manager import McpManager
 from tests.fixtures.responses import ResponsesFactory
+
 # Use our shared Pydantic-only fake model client
 
 # Examples and references:
@@ -50,7 +53,9 @@ async def test_stateless_reasoning_forwarding(make_echo_spec) -> None:
     seq = [_make_reasoning_then_message("ok")]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        for name, slot in specs.items():
+            await mcp.attach_server(name, slot)
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
@@ -64,15 +69,16 @@ async def test_stateless_reasoning_forwarding(make_echo_spec) -> None:
         # Reasoning should be present in the agent transcript/messages for stateless forwarding
         msgs = agent.messages
 
-        # We forward reasoning items as typed ReasoningItem
-        assert any(isinstance(it, ReasoningItem) for it in msgs)
-        # Assistant text is represented as a standard AssistantMessage
-        assert any(isinstance(it, AssistantMessage) for it in msgs)
+        # Typed presence checks using Hamcrest (combined)
+        assert_that(
+            msgs,
+            has_items(instance_of(ReasoningItem), instance_of(AssistantMessage)),
+        )
 
 
 @pytest.mark.asyncio
-async def test_function_call_and_fco_replay(make_echo_spec) -> None:
-    """Request1 produces a function_call; after local execution, messages() must include fc and fco."""
+async def test_function_call_and_function_call_output_replay(make_echo_spec) -> None:
+    """Request1 produces a function_call; after local execution, messages() must include function_call and function_call_output."""
     specs = make_echo_spec()
 
     seq = [
@@ -81,7 +87,9 @@ async def test_function_call_and_fco_replay(make_echo_spec) -> None:
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        for name, slot in specs.items():
+            await mcp.attach_server(name, slot)
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
@@ -97,14 +105,16 @@ async def test_function_call_and_fco_replay(make_echo_spec) -> None:
     assert client.calls == 2
     # Captured request input holds our typed InputItem models
     input_items = list(client.captured[1].input or [])
-    assert any(isinstance(it, FunctionCallItem) for it in input_items)
-    assert any(isinstance(it, FunctionCallOutputItem) for it in input_items)
+    assert_that(
+        input_items,
+        has_items(instance_of(FunctionCallItem), instance_of(FunctionCallOutputItem)),
+    )
 
 
 @pytest.mark.asyncio
 async def test_mixed_reasoning_fc_ordering(make_echo_spec) -> None:
-    """Resp1 returns reasoning, function_call, assistant; after fco, messages preserves order
-    reasoning, fc, fco, assistant.
+    """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
+    reasoning, function_call, function_call_output, assistant.
     """
     specs = make_echo_spec()
 
@@ -117,7 +127,9 @@ async def test_mixed_reasoning_fc_ordering(make_echo_spec) -> None:
     # Use a final assistant message on the second call to avoid infinite tool-call loops
     client = FakeOpenAIModel([resp, _make_reasoning_then_message("ok")])
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        for name, slot in specs.items():
+            await mcp.attach_server(name, slot)
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
@@ -130,10 +142,15 @@ async def test_mixed_reasoning_fc_ordering(make_echo_spec) -> None:
     # Expect exactly two calls; validate second call input ordering/types (typed InputItems)
     assert client.calls == 2
     input_items = list(client.captured[1].input or [])
-    assert any(isinstance(it, ReasoningItem) for it in input_items)
-    assert any(isinstance(it, FunctionCallItem) for it in input_items)
-    assert any(isinstance(it, FunctionCallOutputItem) for it in input_items)
-    assert any(isinstance(it, AssistantMessage) for it in input_items)
+    assert_that(
+        input_items,
+        has_items(
+            instance_of(ReasoningItem),
+            instance_of(FunctionCallItem),
+            instance_of(FunctionCallOutputItem),
+            instance_of(AssistantMessage),
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -148,7 +165,9 @@ async def test_no_synthesized_reasoning_items(make_echo_spec) -> None:
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        for name, slot in specs.items():
+            await mcp.attach_server(name, slot)
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
@@ -161,7 +180,7 @@ async def test_no_synthesized_reasoning_items(make_echo_spec) -> None:
     idx = min(1, len(client.captured) - 1)
     input_items = list(client.captured[idx].input or [])
     # No synthesized ReasoningItem entries should be present
-    assert not any(isinstance(it, ReasoningItem) for it in input_items)
+    assert_that(input_items, is_not(has_item(instance_of(ReasoningItem))))
 
 
 @pytest.mark.asyncio
@@ -181,7 +200,9 @@ async def test_model_provided_tool_output_records_without_execution(
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager(specs) as mcp:
+    async with McpManager({}) as mcp:
+        for name, slot in specs.items():
+            await mcp.attach_server(name, slot)
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
@@ -193,6 +214,6 @@ async def test_model_provided_tool_output_records_without_execution(
         await agent.run("say hi")
 
     msgs = agent.messages
-    assert any(isinstance(it, FunctionCallOutputItem) for it in msgs)
+    assert_that(msgs, has_item(instance_of(FunctionCallOutputItem)))
     assert not agent.pending_function_calls
     assert client.calls == 1

@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib import resources as ilres
+from importlib import resources
 from pathlib import Path
-
-import docker
-from docker.errors import ImageNotFound
 
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.docker_exec.server import make_container_exec_mcp
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.mcp.types import ServerSlotSpec
 from adgn.props.prop_utils import props_definitions_root
+import docker
+from docker.errors import ImageNotFound
 
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 SERVER_NAME = "docker"
@@ -38,7 +37,7 @@ class PropertiesDockerWiring:
 
 
 def build_critic_build_hint() -> str:
-    dockerfile_trav = ilres.files("adgn.llm").joinpath("docker/critic.Dockerfile")
+    dockerfile_trav = resources.files("adgn.llm").joinpath("docker/critic.Dockerfile")
     # Convert Traversable to a real filesystem path for mypy/typeshed compatibility
     dockerfile_path = str(dockerfile_trav)
     context_dir = str(Path(dockerfile_path).parent)

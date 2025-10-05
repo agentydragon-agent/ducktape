@@ -6,9 +6,10 @@ Implemented
 
 - Approval engine (adgn/agent/approvals.py)
   - ApprovalPolicyEngine with decide(ctx), set_policy(), create_proposal(), withdraw(), apply(), get_status().
+  - Policies must `from adgn.agent.approvals import ApprovalContext, PolicyDecision, WellKnownServers, WellKnownTools` and implement `decide(ctx)`.
   - ApprovalContext passed to policy with attributes: server, tool, arguments.
   - Syntax validation via ast.parse; invalid policies raise ValueError.
-  - Default policy: allow UI and approval_policy ops; ask otherwise.
+- Default policy: allow UI and approval_policy ops; ask otherwise. See `adgn.agent.approvals` for the canonical policy header imports and examples.
 
 - Agent gating (handler-based)
   - ApprovalPolicyHandler consults the engine and gates tool calls before MCP execution, coordinating ask/deny via ApprovalHub.
@@ -39,4 +40,3 @@ Usage (high level)
   - await MiniCodex.create(..., approval_engine=engine, approval_hub=hub)
 
 - Optionally expose approval_policy MCP server using ApprovalPolicyServer(engine) for LLM visibility and proposals.
-

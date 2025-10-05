@@ -1,10 +1,6 @@
 import json
 from pathlib import Path
 
-from adgn.openai_utils.model import (
-    FunctionCallItem,
-    ResponsesRequest,
-)
 import pytest
 
 from adgn.inop.config import (
@@ -17,15 +13,25 @@ from adgn.inop.config import (
     TokenConfig,
     TruncationConfig,
 )
-from adgn.inop.engine import optimizer as opt
 from adgn.inop.engine.models import (
     AgentTaskType,
+    AssistantMessage as TrMsg,
     Criterion,
     MessageBasedGrading,
+    Rollout,
+    RunnerEnvironment,
     TaskDefinition,
     TaskType,
 )
+import adgn.inop.engine.optimizer
+import adgn.inop.engine.runner_factory
 from adgn.inop.io.jsonl_logger import JSONLLogger
+from adgn.inop.runners.base import AgentRunner
+from adgn.openai_utils.model import (
+    FunctionCallItem,
+    FunctionToolParam,
+    ResponsesRequest,
+)
 
 
 def mk_func_call(*, name: str, args: dict, call_id: str) -> FunctionCallItem:
@@ -50,11 +56,7 @@ class FakeModelLayer:
         tools = req.tools or []
 
         def _tool_name(choice):
-            if isinstance(choice, dict):
-                return choice.get("name")
-            if hasattr(choice, "name"):
-                return getattr(choice, "name")
-            return None
+            return getattr(choice, "name", None)
 
         name = _tool_name(tool_choice)
         # Tool-based routing
@@ -74,10 +76,11 @@ class FakeModelLayer:
                     )
                 )
             if name == "submit_grades":
+                assert all(isinstance(t, FunctionToolParam) for t in tools)
                 required = []
                 if tools:
-                    tool = tools[0]
-                    params = tool.get("parameters", {})
+                    tool: FunctionToolParam = tools[0]
+                    params = tool.parameters or {}
                     required = params.get("required", [])
                 payload = {rk: {"score": 9.0, "rationale": "ok"} for rk in required}
                 call = mk_func_call(
@@ -150,24 +153,12 @@ async def test_optimize_prompts_two_iterations_async(
     responses_factory,
 ):
     # Provide a lightweight runner that avoids Docker and writes deterministic outputs
-    from adgn.inop.engine.models import (
-        AssistantMessage as TrMsg,
-        Rollout,
-        RunnerEnvironment,
-    )
-    from adgn.inop.runners.base import AgentRunner
-    from adgn.inop.engine import runner_factory
-
     class FakeRunner(AgentRunner):
         async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:  # noqa: D401
-            self._env = RunnerEnvironment(
-                type="workspace_dir", data={"path": str(tmp_path / "ws")}
-            )
+            self._env = RunnerEnvironment(type="workspace_dir", data={"path": str(tmp_path / "ws")})
             (tmp_path / "ws").mkdir(parents=True, exist_ok=True)
 
-        async def run_task(
-            self, task: TaskDefinition, agent_instructions: str
-        ) -> Rollout:  # noqa: D401
+        async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:  # noqa: D401
             traj = [TrMsg(text="default")]
             files = {"README.md": f"prompt: {agent_instructions}"}
             return Rollout(
@@ -192,7 +183,7 @@ async def test_optimize_prompts_two_iterations_async(
             config=runner_configs.get(runner_name, {}).get("config", {}),
         )
 
-    monkeypatch.setattr(runner_factory, "create_runner", _fake_create_runner)
+    monkeypatch.setattr(adgn.inop.engine.runner_factory, "create_runner", _fake_create_runner)
     base_dir = tmp_path / "run"
     base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -211,29 +202,26 @@ async def test_optimize_prompts_two_iterations_async(
     task_types = {"coding": TaskType(name="coding", grading=None)}
     runner_configs = {"claude": {"type": "claude_runner", "config": {}}}
 
-    # Logging client (openai_client is unused here); DI concrete models
-    dummy_client = opt.LoggingOpenAIClient(
-        openai_client=object(), jsonl_logger=JSONLLogger(base_dir / "api.jsonl")
-    )
     fake_model = FakeModelLayer(responses_factory)
 
     # Ensure logging is initialized for optimizer
-    opt.DualOutputLogging.setup_logging(verbose=False)
-    opt.logger = opt.DualOutputLogging.get_logger()
+    adgn.inop.engine.optimizer.DualOutputLogging.setup_logging(verbose=False)
+    adgn.inop.engine.optimizer.logger = adgn.inop.engine.optimizer.DualOutputLogging.get_logger()
 
     # Disable plotting by stubbing tracker.generate_report
-    orig_generate_report = opt.ScoreEvolutionTracker.generate_report
+    orig_generate_report = adgn.inop.engine.optimizer.ScoreEvolutionTracker.generate_report
 
     def _no_plot(self, run_dir, log_path):
         return "report"
 
-    monkeypatch.setattr(opt.ScoreEvolutionTracker, "generate_report", _no_plot)
+    monkeypatch.setattr(
+        adgn.inop.engine.optimizer.ScoreEvolutionTracker, "generate_report", _no_plot
+    )
     monkeypatch.setenv("DUCK_ALLOW_UNSANDBOXED", "1")
 
-    out_dir = await opt.optimize_prompts(
-        opt.OptimizeArgs(
+    out_dir = await adgn.inop.engine.optimizer.optimize_prompts(
+        adgn.inop.engine.optimizer.OptimizeArgs(
             anthropic_log=JSONLLogger(base_dir / "anthropic.jsonl"),
-            openai_client=dummy_client,
             pe_model=fake_model,
             runner_model=fake_model,
             grader_model=fake_model,
@@ -280,7 +268,5 @@ async def test_optimize_prompts_two_iterations_async(
 
     # Restore original method
     monkeypatch.setattr(
-        opt.ScoreEvolutionTracker,
-        "generate_report",
-        orig_generate_report,
+        adgn.inop.engine.optimizer.ScoreEvolutionTracker, "generate_report", orig_generate_report
     )

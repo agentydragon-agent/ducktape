@@ -9,7 +9,12 @@ import time
 from typing import Any
 import uuid
 
-from adgn.inop.clients.logging_openai_client import LoggingOpenAIModel
+from adgn.agent.agent import MiniCodex
+from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.handler import BaseHandler
+from adgn.agent.loggers import TranscriptLoggerHandler
+from adgn.agent.mcp_manager import McpManager
+from adgn.agent.reducer import AutoHandler
 from adgn.inop.engine.models import (
     FinalOutput,
     Rollout,
@@ -26,12 +31,7 @@ from adgn.mcp.docker_exec.server import make_container_exec_mcp
 from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.mcp.local_exec.server import make_local_exec_mcp
 from adgn.mcp.types import ServerSlotSpec
-from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler
-from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.handler import BaseHandler
-from adgn.agent.loggers import TranscriptLoggerHandler
-from adgn.agent.mcp_manager import McpManager
+from adgn.openai_utils.model import OpenAIModelProto
 
 """Mini Codex runner that delegates execution to the MiniCodex agent."""
 
@@ -44,21 +44,21 @@ class MiniCodexRunner(AgentRunner):
         runner_id: str,
         config: dict[str, Any],
         *,
-        openai_model: LoggingOpenAIModel,
+        openai_model: OpenAIModelProto,
     ) -> None:
         super().__init__(runner_id, config)
         configured_model = config.get("model")
         self.model = (
             configured_model
             if isinstance(configured_model, str)
-            else openai_model.model_id
+            else os.getenv("OPENAI_MODEL", "o4-mini")
         )
         self.reasoning_effort = config.get("reasoning_effort")
         self.workspace_path: Path | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._agent: MiniCodex | None = None
         self._mcp_manager: McpManager | None = None
-        self._logging_model = openai_model
+        self._openai_model = openai_model
         # Optional: allow callers/tests to pass their own handlers
         self._handlers: list[BaseHandler] | None = (
             config.get("handlers") if isinstance(config.get("handlers"), list) else None
@@ -87,9 +87,9 @@ class MiniCodexRunner(AgentRunner):
         slots = self._build_mcp_slots(setup)
 
         self._exit_stack = AsyncExitStack()
-        self._mcp_manager = await self._exit_stack.enter_async_context(
-            McpManager(slots),
-        )
+        self._mcp_manager = await self._exit_stack.enter_async_context(McpManager({}))
+        for name, slot in slots.items():
+            await self._mcp_manager.attach_server(name, slot)
         # Per-run transcript directory
         run_dir = Path.cwd() / "logs" / "mini_codex" / "minicodex_runner"
         run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
@@ -104,7 +104,7 @@ class MiniCodexRunner(AgentRunner):
             model=self.model,
             system=None,
             mcp=self._mcp_manager,
-            client=self._logging_model,
+            client=self._openai_model,
             reasoning_effort=self.reasoning_effort,
             handlers=handlers,
         )
@@ -121,9 +121,7 @@ class MiniCodexRunner(AgentRunner):
             for host_path, spec in (setup.docker.volumes or {}).items():
                 if isinstance(spec, dict):
                     volumes[str(host_path)] = spec
-            network_mode = (
-                NetworkMode.BRIDGE if setup.docker.network_enabled else NetworkMode.NONE
-            )
+            network_mode = NetworkMode.BRIDGE if setup.docker.network_enabled else NetworkMode.NONE
 
             def _make_server():
                 return make_container_exec_mcp(
