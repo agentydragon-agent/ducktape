@@ -32,6 +32,7 @@ let
   openai-codex = pkgs.callPackage ./packages/openai-codex.nix {};
 in
 {
+  imports = [ ./modules/claude-code-router.nix ];
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
@@ -42,6 +43,41 @@ in
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
+
+  # Claude Code Router config and transformers via Home Manager
+  programs.claudeCodeRouter = {
+    enable = true;
+
+    # Match reasoning models used by the router's transformer
+    reasoningModelPatterns = [ "^o.(-mini)?$" "^gpt-5-2025-08-07$" ];
+
+    systemReplace = {
+      search = "Claude Code";
+      replace = "OpenAI Code";
+      regex = false;
+    };
+
+    providers.openai = {
+      apiBaseUrl = "https://api.openai.com/v1/chat/completions";
+      models = [ "o3" "o4-mini" "gpt-5-2025-08-07" ];
+      useTransformers = [ "system-replace" "openai-reasoning" ];
+    };
+
+    router = {
+      default = "openai,gpt-5-2025-08-07";
+      background = "openai,gpt-5-2025-08-07";
+      think = "openai,gpt-5-2025-08-07";
+      longContext = "openai,gpt-5-2025-08-07";
+      webSearch = "openai,gpt-5-2025-08-07";
+    };
+
+    # To run as a service, enable this and set env (e.g., OPENAI_API_KEY)
+    # service = {
+    #   enable = true;
+    #   command = [ "claude-code-router" "--config" "${config.home.homeDirectory}/.claude-code-router/config.json" ];
+    #   environment = { OPENAI_API_KEY = "set-me-in-env-or-secrets"; };
+    # };
+  };
 
   # Bat configuration with Solarized themes
   programs.bat = {
