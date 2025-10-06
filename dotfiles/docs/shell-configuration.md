@@ -2,17 +2,46 @@
 
 This document explains the shell startup file organization for this system.
 
-## Quick Reference
+## Migration Status (2025-10)
 
-| File | Purpose | When Loaded | What Goes Here |
-|------|---------|-------------|----------------|
-| `~/.profile` | POSIX environment setup | Login shells (bash, sh) | PATH, environment variables, sources ~/.secret_env |
-| `~/.bashrc` | Bash interactive config | Interactive bash shells | Sources ~/.shellrc, bash-specific settings |
-| `~/.zshenv` | Zsh environment (minimal) | ALL zsh invocations | Only zsh-specific settings (skip_global_compinit) |
-| `~/.zprofile` | Zsh login config | Zsh login shells | Currently empty |
-| `~/.zshrc` | Zsh interactive config | Interactive zsh shells | Sources ~/.shellrc, oh-my-zsh, zsh-specific |
-| `~/.shellrc` | Interactive settings | Interactive shells | Sources profile, aliases, functions, completions |
-| `~/.secret_env` | Secret environment vars | When sourced by ~/.profile | API keys, tokens (not in git) |
+**Most shell configuration has been migrated to Nix home-manager** as of October 2025.
+
+- **Shell configurations**: Managed declaratively in `~/code/ducktape/nix/home/home.nix`
+  - Programs: `programs.bash`, `programs.zsh`, `programs.atuin`, `programs.direnv`, `programs.zoxide`, `programs.eza`
+  - Shell-specific initialization: `~/code/ducktape/nix/home/shell/*.sh` (bash-init.sh, zsh-init.sh, common-init.sh)
+  - Aliases: `home.shellAliases`
+  - Environment variables: `home.sessionVariables`
+
+- **What remains in dotfiles**:
+  - `~/.profile` - Complex conditional PATH management and legacy integrations (CUDA, lesspipe, dotnet, pnpm, machine-specific config)
+  - `~/.secret_env` - Secret environment variables (not tracked in git)
+
+- **Nix-managed theme configuration**:
+  - `nix/home/p10k.zsh` - Powerlevel10k theme configuration (deployed to ~/.p10k.zsh via home.file)
+
+- **Removed legacy tools** (2025-10):
+  - **pyenv** - Not actively used (was set to "system"), Python now managed via Nix
+  - **NVM** - Not installed, Node.js now managed via Nix (nodejs_22 package)
+  - **Bun** - Not installed
+
+- **Deprecated dotfiles** (now managed by Nix):
+  - `~/.bashrc` → `programs.bash` in home.nix
+  - `~/.zshrc` → `programs.zsh` in home.nix
+  - `~/.shellrc` → `home.shellAliases` and shell init scripts
+  - `~/.zshenv` → `programs.zsh.envExtra` in home.nix
+  - `~/.zprofile` → Not needed (empty)
+
+## Quick Reference (Legacy)
+
+| File | Purpose | Status | What Goes Here |
+|------|---------|--------|----------------|
+| `~/.profile` | POSIX environment setup | **Active** | PATH, pyenv, CUDA, lesspipe, machine-specific config, sources ~/.secret_env |
+| `~/.bashrc` | Bash interactive config | **Nix-managed** | Managed by programs.bash in home.nix |
+| `~/.zshenv` | Zsh environment (minimal) | **Nix-managed** | Managed by programs.zsh.envExtra (skip_global_compinit) |
+| `~/.zprofile` | Zsh login config | **Deprecated** | Empty (not needed) |
+| `~/.zshrc` | Zsh interactive config | **Nix-managed** | Managed by programs.zsh in home.nix |
+| `~/.shellrc` | Interactive settings | **Nix-managed** | Migrated to home.shellAliases and shell init scripts |
+| `~/.secret_env` | Secret environment vars | **Active** | API keys, tokens (not in git) |
 
 ## Loading Order
 

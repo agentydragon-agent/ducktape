@@ -1,6 +1,12 @@
 #!/bin/sh
 # ~/.profile - Shell-agnostic login environment setup (POSIX compliant)
-# For: PATH, environment variables, system paths. NOT for: aliases, functions, interactive settings
+#
+# NOTE (2025-10): Most environment variables have been migrated to Nix home-manager
+# (see ~/code/ducktape/nix/home/home.nix under home.sessionVariables).
+# This file now contains only complex conditional PATH management and legacy integrations
+# that are difficult to express declaratively in Nix.
+#
+# For: PATH, pyenv, CUDA, lesspipe, machine-specific config, sources ~/.secret_env
 # See: ~/code/ducktape/dotfiles/docs/shell-configuration.md
 
 # prepend $1 to $PATH once (if dir exists)
@@ -12,17 +18,17 @@ add_path() {
 add_path "$HOME/.local/bin"  # user's private binaries
 add_path "$HOME/.cargo/bin"  # Rust
 add_path "$HOME/.cabal/bin"  # Haskell
-add_path "$HOME/.bun/bin"    # Bun
 add_path "$HOME/.r2env/bin"  # Radare2
 add_path "$HOME/.elan/bin"   # Elan, for Lean theorem prover
+# Note: .bun/bin removed - Bun is not installed (Node.js is from Nix)
 # Ruby would be: $(ruby -rubygems -e 'puts Gem.user_dir')/bin
 
 # make less more friendly for non-text input files, see lesspipe(1)
 eval "$(SHELL=/bin/sh lesspipe)"  # Force POSIX-compliant output for compatibility
 
 # Go installation
+# Note: GOPATH is now managed by Nix (see ~/code/ducktape/nix/home/home.nix)
 add_path "$HOME/.local/go/bin"   # Go binaries from our Ansible-managed installation
-export GOPATH="$HOME/.go"        # Go workspace (hidden directory)
 add_path "$GOPATH/bin"           # Go-installed tools
 
 # CUDA for Tensorflow
@@ -42,15 +48,8 @@ if [ -d "$HOME/.dotnet" ]; then
     add_path "$DOTNET_ROOT/tools"
 fi
 
-# pyenv - if installed
-if [ -d "$HOME/.pyenv" ]; then
-    export PYENV_ROOT="$HOME/.pyenv"
-    add_path "$PYENV_ROOT/bin"
-    eval "$(pyenv init --path)"
-fi
-
 # pnpm global packages
-export PNPM_HOME="$HOME/.local/share/pnpm"
+# Note: PNPM_HOME is now managed by Nix (see ~/code/ducktape/nix/home/home.nix)
 add_path "$PNPM_HOME"
 
 # Source machine-specific profile if it exists
@@ -60,27 +59,12 @@ add_path "$PNPM_HOME"
 # tidy-up: drop helper function
 unset -f add_path 2>/dev/null
 
-export BASIC_MEMORY_HOME="$HOME/.syncthing/pkm/basic-memory"
-
-export NVM_DIR="$HOME/.nvm"
-export BUN_INSTALL="$HOME/.bun"
-
-# MC_SKIN moved to Nix home.sessionVariables
-export DEFAULT_CHARSET="utf8"
-export AIDER_MODEL="o1"
-
-# Set Aider OpenAI API key to OPENAI_API_KEY by default, if set
-if [ -z "$AIDER_OPENAI_API_KEY" ] && [ -n "$OPENAI_API_KEY" ]; then
-    export AIDER_OPENAI_API_KEY="$OPENAI_API_KEY"
-fi
-
-# GCC colored warnings and errors
-export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
-
-# Bat theme environment variables for light/dark mode switching
-export BAT_THEME_DARK="Solarized (dark)"
-export BAT_THEME_LIGHT="Solarized (light)"
-# Default to dark theme
-export BAT_THEME="Solarized (dark)"
-
-export EDITOR="nvim"
+# The following environment variables are now managed by Nix home-manager
+# (see ~/code/ducktape/nix/home/home.nix under home.sessionVariables):
+# - BASIC_MEMORY_HOME, DEFAULT_CHARSET, AIDER_MODEL, GCC_COLORS
+# - MC_SKIN, EDITOR
+# - LESS, PYTHONSTARTUP
+# - GOPATH, PNPM_HOME
+#
+# Note: NVM_DIR and BUN_INSTALL were removed - Node.js is now managed via Nix (nodejs_22 package)
+# The AIDER_OPENAI_API_KEY fallback logic is in ~/code/ducktape/nix/home/shell/common-init.sh

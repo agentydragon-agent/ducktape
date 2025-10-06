@@ -1,3 +1,0 @@
-# ~/.zprofile - Zsh login shell configuration
-# Currently empty as ~/.zshrc sources ~/.profile for all interactive shells
-# See: ~/code/ducktape/dotfiles/docs/shell-configuration.md

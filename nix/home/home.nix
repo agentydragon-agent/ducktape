@@ -30,9 +30,18 @@ let
 
   # Custom packages
   openai-codex = pkgs.callPackage ./packages/openai-codex.nix {};
+
+  # Shell initialization scripts (loaded from external files to avoid escaping hell)
+  commonShellInit = builtins.readFile ./shell/common-init.sh;
+  bashInit = builtins.readFile ./shell/bash-init.sh;
+  zshInit = builtins.readFile ./shell/zsh-init.sh;
+
 in
 {
-  imports = [ ./modules/claude-code-router.nix ];
+  imports = [
+    ./modules/claude-code-router.nix
+    ./packages/google-drive-service.nix
+  ];
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
@@ -259,10 +268,6 @@ in
     # Command-line fuzzy finder
     fzf
 
-    # Zsh enhancements
-    zsh-syntax-highlighting
-    zsh-autosuggestions
-
     # GNOME Shell Extensions (migrated from Ansible gui role)
     # These extensions were installed via petermosmans.customize-gnome role:
     # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
@@ -286,6 +291,31 @@ in
 
     # Midnight Commander skin
     MC_SKIN = "$HOME/.config/mc/solarized.ini";
+
+    # Editor
+    EDITOR = "nvim";
+
+    # Basic Memory location
+    BASIC_MEMORY_HOME = "$HOME/.syncthing/pkm/basic-memory";
+
+    # Character encoding
+    DEFAULT_CHARSET = "utf8";
+
+    # Aider AI model
+    AIDER_MODEL = "o1";
+
+    # GCC colored warnings and errors
+    GCC_COLORS = "error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01";
+
+    # Interactive shell settings
+    LESS = "-F -X -R";  # -F: exit if one screen, -X: no clear screen, -R: raw ANSI colors
+    PYTHONSTARTUP = "$HOME/.config/pythonstartup.py";
+
+    # Go workspace
+    GOPATH = "$HOME/.go";
+
+    # pnpm global packages
+    PNPM_HOME = "$HOME/.local/share/pnpm";
   };
 
   # Wyrm-specific pip configuration for tankshare storage
@@ -480,6 +510,26 @@ in
     };
   };
 
+  # Common shell configuration
+  home.shellAliases = {
+    ".." = "cd ..";
+    suspend = "systemctl suspend";
+    npm = "pnpm";
+    npx = "echo '❌ No you idiot, use pnpm dlx' && false";
+    gs = "git status --short --branch";
+    gmrc = "glab mr create --fill --remove-source-branch --yes";
+    grcb = "git for-each-ref --sort=-committerdate";
+    vimdiff = "nvim -d";
+    alert = ''notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"'';
+
+    # Custom eza aliases (beyond what programs.eza provides)
+    lt = "eza -l --tree --icons=auto --group-directories-first";
+    lS = "eza -l --sort=size --reverse --icons=auto --group-directories-first";
+    ld = "eza -l --only-dirs --icons=auto --group-directories-first";
+    l1 = "eza -1 --icons=auto";
+    lm = "eza -l --sort=modified --reverse --icons=auto --group-directories-first";
+  };
+
   # GNOME Terminal Solarized profiles using nix-colors schemes
   # This creates both profiles which can be switched dynamically with switch_gnome_terminal_profile
   programs.gnome-terminal = {
@@ -538,6 +588,130 @@ in
         };
       };
     };
+  };
+
+  # Zsh configuration - full Nix management
+  programs.zsh = {
+    enable = true;
+
+    # .zshenv content (loaded for all zsh invocations, including scripts)
+    envExtra = "skip_global_compinit=1";
+
+    # Disable auto-correction
+    enableCompletion = true;
+    autocd = true;
+
+    # History configuration
+    history = {
+      size = 10000000;
+      save = 10000000;
+      extended = true;  # Timestamps
+      share = true;     # Share between sessions
+      ignoreDups = true;
+      ignoreSpace = true;
+    };
+
+    # Zsh plugins (managed by home-manager)
+    plugins = [
+      {
+        name = "powerlevel10k";
+        src = pkgs.zsh-powerlevel10k;
+        file = "share/zsh-powerlevel10k/powerlevel10k.zsh-theme";
+      }
+    ];
+
+    # Autosuggestions configuration
+    autosuggestion = {
+      enable = true;
+      strategy = [ "history" "completion" ];
+      highlight = "fg=244";
+    };
+
+    # Syntax highlighting
+    syntaxHighlighting.enable = true;
+
+    # Oh-my-zsh configuration
+    oh-my-zsh = {
+      enable = true;
+      plugins = [
+        "alias-finder" "bazel" "aliases" "colored-man-pages"
+        "command-not-found" "docker" "git" "gpg-agent" "isodate"
+        "lein" "python" "rust" "screen"
+      ];
+      # Note: powerlevel10k is now loaded as a Nix-managed plugin (see plugins section above)
+      # custom = "$HOME/.oh-my-zsh/custom";  # Removed - no longer needed with Nix-managed p10k
+    };
+
+    # Environment variables
+    sessionVariables = {
+      ZSH_ALIAS_FINDER_AUTOMATIC = "true";
+      COMPLETION_WAITING_DOTS = "%F{yellow}...%f";
+      DISABLE_UNTRACKED_FILES_DIRTY = "true";
+      HIST_STAMPS = "yyyy-mm-dd";
+      RPROMPT = "%*";
+      DEFAULT_USER = "agentydragon";
+      ZSH_THEME_TERM_TITLE_IDLE = "%n: %~ $";
+    };
+
+    # Additional initialization (loaded after oh-my-zsh)
+    initContent = zshInit + "\n" + commonShellInit;
+  };
+
+  # Bash configuration - full Nix management
+  programs.bash = {
+    enable = true;
+    enableCompletion = true;
+
+    # History configuration
+    historyControl = [ "ignoreboth" ];
+    historySize = 10000000;
+    historyFileSize = 10000000;
+
+    shellOptions = [
+      "histappend"
+      "checkwinsize"
+      "globstar"
+    ];
+
+    # Bash-specific initialization
+    initExtra = bashInit + "\n" + commonShellInit;
+  };
+
+  # Atuin - better shell history
+  programs.atuin = {
+    enable = true;
+    enableBashIntegration = true;
+    enableZshIntegration = true;
+    flags = [ "--disable-up-arrow" ];
+  };
+
+  # Direnv - per-directory environment management
+  programs.direnv = {
+    enable = true;
+    enableBashIntegration = true;
+    enableZshIntegration = true;
+    nix-direnv.enable = true;
+  };
+
+  # Zoxide - smarter cd
+  programs.zoxide = {
+    enable = true;
+    enableBashIntegration = true;
+    enableZshIntegration = true;
+    options = [ "--cmd cd" ];
+  };
+
+  # Eza - modern ls replacement
+  programs.eza = {
+    enable = true;
+    enableBashIntegration = true;
+    enableZshIntegration = true;
+    icons = "auto";
+    git = true;
+    extraOptions = [
+      "--group-directories-first"
+      "--header"
+    ];
   };
 
   # Tmux configuration with plugins (migrated from dotfiles/tmux.conf)
@@ -638,40 +812,12 @@ in
     '';
   };
 
-  # Google Drive setup (migrated from Ansible google-drive-client role)
-  systemd.user.services.google-drive = {
-    Unit = {
-      Description = "Google Drive service";
-      After = [ "network.target" ];
-    };
-    Service = {
-      Type = "simple";
-      Restart = "no";
-      ExecStart = "/opt/google/drive-file-stream/drive %h/.google-drive";
-      StandardOutput = "journal";
-      StandardError = "journal";
-    };
-    Install = {
-      WantedBy = [ "default.target" ];
-    };
-  };
+  # Powerlevel10k configuration
+  # Sourced in zsh-init.sh
+  home.file.".p10k.zsh".source = ./p10k.zsh;
 
-  # Create symlinks for Google Drive
-  # Note: The actual .google-drive mount directory will be created by the drive binary
-  home.file = {
-    # Symlink ~/drive -> ~/.google-drive/My Drive
-    "drive" = {
-      source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.google-drive/My Drive";
-    };
-
-    # Create Worthy config directory
-    ".config/worthy/.keep".text = "";
-
-    # Symlink Worthy config from Drive
-    ".config/worthy/config.yaml" = {
-      source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/drive/finance/worthy-config.yaml";
-    };
-  };
+  # Create Worthy config directory
+  home.file.".config/worthy/.keep".text = "";
 
   # Claude Code MCP configuration - SKIPPED
   # TODO: .claude.json contains other Claude configuration beyond MCP servers

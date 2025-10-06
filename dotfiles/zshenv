@@ -1,4 +1,0 @@
-# ~/.zshenv - Minimal zsh environment (loaded for ALL zsh invocations including scripts)
-# For: only essential zsh-specific settings. Environment variables are in ~/.profile
-# See: ~/code/ducktape/dotfiles/docs/shell-configuration.md
-skip_global_compinit=1

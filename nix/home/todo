@@ -1,3 +1,38 @@
+## Shell Configuration Migration (2025-10)
+
+- [ ] Clean up manual powerlevel10k installation
+  - Now using Nix-managed `zsh-powerlevel10k` package
+  - Can remove: `~/.oh-my-zsh/custom/themes/powerlevel10k/`
+  - The configuration is now in `nix/home/p10k.zsh` (deployed to `~/.p10k.zsh`)
+
+- [ ] Remove pyenv ansible workarounds from `ansible/inventory.yaml`
+  - Currently all hosts (agentydragon, gpd, wyrm) have:
+    ```yaml
+    # (pyenv breaks interpreter detection)
+    ansible_python_interpreter: /usr/bin/python3
+    ```
+  - Since pyenv has been removed from shell initialization, these workarounds can be removed
+  - Just delete the comment and the `ansible_python_interpreter` override lines
+
+- [ ] Consider uninstalling pyenv entirely
+  - Currently set to "system" (not actively managing Python)
+  - Only one `.python-version` file exists: `homeassistant/iaqi/.python-version` (Python 3.10.12)
+  - Python is now managed via Nix home-manager (`python312` package)
+  - To uninstall: `rm -rf ~/.pyenv`
+
+- [ ] Decide on Node.js version management strategy
+  - **Current state**: NVM and Bun are NOT installed (directories don't exist)
+  - **Current approach**: Node.js from Nix (`nodejs_22` package, v20.19.4)
+  - **All NVM/Bun init code removed** from shell initialization
+  - **Decision needed**: Keep using Nix-only, or install a version manager?
+  - **Alternatives if multiple versions needed**:
+    - `nix-node`: Nix flakes (`nix shell node#16`, `nix shell node#16.3.0`)
+    - `fnm`: Fast, cross-platform, works with `.node-version` files
+    - `Volta`: Rust-based, uses package.json for version config
+    - Direct Nix shells: Create `shell.nix` per project
+
+## Ansible migration items
+
 - install cli packages
 - zsh as login shell
 - ~/Downloads ~/Pictures etc. should be empty or absent
