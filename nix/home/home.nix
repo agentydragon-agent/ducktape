@@ -78,8 +78,8 @@ in
   programs.bat = {
     enable = true;
     config = {
-      # Theme will be set via environment variables for dynamic switching
-      theme = "\${BAT_THEME}";  # Escaped to use environment variable
+      # Default theme - can be overridden by BAT_THEME environment variable
+      theme = "Solarized (dark)";
     };
   };
 
@@ -144,7 +144,7 @@ in
       light = false;  # Default to dark theme
       side-by-side = true;
       line-numbers = true;
-      syntax-theme = "\${BAT_THEME}";  # Use same theme as bat
+      syntax-theme = "Solarized (dark)";  # Use same theme as bat
       features = "decorations";
       decorations = {
         commit-decoration-style = "bold yellow box ul";
