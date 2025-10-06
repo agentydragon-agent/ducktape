@@ -85,6 +85,7 @@ in
 
   programs.git = {
     enable = true;
+    package = pkgs.git.override { withLibsecret = true; };
     userName = "Rai";
     userEmail = "agentydragon@gmail.com";
 
@@ -119,6 +120,8 @@ in
       rerere.enabled = true;
       init.defaultBranch = "main";
       merge.tool = "vimdiff";
+      # Use libsecret credential helper for secure HTTPS token storage
+      credential.helper = "libsecret";
       "url \"git@github.com:\"" = {
         insteadOf = [
           "https://github.com"
