@@ -6,7 +6,9 @@ import pytest
 
 from adgn.mcp.editor_server import (
     DoneInput,
+    ReadInfoArgs,
     ReadInfoResult,
+    ReplaceTextArgs,
     ReplaceTextResult,
     Success,
 )
@@ -16,16 +18,14 @@ from adgn.mcp.editor_server import (
 async def test_editor_inproc_basic_ops(typed_editor_factory) -> None:
     async with typed_editor_factory() as (client, target):
         # read_info works (typed via introspected Input model)
-        ReadInfoInput = client.models["read_info"].Input
-        info = await client.read_info(ReadInfoInput())
+        info = await client.read_info(ReadInfoArgs())
         assert isinstance(info, ReadInfoResult)
         assert info.ok is True
         assert info.lines == 1
         assert Path(info.path) == target
 
         # replace_text modifies buffer (x=1 → x=2)
-        ReplaceInput = client.models["replace_text"].Input
-        sc = await client.replace_text(ReplaceInput(old_text="x = 1", new_text="x = 2"))
+        sc = await client.replace_text(ReplaceTextArgs(old_text="x = 1", new_text="x = 2"))
         assert isinstance(sc, ReplaceTextResult)
         assert sc.ok is True
 

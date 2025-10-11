@@ -4,7 +4,7 @@
   import SettingsPanel from './SettingsPanel.svelte'
   
   import { agentStatus as agentStatusStore, agentStatusError as agentStatusErrorStore } from '../features/agents/stores'
-  import { wsConnected, runStatus as runStatusStore, pendingApprovals, approvalPolicy as approvalPolicyStore, mcpServerEntries as mcpServerEntriesStore, lastError as lastErrorStore, clearError as clearWsError, approve as wsApprove, denyContinue as wsDenyContinue, deny as wsDeny, setPolicy as wsSetPolicy, applyProposal as wsApplyProposal } from '../features/chat/stores'
+  import { wsConnected, runStatus as runStatusStore, pendingApprovals, approvalPolicy as approvalPolicyStore, mcpServerEntries as mcpServerEntriesStore, lastError as lastErrorStore, clearError as clearWsError, approve as wsApprove, denyContinue as wsDenyContinue, deny as wsDeny, setPolicy as wsSetPolicy, approveProposal as wsApproveProposal, withdrawProposal as wsWithdrawProposal } from '../features/chat/stores'
 
   // Local UI state
   let activeTab: 'approvals' | 'servers' | 'settings' = 'approvals'
@@ -24,6 +24,36 @@
     <span>{$wsConnected ? 'WS connected' : 'WS disconnected'}</span>
   </div>
   <div class="status">Status: {$runStatusStore}</div>
+  {#if $agentStatusStore}
+    <div class="row" style="gap: 0.5rem; font-size: 0.85rem; margin-top: 0.25rem;">
+      <span title="Lifecycle">Lifecycle: {$agentStatusStore.lifecycle ?? ($agentStatusStore.live ? 'ready' : 'persisted_only')}</span>
+      
+      {#if $agentStatusStore.policy}
+        <span title="Policy">
+          Policy: { typeof $agentStatusStore.policy.version === 'number' ? `v${$agentStatusStore.policy.version}` : 'unavailable' }
+        </span>
+      {/if}
+      {#if $agentStatusStore.mcp}
+        <span title="MCP servers">MCP: {Object.values(($agentStatusStore.mcp.entries || {})).filter((e: any) => e?.state !== 'running').length} failed</span>
+      {/if}
+      {#if $agentStatusStore.container}
+        <span title={$agentStatusStore.container.id ? `Container ${$agentStatusStore.container.id}` : 'Runtime container'}>
+          Runtime: { $agentStatusStore.container.ephemeral ? 'ephemeral' : 'session' }
+        </span>
+      {/if}
+    </div>
+    <!-- Live mounts summary (derived from snapshots; updates on MCP notifications) -->
+    {#if Array.isArray($mcpServerEntriesStore) && $mcpServerEntriesStore.length}
+      <div class="mounts">
+        {#each $mcpServerEntriesStore as m}
+          <div class="mount-item" title={`server ${m.name}: ${m.state}${m.error ? ' — ' + m.error : ''}`}>
+            <span class="dot {m.state === 'running' ? 'on' : 'off'}"></span>
+            <span class="name">{m.name}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  {/if}
   {#if $agentStatusErrorStore}
     <div class="status-error" title={$agentStatusErrorStore}>
       Agent status unavailable
@@ -54,8 +84,8 @@
       {startEditingPolicy}
       {cancelEditingPolicy}
       setPolicy={wsSetPolicy}
-      approveProposal={(id) => wsApplyProposal(id, 'approve')}
-      rejectProposal={(id) => wsApplyProposal(id, 'reject')}
+      approveProposal={(id) => wsApproveProposal(id)}
+      rejectProposal={(id) => wsWithdrawProposal(id)}
       approve={wsApprove}
       denyContinue={wsDenyContinue}
       deny={wsDeny}
@@ -81,15 +111,15 @@
   .dot.off { background: #bbb; }
   .status { color: var(--text); }
   .status-error { color: #b00020; font-size: 0.75rem; margin-top: 0.25rem; }
-  .agent-badge { display: inline-flex; align-items: center; gap: 0.25rem; }
-  .agent-dot { width: 10px; height: 10px; border-radius: 50%; background: #bbb; display: inline-block; }
-  .agent-dot.on { background: #2ecc71; }
-  .agent-dot.off { background: #bbb; }
+  /* Removed unused legacy agent-badge/agent-dot styles */
   .badge { background: var(--surface-3); border-radius: 0.75rem; padding: 0 0.4rem; font-size: 0.7rem; }
   .row { display: flex; gap: 0.5rem; align-items: center; }
+  .mounts { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-top: 0.35rem; }
+  .mount-item { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.1rem 0.35rem; border: 1px solid var(--border); border-radius: 999px; font-size: 0.75rem; }
+  .mount-item .name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
   .tabs { display: flex; gap: 0.25rem; padding: 0.5rem; border-bottom: 1px solid var(--border); }
   .tab { padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-bottom: none; background: var(--surface-2); color: var(--text); cursor: pointer; }
   .tab.active { background: var(--surface); font-weight: 600; }
   .tab-content { padding: 0.5rem; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  .small { font-size: 0.75rem; padding: 0.2rem 0.4rem; }
+  /* Removed unused .small */
 </style>

@@ -84,7 +84,7 @@ async def get_status(
     items: dict[WorktreeID, StatusItem] = {}
 
     async def process_single_worktree(worktree_path: Path):
-        single_start = time.time()
+        single_start = time.perf_counter()
         gs_client = gitstat.get_client(worktree_path)
         worktree_last_error: str | None = None
         meta = status
@@ -94,7 +94,7 @@ async def get_status(
             return (*meta.summarize_status(path), None)
 
         if not gs_client:
-            single_time = (time.time() - single_start) * 1000
+            single_time = (time.perf_counter() - single_start) * 1000
             state = GitstatusdState.STOPPED
             dirty_count, untracked_count = 0, 0
             # Surface explicit error to avoid silent downgrade
@@ -175,7 +175,7 @@ async def get_status(
             )
             state = GitstatusdState.RUNNING if gs_client.is_running else GitstatusdState.STOPPED
         except TimeoutError:
-            single_time = (time.time() - single_start) * 1000
+            single_time = (time.perf_counter() - single_start) * 1000
             state = GitstatusdState.STARTING
             dirty_count, untracked_count = 0, 0
             commit_info_data, ahead_behind, branch_name, _ = _compute_status(worktree_path)
@@ -188,7 +188,7 @@ async def get_status(
 
         commit_info = CommitInfo.model_validate(commit_info_data) if commit_info_data else None
         wtid = make_worktree_id(worktree_path.name)
-        single_time = (time.time() - single_start) * 1000
+        single_time = (time.perf_counter() - single_start) * 1000
         return (
             wtid,
             StatusResult(

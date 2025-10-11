@@ -3,13 +3,17 @@
 from datetime import timedelta
 import os
 from pathlib import Path
-import time
 
 import pytest
 
 from adgn.wt.shared.git_utils import git_run
 
-pytestmark = pytest.mark.timeout(10)
+from ..test_utils import wait_until
+
+pytestmark = [
+    pytest.mark.timeout(10),
+    pytest.mark.xdist_group("wt-daemon-e2e"),
+]
 
 
 def test_real_program_workflow(real_temp_repo, wt_cli):
@@ -67,8 +71,8 @@ def test_real_daemon_startup_and_communication(real_temp_repo, wt_cli):
     assert daemon_dir.exists()
     pid_file = daemon_dir / "daemon.pid"
 
-    time.sleep(0.5)
-    assert pid_file.exists()
+    ok = wait_until(lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
+    assert ok, "daemon.pid not created in time"
     pid = int(pid_file.read_text().strip())
     try:
         os.kill(pid, 0)

@@ -103,8 +103,4 @@ def run_async(require_sandbox_exec):
     return _run
 
 
-# For tests marked with @pytest.mark.anyio (e.g., python_basic), prefer trio backend to avoid
-# nested runner conflicts occasionally seen with pytest-asyncio + asyncio runners on some hosts.
-@pytest.fixture
-def anyio_backend() -> str:
-    return "trio"
+# (No anyio_backend override — seatbelt tests use pytest-asyncio directly.)

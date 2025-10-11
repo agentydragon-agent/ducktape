@@ -49,22 +49,21 @@ def done(payload: DoneInput) -> DoneResult:
 - Don’t use bare Union without a discriminator when variants overlap
 - Don’t restate the schema in prose; rely on the JSON Schema
 
-## Verification (check the schema seen by the agent)
-- Programmatic: use McpManager to list tools and inspect parameters
+- Programmatic: connect directly to your FastMCP server or a Compositor client and list tools
 ```python
-# Quick check snippet
+# Quick check snippet (in-proc server)
 import asyncio
-from adgn.agent.mcp_manager import McpManager
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from my_server import make_server  # returns a FastMCP instance
+from fastmcp.client import Client
+from my_server import make_server  # returns a FastMCP("demo") instance
 
 async def main():
-    spec = make_inproc_slot_spec(make_server())
-    async with McpManager({"demo": spec}) as m:
-        tools = await m.list_tools(["demo"])
+    server = make_server()
+    async with Client(server) as client:
+        tools = await client.list_tools()
         for t in tools:
-            if t["name"].endswith("__done"):
-                print(t["name"], t["parameters"])  # should match DoneInput
+            if t.name == "done":
+                # JSON Schema for the input model
+                print(t.inputSchema)
 asyncio.run(main())
 ```
 - Manual: log/print the schema FastMCP emits (client.list_tools()), confirm:

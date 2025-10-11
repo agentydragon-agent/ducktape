@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+from enum import StrEnum
+from typing import Any
+
+from mcp import types as mtypes
+from pydantic import BaseModel
+
+from adgn.mcp._shared.constants import (
+    POLICY_BACKEND_RESERVED_MISUSE_CODE,
+    POLICY_BACKEND_RESERVED_MISUSE_MSG,
+    POLICY_DENIED_ABORT_CODE,
+    POLICY_DENIED_ABORT_MSG,
+    POLICY_DENIED_CONTINUE_CODE,
+    POLICY_DENIED_CONTINUE_MSG,
+    POLICY_EVALUATOR_ERROR_CODE,
+    POLICY_EVALUATOR_ERROR_MSG,
+    POLICY_GATEWAY_STAMP_KEY,
+)
+
+
+class PolicyGatewayErrorKind(StrEnum):
+    POLICY_EVALUATOR_ERROR = POLICY_EVALUATOR_ERROR_MSG
+    POLICY_DENIED = POLICY_DENIED_ABORT_MSG
+    POLICY_DENIED_CONTINUE = POLICY_DENIED_CONTINUE_MSG
+    POLICY_BACKEND_RESERVED_MISUSE = POLICY_BACKEND_RESERVED_MISUSE_MSG
+
+
+class PolicyGatewayError(BaseModel):
+    kind: PolicyGatewayErrorKind
+    code: int | None = None
+    message: str
+    data: dict[str, Any] | None = None
+
+
+# Central registry for reserved gateway errors → kinds
+_KINDS: tuple[tuple[int, str, PolicyGatewayErrorKind], ...] = (
+    (
+        POLICY_EVALUATOR_ERROR_CODE,
+        POLICY_EVALUATOR_ERROR_MSG,
+        PolicyGatewayErrorKind.POLICY_EVALUATOR_ERROR,
+    ),
+    (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_ABORT_MSG, PolicyGatewayErrorKind.POLICY_DENIED),
+    (
+        POLICY_DENIED_CONTINUE_CODE,
+        POLICY_DENIED_CONTINUE_MSG,
+        PolicyGatewayErrorKind.POLICY_DENIED_CONTINUE,
+    ),
+    (
+        POLICY_BACKEND_RESERVED_MISUSE_CODE,
+        POLICY_BACKEND_RESERVED_MISUSE_MSG,
+        PolicyGatewayErrorKind.POLICY_BACKEND_RESERVED_MISUSE,
+    ),
+)
+
+_CODE_TO_KIND: dict[int, PolicyGatewayErrorKind] = {code: kind for code, _msg, kind in _KINDS}
+_MSG_TO_KIND: dict[str, PolicyGatewayErrorKind] = {msg: kind for _code, msg, kind in _KINDS}
+
+
+def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
+    """Attempt to coerce various error representations to mcp.types.ErrorData.
+
+    - Accepts dicts, already-typed ErrorData, or objects with .code/.message attributes.
+    - Returns None if no minimally-typed shape is available.
+    """
+    if isinstance(obj, mtypes.ErrorData):
+        return obj
+    if isinstance(obj, dict):
+        try:
+            return mtypes.ErrorData.model_validate(obj)
+        except Exception:
+            try:
+                # Minimal acceptance: just code+message fields
+                return mtypes.ErrorData(code=int(obj.get("code")), message=str(obj.get("message")))
+            except Exception:
+                return None
+    # Attribute-style fallback
+    try:
+        code = getattr(obj, "code")
+        msg = getattr(obj, "message")
+        return mtypes.ErrorData(code=int(code), message=str(msg))
+    except Exception:
+        return None
+
+
+def detect_policy_gateway_error(err: Any) -> PolicyGatewayError | None:
+    """Detect and classify policy-gateway errors robustly.
+
+    Accepts either:
+    - A FastMCP CallToolResult (with is_error=True)
+    - An exception (McpError/ToolError/other)
+    - A raw error payload (dict/ErrorData)
+
+    Returns a typed PolicyGatewayError when recognized; otherwise None.
+    """
+    # Prefer structured error data when present (CallToolResult or exception with .error)
+    error_data: mtypes.ErrorData | None = None
+    if hasattr(err, "is_error") and bool(getattr(err, "is_error", False)):
+        error_data = _coerce_error_data(getattr(err, "error", None))
+    if error_data is None and hasattr(err, "error"):
+        error_data = _coerce_error_data(getattr(err, "error"))
+    if error_data is None and isinstance(err, (dict, mtypes.ErrorData)):
+        error_data = _coerce_error_data(err)
+
+    # Map structured error first
+    if error_data is not None:
+        # Extract minimally-typed fields
+        code: int | None
+        try:
+            code = int(error_data.code)
+        except Exception:
+            code = None
+        msg = str(error_data.message)
+        data = getattr(error_data, "data", None)
+
+        # Only accept stamped errors as originating from the policy gateway.
+        if not (isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True):
+            return None
+        kind = _CODE_TO_KIND.get(code) if code is not None else _MSG_TO_KIND.get(msg)
+        if kind is None:
+            # Unknown code/message but stamped as gateway: treat as evaluator error fallback
+            kind = PolicyGatewayErrorKind.POLICY_EVALUATOR_ERROR
+        return PolicyGatewayError(kind=kind, code=code, message=msg, data=data)
+
+    # Fallback: detect by message string on generic exceptions (e.g., ToolError)
+    s = str(err)
+    # No non-stamped fallbacks
+    return None

@@ -130,7 +130,7 @@ class ClaudeRunner(AgentRunner):
         logger = structlog.get_logger().bind(task_id=task.id, runner_id=self.runner_id)
 
         trajectory: list[TrajectoryItem] = []
-        start_time = time.time()
+        start_time = time.perf_counter()
         total_cost: float = 0.0
         success = True
         error_message: str | None = None
@@ -202,16 +202,11 @@ class ClaudeRunner(AgentRunner):
                         # Final result message with cost and status
                         if message.is_error:
                             success = False
-                            # Prefer 'error_message' if present; fallback to generic string
-                            err = getattr(message, "error_message", None)
-                            error_message = (
-                                str(err) if err is not None else "Claude reported an error"
-                            )
+                            # SDK does not expose a typed error message attribute; use a generic string
+                            error_message = "Claude reported an error"
 
                         # total_cost_usd may be Optional; coerce to float
-                        total_cost = float(
-                            getattr(message, "total_cost_usd", 0.0) or 0.0,
-                        )
+                        total_cost = float((message.total_cost_usd or 0.0))
 
                         # ResultMessage indicates completion
                         break
@@ -226,7 +221,7 @@ class ClaudeRunner(AgentRunner):
             logger.error("Claude execution failed", error=str(e))
             files = {}
 
-        duration = time.time() - start_time
+        duration = time.perf_counter() - start_time
 
         return Rollout(
             task_id=task.id,

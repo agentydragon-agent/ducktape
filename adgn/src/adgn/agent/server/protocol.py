@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum, StrEnum
-from typing import Annotated, Any, Literal
+from enum import StrEnum
+from typing import Annotated, Literal
+from uuid import UUID
 
+from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.agent.mcp_manager import (
-    SamplingSnapshot,  # structured snapshot model (module-level)
-)
+from adgn.agent.models.policy_error import PolicyTestsSummary
+from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.server.bus import MimeType
 from adgn.agent.server.state import UiState
+from adgn.mcp.snapshots import (
+    SamplingSnapshot,  # structured snapshot model (module-level)
+)
 
 # --------------------------
 # Envelope and core state
@@ -34,7 +38,7 @@ class SessionState(BaseModel):
     version: str
     capabilities: list[str] = []
     last_event_id: int | None = None
-    active_run_id: str | None = None
+    active_run_id: UUID | None = None
     run_counter: int = 0
 
     model_config = ConfigDict(extra="forbid")
@@ -48,14 +52,18 @@ class ApprovalBrief(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+## Tests summary/error model shared in adgn.agent.models.policy_error
+
+
 class ProposalInfo(BaseModel):
-    """Policy proposal information for UI (no policy content here)."""
+    """Policy proposal information for UI (no policy content included)."""
 
     id: str
-    status: str
-    rationale: str | None = None
-    # Include proposal source for UI diffs (optional for legacy snapshots)
-    source: str | None = None
+    status: ProposalStatus
+    # Optional docstring extracted from class ApprovalPolicy
+    docstring: str | None = None
+    # Optional structured test results summary
+    tests: PolicyTestsSummary | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -81,7 +89,7 @@ class RunStatus(StrEnum):
 
 
 class RunState(BaseModel):
-    run_id: str
+    run_id: UUID
     status: RunStatus
     started_at: datetime
     finished_at: datetime | None = None
@@ -122,7 +130,8 @@ class ToolCall(BaseModel):
 class FunctionCallOutput(BaseModel):
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
-    result: dict[str, Any]
+    # Carry full Pydantic MCP CallToolResult; wire serialization handled by Pydantic
+    result: mcp_types.CallToolResult
 
     model_config = ConfigDict(extra="forbid")
 
@@ -162,56 +171,7 @@ TranscriptItem = Annotated[
     Field(discriminator="type"),
 ]
 
-# --------------------------
-# Client -> Server messages
-# --------------------------
-
-
-class Hello(Envelope):
-    type: Literal["hello"] = "hello"
-    v: str
-    client_capabilities: list[str] = []
-
-
-class Resume(Envelope):
-    type: Literal["resume"] = "resume"
-    last_seen_event_id: int | None = None
-
-
-class Send(Envelope):
-    type: Literal["send"] = "send"
-    text: str
-    client_msg_id: str | None = None
-
-
-class Approve(Envelope):
-    type: Literal["approve"] = "approve"
-    call_id: str
-
-
-class Deny(Envelope):
-    type: Literal["deny"] = "deny"
-    call_id: str
-
-
-class Abort(Envelope):
-    type: Literal["abort"] = "abort"
-
-
-class GetSnapshot(Envelope):
-    type: Literal["get_snapshot"] = "get_snapshot"
-    include_transcript_window: bool = False
-
-
-class Ping(Envelope):
-    type: Literal["ping"] = "ping"
-    nonce: str | None = None
-
-
-ClientMessage = Annotated[
-    Hello | Resume | Send | Approve | Deny | Abort | GetSnapshot | Ping,
-    Field(discriminator="type"),
-]
+## Client -> Server message types are no longer used; REST handles mutations.
 
 # --------------------------
 # Server -> Client messages
@@ -224,15 +184,26 @@ class Welcome(Envelope):
     session_state: SessionState
 
 
+class SnapshotDetails(BaseModel):
+    """Non-nullable bundle of snapshot details.
+
+    Group formerly individually-optional fields into a single optional bundle.
+    This reduces surprising nullability at the protocol boundary.
+    """
+
+    run_state: RunState
+    sampling: SamplingSnapshot
+    approval_policy: ApprovalPolicyInfo
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class Snapshot(BaseModel):
     type: Literal["snapshot"] = "snapshot"
     v: str
     session_state: SessionState
-    run_state: RunState | None = None
-    # Structured MCP state for UI and sampling (Pydantic models from McpManager)
-    sampling: SamplingSnapshot | None = None
-    # Approval policy (Python code and version)
-    approval_policy: ApprovalPolicyInfo | None = None
+    # Preferred: a single optional bundle; each item inside is non-nullable
+    details: SnapshotDetails | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -306,7 +277,7 @@ class TurnDone(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ErrorCode(str, Enum):
+class ErrorCode(StrEnum):
     INVALID_JSON = "INVALID_JSON"
     MISSING_FIELD = "MISSING_FIELD"
     INVALID_COMMAND = "INVALID_COMMAND"

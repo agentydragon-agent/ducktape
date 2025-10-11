@@ -3,15 +3,14 @@ import json
 import time
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp.server import FastMCP
 import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Abort, Auto, Continue
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import BaseHandler
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import FunctionCallItem
 
 
@@ -64,18 +63,17 @@ def _make_slow_server(per_call_secs: float = 0.30) -> FastMCP:
 
 
 @pytest.mark.asyncio
-async def test_parallel_tool_calls_reduce_wall_time():
+async def test_parallel_tool_calls_reduce_wall_time(make_compositor):
     # Build a real inproc FastMCP server with two slow tools
-    spec = make_inproc_slot_spec(_make_slow_server())
 
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
     tc1 = FunctionCallItem(
-        name="mcp__dummy__slow",
+        name=build_mcp_function("dummy", "slow"),
         call_id="call_1",
         arguments=json.dumps({}),
     )
     tc2 = FunctionCallItem(
-        name="mcp__dummy__slow2",
+        name=build_mcp_function("dummy", "slow2"),
         call_id="call_2",
         arguments=json.dumps({}),
     )
@@ -84,14 +82,11 @@ async def test_parallel_tool_calls_reduce_wall_time():
 
     rec = RecordingHandler()
 
-    # Use McpManager context to wire the inproc slot into a manager the agent expects
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("dummy", spec)
-        # Create agent with the controller wrapped as a handler so loop control comes from handlers
-        agent = MiniCodex(
+    async with make_compositor({"dummy": _make_slow_server()}) as (mcp_client, _comp):
+        agent = await MiniCodex.create(
             model="noop",
             system="test",
-            mcp=mcp,
+            mcp_client=mcp_client,
             client=None,  # SyntheticAction path bypasses OpenAI
             parallel_tool_calls=True,
             handlers=[handler, rec],
@@ -101,8 +96,6 @@ async def test_parallel_tool_calls_reduce_wall_time():
         await agent.run("go")
 
         # Wait for recording handler to observe expected events (tool_call + function_call_output)
-        # This synchronizes with FastMCP background work before closing McpManager to avoid anyio
-        # cancel-scope teardown races.
         async def _wait_for_records(timeout: float = 2.0) -> None:
             deadline = time.perf_counter() + timeout
             while time.perf_counter() < deadline:

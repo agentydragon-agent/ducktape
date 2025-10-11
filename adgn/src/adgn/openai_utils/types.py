@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import Literal, cast
 
 from typing_extensions import TypedDict
@@ -10,7 +10,7 @@ def to_reasoning_effort(value: ReasoningEffort | str | None) -> str | None:
     if value is None:
         return None
     if isinstance(value, ReasoningEffort):
-        return cast(str, value.value)
+        return value.value
     try:
         effort = ReasoningEffort(value)
     except ValueError as exc:
@@ -18,10 +18,10 @@ def to_reasoning_effort(value: ReasoningEffort | str | None) -> str | None:
         raise ValueError(
             f"Invalid reasoning effort {value!r}; expected one of: {allowed}",
         ) from exc
-    return cast(str, effort.value)
+    return effort.value
 
 
-class ReasoningEffort(str, Enum):
+class ReasoningEffort(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"

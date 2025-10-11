@@ -1,12 +1,13 @@
 export type McpPreset = {
   id: string
   label: string
-  transport: 'stdio' | 'sse' | 'inproc'
+  transport: 'stdio' | 'sse' | 'inproc' | 'http'
   defaultName?: string
   defaults: {
     stdio?: { command: string; args: any[]; env: Record<string, string> }
     sse?: { url: string; headers: Record<string, string>; timeout_secs: number; sse_read_timeout_secs: number }
     inproc?: { factory: string; args: any[]; kwargs: Record<string, any> }
+    http?: { url: string; headers?: Record<string, string>; auth?: string }
   }
 }
 
@@ -34,6 +35,18 @@ export const MCP_PRESETS: McpPreset[] = [
         factory: 'adgn.mcp.seatbelt_exec.server:make_seatbelt_exec_mcp',
         args: [],
         kwargs: { name: 'seatbelt' },
+      },
+    },
+  },
+  {
+    id: 'http_template',
+    label: 'HTTP (manual)',
+    transport: 'http',
+    defaultName: 'server',
+    defaults: {
+      http: {
+        url: 'http://127.0.0.1:8768/mcp',
+        headers: { Authorization: 'Bearer <token>' },
       },
     },
   },

@@ -8,7 +8,7 @@ import argparse
 import os
 from pathlib import Path
 
-from .server import make_gitea_mirror_mcp
+from .server import make_gitea_mirror_server
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--token-file",
         default=os.environ.get("GITEA_TOKEN_FILE"),
+        type=Path,
         help="Path to file containing Gitea API token",
     )
     parser.add_argument(
@@ -69,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
         else float(os.environ.get("GITEA_POLL_TIMEOUT_SECS", "60.0"))
     )
 
-    server = make_gitea_mirror_mcp(
+    server = make_gitea_mirror_server(
         base_url=args.base_url,
         token=token,
         poll_interval_secs=poll_interval,

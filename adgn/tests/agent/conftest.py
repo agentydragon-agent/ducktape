@@ -7,18 +7,21 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from fastapi.testclient import TestClient
-from mcp.server.fastmcp import FastMCP
+from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
 
-from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, ApprovalPolicyHandler
-from adgn.agent.mcp_manager import McpManager
+from adgn.agent.approvals import ApprovalPolicyEngine
+from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.server.app import create_app
-from adgn.mcp.editor_server import make_editor_mcp
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.agent.server.protocol import Envelope, RunStatus, RunStatusEvt
+from adgn.mcp.editor_server import make_editor_server
 from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.mcp.types import ServerSlotSpec
 from adgn.openai_utils.model import FakeOpenAIModel, ResponsesResult
+import docker
 from tests.agent.ws_helpers import (
+    _short_payload,
     collect_payloads_until_finished,
     collect_payloads_until_finished_auto_approve,
     wait_for_accepted,
@@ -27,14 +30,159 @@ from tests.agent.ws_helpers import (
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
 
 
-@pytest.fixture
-def approval_engine() -> ApprovalPolicyEngine:
-    return ApprovalPolicyEngine()
+# Note: approval_engine fixture is provided globally in tests/conftest.py
 
 
 @pytest.fixture
-def approval_handler(approval_engine: ApprovalPolicyEngine) -> ApprovalPolicyHandler:
-    return ApprovalPolicyHandler(approval_engine, ApprovalHub())
+def policy_evaluator(approval_engine: ApprovalPolicyEngine) -> ContainerPolicyEvaluator:
+    """Container-backed policy evaluator using the default policy engine.
+
+    Deduplicates setup across tests that need to call policy.decide(...).
+    Requires Docker (tests should mark with @pytest.mark.requires_docker).
+    """
+    return ContainerPolicyEvaluator(
+        agent_id="tests", docker_client=docker.from_env(), engine=approval_engine
+    )
+
+
+@pytest.fixture
+def make_policy_engine(sqlite_persistence):
+    """Factory that builds an ApprovalPolicyEngine for a given policy source.
+
+    Reuses the shared sqlite_persistence to avoid duplication in tests.
+    """
+
+    def _make(policy_source: str, *, agent_id: str = "tests") -> ApprovalPolicyEngine:
+        return ApprovalPolicyEngine(
+            docker_client=docker.from_env(),
+            agent_id=agent_id,
+            persistence=sqlite_persistence,
+            policy_source=policy_source,
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_policy_evaluator(make_policy_engine):
+    """Factory that builds a ContainerPolicyEvaluator for a given policy source."""
+
+    def _make(policy_source: str, *, agent_id: str = "tests") -> ContainerPolicyEvaluator:
+        engine = make_policy_engine(policy_source, agent_id=agent_id)
+        return ContainerPolicyEvaluator(
+            agent_id=agent_id, docker_client=docker.from_env(), engine=engine
+        )
+
+    return _make
+
+
+# ---- Standard policy text fixtures (string sources) ----
+
+
+@pytest.fixture
+def policy_allow_all() -> str:
+    """Return the text of the approve-all policy from packaged resources."""
+    from adgn.agent.policies.loader import approve_all_policy_text
+
+    return approve_all_policy_text()
+
+
+@pytest.fixture
+def policy_ui_send_message_allow() -> str:
+    from tests.agent.testdata.approval_policy import make_policy
+
+    return make_policy(
+        decision_expr="PolicyDecision.ALLOW",
+        server="ui",
+        tool="send_message",
+        default="ask",
+        doc="Allow UI send_message; ask otherwise.",
+    )
+
+
+@pytest.fixture
+def policy_failing_tests() -> str:
+    from tests.agent.testdata.approval_policy import fetch_policy
+
+    return fetch_policy("failing_tests")
+
+
+# --- Missing fixtures for default policy tests ---
+
+
+@pytest.fixture
+def policy_version_test() -> str:
+    from tests.agent.testdata.approval_policy import make_policy
+
+    return make_policy(
+        decision_expr="PolicyDecision.ALLOW",
+        server="ui",
+        tool="send_message",
+        default="ask",
+        doc="Version bump check policy used in tests.",
+    )
+
+
+@pytest.fixture
+def policy_invalid_syntax() -> str:
+    # Intentionally invalid Python
+    return "class ApprovalPolicy:\n    '''invalid'''\n    def decide(self, ctx):\n        return (PolicyDecision.ALLOW, 'ok'\n"
+
+
+@pytest.fixture
+def policy_context_checking() -> str:
+    from tests.agent.testdata.approval_policy import fetch_policy
+
+    return fetch_policy("context_checking")
+
+
+@pytest.fixture
+def policy_const() -> str:
+    from tests.agent.testdata.approval_policy import fetch_policy
+
+    return fetch_policy("const")
+
+
+# ---- Policy factory fixtures -----------------------------------------------
+
+
+@pytest.fixture(name="policy_fetch")
+def policy_fetch_factory() -> Callable[[str], str]:
+    """Factory to fetch approval policy text by short name.
+
+    Usage: policy_fetch("allow_all") → returns policy source text.
+    """
+
+    from tests.agent.testdata.approval_policy import fetch_policy as _fetch
+
+    def _get(name: str) -> str:
+        return _fetch(name)
+
+    return _get
+
+
+@pytest.fixture(name="policy_make")
+def policy_make_factory() -> Callable[..., str]:
+    """Factory to build minimal ApprovalPolicy source.
+
+    Args:
+      decision_expr: e.g., "PolicyDecision.DENY_CONTINUE"
+      server: server name
+      tool: tool name
+      default: "ask" (default) or "allow"
+      doc: optional docstring
+    """
+
+    from tests.agent.testdata.approval_policy import make_policy as _make
+
+    def _builder(
+        *, decision_expr: str, server: str, tool: str, default: str = "ask", doc: str | None = None
+    ) -> str:
+        return _make(
+            decision_expr=decision_expr, server=server, tool=tool, default=default, doc=doc
+        )
+
+    return _builder
 
 
 # Shared model fixture for live tests that need a reasoning-capable model
@@ -65,17 +213,6 @@ def fake_openai_client_factory() -> Callable[[Iterable[ResponsesResult]], FakeOp
 
 
 @pytest.fixture
-async def empty_mcp() -> McpManager:
-    """A real McpManager with zero servers, entered for the test duration."""
-    mgr = McpManager({})
-    await mgr.__aenter__()
-    try:
-        yield mgr
-    finally:
-        await mgr.__aexit__(None, None, None)
-
-
-@pytest.fixture
 def typed_editor_factory(tmp_path: Path, make_typed_mcp):
     """Factory that yields (TypedClient, target_path) for an in-proc editor server."""
 
@@ -85,7 +222,8 @@ def typed_editor_factory(tmp_path: Path, make_typed_mcp):
     ) -> AsyncIterator[tuple[TypedClient, Path]]:
         target = tmp_path / "sample.py"
         target.write_text(initial_text, encoding="utf-8")
-        srv = make_editor_mcp(target)
+
+        srv = make_editor_server(target)
         async with make_typed_mcp(srv, "editor") as (client, _session):
             yield client, target
 
@@ -105,26 +243,14 @@ def make_echo_mcp_server() -> Callable[[], FastMCP]:
 
         @mcp.tool()
         def echo(text: str) -> dict[str, Any]:
-            return {"ok": True, "echo": text}
+            return {"echo": text}
 
         return mcp
 
     return _make
 
 
-@pytest.fixture
-def make_echo_spec() -> Callable[[], dict[str, Any]]:
-    """Return a factory that yields a typed, JSON-serializable inproc spec for echo MCP.
-
-    Using a typed InprocFactorySpec avoids needing TestClient.portal bridging in tests.
-    """
-
-    def _spec() -> dict[str, Any]:
-        from adgn.agent.runtime.specs import InprocFactorySpec
-
-        return {"echo": InprocFactorySpec(factory="adgn.mcp.echo.server:make_echo_mcp")}
-
-    return _spec
+# make_echo_spec is provided at tests/conftest.py for all suites.
 
 
 # Helper: create a live agent via HTTP on a TestClient and return its id
@@ -136,7 +262,7 @@ def create_live_agent():
         typed: dict[str, Any] = {}
         runtime: dict[str, Any] = {}
         for k, v in list(specs.items()):
-            if hasattr(v, "open_uninitialized") or hasattr(v, "open"):
+            if isinstance(v, ServerSlotSpec):
                 runtime[k] = v
             else:
                 typed[k] = v
@@ -165,7 +291,12 @@ def create_live_agent():
                 m = c.mcp
                 assert m is not None
                 for name, slot in runtime.items():
-                    await m.attach_server(name, slot)
+                    # Inject runtime ServerSlotSpec directly (tests-only path to avoid MCPConfig)
+                    m._specs[name] = slot  # type: ignore[attr-defined]
+                    st = m._state(name)  # type: ignore[attr-defined]
+                    st.spec = slot
+                    st.error = None
+                    await m.ensure_open(name)
 
             client.portal.call(_attach_async)
         return agent_id
@@ -198,6 +329,14 @@ def agent_app_client():
 
 
 @pytest.fixture
+def ws_hub(agent_app_client):
+    """Yield (client, hub_ws) connected to /ws/agents, closes automatically."""
+    app, client = agent_app_client
+    with client.websocket_connect("/ws/agents") as ws:
+        yield client, ws
+
+
+@pytest.fixture
 def make_spy_spec() -> Callable[[list[str]], dict[str, Any]]:
     def _spec(counter: list[str]) -> dict[str, Any]:
         mcp = FastMCP("spy")
@@ -207,9 +346,12 @@ def make_spy_spec() -> Callable[[list[str]], dict[str, Any]]:
             counter.append(text)
             return {"ok": True, "echo": text}
 
-        return {"spy": make_inproc_slot_spec(mcp)}
+        return {"spy": mcp}
 
     return _spec
+
+
+# ---- Seatbelt helpers (removed)
 
 
 # Unified WS session fixture
@@ -250,5 +392,140 @@ def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
                 return collect_payloads_until_finished(ws, limit=limit)
 
             yield client, ws, _collect, agent_id
+
+    return _open
+
+
+# ---- Bound HTTP helper fixture ----------------------------------------------
+
+
+@pytest.fixture
+def make_agent_http():
+    """Factory returning an object with HTTP helpers bound to (client, agent_id).
+
+    Usage:
+        http = make_agent_http(client, agent_id)
+        http.prompt("hi")
+        http.set_policy("src")
+        http.snapshot()
+        http.abort()
+        http.approve(call_id)
+        http.deny_continue(call_id)
+        http.deny_abort(call_id)
+    """
+
+    class _AgentHttp:
+        def __init__(self, client, agent_id: str) -> None:
+            self._c = client
+            self._id = agent_id
+
+        def _ep(self, suffix: str | None = None) -> str:
+            base = f"/api/agents/{self._id}"
+            return f"{base}/{suffix}" if suffix else base
+
+        # Chat
+        def prompt(self, text: str):
+            return self._c.post(self._ep("prompt"), json={"text": text})
+
+        def abort(self):
+            return self._c.post(self._ep("abort"))
+
+        def snapshot(self):
+            return self._c.get(self._ep("snapshot"))
+
+        # Approvals
+        def approve(self, call_id: str):
+            return self._c.post(self._ep("approve"), json={"call_id": call_id})
+
+        def deny_continue(self, call_id: str):
+            return self._c.post(self._ep("deny_continue"), json={"call_id": call_id})
+
+        def deny_abort(self, call_id: str):
+            return self._c.post(self._ep("deny_abort"), json={"call_id": call_id})
+
+        # Policy
+        def set_policy(self, content: str, proposal_id: str | None = None):
+            body: dict[str, object] = {"content": content}
+            if proposal_id is not None:
+                body["proposal_id"] = proposal_id
+            return self._c.post(self._ep("policy"), json=body)
+
+    def _factory(client, agent_id: str) -> _AgentHttp:
+        return _AgentHttp(client, agent_id)
+
+    return _factory
+
+
+# ---- Combined agent WS box fixture ------------------------------------------
+
+
+@pytest.fixture
+def agent_ws_box(ws_session, make_agent_http):
+    """Factory that opens a WS-connected live agent and returns a bound box.
+
+    Usage:
+        with agent_ws_box(model_client, specs={}) as box:
+            box.http.prompt("hi")
+            payloads = box.collect(limit=100)
+            box.ws  # underlying WS
+            box.agent_id
+    """
+
+    from dataclasses import dataclass
+
+    @dataclass
+    class Box:
+        client: Any
+        ws: Any
+        collect: Callable[[int], list]
+        agent_id: str
+        http: Any
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _open(
+        model_client: Any,
+        *,
+        specs: dict[str, Any] | None = None,
+        wait_accepted: bool = True,
+        auto_approve: bool = False,
+    ):
+        with ws_session(
+            model_client,
+            specs=specs,
+            wait_accepted=wait_accepted,
+            auto_approve=auto_approve,
+        ) as (client, ws, _collect_orig, agent_id):
+            http = make_agent_http(client, agent_id)
+
+            def _collect(limit: int = 200):
+                out = []
+                for _ in range(limit):
+                    env = Envelope.model_validate(ws.receive_json())
+                    p = env.payload
+                    # Optional trace for visibility when debugging CI flakes
+                    try:
+                        import os
+
+                        if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
+                            from datetime import datetime, timezone
+
+                            print(
+                                f"[ws:agent {datetime.now(timezone.utc).isoformat()}] recv: {_short_payload(p)}"
+                            )
+                    except Exception:
+                        pass
+                    # Auto-approve via REST when requested
+                    if getattr(p, "type", None) == "approval_pending" and auto_approve:
+                        http.approve(p.call_id)
+                        out.append(p)
+                        continue
+                    out.append(p)
+                    if isinstance(p, RunStatusEvt) and p.run_state.status == RunStatus.FINISHED:
+                        break
+                return out
+
+            yield Box(client=client, ws=ws, collect=_collect, agent_id=agent_id, http=http)
 
     return _open

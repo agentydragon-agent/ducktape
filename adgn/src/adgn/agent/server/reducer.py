@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from adgn.agent.mcp_manager import build_mcp_function
+from mcp import types as mcp_types
+
+from adgn.agent.approvals import WellKnownTools
 from adgn.agent.server.protocol import (
     ApprovalDecisionEvt,
     FunctionCallOutput,
@@ -12,6 +14,8 @@ from adgn.agent.server.protocol import (
     UiMessageEvt,
     UserText,
 )
+from adgn.mcp._shared.constants import UI_SERVER_NAME
+from adgn.mcp._shared.naming import build_mcp_function
 
 from .state import (
     AssistantMarkdownItem,
@@ -74,13 +78,13 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
                             s = str(a).replace("'", "'\\''")
                             parts.append(f"'{s}'")
                     cmd = " ".join(parts)
-            except Exception:
+            except json.JSONDecodeError:
                 cmd = None
                 parsed_args = None
         # For ui.send_message and ui.end_turn: do not create a ToolItem; UiMessageEvt/UiEndTurnEvt after execution will surface AssistantMarkdown/EndTurn
         if evt.name in (
-            build_mcp_function("ui", "send_message"),
-            build_mcp_function("ui", "end_turn"),
+            build_mcp_function(UI_SERVER_NAME, WellKnownTools.SEND_MESSAGE),
+            build_mcp_function(UI_SERVER_NAME, WellKnownTools.END_TURN),
         ):
             return state
         return start_tool(state, tool=evt.name, call_id=evt.call_id, cmd=cmd, args=parsed_args)
@@ -91,8 +95,12 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
 
     # Function call output → merge stdout/stderr/exit
     if isinstance(evt, FunctionCallOutput):
-        result_dict = evt.result or {}
-        structured = result_dict.get("structuredContent")
+        res = evt.result
+        if not isinstance(res, mcp_types.CallToolResult):
+            raise TypeError(
+                f"FunctionCallOutput.result must be mcp.types.CallToolResult, got {type(res).__name__}"
+            )
+        structured = res.structuredContent
         stdout = stderr = None
         exit_code = None
         if isinstance(structured, dict):
@@ -106,14 +114,11 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
                     exit_code = int(exit_code_val)
                 except (TypeError, ValueError):
                     exit_code = None
-        is_error = bool(result_dict.get("isError"))
+        is_error = bool(res.isError)
         # If tool reported an error without structured streams, surface a message via stderr
         error_message: str | None = None
         if is_error and not stderr:
-            err = result_dict.get("error")
-            if isinstance(err, str):
-                error_message = err
-            elif isinstance(structured, dict):
+            if isinstance(structured, dict):
                 # Best-effort message discovery for common fields
                 msg = (
                     structured.get("error") or structured.get("message") or structured.get("detail")
@@ -138,12 +143,13 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
                 tool_name = it.tool
                 break
         if tool_name in (
-            build_mcp_function("ui", "send_message"),
-            build_mcp_function("ui", "end_turn"),
+            build_mcp_function(UI_SERVER_NAME, WellKnownTools.SEND_MESSAGE),
+            build_mcp_function(UI_SERVER_NAME, WellKnownTools.END_TURN),
         ):
             return state
 
-        result_payload = result_dict if result_dict else None
+        # Serialize typed result once at the boundary for JSON display
+        result_payload: dict | None = res.model_dump(mode="json", by_alias=True)
         return update_tool_json_output(
             state,
             evt.call_id,

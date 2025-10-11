@@ -7,12 +7,11 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.handler import ContinueDecision
-from adgn.agent.mcp_manager import McpManager
+from adgn.agent.notifications.types import NotificationsBatch
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp.ui.server import make_ui_mcp
+from adgn.mcp.ui.server import make_ui_server
 from tests.agent.ui.typed_asserts import assert_typed_items_have_one, is_assistant_markdown
 from tests.fixtures.responses import ResponsesFactory
 from tests.llm.support.openai_mock import make_mock
@@ -46,10 +45,12 @@ def _make_ui_behavior(rf: ResponsesFactory):
 @pytest.mark.asyncio
 async def test_ui_server_with_mock_agent_produces_ui_state_updates(
     responses_factory: ResponsesFactory,
+    make_pg_compositor,
+    approval_policy_reader_allow_all,
 ):
     # Per-agent bus and UI MCP server
     bus = ServerBus()
-    ui_server = make_ui_mcp("ui", bus)
+    ui_server = make_ui_server("ui", bus)
     # no server specs required for this test
 
     captured: list[dict] = []
@@ -76,7 +77,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
             pl = payload.get("payload") if isinstance(payload, dict) else None
             if isinstance(pl, dict) and pl.get("type") == "approval_pending":
                 call_id = pl.get("call_id") or ""
-                # Defer resolution to avoid racing before_tool_call(await_decision)
+                # Defer resolution slightly to avoid resolving within send pipeline
                 asyncio.get_running_loop().call_soon(
                     sess.approval_hub.resolve, call_id, ContinueDecision()
                 )
@@ -87,12 +88,13 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
 
     mgr.send_json = _capture  # type: ignore[assignment]
 
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("ui", make_inproc_slot_spec(ui_server))
-        handlers = [ServerModeHandler(bus=bus, poll_notifications=lambda: mcp.poll_notifications())]
+    async with make_pg_compositor(
+        {"ui": ui_server, "approval_policy": approval_policy_reader_allow_all}
+    ) as (mcp_client, _comp):
+        handlers = [ServerModeHandler(bus=bus, poll_notifications=lambda: NotificationsBatch())]
         agent = await MiniCodex.create(
             model="test-model",
-            mcp=mcp,
+            mcp_client=mcp_client,
             handlers=handlers,
             client=make_mock(_make_ui_behavior(responses_factory)),
             system="Use ui tools",

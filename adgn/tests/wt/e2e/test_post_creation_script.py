@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from ..conftest import kill_daemon_at_wt_dir
-from ..test_utils import run_cli_command
 
 
 @pytest.fixture
@@ -32,10 +31,10 @@ def real_env_with_post_script(real_temp_repo, config_factory, tmp_path):
     kill_daemon_at_wt_dir(config.wt_dir)
 
 
-def test_post_creation_script_runs(real_env_with_post_script):
+def test_post_creation_script_runs(real_env_with_post_script, wtcli):
     env, repo = real_env_with_post_script
     name = "hooked"
-    result = run_cli_command(["create", "--yes", name], env=env, timeout=timedelta(seconds=15.0))
+    result = wtcli(env).sh_c(name, timeout=timedelta(seconds=15.0))
     assert result.returncode == 0
     wt_path = Path(repo) / "worktrees" / name
     assert wt_path.exists()

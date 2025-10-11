@@ -1,7 +1,9 @@
 <script lang="ts">
-  export let servers: Array<{ name: string; state: 'running' | 'failed'; error?: string | null; supports_resources?: boolean | null; tools?: Array<{ name: string; description?: string; inputSchema?: any }>; initialize?: { instructions?: string | null; server_info?: any; protocol_version?: string | null; capabilities?: any } | null }> = []
+  import type { ServerEntry } from '../../shared/types'
+  export let servers: ServerEntry[] = []
   import { currentAgentId } from '../shared/router'
-  import { attachMcpServers, detachMcpServers } from '../features/agents/api'
+  import ModalBackdrop from './ModalBackdrop.svelte'
+  import { attachMcpServer, detachMcpServer } from '../features/agents/api'
   import { refreshSnapshot, reconfigureMcp } from '../features/chat/stores'
   import { MCP_PRESETS } from '../features/mcp/presets'
   import { buildSpecFromForm } from '../features/mcp/schema'
@@ -42,7 +44,7 @@
   // Manage servers state/logic (moved into the top script)
   let preset: string = ''
   let newName = ''
-  let transport: 'stdio' | 'sse' | 'inproc' = 'stdio'
+  let transport: 'stdio' | 'sse' | 'inproc' | 'http' = 'stdio'
 
   // stdio fields
   let stdioCommand = ''
@@ -59,6 +61,12 @@
   let inprocFactory = ''
   let inprocArgs = '[]'
   let inprocKwargs = '{}'
+  // http fields
+  let httpUrl = ''
+  let httpHeaders = '{}'
+  let httpAuth = ''
+  let httpTimeout: number | string = 30
+  let httpReadTimeout: number | string = 300
 
   // async action state
   let attaching = false
@@ -80,6 +88,7 @@
       transport,
       stdioCommand, stdioArgs, stdioEnv,
       sseUrl, sseHeaders, sseTimeout, sseReadTimeout,
+      httpUrl, httpHeaders, httpAuth, httpTimeout, httpReadTimeout,
       inprocFactory, inprocArgs, inprocKwargs,
     })
     previewSpec = res.spec ?? null
@@ -106,6 +115,10 @@
       sseHeaders = JSON.stringify(p.defaults.sse.headers ?? {}, null, 2)
       sseTimeout = p.defaults.sse.timeout_secs
       sseReadTimeout = p.defaults.sse.sse_read_timeout_secs
+    } else if (p.transport === 'http' && p.defaults.http) {
+      httpUrl = p.defaults.http.url
+      httpHeaders = JSON.stringify(p.defaults.http.headers ?? {}, null, 2)
+      httpAuth = p.defaults.http.auth ?? ''
     }
   }
 
@@ -118,18 +131,14 @@
       transport,
       stdioCommand, stdioArgs, stdioEnv,
       sseUrl, sseHeaders, sseTimeout, sseReadTimeout,
+      httpUrl, httpHeaders, httpAuth, httpTimeout, httpReadTimeout,
       inprocFactory, inprocArgs, inprocKwargs,
     })
     if (!newName.trim()) { attachErr = 'Server name required'; return }
     if (!spec || (fe && Object.keys(fe).length)) { attachErr = 'Please fix highlighted errors'; return }
     attaching = true; attachErr = null; attachMsg = 'Attaching…'
     try {
-      try {
-        await attachMcpServers(agentId, { [newName]: spec })
-      } catch (e) {
-        // HTTP failed (dev proxy or CORS). Fallback to WS command.
-        reconfigureMcp({ [newName]: spec }, [])
-      }
+      await attachMcpServer(agentId, newName, spec)
       attachMsg = 'Attached. Refreshing…'
       await new Promise(r => setTimeout(r, 150))
       refreshSnapshot()
@@ -147,11 +156,7 @@
     if (!agentId) { alert('No agent selected'); return }
     try {
       attaching = true; attachErr = null; attachMsg = `Detaching ${name}…`
-      try {
-        await detachMcpServers(agentId, [name])
-      } catch (e) {
-        reconfigureMcp(undefined, [name])
-      }
+      await detachMcpServer(agentId, name)
       attachMsg = 'Detached. Refreshing…'
       await new Promise(r => setTimeout(r, 150))
       refreshSnapshot()
@@ -163,6 +168,13 @@
       setTimeout(() => { attachMsg = null; attachErr = null }, 2000)
     }
   }
+
+  // --- Visible server meta helpers ---
+  function instSnippet(text: string | null | undefined): string | null {
+    if (!text || typeof text !== 'string') return null
+    const line = text.split(/\r?\n/)[0] || ''
+    return line.length > 160 ? line.slice(0, 157) + '…' : line
+  }
 </script>
 
 <div class="servers">
@@ -172,8 +184,8 @@
       <div class="row">
         <div class="col">
           <div class="field">
-            <label class="inline">Preset</label>
-            <select bind:value={preset} on:change={(e) => applyPresetFrom((e.target as HTMLSelectElement).value)}>
+            <label class="inline" for="preset-select">Preset</label>
+            <select id="preset-select" bind:value={preset} on:change={(e) => applyPresetFrom((e.target as HTMLSelectElement).value)}>
               <option value="">Custom</option>
               {#each MCP_PRESETS as p}
                 <option value={p.id}>{p.label}</option>
@@ -183,8 +195,8 @@
         </div>
         <div class="col">
           <div class="field">
-            <label class="inline">Server Name</label>
-            <input type="text" placeholder="server name" bind:value={newName} />
+            <label class="inline" for="server-name">Server Name</label>
+            <input id="server-name" type="text" placeholder="server name" bind:value={newName} />
             {#if !newName.trim()}<div class="err">name required</div>{/if}
           </div>
         </div>
@@ -193,11 +205,12 @@
       <div class="row">
         <div class="col">
           <div class="field">
-            <label class="inline">Transport</label>
-            <select bind:value={transport}>
+            <label class="inline" for="transport-select">Transport</label>
+            <select id="transport-select" bind:value={transport}>
               <option value="stdio">stdio</option>
               <option value="sse">sse</option>
               <option value="inproc">inproc</option>
+              <option value="http">http</option>
             </select>
           </div>
         </div>
@@ -241,6 +254,33 @@
             {#if fieldErrors.sseReadTimeout}<div class="err">{fieldErrors.sseReadTimeout.join(', ')}</div>{/if}
           </div>
         </div>
+      {:else if transport === 'http'}
+        <div class="row">
+          <div class="col grow">
+            <label>url <input type="text" placeholder="http://127.0.0.1:8768/mcp" bind:value={httpUrl} /></label>
+            {#if fieldErrors.httpUrl}<div class="err">{fieldErrors.httpUrl.join(', ')}</div>{/if}
+          </div>
+        </div>
+        <div class="row">
+          <div class="col grow">
+            <label>headers (JSON object) <textarea rows="3" bind:value={httpHeaders} spellcheck={false}></textarea></label>
+            {#if fieldErrors.httpHeaders}<div class="err">{fieldErrors.httpHeaders.join(', ')}</div>{/if}
+          </div>
+          <div class="col">
+            <label>auth (Bearer) <input type="text" bind:value={httpAuth} placeholder="optional" /></label>
+            {#if fieldErrors.httpAuth}<div class="err">{fieldErrors.httpAuth.join(', ')}</div>{/if}
+          </div>
+        </div>
+        <div class="row">
+          <div class="col">
+            <label>timeout_secs (s) <input type="number" min="1" bind:value={httpTimeout} /></label>
+            {#if fieldErrors.httpTimeout}<div class="err">{fieldErrors.httpTimeout.join(', ')}</div>{/if}
+          </div>
+          <div class="col">
+            <label>read_timeout_secs (s) <input type="number" min="1" bind:value={httpReadTimeout} /></label>
+            {#if fieldErrors.httpReadTimeout}<div class="err">{fieldErrors.httpReadTimeout.join(', ')}</div>{/if}
+          </div>
+        </div>
       {:else}
         <div class="row">
           <div class="col grow">
@@ -261,7 +301,7 @@
       {/if}
 
       <div class="row">
-        <button class="small" type="button" on:click={() => { console.log('[ServersPanel] attach clicked', { newName, transport }); onAttach() }} disabled={!attachEnabled}>Attach Server</button>
+        <button class="small" type="button" on:click={() => onAttach()} disabled={!attachEnabled}>Attach Server</button>
         {#if attachMsg}<span class="note">{attachMsg}</span>{/if}
         {#if attachErr}<span class="err">{attachErr}</span>{/if}
         {#if topErrors.length}
@@ -299,7 +339,7 @@
             <span class="server-name">{serverName}</span>
             <span class="tool-count" title={`${serverTools.length} tools`}>🛠 {serverTools.length}</span>
           </div>
-          <button class="small detach-btn" type="button" title="Detach server" aria-label="Detach server" on:click={() => { console.log('[ServersPanel] detach clicked', serverName); onDetach(serverName) }}>
+          <button class="small detach-btn" type="button" title="Detach server" aria-label="Detach server" on:click={() => onDetach(serverName)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="9" y1="9" x2="15" y2="15"></line>
@@ -308,6 +348,29 @@
             <span class="label">Detach</span>
           </button>
         </div>
+        <!-- Visible server meta (instructions snippet + capabilities badges) -->
+        {#if health.state === 'running'}
+          <div class="server-meta">
+            {#if instSnippet(health.initialize?.instructions)}
+              <div class="inst-snippet" title="Instructions snippet">{instSnippet(health.initialize?.instructions)}</div>
+            {/if}
+            <div class="caps">
+              {#if !!health.initialize?.capabilities?.resources}
+                <span class="badge cap" title="Server exposes resources">resources</span>
+                {#if health.initialize?.capabilities?.resources?.subscribe === true}
+                  <span class="badge cap" title="Supports resources.subscribe">subscribe</span>
+                {/if}
+                {#if health.initialize?.capabilities?.resources?.listChanged === true}
+                  <span class="badge cap" title="Supports resources.listChanged">listChanged</span>
+                {/if}
+              {:else}
+                <span class="badge cap" title="No resources">no resources</span>
+              {/if}
+            </div>
+          </div>
+        {:else if health.state === 'failed' && health.error}
+          <div class="server-meta"><div class="err">Error: {health.error}</div></div>
+        {/if}
       </div>
     {/each}
   {:else}
@@ -316,7 +379,7 @@
 </div>
 
 {#if showInfoModal && infoServer}
-  <div class="modal-backdrop" on:click={(e) => { if (e.target === e.currentTarget) showInfoModal = false }}>
+  <ModalBackdrop label="Close MCP server info" onClose={() => (showInfoModal = false)}>
     <div class="modal" role="dialog" aria-modal="true" aria-label="MCP server info">
       <header>
         <div style="display:flex; align-items:center; gap:0.5rem;">
@@ -330,16 +393,12 @@
           <div class="err">Error: {infoServer.error}</div>
         {/if}
         <div class="row">
-          <div><strong>Supports resources:</strong> {infoServer?.supports_resources === true ? 'Yes' : infoServer?.supports_resources === false ? 'No' : 'Unknown'}</div>
           <div style="margin-left:auto;"><strong>Tools:</strong> {Array.isArray(infoServer?.tools) ? infoServer.tools.length : 0}</div>
         </div>
 
         {#if infoServer?.initialize}
           {@const init = infoServer.initialize}
-          <section>
-            <h5>Protocol</h5>
-            <div class="kv"><span class="k">Version</span><span class="v">{init?.protocol_version ?? '—'}</span></div>
-          </section>
+          <!-- Protocol details (version) not provided by InitializeResult; omit for now. -->
 
           {#if init?.instructions}
             <section>
@@ -348,17 +407,18 @@
             </section>
           {/if}
 
-          {#if init?.server_info}
+          {#if init?.serverInfo}
             <section>
               <h5>Server Info</h5>
-              <div use:jsonView={init.server_info}></div>
+              <div use:jsonView={init.serverInfo}></div>
             </section>
           {/if}
 
-          {#if init?.capabilities}
+          {@const capsView = init?.capabilities}
+          {#if capsView}
             <section>
               <h5>Capabilities</h5>
-              <div use:jsonView={init.capabilities}></div>
+              <div use:jsonView={capsView}></div>
             </section>
           {/if}
         {/if}
@@ -397,7 +457,7 @@
         <button class="secondary" on:click={() => (showInfoModal = false)}>Close</button>
       </footer>
     </div>
-  </div>
+  </ModalBackdrop>
 {/if}
 
 <style>
@@ -443,20 +503,21 @@
   .empty { color: var(--muted); }
   /* server-actions removed; detach now lives in header row */
 
+  .server-meta { margin: 0.2rem 0 0.35rem 1.5rem; display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: center; }
+  .server-meta .inst-snippet { font-size: 0.8rem; color: var(--muted); max-width: 100%; }
+
   .badge { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.4rem; font-size: 0.7rem; margin-left: 0.25rem; color: var(--muted); }
   .badge.cap { background: var(--surface-2); }
 
   /* Modal styles */
-  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  /* Backdrop styling moved to ModalBackdrop component */
   .modal { background: var(--surface); color: var(--text); width: min(1000px, 92vw); max-height: 90vh; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); display: flex; flex-direction: column; }
   .modal header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-weight: 600; }
   .modal .body { padding: 0.75rem; display: grid; grid-template-columns: 1fr; gap: 0.75rem; overflow: auto; }
   .modal .row { display: flex; gap: 1rem; align-items: center; }
   .modal footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--border); }
   .modal h5 { margin: 0.25rem 0; }
-  .kv { display: grid; grid-template-columns: 140px 1fr; gap: 0.25rem 0.5rem; align-items: center; }
-  .kv .k { color: var(--muted); }
-  .kv .v { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+  /* Removed unused .kv styles */
   .modal-tools { margin-left: 0; border-left: none; padding-left: 0; }
   .modal .disclosure { display: inline; font-size: 0.75rem; width: 1rem; flex-shrink: 0; }
   /* info button removed; row click opens modal */

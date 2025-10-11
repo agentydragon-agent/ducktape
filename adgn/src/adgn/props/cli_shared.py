@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
+
+import tiktoken
 
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.agent_runner import run_prompt_async
@@ -59,6 +63,26 @@ def detect_tools() -> list[str]:
     return available
 
 
+def now_ts() -> str:
+    """Return a filesystem-friendly timestamp string (YYYYMMDD_HHMMSS)."""
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def save_prompt_to_tmp(stem: str, text: str) -> Path:
+    """Save prompt text under the system temp dir and print a short summary.
+
+    File name: <stem>_<ts>.md; returns the full path. Prints an approximate token count using tiktoken.
+    """
+    tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    ts = now_ts()
+    outfile = tmpdir / f"{stem}_{ts}.md"
+    outfile.write_text(text, encoding="utf-8")
+    tokens = len(tiktoken.get_encoding("cl100k_base").encode(text))
+    print(f"Saved prompt: {outfile} (approx tokens: {tokens})")
+    return outfile
+
+
 def build_cmd(model: str, workdir: Path, opts: BuildOptions) -> list[str]:
     cmd: list[str] = [
         "codex",
@@ -90,11 +114,11 @@ async def run_check_minicodex_async(
     client: OpenAIModelProto,
 ) -> int:
     wiring = properties_docker_spec(workdir, mount_properties=True)
-    specs = {wiring.server_name: wiring.server_spec}
+    server_factories = {wiring.server_name: wiring.server_factory}
     res = await run_prompt_async(
         prompt,
         model,
-        specs,
+        server_factories,
         client=client,
         capture_transcript=not final_only,
     )

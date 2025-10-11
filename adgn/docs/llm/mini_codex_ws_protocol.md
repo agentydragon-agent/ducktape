@@ -20,7 +20,7 @@ Envelope
   - type: string (discriminator)
   - v?: string (protocol version; present on hello/welcome/snapshot; optional on other frames)
   - session_id?: string
-  - run_id?: string
+  - run_id?: string (UUID)
   - event_id?: integer (monotonic, server→client only)
   - ts?: RFC3339 timestamp
   - req_id?: string (client‑supplied correlation id for command → CommandAccepted/Error)
@@ -31,10 +31,10 @@ State models (server authoritative)
   - version: str
   - capabilities: list[str]  (e.g., ["reasoning", "approvals", "replay"])
   - last_event_id: int | null
-  - active_run_id: str | null
+  - active_run_id: UUID | null
   - run_counter: int
 - RunState
-  - run_id: str
+  - run_id: UUID
   - status: enum("idle", "starting", "running", "awaiting_approval", "aborting", "finished", "error")
   - started_at: datetime
   - finished_at: datetime | null
@@ -82,8 +82,8 @@ Server → Client messages (events)
 - Transcript events
   - UserText, AssistantText, ToolCall, FunctionCallOutput, ReasoningChunk (each carries event_id)
 - Approvals
-  - ApprovalPending {type: "approval_pending", call_id, tool_key, args, event_id}
-  - ApprovalDecision {type: "approval_decision", call_id, decision: "continue" | "inject_result" | "abort", event_id}
+  - ApprovalPending {type: "approval_pending", call_id, tool_key, args_json, event_id}
+  - ApprovalDecision {type: "approval_decision", call_id, decision: "approve" | "deny_continue" | "deny_abort", event_id}
 - TurnDone
   - {type: "turn_done", run_id, event_id}  // emitted when a run completes without tool outputs
 - Error
@@ -106,6 +106,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
+from uuid import UUID
 
 # Envelope base
 class Envelope(BaseModel):
@@ -123,7 +124,7 @@ class SessionState(BaseModel):
     version: str
     capabilities: list[str] = []
     last_event_id: int | None = None
-    active_run_id: str | None = None
+    active_run_id: UUID | None = None
     run_counter: int = 0
     model_config = ConfigDict(extra="forbid")
 
@@ -136,7 +137,7 @@ class RunStatusValue(str):
     pass  # use Literal below
 
 class RunState(BaseModel):
-    run_id: str
+    run_id: UUID
     status: Literal[
         "idle", "starting", "running", "awaiting_approval", "aborting", "finished", "error"
     ]
@@ -238,12 +239,12 @@ class ApprovalPendingEvt(Envelope):
     type: Literal["approval_pending"] = "approval_pending"
     call_id: str
     tool_key: str
-    args: dict
+    args_json: str | None = None
 
 class ApprovalDecisionEvt(Envelope):
     type: Literal["approval_decision"] = "approval_decision"
     call_id: str
-    decision: Literal["continue", "inject_result", "abort"]
+    decision: Literal["approve", "deny_continue", "deny_abort"]
 
 class TurnDone(Envelope):
     type: Literal["turn_done"] = "turn_done"
@@ -281,11 +282,13 @@ export interface SessionState {
   version: string;
   capabilities: string[];
   last_event_id?: number | null;
+  // UUID string
   active_run_id?: string | null;
   run_counter: number;
 }
 
 export interface RunState {
+  // UUID string
   run_id: string;
   status: RunStatus;
   started_at: string; // RFC3339
@@ -320,9 +323,10 @@ export type ServerMessage =
   | { type: "snapshot"; v: string; session_state: SessionState; run_state?: RunState | null; transcript: TranscriptItem[]; event_id: number }
   | { type: "accepted"; req_id?: string }
   | { type: "run_status"; run_state: RunState; event_id: number }
-  | { type: "approval_pending"; call_id: string; tool_key: string; args: Record<string, unknown>; event_id: number }
-  | { type: "approval_decision"; call_id: string; decision: "continue" | "inject_result" | "abort"; event_id: number }
+  | { type: "approval_pending"; call_id: string; tool_key: string; args_json?: string | null; event_id: number }
+  | { type: "approval_decision"; call_id: string; decision: "approve" | "deny_continue" | "deny_abort"; event_id: number }
   | { type: "turn_done"; run_id?: string; event_id: number }
+  // Note: run_id fields are UUID strings over the wire
   | { type: "error"; code: string; message: string; details?: Record<string, unknown> }
   | { type: "heartbeat"; interval_ms: number }
   | { type: "backpressure"; state: "drain" | "ok" }

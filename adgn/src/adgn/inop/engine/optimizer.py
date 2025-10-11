@@ -42,9 +42,10 @@ from pathlib import Path
 import signal
 import sys
 
+from fastmcp.client import Client as McpClient
+
 from adgn.agent.agent import MiniCodex
-from adgn.agent.loggers import TranscriptLoggerHandler
-from adgn.agent.mcp_manager import McpManager
+from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import (
     AgentTaskType,
@@ -62,9 +63,7 @@ from adgn.inop.io.task_loader import (
     load_task_types,
 )
 from adgn.inop.io.yaml_loader import load_yaml_files
-from adgn.inop.mcp.prompt_feedback_server import (
-    make_prompt_feedback_server_with_handle,
-)
+from adgn.inop.mcp.prompt_feedback_server import make_prompt_feedback_server_with_state
 from adgn.inop.model_factory import create_optimizer_models
 from adgn.inop.plots import ScoreEvolutionTracker
 from adgn.inop.prompting.pe_controller import ProposePromptNTimes
@@ -76,7 +75,7 @@ from adgn.inop.prompting.prompt_engineer import (
 )
 from adgn.inop.prompting.summarizer import PatternSummarizer
 from adgn.inop.prompting.truncation_utils import TruncationManager
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.model import OpenAIModelProto
 
 # TODO: consider showing grader text Assistant messages, not just code
@@ -307,16 +306,12 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
     deps = _Deps()
 
     # Build the MCP servers and session handle
-    mcp_server, state_handle = make_prompt_feedback_server_with_handle(
-        deps=deps,
-        feedback_provider=feedback_provider,
-    )
+    # Build secured in-proc attach via factory and capture the handle directly
 
-    # Build ServerSlotSpecs via the in-proc JSON-RPC utility
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("prompt_feedback", make_inproc_slot_spec(mcp_server))
-        # Session will be initialized on first access via McpManager ensure_open
-
+    comp = Compositor("compositor")
+    _server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
+    await comp.mount_inproc("prompt_feedback", _server)
+    async with McpClient(comp) as mcp_client:
         # Create MiniCodex PE with system prompt at init
         model = args.pe_model
         # Build the expert prompt-engineer system message (same wording formerly in PromptEngineer.prompt_messages)
@@ -349,12 +344,12 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
         pe = await MiniCodex.create(
             model=args.cfg.prompt_engineer.model,
-            mcp=mcp,
+            mcp_client=mcp_client,
             client=model,
             system=system_message,
             handlers=[
                 ProposePromptNTimes(args.iterations),
-                TranscriptLoggerHandler(run_dir),
+                TranscriptHandler(dest_dir=run_dir),
             ],
         )
 
@@ -362,8 +357,8 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         await pe.run(user_text="Start prompt optimization.")
 
         # Read final state directly (in-proc) for logging only
-        last_prompt = state_handle.state.last_prompt if state_handle.state else ""
-        last_feedback = state_handle.state.last_feedback if state_handle.state else ""
+        last_prompt = state.last_prompt or ""
+        last_feedback = state.last_feedback or ""
 
         logger.info(
             "Optimization complete (MCP)",
@@ -372,7 +367,6 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 "last_feedback_preview": (last_feedback or "")[:160],
             },
         )
-    # Exit McpManager context before returning to avoid teardown happening under return unwinding
     return args.base_dir
 
 

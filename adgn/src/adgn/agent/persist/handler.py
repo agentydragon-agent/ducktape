@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 import logging
 from typing import Any, Callable
+from uuid import UUID
 
 from adgn.agent.handler import (
     AssistantText,
@@ -13,6 +14,7 @@ from adgn.agent.handler import (
     ToolCallOutput,
     UserText,
 )
+from adgn.mcp._shared.calltool import to_pydantic
 from adgn.openai_utils.model import ReasoningItem
 
 from . import EventType, Persistence
@@ -30,12 +32,12 @@ class RunPersistenceHandler(BaseHandler):
         self,
         *,
         persistence: Persistence,
-        get_run_id: Callable[[], str | None] | None = None,
+        get_run_id: Callable[[], UUID | None] | None = None,
     ) -> None:
         self._persistence = persistence
         self._get_run_id = get_run_id
-        self._current_run_id: str | None = None
-        self._last_run_id: str | None = None
+        self._current_run_id: UUID | None = None
+        self._last_run_id: UUID | None = None
         self._seq = 0
         self._tasks: set[asyncio.Task] = set()
 
@@ -51,7 +53,7 @@ class RunPersistenceHandler(BaseHandler):
 
         t.add_done_callback(_done)
 
-    def bind_run(self, run_id: str) -> None:
+    def bind_run(self, run_id: UUID) -> None:
         """Explicitly bind to a run. Primarily for legacy call sites.
 
         When a get_run_id callback is provided, this is optional; the handler
@@ -138,7 +140,9 @@ class RunPersistenceHandler(BaseHandler):
         )
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        payload = evt.result.model_dump(mode="json", exclude_none=True)
+        # Persist full Pydantic MCP CallToolResult (with content when available)
+        payload_model = to_pydantic(evt.result)
+        payload = payload_model.model_dump(mode="json", by_alias=True)
         self._record_event(
             type=EventType.FUNCTION_CALL_OUTPUT, payload=payload, call_id=evt.call_id
         )

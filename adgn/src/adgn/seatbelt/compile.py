@@ -87,9 +87,9 @@ def compile_sbpl(policy: SBPLPolicy) -> str:
     # System toggles
     if policy.system.system_socket:
         lines.append("(allow system-socket)")
-    if getattr(policy.system, "user_preference_read", False):
+    if policy.system.user_preference_read:
         lines.append("(allow user-preference-read)")
-    if getattr(policy.system, "ipc_posix_sem", False):
+    if policy.system.ipc_posix_sem:
         lines.append("(allow ipc-posix-sem)")
     # sysctl-read: allow unrestricted if sysctl_read is True and no filters.
     # Otherwise, when names/prefixes provided, emit a filtered clause.

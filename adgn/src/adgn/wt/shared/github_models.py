@@ -45,7 +45,6 @@ class PRStatus(StrEnum):
         return self.value.lower()
 
 
-# Legacy enums for backward compatibility
 class PRState(StrEnum):
     OPEN = "open"
     CLOSED = "closed"

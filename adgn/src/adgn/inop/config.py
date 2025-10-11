@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 import yaml
 
 from adgn.openai_utils.types import ReasoningEffort
@@ -161,11 +161,7 @@ class OptimizerConfig(BaseModel):
         description="Additional environment variables for the docker wrapper",
     )
 
-    class Config:
-        """Pydantic configuration."""
-
-        validate_assignment = True
-        extra = "forbid"
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     @classmethod
     def from_file(cls, config_path: str | Path | None = None) -> "OptimizerConfig":

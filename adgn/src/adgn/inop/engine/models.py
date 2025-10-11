@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import (
@@ -18,7 +18,7 @@ from pydantic import (
 COMMIT_SHA_LEN = 40
 
 
-class AgentTaskType(str, Enum):
+class AgentTaskType(StrEnum):
     """Type of agent being optimized."""
 
     CODING = "coding"

@@ -22,6 +22,9 @@ DATA = ROOT / "data" / "_test"
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    not (DATA / "ccr_min.jsonl").exists(), reason="ccr_min.jsonl test dataset missing"
+)
 async def test_read_ccr_min():
     ds = await read_dataset(DATA / "ccr_min.jsonl")
     assert len(ds) == 2
@@ -45,6 +48,9 @@ async def test_read_ccr_min():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    not (DATA / "crush_min.jsonl").exists(), reason="crush_min.jsonl test dataset missing"
+)
 async def test_read_crush_min():
     ds = await read_dataset(DATA / "crush_min.jsonl")
     assert len(ds) == 2

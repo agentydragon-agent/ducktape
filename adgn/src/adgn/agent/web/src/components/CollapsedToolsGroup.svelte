@@ -63,12 +63,6 @@
       const parts = [u, s].filter(Boolean).join(', ')
       return `Read Resource(${parts})`
     }
-    if (name === 'mcp__approval_policy__propose') {
-      return 'Propose Policy'
-    }
-    if (name === 'mcp__approval_policy__withdraw') {
-      return 'Withdraw Proposed Policy'
-    }
     // Fallback: show the raw tool key
     return it.tool
   }
@@ -89,13 +83,18 @@
     return null
   }
 
-  // For JSON content, display structuredContent when present, else raw result
+  // For JSON content, display structured_content when present, else raw result
+  import { z } from 'zod'
+  const CallToolResultZ = z.object({ structured_content: z.unknown().optional() }).passthrough()
   function jsonOutput(it: ToolItem): unknown {
     const c: any = it?.content
     if (!c || c.content_kind !== 'Json') return null
     const res: any = c.result
-    if (res && typeof res === 'object' && 'structuredContent' in res) {
-      return (res as any).structuredContent
+    if (res && typeof res === 'object') {
+      const parsed = CallToolResultZ.safeParse(res)
+      if (parsed.success && parsed.data.structured_content !== undefined) {
+        return parsed.data.structured_content
+      }
     }
     return res ?? null
   }
@@ -151,7 +150,7 @@
   .icon-token { background: none; border: none; padding: 0 0.125rem; cursor: pointer; font: inherit; text-decoration: none; }
   .icon-token.active { filter: brightness(0.9); }
   .expanded { margin-top: 0.25rem; padding-left: 0.5rem; border-left: 2px solid var(--border); }
-  .row { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.1rem 0; }
+  /* Removed unused .row */
   .status { display: inline; text-decoration: none; }
   .status.ok { color: #2e7d32; }
   .status.err { color: #c62828; }

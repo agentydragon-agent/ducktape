@@ -1,55 +1,89 @@
 from __future__ import annotations
 
-from textwrap import indent
+from pydantic import TypeAdapter
+import yaml
 
-from fastapi.testclient import TestClient
+from adgn.agent.presets import AgentPreset
+from adgn.agent.server.protocol import Snapshot as UiSnapshot
+from tests.agent.ws_helpers import wait_for_accepted
 
-from adgn.agent.server.app import create_app
 
-
-def test_preset_initial_policy_loaded_into_engine(tmp_path, monkeypatch):
+def test_preset_initial_policy_loaded_into_engine(
+    agent_app_client, tmp_path, monkeypatch, policy_ui_send_message_allow
+):
     # Prepare a preset with an explicit approval policy
     d = tmp_path / "presets"
     d.mkdir()
-    policy = (
-        "from adgn.agent.approvals import PolicyDecision, WellKnownServers, WellKnownTools, ApprovalContext\n"
-        "def decide(ctx):\n"
-        "  return (PolicyDecision.ALLOW, 'ok')\n"
-        "TEST_CASES = [\n"
-        "  (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW),\n"
-        "]\n"
+    preset = AgentPreset(
+        name="policytest",
+        description="preset with initial policy",
+        system="Initial system",
+        approval_policy=policy_ui_send_message_allow,
+        specs={},
     )
-    yaml_text = (
-        "name: policytest\n"
-        "description: preset with initial policy\n"
-        "system: Initial system\n"
-        "approval_policy: |\n" + indent(policy, "  ") + "\n"
-        "specs: {}\n"
+    (d / "policytest.yaml").write_text(
+        yaml.safe_dump(preset.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
     )
-    (d / "policytest.yaml").write_text(yaml_text, encoding="utf-8")
     monkeypatch.setenv("ADGN_AGENT_PRESETS_DIR", str(d))
 
-    app = create_app(require_static_assets=False)
-    with TestClient(app) as c:
-        # Create agent from preset
-        r = c.post("/api/agents", json={"preset": "policytest"})
-        assert r.status_code == 200, r.text
-        agent_id = r.json()["id"]
-        # Open WS and request snapshot; verify approval_policy content matches
-        with c.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
-            # accepted
+    app, c = agent_app_client
+    # Create agent from preset
+    r = c.post("/api/agents", json={"preset": "policytest"})
+    assert r.status_code == 200, r.text
+    agent_id = r.json()["id"]
+    # Open WS and request snapshot; verify approval_policy content matches
+    with c.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
+        # accepted
+        wait_for_accepted(ws)
+        # The server pushes a Snapshot on connect; read until we see it
+        for _ in range(20):
             env = ws.receive_json()
-            assert env.get("payload", {}).get("type") == "accepted"
-            # request snapshot
-            ws.send_json({"type": "get_snapshot"})
-            # Expect several payloads; find the snapshot
-            for _ in range(10):
-                env = ws.receive_json()
-                payload = env.get("payload", {})
-                if payload.get("type") == "snapshot":
-                    ap = payload.get("approval_policy") or {}
-                    content = ap.get("content") or ""
-                    assert "TEST_CASES" in content and "PolicyDecision.ALLOW" in content
-                    break
-            else:
-                raise AssertionError("snapshot not received")
+            payload = env.get("payload", {})
+            if payload.get("type") == "snapshot":
+                snap = TypeAdapter(UiSnapshot).validate_python(payload)
+                content = snap.approval_policy.content if snap.approval_policy else ""
+                assert "class ApprovalPolicy" in content and "TEST_CASES" in content
+                break
+        else:
+            raise AssertionError("snapshot not received")
+
+
+def test_preset_policy_with_failing_tests_falls_back(
+    agent_app_client, tmp_path, monkeypatch, policy_failing_tests
+):
+    # Prepare a preset with an explicit approval policy that fails its test
+    d = tmp_path / "presets"
+    d.mkdir()
+    marker = "# failing_test_marker"
+    policy = policy_failing_tests + f"\n{marker}\n"
+    preset = AgentPreset(
+        name="policyfail",
+        description="preset with failing policy",
+        system="Initial system",
+        approval_policy=policy,
+        specs={},
+    )
+    (d / "policyfail.yaml").write_text(
+        yaml.safe_dump(preset.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
+    )
+    monkeypatch.setenv("ADGN_AGENT_PRESETS_DIR", str(d))
+
+    app, c = agent_app_client
+    # Create agent from preset
+    r = c.post("/api/agents", json={"preset": "policyfail"})
+    assert r.status_code == 200, r.text
+    agent_id = r.json()["id"]
+    # Open WS and request snapshot; verify we do NOT see the marker from failing policy
+    with c.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
+        wait_for_accepted(ws)
+        for _ in range(20):
+            env = ws.receive_json()
+            payload = env.get("payload", {})
+            if payload.get("type") == "snapshot":
+                snap = TypeAdapter(UiSnapshot).validate_python(payload)
+                content = snap.approval_policy.content if snap.approval_policy else ""
+                assert marker not in content
+                assert "class ApprovalPolicy" in content
+                break
+        else:
+            raise AssertionError("snapshot not received")

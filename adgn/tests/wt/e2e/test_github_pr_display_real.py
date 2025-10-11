@@ -10,12 +10,13 @@ import json
 import os
 import re
 import socket
-import time
 import uuid
 
 import pytest
 
 from adgn.wt.shared.fixtures import PRFixtureEntry
+
+from ..test_utils import wait_until
 
 # Global conftest disables gh token via get_github_token
 
@@ -95,14 +96,20 @@ def test_github_pr_display_with_mocked_pygithub(
     assert refresh_res.get("result") == "ok"
 
     # Now poll until status shows the PR details (robust to any async)
-    deadline = time.time() + 12.0
-    last = ""
-    while time.time() < deadline:
-        r = wt_cli.status(timeout=timedelta(seconds=30.0))
-        assert r.returncode == 0
-        last = r.stdout
-        if "#123" in last and re.search(r"\bcan merge\b", last) and "+10/-2" in last:
-            break
-        time.sleep(0.25)
-    else:
-        raise AssertionError(f"PR details not shown in time. Last output:\n{last}")
+    last = {"out": ""}
+    ok = wait_until(
+        lambda: (
+            (
+                lambda r: last.update({"out": r.stdout})
+                or (
+                    "#123" in r.stdout
+                    and re.search(r"\bcan merge\b", r.stdout)
+                    and "+10/-2" in r.stdout
+                )
+            )(wt_cli.status(timeout=timedelta(seconds=30.0)))
+        ),
+        timeout_seconds=12.0,
+        interval_seconds=0.25,
+    )
+    if not ok:
+        raise AssertionError(f"PR details not shown in time. Last output:\n{last['out']}")

@@ -650,15 +650,29 @@ class WtDaemon:
             return
 
         # Bind socket immediately after validation
-        if self.socket_path.exists():
-            self.socket_path.unlink()
-        self.server = await asyncio.start_unix_server(
-            self.handle_client_request,
-            self.socket_path,
-        )
-        # Write PID file in thread to avoid blocking the event loop
-        await asyncio.to_thread(self.pid_file.write_text, str(os.getpid()))
-        self.running = True
+        try:
+            if self.socket_path.exists():
+                self.socket_path.unlink()
+            self.server = await asyncio.start_unix_server(
+                self.handle_client_request,
+                self.socket_path,
+            )
+            # Write PID file in thread to avoid blocking the event loop
+            await asyncio.to_thread(self.pid_file.write_text, str(os.getpid()))
+            self.running = True
+        except OSError as e:
+            # Emit failure handshake so client can surface the error deterministically
+            write_startup_handshake(
+                success=False,
+                error_message=f"Failed to bind daemon socket at {self.socket_path}: {e}",
+                protocol_version=1,
+                daemon_log_path=self.config.daemon_log_file,
+            )
+            logger.error("Socket bind failed: %s", e)
+            # Ensure clean shutdown of any partial state
+            with contextlib.suppress(Exception):
+                await self.stop()
+            return
 
         # Signal listening via single handshake; redirect stdout to log afterward
         write_startup_handshake(

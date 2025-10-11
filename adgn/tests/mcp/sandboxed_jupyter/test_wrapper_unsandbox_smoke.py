@@ -25,7 +25,6 @@ def test_wrapper_unsandbox_initialize_and_hello(
     launch_proc,
 ):
     (ws, run_root) = provision_ws_with_policy
-    port = pick_free_port
     cmd = [
         "sandbox-jupyter",
         "--workspace",
@@ -35,7 +34,7 @@ def test_wrapper_unsandbox_initialize_and_hello(
         "--mode",
         "seatbelt",
         "--jupyter-port",
-        str(port),
+        str(pick_free_port),
         "--no-kernel-sandbox",
     ]
     with launch_proc(cmd, env_update=pkg_src_env_update) as proc:

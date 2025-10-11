@@ -17,15 +17,14 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
     Runs a simple pipeline `yes hello | head -n 5` under a tight allowlist and prints
     diagnostic tails (seatbelt.trace + unified denies) when failing.
     """
-    run = tmp_path
-    (run / "tmp").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "tmp").mkdir(parents=True, exist_ok=True)
 
-    policy = run / "policy_narrow.yaml"
+    policy = tmp_path / "policy_narrow.yaml"
     policy_dict = {
         "env": {
             "set": {
-                "TMPDIR": (run / "tmp").as_posix(),
-                "HOME": run.as_posix(),
+                "TMPDIR": (tmp_path / "tmp").as_posix(),
+                "HOME": tmp_path.as_posix(),
                 "PYTHONUNBUFFERED": "1",
             },
             "passthrough": [],
@@ -33,8 +32,8 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
         "fs": {
             # Minimal system bins required by this test: sh/yes/head and loader essentials
             "read_paths": [
-                run.as_posix(),
-                (run / "tmp").as_posix(),
+                tmp_path.as_posix(),
+                (tmp_path / "tmp").as_posix(),
                 "/bin",
                 "/usr/bin",
                 # loader + system framework essentials
@@ -57,7 +56,7 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
                 "/usr/local",
                 "/opt/homebrew",
             ],
-            "write_paths": [run.as_posix()],
+            "write_paths": [tmp_path.as_posix()],
         },
         "net": {"mode": "none"},
         "platform": {
@@ -85,7 +84,7 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
         print("STDERR:\n" + cp.stderr)
         if cp.returncode != 0:
             # Print sandbox trace tail
-            trace_path = run / "tmp" / "seatbelt.trace.log"
+            trace_path = tmp_path / "tmp" / "seatbelt.trace.log"
             try:
                 if trace_path.exists():
                     lines = trace_path.read_text(errors="ignore").splitlines()

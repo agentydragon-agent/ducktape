@@ -5,29 +5,22 @@ import contextlib
 from datetime import UTC, datetime
 import json
 import os
+from os import PathLike
 from pathlib import Path
 import secrets
 import shlex
 import socket
 import subprocess
 import sys
-import time
-from typing import Union
 
-from pydantic import BaseModel
 import yaml
 
 from adgn.llm.sandboxer import Policy
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
+from adgn.util.net import wait_for_port
 import docker
 
-StrPath = Union[str, os.PathLike[str]]
-
-
-# Legacy wrapper PolicyConfig retained only for import compatibility in older tests; wrapper no longer uses it.
-class PolicyConfig(BaseModel):
-    class Config:
-        extra = "forbid"
+StrPath = str | PathLike[str]
 
 
 # Utilities
@@ -95,6 +88,8 @@ jupyter server \
   1>"$JUPYTER_RUNTIME_DIR/jupyter_server.out" 2>"$JUPYTER_RUNTIME_DIR/jupyter_server.err" &
 JPID=$!
 # Wait for port to become ready (up to ~10s)
+# Note: this inline probe intentionally mirrors adgn.util.net.wait_for_port.
+# The wrapper runs in an isolated environment where importing adgn is not guaranteed.
 python3 - "$JP_PORT" <<'PY'
 import socket, sys, time
 port=int(sys.argv[1])
@@ -310,13 +305,7 @@ def _start_jupyter_server(
     env.setdefault("JUPYTER_PLATFORM_DIRS", "1")
     proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, env=env)
 
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), 0.5):
-                break
-        except OSError:
-            time.sleep(0.25)
+    wait_for_port("127.0.0.1", port, timeout_secs=10.0)
     return proc, port
 
 
@@ -383,6 +372,9 @@ def _seatbelt(
     )
 
     # Launch stdio MCP server bound to our stdio to drive the Jupyter server
+    from urllib.parse import urlunparse
+
+    mcp_url = urlunparse(("http", f"127.0.0.1:{actual_port}", "", "", "", ""))
     mcp_cmd = [
         "jupyter-mcp-server",
         "start",
@@ -391,13 +383,13 @@ def _seatbelt(
         "--provider",
         "jupyter",
         "--document-url",
-        f"http://127.0.0.1:{actual_port}",
+        mcp_url,
         "--document-id",
         document_id,
         "--document-token",
         jpy_token,
         "--runtime-url",
-        f"http://127.0.0.1:{actual_port}",
+        mcp_url,
         "--runtime-token",
         jpy_token,
         "--start-new-runtime",
@@ -434,16 +426,19 @@ def main(argv: list[str] | None = None) -> int:
     p_loc = sub.add_parser("seatbelt", help="Run locally with SBPL sandboxed kernel (stdio)")
     # Support both positional and legacy --workspace flag (tests may use either)
     p_loc.add_argument(
-        "workspace", nargs="?", help="Workspace directory for notebooks and runtime state"
+        "workspace",
+        nargs="?",
+        type=Path,
+        help="Workspace directory for notebooks and runtime state",
     )
     p_loc.add_argument(
-        "--workspace", dest="workspace_opt", help="Workspace directory (legacy flag)"
+        "--workspace", dest="workspace_opt", type=Path, help="Workspace directory (legacy flag)"
     )
     p_loc.add_argument(
         "--document-id",
         help="Notebook path relative to workspace; if missing, a new timestamped notebook is created",
     )
-    p_loc.add_argument("--policy", required=True, help="Path to SBPL policy YAML")
+    p_loc.add_argument("--policy", required=True, type=Path, help="Path to SBPL policy YAML")
     p_loc.add_argument(
         "--kernel-python", default=sys.executable, help="Python interpreter to run the kernel with"
     )
@@ -462,7 +457,7 @@ def main(argv: list[str] | None = None) -> int:
     # Docker mode: background container with Jupyter + stdio MCP
     p_dock = sub.add_parser("docker", help="Run inside Docker and exec jupyter-mcp-server (stdio)")
     p_dock.add_argument(
-        "workspace", help="Workspace directory mounted into container at /workspace"
+        "workspace", type=Path, help="Workspace directory mounted into container at /workspace"
     )
     p_dock.add_argument(
         "--document-id",

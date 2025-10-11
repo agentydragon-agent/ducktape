@@ -15,15 +15,16 @@ import os
 from pathlib import Path
 import time
 
+from fastmcp.client import Client as McpClient
 import typer
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loggers import TranscriptLoggerHandler
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import AutoHandler
-from adgn.mcp.editor_server import make_editor_mcp
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.agent.transcript_handler import TranscriptHandler
+from adgn.mcp._shared.constants import EDITOR_SERVER_NAME
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.editor_server import make_editor_server
 from adgn.openai_utils import client_factory
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.openai_utils.types import ReasoningEffort, ReasoningSummary
@@ -44,32 +45,32 @@ async def _execute(
         print(f"Error: {target_path} is not a file")
         return 2
 
-    # Build in-proc MCP spec for the editor FastMCP server over memory streams
-    spec = make_inproc_slot_spec(make_editor_mcp(target_path))
-
     # Folded context: per-agent MCP lifetime + agent lifetime
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("editor", spec)
-        # Normalize CLI strings to adapter-level values (no direct SDK types)
-        effort_val: ReasoningEffort | None = None
-        if reasoning_effort is not None:
-            try:
-                effort_val = ReasoningEffort(reasoning_effort)
-            except ValueError as exc:
-                allowed = ", ".join(item.value for item in ReasoningEffort)
-                raise ValueError(
-                    f"Invalid reasoning_effort={reasoning_effort!r}; expected one of: {allowed}"
-                ) from exc
-        summary_val = None if reasoning_summary is None else ReasoningSummary(reasoning_summary)
+    comp = Compositor("compositor")
+    await comp.mount_inproc(
+        EDITOR_SERVER_NAME, make_editor_server(target_path, name=EDITOR_SERVER_NAME)
+    )
+    # Normalize CLI strings to adapter-level values (no direct SDK types)
+    effort_val: ReasoningEffort | None = None
+    if reasoning_effort is not None:
+        try:
+            effort_val = ReasoningEffort(reasoning_effort)
+        except ValueError as exc:
+            allowed = ", ".join(item.value for item in ReasoningEffort)
+            raise ValueError(
+                f"Invalid reasoning_effort={reasoning_effort!r}; expected one of: {allowed}"
+            ) from exc
+    summary_val = None if reasoning_summary is None else ReasoningSummary(reasoning_summary)
 
-        # Create a per-run transcript directory (aligned with MiniCodex defaults)
-        run_dir = Path.cwd() / "logs" / "mini_codex" / "llm_edit"
-        run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
-        run_dir.mkdir(parents=True, exist_ok=True)
+    # Create a per-run transcript directory (aligned with MiniCodex defaults)
+    run_dir = Path.cwd() / "logs" / "mini_codex" / "llm_edit"
+    run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
+    run_dir.mkdir(parents=True, exist_ok=True)
 
+    async with McpClient(comp) as mcp_client:
         agent = await MiniCodex.create(
             model=model,
-            mcp=mcp,
+            mcp_client=mcp_client,
             system=(
                 "You are a code editor assistant. Use tools to read/modify/save files.\n"
                 "Operate on the provided file only. Prefer precise replace_text edits.\n"
@@ -81,7 +82,7 @@ async def _execute(
             handlers=[
                 AutoHandler(),
                 DisplayEventsHandler(),
-                TranscriptLoggerHandler(run_dir),
+                TranscriptHandler(dest_dir=run_dir),
             ],
         )
         async with agent:

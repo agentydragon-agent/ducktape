@@ -16,19 +16,17 @@ from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.handler import (
     AssistantText,
     BaseHandler,
-    BeforeToolCallDecision,
-    ContinueDecision,
     ToolCall,
     ToolCallOutput,
     UserText,
 )
+from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import RunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.agents_ws import AgentsWSHub
 from adgn.agent.server.bus import UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
     ApprovalBrief,
-    ApprovalPendingEvt,
     ApprovalPolicyInfo,
     Envelope,
     ErrorCode,
@@ -41,6 +39,7 @@ from adgn.agent.server.protocol import (
     ServerMessage,
     SessionState,
     Snapshot,
+    SnapshotDetails,
     ToolCall as UiToolCall,
     UiEndTurnEvt,
     UiMessageEvt,
@@ -50,6 +49,8 @@ from adgn.agent.server.protocol import (
 )
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
+from adgn.agent.server.status_shared import RunPhase, determine_run_phase
+from adgn.mcp._shared.calltool import to_pydantic
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,14 @@ class ConnectionManager(BaseHandler):
     async def connect(self, ws: WebSocket) -> None:
         # Accept only if not already accepted by the route handler
         if ws.application_state is not WebSocketState.CONNECTED:
-            await ws.accept()
+            try:
+                await ws.accept()
+            except Exception:
+                # If a close has already been sent or the client disconnected, skip
+                return
+        # If still not connected after best-effort accept, do not register
+        if ws.application_state is not WebSocketState.CONNECTED:
+            return
         q: asyncio.Queue[Any | None] = asyncio.Queue()
         client_id = id(ws)
         task = asyncio.create_task(self._sender_loop(client_id, ws, q))
@@ -130,7 +138,7 @@ class ConnectionManager(BaseHandler):
         if isinstance(payload, RunStatusEvt):
             st = payload.run_state.status
             run_id = payload.run_state.run_id
-            active: str | None = run_id if st != UiRunStatus.FINISHED else None
+            active = run_id if st != UiRunStatus.FINISHED else None
             await self.broadcast_status(True, active)
 
     async def _emit_ui_bus_messages(self) -> None:
@@ -160,10 +168,10 @@ class ConnectionManager(BaseHandler):
         if isinstance(payload, RunStatusEvt):
             st = payload.run_state.status
             run_id = payload.run_state.run_id
-            active: str | None = run_id if st != UiRunStatus.FINISHED else None
+            active = run_id if st != UiRunStatus.FINISHED else None
             await self.broadcast_status(True, active)
 
-    def set_session(self, session: "AgentSession") -> None:
+    def set_session(self, session: AgentSession) -> None:
         self._session = session
 
     def on_response(self, evt: Any) -> None:
@@ -197,20 +205,11 @@ class ConnectionManager(BaseHandler):
         tc = UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
         self._spawn(self._send_and_reduce(tc))
 
-    async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
-        if self._session is None:
-            return ContinueDecision()
-        pending_calls = set(self._session.approval_hub._requests.keys())
-        if evt.call_id not in pending_calls:
-            return ContinueDecision()
-        await self.send_payload(
-            ApprovalPendingEvt(call_id=evt.call_id, tool_key=evt.name, args_json=evt.args_json)
-        )
-        return ContinueDecision()
+    # No per-tool interception; Policy Gateway middleware emits approval_pending via notifier
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        payload = evt.result.model_dump(mode="json", exclude_none=True)
-        fco = FunctionCallOutput(call_id=evt.call_id, result=payload)
+        # FastMCP CallToolResult is not a Pydantic model; project minimal fields
+        fco = FunctionCallOutput(call_id=evt.call_id, result=to_pydantic(evt.result))
         self._spawn(self._send_and_reduce(fco))
         self._spawn(self._emit_ui_bus_messages())
 
@@ -218,10 +217,18 @@ class ConnectionManager(BaseHandler):
         self._status_hub = hub
         self._status_agent_id = agent_id
 
-    async def broadcast_status(self, live: bool, active_run_id: str | None) -> None:
+    async def broadcast_status(self, live: bool, active_run_id) -> None:
         # No-op when not configured (unit tests may use manager without a WS hub)
         if self._status_hub is None or self._status_agent_id is None:
             return
+        logger.info(
+            "manager: broadcast_status",
+            extra={
+                "agent_id": self._status_agent_id,
+                "live": live,
+                "active_run_id": str(active_run_id) if active_run_id else None,
+            },
+        )
         await self._status_hub.broadcast_agent_status(
             agent_id=self._status_agent_id, live=live, active_run_id=active_run_id
         )
@@ -249,10 +256,26 @@ class AgentSession:
         self._persist_handler: RunPersistenceHandler | None = None
         # Optional: agent identifier to associate runs with a specific hosted agent
         self.agent_id: str | None = None
+        # No Docker client on session; runtime server handles any containerization
 
-    def build_snapshot(self, sampling=None) -> Snapshot:
-        # mcp_servers list removed; rely on structured sampling snapshot only
+    def current_run_phase(self) -> RunPhase:
+        """Compute the current run phase from live signals (no stored state).
 
+        - IDLE: no active run
+        - WAITING_APPROVAL: there are pending approvals
+        - TOOLS_RUNNING: MCP manager reports in-flight requests
+        - SAMPLING: default while running without approvals or tool exec
+        """
+        pending = len(self.approval_hub.pending)
+        # Tool inflight detection is not exposed at this layer
+        has_inflight = False
+        return determine_run_phase(
+            active_run_id=(self.active_run.run_id if self.active_run else None),
+            pending_approvals=pending,
+            mcp_has_inflight=has_inflight,
+        )
+
+    async def build_snapshot(self, sampling=None) -> Snapshot:
         if self.active_run:
             self.active_run.pending_approvals = [
                 ApprovalBrief(
@@ -266,20 +289,33 @@ class AgentSession:
             ]
 
         approval_policy = None
-        if self.approval_engine:
-            content, version = self.approval_engine.get_policy()
-            status = self.approval_engine.get_status()
-            proposals: list[ProposalInfo] = []
-            for p in status.proposals:
-                # Enrich proposal metadata with source for UI diff rendering
-                snap = self.approval_engine.get_proposal(p.id)
-                proposals.append(
-                    ProposalInfo(
-                        id=p.id, status=p.status, rationale=p.rationale, source=snap.source
-                    )
-                )
-            approval_policy = ApprovalPolicyInfo(
-                content=content, version=version, proposals=proposals
+        if self.approval_engine is None:
+            raise RuntimeError("approval_engine not configured for session")
+
+        content, version = self.approval_engine.get_policy()
+        proposals: list[ProposalInfo] = []
+        # Load proposals from persistence policy store
+        if self._persistence is not None and self.agent_id:
+            rows = await self._persistence.list_policy_proposals(self.agent_id)
+            for r in rows:
+                pid = str(r.get("id"))
+                raw = str(r.get("status"))
+                # Strict mapping; surface invalid data rather than swallowing
+                status = ProposalStatus(raw)
+                proposals.append(ProposalInfo(id=pid, status=status))
+        approval_policy = ApprovalPolicyInfo(content=content, version=version, proposals=proposals)
+
+        # Build preferred details bundle when all components are present
+        details = None
+        if (
+            (self.active_run is not None)
+            and (sampling is not None)
+            and (approval_policy is not None)
+        ):
+            details = SnapshotDetails(
+                run_state=self.active_run,
+                sampling=sampling,
+                approval_policy=approval_policy,
             )
 
         return Snapshot(
@@ -289,12 +325,10 @@ class AgentSession:
                 version="1.0.0",
                 capabilities=[],
                 last_event_id=self._manager._event_id or None,
-                active_run_id=self.active_run.run_id if self.active_run else None,
+                active_run_id=(self.active_run.run_id if self.active_run else None),
                 run_counter=self._run_counter,
             ),
-            run_state=self.active_run,
-            sampling=sampling,
-            approval_policy=approval_policy,
+            details=details,
         )
 
     def attach_agent(
@@ -327,13 +361,13 @@ class AgentSession:
         """Cancel currently running task (if any) and await its completion."""
         # First, send protocol-level cancellations for any in-flight MCP requests
         if self._agent is not None:
-            await self._agent._mcp.cancel_all_outgoing("ui_abort")
+            # Best-effort: synthesize aborted outputs for pending calls; do not
+            # attempt to cancel MCP requests via private attributes
             try:
                 # Synthesize aborted outputs for any pending tool calls so the
                 # Responses API invariant (each function_call has an output) holds.
                 # This prevents downstream 400 errors when the SDK validates input.
-                if hasattr(self._agent, "abort_pending_tool_calls"):
-                    self._agent.abort_pending_tool_calls()
+                self._agent.abort_pending_tool_calls()
             except Exception:
                 # Best-effort; do not block abort on synthesis failures
                 logger.debug("abort_pending_tool_calls failed", exc_info=True)
@@ -348,7 +382,8 @@ class AgentSession:
 
     async def _run_impl(self, prompt: str) -> None:
         if self._agent is not None:
-            run_id = str(uuid.uuid4())
+            # Agent notices are injected via the NotificationsHandler/ServerModeHandler from MCP resource updates
+            run_id = uuid.uuid4()
             started = datetime.now(UTC)
             model_params: dict[str, Any] = {}
             if self._persistence is None:
@@ -379,7 +414,7 @@ class AgentSession:
             # state (not incremental run_status) update immediately.
             # This helps early UI elements like the Abort button appear
             # deterministically even if they don't consume run_status events.
-            await self._manager.send_payload(self.build_snapshot())
+            await self._manager.send_payload(await self.build_snapshot())
             self.active_run = RunState(
                 run_id=run_id,
                 status=UiRunStatus.RUNNING,
@@ -395,7 +430,6 @@ class AgentSession:
                 await self._manager.send_payload(ErrorEvt(code=ErrorCode.ABORTED))
                 finish_status = RunStatus.ABORTED
             except Exception as e:
-                # Preserve legacy marker for tests while surfacing details
                 await self._manager.send_payload(
                     ErrorEvt(code=ErrorCode.AGENT_ERROR, message=f"agent_run_exception: {e}")
                 )
@@ -425,7 +459,7 @@ class AgentSession:
                     ),
                 )
                 # Keep snapshot run_state in sync with finished status
-                await self._manager.send_payload(self.build_snapshot())
+                await self._manager.send_payload(await self.build_snapshot())
                 await self._manager.broadcast_status(True, None)
             return
         await self._manager.send_payload(

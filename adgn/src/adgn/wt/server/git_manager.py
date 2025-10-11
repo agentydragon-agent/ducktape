@@ -56,7 +56,7 @@ class WorktreeInfo:
 
 @dataclass
 class GitManager:
-    config: "Configuration"
+    config: Configuration
 
     def __post_init__(self) -> None:
         self._main_repo: pygit2.Repository = pygit2.Repository(str(self.config.main_repo))

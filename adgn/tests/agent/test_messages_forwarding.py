@@ -6,8 +6,8 @@ from hamcrest import assert_that, has_item, has_items, instance_of, is_not
 import pytest
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import AutoHandler
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import (
     AssistantMessage,
     FakeOpenAIModel,
@@ -46,19 +46,18 @@ def _make_tool_call_resp(
 
 
 @pytest.mark.asyncio
-async def test_stateless_reasoning_forwarding(make_echo_spec) -> None:
+async def test_stateless_reasoning_forwarding(
+    make_pg_compositor_echo,
+) -> None:
     """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
-    specs = make_echo_spec()
 
     seq = [_make_reasoning_then_message("ok")]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({}) as mcp:
-        for name, slot in specs.items():
-            await mcp.attach_server(name, slot)
+    async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
             model="test-model",
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="test",
             client=client,
             handlers=[AutoHandler()],
@@ -77,22 +76,21 @@ async def test_stateless_reasoning_forwarding(make_echo_spec) -> None:
 
 
 @pytest.mark.asyncio
-async def test_function_call_and_function_call_output_replay(make_echo_spec) -> None:
+async def test_function_call_and_function_call_output_replay(
+    make_pg_compositor_echo,
+) -> None:
     """Request1 produces a function_call; after local execution, messages() must include function_call and function_call_output."""
-    specs = make_echo_spec()
 
     seq = [
-        _make_tool_call_resp("mcp__echo__echo", {"text": "hi"}),
+        _make_tool_call_resp(build_mcp_function("echo", "echo"), {"text": "hi"}),
         _make_reasoning_then_message("done"),
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({}) as mcp:
-        for name, slot in specs.items():
-            await mcp.attach_server(name, slot)
+    async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
             model="test-model",
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="test",
             client=client,
             handlers=[AutoHandler()],
@@ -112,27 +110,26 @@ async def test_function_call_and_function_call_output_replay(make_echo_spec) -> 
 
 
 @pytest.mark.asyncio
-async def test_mixed_reasoning_fc_ordering(make_echo_spec) -> None:
+async def test_mixed_reasoning_fc_ordering(
+    make_pg_compositor_echo,
+) -> None:
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.
     """
-    specs = make_echo_spec()
 
     # Build a response with reasoning then function_call then assistant (our facade types)
     resp = _rf.make(
         _rf.make_item_reasoning(),
-        _rf.tool_call("mcp__echo__echo", {"text": "hi"}),
+        _rf.tool_call(build_mcp_function("echo", "echo"), {"text": "hi"}),
         _rf.assistant_text("done"),
     )
     # Use a final assistant message on the second call to avoid infinite tool-call loops
     client = FakeOpenAIModel([resp, _make_reasoning_then_message("ok")])
 
-    async with McpManager({}) as mcp:
-        for name, slot in specs.items():
-            await mcp.attach_server(name, slot)
+    async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
             model="test-model",
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="test",
             client=client,
             handlers=[AutoHandler()],
@@ -154,23 +151,22 @@ async def test_mixed_reasoning_fc_ordering(make_echo_spec) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_synthesized_reasoning_items(make_echo_spec) -> None:
+async def test_no_synthesized_reasoning_items(
+    make_pg_compositor_echo,
+) -> None:
     """Ensure agent does not fabricate reasoning rs_* items when missing."""
-    specs = make_echo_spec()
 
     # Response with only a function_call (no reasoning)
     seq = [
-        _make_tool_call_resp("mcp__echo__echo", {"text": "hi"}),
+        _make_tool_call_resp(build_mcp_function("echo", "echo"), {"text": "hi"}),
         _make_reasoning_then_message("done"),
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({}) as mcp:
-        for name, slot in specs.items():
-            await mcp.attach_server(name, slot)
+    async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
             model="test-model",
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="test",
             client=client,
             handlers=[AutoHandler()],
@@ -186,26 +182,23 @@ async def test_no_synthesized_reasoning_items(make_echo_spec) -> None:
 @pytest.mark.asyncio
 async def test_model_provided_tool_output_records_without_execution(
     responses_factory: ResponsesFactory,
-    make_echo_spec,
+    make_pg_compositor_echo,
 ) -> None:
     """If the model supplies tool output inline, agent should not run the tool again."""
 
-    specs = make_echo_spec()
     seq = [
         responses_factory.make_tool_call_with_output(
-            "mcp__echo__echo",
+            build_mcp_function("echo", "echo"),
             {"text": "hi"},
-            {"ok": True, "echo": "hi"},
+            {"echo": "hi"},
         )
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({}) as mcp:
-        for name, slot in specs.items():
-            await mcp.attach_server(name, slot)
+    async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
             model="test-model",
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="test",
             client=client,
             handlers=[AutoHandler()],

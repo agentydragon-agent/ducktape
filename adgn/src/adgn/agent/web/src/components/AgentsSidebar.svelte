@@ -5,8 +5,8 @@
   import { prefs } from '../shared/prefs'
   import { LEFT_MIN, LEFT_MAX } from '../shared/layout'
   import SidebarToggle from './SidebarToggle.svelte'
+  import ModalBackdrop from './ModalBackdrop.svelte'
 
-  export let width = 220
   export let onStartResize: (e: MouseEvent) => void
 
   $: agentList = $agents as AgentRow[]
@@ -127,6 +127,15 @@
     const s = a.working ? 'working (active run in progress)' : (a.live ? 'on (live container running)' : 'off (no live container)')
     return `Agent ${a.id}\n${s}${lu}`
   }
+
+  function lifecycleLabel(a: AgentRow): string {
+    const lc = a.lifecycle
+    if (lc === 'ready') return 'ready'
+    if (lc === 'starting') return 'starting'
+    if (lc === 'persisted_only') return 'persisted'
+    // Fallback when lifecycle not provided yet
+    return a.live ? 'ready' : 'persisted'
+  }
 </script>
 
 <aside class="leftbar" id="agents-sidebar">
@@ -159,6 +168,10 @@
         <button type="button" class="agent-open" on:click={(e) => { e.stopPropagation(); open(a.id) }}>
           <span class="dot {a.working ? 'working' : (a.live ? 'on' : 'off')}"></span>
           <span class="agent-id">{a.id.slice(0,8)}</span>
+          <span class="badge lifecycle lc-{a.lifecycle ?? (a.live ? 'ready' : 'persisted_only')}" title={`Lifecycle: ${lifecycleLabel(a)}`}>{lifecycleLabel(a)}</span>
+          {#if a.metadata?.preset}
+            <span class="preset" title={`Preset: ${a.metadata.preset}`}>{a.metadata.preset}</span>
+          {/if}
         </button>
         <div class="row-actions">
           {#if confirmingId === a.id}
@@ -194,7 +207,7 @@
 </aside>
 
 {#if showPresetModal}
-  <div class="modal-backdrop" on:click={(e) => { if (e.target === e.currentTarget) showPresetModal = false }}>
+  <ModalBackdrop label="Close create agent dialog" onClose={() => (showPresetModal = false)}>
     <div class="modal" role="dialog" aria-modal="true" aria-label="Create agent from preset">
       <header>Create Agent</header>
       <div class="body">
@@ -220,7 +233,7 @@
         <button class="primary" on:click={confirmCreateFromModal} disabled={!modalPreset && presets.length > 0}>Create</button>
       </footer>
     </div>
-  </div>
+  </ModalBackdrop>
 {/if}
 
 <style>
@@ -235,6 +248,10 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #bbb; display: inline-block; }
   .dot.on { background: #2ecc71; }
   .dot.off { background: #bbb; }
+  .badge.lifecycle { font-size: 0.65rem; padding: 0.05rem 0.3rem; border-radius: 0.5rem; text-transform: lowercase; border: 1px solid var(--border); }
+  .badge.lifecycle.lc-ready { background: rgba(46, 204, 113, 0.15); color: #2e7d32; border-color: rgba(46, 204, 113, 0.4); }
+  .badge.lifecycle.lc-starting { background: rgba(255, 193, 7, 0.15); color: #b26a00; border-color: rgba(255, 193, 7, 0.4); }
+  .badge.lifecycle.lc-persisted_only { background: rgba(158, 158, 158, 0.15); color: #616161; border-color: rgba(158, 158, 158, 0.4); }
   .dot.working { background: #f39c12; animation: blink 1s infinite ease-in-out; }
   @keyframes blink { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
   /* Keep the resize handle within the sidebar to avoid overlaying the chat area */
@@ -242,7 +259,7 @@
   .row { display: flex; gap: 0.5rem; align-items: center; }
   .preset { flex: 1; min-width: 0; }
   /* Modal styles */
-  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  /* Backdrop styling moved to ModalBackdrop component */
   .modal { background: var(--surface); color: var(--text); min-width: 320px; max-width: 90vw; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
   .modal header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-weight: 600; }
   .modal .body { padding: 0.75rem; display: grid; grid-template-columns: 1fr; gap: 0.5rem; }

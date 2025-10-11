@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -304,12 +305,17 @@ class AsyncSeatbeltPopen:
     async def __aexit__(self, exc_type, exc, tb) -> None:
         try:
             if self._proc.returncode is None:
+                # Two-phase termination policy (deterministic):
+                # 1) terminate and wait up to grace seconds
+                # 2) kill and wait unbounded (shielded) if still alive
+                grace = float(os.getenv("ADGN_SEATBELT_TERM_GRACE_SECS", "2.0"))
                 self._proc.terminate()
                 try:
-                    await asyncio.wait_for(self._proc.wait(), timeout=2)
+                    await asyncio.wait_for(self._proc.wait(), timeout=grace)
                 except asyncio.TimeoutError:
                     self._proc.kill()
-                    await self._proc.wait()
+                    # Ensure we wait for process exit regardless of outer cancellations
+                    await asyncio.shield(self._proc.wait())
         finally:
             self.cleanup()
 

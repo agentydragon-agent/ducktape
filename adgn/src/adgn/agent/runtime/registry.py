@@ -3,18 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
-from adgn.agent.persist import Persistence
-from adgn.agent.runtime.spec_utils import rehydrate_mcp_specs
-from adgn.agent.runtime.specs import McpServerSpec
+from fastmcp.mcp_config import MCPConfig
+
+from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.openai_utils.model import OpenAIModelProto
+from docker import DockerClient
 
 from .container import AgentContainer, build_container
 
 
 @dataclass
 class AgentRegistry:
-    persistence: Persistence
+    persistence: SQLitePersistence
     model: str
+    docker_client: DockerClient
     client_factory: Callable[[str], OpenAIModelProto] | None = None
     _items: dict[str, AgentContainer] = field(default_factory=dict)
 
@@ -27,19 +29,20 @@ class AgentRegistry:
     async def create(
         self,
         agent_id: str,
-        specs: dict[str, McpServerSpec],
+        mcp_config: MCPConfig,
         *,
         with_ui: bool = True,
         system: str | None = None,
     ) -> AgentContainer:
         c = await build_container(
             agent_id=agent_id,
-            specs=specs,
+            mcp_config=mcp_config,
             persistence=self.persistence,
             model=self.model,
             client_factory=self.client_factory,
             with_ui=with_ui,
             system=system,
+            docker_client=self.docker_client,
         )
         self._items[agent_id] = c
         return c
@@ -56,10 +59,10 @@ class AgentRegistry:
         row = await self.persistence.get_agent(agent_id)
         if row is None:
             raise KeyError(f"agent not found: {agent_id}")
-        specs = rehydrate_mcp_specs(row.specs)
-        await self.create(agent_id, specs, with_ui=with_ui)
-        assert self.get(agent_id) is not None
-        return self.get(agent_id)  # type: ignore[return-value]
+        await self.create(agent_id, row.mcp_config, with_ui=with_ui)
+        c2 = self.get(agent_id)
+        assert c2 is not None
+        return c2
 
     def remove(self, agent_id: str) -> None:
         self._items.pop(agent_id, None)

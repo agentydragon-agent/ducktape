@@ -29,27 +29,25 @@ if os.environ.get("ADGN_RUN_SJ_STDIO") != "1":
 async def test_kernel_runs_minimal(
     tmp_path: Path, launch_proc, mcp_stdio_protocol, pkg_src_env_update
 ):
-    run = tmp_path
-    ws = run / "ws"
+    ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
     (ws / "workspace").mkdir(parents=True, exist_ok=True)
-    env = pkg_src_env_update
 
     cmd = [
         "sandbox-jupyter",
         "seatbelt",
         ws,
         "--run-root",
-        run / ".mcp",
+        tmp_path / ".mcp",
         "--policy",
-        run / "policy.yaml",
+        tmp_path / "policy.yaml",
         "--kernel-python",
         os.environ.get("PYTHON", "python3"),
         "--jupyter-port",
         0,
     ]
     # Write a minimal policy.yaml
-    (run / "policy.yaml").write_text(
+    (tmp_path / "policy.yaml").write_text(
         """
 env:
   set:
@@ -58,11 +56,11 @@ fs:
   read_paths: ['/']
   write_paths: ['{home}']
 net: {{ mode: loopback }}
-""".format(home=str(run)),
+""".format(home=str(tmp_path)),
         encoding="utf-8",
     )
 
-    with launch_proc(cmd, env_update=env) as proc:
+    with launch_proc(cmd, env_update=pkg_src_env_update) as proc:
         res = mcp_stdio_protocol(
             proc.stdin,
             proc.stdout,

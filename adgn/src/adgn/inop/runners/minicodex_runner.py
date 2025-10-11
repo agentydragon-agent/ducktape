@@ -4,17 +4,20 @@ from contextlib import AsyncExitStack
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import time
-from typing import Any
+from typing import Any, Callable
 import uuid
+
+from fastmcp.client import Client
+from fastmcp.server import FastMCP
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
-from adgn.agent.loggers import TranscriptLoggerHandler
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import AutoHandler
+from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.inop.engine.models import (
     FinalOutput,
     Rollout,
@@ -27,10 +30,10 @@ from adgn.inop.engine.models import (
 from adgn.inop.io.file_utils import collect_workspace_files
 from adgn.inop.runners.base import AgentRunner
 from adgn.mcp._shared.container_session import ContainerOptions, NetworkMode
-from adgn.mcp.docker_exec.server import make_container_exec_mcp
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp.local_exec.server import make_local_exec_mcp
-from adgn.mcp.types import ServerSlotSpec
+from adgn.mcp.bwrap_exec.server import make_bwrap_exec_server
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.direct_exec.server import make_direct_exec_server
+from adgn.mcp.docker_exec.server import make_container_exec_server
 from adgn.openai_utils.model import OpenAIModelProto
 
 """Mini Codex runner that delegates execution to the MiniCodex agent."""
@@ -57,7 +60,7 @@ class MiniCodexRunner(AgentRunner):
         self.workspace_path: Path | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._agent: MiniCodex | None = None
-        self._mcp_manager: McpManager | None = None
+        # Note: Compositor + Client are managed per-setup; no manager retained
         self._openai_model = openai_model
         # Optional: allow callers/tests to pass their own handlers
         self._handlers: list[BaseHandler] | None = (
@@ -84,12 +87,12 @@ class MiniCodexRunner(AgentRunner):
                 is_docker=False,
             )
 
-        slots = self._build_mcp_slots(setup)
+        server_factories = self._build_mcp_server_factories(setup)
 
         self._exit_stack = AsyncExitStack()
-        self._mcp_manager = await self._exit_stack.enter_async_context(McpManager({}))
-        for name, slot in slots.items():
-            await self._mcp_manager.attach_server(name, slot)
+        comp = Compositor("compositor")
+        for name, factory in server_factories.items():
+            await comp.mount_inproc(name, factory(None))
         # Per-run transcript directory
         run_dir = Path.cwd() / "logs" / "mini_codex" / "minicodex_runner"
         run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
@@ -97,20 +100,21 @@ class MiniCodexRunner(AgentRunner):
         default_handlers: list[BaseHandler] = [
             AutoHandler(),
             DisplayEventsHandler(),
-            TranscriptLoggerHandler(run_dir),
+            TranscriptHandler(dest_dir=run_dir),
         ]
         handlers: list[BaseHandler] = self._handlers or default_handlers
+        mcp_client = await self._exit_stack.enter_async_context(Client(comp))
         agent = await MiniCodex.create(
             model=self.model,
             system=None,
-            mcp=self._mcp_manager,
+            mcp_client=mcp_client,
             client=self._openai_model,
             reasoning_effort=self.reasoning_effort,
             handlers=handlers,
         )
         self._agent = await self._exit_stack.enter_async_context(agent)
 
-    def _build_mcp_slots(self, setup) -> dict[str, ServerSlotSpec]:
+    def _build_mcp_server_factories(self, setup) -> dict[str, "Callable[..., FastMCP]"]:
         if not self.workspace_path:
             raise RuntimeError("Workspace not initialised")
 
@@ -123,19 +127,20 @@ class MiniCodexRunner(AgentRunner):
                     volumes[str(host_path)] = spec
             network_mode = NetworkMode.BRIDGE if setup.docker.network_enabled else NetworkMode.NONE
 
-            def _make_server():
-                return make_container_exec_mcp(
+            def _factory(verifier) -> FastMCP:
+                return make_container_exec_server(
                     ContainerOptions(
                         image=setup.docker.image,
-                        working_dir="/workspace",
+                        working_dir=Path("/workspace"),
                         volumes=volumes,
                         network_mode=network_mode,
                         environment=setup.docker.env or {},
-                    )
+                        ephemeral=True,
+                    ),
+                    name="container",
                 )
 
-            spec = make_inproc_slot_spec(_make_server())
-            return {"container": spec}
+            return {"container": _factory}
 
         sandbox_enabled = True
         if setup and setup.sandbox:
@@ -143,15 +148,24 @@ class MiniCodexRunner(AgentRunner):
         if os.getenv("DUCK_ALLOW_UNSANDBOXED") == "1":
             sandbox_enabled = False
 
-        def _make_server_local():
-            return make_local_exec_mcp(
+        def _factory_local(verifier) -> FastMCP:
+            # When sandbox is required, do not fall back to unsandboxed exec; crash instead.
+            if sandbox_enabled:
+                if os.name == "posix" and sys.platform == "linux":
+                    return make_bwrap_exec_server(
+                        name="local",
+                        default_cwd=self.workspace_path,
+                    )
+                raise RuntimeError(
+                    "Sandbox (bubblewrap) required but not available on this platform"
+                )
+            # Explicitly unsandboxed path allowed via config/env override
+            return make_direct_exec_server(
                 name="local",
-                default_cwd=str(self.workspace_path),
-                sandbox_enabled=sandbox_enabled,
+                default_cwd=self.workspace_path,
             )
 
-        spec = make_inproc_slot_spec(_make_server_local())
-        return {"local": spec}
+        return {"local": _factory_local}
 
     async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:
         if not self._agent:
@@ -159,7 +173,7 @@ class MiniCodexRunner(AgentRunner):
 
         self._agent.set_system_instructions(agent_instructions)
 
-        start_time = time.time()
+        start_time = time.perf_counter()
         result = await self._agent.run(
             user_text=task.prompt,
         )
@@ -183,7 +197,7 @@ class MiniCodexRunner(AgentRunner):
             success=True,
             error_message=None,
             cost_usd=0.0,
-            duration_seconds=time.time() - start_time,
+            duration_seconds=time.perf_counter() - start_time,
             metadata={
                 "workspace": str(self.workspace_path) if self.workspace_path else None,
             },

@@ -7,10 +7,12 @@ Current scope: prompt-optimize (with --context) and prompt-eval will be added ne
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import csv
 from dataclasses import asdict, dataclass
 from datetime import datetime
 import functools
+from importlib import resources
 import json
 from pathlib import Path
 import re
@@ -19,31 +21,43 @@ import tempfile
 import time
 from typing import Any, Literal
 
+from fastmcp.client import Client
 import matplotlib
 import matplotlib.pyplot as plt
 from rich.console import Console
 from rich.traceback import install as rich_traceback_install
-import tiktoken
 import typer
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.logging_config import configure_logging
 from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+
+# in-proc servers are mounted via Compositor.mount_inproc
+from adgn.mcp._shared.constants import (
+    PROMPT_EVAL_SERVER_NAME,
+    SLEEP_FOREVER_CMD,
+)
+from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.props.cli_shared import BuildOptions, build_cmd, detect_tools, run_check_minicodex_async
+from adgn.props.cli_shared import (
+    BuildOptions,
+    build_cmd,
+    detect_tools,
+    now_ts,
+    run_check_minicodex_async,
+    save_prompt_to_tmp,
+)
 from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic import (
     CRITIC_MCP_INSTRUCTIONS,
     CriticSubmitPayload,
     CriticSubmitState,
-    make_critic_submit_server,
+    ReportedIssue,
+    attach_critic_submit,
 )
 from adgn.props.docker_env import (
     PROPERTIES_DOCKER_IMAGE,
@@ -55,19 +69,17 @@ from adgn.props.docker_env import (
 )
 from adgn.props.eval_harness import run_all_evals
 from adgn.props.grade_runner import _metrics_row, grade_critic_output
+from adgn.props.grader import GradeMetrics, GradeSubmitPayload
 from adgn.props.lint_issue import run_specimen_lint_issue_async
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
-from adgn.props.prompt_eval.server import (
-    _run_critic_for_specimen,
-    build_server as build_prompt_eval_server,
-)
+from adgn.props.prompt_eval.server import _run_critic_for_specimen, attach_prompt_eval
 from adgn.props.prompts.builder import (
     build_check_prompt,
     build_enforce_prompt,
     build_input_schemas_json,
     build_role_prompt,
 )
-from adgn.props.prompts.util import build_scope_text
+from adgn.props.prompts.util import build_scope_text, get_templates_env
 from adgn.props.prop_utils import pkg_dir
 from adgn.props.specimens.registry import (
     SpecimenRegistry,
@@ -203,27 +215,15 @@ async def cmd_check(
 ) -> None:
     """Check a static path set against committed property definitions (docker RO mount)."""
 
-    # Dry-run path: compose prompt only and save it to a temp file (compat with legacy tests)
+    # Dry-run path: compose prompt only and save it to a temp file (using real wiring)
     if dry_run:
-        # Compose prompt without spinning up docker/agent
-        wiring = PropertiesDockerWiring(
-            server_spec=None,  # type: ignore[arg-type]
-            working_dir=Path("/"),
-            definitions_container_dir=None,
-            image_name="n/a",
-        )
+        wiring = properties_docker_spec(workdir, mount_properties=True)
         prompt_text = build_check_prompt(
             scope,
             wiring=wiring,
             allow_general_findings=allow_general_findings,
         )
-        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-        tmpdir.mkdir(parents=True, exist_ok=True)
-        ts = int(time.time())
-        outfile = tmpdir / f"codex_prompt_check_{ts}.md"
-        outfile.write_text(prompt_text, encoding="utf-8")
-        tokens = len(tiktoken.get_encoding("cl100k_base").encode(prompt_text))
-        typer.echo(f"Saved prompt: {outfile} (approx tokens: {tokens})")
+        save_prompt_to_tmp("codex_prompt_check", prompt_text)
         return
 
     wiring = properties_docker_spec(workdir, mount_properties=True)
@@ -262,7 +262,7 @@ async def _run_specimen_minicodex_async(
     specimen: str,
     *,
     dry_run: bool,
-    embed_paths: list[str] | None,
+    embed_paths: list[Path] | None,
     gitconfig: Path | None,
     mode: str,
     final_only: bool,
@@ -273,9 +273,7 @@ async def _run_specimen_minicodex_async(
     rec = SpecimenRegistry.load_strict(specimen)
     man = rec.manifest
 
-    supplemental_text = (
-        read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
-    )
+    supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
 
     # Build prompt according to mode
     scope_text = build_scope_text(man.scope.include, man.scope.exclude)
@@ -283,28 +281,20 @@ async def _run_specimen_minicodex_async(
         "discover" if mode == "discover" else ("open" if mode == "open" else "find")
     )
 
-    # In dry-run, avoid hydration and Docker wiring; compose prompt only
+    # In dry-run, hydrate and create real wiring; compose prompt only
     if dry_run:
-        wiring = PropertiesDockerWiring(
-            server_spec=None,  # type: ignore[arg-type]
-            working_dir=Path("/"),
-            definitions_container_dir=None,
-            image_name="n/a",
-        )
-        prompt = build_role_prompt(
-            role_mode,
-            scope_text,
-            wiring=wiring,
-            supplemental_text=supplemental_text,
-            available_tools=detect_tools(),
-        )
-        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-        tmpdir.mkdir(parents=True, exist_ok=True)
-        ts = int(time.time())
-        outfile = tmpdir / f"codex_prompt_specimen_{mode}_{ts}.md"
-        outfile.write_text(prompt, encoding="utf-8")
-        tokens = len(tiktoken.get_encoding("cl100k_base").encode(prompt))
-        print(f"Saved prompt: {outfile} (approx tokens: {tokens})")
+        async with rec.hydrated_copy(gitconfig) as content_root:
+            wiring = properties_docker_spec(content_root, mount_properties=True)
+            prompt = build_role_prompt(
+                role_mode,
+                scope_text,
+                wiring=wiring,
+                supplemental_text=supplemental_text,
+                available_tools=detect_tools(),
+            )
+            tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+            tmpdir.mkdir(parents=True, exist_ok=True)
+            save_prompt_to_tmp(f"codex_prompt_specimen_{mode}", prompt)
         return 0
 
     async with rec.hydrated_copy(gitconfig) as content_root:
@@ -319,22 +309,20 @@ async def _run_specimen_minicodex_async(
 
         # Critic flow via MiniCodex: agent must call critic_submit.submit_result
         submit_state = CriticSubmitState()
-        critic_server = make_critic_submit_server(submit_state, name="critic_submit")
-        async with McpManager({}) as mcp:
-            await mcp.attach_server(wiring.server_name, wiring.server_spec)
-            await mcp.attach_server("critic_submit", make_inproc_slot_spec(critic_server))
+        comp = Compositor("compositor")
+        await wiring.attach(comp)
+        await attach_critic_submit(comp, submit_state)
+
+        def _ready_state() -> bool:
+            return (submit_state.result is not None) or (submit_state.error is not None)
+
+        async with Client(comp) as mcp_client:
             agent = await MiniCodex.create(
                 model=model,
-                mcp=mcp,
+                mcp_client=mcp_client,
                 system="You are a code agent. Be concise.",
                 client=client,  # type: ignore[arg-type]
-                handlers=[
-                    GateUntil(
-                        lambda: (submit_state.result is not None)
-                        or (submit_state.error is not None),
-                    ),
-                    DisplayEventsHandler(max_lines=10),
-                ],
+                handlers=[GateUntil(_ready_state), DisplayEventsHandler(max_lines=10)],
                 parallel_tool_calls=True,
             )
             result = await agent.run(prompt)
@@ -351,55 +339,19 @@ async def _run_specimen_minicodex_async(
             return 2
         assert submit_state.result is not None, "Critic did not call submit_result or submit_error?"
         Console().print(render_to_rich(submit_state.result))
-        # Write critique JSON for specimen-check runs (find/open modes)
-        if mode in ("find", "open"):
-            ts = int(time.time())
-            out_dir = Path.cwd() / "runs" / "specimen-check" / f"{specimen}_{ts}"
+        # Write critique JSON for structured specimen runs (find/open modes)
+        if mode in ("find", "open") and submit_state.result is not None:
+            ts_str = str(int(time.time()))
+            out_dir = _critique_output_dir(origin="specimen", label=specimen, ts=ts_str)
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / "critique.json"
-            obj = submit_state.result
-            s = obj.model_dump_json(indent=2)  # type: ignore[attr-defined]
+            s = submit_state.result.model_dump_json(indent=2)  # type: ignore[attr-defined]
             out_path.write_text(s, encoding="utf-8")
             print(f"Saved critique JSON: {out_path}")
         return 0
 
 
-@app.command("specimen-check")
-@async_run
-async def cmd_specimen_check(
-    specimen: str = ARG_SPECIMEN,
-    dry_run: bool = OPT_DRY_RUN,
-    final_only: bool = OPT_FINAL_ONLY,
-    output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
-    gitconfig: Path | None = OPT_GITCONFIG,
-    allow_general_findings: bool = OPT_ALLOW_GENERAL,
-    model: str = OPT_MODEL,
-) -> None:
-    """Run a property scan on a saved specimen (uses manifest.yaml)."""
-    base = find_specimens_base()
-    names = list_specimen_names(base)
-    if specimen not in names:
-        typer.echo(
-            f"Unknown specimen slug: {specimen}\nAvailable: \n"
-            + "\n".join(f" - {n}" for n in names),
-        )
-        raise typer.Exit(2)
-
-    git_path = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
-    mode: Literal["discover", "open", "find"] = "open" if allow_general_findings else "find"
-
-    rc = await _run_specimen_minicodex_async(
-        specimen,
-        dry_run=dry_run,
-        embed_paths=None,
-        gitconfig=git_path,
-        mode=mode,
-        final_only=final_only,
-        output_final_message=output_final_message,
-        client=(None if dry_run else build_client(model)),
-        model=model,
-    )
-    raise typer.Exit(code=rc)
+# specimen-check command removed in favor of the unified 'run' command.
 
 
 @app.command("specimen-discover")
@@ -421,9 +373,11 @@ async def cmd_specimen_discover(
         )
         raise typer.Exit(2)
     spec_dir = base / specimen
-    embed_paths = [
-        str(p) for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()
+    embed_paths: list[Path] | None = [
+        p for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()
     ]
+    if not embed_paths:
+        embed_paths = None
     git_path = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
     rc = await _run_specimen_minicodex_async(
         specimen,
@@ -460,12 +414,7 @@ async def prompt_optimize(
     model: str = OPT_MODEL,
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP."""
-    # Build base specs with prompt_eval MCP
-    pe_server, pe_state = build_prompt_eval_server(
-        agent_model=model,
-        client=build_client(model),
-    )
-    pe_spec = make_inproc_slot_spec(pe_server)
+    # Build base specs will be done inside attach factory; capture state after attach
 
     system = (
         "You are an expert LLM prompt engineer.\n\n"
@@ -482,28 +431,31 @@ async def prompt_optimize(
     props_dir = None
     if context == "props":
         wiring = properties_docker_spec(pkg_dir(), mount_properties=True)
-        docker_spec = wiring.server_spec
         props_dir = wiring.definitions_container_dir
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     root = out_dir if out_dir is not None else (pkg_dir() / "runs" / "prompt_optimize" / ts)
     root.mkdir(parents=True, exist_ok=True)
 
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("prompt_eval", pe_spec)
-        if context == "props":
-            await mcp.attach_server("docker", docker_spec)
+    comp = Compositor("compositor")
+    server, pe_state = await attach_prompt_eval(
+        comp,
+        client=build_client(model),
+        name=PROMPT_EVAL_SERVER_NAME,
+        agent_model=model,
+    )
+    if context == "props":
+        await wiring.attach(comp)
+    async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
             model=model,
-            mcp=mcp,
+            mcp_client=mcp_client,
             system=system,
             client=build_client(model),
             handlers=[
                 TranscriptHandler(dest_dir=root / "prompt_optimize"),
                 DisplayEventsHandler(max_lines=10),
-                # TODO(mpokorny): This gate can be exceeded under parallel_tool_calls if
-                # multiple prompt_eval.test_prompt calls are in-flight when the budget flips.
-                # Consider moving budget enforcement into the server or serialize near limit.
+                # Budget gate: stop when successful_calls reaches max_iters
                 GateUntil(lambda: pe_state.successful_calls >= max_iters),
             ],
             parallel_tool_calls=True,
@@ -630,11 +582,6 @@ async def prompt_eval(
     root = (out_dir if out_dir is not None else (pkg_dir() / "runs" / "prompt_eval")) / ts
     root.mkdir(parents=True, exist_ok=True)
     client = build_client(model, log_http_path=(root / "openai_http.jsonl") if debug else None)
-    _pe_server, _state = build_prompt_eval_server(
-        agent_model=model,
-        client=client,
-        debug=debug,
-    )
 
     async def _run() -> list[dict[str, Any]]:
         base = find_specimens_base()
@@ -648,7 +595,7 @@ async def prompt_eval(
             out_dir_spec.mkdir(parents=True, exist_ok=True)
             print(f"[logs] specimen: {name}")
             critic_obj = await _run_critic_for_specimen(
-                name, prompt, client, root, agent_model=model, debug=debug
+                name, prompt, client, root, agent_model=model
             )
             # Log where transcripts will be
             print(
@@ -691,11 +638,13 @@ async def specimen_grade(
         typer.echo(f"ERROR: failed to parse or validate critique JSON: {e}")
         raise typer.Exit(code=2) from e
 
+    # Use a unique transcript directory per grading run to avoid collisions
+    grader_out = critique.parent / f"grader_{now_ts()}"
     grade = await grade_critic_output(
         specimen,
         crit_obj,
         build_client("gpt-5"),
-        transcript_out_dir=critique.parent,
+        transcript_out_dir=grader_out,
     )
     row = _metrics_row(grade, specimen=specimen)
     typer.echo(json.dumps(row, indent=2))
@@ -772,6 +721,305 @@ async def cmd_lint_issue(
 @async_run
 async def cmd_eval_all() -> None:
     await run_all_evals(model="gpt-5", gitconfig=None, client=build_client("gpt-5"))
+
+
+OPT_RUNBOOK_PATH = typer.Option(
+    None,
+    "--path",
+    exists=True,
+    file_okay=False,
+    resolve_path=True,
+    help="Local code path to mount as /workspace (read-only)",
+)
+OPT_RUNBOOK_SPECIMEN = typer.Option(
+    None,
+    "--specimen",
+    help="Specimen slug to hydrate and mount as /workspace (read-only)",
+)
+
+
+# ---------- Shared helpers for run ----------
+
+
+def _render_prompt_with_context(
+    text: str, *, wiring: PropertiesDockerWiring, scope_text: str
+) -> str:
+    """Render a (potentially Jinja) prompt with standard props context; plain text passes through."""
+    env = get_templates_env()
+    tmpl = env.from_string(text)
+    schemas_json = build_input_schemas_json(
+        [
+            Occurrence,
+            LineRange,
+            IssueCore,
+            ReportedIssue,
+            CriticSubmitPayload,
+            GradeMetrics,
+            GradeSubmitPayload,
+        ]
+    )
+    return str(
+        tmpl.render(
+            wiring=wiring,
+            available_tools=detect_tools(),
+            read_only=True,
+            include_tools=False,
+            include_reporting=False,
+            scope_text=scope_text,
+            static_action="analyze",
+            ambiguity_tail="do not include anything outside run instructions.",
+            schemas_json=schemas_json,
+        )
+    )
+
+
+@asynccontextmanager
+async def _open_run_context(path: Path | None, specimen: str | None, gitconfig: Path | None):
+    """Yield (wiring, scope_text, label) for either a local path or a hydrated specimen."""
+    if path is not None:
+        wiring = properties_docker_spec(path, mount_properties=True, ephemeral=False)
+        yield wiring, build_scope_text(["/workspace/**"]), path.name
+        return
+    rec = SpecimenRegistry.load_strict(specimen or "")
+    async with rec.hydrated_copy(
+        _resolve_gitconfig(str(gitconfig) if gitconfig else None)
+    ) as content_root:
+        wiring = properties_docker_spec(content_root, mount_properties=True, ephemeral=False)
+        scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
+        yield wiring, scope_text, rec.slug
+
+
+def _compute_scope_and_label(
+    path: Path | None, specimen: str | None, gitconfig: Path | None
+) -> tuple[str, str]:
+    """Return (scope_text, label) without requiring Docker/hydration.
+
+    Used by --dry-run to avoid side effects while still rendering prompts consistently.
+    """
+    if specimen is not None:
+        rec = SpecimenRegistry.load_strict(specimen)
+        scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
+        return scope_text, rec.slug
+    assert path is not None
+    return build_scope_text(["/workspace/**"]), path.name
+
+
+def _critique_output_dir(*, origin: str, label: str, ts: str) -> Path:
+    """Return the directory path to save a structured critique JSON.
+
+    origin: "specimen" or "path" (other callers may pass "run" to keep folder structure stable)
+    """
+    kind = "specimen" if origin == "specimen" else "run"
+    return Path.cwd() / "runs" / kind / f"{label}_{ts}"
+
+
+async def _compose_prompt_only(
+    *,
+    prompt_raw: str,
+    path: Path | None,
+    specimen: str | None,
+    gitconfig: Path | None,
+    preset: str | None,
+) -> None:
+    """Render prompt with real wiring and save to /tmp for inspection (no agent run)."""
+    if path is not None:
+        wiring = properties_docker_spec(path, mount_properties=True)
+        scope_text = build_scope_text(["/workspace/**"])
+    else:
+        rec = SpecimenRegistry.load_strict(specimen or "")
+        async with rec.hydrated_copy(
+            _resolve_gitconfig(str(gitconfig) if gitconfig else None)
+        ) as content_root:
+            wiring = properties_docker_spec(content_root, mount_properties=True)
+            scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
+    prompt = _render_prompt_with_context(prompt_raw, wiring=wiring, scope_text=scope_text)
+    tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    save_prompt_to_tmp(f"codex_prompt_run_{preset or 'run'}", prompt)
+
+
+async def _exec_agent(
+    *,
+    wiring: PropertiesDockerWiring,
+    prompt_text: str,
+    model: str,
+    structured: bool,
+    transcript_dir: Path | None,
+    output_final_message: Path | None,
+    final_only: bool,
+    label: str,
+    origin: str,
+) -> None:
+    ts = now_ts()
+    base_dir = _critique_output_dir(origin=origin, label=label, ts=ts)
+    base_dir.mkdir(parents=True, exist_ok=True)
+    dest_root = transcript_dir if transcript_dir is not None else (base_dir / "transcript")
+    dest_root.mkdir(parents=True, exist_ok=True)
+
+    comp = Compositor("compositor")
+    await wiring.attach(comp)
+    handlers = [DisplayEventsHandler(max_lines=10), TranscriptHandler(dest_dir=dest_root)]
+    submit_state = CriticSubmitState() if structured else None
+    if structured and submit_state is not None:
+        await attach_critic_submit(comp, submit_state)
+        assert submit_state is not None
+
+        def _ready_state() -> bool:
+            return (submit_state.result is not None) or (submit_state.error is not None)
+
+        handlers.append(GateUntil(_ready_state))
+    print(f"[run] Transcript: {dest_root}")
+    async with Client(comp) as mcp_client:
+        agent = await MiniCodex.create(
+            model=model,
+            mcp_client=mcp_client,
+            system="You are a code agent. Use tools to execute commands. Respond concisely.",
+            client=build_client(model),
+            handlers=handlers,
+            parallel_tool_calls=True,
+        )
+        result = await agent.run(prompt_text)
+        if output_final_message:
+            output_final_message.write_text(result.text or "", encoding="utf-8")
+        elif not final_only and (result.text or ""):
+            print(result.text)
+        # Persist structured critique as JSON when available
+        if structured and submit_state is not None:
+            assert submit_state is not None
+            if (submit_state.error is None) and (submit_state.result is not None):
+                out = base_dir / "critique.json"
+                s = submit_state.result.model_dump_json(indent=2)  # type: ignore[attr-defined]
+                out.write_text(s, encoding="utf-8")
+                print(f"Saved critique JSON: {out}")
+
+
+# --- Unified run command (structured/freeform; preset/prompt-file/text) ---
+
+_PRESET_MAP: dict[str, str] = {
+    # General review styles
+    "open": "prompts/open.j2.md",
+    "find": "prompts/find.j2.md",
+    "discover": "prompts/discover.j2.md",
+    # High-volume structured critic
+    "max-recall-critic": "prompts/max_recall_critic.j2.md",
+    # Detectors/runbooks
+    "dead-code-and-reachability": "detectors/prompts/dead_code_and_reachability.j2.md",
+    "flag-propagation": "detectors/prompts/flag_propagation.j2.md",
+    "contract-truthfulness": "detectors/prompts/contract_truthfulness.j2.md",
+}
+
+
+def _print_presets() -> None:
+    for name in sorted(_PRESET_MAP.keys()):
+        print(name)
+
+
+def _load_preset_text(name: str) -> str:
+    rel = _PRESET_MAP.get(name)
+    if not rel:
+        raise typer.BadParameter(f"Unknown preset: {name}. Use --list-presets to see options.")
+    # Resources are relative to the adgn.props package root
+    res = resources.files("adgn.props").joinpath(rel)
+    try:
+        return res.read_text(encoding="utf-8")  # type: ignore[attr-defined]
+    except Exception as e:
+        raise typer.BadParameter(f"Failed to load preset '{name}' from resources: {rel} ({e})")
+
+
+# (Jinja rendering helpers are inlined at call sites; plain Markdown passes through unchanged)
+
+
+@app.command("run")
+@async_run
+async def cmd_run(
+    # Scope (exactly one)
+    path: Path | None = OPT_RUNBOOK_PATH,
+    specimen: str | None = OPT_RUNBOOK_SPECIMEN,
+    # Prompt source (at most one; default by mode)
+    preset: str | None = typer.Option(
+        None, "--preset", help="Built-in prompt name; see --list-presets"
+    ),
+    prompt_file: Path | None = typer.Option(
+        None, "--prompt-file", exists=True, dir_okay=False, readable=True
+    ),
+    prompt_text: str | None = typer.Option(
+        None, "--prompt-text", help="Inline prompt text (discouraged for long prompts)"
+    ),
+    # Mode
+    structured: bool = typer.Option(
+        False, help="Attach critic_submit and require structured submit flow"
+    ),
+    # Common options
+    model: str = OPT_MODEL,
+    final_only: bool = OPT_FINAL_ONLY,
+    output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
+    gitconfig: Path | None = OPT_GITCONFIG,
+    transcript_dir: Path | None = typer.Option(None, "--transcript-dir"),
+    list_presets: bool = typer.Option(
+        False, "--list-presets", help="List available built-in presets and exit"
+    ),
+    dry_run: bool = typer.Option(False, help="Compose prompt only; save to /tmp and exit"),
+) -> None:
+    """Unified runner: specimen|path + structured|freeform + preset|prompt-file|text.
+
+    Defaults:
+    - structured=false: preset=open (if no prompt source provided)
+    - structured=true: preset=max-recall-critic (if no prompt source provided)
+    """
+    if list_presets:
+        _print_presets()
+        return
+    # Validate scope
+    if (path is None and specimen is None) or (path is not None and specimen is not None):
+        print("ERROR: Provide exactly one of --path or --specimen.")
+        raise typer.Exit(2)
+    # Validate prompt source
+    sources = [x is not None for x in (preset, prompt_file, prompt_text)]
+    if sum(sources) == 0:
+        preset = "max-recall-critic" if structured else "open"
+    elif sum(sources) > 1:
+        print("ERROR: Provide at most one of --preset, --prompt-file, or --prompt-text.")
+        raise typer.Exit(2)
+
+    # Resolve prompt content
+    if preset is not None:
+        prompt_raw = _load_preset_text(preset)
+    elif prompt_file is not None:
+        prompt_raw = prompt_file.read_text(encoding="utf-8")
+    else:
+        prompt_raw = prompt_text or ""
+
+    # Dry-run path: render without docker/hydration; save prompt to temp and exit
+    if dry_run:
+        await _compose_prompt_only(
+            prompt_raw=prompt_raw,
+            path=path,
+            specimen=specimen,
+            gitconfig=gitconfig,
+            preset=preset,
+        )
+        return
+
+    # Enter workspace context and run
+    async with _open_run_context(path, specimen, gitconfig) as (wiring, scope_text, label):
+        prompt = _render_prompt_with_context(prompt_raw, wiring=wiring, scope_text=scope_text)
+        await _exec_agent(
+            wiring=wiring,
+            prompt_text=prompt,
+            model=model,
+            structured=structured,
+            transcript_dir=transcript_dir,
+            output_final_message=output_final_message,
+            final_only=final_only,
+            label=label,
+            origin=("specimen" if specimen is not None else "path"),
+        )
+
+
+@app.command("list-presets")
+def cmd_list_presets() -> None:
+    """List available built-in prompt presets and their descriptions."""
+    _print_presets()
 
 
 @app.command("specimen-exec")

@@ -47,3 +47,11 @@ Environment and setup (direnv + devenv)
 
 ## More details
 - See ./CLAUDE.md for a deeper guide (test config, module map, LLM toolkit notes).
+
+## Runtime and policy images (container mode)
+- Build the runtime base image (used by the in‑proc runtime exec server):
+  - `docker build -t adgn-runtime:latest -f docker/runtime/Dockerfile .`
+  - Set `ADGN_RUNTIME_IMAGE=adgn-runtime:latest` to use this image at runtime.
+- Approval policy evaluation also runs in a container. You can reuse the same base or tag a separate one:
+  - For a separate tag: `docker tag adgn-runtime:latest adgn-policy-eval:latest`
+  - Override with `ADGN_POLICY_EVAL_IMAGE` if you use a different tag.

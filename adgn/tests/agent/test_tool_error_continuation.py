@@ -8,16 +8,14 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from fastmcp.server import FastMCP
 from hamcrest import assert_that, contains_string
-from mcp.server.fastmcp import FastMCP
 import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Auto, Continue
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import BaseHandler
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.openai_utils.model import FakeOpenAIModel
 from tests.agent.ws_helpers import assert_function_call_output_structured
 
@@ -38,6 +36,8 @@ def _make_validation_server() -> FastMCP:
 async def test_tool_error_continues_turn(
     monkeypatch: pytest.MonkeyPatch,
     responses_factory,
+    make_pg_compositor,
+    approval_policy_reader_allow_all,
 ) -> None:
     """Test that a tool validation error doesn't abort the turn.
 
@@ -48,9 +48,10 @@ async def test_tool_error_continues_turn(
     4. Retry with correct mime type (text/markdown)
     5. Successfully complete
     """
-    spec = make_inproc_slot_spec(_make_validation_server())
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("validator", spec)
+    server = _make_validation_server()
+    async with make_pg_compositor(
+        {"validator": server, "approval_policy": approval_policy_reader_allow_all}
+    ) as (mcp_client, _comp):
 
         class _AutoHandler(BaseHandler):
             def on_before_sample(self):  # type: ignore[override]
@@ -78,7 +79,7 @@ async def test_tool_error_continues_turn(
 
         agent = await MiniCodex.create(
             model=responses_factory.model,
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="You are a helpful assistant. Use the validator tools.",
             client=client,
             handlers=[_AutoHandler(), rec],
@@ -95,7 +96,7 @@ async def test_tool_error_continues_turn(
 
     # First call should fail with validation error
     first_output = outputs[0]
-    assert first_output["result"].get("isError") is True
+    assert first_output["result"].get("is_error") is True
     error_content = first_output["result"]["content"][0]["text"]
     # Hamcrest contains-string checks for clarity
     assert_that(error_content.lower(), contains_string("error"))
@@ -103,7 +104,7 @@ async def test_tool_error_continues_turn(
 
     # Second call should succeed
     second_output = outputs[1]
-    assert second_output["result"].get("isError") is False
+    assert second_output["result"].get("is_error") is False
     assert_function_call_output_structured([second_output], ok=True)
 
     # Final result should contain the success message

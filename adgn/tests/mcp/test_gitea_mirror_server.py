@@ -90,7 +90,7 @@ async def test_tool_success_flow(monkeypatch: pytest.MonkeyPatch, make_typed_mcp
     monkeypatch.setattr(gitea_server.time, "monotonic", lambda: next(monotonic_values))
     monkeypatch.setattr(gitea_server.time, "sleep", lambda _: None)
 
-    server = gitea_server.make_gitea_mirror_mcp(
+    server = gitea_server.make_gitea_mirror_server(
         base_url="https://gitea.local",
         token="secret-token",
         poll_interval_secs=0.01,
@@ -132,7 +132,7 @@ async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch, make_t
 
     monkeypatch.setattr(gitea_server.requests, "get", unexpected_get)
 
-    server = gitea_server.make_gitea_mirror_mcp(
+    server = gitea_server.make_gitea_mirror_server(
         base_url="https://gitea.local",
         token="secret-token",
     )
@@ -148,4 +148,4 @@ async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch, make_t
 def test_make_mcp_requires_configuration() -> None:
     # Use a raw regex for the generic message match
     with pytest.raises(ValueError, match=r"."):
-        gitea_server.make_gitea_mirror_mcp()
+        gitea_server.make_gitea_mirror_server()

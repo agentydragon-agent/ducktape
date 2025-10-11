@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from importlib import resources
 import json
 import os
+import logging
 from pathlib import Path
 import shutil
 import subprocess
@@ -14,6 +15,7 @@ import tempfile
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
+from urllib.parse import urlunparse
 
 import _jsonnet
 from platformdirs import user_cache_dir
@@ -24,6 +26,7 @@ from ..models.issue import IssueCore, Occurrence, SpecimenIssuesLoadError
 from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
 from ..prop_utils import pkg_dir
 
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class IssueRecord:
@@ -107,7 +110,9 @@ def _jsonnet_load_dir(
             core_input["id"] = stem
             core_input["should_flag"] = should_flag
             core = IssueCore.model_validate(core_input)
-            inst_raw = obj.get("instances") or []
+            inst_raw = obj.get("instances")
+            if inst_raw is None:
+                inst_raw = []
             instances = [Occurrence.model_validate(inst) for inst in inst_raw]
             items.append(IssueRecord(core=core, instances=instances))
         except Exception as e:
@@ -180,7 +185,12 @@ def _repack_dir_with_mtime(src_dir: Path, out_archive: Path, mtime: int = 0) -> 
 
     with tarfile.open(tmp, "w:gz", format=tarfile.PAX_FORMAT) as tf:
         if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
-            print(f"[specimen] repacking {src_dir} -> {out_archive} (filter .git, mtime={mtime})")
+            logger.debug(
+                "[specimen] repacking %s -> %s (filter .git, mtime=%s)",
+                src_dir,
+                out_archive,
+                mtime,
+            )
         tf.add(src_dir, arcname=Path(src_dir).name, filter=_filter)
     tmp.replace(out_archive)
 
@@ -199,7 +209,7 @@ def _default_gitconfig() -> Path | None:
 
 def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{ref}"
+    url = urlunparse(("https", "codeload.github.com", f"/{owner}/{repo}/tar.gz/{ref}", "", "", ""))
     tmp = dest.with_suffix(".tmp")
     try:
         with urlopen(url) as resp:
@@ -261,7 +271,7 @@ def ensure_archive_for_specimen_slug(
     slug = manifest_path.parent.name
     out = _xdg_cache_base() / "by-slug" / f"{slug}.tar.gz"
     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
-        print(f"[specimen] ensure_archive_for_specimen_slug slug={slug} out={out}")
+        logger.debug("[specimen] ensure_archive_for_specimen_slug slug=%s out=%s", slug, out)
     if out.exists():
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -271,7 +281,16 @@ def ensure_archive_for_specimen_slug(
             return out
         if (
             _create_archive_from_git(
-                f"https://github.com/{man.source.org}/{man.source.repo}.git",
+                urlunparse(
+                    (
+                        "https",
+                        "github.com",
+                        f"/{man.source.org}/{man.source.repo}.git",
+                        "",
+                        "",
+                        "",
+                    )
+                ),
                 man.source.ref,
                 out,
                 gitconfig,
@@ -405,13 +424,18 @@ class SpecimenRecord:
                     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
                         total = len(tf.getmembers())
                         filtered = len(members)
-                        print(f"[specimen] extracting {archive} members={filtered}/{total} (filtered .git)")
+                        logger.debug(
+                            "[specimen] extracting %s members=%s/%s (filtered .git)",
+                            archive,
+                            filtered,
+                            total,
+                        )
                     tf.extractall(mount_root, members=members)
                     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
                         git_dirs = list((mount_root).rglob(".git"))
-                        print(f"[specimen] post-extract .git dirs: {len(git_dirs)}")
+                        logger.debug("[specimen] post-extract .git dirs: %d", len(git_dirs))
                         for p in git_dirs[:10]:
-                            print("   ", p)
+                            logger.debug("    %s", p)
             elif isinstance(self.manifest.source, LocalSource):
                 src = (self.manifest_path.parent / self.manifest.source.root).resolve()
                 # For local specimens, materialize directly into mount_root (no extra subdir)

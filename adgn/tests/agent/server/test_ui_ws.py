@@ -12,7 +12,7 @@ from adgn.openai_utils.model import FakeOpenAIModel
 @pytest.mark.timeout(5)
 def test_ui_websocket_roundtrip_with_mocked_openai(
     responses_factory,
-    ws_session,
+    agent_ws_box,
 ) -> None:
     """
     Use FastAPI TestClient against a fresh create_app() instance. Attach a MiniCodex
@@ -24,9 +24,9 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
     model_client = FakeOpenAIModel([responses_factory.make_assistant_message("pong")])
 
     try:
-        with ws_session(model_client, specs={}) as (client, ws, collect, agent_id):
-            ws.send_json({"type": "send", "text": "hi"})
-            payloads = collect(limit=50)
+        with agent_ws_box(model_client, specs={}) as box:
+            box.http.prompt("hi")
+            payloads = box.collect(limit=50)
             assert_that(
                 payloads,
                 has_item(

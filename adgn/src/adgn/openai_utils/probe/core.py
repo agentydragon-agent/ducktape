@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 import re
 from typing import Any
 
 # ---------- Families and grouping -------------------------------------------
 
 
-class Family(str, Enum):
+class Family(StrEnum):
     GPT_5 = "gpt-5"
     O3 = "o3"
     O4_MINI = "o4-mini"
@@ -47,7 +47,7 @@ def family_of(mid: str) -> Family:
 # ---------- Error classification surface (shared enums only) -----------------
 
 
-class ErrorCode(str, Enum):
+class ErrorCode(StrEnum):
     MISSING_TOOLS_NAME = "MISSING-TOOLS-NAME"
     RATE_LIMIT = "RATE-LIMIT"
     TOO_LARGE = "TOO-LARGE"

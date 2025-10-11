@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from adgn.llm.llm_edit import _execute
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import ResponsesRequest
 from tests.fixtures.responses import ResponsesFactory
 
@@ -27,21 +28,25 @@ def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
         if i == 0:
             return responses_factory.make(
                 responses_factory.tool_call(
-                    "mcp__editor__replace_text",
+                    build_mcp_function("editor", "replace_text"),
                     {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"},
                 )
             )
         if i == 1:
-            return responses_factory.make(responses_factory.tool_call("mcp__editor__save", {}))
+            return responses_factory.make(
+                responses_factory.tool_call(build_mcp_function("editor", "save"), {})
+            )
         if i == 2:
             # Inspect buffer to verify content before done
             return responses_factory.make(
-                responses_factory.tool_call("mcp__editor__read_line_range", {"start": 1, "end": 1})
+                responses_factory.tool_call(
+                    build_mcp_function("editor", "read_line_range"), {"start": 1, "end": 1}
+                )
             )
         if i == 3:
             return responses_factory.make(
                 responses_factory.tool_call(
-                    "mcp__editor__done",
+                    build_mcp_function("editor", "done"),
                     {"payload": {"outcome": "success", "summary": "ok"}},
                 )
             )

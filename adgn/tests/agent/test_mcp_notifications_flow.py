@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp.server import FastMCP
+from fastmcp.server.context import Context
 from pydantic import BaseModel, ConfigDict
 import pytest
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import AutoHandler, NotificationsHandler
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.mcp.testing.typed_stubs import call_tool_typed
 from adgn.openai_utils.model import (
     InputTextPart,
     ResponsesRequest,
@@ -36,8 +36,7 @@ class NotifyPolicyOutput(BaseModel):
 class _NotifierServer(FastMCP):
     """Test helper FastMCP that can emit resource-updated notifications via a callback.
 
-    We attach a _notify(uri: str) callable post-construction that is expected to call
-    McpManager.notify_resource_updated("notifier", uri). Tools can then trigger it.
+    Emits ResourceUpdated notifications via the protocol inside tool logic.
     """
 
     def __init__(self) -> None:
@@ -50,9 +49,8 @@ class _NotifierServer(FastMCP):
             description="Emit a ResourceUpdated notification",
             structured_output=True,
         )
-        async def notify_policy(input: NotifyPolicyInput) -> NotifyPolicyOutput:
+        async def notify_policy(input: NotifyPolicyInput, ctx: Context) -> NotifyPolicyOutput:
             # Protocol-level notification: emit ResourceUpdatedNotification from server to client
-            ctx = self.get_context()
             sess = ctx.request_context.session  # low-level ServerSession
             await sess.send_resource_updated(input.uri)
             return NotifyPolicyOutput(ok=True, uri=input.uri)
@@ -67,29 +65,29 @@ def server() -> FastMCP:
 async def test_notifications_pre_sampling_out_of_band(
     server: FastMCP,
     responses_factory,
+    make_buffered_client,
 ):
-    # Build notifier server and manager
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("notifier", make_inproc_slot_spec(server))
+    # Buffered client path via shared fixture
+    async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         # Prime a protocol-level notification before sampling by calling the server tool once
-        # (establishes session and emits ResourceUpdatedNotification)
-        sess = await mcp.get_session("notifier")
-        # Use typed client to call the tool with default args
-        client = TypedClient.from_server(server, sess)
-        await client.notify_policy(NotifyPolicyInput())
+        await call_tool_typed(
+            mcp_client,
+            build_mcp_function("notifier", "notify_policy"),
+            NotifyPolicyInput(),
+            NotifyPolicyOutput,
+        )
 
         captured: list[ResponsesRequest] = []
 
         async def _create(req: ResponsesRequest) -> ResponsesResult:
             captured.append(req)
-            # Minimal assistant response; we only care about the input we sent
             return responses_factory.make_assistant_message("ok")
 
         client = make_mock(_create)
         agent = await MiniCodex.create(
             model="test-model",
-            mcp=mcp,
-            handlers=[NotificationsHandler(mcp), AutoHandler()],
+            mcp_client=mcp_client,
+            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
             client=client,
             system="n/a",
         )
@@ -105,7 +103,7 @@ async def test_notifications_pre_sampling_out_of_band(
                     for c in msg.content or []:
                         if isinstance(c, InputTextPart) and "<system notification>" in c.text:
                             payload = c.text.split("\n", 1)[-1]
-                            if "notifier" in payload and "policy.py" in payload:
+                            if "policy.py" in payload:
                                 return True
             return False
 
@@ -118,6 +116,7 @@ async def test_notifications_pre_sampling_out_of_band(
 async def test_notifications_within_turn_from_tool(
     server: FastMCP,
     responses_factory,
+    make_buffered_client,
 ):
     # Build notifier server and manager
     stage = {"n": 0}
@@ -128,17 +127,18 @@ async def test_notifications_within_turn_from_tool(
         stage["n"] += 1
         if stage["n"] == 1:
             # First model output: ask to call notifier.notify_policy
-            return responses_factory.make_tool_call("mcp__notifier__notify_policy", {})
+            return responses_factory.make_tool_call(
+                build_mcp_function("notifier", "notify_policy"), {}
+            )
         # Second (and later) model output: nothing else to do
         return responses_factory.make_assistant_message("done")
 
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("notifier", make_inproc_slot_spec(server))
+    async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         client = make_mock(_create)
         agent = await MiniCodex.create(
             model="test-model",
-            mcp=mcp,
-            handlers=[NotificationsHandler(mcp), AutoHandler()],
+            mcp_client=mcp_client,
+            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
             client=client,
             system="n/a",
         )
@@ -160,7 +160,7 @@ async def test_notifications_within_turn_from_tool(
 
 
 @pytest.mark.asyncio
-async def test_notifications_broadcast_outside_tool(responses_factory):
+async def test_notifications_broadcast_outside_tool(responses_factory, make_buffered_client):
     # Server that can broadcast notifications outside a tool
     server = NotifyingFastMCP(name="notifier", instructions="Notifier test")
 
@@ -175,18 +175,16 @@ async def test_notifications_broadcast_outside_tool(responses_factory):
         captured.append(req)
         return responses_factory.make_assistant_message("ok")
 
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("notifier", make_inproc_slot_spec(server))
-        # Establish a session (prime capture) then broadcast outside any tool handler
-        sess = await mcp.get_session("notifier")
-        await sess.call_tool(name="prime", arguments={})
+    async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
+        # Establish session (prime) then broadcast outside any tool handler
+        await mcp_client.call_tool(name=build_mcp_function("notifier", "prime"), arguments={})
         await server.broadcast_resource_updated("notifier://policy.py")
 
         client = make_mock(_create)
         agent = await MiniCodex.create(
             model="test-model",
-            mcp=mcp,
-            handlers=[NotificationsHandler(mcp), AutoHandler()],
+            mcp_client=mcp_client,
+            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
             client=client,
             system="n/a",
         )
@@ -199,7 +197,7 @@ async def test_notifications_broadcast_outside_tool(responses_factory):
                     for c in msg.content or []:
                         if isinstance(c, InputTextPart) and "<system notification>" in c.text:
                             payload = c.text.split("\n", 1)[-1]
-                            if "notifier" in payload and "policy.py" in payload:
+                            if "policy.py" in payload:
                                 return True
             return False
 

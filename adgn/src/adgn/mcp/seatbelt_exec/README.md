@@ -3,12 +3,13 @@ Seatbelt Exec MCP Server (macOS sandbox-exec)
 Overview
 - Location: src/adgn/mcp/seatbelt_exec/server.py
 - Server name: seatbelt_exec
-- Purpose: execute processes under the macOS seatbelt (sandbox-exec). The caller must supply the full sandbox policy on each exec call. No server-side policy storage.
-- Platform: execution is macOS-only (NOT_DARWIN error otherwise).
+- Purpose: execute processes under the macOS seatbelt (sandbox-exec).
+  - Stateless: callers must provide a full SBPL policy on each call.
+- Platform: macOS-only. The server refuses to instantiate on non‑darwin.
 
-Policy
-- Schema: SBPLPolicy from adgn.seatbelt.model (Pydantic), with validation and extra="forbid"
-- The policy is provided inline on each sandbox_exec call.
+Policy input
+- Schema: SBPLPolicy from adgn.seatbelt.model (Pydantic), with validation and extra="forbid".
+- Provide `policy: SBPLPolicy` on every call.
 
 Tool (FastMCP)
 1) sandbox_exec
@@ -17,65 +18,33 @@ Tool (FastMCP)
      - argv: list[str] (required; no shell)
      - cwd: str | null (optional)
      - env: {str: str} | null (optional)
-     - timeout_secs: float | null (optional)
+     - timeout_ms: int (0 < timeout_ms <= 300_000)
      - trace: bool (default: false)
    - Return (SandboxExecResult):
      - exit_code: int | null (null when timeout=true)
      - timeout: bool
      - duration_ms: int
-     - stdout_text: str | null (utf‑8 decode with replacement)
-     - stderr_text: str | null (utf‑8 decode with replacement)
+     - stdout: string or {truncated_text,total_bytes}
+     - stderr: string or {truncated_text,total_bytes}
      - trace_text: str | null (present iff trace==true and trace captured)
      - unified_sandbox_denies_text: str | null (disabled by default)
    - Errors:
      - NOT_DARWIN (macOS only)
      - SANDBOX_EXEC_MISSING (sandbox-exec not available on PATH)
      - LAUNCH_ERROR (unexpected failure running the process)
+     - TEMPLATE_NOT_FOUND (referenced template does not exist)
+
+No template management tools; server is stateless.
 
 Notes
-- Timeout semantics: if timeout_secs elapses, the process is killed and the result returns timeout=true, exit_code=null, empty stdout/stderr.
+- Timeout semantics: if timeout_ms elapses, the process is killed and the result returns timeout=true, exit_code=null, empty stdout/stderr.
 - stdout/stderr are text only in v1. TODO markers exist in the server to add *_b64 fields when non‑UTF‑8 appears.
 - No start/end timestamps are returned; only duration_ms.
+- Error handling: FastMCP converts uncaught exceptions into MCP tool errors (`isError=true`). Avoid redundant wrappers; raise `ToolError` with specific codes when needed.
+- Runtime container workflow: not required; provide full policy per call.
 
-Minimal in-proc usage (Python)
-
-from contextlib import AsyncExitStack
-import anyio
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp.seatbelt_exec.server import make_seatbelt_exec_mcp
-from adgn.seatbelt.model import SBPLPolicy, ProcessRule, FileRule, FileOp, Subpath, DefaultBehavior
-
-async def main():
-    server = make_seatbelt_exec_mcp()
-    spec = make_inproc_slot_spec(server)
-    async with AsyncExitStack() as stack:
-        slot = await spec.open(stack)
-        session = slot.session
-
-        # Create a minimal restrictive policy (allow exec mapping + read)
-        policy = SBPLPolicy(
-            default_behavior=DefaultBehavior.DENY,
-            process=ProcessRule(allow_process_star=True, allow_signal_self=True),
-            files=[
-                FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
-                FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
-            ],
-        )
-
-        # Echo command under sandbox
-        res = await session.call_tool(
-            name="sandbox_exec",
-            arguments={
-                "policy": policy.model_dump(),
-                "argv": ["/bin/echo", "HELLO"],
-                "timeout_secs": 5,
-                "trace": False,
-            },
-        )
-        payload = res.structuredContent  # object with keys listed under Return (SandboxExecResult)
-        assert payload["exit_code"] == 0 and payload["stdout_text"] == "HELLO\n"
-
-anyio.run(main)
+Resources
+- None exposed by this server (stateless).
 
 Development and tests
 - Integration tests live at tests/mcp/test_seatbelt_exec_inproc.py
@@ -86,6 +55,6 @@ Development and tests
 - The test suite uses @pytest.mark.requires_sandbox_exec, which implies macOS and checks availability of sandbox-exec on PATH.
 
 Internal impl tips
-- Server entry: make_seatbelt_exec_mcp() builds a FastMCP server and registers tools.
+- Server entry: SeatbeltExecMCP(name, agent_id, persistence) constructs the server; embed via HTTP or run under stdio.
 - Execution uses adgn.seatbelt.runner.apopen(...), enforcing timeout and returning text outputs.
 - seatbelt runner has collect_unified_sandbox_denies(...) and a shared result tail helper to avoid duplication.

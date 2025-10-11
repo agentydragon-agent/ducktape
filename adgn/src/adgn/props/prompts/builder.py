@@ -4,14 +4,8 @@ from typing import Literal
 
 from adgn.props.critic import CriticSubmitPayload, ReportedIssue
 from adgn.props.docker_env import PropertiesDockerWiring
-from adgn.props.grader import (
-    CANON_FP_PREFIX,
-    CANON_TP_PREFIX,
-    CRIT_PREFIX,
-    GradeMetrics,
-    GradeSubmitInput,
-    GradeSubmitPayload,
-)
+from adgn.props.grader import CoverageCredit, GradeMetrics, GradeSubmitInput, GradeSubmitPayload
+from adgn.props.ids import CANON_FP_PREFIX, CANON_TP_PREFIX, CRIT_PREFIX
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
 
 from .util import build_input_schemas_json, render_prompt_template
@@ -53,7 +47,7 @@ def build_role_prompt(
         template,
         scope_text=scope_text,
         supplemental_text=supplemental_text,
-        available_tools=available_tools or [],
+        available_tools=(available_tools if available_tools is not None else []),
         static_action="analyze",
         ambiguity_tail="do not include anything outside it.",
         wiring=wiring,
@@ -130,7 +124,7 @@ def build_find_prompt(
         "find.j2.md",
         scope_text=scope_text,
         supplemental_text=supplemental_text,
-        available_tools=available_tools or [],
+        available_tools=(available_tools if available_tools is not None else []),
         static_action="analyze",
         ambiguity_tail="do not include anything outside it.",
         wiring=wiring,
@@ -150,7 +144,7 @@ def build_open_review_prompt(
         "open.j2.md",
         scope_text=scope_text,
         supplemental_text=supplemental_text,
-        available_tools=available_tools or [],
+        available_tools=(available_tools if available_tools is not None else []),
         static_action="analyze",
         ambiguity_tail="do not include anything outside it.",
         wiring=wiring,
@@ -188,7 +182,7 @@ def build_grade_from_json_prompt(
     """Compose grader prompt that consumes structured JSON and requires submit via grader_submit.
 
     - canonical_json: JSON block of canonical positives (IssueCore+Occurrence) list or mapping
-    - critique_json: JSON block produced by specimen-check (critic output)
+    - critique_json: JSON block produced by the unified run (critic output)
     - known_fp_json: JSON block of known false positives (IssueCore+Occurrence) list or mapping
     - submit_tool_name: fully-qualified MCP function name for grader_submit.submit_result
     """
@@ -201,6 +195,7 @@ def build_grade_from_json_prompt(
             CriticSubmitPayload,
             GradeMetrics,
             GradeSubmitInput,
+            CoverageCredit,
         ],
     )
     # Pass shared ID prefix constants into the template to avoid drift

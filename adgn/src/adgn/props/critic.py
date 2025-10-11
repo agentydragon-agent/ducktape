@@ -1,18 +1,19 @@
 """Critic MCP server and CriticSubmitPayload models.
 
 This module defines the strict structured output used by the critic agent (codebase → candidate issues)
-and a tiny FastMCP server that accepts exactly one submission per run via submit_result.
+and a tiny FastMCP server that accepts exactly one submission per run via ``submit``.
 
 Candidate issues are expressed as IssueCore + Occurrence(s); freeform notes allowed only via notes_md.
 Payload is validated with Pydantic.
 
-Critic agent MUST call submit_result(result) where result conforms to CriticSubmitPayload.
+Critic agent MUST call ``submit(issues_count)`` after building the critique using the incremental tools.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, NoReturn
 
+from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
@@ -20,7 +21,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.mcp._shared.constants import CRITIC_SUBMIT_SERVER_NAME
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.props.models.issue import IssueId, LineRange, Occurrence
 
 
@@ -67,6 +70,31 @@ class CriticSubmitState:
     error: CriticErrorPayload | None = None
     # In-progress incremental payload (used by upsert/add_* tools before submit)
     work: CriticSubmitPayload | None = None
+
+
+class ToolAck(BaseModel):
+    ok: bool = Field(default=True, description="Operation succeeded")
+    message: str | None = Field(default=None, description="Optional human-friendly note")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SubmitAck(BaseModel):
+    ok: bool = Field(default=True, description="Submit succeeded")
+    issues: int = Field(description="Number of issues submitted")
+    occurrences: int = Field(description="Total number of occurrences submitted")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def _raise_unknown_issue(issue_id: IssueId) -> NoReturn:
+    """Raise a ToolError for unknown issue references (DRY helper)."""
+    raise ToolError(f"Unknown issue '{issue_id}'. Create the issue before adding occurrences.")
+
+
+def _raise_already_submitted() -> NoReturn:
+    """Raise a ToolError when a critique has already been submitted for the run."""
+    raise ToolError("Critique has already been submitted for this run.")
 
 
 # --- Incremental tool input models (module-scope to avoid ForwardRef issues) ---
@@ -128,52 +156,16 @@ class AddOccurrenceFilesInput(BaseModel):
 
 
 CRITIC_MCP_INSTRUCTIONS = (
-    "Critique builder: upsert issues, add occurrences, and submit when complete.\n"
-    "Tools:\n"
-    "- upsert_issue(issue_id, description): Create or update an issue header (id, rationale).\n"
-    "- cancel_issue(issue_id): Remove an issue and all its occurrences.\n"
-    "- add_occurrence(issue_id, file, ranges): Add one occurrence for an issue. ranges accepts items like 123 or [140,150].\n"
-    '- add_occurrence_files(issue_id, files): Add a single occurrence spanning multiple files and ranges (files is a map: {"a.py":[123,[140,150]], "b.py":[[5,7]]}).\n'
-    "- show_critique(): Return the current structured critique.\n"
-    "- submit(issues): Validate the count matches current critique; returns Ok/Err.\n"
-    "- report_failure(error): Report that critique could not be completed (e.g., no files matched scope, access errors).\n\n"
+    "Critique builder: incrementally add issues and occurrences, then call submit(issues) when complete.\n\n"
     "Notes:\n"
-    "- Multi-occurrence issues: call add_occurrence multiple times for the same issue.\n"
-    "- Cross-file support: use add_occurrence_files to express one occurrence that spans multiple files/ranges.\n\n"
-    "Example:\n"
-    "\n"
-    "# One file, three occurrences:\n"
-    "upsert_issue(\"iss-001\", \"Avoid broad exception handling: replace bare 'except' or 'except Exception' with specific exceptions; do not swallow errors. Surface unexpected failures and keep handlers minimal.\")\n"
-    'add_occurrence("iss-001", "pkg/a.py", [123])\n'
-    'add_occurrence("iss-001", "pkg/a.py", [[140,150]])\n'
-    'add_occurrence("iss-001", "pkg/a.py", [200, 205, [210, 220]])\n'
-    "\n"
-    "# One occurrence over multiple files/ranges:\n"
-    'upsert_issue("iss-002", "Pydantic v2 migration: stop mixing legacy Config class with v2 validators; use model_config=ConfigDict(...) and model_validator consistently across models.")\n'
-    'add_occurrence_files("iss-002", {"pkg/a.py":[[10,12],20], "pkg/b.py":[[5,7]]})\n'
-    "\n"
-    "submit(issues=2)  # review complete, iss-001, iss-002\n"
+    "- Tools are self‑describing via MCP; consult tool schemas instead of this banner.\n"
+    "- For multiple occurrences of the same issue, call add_occurrence repeatedly.\n"
+    "- For a single occurrence spanning multiple files/ranges, use add_occurrence_files.\n"
 )
 
 
-def make_critic_submit_server(
-    state: CriticSubmitState,
-    *,
-    name: str = "critic_submit",
-) -> SafeFastMCP:
-    """Create a FastMCP exposing submit_result(result: CriticSubmitPayload) -> {ok: True}.
-
-    Agent must call submit_result exactly once to deliver a validated CriticSubmitPayload.
-    Payload is validated with Pydantic and stored in state.result. Invalid payloads
-    will raise and be returned to the caller as an error.
-    """
-
-    mcp = SafeFastMCP(
-        name,
-        instructions=CRITIC_MCP_INSTRUCTIONS,
-    )
-
-    # --- New incremental tooling (simpler structure) ---
+def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -> None:
+    """Register critic submit tools on the provided server (tools‑builder pattern)."""
 
     def _ensure_work_payload() -> CriticSubmitPayload:
         work = state.work
@@ -191,159 +183,130 @@ def make_critic_submit_server(
                 start, end = int(a[0]), int(a[1])
                 out.append(LineRange(start_line=start, end_line=end))
             else:
-                raise ValueError(
-                    "ranges items must be int or [start,end]",
-                )
+                raise ValueError("ranges items must be int or [start,end]")
         return out
 
-    @mcp.tool()
-    async def upsert_issue(payload: UpsertIssueInput) -> dict[str, Any]:
-        """Upsert issue(issue_id, description). Returns guidance on next steps."""
+    @mcp.flat_model()
+    async def upsert_issue(payload: UpsertIssueInput) -> ToolAck:
+        """Create or update an issue header (id + rationale)."""
         work = _ensure_work_payload()
-        # Replace or insert
         for idx, it in enumerate(work.issues):
             if it.id == payload.issue_id:
                 work.issues[idx] = ReportedIssue(
-                    id=payload.issue_id,
-                    rationale=payload.description,
-                    occurrences=it.occurrences,
+                    id=payload.issue_id, rationale=payload.description, occurrences=it.occurrences
                 )
                 break
         else:
             work.issues.append(
                 ReportedIssue(id=payload.issue_id, rationale=payload.description, occurrences=[])
             )
-        return {
-            "ok": True,
-            "message": f"issue {payload.issue_id} noted. note: you need to use add_occurrence to mark the site of at least one occurrence",
-        }
+        return ToolAck(
+            message=f"issue {payload.issue_id} noted. note: you need to use add_occurrence to mark the site of at least one occurrence"
+        )
 
-    @mcp.tool()
-    async def cancel_issue(payload: CancelIssueInput) -> dict[str, Any]:
-        """Cancel issue(issue_id) and remove all its occurrences."""
+    @mcp.flat_model()
+    async def cancel_issue(payload: CancelIssueInput) -> ToolAck:
+        """Remove an issue and all its occurrences by id."""
         work = _ensure_work_payload()
         work.issues = [it for it in work.issues if it.id != payload.issue_id]
         after_issues = len(work.issues)
         after_occs = sum(len(i.occurrences) for i in work.issues)
-        return {
-            "ok": True,
-            "message": f"issue {payload.issue_id} canceled. {after_issues} issues ({after_occs} occurrences) noted.",
-        }
+        return ToolAck(
+            message=f"issue {payload.issue_id} canceled. {after_issues} issues ({after_occs} occurrences) noted."
+        )
 
-    @mcp.tool()
-    async def add_occurrence(payload: AddOccurrenceInput) -> dict[str, Any]:
-        """Add occurrence(issue_id, file, ranges). ranges: [123, [140,150]]."""
+    @mcp.flat_model()
+    async def add_occurrence(payload: AddOccurrenceInput) -> ToolAck:
+        """Add one occurrence for an issue."""
         work = _ensure_work_payload()
-        # Find issue
         for it in work.issues:
             if it.id == payload.issue_id:
                 files_map: dict[str, list[LineRange] | None] = {
                     payload.file: _normalize_ranges(payload.ranges)
                 }
-                occ = Occurrence(files=files_map)
-                it.occurrences.append(occ)
+                it.occurrences.append(Occurrence(files=files_map))
                 total_occs = sum(len(i.occurrences) for i in work.issues)
-                return {
-                    "ok": True,
-                    "message": f"occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted.",
-                    "occurrences": total_occs,
-                }
-        return {
-            "ok": False,
-            "code": "UNKNOWN_ISSUE",
-            "error": f"unknown issue_id: {payload.issue_id}",
-            "details": {"issue_id": str(payload.issue_id)},
-        }
+                return ToolAck(
+                    message=f"occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted."
+                )
+        _raise_unknown_issue(payload.issue_id)
 
     @mcp.tool()
     async def show_critique() -> CriticSubmitPayload:
-        """Return the current critique (issues + occurrences)."""
         return _ensure_work_payload()
 
-    @mcp.tool()
-    async def add_occurrence_files(payload: AddOccurrenceFilesInput) -> dict[str, Any]:
-        """Add a single occurrence with multiple files/ranges via files map."""
+    @mcp.flat_model()
+    async def add_occurrence_files(payload: AddOccurrenceFilesInput) -> ToolAck:
+        """Add one occurrence spanning multiple files/ranges."""
         work = _ensure_work_payload()
         for it in work.issues:
             if it.id == payload.issue_id:
                 files_map: dict[str, list[LineRange] | None] = {
-                    path: _normalize_ranges(ranges)
-                    for path, ranges in (payload.files or {}).items()
+                    p: _normalize_ranges(r) for p, r in (payload.files or {}).items()
                 }
-                occ = Occurrence(files=files_map)
-                it.occurrences.append(occ)
+                it.occurrences.append(Occurrence(files=files_map))
                 total_occs = sum(len(i.occurrences) for i in work.issues)
-                return {
-                    "ok": True,
-                    "message": f"multi-file occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted.",
-                    "occurrences": total_occs,
-                }
-        return {
-            "ok": False,
-            "code": "UNKNOWN_ISSUE",
-            "error": f"unknown issue_id: {payload.issue_id}",
-            "details": {"issue_id": str(payload.issue_id)},
-        }
+                return ToolAck(
+                    message=f"multi-file occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted."
+                )
+        _raise_unknown_issue(payload.issue_id)
 
-    @mcp.tool()
-    async def submit(payload: SubmitInput) -> dict[str, Any]:
-        """Finalize: validate each issue has ≥1 occurrence, check count, and persist as result.
-
-        Returns a structured status dict instead of raising for normal usage errors:
-        - {ok: False, code: "ALREADY_SUBMITTED"}
-        - {ok: False, code: "MISSING_OCCURRENCES", details: {issue_ids: [...]}}
-        - {ok: False, code: "COUNT_MISMATCH", details: {reported: n, actual: m}}
-        - On success: {ok: True, issues: n, occurrences: m}
-        """
+    @mcp.flat_model()
+    async def submit(payload: SubmitInput) -> SubmitAck:
+        """Finalize critique (enforces count and at least one occurrence per issue)."""
         if (state.result is not None) or (state.error is not None):
-            return {
-                "ok": False,
-                "code": "ALREADY_SUBMITTED",
-                "error": "submit already called (result or error set)",
-            }
+            _raise_already_submitted()
         work = _ensure_work_payload()
         missing = [it.id for it in work.issues if not it.occurrences]
         if missing:
-            return {
-                "ok": False,
-                "code": "MISSING_OCCURRENCES",
-                "error": "cannot submit: issues without occurrences",
-                "details": {"issue_ids": [str(x) for x in missing]},
-            }
+            raise ToolError(
+                "Each issue must include at least one occurrence. Missing occurrences for: "
+                + ", ".join(str(x) for x in missing)
+            )
         actual_issues = len(work.issues)
         if payload.issues != actual_issues:
-            return {
-                "ok": False,
-                "code": "COUNT_MISMATCH",
-                "error": "submit count mismatch",
-                "details": {"reported": payload.issues, "actual": actual_issues},
-            }
+            raise ToolError(
+                f"Submit count mismatch: reported {payload.issues} but found {actual_issues}."
+            )
         state.result = work
         occs = sum(len(i.occurrences) for i in work.issues)
-        return {"ok": True, "issues": actual_issues, "occurrences": occs}
+        return SubmitAck(issues=actual_issues, occurrences=occs)
 
-    @mcp.tool()
-    async def report_failure(error: CriticErrorPayload) -> dict[str, Any]:
-        """Report a failure to complete the critique (operational or scope issues)."""
+    @mcp.flat_model()
+    async def report_failure(error: CriticErrorPayload) -> ToolAck:
+        """Report that critique could not be completed."""
         if (state.result is not None) or (state.error is not None):
-            return {
-                "ok": False,
-                "code": "ALREADY_SUBMITTED",
-                "error": "submit already called (result or error set)",
-            }
+            _raise_already_submitted()
         state.error = error
-        return {"ok": False}
+        raise ToolError(error.message)
 
-    # --- Legacy tools kept for compatibility ---
-    # @mcp.tool()  # disabled legacy batch submit
-    async def submit_result(result: CriticSubmitPayload) -> dict[str, Any]:
-        """[Legacy DISABLED] Submit the entire structured result in one call."""
-        if (state.result is not None) or (state.error is not None):
-            raise ValueError("submit already called (result or error set)")
-        state.result = result
-        return {"ok": True}
 
+def make_critic_submit_server(
+    state: CriticSubmitState,
+    *,
+    name: str = CRITIC_SUBMIT_SERVER_NAME,
+) -> NotifyingFastMCP:
+    """Create a Critic MCP server with typed, flat tools (single source of truth).
+
+    Agent builds a critique incrementally via tools and must call submit(issues)
+    once to finalize. The payload is validated and stored in state.result.
+    """
+
+    mcp = NotifyingFastMCP(name, instructions=CRITIC_MCP_INSTRUCTIONS)
+    # Register tools via the shared builder to keep a single implementation
+    build_critic_submit_tools(mcp, state)
     return mcp
+
+
+async def attach_critic_submit(comp: Compositor, state: CriticSubmitState) -> NotifyingFastMCP:
+    """Create and mount the critic_submit server on the given Compositor.
+
+    Returns the created server for callers that want to keep a reference.
+    """
+    # Build typed server and attach in-proc (no auth)
+    server = make_critic_submit_server(state, name=CRITIC_SUBMIT_SERVER_NAME)
+    await comp.mount_inproc(CRITIC_SUBMIT_SERVER_NAME, server)
+    return server
 
 
 @render_to_rich.register

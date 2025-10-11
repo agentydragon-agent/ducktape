@@ -4,7 +4,9 @@ from typing import Any, Callable
 
 import pytest
 
+from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.server.app import create_app
+from tests.agent.conftest import policy_allow_all as _policy_allow_all  # noqa: F401
 from tests.agent.helpers import api_create_agent, start_uvicorn_app
 from tests.llm.support.openai_mock import make_mock
 
@@ -32,27 +34,14 @@ def _patch_model(monkeypatch: pytest.MonkeyPatch, create_fn: Callable[[Any], Any
 
 
 @pytest.mark.integration
-def test_policy_proposal_reject_updates_ui(page: Page, run_server, responses_factory):
+@pytest.mark.asyncio
+async def test_policy_proposal_reject_updates_ui(
+    page: Page, run_server, responses_factory, policy_allow_all: str, tmp_path
+):
     """E2E: a policy proposal appears; rejecting it removes it from Open Proposals without reload."""
 
-    state = {"i": 0}
-
-    # First tool call: propose a policy (open proposal). Then end turn.
+    # No model tool calls needed for proposal authoring in this flow
     async def responses_create(_req):
-        i = state["i"]
-        state["i"] = i + 1
-        if i == 0:
-            return responses_factory.make_tool_call(
-                "mcp__approval_policy__propose",
-                {
-                    "policy_python_code": (
-                        "TEST_CASES = [(ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW)]\n"
-                        "def decide(ctx):\n    return (PolicyDecision.ASK, 'ask')\n"
-                    ),
-                    "rationale": "test",
-                },
-                call_id="call_propose",
-            )
         return responses_factory.make_tool_call("mcp__ui__end_turn", {}, call_id="call_ui_end")
 
     s = run_server(lambda model: make_mock(responses_create))
@@ -65,9 +54,16 @@ def test_policy_proposal_reject_updates_ui(page: Page, run_server, responses_fac
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
-    # Trigger proposal creation
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("propose policy")
-    page.get_by_role("button", name="Send").click()
+    # Create a proposal directly via persistence (no named volumes)
+    db_path = tmp_path / "agent.sqlite"
+    p = SQLitePersistence(str(db_path))
+    # Ensure schema (harmless if already created by app startup)
+    await p.ensure_schema()
+    # Insert a proposal for this agent
+    await p.create_policy_proposal(agent_id, "p-e2e", policy_allow_all)
+    # Open UI and connect WS
+    page.goto(base + f"/?agent_id={agent_id}")
+    page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Open proposal should appear in the Approvals tab without reload
     page.get_by_text("Open Proposals (1)").wait_for(timeout=10000)

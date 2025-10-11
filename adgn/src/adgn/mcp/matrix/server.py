@@ -1,19 +1,14 @@
 """Matrix MCP server with background inbox and yield semantics.
 
 Features (MVP):
-- Background sync watcher that collects new text messages in a single room
-- Tools:
-  - send_message(text) → post to room
-  - drain_new_messages() → return and clear queued messages
-  - yield(last_seen_event_id) → mark cursor and request end_turn via shared bus
-- Emits ResourceUpdatedNotification on each new message via NotifyingFastMCP
+- Background sync watcher that collects new text messages in a single room.
+- Emits ResourceUpdatedNotification on each new message via NotifyingFastMCP.
 
 Notes
-- Designed for unencrypted rooms first. E2EE can be added via matrix-nio[e2e]
-  and a persistent store_path, plus device verification. For now we avoid E2EE
-  complexity and rely on plaintext rooms.
-- Network credentials are supplied via MatrixConfig; the caller constructs this
-  server in-proc via make_matrix_mcp().
+- Designed for unencrypted rooms first; E2EE can be added later with matrix-nio[e2e]
+  and a persistent store_path. For now we rely on plaintext rooms.
+- Network credentials are supplied via MatrixConfig; callers construct this server
+  in-proc via make_matrix_server().
 """
 
 from __future__ import annotations
@@ -22,8 +17,10 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
+from fastmcp.exceptions import ToolError
+from fastmcp.server import FastMCP
 from nio import (  # type: ignore
     AsyncClient,
     LoginResponse,
@@ -33,7 +30,6 @@ from nio import (  # type: ignore
 from pydantic import BaseModel, Field
 
 from adgn.agent.server.bus import ServerBus, UiEndTurn
-from adgn.mcp._shared.fastmcp_helpers import mcp_flat_model
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 # Matrix SDK uses millisecond timeouts for sync; keep constants explicit
@@ -109,6 +105,40 @@ class _Inbox:
             self.new_event.clear()
 
 
+def _room_matches(r: MatrixRoom, room: str) -> bool:  # type: ignore[valid-type]
+    """Return True if the MatrixRoom matches the given id or alias.
+
+    Uses attribute access for display_name/canonical_alias guarded by getattr
+    since matrix-nio may omit these fields.
+    """
+    return (
+        str(r.room_id) == room
+        or getattr(r, "display_name", None) == room
+        or getattr(r, "canonical_alias", None) == room
+    )
+
+
+def _parse_text_event(
+    room: MatrixRoom, event: RoomMessageText, self_user: str
+) -> IncomingMessage | None:  # type: ignore[valid-type]
+    """Build an IncomingMessage from a RoomMessageText or return None to skip.
+
+    Skips self-sent messages and non-text bodies.
+    """
+    if str(event.sender) == self_user:
+        return None
+    body = getattr(event, "body", None)
+    if not isinstance(body, str):
+        return None
+    return IncomingMessage(
+        event_id=str(event.event_id),
+        room_id=str(room.room_id),
+        sender=str(event.sender),
+        timestamp_ms=int(getattr(event, "server_timestamp", 0)),
+        body=body,
+    )
+
+
 class _MatrixClient:
     """Thin wrapper for matrix-nio client with guarded imports."""
 
@@ -146,12 +176,8 @@ class _MatrixClient:
         await c.sync(timeout=SYNC_PRIME_TIMEOUT_MS)  # prime rooms
         rid = None
         for r in c.rooms.values():
-            if (
-                r.room_id == room
-                or getattr(r, "display_name", None) == room
-                or getattr(r, "canonical_alias", None) == room
-            ):
-                rid = r.room_id
+            if _room_matches(r, room):
+                rid = str(r.room_id)
                 break
         if rid is None:
             # fallback: if looks like a room id, assume as-is
@@ -161,21 +187,9 @@ class _MatrixClient:
         # Callbacks for new messages
         def _on_message(room: MatrixRoom, event: RoomMessageText):  # type: ignore
             try:
-                # Skip our own messages
-                if event.sender == c.user:
+                msg = _parse_text_event(room, event, str(c.user))
+                if msg is None:
                     return
-                # Only text
-                body = getattr(event, "body", None)
-                if not isinstance(body, str):
-                    return
-                # server_timestamp is provided by nio; use getattr for SDK variation safety
-                msg = IncomingMessage(
-                    event_id=str(event.event_id),
-                    room_id=str(room.room_id),
-                    sender=str(event.sender),
-                    timestamp_ms=int(getattr(event, "server_timestamp", 0)),
-                    body=body,
-                )
                 self.inbox.enqueue(msg)
                 # Emit a protocol notification so handlers can insert a system message
                 try:
@@ -231,27 +245,18 @@ class _MatrixClient:
         return {"ok": True, "event_id": eid}
 
 
-def make_matrix_mcp(name: str, bus: ServerBus, cfg: MatrixConfig) -> NotifyingFastMCP:
+def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> NotifyingFastMCP:
     inbox = _Inbox()
-    mcp = NotifyingFastMCP(
-        name=name,
-        instructions=(
-            "Matrix bridge: receive new messages as notifications and use tools to\n"
-            "interact. Contract: do not emit plain text; use matrix.send_message to\n"
-            "reply and matrix.yield when finished. Start each turn by calling\n"
-            "matrix.drain_new_messages to retrieve pending inbound messages."
-        ),
-    )
-
     # Background client managed via server lifespan; broadcast notifications on new msgs
     client_holder: dict[str, _MatrixClient] = {}
 
-    async def _broadcast(uri: str) -> None:
-        await mcp.broadcast_resource_updated(uri)
-
-    # Lifespan wires the matrix-nio client
+    # Lifespan wires the matrix-nio client and uses the provided server instance for notifications
     @asynccontextmanager
-    async def _lifespan(_: Any):
+    async def _lifespan(server: FastMCP):
+        async def _broadcast(uri: str) -> None:
+            srv = cast(NotifyingFastMCP, server)
+            await srv.broadcast_resource_updated(uri)
+
         mc = _MatrixClient(cfg, inbox, _broadcast)
         client_holder["client"] = mc
         await mc.start()
@@ -263,50 +268,42 @@ def make_matrix_mcp(name: str, bus: ServerBus, cfg: MatrixConfig) -> NotifyingFa
             except Exception as e:
                 logger.debug("matrix client stop failed: %s", e)
 
-    # Install lifespan on the underlying FastMCP server.
-    # Exception: the upstream FastMCP currently exposes lifespan on the internal server
-    # object; set via private attribute until a public hook is available.
-    setattr(mcp._mcp_server, "lifespan", _lifespan)  # type: ignore[attr-defined]
+    mcp = NotifyingFastMCP(
+        name=name,
+        instructions=(
+            "Matrix bridge: receive DMs via notifications; use the provided tools to\n"
+            "read new messages, reply, and end your turn. Do not emit plain text;\n"
+            "always communicate via tools."
+        ),
+        lifespan=_lifespan,
+    )
 
     # Tools
-    @mcp_flat_model(
-        mcp,
-        name="send_message",
-        title="Send message",
-        description="Send a plaintext message to the configured room",
-        structured_output=True,
-    )
-    async def send_message(input: SendMessageInput) -> dict[str, Any]:
+    class MessageSendResult(BaseModel):
+        ok: bool = True
+        event_id: str | None = None
+
+    @mcp.flat_model()
+    async def send_message(input: SendMessageInput) -> MessageSendResult:
+        """Send a plaintext message to the configured room."""
         mc = client_holder.get("client")
         if mc is None:
-            return {"ok": False, "error": "matrix client not running"}
-        try:
-            return await mc.send_text(input.content)
-        except Exception as e:  # pragmatic: return structured error
-            return {"ok": False, "error": str(e)}
+            # Surface as tool error; FastMCP converts to protocol-level error
+            raise ToolError("matrix client not running")
+        res = await mc.send_text(input.content)
+        return MessageSendResult(ok=True, event_id=str(res.get("event_id")))
 
-    @mcp_flat_model(
-        mcp,
-        name="drain_new_messages",
-        title="Drain new messages",
-        description="Return and clear queued inbound messages",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def drain_new_messages() -> DrainResult:
+        """Return and clear queued inbound messages."""
         return inbox.drain()
 
-    @mcp_flat_model(
-        mcp,
-        name="yield",
-        title="Yield turn",
-        description=("End the current turn and record the last seen event id."),
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def do_yield(input: YieldInput) -> UiEndTurn:
+        """End the current turn and record the last seen event id."""
         inbox.ack(input.last_seen_event_id)
         bus.push_end_turn()
         return UiEndTurn()
 
-    # Intentionally avoid setting dynamic attributes on the MCP wrapper; callers
-    # should keep references to the returned inbox via closures or explicit state.
+    # Intentionally avoid setting dynamic attributes on the MCP wrapper
     return mcp

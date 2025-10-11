@@ -1,6 +1,6 @@
-# TODO: MCP resource change subscriptions (push notifications)
+# MCP resource change subscriptions (push notifications)
 
-Status: Missing in current FastMCP Python SDK; desirable for reactive PE/agents.
+Status: Implemented in ADGN via NotifyingFastMCP and server hooks; upstream FastMCP Python still lacks a formal public notification API, so we extend/wrap it internally.
 
 ## Why we want this
 - Reactive UX: When a server-side resource (e.g., container.info, test results, file snapshots) changes, clients should be notified without polling.
@@ -8,16 +8,24 @@ Status: Missing in current FastMCP Python SDK; desirable for reactive PE/agents.
 - Cleaner agent loops: Agents can respond to server events instead of guessing/polling.
 
 ## Current state (our env / SDK)
-- FastMCP Python (installed version) exposes tools, prompts, resources, but does NOT provide a public API to:
-  - register server-side notifications (no `@notification` decorator)
-  - declare or emit resource list/content change notifications
-- The MCP types include capability flags (e.g., `resources.subscribe`, `resources.listChanged`) and generic JSON‑RPC notification types, but FastMCP’s server layer does not surface a simple way to send resource change notifications to the client.
+- Upstream FastMCP Python does not expose a public `@notification` decorator or helpers to emit resource notifications.
+- ADGN provides `NotifyingFastMCP` which captures sessions and exposes:
+  - `broadcast_resource_updated(uri)` and
+  - `broadcast_resource_list_changed()`
+  These are used by in-proc servers to push resource notifications to clients.
+- The Compositor captures child `resources/list_changed` via a message handler and exposes a hook `add_list_changed_listener(cb)` for in-proc servers to react.
 
-## Workarounds we’re using now
-- Dynamic resources: compute content on read; clients poll via `resources/read` when they need updates.
-- Tool-mediated state updates: clients call a tool to update state, then re‑read resources.
+## What we’ve built
+- `resources` server:
+  - Tools: `list`, `read`, `subscribe`, `unsubscribe`.
+  - List-changed interest: `subscribe_list_changes({server})`, `unsubscribe_list_changes({server})` (multi-origin).
+  - Synthetic index resource `resources://subscriptions` includes both per-resource subscriptions and `list_subscriptions` (origins selected for list-changed). The server emits `ResourceUpdated` for the index when selection changes or a subscribed origin fires `list_changed`.
+- `compositor_meta` server:
+  - Emits `ResourceListChanged` on mount lifecycle changes and `ResourceUpdated` for per-server state resources.
+- Agent runtime:
+  - Notification buffer groups `ResourceUpdated` and `ResourceListChanged` for reducers/UI, using compositor attribution.
 
-## Desired design (when SDK supports it)
+## Desired design (upstream SDK)
 - Server capabilities
   - `resources.subscribe: true` and `resources.listChanged: true` in InitializeResult.capabilities.
   - Optional `resources/updated` notifications keyed by URI (content change), and `resources/listChanged` when the index of resources changes.
@@ -30,20 +38,17 @@ Status: Missing in current FastMCP Python SDK; desirable for reactive PE/agents.
 
 ## Acceptance criteria
 - Server can emit at least `notifications/resources/listChanged`; client receives it without polling.
-- Optional: per‑URI content update notifications delivered as `notifications/resources/updated` with `{uri}` payload.
-- Capabilities reflect availability; clients can feature-detect.
+- Per‑URI content update notifications delivered as `notifications/resources/updated` with `{uri}` payload (supported via NotifyingFastMCP; used for index updates).
+- Capabilities reflect availability; clients can feature‑detect.
 
-## Migration plan (once available)
-1) Detect SDK support; gate feature via InitializeResult.capabilities.
-2) Add subscription in McpManager on open (if supported), wire MiniCodex to set a notification handler.
-3) Update runtime flows to react to notifications (e.g., refresh banners, invalidate caches).
-4) Add tests: subscribe → server mutates resource → notification arrives → client re‑reads and validates new content.
+## Remaining work / follow-ups
+1) Persistence for subscriptions (SQLite) so selections survive restart.
+2) Optional per-subscription resources (e.g., `resources://subscriptions/{server}`) for finer‑grained list_changed tracking.
+3) Consider emitting `ResourceListChanged` from the resources server itself when subscribed origins fire, in addition to index `ResourceUpdated` (currently adequate via index updates).
+4) Capability surfacing for list-changed support in InitializeResult where relevant.
 
 ## Tracking
-- Blocked by SDK surface (Python): no public notification API in FastMCP for resources.
-- Candidates to explore upstream:
-  - Expose `@notification` decorator in FastMCP
-  - Add ResourceManager hooks + server notification helpers
+- Upstream FastMCP: propose `@notification` decorator and resource notification helpers.
 
 ## Links
 - In-proc transport design: `src/adgn/mcp/inproc_transport_design.md`

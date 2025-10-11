@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import asyncio
-from contextlib import asynccontextmanager
-from contextvars import ContextVar, Token
 from dataclasses import dataclass
 import logging
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp.server import FastMCP
 
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
+from adgn.mcp.compositor.server import Compositor
 
 # ---- Dependencies and state -------------------------------------------------
 
@@ -38,57 +36,28 @@ class PromptFeedbackState:
     last_feedback: str = ""
 
 
-@dataclass
-class SessionStateHandle:
-    ready: asyncio.Event
-    state: PromptFeedbackState | None = None
-
-
-_state_var: ContextVar[PromptFeedbackState] = ContextVar("_prompt_feedback_state")
 logger = logging.getLogger(__name__)
 
 
-# ---- Server factory ---------------------------------------------------------
-
-
-def make_prompt_feedback_server_with_handle(
+def make_prompt_feedback_server_with_state(
     deps: PromptEvaluationDeps,
     feedback_provider: FeedbackProvider,
     *,
     name: str = "prompt_feedback",
-) -> tuple[FastMCP, SessionStateHandle]:
-    """FastMCP server with per-session state and an external handle.
+) -> tuple[FastMCP, PromptFeedbackState]:
+    """FastMCP with closure state (tools‑builder style). No lifespan/ContextVar.
 
-    Usage (in-proc only):
-      server, handle = make_prompt_feedback_server_with_handle(deps, feedback_provider)
-      # Wire server into fastmcp_inproc_client session; after initialize:
-      await handle.ready.wait(); state = handle.state
+    Returns (server, state). Attach via mcp.attach_inproc.
     """
-    handle = SessionStateHandle(ready=asyncio.Event())
-
-    @asynccontextmanager
-    async def lifespan(_server: FastMCP):  # yields PromptFeedbackState per session
-        state = PromptFeedbackState()
-        handle.state = state
-        handle.ready.set()
-        token: Token = _state_var.set(state)
-        try:
-            yield state
-        finally:
-            _state_var.reset(token)
-
+    state = PromptFeedbackState()
     mcp = FastMCP(
         name,
         instructions="Prompt evaluation (rollouts+grading+persistence)",
-        lifespan=lifespan,
     )
 
     @mcp.tool()
     async def propose_prompt(prompt: str) -> dict[str, str]:
         logger.info("propose_prompt: start", extra={"prompt": prompt})
-        # Use request context lifespan to get per-session state; avoids cross-task ContextVar issues
-        ctx = mcp.get_context()
-        state = cast(PromptFeedbackState, ctx.request_context.lifespan_context)
         state.iteration += 1
         state.last_prompt = prompt
         tasks = await deps.select_seed_tasks()
@@ -106,4 +75,21 @@ def make_prompt_feedback_server_with_handle(
         state.last_feedback = feedback
         return {"feedback": feedback}
 
-    return mcp, handle
+    return mcp, state
+
+
+async def attach_prompt_feedback(
+    comp: Compositor,
+    deps: PromptEvaluationDeps,
+    feedback_provider: FeedbackProvider,
+    *,
+    name: str = "prompt_feedback",
+):
+    """Attach prompt_feedback in-proc; return (server, state)."""
+    server, state = make_prompt_feedback_server_with_state(
+        deps,
+        feedback_provider,
+        name=name,
+    )
+    await comp.mount_inproc(name, server)
+    return server, state

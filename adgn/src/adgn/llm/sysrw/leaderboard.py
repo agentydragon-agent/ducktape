@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import sys
 
+from pydantic import BaseModel, ConfigDict
 from rich.console import Console
 from rich.table import Table
 
@@ -39,6 +40,37 @@ class Row:
     grader_model: str | None = None
     template_error: bool = False
     template_error_exc: str | None = None
+
+
+class SummaryCI(BaseModel):
+    lcb: float | None = None
+    ucb: float | None = None
+    model_config = ConfigDict(extra="ignore")
+
+
+class SummaryModels(BaseModel):
+    sampler: str | None = None
+    evaluator: str | None = None
+    grader: str | None = None
+    model_config = ConfigDict(extra="ignore")
+
+
+class SummaryTooling(BaseModel):
+    with_tools_pct: float | None = 0.0
+    text_only_pct: float | None = None
+    total_samples: int | None = None
+    model_config = ConfigDict(extra="ignore")
+
+
+class EvalSummary(BaseModel):
+    n: int = 0
+    mean: float = 0.0
+    ci95: SummaryCI | float | None = None
+    lcb: float | None = None
+    ucb: float | None = None
+    tooling: SummaryTooling | None = None
+    models: SummaryModels | None = None
+    model_config = ConfigDict(extra="ignore")
 
 
 def sha1_text(text: str) -> str:
@@ -69,10 +101,7 @@ def load_known_templates_from_runs(runs_dir: Path) -> dict[str, str]:
                 if t2.exists():
                     t = t2
         if t.exists():
-            try:
-                h = sha1_text(t.read_text(encoding="utf-8"))
-            except Exception:
-                continue
+            h = sha1_text(t.read_text(encoding="utf-8"))
             curr = mapping.get(h)
             label = str(t)
             if curr is None or label < curr:
@@ -99,14 +128,9 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     s_path, t_path = find_summary_and_template(run_dir)
     if not (s_path and t_path):
         return None
-    try:
-        summ = json.loads(s_path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    try:
-        t_text = t_path.read_text(encoding="utf-8")
-    except Exception:
-        t_text = ""
+    raw = json.loads(s_path.read_text(encoding="utf-8"))
+    summ = EvalSummary.model_validate(raw)
+    t_text = t_path.read_text(encoding="utf-8")
     thash = sha1_text(t_text) if t_text else "?"
     label = known.get(thash) or str(t_path)
 
@@ -122,67 +146,23 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
         except Exception:
             err_repr = "<unprintable exception>"
 
-    def _f(key: str, default: float = 0.0) -> float:
-        try:
-            return float(summ.get(key, default))
-        except Exception:
-            return default
+    mean = float(summ.mean)
 
-    mean = _f("mean")
+    # Derive ci95/bounds via typed helper
+    ci95_val, lcb, ucb = _derive_ci_from_summary(summ)
 
-    # Support both ci95 numeric (legacy) and ci95={lcb,ucb} (new)
-    ci95_val: float | None = None
-    lcb: float | None = None
-    ucb: float | None = None
-
-    ci95_field = summ.get("ci95")
-    if isinstance(ci95_field, dict):
-        # New format inside ci95
-        try:
-            raw_lcb = ci95_field.get("lcb")
-            lcb = float(raw_lcb) if raw_lcb is not None else None
-        except Exception:
-            lcb = None
-        try:
-            raw_ucb = ci95_field.get("ucb")
-            ucb = float(raw_ucb) if raw_ucb is not None else None
-        except Exception:
-            ucb = None
-        if lcb is not None and ucb is not None:
-            ci95_val = max(abs(mean - lcb), abs(ucb - mean))
-    else:
-        # Legacy numeric ci95
-        try:
-            ci95_val = float(ci95_field) if ci95_field is not None else None
-        except Exception:
-            ci95_val = None
-        # Try top-level lcb/ucb if present
-        if isinstance(summ.get("lcb"), int | float):
-            lcb = float(summ.get("lcb"))
-        if isinstance(summ.get("ucb"), int | float):
-            ucb = float(summ.get("ucb"))
-
-    # Derive ci95 half-width if missing but bounds present
-    if ci95_val is None:
-        ci95_val = (
-            max(abs(mean - lcb), abs(ucb - mean)) if lcb is not None and ucb is not None else 0.0
-        )
-
-    tooling = summ.get("tooling") or {}
-    try:
-        with_tools = float(tooling.get("with_tools_pct", 0.0))
-    except Exception:
-        with_tools = 0.0
+    tooling = summ.tooling
+    with_tools = (
+        float(tooling.with_tools_pct) if tooling and tooling.with_tools_pct is not None else 0.0
+    )
 
     # Extract models (sampler/evaluator) for display; do not persist/modify files here
     sampler_model: str | None = None
     grader_model: str | None = None
-    models = summ.get("models")
-    if isinstance(models, dict):
-        sm = models.get("sampler")
-        gm = models.get("evaluator") or models.get("grader")
-        sampler_model = sm if isinstance(sm, str) else None
-        grader_model = gm if isinstance(gm, str) else None
+    models = summ.models
+    if models is not None:
+        sampler_model = models.sampler
+        grader_model = models.evaluator or models.grader
 
     # TODO(mpokorny): deprecate legacy numeric ci95 once all runs use ci95={lcb,ucb}.
 
@@ -190,7 +170,7 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
         run=run_dir.name,
         mean=mean,
         ci95=float(ci95_val),
-        n=int(summ.get("n", 0) or 0),
+        n=int(summ.n or 0),
         lcb=lcb,
         ucb=ucb,
         template_label=label,
@@ -242,7 +222,7 @@ def _color_for_hash(hash_hex: str) -> str:
     ]
     try:
         idx = int(hash_hex[:8], 16) % len(palette)
-    except Exception:
+    except ValueError:
         idx = 0
     return palette[idx]
 
@@ -251,11 +231,11 @@ def _relpath(p: str) -> str:
     # Prefer a path relative to current working directory when possible
     try:
         abs_p = str(Path(p).resolve())
-    except Exception:
+    except OSError:
         abs_p = p
     try:
         return os.path.relpath(abs_p, start=Path.cwd())
-    except Exception:
+    except (OSError, ValueError):
         return p
 
 
@@ -272,9 +252,8 @@ def format_rich_table(rows: list[Row]) -> Table:
     table.add_column("template", justify="left")
 
     for r in rows:
-        # Derive display bounds if missing
-        lcb = r.lcb if r.lcb is not None else (r.mean - r.ci95)
-        ucb = r.ucb if r.ucb is not None else (r.mean + r.ci95)
+        # Derive display bounds via helper when missing
+        lcb, ucb = _bounds_or_fallback(r.mean, r.ci95, r.lcb, r.ucb)
         color = _color_for_hash(r.template_hash)
         if r.template_error:
             label_cell = f"[bold red]ERR: {_relpath(r.template_label)}[/]"
@@ -321,11 +300,13 @@ def generate(
     ]
 
     # Row sort key
-    row_key = {
-        "mean": lambda r: r.mean,
-        "lcb": lambda r: (r.lcb if r.lcb is not None else (r.mean - r.ci95)),
-        "ucb": lambda r: (r.ucb if r.ucb is not None else (r.mean + r.ci95)),
-    }[sort_key]
+    def _row_key(r: Row) -> float:
+        if sort_key == "mean":
+            return r.mean
+        lcb_val, ucb_val = _bounds_or_fallback(r.mean, r.ci95, r.lcb, r.ucb)
+        return lcb_val if sort_key == "lcb" else ucb_val
+
+    row_key = _row_key
 
     # Sort within groups and then groups by best row
     groups: list[list[Row]] = []
@@ -399,3 +380,44 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _derive_ci_from_summary(summary: EvalSummary) -> tuple[float, float | None, float | None]:
+    """Return (ci95_halfwidth, lcb, ucb) from a typed summary.
+
+    Accepts legacy numeric ci95 or a dict with lcb/ucb. If only bounds are
+    available, derives the half-width as max(|mean-lcb|, |ucb-mean|). Falls back
+    to 0.0 when nothing usable is present.
+    """
+    mean = float(summary.mean)
+    ci95_half: float | None = None
+    lcb: float | None = None
+    ucb: float | None = None
+
+    if isinstance(summary.ci95, SummaryCI):
+        lcb = summary.ci95.lcb
+        ucb = summary.ci95.ucb
+        if lcb is not None and ucb is not None:
+            ci95_half = max(abs(mean - lcb), abs(ucb - mean))
+    elif isinstance(summary.ci95, (int, float)):
+        ci95_half = float(summary.ci95)
+    # Fallback: top-level bounds if provided
+    if lcb is None and summary.lcb is not None:
+        lcb = float(summary.lcb)
+    if ucb is None and summary.ucb is not None:
+        ucb = float(summary.ucb)
+
+    if ci95_half is None:
+        ci95_half = (
+            max(abs(mean - lcb), abs(ucb - mean)) if lcb is not None and ucb is not None else 0.0
+        )
+    return ci95_half, lcb, ucb
+
+
+def _bounds_or_fallback(
+    mean: float, ci95: float, lcb: float | None, ucb: float | None
+) -> tuple[float, float]:
+    """Return concrete (lcb, ucb), using mean±ci95 if bounds are missing."""
+    lcb_val = lcb if lcb is not None else (mean - ci95)
+    ucb_val = ucb if ucb is not None else (mean + ci95)
+    return (lcb_val, ucb_val)

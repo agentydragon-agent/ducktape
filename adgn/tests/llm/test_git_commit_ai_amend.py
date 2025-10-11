@@ -11,68 +11,12 @@ import pygit2
 import pytest
 
 from adgn.git_commit_ai import cli
-from adgn.git_commit_ai.cli import get_commit_diff
+from adgn.git_commit_ai.cli import build_cache_key, get_commit_diff
 from adgn.git_commit_ai.core import build_prompt
 
+from .git_repo_utils import _commit, _init_repo, _stage
 
-@pytest.fixture
-def author_name() -> str:
-    return "Test User"
-
-
-@pytest.fixture
-def author_email() -> str:
-    return "test@example.com"
-
-
-# ------------------------- helpers (pygit2) -------------------------
-
-
-def _init_repo(
-    tmpdir: str, name: str = "Test User", email: str = "test@example.com"
-) -> pygit2.Repository:
-    repo = pygit2.init_repository(tmpdir, initial_head="main")
-    cfg = repo.config
-    cfg["user.name"] = name
-    cfg["user.email"] = email
-    return repo
-
-
-def _stage(repo: pygit2.Repository, relpath: str) -> None:
-    repo.index.add(relpath)
-    repo.index.write()
-
-
-def _commit(repo: pygit2.Repository, message: str) -> None:
-    cfg = repo.config
-    try:
-        sig_name = cfg["user.name"]
-    except KeyError:
-        sig_name = "Test User"
-    try:
-        sig_email = cfg["user.email"]
-    except KeyError:
-        sig_email = "test@example.com"
-    sig = pygit2.Signature(sig_name, sig_email)
-    tree_oid = repo.index.write_tree()
-    try:
-        parent = repo.revparse_single("HEAD").peel(pygit2.Commit)
-        parents = [parent.id]
-    except KeyError:
-        parents = []
-    repo.create_commit("HEAD", sig, sig, message, tree_oid, parents)
-
-
-# --------------------------- fixtures -------------------------------
-
-
-@pytest.fixture
-def temp_repo(author_name: str, author_email: str, tmp_path: Path) -> pygit2.Repository:
-    """Create a temporary git repository for testing (pygit2)."""
-    repo_dir = tmp_path / "repo"
-    repo_dir.mkdir(parents=True, exist_ok=True)
-    repo = _init_repo(str(repo_dir), name=author_name, email=author_email)
-    yield repo
+# Fixtures moved to tests/llm/conftest.py
 
 
 # ----------------------------- tests --------------------------------
@@ -204,7 +148,7 @@ def test_build_prompt_with_amend(temp_repo: pygit2.Repository):
 
 
 @pytest.mark.asyncio
-async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path):
+async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fake_editor):
     """Integration test of the full amend flow with mocked AI."""
     tmpdir = tmp_path / "repo"
     tmpdir.mkdir(parents=True, exist_ok=True)
@@ -245,7 +189,7 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path):
     new_message = "Updated: Initial implementation\n\n- Added more changes"
 
     # Patch provider generate and cache so it uses cached message
-    async def _fake_generate(self, include_all: bool, model: str | None = None) -> str:
+    async def _fake_generate(*args, **kwargs) -> str:  # match production signature leniently
         return new_message
 
     monkeypatch.setattr(
@@ -256,33 +200,6 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path):
         "adgn.git_commit_ai.cli.Cache.get",
         lambda self, key: new_message,
     )
-
-    # Patch _get_editor to return a placeholder editor command
-    async def _fake_get_editor():
-        return "fake-editor"
-
-    monkeypatch.setattr("adgn.git_commit_ai.cli._get_editor", _fake_get_editor)
-
-    # Intercept the editor subprocess shell call and append comments + scissors
-    class _Proc:
-        def __init__(self, code=0):
-            self._code = code
-
-        async def wait(self):
-            return self._code
-
-    async def _fake_shell(cmd, *args, **kwargs):
-        # Extract COMMIT_EDITMSG path (last token)
-        commit_path = cmd.rsplit(" ", 1)[-1]
-        msg = (
-            "\n# editor-added comment (should be stripped)\n"
-            "# ------------------------ >8 ------------------------\n"
-            "# diff line (commented)\n"
-        )
-        Path(commit_path).write_text(Path(commit_path).read_text() + msg)
-        return _Proc(0)
-
-    monkeypatch.setattr("asyncio.create_subprocess_shell", _fake_shell)
 
     # Run the tool; patch argv to avoid pytest args leaking
     with patch("sys.exit") as mock_exit:
@@ -307,13 +224,27 @@ def test_cache_key_includes_amend_status():
     scope = "staged"
     commitish = "abc123"
     diff = "test diff content"
-    diff_hash = hashlib.sha256(diff.encode()).hexdigest()
+    _ = hashlib.sha256(diff.encode()).hexdigest()
 
     # Key for new commit
-    key_new = f"{provider}:{model_name}:{scope}:new:{commitish}:{diff_hash}"
+    key_new = build_cache_key(
+        model_name,
+        include_all=(scope == "all"),
+        previous_message=None,
+        commitish=commitish,
+        diff=diff,
+        provider=provider,
+    )
 
     # Key for amend
-    key_amend = f"{provider}:{model_name}:{scope}:amend:{commitish}:{diff_hash}"
+    key_amend = build_cache_key(
+        model_name,
+        include_all=(scope == "all"),
+        previous_message="some msg",
+        commitish=commitish,
+        diff=diff,
+        provider=provider,
+    )
 
     # Should be different
     assert key_new != key_amend

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Literal
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp.server import FastMCP
 from pydantic import BaseModel, Field
 import pytest
 
-from adgn.mcp._shared.fastmcp_helpers import FlatModelFastMCP, mcp_flat_model
+from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP, mcp_flat_model
 
 
 class EchoInput(BaseModel):
@@ -77,11 +77,7 @@ def test_mcp_flat_model_backward_compatibility():
 def test_tool_flat_explicit_models():
     mcp = FlatModelFastMCP("echo2")
 
-    @mcp.tool(
-        name="echo",
-        flat_input_model=EchoInput,
-        flat_output_model=EchoOutput,
-    )
+    @mcp.tool(name="echo", flat=True, flat_output_model=EchoOutput)
     def echo_again(payload: EchoInput) -> EchoOutput:
         return EchoOutput(text=payload.msg)
 

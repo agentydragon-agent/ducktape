@@ -3,12 +3,18 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import json
-from typing import Any, cast
+from typing import cast
 import uuid
+from uuid import UUID
 
 import aiosqlite
+from fastmcp.mcp_config import MCPConfig
+from pydantic import JsonValue
 
-from . import AgentRow, ApprovalOutcome, EventType, Persistence, RunRow, RunStatus
+from adgn.agent.persist import PolicyProposal
+from adgn.agent.runtime.auto_attach import filter_persistable_servers
+
+from . import AgentMetadata, AgentRow, ApprovalOutcome, EventType, Persistence, RunRow, RunStatus
 from .events import EventRecord, parse_event
 
 MAX_EVENT_PAYLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB hard limit per event payload
@@ -99,40 +105,56 @@ CREATE TABLE IF NOT EXISTS approval_policies (
 CREATE TABLE IF NOT EXISTS policy_proposals (
   id TEXT NOT NULL,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
   status TEXT NOT NULL,
-  rationale TEXT NULL,
-  source TEXT NOT NULL,
   created_at TEXT NOT NULL,
   decided_at TEXT NULL,
   PRIMARY KEY (agent_id, id)
+);
+-- Chat: messages and per-server last-read (HWM)
+CREATE TABLE IF NOT EXISTS chat_messages (
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  author TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  content TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_agent ON chat_messages(agent_id);
+CREATE TABLE IF NOT EXISTS chat_last_read (
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  server_name TEXT NOT NULL,
+  last_id INTEGER NULL,
+  PRIMARY KEY (agent_id, server_name)
 );
                     """
             )
             await db.commit()
 
     # Agents -----------------------------------------------------------------
-    async def create_agent(
-        self, *, specs: dict[str, Any], metadata: dict[str, Any] | None = None
-    ) -> str:
+    async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> str:
         agent_id = uuid.uuid4().hex
         async with self._open() as db:
+            # Persist only user-configured servers (exclude default auto-attached)
+            spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
             await db.execute(
                 "INSERT INTO agents (id, created_at, specs, metadata) VALUES (?, ?, ?, ?)",
                 (
                     agent_id,
                     _now().isoformat(),
-                    json.dumps(specs),
-                    json.dumps(metadata) if metadata else None,
+                    json.dumps(spec_json),
+                    json.dumps(metadata.model_dump()),
                 ),
             )
             await db.commit()
         return agent_id
 
-    async def update_agent_specs(self, agent_id: str, *, specs: dict[str, Any]) -> None:
+    async def update_agent_specs(self, agent_id: str, *, mcp_config: MCPConfig) -> None:
         async with self._open() as db:
+            spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
             await db.execute(
                 "UPDATE agents SET specs = ? WHERE id = ?",
-                (json.dumps(specs), agent_id),
+                (json.dumps(spec_json), agent_id),
             )
             await db.commit()
 
@@ -140,29 +162,30 @@ CREATE TABLE IF NOT EXISTS policy_proposals (
         self,
         agent_id: str,
         *,
-        attach: dict[str, Any] | None = None,
+        attach: dict[str, MCPConfig] | None = None,
         detach: list[str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> MCPConfig:
         attach = attach or {}
-        detach = detach or []
+        detach = detach if detach is not None else []
         async with self._open_row() as db:
             async with db.execute("SELECT specs FROM agents WHERE id = ?", (agent_id,)) as cur:
                 r = await cur.fetchone()
             if not r:
                 raise KeyError(f"agent not found: {agent_id}")
-            specs = cast(dict[str, Any], json.loads(r["specs"])) if r["specs"] else {}
-            # apply detach first
+            # Load persisted JSON and rehydrate to MCPConfig
+            cfg = MCPConfig.model_validate(json.loads(r["specs"])) if r["specs"] else MCPConfig()
+            # Apply detach
             for name in detach:
-                specs.pop(name, None)
-            # then attach/replace entries
-            for name, spec in attach.items():
-                specs[name] = spec
-            await db.execute(
-                "UPDATE agents SET specs = ? WHERE id = ?",
-                (json.dumps(specs), agent_id),
-            )
-            await db.commit()
-        return cast(dict[str, Any], specs)
+                cfg.mcpServers.pop(name, None)
+            # Apply attach: when given a whole config per name, merge servers
+            for name, subcfg in attach.items():
+                # Runtime assertion: values must be MCPConfig per typed API
+                assert isinstance(subcfg, MCPConfig), "attach values must be MCPConfig instances"
+                # Merge all entries from the provided config
+                for k, v in subcfg.mcpServers.items():
+                    cfg.mcpServers[k] = v
+            await self.update_agent_specs(agent_id, mcp_config=cfg)
+        return cfg
 
     async def list_agents(self) -> list[AgentRow]:
         out: list[AgentRow] = []
@@ -172,12 +195,15 @@ CREATE TABLE IF NOT EXISTS policy_proposals (
                 "SELECT id, created_at, specs, metadata FROM agents ORDER BY created_at DESC"
             ) as cur:
                 async for r in cur:
+                    meta_val = AgentMetadata.model_validate_json(cast(str, r["metadata"]))
                     out.append(
                         AgentRow(
                             id=r["id"],
                             created_at=datetime.fromisoformat(r["created_at"]),
-                            specs=json.loads(r["specs"]) if r["specs"] else {},
-                            metadata=json.loads(r["metadata"]) if r["metadata"] else None,
+                            mcp_config=MCPConfig.model_validate(json.loads(r["specs"]))
+                            if r["specs"]
+                            else MCPConfig(),
+                            metadata=meta_val,
                         )
                     )
         return out
@@ -192,11 +218,14 @@ CREATE TABLE IF NOT EXISTS policy_proposals (
             r = await cur.fetchone()
             if not r:
                 return None
+            meta_val = AgentMetadata.model_validate_json(cast(str, r["metadata"]))
             return AgentRow(
                 id=r["id"],
                 created_at=datetime.fromisoformat(r["created_at"]),
-                specs=json.loads(r["specs"]) if r["specs"] else {},
-                metadata=json.loads(r["metadata"]) if r["metadata"] else None,
+                mcp_config=MCPConfig.model_validate(json.loads(r["specs"]))
+                if r["specs"]
+                else MCPConfig(),
+                metadata=meta_val,
             )
 
     async def list_agents_last_activity(self) -> dict[str, datetime | None]:
@@ -230,7 +259,7 @@ GROUP BY a.id
         """Delete an agent and all associated records.
 
         Always purges related runs (and cascaded events/approvals) and deletes
-        the agent row (cascading to approval_policies/policy_proposals).
+        the agent row (cascading to approval_policies).
         """
         async with self._open() as db:
             # Single transaction for atomicity
@@ -273,90 +302,134 @@ LIMIT 1
             await db.commit()
             return int(row[0]) if row and row[0] is not None else 0
 
-    async def create_proposal(
+    # ---- Policy proposals (single-store: SQLite) ----------------------------
+    async def create_policy_proposal(
         self,
         agent_id: str,
         *,
         proposal_id: str,
-        source: str,
-        rationale: str | None,
-        created_at: datetime,
+        content: str,
     ) -> None:
         async with self._open() as db:
             await db.execute(
                 """
-INSERT INTO policy_proposals (id, agent_id, status, rationale, source, created_at, decided_at)
-VALUES (?, ?, 'open', ?, ?, ?, NULL)
+INSERT INTO policy_proposals (id, agent_id, content, status, created_at, decided_at)
+VALUES (?, ?, ?, 'pending', ?, NULL)
                 """,
-                (
-                    proposal_id,
-                    agent_id,
-                    rationale,
-                    source,
-                    created_at.isoformat(),
-                ),
+                (proposal_id, agent_id, content, _now().isoformat()),
             )
             await db.commit()
 
-    async def set_proposal_status(
-        self,
-        agent_id: str,
-        *,
-        proposal_id: str,
-        status: str,
-        decided_at: datetime | None,
-    ) -> None:
-        async with self._open() as db:
-            await db.execute(
-                """
-UPDATE policy_proposals
-SET status = ?, decided_at = ?
-WHERE id = ? AND agent_id = ?
-                """,
-                (
-                    status,
-                    decided_at.isoformat() if decided_at else None,
-                    proposal_id,
-                    agent_id,
-                ),
-            )
-            await db.commit()
-
-    async def list_proposals(self, agent_id: str) -> list[dict[str, Any]]:
+    async def list_policy_proposals(self, agent_id: str) -> list[PolicyProposal]:
         async with self._open_row() as db:
+            out: list[PolicyProposal] = []
             async with db.execute(
                 """
-SELECT id, status, rationale, source, created_at, decided_at
+SELECT id, status, created_at, decided_at
 FROM policy_proposals
 WHERE agent_id = ?
-ORDER BY created_at ASC
+ORDER BY created_at DESC
                 """,
                 (agent_id,),
             ) as cur:
-                rows = await cur.fetchall()
-                out: list[dict[str, Any]] = []
-                for r in rows:
+                async for row in cur:
                     out.append(
-                        {
-                            "id": r["id"],
-                            "status": r["status"],
-                            "rationale": r["rationale"],
-                            "source": r["source"],
-                            "created_at": r["created_at"],
-                            "decided_at": r["decided_at"],
-                        }
+                        PolicyProposal(
+                            id=str(row["id"]),
+                            status=str(row["status"]),
+                            created_at=datetime.fromisoformat(cast(str, row["created_at"])),
+                            decided_at=(
+                                datetime.fromisoformat(cast(str, row["decided_at"]))
+                                if row["decided_at"]
+                                else None
+                            ),
+                            content="",  # content not selected in list; leave empty
+                        )
                     )
-                return out
+        return out
+
+    async def get_policy_proposal(self, agent_id: str, proposal_id: str) -> PolicyProposal | None:
+        async with self._open_row() as db:
+            async with db.execute(
+                """
+SELECT id, status, created_at, decided_at, content
+FROM policy_proposals
+WHERE agent_id = ? AND id = ?
+                """,
+                (agent_id, proposal_id),
+            ) as cur:
+                row = await cur.fetchone()
+                if not row:
+                    return None
+                return PolicyProposal(
+                    id=str(row["id"]),
+                    status=str(row["status"]),
+                    created_at=datetime.fromisoformat(cast(str, row["created_at"])),
+                    decided_at=(
+                        datetime.fromisoformat(cast(str, row["decided_at"]))
+                        if row["decided_at"]
+                        else None
+                    ),
+                    content=cast(str, row["content"]),
+                )
+
+    async def approve_policy_proposal(self, agent_id: str, proposal_id: str) -> int:
+        """Mark proposal approved and persist content as new active policy version.
+
+        Returns the new active policy version.
+        """
+        # Read proposal content
+        async with self._open_row() as db:
+            async with db.execute(
+                "SELECT content FROM policy_proposals WHERE agent_id = ? AND id = ?",
+                (agent_id, proposal_id),
+            ) as cur:
+                row = await cur.fetchone()
+                if not row:
+                    raise KeyError("proposal_not_found")
+                content = cast(str, row["content"])
+        # Persist as active policy and mark proposal approved in one transaction
+        async with self._open() as db:
+            await db.execute(
+                "INSERT INTO approval_policies (agent_id, content, created_at) VALUES (?, ?, ?)",
+                (agent_id, content, _now().isoformat()),
+            )
+            await db.execute(
+                "UPDATE policy_proposals SET status = 'approved', decided_at = ? WHERE agent_id = ? AND id = ?",
+                (_now().isoformat(), agent_id, proposal_id),
+            )
+            cur = await db.execute("SELECT last_insert_rowid();")
+            row = await cur.fetchone()
+            await db.commit()
+            return int(row[0]) if row and row[0] is not None else 0
+
+    async def reject_policy_proposal(self, agent_id: str, proposal_id: str) -> None:
+        async with self._open() as db:
+            await db.execute(
+                "UPDATE policy_proposals SET status = 'rejected', decided_at = ? WHERE agent_id = ? AND id = ?",
+                (_now().isoformat(), agent_id, proposal_id),
+            )
+            await db.commit()
+
+    async def delete_policy_proposal(self, agent_id: str, proposal_id: str) -> None:
+        async with self._open() as db:
+            await db.execute(
+                "DELETE FROM policy_proposals WHERE agent_id = ? AND id = ?",
+                (agent_id, proposal_id),
+            )
+            await db.commit()
+
+    # Seatbelt templates are volume-backed via Docker; no DB APIs in final shape
 
     # Runs --------------------------------------------------------------------
     async def start_run(
         self,
         *,
-        run_id: str,
+        run_id: UUID,
         agent_id: str | None,
         system_message: str | None,
         model: str | None,
-        model_params: dict[str, Any] | None,
+        model_params: dict[str, JsonValue] | None,
         started_at: datetime,
     ) -> None:
         async with self._open() as db:
@@ -366,7 +439,7 @@ INSERT INTO runs (id, agent_id, started_at, finished_at, status, system_message,
 VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
                 """,
                 (
-                    run_id,
+                    str(run_id),
                     agent_id,
                     started_at.isoformat(),
                     system_message,
@@ -376,22 +449,22 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
             )
             await db.commit()
 
-    async def finish_run(self, run_id: str, *, status: RunStatus, finished_at: datetime) -> None:
+    async def finish_run(self, run_id: UUID, *, status: RunStatus, finished_at: datetime) -> None:
         async with self._open() as db:
             await db.execute(
                 "UPDATE runs SET status = ?, finished_at = ? WHERE id = ?",
-                (status.value, finished_at.isoformat(), run_id),
+                (status.value, finished_at.isoformat(), str(run_id)),
             )
             await db.commit()
 
     async def append_event(
         self,
         *,
-        run_id: str,
+        run_id: UUID,
         seq: int,
         ts: datetime,
         type: EventType,
-        payload: dict[str, Any],
+        payload: dict[str, JsonValue],
         call_id: str | None = None,
         tool_key: str | None = None,
     ) -> None:
@@ -402,24 +475,24 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
         async with self._open() as db:
             await db.execute(
                 "INSERT INTO events (run_id, seq, ts, type, payload, call_id, tool_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (run_id, seq, ts.isoformat(), type.value, s, call_id, tool_key),
+                (str(run_id), seq, ts.isoformat(), type.value, s, call_id, tool_key),
             )
             await db.execute(
                 "UPDATE runs SET event_count = event_count + 1 WHERE id = ?",
-                (run_id,),
+                (str(run_id),),
             )
             await db.commit()
 
     async def record_approval(
         self,
         *,
-        run_id: str,
+        run_id: UUID,
         agent_id: str | None,
         call_id: str,
         tool_key: str,
         outcome: ApprovalOutcome,
         decided_at: datetime,
-        details: dict[str, Any] | None = None,
+        details: dict[str, JsonValue] | None = None,
     ) -> None:
         async with self._open() as db:
             await db.execute(
@@ -429,7 +502,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     call_id,
-                    run_id,
+                    str(run_id),
                     agent_id,
                     tool_key,
                     outcome.value,
@@ -440,7 +513,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
             await db.commit()
 
     async def list_runs(self, *, agent_id: str | None = None, limit: int = 50) -> list[RunRow]:
-        params: list[Any] = []
+        params: list[object] = []
         where = ""
         if agent_id:
             where = "WHERE agent_id = ?"
@@ -454,7 +527,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 async for r in cur:
                     out.append(
                         RunRow(
-                            id=r["id"],
+                            id=UUID(r["id"]),
                             agent_id=r["agent_id"],
                             started_at=datetime.fromisoformat(r["started_at"]),
                             finished_at=datetime.fromisoformat(r["finished_at"])
@@ -471,18 +544,18 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                     )
         return out
 
-    async def get_run(self, run_id: str) -> RunRow | None:
+    async def get_run(self, run_id: UUID) -> RunRow | None:
         async with self._open_row() as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 "SELECT id, agent_id, started_at, finished_at, status, system_message, model, model_params, event_count FROM runs WHERE id = ?",
-                (run_id,),
+                (str(run_id),),
             )
             r = await cur.fetchone()
             if not r:
                 return None
             return RunRow(
-                id=r["id"],
+                id=UUID(r["id"]),
                 agent_id=r["agent_id"],
                 started_at=datetime.fromisoformat(r["started_at"]),
                 finished_at=datetime.fromisoformat(r["finished_at"]) if r["finished_at"] else None,
@@ -493,13 +566,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 event_count=int(r["event_count"] or 0),
             )
 
-    async def load_events(self, run_id: str) -> list[EventRecord]:
+    async def load_events(self, run_id: UUID) -> list[EventRecord]:
         out: list[EventRecord] = []
         async with self._open_row() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT seq, ts, type, payload, call_id, tool_key FROM events WHERE run_id = ? ORDER BY seq ASC",
-                (run_id,),
+                (str(run_id),),
             ) as cur:
                 async for r in cur:
                     out.append(

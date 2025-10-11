@@ -5,7 +5,6 @@ Refactored to use wt_cli fixture for invoking the CLI.
 
 from datetime import timedelta
 from pathlib import Path
-import time
 
 import pytest
 
@@ -13,6 +12,7 @@ from adgn.wt.shared.configuration import Configuration
 from adgn.wt.shared.git_utils import git_run
 
 from ..test_data import WATCHER_DEBOUNCE_SECS
+from ..test_utils import wait_until
 
 
 def _status(wt_cli) -> str:
@@ -26,16 +26,19 @@ def wait_for_status_contains(
     needle: str,
     timeout: float = WATCHER_DEBOUNCE_SECS * 8,
 ) -> None:
-    deadline = time.time() + timeout
-    last = ""
-    while time.time() < deadline:
-        last = _status(wt_cli)
-        if needle in last:
-            return
-        time.sleep(WATCHER_DEBOUNCE_SECS)
-    pytest.fail(
-        f"Timed out waiting for status to contain '{needle}'. Last output:\n{last}",
+    last = {"out": ""}
+    ok = wait_until(
+        lambda: (
+            last.update({"out": _status(wt_cli)}),
+            needle in last["out"],
+        )[-1],
+        timeout_seconds=timeout,
+        interval_seconds=WATCHER_DEBOUNCE_SECS,
     )
+    if not ok:
+        pytest.fail(
+            f"Timed out waiting for status to contain '{needle}'. Last output:\n{last['out']}",
+        )
 
 
 def wait_for_status_contains_all(
@@ -43,18 +46,20 @@ def wait_for_status_contains_all(
     needles: list[str],
     timeout: float = WATCHER_DEBOUNCE_SECS * 8,
 ) -> None:
-    deadline = time.time() + timeout
-    last = ""
-    needles = list(needles)
-    while time.time() < deadline:
-        last = _status(wt_cli)
-        if all(n in last for n in needles):
-            return
-        time.sleep(WATCHER_DEBOUNCE_SECS)
-    missing = [n for n in needles if n not in last]
-    pytest.fail(
-        f"Timed out waiting for status to contain all {needles}. Missing: {missing}. Last output:\n{last}",
+    last = {"out": ""}
+    ok = wait_until(
+        lambda: (
+            last.update({"out": _status(wt_cli)}),
+            all(n in last["out"] for n in needles),
+        )[-1],
+        timeout_seconds=timeout,
+        interval_seconds=WATCHER_DEBOUNCE_SECS,
     )
+    if not ok:
+        missing = [n for n in needles if n not in last["out"]]
+        pytest.fail(
+            f"Timed out waiting for status to contain all {needles}. Missing: {missing}. Last output:\n{last['out']}",
+        )
 
 
 def wait_for_status_not_contains(
@@ -62,16 +67,19 @@ def wait_for_status_not_contains(
     needle: str,
     timeout: float = WATCHER_DEBOUNCE_SECS * 8,
 ) -> None:
-    deadline = time.time() + timeout
-    last = ""
-    while time.time() < deadline:
-        last = _status(wt_cli)
-        if needle not in last:
-            return
-        time.sleep(WATCHER_DEBOUNCE_SECS)
-    pytest.fail(
-        f"Timed out waiting for status to drop '{needle}'. Last output:\n{last}",
+    last = {"out": ""}
+    ok = wait_until(
+        lambda: (
+            last.update({"out": _status(wt_cli)}),
+            needle not in last["out"],
+        )[-1],
+        timeout_seconds=timeout,
+        interval_seconds=WATCHER_DEBOUNCE_SECS,
     )
+    if not ok:
+        pytest.fail(
+            f"Timed out waiting for status to drop '{needle}'. Last output:\n{last['out']}",
+        )
 
 
 @pytest.mark.timeout(30)
@@ -157,7 +165,6 @@ def test_path_watcher_multiple_worktrees(wt_cli):
     for name in worktree_names:
         result = wt_cli.sh_c(name, timeout=timedelta(seconds=5.0))
         assert result.returncode == 0, f"Failed to create {name}: {result.stderr}"
-        time.sleep(0.1)  # Brief pause between creates
 
     # Wait for all worktrees to appear in status in one poll loop
     wait_for_status_contains_all(wt_cli, worktree_names)
@@ -172,17 +179,19 @@ def test_path_watcher_multiple_worktrees(wt_cli):
     remaining = worktree_names.copy()
 
     def _wait_until_removed(wt_cli, missing_name: str, timeout: float = 6.0):
-        deadline = time.time() + timeout
-        last = ""
-        while time.time() < deadline:
-            r = wt_cli.status(timeout=timedelta(seconds=3.0))
-            if r.returncode == 0:
-                last = r.stdout
-                if missing_name not in last:
-                    return True
-            time.sleep(WATCHER_DEBOUNCE_SECS)
-        print(f"DEBUG last status while waiting removal of {missing_name}:\n{last}")
-        return False
+        last = {"out": ""}
+        ok = wait_until(
+            lambda: (
+                (lambda r: last.update({"out": r.stdout}) or (missing_name not in r.stdout))(
+                    wt_cli.status(timeout=timedelta(seconds=3.0))
+                )
+            ),
+            timeout_seconds=timeout,
+            interval_seconds=WATCHER_DEBOUNCE_SECS,
+        )
+        if not ok:
+            print(f"DEBUG last status while waiting removal of {missing_name}:\n{last['out']}")
+        return ok
 
     for name in worktree_names:
         result = wt_cli.sh("rm", name, "--force", timeout=timedelta(seconds=5.0))

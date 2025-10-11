@@ -4,16 +4,11 @@ from typing import Callable
 
 from pydantic import BaseModel
 
-from adgn.agent.handler import (
-    BaseHandler,
-    BeforeToolCallDecision,
-    ContinueDecision,
-    ToolCall,
-)
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Abort, Continue, RequireAny
 
 # Import just the NotificationsBatch type - it's a lightweight Pydantic model
-from adgn.agent.mcp_manager import NotificationsBatch
+from adgn.agent.notifications.types import NotificationsBatch
 from adgn.agent.reducer import format_notifications_message
 from adgn.agent.server.bus import ServerBus
 
@@ -46,6 +41,4 @@ class ServerModeHandler(BaseModel, BaseHandler):
         # No notifications - just require tool use
         return Continue(RequireAny())
 
-    async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
-        # No per-tool interception needed; end-turn is handled via BUS in on_before_sample
-        return ContinueDecision()
+    # No per-tool interception needed; approvals are enforced by Policy Gateway middleware

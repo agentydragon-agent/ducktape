@@ -6,7 +6,6 @@ import subprocess
 import pytest
 
 from ..conftest import kill_daemon_at_wt_dir
-from ..test_utils import run_cli_command
 
 
 @pytest.fixture
@@ -64,7 +63,7 @@ print("py post-create: hello from stderr", file=sys.stderr)
 
 
 @pytest.mark.parametrize("stdin_mode", ["open", "closed"])
-def test_post_creation_python_script_runs(real_env_with_python_post_script, stdin_mode):
+def test_post_creation_python_script_runs(real_env_with_python_post_script, stdin_mode, wtcli):
     env, repo = real_env_with_python_post_script
     name = "py-hooked"
 
@@ -74,9 +73,8 @@ def test_post_creation_python_script_runs(real_env_with_python_post_script, stdi
         None if stdin_mode == "open" else subprocess.DEVNULL
     )  # parent CLI stdin is /dev/null; daemon inherits this
 
-    result = run_cli_command(
-        ["create", "--yes", name], env=env, timeout=timedelta(seconds=30.0), stdin=stdin
-    )
+    cli = wtcli(env)
+    result = cli.sh_c(name, timeout=timedelta(seconds=30.0), stdin=stdin)
 
     if stdin_mode == "open":
         assert result.returncode == 0, (

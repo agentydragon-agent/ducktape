@@ -32,5 +32,5 @@ export default defineConfig({
     },
   },
   // Emit built assets into the server's static directory for tests/runtime
-  build: { outDir: "../server/static/web", emptyOutDir: true },
+  build: { outDir: "../server/static", emptyOutDir: true },
 })

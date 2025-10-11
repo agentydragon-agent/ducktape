@@ -13,6 +13,7 @@ from adgn.openai_utils.model import (
     ResponsesResult,
     Usage,
 )
+from tests.llm.support.openai_mock import LIVE, make_mock
 
 
 @pytest.fixture(scope="session")
@@ -109,3 +110,21 @@ class ResponsesFactory(builders.ItemFactory):
 @pytest.fixture(scope="session")
 def responses_factory(reasoning_model: str) -> ResponsesFactory:
     return ResponsesFactory(reasoning_model)
+
+
+@pytest.fixture
+def openai_client_param(request, live_openai):
+    """Parametrized OpenAI client fixture for tests.
+
+    Usage (indirect): parametrize with either a behavior function or LIVE sentinel:
+        @pytest.mark.parametrize("openai_client_param", [behavior_fn, LIVE], indirect=True)
+
+    - If parameter is LIVE, returns the live_openai fixture (AsyncOpenAI or skip if not set).
+    - Otherwise, assumes a behavior function(req) -> ResponsesResult and returns a mock client.
+    """
+    param = getattr(request, "param", None)
+    if param is LIVE:
+        return live_openai
+    if callable(param):
+        return make_mock(param)
+    raise pytest.SkipTest("openai_client_param requires a behavior function or LIVE sentinel")

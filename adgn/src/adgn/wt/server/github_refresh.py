@@ -33,7 +33,7 @@ class DebouncedGitHubRefresh:
         self.debounce_delay = debounce_delay
         self.periodic_interval = periodic_interval
         self.pending_refresh_task: asyncio.Task | None = None
-        self.last_refresh_time = 0.0
+        self.last_refresh_time = 0.0  # monotonic seconds when last refreshed
         self.pending_files: set[str] = set()
         self.observer: Any | None = None
         self.event_handler = GitFileHandler(self)
@@ -93,7 +93,7 @@ class DebouncedGitHubRefresh:
         while self.is_running:
             try:
                 await asyncio.sleep(self.periodic_interval)
-                current_time = time.time()
+                current_time = time.monotonic()
                 time_since_last = current_time - self.last_refresh_time
                 if time_since_last >= self.periodic_interval * 0.8:
                     await self._do_refresh("periodic")
@@ -104,14 +104,14 @@ class DebouncedGitHubRefresh:
                 await asyncio.sleep(10)
 
     async def _do_refresh(self, reason: str):
-        start_time = time.time()
+        start_time = time.perf_counter()
         files_changed = list(self.pending_files)
         self.pending_files.clear()
         logger.info("Refreshing GitHub data: %s (files: %s)", reason, files_changed)
         # Do NOT fetch from network here; rely on API cache/background
         await self.refresh_callback(reason, files_changed)
-        self.last_refresh_time = time.time()
-        refresh_time = (self.last_refresh_time - start_time) * 1000
+        self.last_refresh_time = time.monotonic()
+        refresh_time = (time.perf_counter() - start_time) * 1000
         logger.info("GitHub refresh completed in %.1fms", refresh_time)
 
 

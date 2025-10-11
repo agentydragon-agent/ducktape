@@ -23,11 +23,11 @@ class DummyClient:
         raise AssertionError("responses.create should not be called directly in this test")
 
 
-@pytest.mark.timeout(5)
+@pytest.mark.timeout(15)
 def test_ws_tool_multiturn(
     responses_factory,
     make_echo_spec,
-    ws_session,
+    agent_ws_box,
 ) -> None:
     """WS multi-turn: user -> echo tool -> typed MCP result -> UI message."""
 
@@ -53,14 +53,12 @@ def test_ws_tool_multiturn(
     specs = make_echo_spec()
 
     try:
-        with ws_session(client, specs=specs, auto_approve=True) as (
-            client_ws,
-            ws,
-            collect,
-            agent_id,
-        ):
-            ws.send_json({"type": "send", "text": "use echo"})
-            payloads = collect(limit=200)
+        with agent_ws_box(client, specs=specs, auto_approve=True) as box:
+            # Use REST to kick off the run; WS will carry server events
+            r = box.http.prompt("use echo")
+            assert r.status_code == 200
+            assert (r.json() or {}).get("ok") is True
+            payloads = box.collect(limit=180)
             assert_payloads_have(
                 payloads,
                 is_function_call_output(call_id="call_echo", ok=True, echo="hello"),

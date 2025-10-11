@@ -10,12 +10,12 @@ from hamcrest import (
 import pytest
 
 from adgn.agent.server import protocol
-from adgn.agent.server.protocol import RunStatusEvt, UiStateSnapshot
+from adgn.agent.server.protocol import RunStatus, RunStatusEvt, UiStateSnapshot
 from tests.agent.ui_asserts import (
     assert_ui_items_have,
     item_assistant_markdown,
 )
-from tests.agent.ws_helpers import drain_until
+from tests.agent.ws_helpers import drain_until_match, has_finished_run
 from tests.llm.support.openai_mock import make_mock
 
 Envelope = protocol.Envelope
@@ -26,7 +26,10 @@ def _collect_payloads_until_finished(ws, *, limit: int = 200):
     for _ in range(limit):
         env = Envelope.model_validate(ws.receive_json())
         payloads.append(env.payload)
-        if isinstance(env.payload, RunStatusEvt) and env.payload.run_state.status == "finished":
+        if (
+            isinstance(env.payload, RunStatusEvt)
+            and env.payload.run_state.status == RunStatus.FINISHED
+        ):
             break
     return payloads
 
@@ -34,7 +37,7 @@ def _collect_payloads_until_finished(ws, *, limit: int = 200):
 @pytest.mark.timeout(15)
 def test_persist_revive_continue_ui_flow(
     responses_factory,
-    ws_session,
+    agent_ws_box,
 ):
     """
     End-to-end:
@@ -73,10 +76,10 @@ def test_persist_revive_continue_ui_flow(
     client = make_mock(responses_create)
 
     try:
-        with ws_session(client, specs={}) as (client_ws, ws, collect, agent_id):
+        with agent_ws_box(client, specs={}) as box:
             # First run
-            ws.send_json({"type": "send", "text": "hi"})
-            payloads_1 = collect(limit=100)
+            box.http.prompt("hi")
+            payloads_1 = box.collect(limit=100)
             assert_that(
                 payloads_1,
                 has_items(
@@ -84,18 +87,15 @@ def test_persist_revive_continue_ui_flow(
                         type="ui_message",
                         message=has_properties(mime="text/markdown", content="**hello**"),
                     ),
-                    has_properties(
-                        type="run_status",
-                        run_state=has_properties(status="finished"),
-                    ),
+                    has_finished_run(),
                 ),
             )
 
             # Request a snapshot over WS; should include the assistant message
-            ws.send_json({"type": "get_snapshot"})
-            payloads = drain_until(
-                ws,
-                lambda e: isinstance(e.payload, UiStateSnapshot),
+            payloads = drain_until_match(
+                box.ws,
+                lambda p: getattr(p.payload, "type", None)
+                in ("ui_state_snapshot", "ui_state_updated"),
                 limit=50,
                 mapper=lambda e: e.payload,
             )
@@ -103,8 +103,8 @@ def test_persist_revive_continue_ui_flow(
             assert_ui_items_have(snap.state.items, item_assistant_markdown("**hello**"))
 
             # Second run
-            ws.send_json({"type": "send", "text": "again"})
-            payloads_2 = collect(limit=100)
+            box.http.prompt("again")
+            payloads_2 = box.collect(limit=100)
             assert_that(
                 payloads_2,
                 has_items(
@@ -112,10 +112,7 @@ def test_persist_revive_continue_ui_flow(
                         type="ui_message",
                         message=has_properties(content="**world**"),
                     ),
-                    has_properties(
-                        type="run_status",
-                        run_state=has_properties(status="finished"),
-                    ),
+                    has_finished_run(),
                 ),
             )
 

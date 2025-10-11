@@ -6,6 +6,7 @@ import pytest
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import Envelope, UiStateSnapshot
 from adgn.agent.server.state import AssistantMarkdownItem
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import FakeOpenAIModel
 from tests.agent.ws_helpers import (
     assert_finished,
@@ -16,7 +17,9 @@ from tests.llm.support.openai_mock import make_mock
 
 
 @pytest.mark.timeout(10)
-def test_ws_restore_existing_agent_across_app_restart(monkeypatch, tmp_path, responses_factory):
+def test_ws_restore_existing_agent_across_app_restart(
+    monkeypatch, tmp_path, responses_factory, make_agent_http
+):
     """
     Persist an agent (via HTTP), restart the app (new FastAPI instance pointing to the
     same SQLite DB), then connect WS to lazily start the live container and run a turn.
@@ -43,22 +46,22 @@ def test_ws_restore_existing_agent_across_app_restart(monkeypatch, tmp_path, res
             state["i"] = i + 1
             if i == 0:
                 return responses_factory.make_tool_call(
-                    "mcp__ui__send_message",
+                    build_mcp_function("ui", "send_message"),
                     {"mime": "text/markdown", "content": "**r1**"},
                     call_id="call_ui_msg_r1",
                 )
             if i == 1:
                 return responses_factory.make_tool_call(
-                    "mcp__ui__end_turn", {}, call_id="call_ui_end_r1"
+                    build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r1"
                 )
             if i == 2:
                 return responses_factory.make_tool_call(
-                    "mcp__ui__send_message",
+                    build_mcp_function("ui", "send_message"),
                     {"mime": "text/markdown", "content": "**r2**"},
                     call_id="call_ui_msg_r2",
                 )
             return responses_factory.make_tool_call(
-                "mcp__ui__end_turn", {}, call_id="call_ui_end_r2"
+                build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r2"
             )
 
         monkeypatch.setattr(
@@ -69,9 +72,13 @@ def test_ws_restore_existing_agent_across_app_restart(monkeypatch, tmp_path, res
         # Open WS and run two turns to persist history
         with c1.websocket_connect(f"/ws?agent_id={agent_id}") as ws1:
             wait_for_accepted(ws1)
-            ws1.send_json({"type": "send", "text": "hi"})
+            # Start turns via REST; WS carries server-originated events
+            http1 = make_agent_http(c1, agent_id)
+            r1 = http1.prompt("hi")
+            assert r1.status_code == 200 and (r1.json() or {}).get("ok") is True
             collect_payloads_until_finished(ws1, limit=200)
-            ws1.send_json({"type": "send", "text": "again"})
+            r2 = http1.prompt("again")
+            assert r2.status_code == 200 and (r2.json() or {}).get("ok") is True
             collect_payloads_until_finished(ws1, limit=200)
 
     # Second app: same DB; WS connect should lazily start the container and snapshot should include all prior UI state
@@ -88,8 +95,7 @@ def test_ws_restore_existing_agent_across_app_restart(monkeypatch, tmp_path, res
             # Should receive initial Accepted from server
             wait_for_accepted(ws)
 
-            # Request a snapshot and verify both prior messages are present
-            ws.send_json({"type": "get_snapshot"})
+            # On connect, server pushes UiStateSnapshot; verify prior messages are present
             saw_snapshot = False
             msgs: list[str] = []
             for _ in range(200):
@@ -103,7 +109,9 @@ def test_ws_restore_existing_agent_across_app_restart(monkeypatch, tmp_path, res
             assert saw_snapshot, "ui_state_snapshot not received"
             assert "**r1**" in msgs and "**r2**" in msgs, f"missing restored messages: {msgs}"
 
-            # Finally, run a prompt to confirm the live container is functional after lazy start
-            ws.send_json({"type": "send", "text": "hi"})
+            # Finally, run a prompt via REST to confirm live container works
+            http2 = make_agent_http(c2, agent_id)
+            r3 = http2.prompt("hi")
+            assert r3.status_code == 200 and (r3.json() or {}).get("ok") is True
             payloads = collect_payloads_until_finished(ws, limit=100)
             assert_finished(payloads)

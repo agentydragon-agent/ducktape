@@ -5,7 +5,9 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
+from adgn.mcp._shared.constants import UI_SERVER_NAME
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 # UI MCP server: lightweight tools to instruct the HTML UI rendering layer.
 # Tools are declarative; the agent can call them to emit UI messages and to
@@ -36,39 +38,40 @@ class EndTurnInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def make_ui_mcp(name: str, bus: ServerBus) -> SafeFastMCP:
-    mcp = SafeFastMCP(
+def make_ui_server(name: str, bus: ServerBus) -> NotifyingFastMCP:
+    mcp = NotifyingFastMCP(
         name,
         instructions=(
-            "UI helper server: use send_message to communicate with the user and end_turn to finish your turn.\n"
-            "Contract: In this UI, assistant does not emit plain text. You MUST use ui.send_message (text/markdown) for output,\n"
-            "and call ui.end_turn when you are done."
+            "UI helper: send formatted messages and end your turn via tools.\n"
+            "Do not emit plain text in this UI; always use the UI tools."
         ),
     )
 
     # Typed inputs (flat schema)
-    @mcp_flat_model(
-        mcp,
-        name="send_message",
-        title="Send UI message",
-        description="Send a formatted message to the UI. Use markdown formatting for rich text display.",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def send_message(input: SendMessageInput) -> UiMessage:
+        """Send a formatted message to the UI (markdown recommended)."""
         msg = UiMessage(mime=input.mime, content=input.content)
         bus.push_message(msg)
         return msg
 
-    @mcp_flat_model(
-        mcp,
-        name="end_turn",
-        title="End UI turn",
-        description="Tell the UI to end the current turn",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def end_turn(input: EndTurnInput) -> UiEndTurn:
+        """Tell the UI to end the current turn."""
         bus.push_end_turn()
         return UiEndTurn()
 
     # Return the server; callers keep their own reference to the bus.
     return mcp
+
+
+async def attach_ui(
+    comp: Compositor,
+    bus: ServerBus,
+    *,
+    name: str = UI_SERVER_NAME,
+) -> NotifyingFastMCP:
+    """Attach the UI MCP server in-proc to a Compositor (preferred path)."""
+    server = make_ui_server(name, bus)
+    await comp.mount_inproc(name, server)
+    return server

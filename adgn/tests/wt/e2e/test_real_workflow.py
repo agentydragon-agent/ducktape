@@ -44,30 +44,33 @@ from datetime import timedelta
 import os
 from pathlib import Path
 import subprocess
-import time
 
 import pygit2
 import pytest
 
-from ..test_utils import run_cli_command
+from ..test_utils import wait_until
 
-pytestmark = pytest.mark.timeout(10)
+pytestmark = [
+    pytest.mark.timeout(10),
+    pytest.mark.xdist_group("wt-daemon-e2e"),
+]
 
 
 def test_real_workflow_with_existing_worktrees(
     real_env_with_existing_worktrees,
     real_temp_repo,
+    wtcli,
 ):
     """Test workflow starting with existing worktrees - tests real status display."""
-    env = real_env_with_existing_worktrees
+    cli = wtcli(real_env_with_existing_worktrees)
     # Step 1: Status should show existing worktrees
-    result = run_cli_command([], env=env)
+    result = cli.status()
     assert result.returncode == 0
     assert "existing-1" in result.stdout
     assert "existing-2" in result.stdout
 
     # Step 2: Create a new worktree alongside existing ones
-    result = run_cli_command(["create", "--yes", "new-feature"], env=env)
+    result = cli.sh_c("new-feature")
     assert result.returncode == 0
 
     # Verify new worktree created
@@ -75,7 +78,7 @@ def test_real_workflow_with_existing_worktrees(
     assert new_worktree_path.exists()
 
     # Step 3: Status should now show all three worktrees
-    result = run_cli_command([], env=env)
+    result = cli.status()
     assert result.returncode == 0
     assert "existing-1" in result.stdout
     assert "existing-2" in result.stdout
@@ -83,19 +86,17 @@ def test_real_workflow_with_existing_worktrees(
 
 
 @pytest.mark.timeout(10)
-def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env):
+def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env, wt_cli):
     """
     Test workflow: git repo -> make worktrees 1,2 -> jump to worktree -> rm other -> status
     This tests the ACTUAL UNMODIFIED UNMOCKED program with real git operations.
     """
     # Step 1: Initial status (should show empty or main repo only)
-    result = run_cli_command([], env=real_env, timeout=timedelta(seconds=10.0))
+    result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
     # Step 2: Create first worktree
-    result = run_cli_command(
-        ["create", "--yes", "feature1"], env=real_env, timeout=timedelta(seconds=10.0)
-    )
+    result = wt_cli.sh_c("feature1", timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
     # Verify worktree was actually created with real git
@@ -111,9 +112,7 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     )
 
     # Step 3: Create second worktree
-    result = run_cli_command(
-        ["create", "--yes", "feature2"], env=real_env, timeout=timedelta(seconds=10.0)
-    )
+    result = wt_cli.sh_c("feature2", timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
     # Verify second worktree was created
@@ -121,13 +120,13 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     assert worktree2_path.exists(), f"Worktree 2 not created at {worktree2_path}"
 
     # Step 4: Check status shows both worktrees
-    result = run_cli_command([], env=real_env, timeout=timedelta(seconds=10.0))
+    result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
     assert "feature1" in result.stdout
     assert "feature2" in result.stdout
 
     # Step 5: Navigate to feature1 (test cd command emission)
-    result = run_cli_command(["sh", "feature1"], env=real_env, timeout=timedelta(seconds=10.0))
+    result = wt_cli.sh("feature1", timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
     # Note: cd command is emitted to fd3, we can't easily verify it here
 
@@ -144,15 +143,15 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     )
 
     # Step 7: Final status check should show the changes
-    result = run_cli_command([], env=real_env, timeout=timedelta(seconds=10.0))
+    result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
 
-def test_real_git_operations_in_worktrees(real_temp_repo, real_env):
+def test_real_git_operations_in_worktrees(real_temp_repo, real_env, wt_cli):
     """Test that git operations work correctly in created worktrees."""
 
     # Create worktree
-    result = run_cli_command(["create", "--yes", "git-test"], env=real_env)
+    result = wt_cli.sh_c("git-test")
     print(
         f"Create git-test worktree (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
     )
@@ -212,10 +211,10 @@ def test_real_git_operations_in_worktrees(real_temp_repo, real_env):
     assert "Test commit" in result.stdout
 
 
-def test_real_daemon_startup_and_kill(real_temp_repo, real_env):
+def test_real_daemon_startup_and_kill(real_temp_repo, real_env, wt_cli):
     """Test that daemon actually starts and can be killed via CLI command."""
     # Step 1: Initial command should start the daemon
-    result = run_cli_command([], env=real_env, timeout=timedelta(seconds=10.0))
+    result = wt_cli.status(timeout=timedelta(seconds=10.0))
     print(
         f"Initial status (should start daemon) (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
     )
@@ -227,8 +226,8 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env):
     assert daemon_dir.exists(), "Daemon directory not created"
 
     pid_file = daemon_dir / "daemon.pid"
-    # Give daemon a moment to start up
-    time.sleep(0.5)
+    # Wait for daemon to start up
+    assert wait_until(lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
 
     # Step 3: Verify daemon is actually running
     assert pid_file.exists(), "Daemon PID file not created"
@@ -241,14 +240,14 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env):
         pytest.fail(f"❌ Daemon PID {pid} not found")
 
     # Step 4: Test kill-daemon command
-    result = run_cli_command(["kill-daemon"], env=real_env)
+    result = wt_cli.kill()
     print(
         f"Kill daemon command (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
     )
     assert result.returncode == 0
 
     # Step 5: Verify daemon is no longer running
-    time.sleep(0.2)  # Brief wait for cleanup
+    wait_until(lambda: not pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
 
     try:
         os.kill(pid, 0)  # Check if process still exists

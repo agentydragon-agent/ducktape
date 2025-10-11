@@ -22,7 +22,11 @@ from adgn.openai_utils.model import (
     UserMessage,
 )
 from adgn.props.models.issue import IssueCore, IssueId, LineRange, Occurrence
-from adgn.props.models.lint import AnchorIncorrect, PropertyIncorrectlyAssigned
+from adgn.props.models.lint import (
+    AnchorIncorrect,
+    PropertyIncorrectlyAssigned,
+    PropertyShouldBeAssigned,
+)
 
 from .lint_issue import lint_issue_run
 
@@ -282,7 +286,8 @@ async def eval_issue_spec(
     passes = 0
 
     for idx, case in enumerate(spec.cases):
-        exps: list[Expectation] = list(case.expectations or [])
+        exps_raw = case.expectations
+        exps: list[Expectation] = list(exps_raw) if exps_raw is not None else []
 
         occ = case.occurrence
         files_items = list(occ.files.items())
@@ -375,12 +380,12 @@ async def eval_issue_spec(
                 details: list[dict[str, str]] = []
                 for fr in payload.findings:
                     f = fr.finding
-                    kind = getattr(f, "kind", None)
-                    prop = getattr(f, "property", None)
-                    if kind and prop:
-                        details.append({"kind": str(kind), "property": str(prop)})
-                    if kind == exp.finding and prop == exp.property:
-                        found = True
+                    # All variants have kind; only some carry a property field
+                    kind = f.kind
+                    if isinstance(f, (PropertyIncorrectlyAssigned, PropertyShouldBeAssigned)):
+                        details.append({"kind": str(kind), "property": str(f.property)})
+                        if kind == exp.finding and f.property == exp.property:
+                            found = True
                 exp_results.append(
                     {
                         "kind": "property_finding",

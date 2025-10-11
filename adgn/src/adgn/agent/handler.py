@@ -11,13 +11,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, TypeAlias, TypedDict
 
-from mcp import types as mcp_types
+from fastmcp.client.client import CallToolResult
 from pydantic import BaseModel
 
 from adgn.agent.loop_control import NoLoopDecision
 from adgn.openai_utils.model import ReasoningItem
 
-# BeforeToolCallDecision and decision dataclasses are defined below (handler-level, generic)
+# Approval decision dataclasses (used by policy gateway and UI)
 
 
 # ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
@@ -53,7 +53,7 @@ class ToolCall(BaseModel):
 
 class ToolCallOutput(BaseModel):
     call_id: str
-    result: mcp_types.CallToolResult
+    result: CallToolResult
 
 
 # ----- Generic before-tool-call decision algebra (handler-level, generic) -----
@@ -65,27 +65,11 @@ class ContinueDecision(BaseModel):
     action: Literal["continue"] = "continue"
 
 
-class BypassToolInjectOutput(BaseModel):
-    """Bypass MCP execution and inject this tool result into the turn.
-
-    Handlers return this decision to indicate the agent should use the provided
-    mcp_types.CallToolResult as the function_call_output for the named call_id
-    and must NOT invoke the MCP call for that function.
-    """
-
-    result: mcp_types.CallToolResult
-    reason: str | None = None
-    action: Literal["bypass_inject"] = "bypass_inject"
-
-
 class AbortTurnDecision(BaseModel):
     """Request abort of the entire turn."""
 
     action: Literal["abort"] = "abort"
     reason: str | None = None
-
-
-BeforeToolCallDecision = ContinueDecision | BypassToolInjectOutput | AbortTurnDecision
 
 
 class Response(BaseModel):
@@ -171,17 +155,6 @@ class BaseHandler:
 
     def on_tool_call_event(self, evt: ToolCall) -> None:  # default no-op
         return None
-
-    async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
-        """Async hook invoked immediately before executing a tool call.
-
-        The agent does not parse tool arguments. Handlers can inspect evt.args_json
-        (opaque JSON string) if needed but should avoid schema assumptions.
-
-        Must return a BeforeToolCallDecision (ContinueDecision | BypassToolInjectOutput | AbortTurnDecision).
-        Default implementation returns ContinueDecision() (proceed normally).
-        """
-        return ContinueDecision()
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:  # default no-op
         return None

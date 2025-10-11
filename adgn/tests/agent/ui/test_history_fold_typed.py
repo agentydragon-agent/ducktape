@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from mcp import types as mcp_types
+from fastmcp.client.client import CallToolResult as FMCallToolResult
 
 from adgn.agent.persist import EventType
 from adgn.agent.persist.events import (
@@ -16,11 +16,11 @@ from adgn.agent.server.history import fold_events_to_ui_state
 
 def test_fold_events_typed_ui_message() -> None:
     now = datetime.now(timezone.utc)
-    # Simulate ui.send_message tool producing a CallToolResult with structuredContent
-    result = mcp_types.CallToolResult(
+    # Simulate ui.send_message tool producing a CallToolResult with structured content
+    result = FMCallToolResult(
         content=[],
-        isError=False,
-        structuredContent={"mime": "text/markdown", "content": "**hello**"},
+        is_error=False,
+        structured_content={"mime": "text/markdown", "content": "**hello**"},
     )
 
     events = [

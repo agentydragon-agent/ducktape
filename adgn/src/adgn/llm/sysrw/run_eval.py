@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 from contextlib import suppress
+from datetime import datetime
 from importlib import resources
 import json
 import math
@@ -9,7 +10,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import time
 from typing import Any, cast
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -485,7 +485,7 @@ def build_grader_prompt(
             + json.dumps(prefix_messages, ensure_ascii=False)
             + "\n\n"
             + "BAD_BRANCH_JSON (from bad assistant turn through the user's complaint, inclusive):\n"
-            + json.dumps(raw_bad_branch or [], ensure_ascii=False)
+            + json.dumps(raw_bad_branch if raw_bad_branch is not None else [], ensure_ascii=False)
             + "\n\n"
             + "NEW_ASSISTANT_REPLY_JSON:\n"
             + json.dumps(raw_new_asst_obj or {}, ensure_ascii=False)
@@ -513,7 +513,8 @@ GRADE_TOOL = {
 
 def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
     data = resp_obj if isinstance(resp_obj, dict) else resp_obj.model_dump()
-    out = data.get("output", []) or []
+    _out = data.get("output")
+    out = _out if _out is not None else []
     for item in out:
         if item.get("type") == "function_call" and item.get("name") == "grade":
             args = item.get("arguments", "{}")
@@ -604,7 +605,7 @@ async def run_eval(
         # Caller provided a final directory — use it directly (no nesting)
         out_dir = base_out
     else:
-        ts = int(time.time())
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         base = DEFAULT_BASE
         # Default layout: runs/<ts> for variants; runs/baseline-<ts> for baseline
         out_dir = (
@@ -673,7 +674,11 @@ async def run_eval(
                     ar.system
                     if isinstance(ar.system, str)
                     else "\n\n".join(
-                        [p.get("text", "") for p in (ar.system or []) if isinstance(p, dict)],
+                        [
+                            p.get("text", "")
+                            for p in (ar.system if ar.system is not None else [])
+                            if isinstance(p, dict)
+                        ],
                     )
                 )
                 new_sys = rewrite_system_with_template(sys_val, template_path)
@@ -970,14 +975,7 @@ async def run_eval(
                     return int(x)
             return 0
 
-        # Compute mean and 95% CI (normal approx)
-        mean = sum(scores) / len(scores) if scores else 0.0
-        var = sum((x - mean) ** 2 for x in scores) / (len(scores) - 1) if len(scores) > 1 else 0.0
-        se = math.sqrt(var / len(scores)) if len(scores) > 0 else 0.0
-        ci95 = 1.96 * se
-        lcb = mean - ci95
-        ucb = mean + ci95
-        # Secondary metrics
+        # Secondary metrics helpers
         total_samples = _as_int(tool_stats.get("total_samples"))
         text_only = _as_int(tool_stats.get("text_only"))
         with_tools = _as_int(tool_stats.get("with_tools"))
@@ -987,7 +985,7 @@ async def run_eval(
             k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in fc.items()
         }
 
-        # Per-source summaries
+        # CI helpers (normal approx, 95%)
         def _mk_basic(scores_list: list[float]) -> tuple[float, float, float, float]:
             if not scores_list:
                 return 0.0, 0.0, 0.0, 0.0
@@ -1000,6 +998,9 @@ async def run_eval(
             se_ = math.sqrt(v / len(scores_list)) if len(scores_list) > 0 else 0.0
             ci_ = 1.96 * se_
             return m, ci_, m - ci_, m + ci_
+
+        # Compute mean and CI for overall scores
+        mean, ci95, lcb, ucb = _mk_basic(scores)
 
         by_source: dict[str, Any] = {}
         for sname in ("ccr", "crush"):
@@ -1061,7 +1062,8 @@ async def run_eval(
                 # Update tool usage stats
                 tool_stats["total_samples"] = _as_int(tool_stats.get("total_samples")) + 1
                 nmsg = samp_rec.get("new_assistant_message") or {}
-                tcs = nmsg.get("tool_calls") or []
+                _tcs = nmsg.get("tool_calls")
+                tcs = _tcs if _tcs is not None else []
                 if not tcs:
                     tool_stats["text_only"] = _as_int(tool_stats.get("text_only")) + 1
                 else:
@@ -1160,7 +1162,8 @@ async def run_eval(
                 # Two display paths depending on source
                 if alt and isinstance(alt, dict) and "responses_output" in alt:
                     # Crush item: reconstruct minimal views from responses_input
-                    rin = alt.get("responses_input") or []
+                    _rin = alt.get("responses_input")
+                    rin = _rin if _rin is not None else []
                     orig_sys = responses_extract_system_text(rin)
                     rewritten_sys = rewrite_system_with_template(
                         orig_sys or "",
@@ -1182,7 +1185,8 @@ async def run_eval(
                         orig_sys,
                         template_file,
                     )
-                    msgs = ar.get("messages") or []
+                    _msgs = ar.get("messages")
+                    msgs = _msgs if _msgs is not None else []
                     idx = prev_assistant_index(msgs)
                     if idx is None:
                         shared_prefix = msgs
@@ -1223,7 +1227,9 @@ async def run_eval(
 def main():
     args = parse_args()
     # Allow mixing multiple datasets in one run via repeated --dataset
-    dataset_paths: list[Path] = [Path(p) for p in (args.dataset or [])]
+    dataset_paths: list[Path] = [
+        Path(p) for p in (args.dataset if args.dataset is not None else [])
+    ]
     if not dataset_paths:
         dataset_paths = [DEFAULT_DATASET_PATH]
     base_out = Path(args.out_dir) if args.out_dir else None

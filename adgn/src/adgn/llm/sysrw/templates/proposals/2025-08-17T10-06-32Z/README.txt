@@ -1,6 +1,6 @@
 Rationale summary
 
-Newest run analyzed: /Users/mpokorny/code/ducktape/claude/system_rewriter/runs/run-1755424062
+Newest run analyzed: runs/run-1755424062
 - Summary: mean=2.30 over n=115; grader errors due to context_length_exceeded present in progress logs.
 - Observed issues from samples/grader context hints:
   • Overlong/verbose assistant responses and meta-preamble competing with token budget.

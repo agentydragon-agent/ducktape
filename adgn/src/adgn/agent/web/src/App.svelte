@@ -12,6 +12,7 @@
   import { LEFT_MIN, LEFT_MAX } from './shared/layout'
   
   import { disconnectAgentWs } from './features/chat/stores'
+  import { backendOrigin } from './features/agents/api'
 
   let hasAgent = false
   // Current agent id
@@ -88,8 +89,7 @@
   async function deleteCurrentAgent() {
     if (!agentId) return
     try {
-      const backend = (await import('./features/agents/api')).backendOrigin()
-      const res = await fetch(`${backend}/api/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' })
+      const res = await fetch(`${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' })
       const body = await res.json().catch(() => null)
       if (!res.ok || !body?.ok) {
         throw new Error(body?.error || ('HTTP ' + res.status))
@@ -122,7 +122,7 @@
   {#if $prefs.showAgentsSidebar}
     <div class="left-stack" style="grid-column: 1; grid-row: 1; position: relative;">
       <div class="left-top" style={`height: ${$prefs.leftTopHeight}px;`}>
-        <AgentsSidebar width={$prefs.leftSidebarWidth} onStartResize={startLeftResize} />
+        <AgentsSidebar onStartResize={startLeftResize} />
       </div>
       <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
       <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
@@ -195,31 +195,7 @@
   .left-bottom { flex: 1 1 auto; min-height: 0; overflow: hidden; }
   .bottompane { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 
-  .sidebar {
-    border-left: 1px solid var(--border);
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    position: relative;
-  }
-
-  /* Resize handle */
-  .resize-handle {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    cursor: ew-resize;
-    background: transparent;
-    border: none;
-    padding: 0;
-    z-index: 10;
-  }
-  .resize-handle:hover {
-    background: #007acc;
-  }
+  /* Removed unused legacy right-sidebar resize styles */
 
   /* Horizontal splitter between left-top and left-bottom */
   .split-resize { height: 6px; cursor: ns-resize; background: transparent; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }

@@ -52,6 +52,9 @@ dependencies = [
   "textual>=0.60.0",
   "canonicaljson>=1.6.0",
   "asyncpg>=0.29.0",
+  "unidiff>=0.7.5",
+  "fastmcp>=2.12.4",
+  "jinja2>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -78,6 +81,7 @@ dev = [
   'types-tabulate',
   'types-docker',
   'pandas-stubs',
+  'types-Jinja2',
 ]
 typing = [
     'types-colorama',
@@ -87,6 +91,7 @@ typing = [
     'types-tabulate',
     'types-docker',
     'pandas-stubs',
+    'types-Jinja2',
 ]
 # GNOME console script deps (install when needed)
 gnome = [
@@ -120,6 +125,9 @@ include = ["adgn*"]
 "adgn.agent.server" = [
   "static/*",
   "static/**/*",
+]
+"adgn.agent.templates" = [
+  "*.j2",
 ]
 "adgn.wt.shell" = [
   "wt.sh",
@@ -171,6 +179,9 @@ testpaths = ["tests"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["PLR0913"]
+"src/adgn/third_party/**" = ["ALL"]
+
+
 
 [project.scripts]
 switch_gnome_terminal_profile = "adgn.gnome.switch_gnome_terminal_profile:run"
@@ -190,6 +201,8 @@ adgn-openai-probe = "adgn.openai_utils.probe:main"
 adgn-mcp-docker-exec = "adgn.mcp.docker_exec.launcher:main"
 adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
 adgn-matrix-bot = "adgn.agent.matrix_bot:main"
+adgn-detectors-custom = "adgn.props.detectors.cli_custom:main"
+adgn-mcp-seatbelt-exec = "adgn.mcp.seatbelt_exec.stdio_main:main"
 
 [project.entry-points."wt.plugins"]
 wt_demo = "adgn.wt.demo_plugin"
@@ -198,18 +211,32 @@ wt_demo = "adgn.wt.demo_plugin"
 python_version = "3.12"
 ignore_missing_imports = true
 warn_return_any = true
-# Canonical invocation runs from repository root (pre-commit and manual):
-#   mypy --config-file adgn/pyproject.toml
-# With repo-root CWD, the source root for the adgn package is "adgn/src".
-mypy_path = ["adgn/src"]
+# Canonical invocation runs from repository root:
+#   mypy --config-file pyproject.toml
+# With repo-root CWD, the source root for the adgn package is "src".
+mypy_path = ["src"]
 packages = ["adgn"]
+namespace_packages = true
+explicit_package_bases = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 check_untyped_defs = true
 # Exclude specimen code from type-checking (authoring data; not production code)
 # Exclude specimen code from type-checking (authoring data; not production code)
 # Use a broad regex that matches both "src/..." and "adgn/src/..." paths
-exclude = "(^|/)(adgn/)?src/adgn/props/specimens/.*"
+exclude = "(^|/)(adgn/)?src/adgn/(props/specimens|third_party)/.*|^tests/detectors/fixtures/.*|^vendor/.*"
+[[tool.mypy.overrides]]
+module = ["tests.agent.testdata.approval_policy.*"]
+ignore_errors = true
+
+# Per-module overrides
+[[tool.mypy.overrides]]
+module = ["adgn.third_party.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["tests.detectors.fixtures.*"]
+ignore_errors = true
 
 # Ruff configuration
 [tool.ruff]
@@ -217,6 +244,11 @@ exclude = "(^|/)(adgn/)?src/adgn/props/specimens/.*"
 extend-exclude = [
   "src/adgn/props/specimens/**",
   "adgn/src/adgn/props/specimens/**",
+  "src/adgn/third_party/**",
+  "adgn/src/adgn/third_party/**",
+  "vendor/**",
+  "tests/detectors/fixtures/**",
+  "tests/agent/testdata/approval_policy/**",
 ]
 line-length = 100
 

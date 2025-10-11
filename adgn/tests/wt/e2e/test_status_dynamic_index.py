@@ -1,39 +1,34 @@
 from datetime import timedelta
-import time
 
 import pytest
 
 from adgn.wt.shared.git_utils import git_run
 
-from ..test_utils import run_cli_command
+from ..test_utils import wait_until
 
 pytestmark = pytest.mark.timeout(20)
 
 
 @pytest.mark.integration
-def test_worktree_add_then_remove_reflected_in_status(real_env, real_temp_repo):
+def test_worktree_add_then_remove_reflected_in_status(wt_cli, real_temp_repo):
     # Initially, status should show no worktrees
-    r0 = run_cli_command([], env=real_env, timeout=timedelta(seconds=10.0))
+    r0 = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert r0.returncode == 0
 
     # Create a worktree via CLI
     name = "dyn-x"
-    r1 = run_cli_command(["create", "--yes", name], env=real_env, timeout=timedelta(seconds=10.0))
+    r1 = wt_cli.sh_c(name, timeout=timedelta(seconds=10.0))
     assert r1.returncode == 0
 
     # Poll until it appears
-    deadline = time.time() + 10
-    appeared = False
-    while time.time() < deadline:
-        r = run_cli_command([], env=real_env, timeout=timedelta(seconds=10.0))
-        if name in r.stdout:
-            appeared = True
-            break
-        time.sleep(0.2)
-    assert appeared, "newly created worktree did not appear in status output"
+    assert wait_until(
+        lambda: name in wt_cli.status(timeout=timedelta(seconds=10.0)).stdout,
+        timeout_seconds=10.0,
+        interval_seconds=0.2,
+    ), "newly created worktree did not appear in status output"
 
     # Remove the worktree via CLI
-    r2 = run_cli_command(["rm", name, "--force"], env=real_env, timeout=timedelta(seconds=15.0))
+    r2 = wt_cli.sh("rm", name, "--force", timeout=timedelta(seconds=15.0))
     assert r2.returncode == 0
 
     # Ensure git no longer lists the worktree (verifies git worktree remove)
@@ -44,12 +39,8 @@ def test_worktree_add_then_remove_reflected_in_status(real_env, real_temp_repo):
     )
 
     # Poll until it disappears
-    deadline = time.time() + 10
-    gone = False
-    while time.time() < deadline:
-        r = run_cli_command([], env=real_env, timeout=timedelta(seconds=10.0))
-        if name not in r.stdout:
-            gone = True
-            break
-        time.sleep(0.2)
-    assert gone, "deleted worktree still present in status output"
+    assert wait_until(
+        lambda: name not in wt_cli.status(timeout=timedelta(seconds=10.0)).stdout,
+        timeout_seconds=10.0,
+        interval_seconds=0.2,
+    ), "deleted worktree still present in status output"

@@ -76,7 +76,7 @@ class FileBasedGradingStrategy(GradingStrategy):
     """Grade based on files produced by the agent."""
 
     def __init__(self, criteria: list[Criterion] | None = None):
-        self.criteria = criteria or []
+        self.criteria = criteria if criteria is not None else []
 
     def collect_artifacts(self, context: GradingContext) -> dict[str, Any]:
         """Collect files from environment or rollout."""
@@ -207,7 +207,7 @@ class MessageBasedGradingStrategy(GradingStrategy):
     """Grade based on final message output."""
 
     def __init__(self, criteria: list[Criterion] | None = None):
-        self.criteria = criteria or []
+        self.criteria = criteria if criteria is not None else []
 
     def collect_artifacts(self, context: GradingContext) -> dict[str, Any]:
         """Get final message from trajectory."""
@@ -265,7 +265,7 @@ class ComparisonGradingStrategy(GradingStrategy):
 
     def __init__(self, reference: str, criteria: list[dict[str, str]] | None = None):
         self.reference = reference
-        self.criteria = criteria or []
+        self.criteria = criteria if criteria is not None else []
 
     def collect_artifacts(self, context: GradingContext) -> dict[str, Any]:
         """Get agent output for comparison."""

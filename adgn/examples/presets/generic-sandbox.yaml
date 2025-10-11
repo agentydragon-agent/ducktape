@@ -1,11 +1,8 @@
 name: generic-sandbox
-description: Example preset with macOS seatbelt sandbox + local exec fallback
+description: Example preset with macOS seatbelt sandbox
 system: |
-  You are a local development agent with both a macOS seatbelt sandbox tool and a local exec tool.
-
-  - Prefer the sandboxed execution tool for commands on macOS and provide an SBPL policy per call.
-  - Only use the local exec tool if the sandbox is unavailable or unsupported on the current platform.
-  - Be explicit in your reasoning when falling back.
+  You are a local development agent with a macOS seatbelt sandbox tool.
+  Prefer the sandboxed execution tool for commands on macOS and provide an SBPL policy per call.
 
   Approval and execution flow:
   - The Approval Policy MCP server ("approval_policy") evaluates the current policy before any tool executes.
@@ -157,11 +154,7 @@ approval_policy: |
       # Process/system toggles
       if not policy.process.allow_process_star:
         return False
-      if policy.process.allow_signal_self:
-        return False
-      # System: system_socket must be False
-      if policy.system.system_socket:
-        return False
+      # System: sysctl_read and system_socket are allowed in this preset
       # No mach lookups and no trace
       if (policy.mach.global_names or []) != []:
         return False
@@ -188,35 +181,41 @@ approval_policy: |
     except Exception:
       return False
 
-  def decide(ctx):
-    # Always allow UI, approval policy, and resources operations (using well-known enums)
-    if ctx.server in (WellKnownServers.UI, WellKnownServers.APPROVAL_POLICY, WellKnownServers.RESOURCES):
-      return (PolicyDecision.ALLOW, 'UI/approval/resources')
-    # Auto-allow macOS seatbelt sandboxed exec
-    if ctx.server == WellKnownServers.SEATBELT_EXEC and ctx.tool == WellKnownTools.SANDBOX_EXEC:
-      args = ctx.args or {}
-      policy = args.get('policy') or {}
-      argv = args.get('argv') or []
-      if _is_http_get(argv):
-        if _sbpl_validate(policy, allow_remote_outbound_http=True):
-          return (PolicyDecision.ALLOW, 'seatbelt: curl/wget HTTP GET')
-      if _sbpl_validate(policy):
-        return (PolicyDecision.ALLOW, 'safe seatbelt policy')
-    # Ask for everything else by default. Encourage the agent to proactively propose
-    # a narrowly scoped automated policy change when it is likely to be acceptable and
-    # would unblock the current task (e.g., a single-URL curl to GitHub as described above).
-    return (PolicyDecision.ASK, 'default ask; propose narrow auto-approval if needed')
+  class ApprovalPolicy:
+    """Sandbox‑aware defaults: allow UI/approval/resources; narrow seatbelt_exec allowances; ASK otherwise."""
+
+    def decide(self, ctx):
+      # Always allow UI, approval policy, and resources operations (using well-known enums)
+      if ctx.server in (WellKnownServers.UI, WellKnownServers.APPROVAL_POLICY, WellKnownServers.RESOURCES):
+        return (PolicyDecision.ALLOW, 'UI/approval/resources')
+      # Auto-allow macOS seatbelt sandboxed exec
+      if ctx.server == WellKnownServers.SEATBELT_EXEC and ctx.tool == WellKnownTools.SANDBOX_EXEC:
+        args = ctx.args or {}
+        argv = args.get('argv') or []
+        policy = ctx.seatbelt_policy  # runtime guarantees resolution for seatbelt_exec
+        if _is_http_get(argv):
+          if _sbpl_validate(policy, allow_remote_outbound_http=True):
+            return (PolicyDecision.ALLOW, 'seatbelt: curl/wget HTTP GET')
+        if _sbpl_validate(policy):
+          return (PolicyDecision.ALLOW, 'safe seatbelt policy')
+      # Ask for everything else by default. Encourage the agent to proactively propose
+      # a narrowly scoped automated policy change when it is likely to be acceptable and
+      # would unblock the current task (e.g., a single-URL curl to GitHub as described above).
+      return (PolicyDecision.ASK, 'default ask; propose narrow auto-approval if needed')
 
   # Minimal policy tests to enforce invariants (executed on approval)
-  TEST_CASES = [
+  ApprovalPolicy.TEST_CASES = [
     (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW),
     (ApprovalContext(server=WellKnownServers.RESOURCES, tool='list', arguments={'server': 'approval_policy'}), PolicyDecision.ALLOW),
   ]
 
 specs:
   seatbelt_exec:
-    transport: inproc
-    factory: adgn.mcp.seatbelt_exec.server:make_seatbelt_exec_mcp
-  local_exec:
-    transport: inproc
-    factory: adgn.mcp.local_exec.server:make_local_exec_mcp
+    # Example HTTP spec. If you are embedding the seatbelt server, prefer using
+    # an inproc factory in code or attach via the UI presets. For external servers,
+    # provide a reachable URL and a valid bearer token via `auth` or headers.
+    transport: http
+    url: http://127.0.0.1:8768/mcp
+    auth: <replace-with-token>
+    timeout_secs: 30
+    sse_read_timeout_secs: 300

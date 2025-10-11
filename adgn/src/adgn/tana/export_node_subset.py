@@ -206,12 +206,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Export a single Tana node and create a subset JSON with only touched nodes",
     )
-    parser.add_argument("json_file", help="Path to Tana JSON export file")
+    parser.add_argument("json_file", type=Path, help="Path to Tana JSON export file")
     parser.add_argument("node_id", help="ID of the node to export")
     parser.add_argument(
         "-o",
         "--output-prefix",
         help="Prefix for output files (default: based on input filename and node ID)",
+        type=Path,
         default=None,
     )
     parser.add_argument(

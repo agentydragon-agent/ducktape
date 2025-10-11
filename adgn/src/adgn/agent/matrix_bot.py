@@ -6,23 +6,25 @@ import os
 from pathlib import Path
 from urllib.parse import urlencode
 
+from fastmcp.client import Client as McpClient
 from pydantic import TypeAdapter
 import typer
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.mcp_manager import McpManager
-from adgn.agent.runtime.specs import McpServerSpec
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.llm.logging_config import configure_logging
+from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.config_loader import build_mcp_config
+from adgn.mcp._shared.constants import MATRIX_CONTROL_SERVER_NAME
 from adgn.mcp._shared.container_session import ContainerOptions, NetworkMode
-from adgn.mcp.docker_exec.server import (
-    SERVER_NAME as DOCKER_SERVER,
-    make_container_exec_mcp,
-)
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp.matrix.control import make_matrix_control_mcp
+from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import ExecResult
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.docker_exec.server import make_container_exec_server
+from adgn.mcp.matrix.control import make_matrix_control_server
+from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.openai_utils.client_factory import build_client
 
 app = typer.Typer(
@@ -33,27 +35,6 @@ app = typer.Typer(
 
 def _configure_logging_info() -> None:
     configure_logging()
-
-
-def _load_mcp_file(path: Path) -> dict[str, McpServerSpec]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    servers = data.get("mcpServers") or {}
-    if not isinstance(servers, dict):
-        raise ValueError(".mcp.json: mcpServers must be object")
-    TA = TypeAdapter(dict[str, McpServerSpec])
-    return TA.validate_python(servers)
-
-
-def _build_specs(mcp_configs: list[Path]) -> dict[str, McpServerSpec]:
-    baseline = Path.cwd() / ".mcp.json"
-    specs: dict[str, McpServerSpec] = {}
-    if baseline.exists():
-        specs.update(_load_mcp_file(baseline))
-    for p in mcp_configs or []:
-        if not p.exists():
-            raise FileNotFoundError(f"--mcp-config not found: {p}")
-        specs.update(_load_mcp_file(p))
-    return specs
 
 
 @app.command()
@@ -88,7 +69,7 @@ def run(
     async def _run() -> None:
         _configure_logging_info()
 
-        specs = _build_specs(mcp_configs)
+        _ = build_mcp_config(mcp_configs)
         ui_bus = ServerBus()
 
         nm = (
@@ -102,12 +83,6 @@ def run(
             "MATRIX_ROOM_ID": room,
             "MATRIX_USER_ID": user_id,
         }
-        docker_mcp = make_container_exec_mcp(
-            ContainerOptions(image=docker_image, network_mode=nm, environment=env)
-        )
-        docker_spec = make_inproc_slot_spec(docker_mcp)
-        control_spec = make_inproc_slot_spec(make_matrix_control_mcp("matrix_control", ui_bus))
-
         effective_system = (system or "").strip() or (
             "You are a Matrix-driven assistant. Do not emit plain text.\n"
             "I/O contract:\n"
@@ -118,16 +93,26 @@ def run(
 
         client = build_client(model)
 
-        async with McpManager(specs) as mcp:
-            await mcp.attach_server(DOCKER_SERVER, docker_spec)
-            await mcp.attach_server("matrix_control", control_spec)
+        # Build a Compositor and mount runtime + matrix control servers
+
+        comp = Compositor("compositor")
+        runtime_server = make_container_exec_server(
+            ContainerOptions(image=docker_image, network_mode=nm, environment=env, ephemeral=True)
+        )
+        await comp.mount_inproc("docker", runtime_server)
+        matrix_control = make_matrix_control_server(name="Matrix Control", bus=ui_bus)
+        await comp.mount_inproc(MATRIX_CONTROL_SERVER_NAME, matrix_control)
+
+        # Client with notifications buffer so UI can reflect MCP updates
+        notif_buffer = NotificationsBuffer(compositor=comp)
+        async with McpClient(comp, message_handler=notif_buffer.handler) as mcp_client:
             agent = await MiniCodex.create(
                 model=model,
-                mcp=mcp,
+                mcp_client=mcp_client,
                 system=effective_system,
                 client=client,
                 handlers=[
-                    ServerModeHandler(bus=ui_bus, poll_notifications=mcp.poll_notifications),
+                    ServerModeHandler(bus=ui_bus, poll_notifications=notif_buffer.poll),
                     DisplayEventsHandler(),
                 ],
             )
@@ -143,11 +128,13 @@ def run(
                     "-lc",
                     f'curl -sS -H {json.dumps(hdr)} --fail --max-time 35 "{url}"',
                 ]
-                res = await mcp.call_tool_namespaced(
-                    "mcp__docker__docker_exec", {"cmd": cmd, "timeout_secs": 40}
+                res_client = await mcp_client.session.call_tool(
+                    name=build_mcp_function("docker", "exec"),
+                    arguments={"cmd": cmd, "timeout_ms": 40_000},
                 )
-                payload = res.structuredContent or {}
-                stdout = (payload or {}).get("stdout") or ""
+                res = to_pydantic(res_client)
+                ex = TypeAdapter(ExecResult).validate_python(res.structuredContent or {})
+                stdout = ex.stdout or ""
                 try:
                     data = json.loads(stdout)
                 except json.JSONDecodeError:

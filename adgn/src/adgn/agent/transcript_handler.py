@@ -26,10 +26,13 @@ class _Event:
 
 
 class TranscriptHandler(BaseHandler):
-    """Simple JSONL transcript writer for MiniCodex runs.
+    """Unified transcript writer for MiniCodex runs.
 
-    Writes events.jsonl under a destination directory with one JSON object per line:
-    {"ts": ISO8601, "kind": <event>, "payload": {...}}
+    Emits two JSONL streams under the destination directory:
+    - events.jsonl with timestamped records: {"ts": ISO8601, ...to_jsonl_record(evt)...}
+    - transcript.jsonl with compact records: ...to_jsonl_record(evt)...
+
+    Also writes metadata.json once at start with a started timestamp.
 
     Usage:
       h = TranscriptHandler(dest_dir=Path("runs/prompt_eval/<ts>/<specimen>/grader"))
@@ -40,6 +43,7 @@ class TranscriptHandler(BaseHandler):
         self._root = dest_dir
         self._root.mkdir(parents=True, exist_ok=True)
         self._events_path = self._root / "events.jsonl"
+        self._transcript_path = self._root / "transcript.jsonl"
         # Fail fast if a transcript already exists at destination
         if self._events_path.exists():
             raise FileExistsError(f"Transcript already exists: {self._events_path}")
@@ -52,9 +56,13 @@ class TranscriptHandler(BaseHandler):
     # ---- Event helpers ----
     def _write_event(self, evt: Any) -> None:
         rec = to_jsonl_record(evt)
+        # Timestamped envelope (events.jsonl)
         out = {"ts": datetime.utcnow().isoformat() + "Z", **rec}
         with self._events_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(out, ensure_ascii=False) + "\n")
+        # Compact transcript (transcript.jsonl)
+        with self._transcript_path.open("a", encoding="utf-8") as g:
+            g.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     # ---- BaseHandler hooks (typed) ----
     def on_user_text_event(self, evt: UserText) -> None:
@@ -72,6 +80,10 @@ class TranscriptHandler(BaseHandler):
     def on_reasoning(self, item: ReasoningItem) -> None:
         # Record adapter ReasoningItem via shared JSONL mapping
         self._write_event(item)
+
+    def on_response(self, evt: Any) -> None:
+        # Record one responses.create result per model call with usage
+        self._write_event(evt)
 
     def on_before_sample(self) -> NoLoopDecision:
         # Do not influence loop control

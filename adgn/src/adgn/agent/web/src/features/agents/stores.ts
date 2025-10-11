@@ -34,23 +34,8 @@ export function stopAgentsPolling() {
 
 // setAgentId and currentAgentId are provided by router
 
-export function startAgentStatusPolling(id: string, intervalMs = 2500) {
-  stopAgentStatusPolling()
-  const tick = async () => {
-    try {
-      const st = await getAgentStatus(id)
-      agentStatus.set(st)
-      agentStatusError.set(null)
-    } catch (e: any) {
-      const msg = e?.message || String(e)
-      agentStatusError.set(msg)
-      // Keep last known status; log for visibility during dev
-      console.warn('agent status poll failed', msg)
-    }
-  }
-  tick()
-  _statusTimer = setInterval(tick, intervalMs)
-}
+// Disabled: WS agent_status now delivers enriched status; polling is unnecessary
+// Removed legacy polling: rely on agents WS 'agent_status' messages
 
 export function stopAgentStatusPolling() {
   if (_statusTimer) clearInterval(_statusTimer)
@@ -94,10 +79,33 @@ export function startAgentsWs(): void {
     console.warn('agents ws error', ev)
   }
   // Zod schemas for WS messages
-  const AgentStatusSchema = z.object({ type: z.literal('agent_status'), data: z.object({ id: z.string(), live: z.boolean(), active_run_id: z.string().nullable().optional() }) })
+  const AgentStatusDataSchema = z
+    .object({ id: z.string(), live: z.boolean(), active_run_id: z.string().nullable().optional() })
+    .extend({
+      lifecycle: z.string().optional(),
+      run_phase: z.string().optional(),
+      volumes: z.object({ rw: z.boolean() }).optional(),
+      policy: z.object({ version: z.number().nullable().optional() }).optional(),
+      ui: z.object({ ready: z.boolean() }).optional(),
+      // Full entries map; accept any entry shape here and rely on per-view typing
+      mcp: z.object({ entries: z.record(z.any()) }).optional(),
+      container: z.object({ present: z.boolean(), id: z.string().nullable().optional(), ephemeral: z.boolean().optional() }).optional(),
+      pending_approvals: z.number().nullable().optional(),
+      last_event_at: z.string().nullable().optional(),
+    })
+  const AgentStatusSchema = z.object({ type: z.literal('agent_status'), data: AgentStatusDataSchema })
   const AgentCreatedSchema = z.object({ type: z.literal('agent_created'), data: z.object({ id: z.string() }) })
   const AgentDeletedSchema = z.object({ type: z.literal('agent_deleted'), data: z.object({ id: z.string() }) })
-  const AgentsSnapshotSchema = z.object({ type: z.literal('agents_snapshot'), data: z.object({ agents: z.array(z.object({ id: z.string(), live: z.boolean().optional(), active_run_id: z.string().nullable().optional() })) }) })
+  const AgentsSnapshotSchema = z.object({
+    type: z.literal('agents_snapshot'),
+    data: z.object({
+      agents: z.array(
+        z
+          .object({ id: z.string(), live: z.boolean().optional(), active_run_id: z.string().nullable().optional() })
+          .extend({ lifecycle: z.string().optional() })
+      ),
+    }),
+  })
   const AgentsMsgSchema = z.discriminatedUnion('type', [AgentStatusSchema, AgentCreatedSchema, AgentDeletedSchema, AgentsSnapshotSchema])
 
   _ws.onmessage = (ev) => {
@@ -131,9 +139,11 @@ export function startAgentsWs(): void {
       }
       case 'agent_status': {
         const { id, live, active_run_id } = m.data
+        // Update agents list with live/working flags for the sidebar
         agents.update(rows => upsertAgentRow(rows, { id, live, working: !!active_run_id } as any))
+        // If this is the currently selected agent, set full enriched status
         if (get(currentAgentId) === id) {
-          agentStatus.set({ id, live, active_run_id: active_run_id ?? null })
+          agentStatus.set(m.data as unknown as AgentStatus)
           agentStatusError.set(null)
         }
         return

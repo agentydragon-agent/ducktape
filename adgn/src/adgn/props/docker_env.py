@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib import resources
 from pathlib import Path
+from typing import Callable
 
+from fastmcp.server import FastMCP
+
+from adgn.mcp._shared.constants import DOCKER_SERVER_NAME
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp.docker_exec.server import make_container_exec_mcp
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp.types import ServerSlotSpec
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.docker_exec.server import make_container_exec_server
 from adgn.props.prop_utils import props_definitions_root
 import docker
 from docker.errors import ImageNotFound
 
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
-SERVER_NAME = "docker"
 WORKING_DIR: Path = Path("/workspace")
 PROPS_DIR = Path("/props")
 # Shared startup command for long-lived containers
@@ -21,27 +22,39 @@ PROPS_DIR = Path("/props")
 
 @dataclass(slots=True)
 class PropertiesDockerWiring:
-    server_spec: ServerSlotSpec
+    """Wiring for a properties Docker exec server.
+
+    Exposes a factory to build a FastMCP (auth wiring is encapsulated). Callers should
+    attach via mcp.attach_inproc(wiring.server_name, wiring.server_factory()).
+    """
+
+    server_factory: Callable[[], FastMCP]
     working_dir: Path
     definitions_container_dir: Path | None
     image_name: str
 
     @property
     def server_name(self) -> str:
-        return SERVER_NAME
+        return DOCKER_SERVER_NAME
 
     def container_path_for_prop_rel(self, rel: str) -> Path:
         if not self.definitions_container_dir:
             raise RuntimeError("Property definitions not mounted in container")
         return self.definitions_container_dir / rel
 
+    async def attach(self, comp: Compositor) -> FastMCP:
+        """Mount this wiring on a Compositor (in-proc, no auth)."""
+        server = self.server_factory()
+        await comp.mount_inproc(self.server_name, server)
+        return server
+
 
 def build_critic_build_hint() -> str:
-    dockerfile_trav = resources.files("adgn.llm").joinpath("docker/critic.Dockerfile")
-    # Convert Traversable to a real filesystem path for mypy/typeshed compatibility
-    dockerfile_path = str(dockerfile_trav)
-    context_dir = str(Path(dockerfile_path).parent)
-    return f"docker build -f '{dockerfile_path}' -t {PROPERTIES_DOCKER_IMAGE} '{context_dir}'"
+    # Build hint uses repository docker path (not package resources):
+    #   docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .
+    return (
+        f"docker build -f 'docker/llm/properties-critic/Dockerfile' -t {PROPERTIES_DOCKER_IMAGE} ."
+    )
 
 
 def ensure_critic_image() -> None:
@@ -91,6 +104,7 @@ def properties_docker_spec(
     *,
     mount_properties: bool = True,
     extra_volumes: dict[str, dict[str, str]] | None = None,
+    ephemeral: bool = True,
 ) -> PropertiesDockerWiring:
     """Return wiring for the properties critic container.
 
@@ -108,16 +122,31 @@ def properties_docker_spec(
         extra_volumes=extra_volumes,
     )
 
-    server = make_container_exec_mcp(
-        ContainerOptions(
-            image=PROPERTIES_DOCKER_IMAGE,
-            working_dir=str(WORKING_DIR),
-            volumes=volumes,
-            describe=True,
+    # Provide sane defaults for tool caches and tmp dirs inside the container
+    env = {
+        "XDG_CACHE_HOME": "/tmp",
+        "RUFF_CACHE_DIR": "/tmp/.ruff_cache",
+        "MYPY_CACHE_DIR": "/tmp/.mypy_cache",
+        "TMPDIR": "/tmp",
+        "TMP": "/tmp",
+        "TEMP": "/tmp",
+        "PYTHONPYCACHEPREFIX": "/tmp/__pycache__",
+    }
+
+    def _factory() -> FastMCP:
+        return make_container_exec_server(
+            ContainerOptions(
+                image=PROPERTIES_DOCKER_IMAGE,
+                working_dir=WORKING_DIR,
+                volumes=volumes,
+                environment=env,
+                describe=True,
+                ephemeral=ephemeral,
+            ),
         )
-    )
+
     return PropertiesDockerWiring(
-        server_spec=make_inproc_slot_spec(server),
+        server_factory=_factory,
         working_dir=WORKING_DIR,
         definitions_container_dir=defs_container,
         image_name=PROPERTIES_DOCKER_IMAGE,

@@ -5,8 +5,8 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.loggers import RecordingHandler
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import AutoHandler
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.model import (
     FakeOpenAIModel,
@@ -21,17 +21,17 @@ async def test_model_reads_container_info_with_stubbed_openai(
     reasoning_model,
     responses_factory,
     docker_inproc_spec_alpine,
+    make_pg_compositor,
+    approval_policy_reader_allow_all,
 ) -> None:
-    # Use shared in-proc FastMCP spec named 'docker' for Alpine image
-    spec = docker_inproc_spec_alpine
-
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("docker", spec)
+    async with make_pg_compositor(
+        {"runtime": docker_inproc_spec_alpine, "approval_policy": approval_policy_reader_allow_all}
+    ) as (mcp_client, _comp):
         # Prepare a deterministic two-step sequence: function_call then final text
         ResourcesReadArgs(server="docker", uri="resource://container.info", max_bytes=1024)
         seq = [
             responses_factory.make_tool_call(
-                "mcp__resources__read",
+                build_mcp_function("resources", "read"),
                 {
                     "server": "docker",
                     "uri": "resource://container.info",
@@ -45,7 +45,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
         rec = RecordingHandler()  # from adgn.agent.loggers
         agent = await MiniCodex.create(
             model=reasoning_model,
-            mcp=mcp,
+            mcp_client=mcp_client,
             client=client,
             system="test",
             handlers=[AutoHandler(), DisplayEventsHandler(), rec],

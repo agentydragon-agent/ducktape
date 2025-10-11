@@ -110,9 +110,8 @@ class GitstatusdService:
         self._ensure_watcher_for_path = ensure_watcher_for_path
         self._list_watchers = list_watchers
         self._clear_watchers = clear_watchers
-
-    def get_client(self, path: Path):
-        return self._get_client(path)
+        # Squash trivial wrapper: expose provided callable directly
+        self.get_client = get_client  # type: ignore[assignment]
 
     def get_cached_status(
         self,
@@ -225,10 +224,9 @@ class PRServiceProvider:
 
 class StatusService:
     def __init__(self, repo_status: RepoStatus) -> None:
+        # Squash trivial wrapper by exposing underlying method directly
         self._status = repo_status
-
-    def summarize_status(self, worktree_path: Path):
-        return self._status.summarize_status(worktree_path)
+        self.summarize_status = repo_status.summarize_status  # type: ignore[assignment]
 
 
 class DiscoveryService:
@@ -241,9 +239,8 @@ class DiscoveryService:
         self._is_scanning = is_scanning
         self._periodic = periodic
         self._cancel = cancel_periodic
-
-    def is_scanning(self) -> bool:
-        return self._is_scanning()
+        # Squash trivial wrapper: expose provided callable directly
+        self.is_scanning = is_scanning  # type: ignore[assignment]
 
     async def start(self) -> None:
         if self._periodic:

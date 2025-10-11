@@ -123,6 +123,33 @@ Acceptance criteria:
 - [ ] Verify each detected tool runs inside the read-only critic sandbox; track pass/fail per tool and version.
 - [ ] Critics include tool-backed evidence in findings; fixers propose safe autofixes first, with diffs.
 
+## TODO: Heuristic flag — redundant catch-and-reraise (agent consideration)
+
+Pattern
+- Try/except that immediately re-raises the same exception without adding context, logging, or translation is often unnecessary and can be removed for clarity.
+
+Example
+
+```
+try:
+    docker_client.cleanup()
+except docker.errors.APIError:
+    # Cleanup failure: surface as API error
+    raise
+```
+
+Agent guidance
+- Flag such blocks as “consider removing the try/except and allow the exception to propagate.”
+- Exceptions (allowed):
+  - Adding structured logging/metrics or context
+  - Translating exception types (domain-specific)
+  - Narrow scoping to preserve invariants (e.g., guarantee finally semantics when language constructs don’t suffice)
+- Evidence to include in message: exception type(s), whether body is empty/pass/`raise` only, and whether any useful context/logging is present.
+
+Notes
+- Detector can be purely structural: `ast.Try` where each handler body is a bare `raise` (no message/logging) and except types are specific.
+- Leave nuanced “is this context useful?” judgment to the agent.
+
 ## Codex property enforcer and analyzer
 
 Observation (to investigate)
@@ -131,3 +158,34 @@ Observation (to investigate)
   - Symptom: Inserted a comment asserting “Local import in test to avoid heavy module import … heavy import justified,” but a top-level import for the same module already exists.
   - Action: Re-run against this file with a “find-only” analyzer and ask whether the state is correct; capture the agent’s argument.
 
+## Detector ideas (small TODOs)
+
+- Choices vs Arms (CLI/Enum drift)
+  - Extract source sets from argparse/Typer choices and Enums; compare against match/case arms, if/elif chains, and dispatch maps.
+  - Flag unreachable arms (not in source set), missing arms (values unhandled), and redundant defaults when exhaustive.
+  - Anchors: choices/Enum def and arm lines; message includes short proof.
+
+- Union/Instance Exhaustiveness
+  - For annotated `Union[T1|T2|…]` params or `isinstance(x, (T1, T2))` chains, ensure all types are handled and no dead arm remains.
+  - Optionally scan call sites to prove reachability for each type (evidence: callers constructing/passing Ti).
+
+- Assignment‑If Consolidation
+  - Detect patterns where a variable is assigned, then conditionally reassigned in a single if/else, and suggest a conditional expression (`v = A if cond else B`) when readable.
+
+- Optional[str] extensions
+  - Beyond `x is None or x == ""`, include `x is None or not x.strip()` (safe-only when confidently Optional[str]).
+
+- Nested Guard Flattening (extended)
+  - Support simple boolean algebra (A and B) with parentheses to flatten trivial nested guards while skipping complex cases.
+
+- Registry / Plugin Reachability
+  - Index dynamic registries (entrypoint maps, plugin hooks); mark symbols as reachable via registry to reduce Vulture false positives and surface dead registrations.
+
+## CLI consolidation TODOs
+
+- Unify specimen-discover into the `run` command
+  - Add `--embed-specimen-notes` to `run` (specimen mode) to auto-embed `covered.md` and `not_covered_yet.md` as supplemental context.
+  - For structured runs, keep the critic_submit gating; for `--dry-run`, render with minimal wiring and save the prompt like other presets.
+  - Remove the `specimen-discover` command after migration; update docs to use:
+    - `adgn-properties2 run --specimen <slug> --preset discover --structured true --embed-specimen-notes`
+  - Tests: port any `specimen-discover` dry-run tests to run with `--preset discover --dry-run --embed-specimen-notes`.

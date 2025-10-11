@@ -25,8 +25,9 @@ It can run as a CLI REPL or launch a local FastAPI server with a Svelte frontend
     You are a helpful echo agent.
   specs:
     echo:
-      transport: inproc
-      factory: adgn.mcp.echo.server:make_echo_mcp
+      transport: http
+      url: http://127.0.0.1:8768/mcp
+      auth: <replace-with-token>
   
 - System prompt composition: preset.system (if provided, else UI default) plus a header listing attached MCP servers
 - API:
@@ -48,8 +49,8 @@ It can run as a CLI REPL or launch a local FastAPI server with a Svelte frontend
 ```json
 {
   "mcpServers": {
-    "scraper": {"type": "stdio", "command": "scraper-mcp"},
-    "github":  {"type": "stdio", "command": "github-mcp-proxy"}
+    "scraper": {"transport": "stdio", "command": "scraper-mcp"},
+    "github":  {"transport": "stdio", "command": "github-mcp-proxy"}
   }
 }
 ```
@@ -78,7 +79,7 @@ There are two convenient ways to develop the UI + backend:
 
 Notes:
 - Dev mode picks free ports starting at `--port` (default 8765) and `--frontend-port` (default 5173).
-- Static production assets are served from `src/adgn/agent/server/static/web` (Vite build copies there).
+- Static production assets are served from `src/adgn/agent/server/static` (Vite build copies there).
 - The server emits typed Pydantic protocol payloads over a single WS endpoint at `/ws`.
 
 ### Resources MCP Server

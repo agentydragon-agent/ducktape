@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .models import BaseNode
 
 
-def get_tuple_value(node: "BaseNode", key: NodeId | str) -> "BaseNode | None":
+def get_tuple_value(node: BaseNode, key: NodeId | str) -> BaseNode | None:
     """Return the first value node from a tuple keyed by `key`.
 
     Supports two shapes:

@@ -3,6 +3,8 @@
 from datetime import timedelta
 import os
 import subprocess
+import time
+from typing import Callable
 
 
 def add_project_root_to_env(env: dict) -> None:
@@ -38,3 +40,25 @@ def run_cli_command(
 def run_cli_sh_command(args, env, timeout: timedelta = timedelta(seconds=60.0)):
     """Run the CLI command with 'sh' subcommand as subprocess."""
     return run_cli_command(list(args), env=env, timeout=timeout)
+
+
+def wait_until(
+    predicate: Callable[[], bool],
+    *,
+    timeout_seconds: float = 5.0,
+    interval_seconds: float = 0.1,
+) -> bool:
+    """Poll `predicate` until it returns True or timeout elapses.
+
+    Returns True if the condition became true within the timeout; False otherwise.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            if predicate():
+                return True
+        except Exception:
+            # Treat exceptions as transient until timeout; tests can inspect state after
+            pass
+        time.sleep(interval_seconds)
+    return False

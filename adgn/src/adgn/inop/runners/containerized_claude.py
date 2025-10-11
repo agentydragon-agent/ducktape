@@ -121,7 +121,7 @@ class TaskClaude:
         task_id: str,
         config,
         output_dir: Path,
-        seed_task: "SeedTask",
+        seed_task: SeedTask,
         logger,
     ):
         self.task_id = task_id

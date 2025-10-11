@@ -1,32 +1,24 @@
 from __future__ import annotations
 
 from adgn.agent.loop_control import Auto, Continue
-from adgn.agent.mcp_manager import (
-    McpManager,
+from adgn.agent.notifications.types import (
     NotificationsBatch,
     ResourceUpdateEvent,
 )
 from adgn.agent.reducer import NotificationsHandler
 
 
-class _FakeMcp(McpManager):
+class _FakeBuffer:
     def __init__(self) -> None:
-        super().__init__({})
+        # New notifications types do not carry synthetic versions; only server+uri
         self._batch = NotificationsBatch(
             resources_updated=[
-                ResourceUpdateEvent(server="git-ro", uri="http://a.txt", version=2),
-                ResourceUpdateEvent(server="editor", uri="file:///b.py", version=1),
-            ],
-            tools_invalidated=[],
+                ResourceUpdateEvent(server="git-ro", uri="http://a.txt"),
+                ResourceUpdateEvent(server="editor", uri="file:///b.py"),
+            ]
         )
 
-    async def __aenter__(self) -> "_FakeMcp":  # pragma: no cover
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:  # pragma: no cover
-        return None
-
-    def poll_notifications(self) -> NotificationsBatch:
+    def poll(self) -> NotificationsBatch:
         b = self._batch
         # Return once, then empty
         self._batch = NotificationsBatch()
@@ -34,8 +26,8 @@ class _FakeMcp(McpManager):
 
 
 def test_notifications_handler_batches_single_message():
-    mcp = _FakeMcp()
-    h = NotificationsHandler(mcp)
+    buf = _FakeBuffer()
+    h = NotificationsHandler(buf.poll)
     dec = h.on_before_sample()
     assert isinstance(dec, Continue)
     assert isinstance(dec.tool_policy, Auto)

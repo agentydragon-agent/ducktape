@@ -44,6 +44,7 @@ def _make_real_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config
     return Configuration.resolve(wt_dir)
 
 
+# Use pytest-asyncio; cooperate with the worker loop via asyncio backend
 @pytest.mark.asyncio
 async def test_pr_service_handles_missing_worktree_without_crashing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

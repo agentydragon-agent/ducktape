@@ -8,7 +8,7 @@ export type WsHandlers = {
   onMessage?: (p: IncomingPayload) => void
 }
 
-export type WsClient = { send: (obj: any) => void; close: () => void }
+export type WsClient = { close: () => void }
 
 function backendOrigin(): string {
   // Use the current origin so dev goes through Vite's proxy for /ws
@@ -24,20 +24,15 @@ export function connectWS(agentId: string, handlers: WsHandlers = {}): WsClient 
   const wsUrl = backend.replace(/^https?/, wsProto) + '/ws?agent_id=' + encodeURIComponent(agentId)
   if (DEBUG) console.log('[WS] CONNECT', wsUrl)
   const ws = new WebSocket(wsUrl)
-  let pingTimer: any = null
-  const PING_INTERVAL_MS = 15_000
 
   ws.onopen = () => {
     if (DEBUG) console.log('[WS] OPEN')
     handlers.onOpen?.()
-    // Start ping/pong to keep liveness
-    pingTimer = setInterval(() => {
-      try { ws.send(JSON.stringify({ type: 'ping', nonce: String(Date.now()) })) } catch {}
-    }, PING_INTERVAL_MS)
+    // No client-originated WS messages; REST is used for commands.
   }
   ws.onclose = (ev) => {
     if (DEBUG) console.log('[WS] CLOSE', { code: ev.code, reason: ev.reason })
-    if (pingTimer) clearInterval(pingTimer)
+    // No timers to clear
     handlers.onClose?.(ev)
   }
   ws.onerror = (ev) => { if (DEBUG) console.warn('[WS] ERROR', ev); handlers.onError?.(ev) }
@@ -53,9 +48,6 @@ export function connectWS(agentId: string, handlers: WsHandlers = {}): WsClient 
   }
 
   return {
-    send: (obj: any) => ws.send(JSON.stringify(obj)),
-    close: () => {
-      try { if (pingTimer) clearInterval(pingTimer) } finally { ws.close() }
-    }
+    close: () => { try { ws.close() } catch {} }
   }
 }

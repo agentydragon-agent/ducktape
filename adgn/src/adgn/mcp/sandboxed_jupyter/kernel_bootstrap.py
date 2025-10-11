@@ -11,10 +11,8 @@ from .kernel_shim import log  # reuse shared logging helper
 
 
 try:
-    log("bootstrap: starting ipykernel import")
-    # ipykernel_launcher is how Jupyter starts kernels; mirror it but with logging around it
-
-    log("bootstrap: imported ipykernel.kernelapp successfully")
+    # ipykernel_launcher is how Jupyter starts kernels; mirror it but with explicit log
+    log("bootstrap: launching ipykernel app")
     # Replicate behavior of ipykernel_launcher: run app.launch_new_instance()
     sys.argv = [sys.executable, "-m", "ipykernel_launcher", *sys.argv[1:]]
     launch_new_instance()

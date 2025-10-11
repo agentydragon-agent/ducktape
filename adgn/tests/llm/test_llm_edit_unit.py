@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from adgn.mcp.editor_server import DoneInput, is_python_path, make_editor_mcp
+from adgn.mcp.editor_server import DoneInput, is_python_path, make_editor_server
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ def editor_session(make_typed_mcp):
 
     @asynccontextmanager
     async def _open(p: Path):
-        server = make_editor_mcp(p)
+        server = make_editor_server(p)
         async with make_typed_mcp(server, "editor") as pair:
             yield pair
 
@@ -31,7 +31,7 @@ def test_is_python_path() -> None:
 
 
 def _extract_result(res):
-    payload = getattr(res, "structuredContent", None)
+    payload = getattr(res, "structured_content", None)
     if isinstance(payload, str):
         try:
             payload = json.loads(payload)
@@ -118,7 +118,7 @@ async def test_done_explicit_failure_reverts_in_memory(
             name="read_line_range",
             arguments={"start": 1, "end": 1},
         )
-        body = (rr.structuredContent or {}).get("body", "")
+        body = (rr.structured_content or {}).get("body", "")
         assert "A" in body
 
     # file on disk unchanged

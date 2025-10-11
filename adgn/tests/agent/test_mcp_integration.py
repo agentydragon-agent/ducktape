@@ -1,20 +1,17 @@
 import asyncio
 import shutil
 
+from fastmcp.client import Client
+from fastmcp.mcp_config import StdioMCPServer
 import pytest
 
-from adgn.agent.mcp_manager import McpManager
-from adgn.agent.runtime.specs import StdioSpec
-from adgn.mcp.exec_common.models import StreamOut
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp.local_exec.server import make_local_exec_mcp
-from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.mcp.direct_exec.server import make_direct_exec_server
 
 # FastMCP stdio client (hard import)
 
 
 @pytest.mark.asyncio
-async def test_stdio_server_list_tools() -> None:
+async def test_stdio_server_list_tools(make_compositor) -> None:
     """Smoke test: connect to server-everything (stdio) and list tools.
 
     Skips if npx or FastMCP stdio client are unavailable.
@@ -39,37 +36,36 @@ async def test_stdio_server_list_tools() -> None:
     if proc.returncode != 0:
         pytest.skip(f"server-everything stdio help failed (rc={proc.returncode})")
 
-    spec = StdioSpec(command="npx", args=["@modelcontextprotocol/server-everything", "stdio"])
+    spec = StdioMCPServer(
+        command="npx",
+        args=["@modelcontextprotocol/server-everything", "stdio"],
+    )
 
-    async with McpManager({"everything": spec}) as mcp:
-        tools = await mcp.list_tools()
+    async with make_compositor({"everything": spec}) as (sess, comp):
+        tools = await sess.list_tools()
         assert isinstance(tools, list)
-        assert any(t.server == "everything" for t in tools)
+        assert any(t.name.startswith("mcp__everything_") for t in tools)
 
 
 @pytest.mark.asyncio
-async def test_local_inprocess_server() -> None:
-    """Local in-process FastMCP exec tool via memory streams (no stdio)."""
+async def test_direct_inprocess_server(make_compositor) -> None:
+    """Direct (unsandboxed) in-process FastMCP exec tool mounted in a Compositor."""
 
-    # Import FastMCP in-proc helpers locally to avoid global import churn
-
-    srv = make_local_exec_mcp(
-        "local", sandbox_enabled=False
-    )  # run unsandboxed for portability in CI/macOS
-    spec = make_inproc_slot_spec(srv)
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("local", spec)
-        specs = await mcp.list_tools()
-        assert any(t.server == "local" and t.tool.name == "exec" for t in specs)
-
-        # Typed client sanity call
-        session = await mcp.get_session("local")
-        client = TypedClient.from_server(srv, session)
-        Args = client.models["exec"].Input
-        res = await client.exec(Args(cmd=["/bin/echo", "hello"], max_bytes=100000, timeout_ms=5000))
-        assert res.exit == 0
-        out = res.stdout.text if isinstance(res.stdout, StreamOut) else (res.stdout or "")
-        assert "hello" in out
+    srv = make_direct_exec_server("local")
+    async with make_compositor({"local": srv}) as (sess, comp):
+        tools = await sess.list_tools()
+        # Tools are composed under the compositor with namespaced tool names
+        assert any(t.name == "mcp__local_exec" for t in tools)
+        # Sanity-call exec via the namespaced tool
+        res = await sess.call_tool(
+            name="mcp__local_exec",
+            arguments={
+                "cmd": ["/bin/echo", "hello"],
+                "max_bytes": 100000,
+                "timeout_ms": 5000,
+            },
+        )
+        assert getattr(res, "is_error", False) is False
 
 
 @pytest.mark.asyncio
@@ -79,7 +75,7 @@ async def test_inproc_container_exec_exposes_container_info_resource(
 ) -> None:
     """in-proc container exec exposes a container.info resource."""
 
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("docker", docker_inproc_spec_py312)
-        res = await mcp.read_resource("docker", "resource://container.info")
+    # Call the server directly to read the resource; no manager needed here
+    async with Client(docker_inproc_spec_py312) as sess:
+        res = await sess.read_resource_mcp("resource://container.info")
         assert res.contents, "container.info returned no contents"

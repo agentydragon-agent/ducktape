@@ -12,7 +12,6 @@ import asyncio
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from enum import Enum
 import json
 import os
 from pathlib import Path
@@ -27,6 +26,8 @@ from openai.types.chat.chat_completion import ChatCompletion
 from openai.types.responses import Response
 from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict
+
+from adgn.openai_utils.probe.core import ErrorCode, Family
 
 # ---------- Constants & utilities ----------
 
@@ -130,7 +131,7 @@ class ProbeRecord(BaseModel):
     error: ErrorInfo | None = None
 
 
-def _persist_result(res: "ProbeResult") -> None:
+def _persist_result(res: ProbeResult) -> None:
     """Append a single probe result to the JSONL cache."""
     _ensure_cache_dir()
     record = res.to_cache_record()
@@ -163,7 +164,7 @@ async def _init_database() -> None:
     await _get_db_pool()
 
 
-async def _write_probe_result(res: "ProbeResult") -> None:
+async def _write_probe_result(res: ProbeResult) -> None:
     """Write probe result to TimescaleDB."""
     if not res.start_ts or not res.end_ts:
         return  # Skip if missing timing data
@@ -332,14 +333,6 @@ class ModelListRecord(BaseModel):
 
 
 # Model family heuristic
-class Family(str, Enum):
-    GPT_5 = "gpt-5"
-    O3 = "o3"
-    O4_MINI = "o4-mini"
-    O1 = "o1"
-    GPT_41 = "gpt-4.1"
-    OTHER = "other"
-
 
 FAMILY_RULES: dict[Family, str] = {
     Family.GPT_5: r"^gpt[-_]?5(?!-(mini|nano))",
@@ -381,26 +374,6 @@ def priority_index(mid: str) -> int:
 
 
 # Error codes and rules
-class ErrorCode(str, Enum):
-    MISSING_TOOLS_NAME = "MISSING-TOOLS-NAME"
-    RATE_LIMIT = "RATE-LIMIT"
-    TOO_LARGE = "TOO-LARGE"
-    NO_CAP = "NO-CAP"
-    RESP_ONLY = "RESP-ONLY"
-    NOT_CHAT = "NOT-CHAT"
-    TIMEOUT = "TIMEOUT"
-    INVALID_OUTPUT = "INVALID-OUTPUT"
-    SERVER_ERROR = "SERVER-ERROR"
-    NOT_FOUND = "NOT-FOUND"
-    TOOLS_UNSUPPORTED = "TOOLS-UNSUPPORTED"
-    FORBIDDEN = "FORBIDDEN"
-    AUDIO_REQUIRED = "AUDIO-REQUIRED"
-    INVALID_HEADERS = "INVALID-HEADERS"
-    INVALID_REQUEST = "INVALID-REQUEST"
-    TTS_MODEL = "TTS-MODEL"
-    OTHER = "OTHER"
-
-
 ERROR_RULES: Mapping[ErrorCode, tuple[str, Callable[[str], bool]]] = {
     ErrorCode.MISSING_TOOLS_NAME: (
         "Missing tools name in tool call; make sure to set the name.",
@@ -463,7 +436,8 @@ def _snippet_from_responses(resp: Response) -> str:
     if txt:
         return _squeeze_one_line(txt)
     data = resp.model_dump(exclude_none=True)
-    outputs = data.get("output", []) or []
+    _outputs = data.get("output", [])
+    outputs = _outputs if _outputs is not None else []
     for item in outputs:
         typ = item.get("type")
         name: str | None = None
@@ -482,7 +456,8 @@ def _snippet_from_responses(resp: Response) -> str:
 
 
 def _snippet_from_chat(chat: ChatCompletion) -> str:
-    choices = chat.choices or []
+    # OpenAI SDK may set choices to [] (never None in practice); keep explicit
+    choices = chat.choices if chat.choices is not None else []
     for ch in choices:
         msg = ch.message
         if msg is None:
@@ -513,7 +488,7 @@ class ProbeResult:
         raw: Response | ChatCompletion,
         start_ts: datetime,
         end_ts: datetime,
-    ) -> "ProbeResult":
+    ) -> ProbeResult:
         return cls(
             model_id=model_id,
             kind=kind,
@@ -532,7 +507,7 @@ class ProbeResult:
         exc: BaseException,
         start_ts: datetime | None,
         end_ts: datetime,
-    ) -> "ProbeResult":
+    ) -> ProbeResult:
         return cls(
             model_id=model_id,
             kind=kind,

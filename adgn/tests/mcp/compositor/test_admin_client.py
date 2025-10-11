@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from fastmcp.server import FastMCP
+import pytest
+
+from adgn.mcp.compositor.clients import CompositorAdminClient
+
+
+def _make_backend(name: str = "backend") -> FastMCP:
+    m = FastMCP(name)
+
+    @m.tool(name="ping")
+    def ping() -> str:
+        return "pong"
+
+    return m
+
+
+@pytest.mark.asyncio
+async def test_admin_client_list_and_detach(make_pg_compositor, approval_policy_reader_allow_all):
+    backend = _make_backend()
+    async with make_pg_compositor(
+        {"backend": backend, "approval_policy": approval_policy_reader_allow_all}
+    ) as (sess, comp):
+        admin = CompositorAdminClient(sess)
+        mounts = await admin.list_mounts()
+        assert "backend" in mounts
+        # Detach via admin client (allowed for in-proc proxies)
+        await admin.detach_server(name="backend")
+        mounts2 = await admin.list_mounts()
+        assert "backend" not in mounts2
+        # Re-attach in-proc directly to leave compositor in a sane state for any following assertions
+        await comp.mount_inproc("backend", backend)
+

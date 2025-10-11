@@ -1,17 +1,132 @@
 from __future__ import annotations
 
+from datetime import datetime
+from functools import partial
+import os
 from typing import Any, Callable
 
 from hamcrest import (
+    any_of,
     assert_that,
     contains_string,
+    equal_to,
     has_entries,
     has_item,
     has_items,
     has_properties,
+    is_not,
+    none,
+)
+from hamcrest.core.matcher import Matcher
+
+from adgn.agent.server.protocol import (
+    Accepted,
+    Envelope,
+    RunStatus,
+    RunStatusEvt,
+    UiStateSnapshot,
+    UiStateUpdated,
 )
 
-from adgn.agent.server.protocol import Accepted, Envelope, RunStatusEvt
+# ---- Tracing utilities -------------------------------------------------------
+
+
+def _is_trace_enabled() -> bool:
+    return os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE")
+
+
+def _ts() -> str:
+    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+
+def _trace(name: str, msg: str) -> None:
+    if _is_trace_enabled():
+        print(f"[ws:{name} {_ts()}] {msg}")
+
+
+# ---- Small mappers (deduplicated) -------------------------------------------
+
+
+def _payload_mapper(e: Envelope) -> Any:
+    return e.payload
+
+
+def _identity_mapper(x: Any) -> Any:
+    return x
+
+
+def _short_payload(p: Any) -> str:
+    try:
+        t = getattr(p, "type", None)
+        if t == "run_status":
+            return f"run_status status={getattr(p.run_state, 'status', '?')}"
+        if isinstance(p, UiStateSnapshot):
+            return "ui_state_snapshot"
+        if isinstance(p, UiStateUpdated):
+            return "ui_state_updated"
+        if t == "approval_pending":
+            return f"approval_pending call_id={getattr(p, 'call_id', '?')}"
+        if t == "approval_decision":
+            return f"approval_decision call_id={getattr(p, 'call_id', '?')}"
+        if t == "function_call_output":
+            kind = getattr(p, "kind", None)
+            return f"function_call_output kind={kind}"
+        if t is not None:
+            return str(t)
+        # Fallback for dicts (hub JSON)
+        if isinstance(p, dict):
+            tp = p.get("type")
+            if tp == "agent_status":
+                d = p.get("data", {})
+                return f"agent_status id={d.get('id')} live={d.get('live')} active_run_id={d.get('active_run_id')}"
+            return str(tp or "json")
+    except Exception:
+        return str(type(p).__name__)
+    return str(type(p).__name__)
+
+
+def _fetch_envelope(ws):
+    return Envelope.model_validate(ws.receive_json())
+
+
+def drain(
+    *,
+    fetch: Callable[[], Any],
+    until: Callable[[Any], bool] | None = None,
+    match: Matcher | None = None,
+    match_key: Callable[[Any], Any] | None = None,
+    collect: Callable[[Any], Any] | None = None,
+    limit: int = 200,
+    name: str = "stream",
+    trace: bool | None = None,
+):
+    """Generic drain of a pull-based stream.
+
+    - Exactly one of `until` or `match` must be provided.
+    - `match_key` maps source items before evaluation (e.g., Envelope → payload).
+    - `collect` maps source items before appending to the result list.
+    """
+    if (until is None) == (match is None):
+        raise ValueError("Provide exactly one of `until` or `match`")
+
+    key = match_key or _identity_mapper
+    collect_fn = collect or _identity_mapper
+
+    out: list[Any] = []
+    do_trace = _is_trace_enabled() if trace is None else bool(trace)
+    for _ in range(limit):
+        src = fetch()
+        item = collect_fn(src)
+        out.append(item)
+        if do_trace:
+            _trace(name, f"recv: {_short_payload(item)}")
+        target = key(src)
+        hit = match.matches(target) if match is not None else bool(until(target))  # type: ignore[arg-type]
+        if hit:
+            if do_trace:
+                _trace(name, "predicate matched; stopping drain")
+            break
+    return out
 
 
 def drain_until(
@@ -20,22 +135,116 @@ def drain_until(
     *,
     limit: int = 200,
     mapper: Callable[[Envelope], Any] | None = None,
+    name: str = "agent",
+    trace: bool | None = None,
 ):
-    """General drain helper: read envelopes until predicate(envelope) is True.
+    core = partial(
+        drain,
+        fetch=partial(_fetch_envelope, ws),
+        match_key=_identity_mapper,
+        collect=(mapper or _payload_mapper),
+        limit=limit,
+        name=name,
+        trace=trace,
+    )
+    return core(until=predicate)
 
-    - mapper selects what to return for each envelope (default: payload)
-    - returns a list of mapped items
-    """
-    if mapper is None:
 
-        def mapper(e: Envelope) -> Any:  # default: payloads
-            return e.payload
+def drain_until_match(
+    ws,
+    matcher: Matcher,
+    *,
+    limit: int = 200,
+    mapper: Callable[[Envelope], Any] | None = None,
+    name: str = "agent",
+    trace: bool | None = None,
+):
+    core = partial(
+        drain,
+        fetch=partial(_fetch_envelope, ws),
+        match_key=_payload_mapper,
+        collect=(mapper or _payload_mapper),
+        limit=limit,
+        name=name,
+        trace=trace,
+    )
+    return core(match=matcher)
 
-    out = []
+
+def _fetch_json(ws):
+    return ws.receive_json()
+
+
+def drain_json(
+    ws,
+    *,
+    until: Callable[[dict], bool] | None = None,
+    match: Matcher | None = None,
+    limit: int = 200,
+    mapper: Callable[[dict], Any] | None = None,
+    name: str = "hub",
+    trace: bool | None = None,
+):
+    core = partial(
+        drain,
+        fetch=partial(_fetch_json, ws),
+        match_key=_identity_mapper,
+        collect=(mapper or _identity_mapper),
+        limit=limit,
+        name=name,
+        trace=trace,
+    )
+    if match is not None and until is not None:
+        raise ValueError("Provide exactly one of `until` or `match`")
+    if match is not None:
+        return core(match=match)
+    return core(until=until)
+
+
+def drain_json_until(
+    ws,
+    predicate: Callable[[dict], bool],
+    *,
+    limit: int = 200,
+    mapper: Callable[[dict], Any] | None = None,
+    name: str = "hub",
+    trace: bool | None = None,
+):
+    return drain_json(ws, until=predicate, limit=limit, mapper=mapper, name=name, trace=trace)
+
+
+def drain_json_until_match(
+    ws,
+    matcher: Matcher,
+    *,
+    limit: int = 200,
+    mapper: Callable[[dict], Any] | None = None,
+    name: str = "hub",
+    trace: bool | None = None,
+):
+    return drain_json(ws, match=matcher, limit=limit, mapper=mapper, name=name, trace=trace)
+
+
+def _drain_core(
+    *,
+    fetch: Callable[[], Any],
+    match_pred: Callable[[Any], bool],
+    mapper: Callable[[Any], Any],
+    name: str,
+    trace: bool | None,
+    limit: int,
+):
+    out: list[Any] = []
+    do_trace = _is_trace_enabled() if trace is None else bool(trace)
     for _ in range(limit):
-        env = Envelope.model_validate(ws.receive_json())
-        out.append(mapper(env))
-        if predicate(env):
+        src = fetch()
+        item = mapper(src)
+        out.append(item)
+        if do_trace:
+            _trace(name, f"recv: {_short_payload(item)}")
+        if match_pred(src):
+            if do_trace:
+                _trace(name, "predicate matched; stopping drain")
             break
     return out
 
@@ -44,7 +253,8 @@ def collect_payloads_until_finished(ws, *, limit: int = 200):
     """Collect payloads until finished (thin wrapper over drain_until)."""
     return drain_until(
         ws,
-        lambda e: isinstance(e.payload, RunStatusEvt) and e.payload.run_state.status == "finished",
+        lambda e: isinstance(e.payload, RunStatusEvt)
+        and e.payload.run_state.status == RunStatus.FINISHED,
         limit=limit,
         mapper=None,  # default mapper returns payloads
     )
@@ -73,7 +283,8 @@ def collect_envelopes_until_finished(ws, *, limit: int = 200):
     """Collect envelopes until finished (delegates to drain_until)."""
     return drain_until(
         ws,
-        lambda e: isinstance(e.payload, RunStatusEvt) and e.payload.run_state.status == "finished",
+        lambda e: isinstance(e.payload, RunStatusEvt)
+        and e.payload.run_state.status == RunStatus.FINISHED,
         limit=limit,
         mapper=lambda e: e,
     )
@@ -91,7 +302,7 @@ def collect_payloads_until_finished_auto_approve(ws, *, limit: int = 200):
             payloads.append(p)
             continue
         payloads.append(p)
-        if p.type == "run_status" and p.run_state.status == "finished":
+        if p.type == "run_status" and p.run_state.status == RunStatus.FINISHED:
             break
     return payloads
 
@@ -103,7 +314,31 @@ def collect_payloads_until_finished_auto_approve(ws, *, limit: int = 200):
 
 def has_finished_run():
     """Matcher: run_status with status == finished."""
-    return has_properties(type="run_status", run_state=has_properties(status="finished"))
+    return has_properties(type="run_status", run_state=has_properties(status=RunStatus.FINISHED))
+
+
+# ------------------------
+# Hub WS (agents) matchers
+# ------------------------
+
+
+ACTIVE_RUN_SET = is_not(none())
+ACTIVE_RUN_CLEARED = any_of(none(), equal_to(""))
+
+
+def agent_status(agent_id: str, *, active_run_id: Matcher | None = None, live: bool | None = True):
+    """Generic matcher for hub JSON agent_status.
+
+    - agent_id: required id
+    - live: constrain live flag (default True). Pass None to avoid asserting it.
+    - active_run_id: Hamcrest matcher for active_run_id (e.g., ACTIVE_RUN_SET / ACTIVE_RUN_CLEARED)
+    """
+    data_kvs: dict[str, object] = {"id": agent_id}
+    if live is not None:
+        data_kvs["live"] = live
+    if active_run_id is not None:
+        data_kvs["active_run_id"] = active_run_id
+    return has_entries(type="agent_status", data=has_entries(**data_kvs))
 
 
 def is_ui_message(content: str | None = None, mime: str | None = None):
@@ -117,10 +352,10 @@ def is_ui_message(content: str | None = None, mime: str | None = None):
 
 
 def has_function_call_output_structured(**kvs):
-    """Matcher: function_call_output with structuredContent containing kvs."""
+    """Matcher: function_call_output with structured_content containing kvs."""
     return has_entries(
         kind="function_call_output",
-        result=has_entries(structuredContent=has_entries(**kvs)),
+        result=has_entries(structured_content=has_entries(**kvs)),
     )
 
 
@@ -150,7 +385,7 @@ def is_function_call_output(call_id: str | None = None, **structured_kvs):
     """
     props: dict[str, object] = {
         "type": "function_call_output",
-        "result": has_entries(structuredContent=has_entries(**structured_kvs)),
+        "result": has_entries(structured_content=has_entries(**structured_kvs)),
     }
     if call_id is not None:
         props["call_id"] = call_id
@@ -171,7 +406,7 @@ def assert_function_call_output_structured(records: list[dict], **kvs):
         has_item(
             has_entries(
                 kind="function_call_output",
-                result=has_entries(structuredContent=has_entries(**kvs)),
+                result=has_entries(structured_content=has_entries(**kvs)),
             )
         ),
     )

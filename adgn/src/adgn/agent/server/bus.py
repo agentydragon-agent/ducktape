@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Callable, Literal
+from typing import Annotated, Any, Callable, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MimeType(StrEnum):
@@ -17,6 +17,7 @@ class MimeType(StrEnum):
 
 
 class UiMessage(BaseModel):
+    kind: Literal["UiMessage"] = "UiMessage"
     mime: MimeType
     content: str
 
@@ -28,6 +29,10 @@ class UiEndTurn(BaseModel):
 
 
 UiBusItem = UiMessage | UiEndTurn
+
+# Discriminated union type for structured UI tool outputs (used for parsing
+# function_call_output structuredContent back into typed UI events).
+UiBusItemStructured = Annotated[UiMessage | UiEndTurn, Field(discriminator="kind")]
 
 
 @dataclass

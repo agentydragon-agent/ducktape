@@ -69,10 +69,7 @@ class RpcRegistry:
     def __init__(self) -> None:
         self._handlers: dict[
             str,
-            Callable[
-                [Request, "WtDaemon", Any, datetime],
-                Awaitable[Response | ErrorResponse],
-            ],
+            Callable[[Request, WtDaemon, Any, datetime], Awaitable[Response | ErrorResponse]],
         ] = {}
         self._stream_methods: set[str] = set()
 
@@ -80,7 +77,7 @@ class RpcRegistry:
         self,
         fn,
         *,
-        daemon: "WtDaemon",
+        daemon: WtDaemon,
         params_obj: BaseModel | None,
         writer,
         start_time: datetime,

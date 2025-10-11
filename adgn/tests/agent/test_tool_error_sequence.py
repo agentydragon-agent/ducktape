@@ -2,15 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp.server import FastMCP
 import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Auto, Continue
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import BaseHandler
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.openai_utils.model import FakeOpenAIModel
 from tests.agent.ws_helpers import assert_function_call_output_structured
 
@@ -29,11 +27,14 @@ def _make_failing_server() -> FastMCP:
 async def test_tool_error_is_surfaced_in_sequence(
     monkeypatch: pytest.MonkeyPatch,
     responses_factory,
+    make_pg_compositor,
+    approval_policy_reader_allow_all,
 ) -> None:
     # Build in-proc failing server spec using FastMCP
-    spec = make_inproc_slot_spec(_make_failing_server())
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("editor", spec)
+    server = _make_failing_server()
+    async with make_pg_compositor(
+        {"editor": server, "approval_policy": approval_policy_reader_allow_all}
+    ) as (mcp_client, _comp):
         # Create agent and run one turn
 
         class _AutoHandler(BaseHandler):
@@ -50,7 +51,7 @@ async def test_tool_error_is_surfaced_in_sequence(
         )
         agent = await MiniCodex.create(
             model=responses_factory.model,
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="You are a code agent.",
             client=client,
             handlers=[_AutoHandler(), rec],

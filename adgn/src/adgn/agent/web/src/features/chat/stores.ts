@@ -10,8 +10,10 @@ import type {
   ApprovalDecisionPayload,
   SamplingSnapshot,
 } from '../../shared/types'
-import type { UiState, ServerEntry } from '../../shared/types'
+import type { UiState, ServerEntry, ApprovalPolicyInfo } from '../../shared/types'
 import { connectWS, type WsClient } from './ws'
+import { getSnapshot as httpGetSnapshot, getProposal as httpGetProposal, rejectProposal as httpRejectProposal, approveCall, denyAbortCall, denyContinueCall, setPolicy as httpSetPolicy, sendPrompt as httpSendPrompt, abortRun as httpAbortRun, attachMcpServer, detachMcpServer } from '../agents/api'
+import { get } from 'svelte/store'
 import { agentStatus } from '../agents/stores'
 
 export type Pending = { call_id: string; tool_key: string; args_json?: string | null }
@@ -23,7 +25,7 @@ export const uiStates: Writable<Map<string, UiState>> = writable(new Map())
 export const uiState: Readable<UiState | null> = derived([uiStates, currentAgentId], ([$uiStates, $current]) => ($current ? ($uiStates.get($current) ?? null) : null))
 export const lastError: Writable<string | null> = writable(null)
 export const pendingApprovals: Writable<Map<string, Pending>> = writable(new Map())
-export const approvalPolicy: Writable<{ content: string; version: number; proposals?: Array<{id: string, status: string, rationale?: string, source: string}> } | null> = writable(null)
+export const approvalPolicy: Writable<ApprovalPolicyInfo | null> = writable(null)
 export const mcpServerEntries: Writable<ServerEntry[]> = writable([])
 
 let client: WsClient | null = null
@@ -41,9 +43,11 @@ export function connectAgentWs(agentId: string) {
   client = connectWS(agentId, {
     onOpen: () => {
       wsConnected.set(true)
-      sendJson({ type: 'hello' })
       // Reflect that this agent is live once WS is open
       agentStatus.set({ id: agentId, live: true })
+      // Immediately pull a snapshot to avoid races on first paint
+      // WS pushes will continue to keep state fresh
+      refreshSnapshot()
     },
     onClose: (ev) => {
       wsConnected.set(false)
@@ -67,40 +71,105 @@ export function disconnectAgentWs() {
   client = null
 }
 
-export function sendJson(obj: any) {
-  console.log('[WS] SEND', obj)
-  client?.send(obj)
-}
-
-export function sendPrompt(text: string) {
+export async function sendPrompt(text: string) {
   // Optimistically reflect starting state; server will emit run_status shortly
   runStatus.set('starting')
-  sendJson({ type: 'send', text })
+  const id = get(currentAgentId)
+  if (!id) return
+  try { await httpSendPrompt(id, text) } catch (e) { console.warn('prompt failed', e) }
 }
-export function approve(call_id: string) { sendJson({ type: 'approve', call_id }) }
-export function denyContinue(call_id: string) { sendJson({ type: 'deny_continue', call_id }) }
-export function deny(call_id: string) { sendJson({ type: 'deny', call_id }) }
-export function setPolicy(content: string) { sendJson({ type: 'set_policy', content }) }
-export function applyProposal(proposal_id: string, decision: 'approve'|'reject') { sendJson({ type: 'apply_proposal', proposal_id, decision }) }
-export function refreshSnapshot() { sendJson({ type: 'get_snapshot' }) }
-export function abortRun() { sendJson({ type: 'abort' }) }
-export function reconfigureMcp(attach?: Record<string, any>, detach?: string[]) {
-  const payload: any = { type: 'reconfigure_mcp' }
-  if (attach && Object.keys(attach).length) payload.attach = attach
-  if (detach && detach.length) payload.detach = detach
-  sendJson(payload)
+export async function approve(call_id: string) {
+  const id = get(currentAgentId)
+  if (!id) return
+  try { await approveCall(id, call_id) } catch (e) { console.warn('approve failed', e) }
+  try { await refreshSnapshot() } catch {}
+}
+export async function denyContinue(call_id: string) {
+  const id = get(currentAgentId)
+  if (!id) return
+  try { await denyContinueCall(id, call_id) } catch (e) { console.warn('deny_continue failed', e) }
+  try { await refreshSnapshot() } catch {}
+}
+export async function deny(call_id: string) {
+  const id = get(currentAgentId)
+  if (!id) return
+  try { await denyAbortCall(id, call_id) } catch (e) { console.warn('deny_abort failed', e) }
+  try { await refreshSnapshot() } catch {}
+}
+export async function setPolicy(content: string, proposal_id?: string) {
+  const id = get(currentAgentId)
+  if (!id) return
+  try { await httpSetPolicy(id, content, proposal_id) } catch (e) { console.warn('setPolicy failed', e) }
+  try { await refreshSnapshot() } catch {}
+}
+export async function approveProposal(proposal_id: string) {
+  const id = get(currentAgentId)
+  if (!id) return
+  try {
+    const p = await httpGetProposal(id, proposal_id)
+    await httpSetPolicy(id, p.content, proposal_id)
+  } catch (e) {
+    console.warn('approveProposal failed', e)
+  }
+  try { await refreshSnapshot() } catch {}
+}
+export async function withdrawProposal(proposal_id: string) {
+  const id = get(currentAgentId)
+  if (!id) return
+  try {
+    await httpRejectProposal(id, proposal_id)
+  } catch (e) {
+    console.warn('rejectProposal failed', e)
+  }
+  // Fallback: actively refresh via HTTP in case push snapshot races the UI
+  try { await refreshSnapshot() } catch {}
+}
+export async function refreshSnapshot() {
+  const id = get(currentAgentId)
+  if (!id) return
+  try {
+    const snap = await httpGetSnapshot(id)
+    handleSnapshot(snap)
+  } catch (e) {
+    console.warn('refreshSnapshot failed', e)
+  }
+}
+export async function abortRun() {
+  const id = get(currentAgentId)
+  if (!id) return
+  try { await httpAbortRun(id) } catch (e) { console.warn('abort failed', e) }
+  // Proactively refresh snapshot so UI clears busy state even if no run was active yet
+  try { await refreshSnapshot() } catch {}
+}
+export async function reconfigureMcp(attach?: Record<string, any>, detach?: string[]) {
+  const id = get(currentAgentId)
+  if (!id) return
+  try {
+    if (attach && Object.keys(attach).length) {
+      for (const [name, spec] of Object.entries(attach)) {
+        await attachMcpServer(id, name, spec)
+      }
+    }
+    if (detach && detach.length) {
+      for (const name of detach) await detachMcpServer(id, name)
+    }
+  } catch (e) {
+    console.warn('reconfigureMcp failed', e)
+  }
+  try { await refreshSnapshot() } catch {}
 }
 
 function handleSnapshot(p: SnapshotPayload) {
-  const sampling: SamplingSnapshot | undefined = p.sampling as any
+  const sampling: SamplingSnapshot | undefined = p.details?.sampling as any
   if (sampling) {
     mcpServerEntries.set(sampling.servers || [])
   }
-  const st = p.run_state?.status
+  const st = p.details?.run_state.status
   if (st) runStatus.set(st)
-  if (Array.isArray(p.run_state?.pending_approvals)) {
+  else runStatus.set('idle')
+  if (Array.isArray(p.details?.run_state?.pending_approvals)) {
     const map = new Map<string, Pending>()
-    for (const a of p.run_state!.pending_approvals!) {
+    for (const a of p.details!.run_state!.pending_approvals!) {
       map.set(a.call_id, {
         call_id: a.call_id,
         tool_key: a.tool_key,
@@ -109,7 +178,7 @@ function handleSnapshot(p: SnapshotPayload) {
     }
     pendingApprovals.set(map)
   }
-  if (p.approval_policy) approvalPolicy.set(p.approval_policy)
+  if (p.details?.approval_policy) approvalPolicy.set(p.details.approval_policy)
 }
 
 function handleUiStateSnapshot(agentId: string, p: UiStateSnapshotPayload) {
@@ -135,7 +204,7 @@ function handlePayload(agentId: string, p: IncomingPayload) {
   if (p.type === 'run_status') {
     console.log('[WS] RUN_STATUS', (p as any).run_state?.status)
   } else if (p.type === 'snapshot') {
-    console.log('[WS] SNAPSHOT', (p as any).run_state?.status)
+    console.log('[WS] SNAPSHOT', (p as any).details?.run_state?.status)
   }
   switch (p.type) {
     case 'snapshot': return handleSnapshot(p)

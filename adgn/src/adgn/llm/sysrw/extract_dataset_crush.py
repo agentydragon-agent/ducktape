@@ -62,7 +62,7 @@ def parse_rfc3339_millis(ts: str | None) -> int | None:
         # Support fractional seconds
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         return int(dt.timestamp() * 1000)
-    except Exception:
+    except (TypeError, ValueError):
         return None
 
 
@@ -232,10 +232,7 @@ def find_wire_logs(roots: list[Path]) -> list[Path]:
             continue
         for pat in patterns:
             for p in root.glob(pat):
-                try:
-                    found.append(p)
-                except Exception:
-                    continue
+                found.append(p)
     # Dedup and sort
     return sorted({p.resolve() for p in found})
 

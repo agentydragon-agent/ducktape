@@ -21,9 +21,9 @@
     try { copyText(JSON.stringify(displayResult ?? {}, null, 2)) } catch {}
   }
 
-  // Prefer structuredContent when present (typed CallToolResult mirror)
+  // Prefer structured_content when present (FastMCP CallToolResult)
   import { z } from 'zod'
-  const CallToolResultZ = z.object({ structuredContent: z.unknown().optional() }).passthrough()
+  const CallToolResultZ = z.object({ structured_content: z.unknown().optional() }).passthrough()
   const StructuredOutZ = z.object({
     error: z.string().optional(),
     ok: z.boolean().optional(),
@@ -35,8 +35,8 @@
     const res: unknown = (c && (c as any).content_kind === 'Json') ? (c as any).result : undefined
     if (res && typeof res === 'object') {
       const parsed = CallToolResultZ.safeParse(res)
-      if (parsed.success && parsed.data.structuredContent !== undefined) {
-        return parsed.data.structuredContent
+      if (parsed.success && parsed.data.structured_content !== undefined) {
+        return parsed.data.structured_content
       }
     }
     return res

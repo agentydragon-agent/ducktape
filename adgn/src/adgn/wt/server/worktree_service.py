@@ -1,5 +1,7 @@
 """Worktree operations orchestrator layer that performs I/O and subprocess work."""
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Awaitable, Callable
 import contextlib
@@ -7,7 +9,7 @@ import inspect
 import logging
 from pathlib import Path
 import shutil
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import psutil
 import pygit2
@@ -17,9 +19,7 @@ from ..shared.error_handling import ErrorContext, validate_worktree_name
 
 # PR types are referenced by protocol layer; not needed here directly
 from ..shared.models import ProcessInfo
-
-if TYPE_CHECKING:
-    from ..shared.protocol import WorktreeID
+from ..shared.protocol import WorktreeID
 from .copy_strategies import get_copy_strategy
 from .git_manager import GitManager
 from .github_client import GitHubInterface
@@ -41,11 +41,11 @@ class WorktreeService:
     Note: This layer performs filesystem and subprocess I/O.
     """
 
-    def __init__(self, git_manager: GitManager, github: "GitHubInterface | None"):
+    def __init__(self, git_manager: GitManager, github: GitHubInterface | None):
         self.git_manager = git_manager
         self.github = github
 
-    def list_worktrees(self, config: "Configuration") -> list[tuple[str, Path, bool]]:
+    def list_worktrees(self, config: Configuration) -> list[tuple[str, Path, bool]]:
         """List all managed worktrees with their existence status."""
         worktree_infos = self.git_manager.list_worktrees()
         worktrees = []
@@ -56,7 +56,7 @@ class WorktreeService:
 
         return worktrees
 
-    def _is_managed_worktree(self, path: Path, config: "Configuration") -> bool:
+    def _is_managed_worktree(self, path: Path, config: Configuration) -> bool:
         """Check if this worktree should be managed by our tool."""
         # Skip the main repo
         if path.resolve() == config.main_repo.resolve():
@@ -69,18 +69,18 @@ class WorktreeService:
         # Filter out hidden worktrees using configurable patterns
         return not any(path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns)
 
-    def _require_post_creation_script_valid(self, config: "Configuration") -> None:
+    def _require_post_creation_script_valid(self, config: Configuration) -> None:
         if config.post_creation_script:
             script = config.post_creation_script
             if not script.exists() or not script.is_file():
                 raise FileNotFoundError(f"Post-creation script {script} is not a file")
 
-    def _wtid_to_path(self, config: "Configuration", wtid: "WorktreeID") -> Path:
+    def _wtid_to_path(self, config: Configuration, wtid: WorktreeID) -> Path:
         return wtid_to_path(config, wtid)
 
     def create_worktree(
         self,
-        config: "Configuration",
+        config: Configuration,
         name: str,
         source_worktree: Path | None = None,
         source_branch: str | None = None,
@@ -130,13 +130,13 @@ class WorktreeService:
                 logger.info("Not hydrating worktree.")
             return worktree_path
 
-    def get_worktree_path(self, config: "Configuration", name: str) -> Path:
+    def get_worktree_path(self, config: Configuration, name: str) -> Path:
         """Get path for a worktree by name."""
         return config.worktrees_dir / name
 
     async def remove_worktree(
         self,
-        config: "Configuration",
+        config: Configuration,
         name: str,
         force: bool = False,
     ) -> None:
@@ -149,14 +149,14 @@ class WorktreeService:
         with contextlib.suppress(Exception):
             shutil.rmtree(worktree_path, ignore_errors=True)
 
-    def require_worktree_exists(self, config: "Configuration", name: str) -> Path:
+    def require_worktree_exists(self, config: Configuration, name: str) -> Path:
         """Require that a worktree exists and return its path."""
         worktree_path = self.get_worktree_path(config, name)
         if not worktree_path.exists():
             raise RuntimeError(f"Worktree '{name}' does not exist")
         return worktree_path
 
-    def _hydrate_worktree(self, config: "Configuration", src: Path, dst: Path) -> None:
+    def _hydrate_worktree(self, config: Configuration, src: Path, dst: Path) -> None:
         dst.mkdir(parents=True, exist_ok=True)
         get_copy_strategy(config.cow_method).copy(src, dst)
 

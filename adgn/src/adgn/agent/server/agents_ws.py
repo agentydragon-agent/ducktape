@@ -2,10 +2,23 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Annotated, Any, Dict, Literal, Set
+from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+
+from adgn.agent.server.status_shared import (
+    AgentLifecycle,
+    AgentStatusCore,
+    ContainerState,
+    McpState,
+    PolicyState,
+    RunPhase,
+    UiStateLite,
+    build_agent_status_core,
+)
+from adgn.mcp.snapshots import RunningServerEntry
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +31,8 @@ logger = logging.getLogger(__name__)
 class AgentBrief(BaseModel):
     id: str
     live: bool | None = None
-    active_run_id: str | None = None
+    active_run_id: UUID | None = None
+    lifecycle: AgentLifecycle | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -53,8 +67,39 @@ class AgentDeletedMsg(BaseModel):
 class AgentStatusData(BaseModel):
     id: str
     live: bool
-    active_run_id: str | None = None
+    active_run_id: UUID | None = None
+    lifecycle: AgentLifecycle
+    run_phase: RunPhase
+    # volumes removed
+    policy: PolicyState
+    ui: UiStateLite
+    mcp: McpState
+    container: ContainerState
+    pending_approvals: int
+    last_event_at: str | None = None
     model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_core(cls, core: AgentStatusCore) -> "AgentStatusData":
+        """Build a WS-friendly AgentStatusData from the internal status core.
+
+        Centralizes the mapping and ensures JSON-friendly fields (e.g., last_event_at ISO string).
+        Keeps the WS schema stable without exposing internal types directly.
+        """
+        last = core.last_event_at.isoformat() if core.last_event_at is not None else None
+        return cls(
+            id=core.id,
+            live=core.live,
+            active_run_id=core.active_run_id,
+            lifecycle=core.lifecycle,
+            run_phase=core.run_phase,
+            policy=core.policy,
+            ui=core.ui,
+            mcp=core.mcp,
+            container=core.container,
+            pending_approvals=core.pending_approvals,
+            last_event_at=last,
+        )
 
 
 class AgentStatusMsg(BaseModel):
@@ -76,7 +121,7 @@ class AgentsWSHub:
 
     def __init__(self, app: FastAPI) -> None:
         self._app = app
-        self._connections: Set[WebSocket] = set()
+        self._connections: set[WebSocket] = set()
 
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -84,15 +129,24 @@ class AgentsWSHub:
         # Send initial snapshot of agents with live/status info (typed)
         payload = await self._build_initial_snapshot()
         msg = AgentsSnapshotMsg(data=payload)
+        logger.info(
+            "agents_ws: sending initial snapshot",
+            extra={"connections": len(self._connections), "agents": len(payload.agents)},
+        )
         await ws.send_json(msg.model_dump(mode="json"))
 
     def disconnect(self, ws: WebSocket) -> None:
         self._connections.discard(ws)
 
-    async def broadcast(self, message: Dict[str, Any]) -> None:
+    async def broadcast(self, message: dict[str, Any]) -> None:
         if not self._connections:
             return
-        dead: Set[WebSocket] = set()
+        dead: set[WebSocket] = set()
+        mtype = message.get("type") if isinstance(message, dict) else None
+        logger.info(
+            "agents_ws: broadcasting",
+            extra={"connections": len(self._connections), "type": mtype},
+        )
         for ws in list(self._connections):
             try:
                 await ws.send_json(message)
@@ -111,11 +165,18 @@ class AgentsWSHub:
         await self.broadcast(msg.model_dump(mode="json"))
 
     async def broadcast_agent_status(
-        self, *, agent_id: str, live: bool, active_run_id: str | None
+        self, *, agent_id: str, live: bool, active_run_id: UUID | None
     ) -> None:
-        msg = AgentStatusMsg(
-            data=AgentStatusData(id=agent_id, live=live, active_run_id=active_run_id)
+        data = await self._build_agent_status(agent_id)
+        logger.info(
+            "agents_ws: agent_status",
+            extra={
+                "agent_id": agent_id,
+                "live": live,
+                "active_run_id": str(active_run_id) if active_run_id else None,
+            },
         )
+        msg = AgentStatusMsg(data=data)
         await self.broadcast(msg.model_dump(mode="json"))
 
     async def _build_initial_snapshot(self) -> AgentsSnapshotData:
@@ -129,15 +190,43 @@ class AgentsWSHub:
             active_run = None
             if live_c is not None and live_c.session is not None and live_c.session.active_run:
                 active_run = live_c.session.active_run.run_id
-            out.append(AgentBrief(id=r.id, live=(live_c is not None), active_run_id=active_run))
+            # Derive a lightweight lifecycle: persisted_only | starting | ready
+            lifecycle: str | None
+            if live_c is None:
+                lifecycle = AgentLifecycle.PERSISTED_ONLY
+            else:
+                lifecycle = AgentLifecycle.STARTING
+                # Prefer compositor-backed entries map with typed union members
+                entries = await live_c.list_mcp_entries() if live_c is not None else {}
+                if (live_c.ui is not None) and (
+                    not entries or all(isinstance(e, RunningServerEntry) for e in entries.values())
+                ):
+                    lifecycle = AgentLifecycle.READY
+            out.append(
+                AgentBrief(
+                    id=r.id,
+                    live=(live_c is not None),
+                    active_run_id=active_run,
+                    lifecycle=lifecycle,
+                )
+            )
         return AgentsSnapshotData(agents=out)
+
+    async def _build_agent_status(self, agent_id: str) -> AgentStatusData:
+        app = self._app
+        core = await build_agent_status_core(app, agent_id)
+        return AgentStatusData.from_core(core)
 
 
 def register_agents_ws(app: FastAPI) -> None:
-    """Register the general agents WebSocket endpoint and initialize the hub on app.state."""
+    """Register the general agents WebSocket endpoint.
 
-    if not hasattr(app.state, "agents_ws_hub"):
-        app.state.agents_ws_hub = AgentsWSHub(app)
+    Requires app.state.agents_ws_hub to be initialized by the app factory.
+    """
+    try:
+        _ = app.state.agents_ws_hub  # type: ignore[attr-defined]
+    except AttributeError as e:
+        raise RuntimeError("agents_ws_hub not initialized; app must set it during startup") from e
 
     @app.websocket("/ws/agents")
     async def agents_websocket(ws: WebSocket) -> None:  # noqa: F811 (route name shadow in FastAPI ok)
@@ -149,7 +238,8 @@ def register_agents_ws(app: FastAPI) -> None:
                 data = await ws.receive_text()
                 try:
                     msg = json.loads(data)
-                except Exception:
+                except json.JSONDecodeError:
+                    logger.debug("agents_ws: ignoring malformed client message: %r", data[:200])
                     continue
                 # Validate any client message (optional) via adapter; ignore unrecognized
                 if isinstance(msg, dict) and msg.get("type") == "ping":

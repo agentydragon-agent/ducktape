@@ -2,16 +2,27 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Protocol
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from fastmcp.mcp_config import MCPConfig
+from pydantic import BaseModel, ConfigDict, JsonValue
+
+
+class AgentMetadata(BaseModel):
+    """Typed per-agent metadata stored in persistence.
+
+    Currently only preset name is tracked; expand here if new metadata is added.
+    """
+
+    preset: str
 
 
 class AgentRow(BaseModel):
     id: str
     created_at: datetime
-    specs: dict[str, Any]
-    metadata: dict[str, Any] | None = None
+    mcp_config: MCPConfig
+    metadata: AgentMetadata
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -41,16 +52,24 @@ class EventType(StrEnum):
 
 
 class RunRow(BaseModel):
-    id: str
+    id: UUID
     agent_id: str | None
     started_at: datetime
     finished_at: datetime | None
     status: RunStatus
     system_message: str | None
     model: str | None
-    model_params: dict[str, Any] | None
+    model_params: dict[str, JsonValue] | None
     event_count: int
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class PolicyProposal(BaseModel):
+    id: str
+    status: str
+    created_at: datetime
+    decided_at: datetime | None = None
+    content: str
 
 
 from .events import EventRecord  # noqa: E402
@@ -60,17 +79,15 @@ class Persistence(Protocol):
     async def ensure_schema(self) -> None: ...
 
     # Agents API ---------------------------------------------------------------
-    async def create_agent(
-        self, *, specs: dict[str, Any], metadata: dict[str, Any] | None = None
-    ) -> str: ...
-    async def update_agent_specs(self, agent_id: str, *, specs: dict[str, Any]) -> None: ...
+    async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> str: ...
+    async def update_agent_specs(self, agent_id: str, *, mcp_config: MCPConfig) -> None: ...
     async def patch_agent_specs(
         self,
         agent_id: str,
         *,
-        attach: dict[str, Any] | None = None,
+        attach: dict[str, MCPConfig] | None = None,
         detach: list[str] | None = None,
-    ) -> dict[str, Any]: ...
+    ) -> MCPConfig: ...
     async def list_agents(self) -> list[AgentRow]: ...
     async def get_agent(self, agent_id: str) -> AgentRow | None: ...
     async def list_agents_last_activity(self) -> dict[str, datetime | None]: ...
@@ -80,26 +97,26 @@ class Persistence(Protocol):
     async def start_run(
         self,
         *,
-        run_id: str,
+        run_id: UUID,
         agent_id: str | None,
         system_message: str | None,
         model: str | None,
-        model_params: dict[str, Any] | None,
+        model_params: dict[str, JsonValue] | None,
         started_at: datetime,
     ) -> None: ...
 
     async def finish_run(
-        self, run_id: str, *, status: RunStatus, finished_at: datetime
+        self, run_id: UUID, *, status: RunStatus, finished_at: datetime
     ) -> None: ...
 
     async def append_event(
         self,
         *,
-        run_id: str,
+        run_id: UUID,
         seq: int,
         ts: datetime,
         type: EventType,
-        payload: dict[str, Any],
+        payload: dict[str, JsonValue],
         call_id: str | None = None,
         tool_key: str | None = None,
     ) -> None: ...
@@ -107,37 +124,31 @@ class Persistence(Protocol):
     async def record_approval(
         self,
         *,
-        run_id: str,
+        run_id: UUID,
         agent_id: str | None,
         call_id: str,
         tool_key: str,
         outcome: ApprovalOutcome,
         decided_at: datetime,
-        details: dict[str, Any] | None = None,
+        details: dict[str, JsonValue] | None = None,
     ) -> None: ...
 
     async def list_runs(self, *, agent_id: str | None = None, limit: int = 50) -> list[RunRow]: ...
-    async def get_run(self, run_id: str) -> RunRow | None: ...
-    async def load_events(self, run_id: str) -> list[EventRecord]: ...
+    async def get_run(self, run_id: UUID) -> RunRow | None: ...
+    async def load_events(self, run_id: UUID) -> list[EventRecord]: ...
 
     # Approval policy (per-agent) --------------------------------------------
     async def get_latest_policy(self, agent_id: str) -> tuple[str, int] | None: ...
     async def set_policy(self, agent_id: str, *, content: str) -> int: ...
-    async def create_proposal(
-        self,
-        agent_id: str,
-        *,
-        proposal_id: str,
-        source: str,
-        rationale: str | None,
-        created_at: datetime,
+
+    # Approval policy proposals (single store impl: SQLite)
+    async def create_policy_proposal(
+        self, agent_id: str, *, proposal_id: str, content: str
     ) -> None: ...
-    async def set_proposal_status(
-        self,
-        agent_id: str,
-        *,
-        proposal_id: str,
-        status: str,
-        decided_at: datetime | None,
-    ) -> None: ...
-    async def list_proposals(self, agent_id: str) -> list[dict[str, Any]]: ...
+    async def list_policy_proposals(self, agent_id: str) -> list[PolicyProposal]: ...
+    async def get_policy_proposal(
+        self, agent_id: str, proposal_id: str
+    ) -> PolicyProposal | None: ...
+    async def approve_policy_proposal(self, agent_id: str, proposal_id: str) -> int: ...
+    async def reject_policy_proposal(self, agent_id: str, proposal_id: str) -> None: ...
+    async def delete_policy_proposal(self, agent_id: str, proposal_id: str) -> None: ...

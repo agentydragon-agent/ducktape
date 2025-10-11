@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlunparse
 
 import click
 from colorama import Style
@@ -110,10 +111,8 @@ class ViewFormatter:
 
             # Create clickable hyperlink - fall back to plain text if not supported
             # Hardcoded helper: map PR number -> http://go/pull/{n}
-            clickable_link = self.make_hyperlink(
-                f"http://go/pull/{pr_number}",
-                f"#{pr_number}",
-            )
+            go_url = urlunparse(("http", "go", f"/pull/{pr_number}", "", "", ""))
+            clickable_link = self.make_hyperlink(go_url, f"#{pr_number}")
 
             # Add lines changed info if available
             lines_info = ""
@@ -164,7 +163,8 @@ class ViewFormatter:
             return ""
         pr_number = status.pr_info.pr_data.pr_number
         # Hardcoded helper: map PR number -> http://go/pull/{n}
-        return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
+        go_url = urlunparse(("http", "go", f"/pull/{pr_number}", "", "", ""))
+        return self.make_hyperlink(go_url, f"#{pr_number}")
 
     def _get_pr_status_column(self, status: StatusResult) -> str:
         """Get PR status text column."""

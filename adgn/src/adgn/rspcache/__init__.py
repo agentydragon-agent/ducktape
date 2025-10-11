@@ -118,7 +118,7 @@ def _process_complete_lines(text_buffer: str, frames: list[dict]) -> str:
         line = part.strip()
         if not line:
             continue
-        content = line[len(SSE_PREFIX) :].lstrip() if line.startswith(SSE_PREFIX) else line
+        content = line.removeprefix(SSE_PREFIX).lstrip()
         if content == "[DONE]":
             # Sentinel; skip storing
             continue
@@ -138,8 +138,7 @@ def _append_remaining_buffer(remaining: str, frames: list[dict]) -> None:
     remaining = remaining.strip()
     if not remaining:
         return
-    if remaining.startswith(SSE_PREFIX):
-        remaining = remaining[len(SSE_PREFIX) :].lstrip()
+    remaining = remaining.removeprefix(SSE_PREFIX).lstrip()
     try:
         obj = json.loads(remaining)
     except Exception as e:

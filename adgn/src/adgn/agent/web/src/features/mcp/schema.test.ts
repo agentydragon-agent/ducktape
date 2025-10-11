@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { McpServerSpecZ, SseSpecZ, StdioSpecZ, InprocSpecZ, buildSpecFromForm } from './schema'
+import { TransportSpecZ, SseSpecZ, StdioSpecZ, InprocSpecZ, buildSpecFromForm } from './schema'
 
 describe('MCP schema (Zod)', () => {
   it('validates stdio spec', () => {
@@ -25,9 +25,9 @@ describe('MCP schema (Zod)', () => {
   })
 
   it('discriminated union parses by transport', () => {
-    const sse = McpServerSpecZ.parse({ transport: 'sse', url: 'u', headers: {}, timeout_secs: 5, sse_read_timeout_secs: 300 })
+    const sse = TransportSpecZ.parse({ transport: 'sse', url: 'u', headers: {}, timeout_secs: 5, sse_read_timeout_secs: 300 })
     expect(sse.transport).toBe('sse')
-    const stdio = McpServerSpecZ.parse({ transport: 'stdio', command: 'x', args: [], env: {} })
+    const stdio = TransportSpecZ.parse({ transport: 'stdio', command: 'x', args: [], env: {} })
     expect(stdio.transport).toBe('stdio')
   })
 })

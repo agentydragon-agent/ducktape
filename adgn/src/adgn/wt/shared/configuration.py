@@ -67,18 +67,16 @@ class Configuration:
     def daemon_socket_path(self) -> Path:
         """Path to daemon UNIX socket with macOS length-safe fallback.
 
-        macOS enforces a relatively short maximum length for UNIX domain socket paths
-        (historically ~104 bytes). Pytest creates deeply nested temporary directories
-        that can push WT_DIR over this limit, causing AF_UNIX path too long errors
-        when binding the socket. To avoid flaky failures in such environments, we:
-
-        1) Prefer WT_DIR/daemon.sock when short enough
-        2) Otherwise fall back to a stable short path under /tmp using a hash of WT_DIR
+        Notes:
+        - Use the real (resolved) path for length checks to avoid /var → /private/var
+          symlink surprises on macOS. The kernel enforces the limit on the real path.
+        - If too long, fall back to a stable short path under /tmp derived from WT_DIR.
         """
-        p = self.wt_dir / "daemon.sock"
+        real_wt_dir = self.wt_dir.resolve()
+        p = real_wt_dir / "daemon.sock"
         if len(str(p)) <= MAX_SOCK_PATH_LEN:
             return p
-        h = md5(str(self.wt_dir).encode()).hexdigest()[:12]
+        h = md5(str(real_wt_dir).encode()).hexdigest()[:12]
         return Path("/tmp") / f"wt_daemon_{h}.sock"
 
     @property

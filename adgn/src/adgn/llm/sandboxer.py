@@ -8,7 +8,7 @@ import sys
 import tempfile
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 import yaml
 
 from adgn.seatbelt.compile import compile_sbpl
@@ -35,24 +35,18 @@ from adgn.seatbelt.model import (
 class EnvConfig(BaseModel):
     set: dict[str, str] = Field(default_factory=dict)
     passthrough: list[str] = Field(default_factory=list)
-
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class FSConfig(BaseModel):
     read_paths: list[Path] = Field(default_factory=list)
     write_paths: list[Path] = Field(default_factory=list)
-
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class SeatbeltDevConfig(BaseModel):
     allow_tty_writes: bool | None = None
-
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class SeatbeltExtraAllow(BaseModel):
@@ -61,43 +55,33 @@ class SeatbeltExtraAllow(BaseModel):
     sysctl_read: bool | None = None
     dev: SeatbeltDevConfig = Field(default_factory=SeatbeltDevConfig)
     file_read_extra: list[Path] = Field(default_factory=list)
-
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class SeatbeltPlatform(BaseModel):
     trace: bool = False
     extra_allow: SeatbeltExtraAllow = Field(default_factory=SeatbeltExtraAllow)
-
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class PlatformConfig(BaseModel):
     # Platform-neutral tracing toggle; backends may map to their own tracing
     trace: bool = False
     seatbelt: SeatbeltPlatform = Field(default_factory=SeatbeltPlatform)
-
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class NetProxyConfig(BaseModel):
     listen: str | None = None  # e.g., 127.0.0.1:0
     upstream: str | None = None  # e.g., host:port
-
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class NetConfig(BaseModel):
     mode: Literal["none", "loopback", "open"] = "loopback"
     allow_domains: list[str] = Field(default_factory=list)
     proxy: NetProxyConfig | None = None
-
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class Policy(BaseModel):
@@ -105,9 +89,7 @@ class Policy(BaseModel):
     fs: FSConfig = Field(default_factory=FSConfig)
     net: NetConfig = Field(default_factory=NetConfig)
     platform: PlatformConfig = Field(default_factory=PlatformConfig)
-
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 # -----------------------------
@@ -135,9 +117,7 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
             sysctl_read=bool(policy.platform.seatbelt.extra_allow.sysctl_read),
             user_preference_read=True,
         ),
-        mach=MachLookupRule(
-            global_names=list(policy.platform.seatbelt.extra_allow.mach_lookup or [])
-        ),
+        mach=MachLookupRule(global_names=list(policy.platform.seatbelt.extra_allow.mach_lookup)),
         trace=TraceConfig(
             enabled=bool(trace_path or policy.platform.seatbelt.trace), path=trace_path
         ),
@@ -170,7 +150,7 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
         sp.files.append(FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath=root)]))
 
     # Extra file read allowances from platform extras
-    for extra_path in policy.platform.seatbelt.extra_allow.file_read_extra or []:
+    for extra_path in policy.platform.seatbelt.extra_allow.file_read_extra:
         sp.files.append(
             FileRule(
                 op=FileOp.FILE_READ_STAR,
@@ -186,7 +166,7 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
     write_seen: set[str] = set()
 
     # Write dirs
-    for p in fs.write_paths or []:
+    for p in fs.write_paths:
         ap = _abs(p)
         d = ap if ap.is_dir() else ap.parent
         dp = d.as_posix()
@@ -195,7 +175,7 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
             write_dirs.append(d)
 
     # Read dirs: include symlink path and resolved real path parents
-    for p in fs.read_paths or []:
+    for p in fs.read_paths:
         ap = _abs(p)
         cand: list[Path] = []
         d = ap if ap.is_dir() else ap.parent
@@ -400,11 +380,11 @@ def main() -> int:
         return 4
 
     # Execute under sandbox
-    sx_args = [sx, "-f", str(sb_path), *cmd]
+    sx_args = [sx, "-f", sb_path, *cmd]
     if args.debug:
         print(
             "sandboxer: exec:",
-            " ".join(shlex.quote(x) for x in sx_args),
+            " ".join(shlex.quote(str(x)) for x in sx_args),
             file=sys.stderr,
         )
     proc = subprocess.Popen(sx_args, env=child_env)

@@ -9,6 +9,7 @@ import pytest
 
 from adgn.agent.server import protocol
 from tests.agent.ws_helpers import (
+    has_finished_run,
     is_function_call_output_end_turn,
 )
 from tests.llm.support.openai_mock import make_mock
@@ -20,7 +21,7 @@ Envelope = protocol.Envelope
 def test_approval_prompt_auto_appears(
     responses_factory,
     make_echo_spec,
-    ws_session,
+    agent_ws_box,
 ) -> None:
     """Test that approval prompts appear immediately in UI without manual refresh."""
 
@@ -41,21 +42,18 @@ def test_approval_prompt_auto_appears(
     specs = make_echo_spec()
 
     try:
-        with ws_session(client, specs=specs, auto_approve=True) as (
-            client_ws,
-            ws,
-            collect,
-            agent_id,
-        ):
-            ws.send_json({"type": "send", "text": "use echo tool to say hello"})
-            payloads = collect(limit=100)
+        with agent_ws_box(client, specs=specs, auto_approve=True) as box:
+            # Prompt via REST; UI approvals flow remains via WS events
+            r = box.http.prompt("use echo tool to say hello")
+            assert r.status_code == 200 and (r.json() or {}).get("ok") is True
+            payloads = box.collect(limit=100)
             assert_that(
                 payloads,
                 has_items(
                     has_properties(type="approval_pending", call_id="call_echo"),
                     has_properties(type="approval_decision"),
                     is_function_call_output_end_turn(call_id="call_ui_end"),
-                    has_properties(type="run_status", run_state=has_properties(status="finished")),
+                    has_finished_run(),
                 ),
             )
     except CancelledError:

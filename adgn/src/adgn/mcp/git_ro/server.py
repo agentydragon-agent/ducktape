@@ -21,11 +21,13 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 
+# FastMCP-only: no TokenVerifier in server construction
 from pydantic import BaseModel, Field
 import pygit2
 from pygit2.enums import BranchType
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 from .formatting import (
     ChangedFilesPage,
@@ -284,7 +286,7 @@ class GitRoState:
     git_repo: Path
 
 
-def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
+def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFastMCP:
     """Create a read-only Git FastMCP server scoped to a single allowed root.
 
     Guidance:
@@ -296,15 +298,13 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
     configured root results in an error.
     """
     state = GitRoState(git_repo=git_repo.resolve())
-    mcp = SafeFastMCP(name, instructions=f"Read-only Git tools scoped to repo: {git_repo}")
-
-    @mcp_flat_model(
-        mcp,
-        name="git_status",
-        title="Git status",
-        description="Compact status similar to porcelain v1",
-        structured_output=True,
+    display = f"Git (read-only): {git_repo.name}"
+    mcp = NotifyingFastMCP(
+        display,
+        instructions=f"Read-only Git tools scoped to repo: {git_repo}",
     )
+
+    @mcp.flat_model()
     def git_status(input: StatusInput) -> StatusPage:
         """Return compact status entries similar to porcelain v1 (no headers)."""
         root = state.git_repo
@@ -334,13 +334,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
             entries.append(StatusEntry(path=path, index=idx, worktree=wt))
         return build_status_page(entries, input.list_slice)
 
-    @mcp_flat_model(
-        mcp,
-        name="git_diff",
-        title="Git diff",
-        description="Diff with multiple formats",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     async def git_diff(input: DiffInput) -> DiffResult:
         """Git diff with multiple formats:
         - format=patch: unified patch (TextPage)
@@ -369,13 +363,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
         stats = await asyncio.to_thread(diff_to_file_stats, diff)
         return build_diff_stat_page(stats, input.list_slice)
 
-    @mcp_flat_model(
-        mcp,
-        name="git_log",
-        title="Git log text",
-        description="Return recent commits as text",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def git_log(input: LogInput) -> TextPage:
         """Return recent commits as oneline entries or multi-line blocks, with pagination."""
         root = state.git_repo
@@ -401,13 +389,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
             body += "\n"
         return apply_text_slice(body, input.slice)
 
-    @mcp_flat_model(
-        mcp,
-        name="git_log_entries",
-        title="Git log entries",
-        description="Structured commit entries with pagination",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def git_log_entries(input: LogEntriesInput) -> LogEntriesPage:
         """Return structured commit entries with offset/limit pagination (preferred for programmatic use)."""
         root = state.git_repo
@@ -447,13 +429,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
             next_offset=next_offset,
         )
 
-    @mcp_flat_model(
-        mcp,
-        name="git_show",
-        title="Git show",
-        description="Show commit or blob with multiple formats",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     async def git_show(input: ShowInput) -> ShowResult:
         """Show a commit in various formats or blob contents for REV:PATH.
         - format=patch: header + patch (TextPage) or blob text
@@ -516,13 +492,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
         stats = await asyncio.to_thread(diff_to_file_stats, diff)
         return build_diff_stat_page(stats, input.list_slice)
 
-    @mcp_flat_model(
-        mcp,
-        name="git_rev_parse",
-        title="Git rev-parse",
-        description="Resolve rev or show-toplevel",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def git_rev_parse(input: RevParseInput) -> RevParseResult:
         """Resolve a rev to an OID (optionally shortened) or return toplevel path for --show-toplevel."""
         root = state.git_repo
@@ -539,33 +509,39 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
             s = s[:7]
         return RevParseResult(kind="oid", value=s)
 
-    @mcp_flat_model(
-        mcp,
-        name="git_ls_files",
-        title="Git ls-files",
-        description="List index paths with pagination",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def git_ls_files(input: LsFilesInput) -> StringListPage:
         """List index paths, with offset/limit pagination (structured output)."""
         root = state.git_repo
         repo = _open_repo(root)
         all_paths = [e.path for e in repo.index]
-        return apply_list_slice(all_paths, input.list_slice)
+        items, truncated, next_offset, total = apply_list_slice(all_paths, input.list_slice)
+        return StringListPage(
+            items=items, truncated=truncated, next_offset=next_offset, total_items=total
+        )
 
-    @mcp_flat_model(
-        mcp,
-        name="git_branch_list",
-        title="Git branch list",
-        description="List branches with pagination",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def git_branch_list(input: BranchListInput) -> StringListPage:
-        """List local or remote branches (short names) with offset/limit pagination (structured output)."""
+        """List local or remote branches (short names) with offset/limit pagination."""
         root = state.git_repo
         repo = _open_repo(root)
         kind = BranchType.REMOTE if input.remote else BranchType.LOCAL
         names = repo.listall_branches(kind)
-        return apply_list_slice(names, input.list_slice)
+        items, truncated, next_offset, total = apply_list_slice(names, input.list_slice)
+        return StringListPage(
+            items=items, truncated=truncated, next_offset=next_offset, total_items=total
+        )
 
     return mcp
+
+
+async def attach_git_ro(
+    comp: Compositor,
+    git_repo: Path,
+    *,
+    name: str = GIT_RO_SERVER_NAME,
+) -> NotifyingFastMCP:
+    """Mount read-only Git MCP server in-proc on a Compositor (preferred path)."""
+    server = make_git_ro_server(git_repo, name=name)
+    await comp.mount_inproc(name, server)
+    return server

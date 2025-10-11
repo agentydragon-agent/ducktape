@@ -10,7 +10,7 @@ import asyncio
 from pathlib import Path
 
 from .._shared.container_session import ContainerOptions, NetworkMode
-from .server import make_container_exec_mcp
+from .server import make_container_exec_server
 
 
 def _parse_volumes(values: list[str] | None) -> dict[str, dict[str, str]] | None:
@@ -73,6 +73,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include Docker image history in server description",
     )
+    parser.add_argument(
+        "--ephemeral",
+        action="store_true",
+        help="Run each command in a fresh ephemeral container with host-enforced timeouts",
+    )
     return parser
 
 
@@ -99,8 +104,9 @@ def main(argv: list[str] | None = None) -> int:
         network_mode=network_mode,
         labels=labels,
         describe=args.describe,
+        ephemeral=args.ephemeral,
     )
-    server = make_container_exec_mcp(opts)
+    server = make_container_exec_server(opts)
 
     asyncio.run(server.run_stdio_async())
     return 0

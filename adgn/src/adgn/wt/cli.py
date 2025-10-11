@@ -114,7 +114,8 @@ def _root(
     - If no subcommand and no extra args, show status
     """
     init()
-    effective_verbose = bool(verbose) or ("--verbose" in (ctx.args or []))
+    args_list = ctx.args if ctx.args is not None else []
+    effective_verbose = bool(verbose) or ("--verbose" in args_list)
     ctx.obj = ctx.obj or {}
     ctx.obj["verbose"] = effective_verbose
     if ctx.invoked_subcommand is None:
@@ -128,7 +129,7 @@ def _root(
                 formatter,
                 config,
                 plugin_manager,
-                list(ctx.args or []),
+                list(ctx.args) if ctx.args is not None else [],
                 ctx,
             )
         else:
@@ -153,9 +154,6 @@ async def _async_main(verbose: bool = False):
         verbose=verbose,
     )
     await handle_status(daemon_client, formatter)
-
-
-## legacy 'sh' subcommand removed; main group handles positional args.
 
 
 async def _cmd_ls(daemon_client, formatter, **_):
@@ -185,9 +183,6 @@ async def _cmd_cp(config, remaining_args, ctx, **_):
         return
     click.echo("Error: cp requires 1 or 2 arguments")
     ctx.exit(1)
-
-
-# (legacy -c handler removed; use `wt create` instead)
 
 
 async def _cmd_path(config, remaining_args, **_):
@@ -407,7 +402,7 @@ def cmd_sh(ctx: typer.Context):
             formatter,
             config,
             plugin_manager,
-            list(ctx.args or []),
+            (list(ctx.args) if ctx.args is not None else []),
             ctx,
         )
     )

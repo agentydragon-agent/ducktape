@@ -5,9 +5,9 @@ import json
 import os
 from pathlib import Path
 import tempfile
-import time
 from typing import Any, cast
 
+from fastmcp.client import Client
 from rich.console import Console, ConsoleRenderable, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -15,23 +15,20 @@ from rich.table import Table
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loggers import TranscriptLoggerHandler
 from adgn.agent.loop_control import (
     Abort,
     Auto,
     Continue,
     RequireAny,
 )
-from adgn.agent.mcp_manager import McpManager, build_mcp_function
 from adgn.agent.reducer import BaseHandler
+from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
-from adgn.mcp._shared.types import ExecInput
-from adgn.mcp.docker_exec.server import (
-    SERVER_NAME as DOCKER_SERVER_NAME,
-    TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
-)
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp._shared.constants import LINT_SUBMIT_SERVER_NAME
+from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import ExecInput, SimpleOk
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.builders import make_item_tool_call
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.props.models.issue import IssueCore, IssueId, LineRange, Occurrence
@@ -47,6 +44,7 @@ from adgn.props.prompts.util import (
 from adgn.props.prop_utils import pkg_dir, props_definitions_root
 from adgn.props.specimens.registry import SpecimenRegistry
 
+from .cli_shared import now_ts
 from .docker_env import PropertiesDockerWiring, properties_docker_spec
 
 # ---------------------------------------------------------------------------
@@ -123,19 +121,19 @@ def make_lint_submit_server(
     state: LintSubmitState,
     *,
     name: str = "lint_submit",
-) -> SafeFastMCP:
+) -> NotifyingFastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
     The linter agent must call this exactly once to signal completion. This flips
     shared state so the loop controller will stop the run on the next sampling step.
     """
-    mcp = SafeFastMCP(name, instructions="Final result submission for linting run")
+    mcp = NotifyingFastMCP(name, instructions="Final result submission for linting run")
 
-    @mcp.tool()
-    async def submit_result(result: LintSubmitPayload) -> dict[str, Any]:
+    @mcp.flat_model(structured_output=True)
+    async def submit_result(input: LintSubmitPayload) -> SimpleOk:
         """Submit final linter result."""
-        state.result = result
-        return {"ok": True}
+        state.result = input
+        return SimpleOk(ok=True)
 
     return mcp
 
@@ -165,7 +163,9 @@ def make_nl_tool_call(
     return make_item_tool_call(
         call_id=call_id,
         name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
-        arguments=ExecInput(cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)]).model_dump(),
+        arguments=ExecInput(
+            cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)], timeout_ms=10_000
+        ).model_dump(),
     )
 
 
@@ -197,7 +197,7 @@ def make_ls_workspace_call(
     return make_item_tool_call(
         call_id="bootstrap:ls",
         name=build_mcp_function(wiring.server_name, DOCKER_EXEC_TOOL_NAME),
-        arguments=ExecInput(cmd=["ls", "-la", *targets]).model_dump(),
+        arguments=ExecInput(cmd=["ls", "-la", *targets], timeout_ms=10_000).model_dump(),
     )
 
 
@@ -388,8 +388,12 @@ async def lint_issue_run(
     # Hydrate specimen via registry context manager (centralized cleanup)
     async with rec.hydrated_copy(gc_path) as content_root:
         # Build in-process FastMCP servers
-        submit_server = make_lint_submit_server(submit_state, name="lint_submit")
-        submit_spec = make_inproc_slot_spec(submit_server)
+        # Lint submit as tools-builder secured attach
+        def _build_lint_submit_tools(s: NotifyingFastMCP) -> None:
+            @s.flat_model()
+            async def submit_result(result: LintSubmitPayload) -> SimpleOk:
+                submit_state.result = result
+                return SimpleOk(ok=True)
 
         wiring = properties_docker_spec(content_root, mount_properties=True)
 
@@ -410,24 +414,25 @@ async def lint_issue_run(
             prop_host_paths=props,
         )
 
-        async with McpManager({}) as mcp:
-            await mcp.attach_server(wiring.server_name, wiring.server_spec)
-            await mcp.attach_server("lint_submit", submit_spec)
-            # Register LinterController instance (ctrl) first so it provides loop decisions,
-            # then register the display handler for rendering events.
+        # Build compositor and client
+        comp = Compositor("compositor")
+        await wiring.attach(comp)
+        # Create a small server and mount in-proc (no auth)
+        submit_srv = NotifyingFastMCP(LINT_SUBMIT_SERVER_NAME, instructions="Lint submit")
+        _build_lint_submit_tools(submit_srv)
+        await comp.mount_inproc(LINT_SUBMIT_SERVER_NAME, submit_srv)
+        async with Client(comp) as mcp_client:
             agent = await MiniCodex.create(
                 model=model,
-                mcp=mcp,
+                mcp_client=mcp_client,
                 system="You are a code agent. Be concise.",
                 client=client,
                 handlers=[
-                    # LinterController handles bootstrap and abort-on-submit itself
                     ctrl,
-                    *(handlers or []),
+                    *(handlers if handlers is not None else []),
                 ],
                 parallel_tool_calls=True,
             )
-            # Run without passing controller; loop control is provided by handlers.
             await agent.run(prompt)
 
     assert submit_state.result, "submit_result somehow not called?"
@@ -480,7 +485,7 @@ async def run_specimen_lint_issue_async(
         )
         tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
         tmpdir.mkdir(parents=True, exist_ok=True)
-        ts = int(time.time())
+        ts = now_ts()
         outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
         outfile.write_text(prompt, encoding="utf-8")
         print(f"[dry-run] Saved prompt: {outfile}")
@@ -489,7 +494,7 @@ async def run_specimen_lint_issue_async(
     # Shared core: run and capture structured payload
     # Add per-run transcript logger handler
     run_dir = Path.cwd() / "logs" / "mini_codex" / "lint_issue"
-    run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
+    run_dir = run_dir / f"run_{now_ts()}_{os.getpid()}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
     res = await lint_issue_run(
@@ -499,7 +504,7 @@ async def run_specimen_lint_issue_async(
         model=model,
         gitconfig=gitconfig,
         client=client,
-        handlers=[DisplayEventsHandler(), TranscriptLoggerHandler(run_dir)],
+        handlers=[DisplayEventsHandler(), TranscriptHandler(dest_dir=run_dir)],
     )
 
     # Print the exact occurrence representation as fed to the model
@@ -514,3 +519,8 @@ async def run_specimen_lint_issue_async(
     # Pretty-print final agent output via Rich renderer
     Console().print(render_to_rich(res))
     return 0
+
+
+# Generic docker exec tool identifiers
+DOCKER_SERVER_NAME = "docker"
+DOCKER_EXEC_TOOL_NAME = "exec"

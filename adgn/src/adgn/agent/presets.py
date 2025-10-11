@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from platformdirs import user_config_dir
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 import yaml
-
-from adgn.agent.runtime.spec_utils import rehydrate_mcp_specs
-from adgn.agent.runtime.specs import McpServerSpec
 
 
 def _xdg_presets_dir() -> Path:
@@ -25,19 +23,19 @@ class AgentPreset(BaseModel):
     name: str
     description: str | None = None
     system: str | None = None
-    specs: dict[str, Any] = Field(default_factory=dict)
+    specs: dict[str, JsonValue] = Field(default_factory=dict)
     approval_policy: str | None = None
+    # Source metadata (filled by loader; used by UI)
+    file_path: str | None = None
+    modified_at: str | None = None  # ISO-8601 string
 
-    def typed_specs(self) -> dict[str, McpServerSpec]:
-        return rehydrate_mcp_specs(self.specs)
 
-
-def _load_yaml(path: Path) -> dict[str, Any]:
+def _load_yaml(path: Path) -> dict[str, JsonValue]:
     with path.open("r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     if not isinstance(data, dict):
         raise ValueError(f"preset must be a mapping: {path}")
-    return data
+    return cast(dict[str, JsonValue], data)
 
 
 def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
@@ -46,14 +44,14 @@ def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
         return out
     for p in sorted(root.glob("*.y*ml")):
         data = _load_yaml(p)
-        name = str(data.get("name") or p.stem)
-        preset = AgentPreset(
-            name=name,
-            description=data.get("description"),
-            system=data.get("system"),
-            specs=data.get("specs") or {},
-            approval_policy=data.get("approval_policy") or data.get("policy") or None,
-        )
+        # Default name from filename when missing in YAML
+        if "name" not in data or not data.get("name"):
+            data = dict(data)
+            data["name"] = p.stem
+        preset = AgentPreset.model_validate(data)
+        stat = p.stat()  # Fail fast on OS errors
+        preset.file_path = str(p)
+        preset.modified_at = datetime.fromtimestamp(stat.st_mtime).isoformat()
         out[preset.name] = preset
     return out
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import AutoHandler
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import (
     FakeOpenAIModel,
     FunctionCallItem,
@@ -17,21 +17,20 @@ from adgn.openai_utils.model import (
 async def test_reasoning_threading_filters_reasoning_from_next_input(
     reasoning_model: str,
     responses_factory,
-    make_echo_spec,
+    make_pg_compositor_echo,
 ) -> None:
     """Test that reasoning items are properly threaded with their function calls across turns."""
-    specs = make_echo_spec()
 
     # Create function calls with explicit id and status to verify preservation
     fc1 = FunctionCallItem(
-        name="mcp__echo__echo",
+        name=build_mcp_function("echo", "echo"),
         arguments='{"text": "hi"}',
         call_id="call_1",
         id="fc_id_1",  # Must be preserved
         status="completed",  # Must be preserved
     )
     fc2 = FunctionCallItem(
-        name="mcp__echo__echo",
+        name=build_mcp_function("echo", "echo"),
         arguments='{"text": "bye"}',
         call_id="call_2",
         id="fc_id_2",
@@ -58,12 +57,10 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({}) as mcp:
-        for name, slot in specs.items():
-            await mcp.attach_server(name, slot)
+    async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
             model=responses_factory.model,
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="test",
             client=client,
             handlers=[AutoHandler()],

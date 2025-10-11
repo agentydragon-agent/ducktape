@@ -220,8 +220,8 @@ def extract_text_from_openai_response(response: ResponsesResult) -> str:
     """
     for item in response.output:
         if isinstance(item, AssistantMessageOut):
-            text = item.text
-            if text:
-                return cast(str, text)
+            t = item.text
+            if t is not None and t != "":
+                return t
 
     raise RuntimeError("No text content found in OpenAI response")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import importlib
 import json
 import os
 from pathlib import Path
@@ -57,7 +58,7 @@ def main() -> int:
         log("shim: sys.path head=" + json.dumps(sys.path[:10]))
         # Try importing critical packages
         for mod in ("ipykernel", "jupyter_client", "zmq"):
-            __import__(mod)
+            importlib.import_module(mod)
             log(f"shim: import {mod} OK")
 
         log("shim: launching ipykernel_launcher")

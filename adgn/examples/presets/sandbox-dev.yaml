@@ -48,12 +48,9 @@ approval_policy: |
     if policy.default_behavior != DefaultBehavior.DENY:
       return "default_behavior must be DENY"
     # Process/system toggles
-    if policy.process.allow_signal_self:
-      return "process.allow_signal_self must be False"
-    if policy.system.system_socket:
-      return "system.system_socket is not allowed"
-    if policy.system.sysctl_read:
-      return "system.sysctl_read is not allowed"
+    # allow_signal_self is allowed by default in this preset
+    # system_socket is allowed in this preset
+    # sysctl_read is allowed; filters may further constrain reads if provided
     # Trace/mach
     if policy.trace.enabled:
       return "trace.enabled is not allowed"
@@ -75,15 +72,17 @@ approval_policy: |
           return "only local_only network allowed"
     return None
 
-  def decide(ctx):
-    # Always allow UI, approval policy, and resources operations
-    if ctx.server in (WellKnownServers.UI, WellKnownServers.APPROVAL_POLICY, WellKnownServers.RESOURCES):
-      return (PolicyDecision.ALLOW, 'auto-allowed UI/approval/resources')
+  class ApprovalPolicy:
+    """Dev sandbox preset: allow UI/resources; narrow seatbelt_exec allowances; ASK by default."""
+
+    def decide(self, ctx):
+      # Always allow UI, approval policy, and resources operations
+      if ctx.server in (WellKnownServers.UI, WellKnownServers.APPROVAL_POLICY, WellKnownServers.RESOURCES):
+        return (PolicyDecision.ALLOW, 'auto-allowed UI/approval/resources')
 
     # Auto-allow safe macOS seatbelt sandboxed exec
-    if (ctx.server, ctx.tool) == ('seatbelt_exec', 'sandbox_exec'):
-      policy = (ctx.args or {}).get('policy') or {}
-      policy = SBPLPolicy(**policy)
+    if (ctx.server, ctx.tool) == (WellKnownServers.SEATBELT_EXEC, WellKnownTools.SANDBOX_EXEC):
+      policy = ctx.seatbelt_policy  # runtime guarantees resolution for seatbelt_exec
       if (err := _sbpl_validate(policy)) is None:
         return (PolicyDecision.ALLOW, 'safe seatbelt policy')
       return (PolicyDecision.DENY_CONTINUE, f"not auto-allowed due to: {err}")
@@ -94,8 +93,8 @@ approval_policy: |
   POLICY_BASE = SBPLPolicy(
     version=1,
     default_behavior=DefaultBehavior.DENY,
-    process=ProcessRule(allow_process_star=True, allow_signal_self=False),
-    system=SystemRule(sysctl_read=False, system_socket=False),
+    process=ProcessRule(allow_process_star=True, allow_signal_self=True),
+    system=SystemRule(sysctl_read=True, system_socket=True),
     files=[
       FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_METADATA, filters=[Subpath(subpath='/')]),
       FileRule(action=Action.ALLOW, op=FileOp.FILE_MAP_EXECUTABLE, filters=[Subpath(subpath='/')]),
@@ -107,7 +106,7 @@ approval_policy: |
   )
 
   # Executable tests (invariants)
-  TEST_CASES = [
+  ApprovalPolicy.TEST_CASES = [
     (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW),
     (ApprovalContext(server=WellKnownServers.RESOURCES, tool='list', arguments={'server': 'approval_policy'}), PolicyDecision.ALLOW),
   ]
@@ -120,12 +119,12 @@ approval_policy: |
     # Allow specific deeper subpaths
     (_policy_over(files=[FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath='/usr/local')])]), PolicyDecision.ALLOW),
     (_policy_over(default_behavior=DefaultBehavior.ALLOW), PolicyDecision.DENY_CONTINUE),
-    (_policy_over(process=ProcessRule(allow_signal_self=True)), PolicyDecision.DENY_CONTINUE),
+    (_policy_over(process=ProcessRule(allow_signal_self=True)), PolicyDecision.ALLOW),
     (
       _policy_over(network=[NetworkRule(action=Action.ALLOW, op=NetworkOp.NETWORK_OUTBOUND, local_only=False)]),
       PolicyDecision.DENY_CONTINUE
     ),
-    (_policy_over(system=SystemRule(sysctl_read=True, system_socket=False)), PolicyDecision.DENY_CONTINUE),
+    (_policy_over(system=SystemRule(sysctl_read=True, system_socket=False)), PolicyDecision.ALLOW),
     # File rule variants (write ops remain disallowed)
     (_policy_over(files=[FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_STAR)]), PolicyDecision.ALLOW),
     (_policy_over(files=[FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_METADATA, filters=[LiteralFilter(literal='/etc/passwd')])]), PolicyDecision.ALLOW),
@@ -133,7 +132,7 @@ approval_policy: |
     # Network bind reject
     (_policy_over(network=[NetworkRule(action=Action.ALLOW, op=NetworkOp.NETWORK_BIND, local_only=True)]), PolicyDecision.DENY_CONTINUE),
   ):
-    TEST_CASES.append((ApprovalContext(server='seatbelt_exec', tool='sandbox_exec', arguments={'policy': policy.model_dump()}), decision))
+    ApprovalPolicy.TEST_CASES.append((ApprovalContext(server=WellKnownServers.SEATBELT_EXEC, tool=WellKnownTools.SANDBOX_EXEC, arguments={}, seatbelt_policy=policy), decision))
 
   # --- DRY HTTP test cases (local exec via curl) ---
   # Generate HTTP-related ApprovalContext cases using a compact table,
@@ -157,7 +156,7 @@ approval_policy: |
   def _add_http_cases(server: str, tool: str, table: list[tuple[PolicyDecision, list[str]]]) -> None:
     for decision, urls in table:
       for u in urls:
-        TEST_CASES.append(
+        ApprovalPolicy.TEST_CASES.append(
           (ApprovalContext(server=server, tool=tool, arguments=_curl_args(u)), decision)
         )
 
@@ -177,7 +176,7 @@ approval_policy: |
   for u in [
     'https://example.com/robots.txt',
   ]:
-    TEST_CASES.append(
+    ApprovalPolicy.TEST_CASES.append(
       (
         ApprovalContext(server='local_exec', tool='exec', arguments=_curl_file_args(u, '/private/var/tmp/adgn_http.out')),
         PolicyDecision.ASK,
@@ -186,8 +185,16 @@ approval_policy: |
 
 specs:
   seatbelt_exec:
-    transport: inproc
-    factory: adgn.mcp.seatbelt_exec.server:make_seatbelt_exec_mcp
+    # Example HTTP spec for a seatbelt server. For embedded servers, attach via
+    # UI presets or in code using an inproc factory wrapper.
+    transport: http
+    url: http://127.0.0.1:8768/mcp
+    auth: <replace-with-token>
+    timeout_secs: 30
+    sse_read_timeout_secs: 300
+  # local_exec (example placeholder if you later wire a local exec server)
   # local_exec:
-  #   transport: inproc
-  #   factory: adgn.mcp.local_exec.server:make_local_exec_mcp
+  #   transport: http
+  #   url: http://127.0.0.1:0/mcp
+  #   timeout_secs: 30
+  #   sse_read_timeout_secs: 300

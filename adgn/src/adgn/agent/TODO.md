@@ -1,2 +1,1 @@
-- add apply_patch tool: https://github.com/openai/openai-cookbook/blob/main/examples/gpt-5/apply_patch.py
 - absorb codex's default seatbelt policy including all the knobs and switches

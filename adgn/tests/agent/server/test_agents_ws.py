@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
+from hamcrest import assert_that, has_item
 from pydantic import TypeAdapter
+import pytest
 
 from adgn.agent.server.agents_ws import (
     AgentCreatedMsg,
@@ -9,84 +10,69 @@ from adgn.agent.server.agents_ws import (
     AgentsSnapshotMsg,
     AgentStatusMsg,
 )
-from adgn.agent.server.app import create_app
 from adgn.openai_utils.model import FakeOpenAIModel
-from tests.agent.ws_helpers import wait_for_accepted
+from tests.agent.ws_helpers import (
+    ACTIVE_RUN_CLEARED,
+    ACTIVE_RUN_SET,
+    agent_status,
+    drain_json_until_match,
+    wait_for_accepted,
+)
 
 
-def _recv_until(ws, predicate, limit=10):
-    msgs = []
-    for _ in range(limit):
-        msg = ws.receive_json()
-        msgs.append(msg)
-        if predicate(msg):
-            return msg, msgs
-    raise AssertionError("expected message not received; got: %r" % msgs)
+def test_agents_ws_initial_and_create_broadcast(ws_hub):
+    client, ws = ws_hub
+    init = ws.receive_json()
+    msg = TypeAdapter(AgentsHubMsg).validate_python(init)
+    assert isinstance(msg, AgentsSnapshotMsg), msg
+    assert isinstance(msg.data.agents, list)
+
+    r = client.post("/api/agents", json={"preset": "default"})
+    assert r.status_code == 200
+    agent_id = r.json()["id"]
+
+    def _have_create_and_status(acc):
+        kinds = []
+        ids_ok = True
+        for raw in acc:
+            m = TypeAdapter(AgentsHubMsg).validate_python(raw)
+            kinds.append(type(m).__name__)
+            if isinstance(m, (AgentCreatedMsg, AgentStatusMsg)):
+                if (getattr(m, "data").id) != agent_id:
+                    ids_ok = False
+        return ("AgentCreatedMsg" in kinds and "AgentStatusMsg" in kinds) and ids_ok
+
+    acc: list[dict] = []
+    for _ in range(5):
+        acc.append(ws.receive_json())
+        if _have_create_and_status(acc):
+            break
+    assert _have_create_and_status(acc), acc
 
 
-def test_agents_ws_initial_and_create_broadcast():
-    app = create_app(require_static_assets=False)
-    with TestClient(app) as c:
-        with c.websocket_connect("/ws/agents") as ws:
-            init = ws.receive_json()
-            msg = TypeAdapter(AgentsHubMsg).validate_python(init)
-            assert isinstance(msg, AgentsSnapshotMsg), msg
-            assert isinstance(msg.data.agents, list)
+def test_agents_ws_status_on_agent_ws_connect(ws_hub, agent_app_client):
+    client, hub = ws_hub
+    # Create an agent first
+    r = client.post("/api/agents", json={"preset": "default"})
+    assert r.status_code == 200
+    agent_id = r.json()["id"]
 
-            r = c.post("/api/agents", json={"preset": "default"})
-            assert r.status_code == 200
-            agent_id = r.json()["id"]
+    init = hub.receive_json()
+    _ = TypeAdapter(AgentsHubMsg).validate_python(init)
 
-            def _have_create_and_status(acc):
-                kinds = []
-                ids_ok = True
-                for raw in acc:
-                    m = TypeAdapter(AgentsHubMsg).validate_python(raw)
-                    kinds.append(type(m).__name__)
-                    if isinstance(m, (AgentCreatedMsg, AgentStatusMsg)):
-                        if (getattr(m, "data").id) != agent_id:
-                            ids_ok = False
-                return ("AgentCreatedMsg" in kinds and "AgentStatusMsg" in kinds) and ids_ok
+    # Opening per-agent WS should cause a live:true status broadcast on the hub
+    with client.websocket_connect(f"/ws?agent_id={agent_id}") as agent_ws:
+        _ = wait_for_accepted(agent_ws)
 
-            # Collect a few messages and ensure we saw both notifications for our id
-            acc: list[dict] = []
-            for _ in range(5):
-                acc.append(ws.receive_json())
-                if _have_create_and_status(acc):
-                    break
-            assert _have_create_and_status(acc), acc
+        # Hub emits bare typed messages (not Envelope); use matcher-based drain
+        acc = drain_json_until_match(
+            hub, agent_status(agent_id, active_run_id=None, live=True), limit=10, mapper=lambda m: m
+        )
+        assert_that(acc, has_item(agent_status(agent_id, active_run_id=None, live=True)))
 
 
-def test_agents_ws_status_on_agent_ws_connect():
-    app = create_app(require_static_assets=False)
-    with TestClient(app) as c:
-        # Create an agent first
-        r = c.post("/api/agents", json={"preset": "default"})
-        assert r.status_code == 200
-        agent_id = r.json()["id"]
-
-        with c.websocket_connect("/ws/agents") as hub:
-            init = hub.receive_json()
-            _ = TypeAdapter(AgentsHubMsg).validate_python(init)
-
-            # Opening per-agent WS should cause a live:true status broadcast on the hub
-            with c.websocket_connect(f"/ws?agent_id={agent_id}") as agent_ws:
-                # Wait for enveloped Accepted on agent ws so it's fully open
-                _ = wait_for_accepted(agent_ws)
-
-                def _is_live_status(m):
-                    parsed = TypeAdapter(AgentsHubMsg).validate_python(m)
-                    return (
-                        isinstance(parsed, AgentStatusMsg)
-                        and parsed.data.id == agent_id
-                        and parsed.data.live is True
-                    )
-
-                _, acc = _recv_until(hub, _is_live_status, limit=5)
-                assert any(_is_live_status(m) for m in acc), acc
-
-
-def test_agents_ws_run_status_mirrors(agent_app_client, ws_session, responses_factory):
+@pytest.mark.timeout(15)
+def test_agents_ws_run_status_mirrors(agent_app_client, agent_ws_box, responses_factory):
     app, client = agent_app_client
     # Open hub first to receive broadcasts
     with client.websocket_connect("/ws/agents") as hub:
@@ -96,33 +82,30 @@ def test_agents_ws_run_status_mirrors(agent_app_client, ws_session, responses_fa
         # Fake model that returns a simple assistant message
         model_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
 
-        with ws_session(model_client, specs={}) as (_client, ws, collect, agent_id):
+        with agent_ws_box(model_client, specs={}) as box:
             # Agent WS accepted
             # Send a run
-            ws.send_json({"type": "send", "text": "hello"})
+            r = box.http.prompt("hello")
+            assert r.status_code == 200
 
-            # Expect a live:true with active_run_id set
-            def _have_active(m):
-                parsed = TypeAdapter(AgentsHubMsg).validate_python(m)
-                return (
-                    isinstance(parsed, AgentStatusMsg)
-                    and parsed.data.id == agent_id
-                    and parsed.data.live is True
-                    and bool(parsed.data.active_run_id)
-                )
-
-            _, acc1 = _recv_until(hub, _have_active, limit=10)
-            assert any(_have_active(m) for m in acc1), acc1
+            # Expect a live:true with active_run_id set; drain until a status for this agent
+            acc1 = drain_json_until_match(
+                hub,
+                agent_status(box.agent_id, active_run_id=ACTIVE_RUN_SET),
+                limit=40,
+                mapper=lambda m: m,
+            )
+            assert_that(acc1, has_item(agent_status(box.agent_id, active_run_id=ACTIVE_RUN_SET)))
 
             # Expect a follow-up live:true with active_run_id cleared when finished
-            def _have_finished(m):
-                parsed = TypeAdapter(AgentsHubMsg).validate_python(m)
-                return (
-                    isinstance(parsed, AgentStatusMsg)
-                    and parsed.data.id == agent_id
-                    and parsed.data.live is True
-                    and (parsed.data.active_run_id is None or parsed.data.active_run_id == "")
-                )
-
-            _, acc2 = _recv_until(hub, _have_finished, limit=20)
-            assert any(_have_finished(m) for m in acc2), acc2
+            # Ensure the run finished on the agent WS to avoid missing the hub update
+            _ = box.collect(limit=180)
+            acc2 = drain_json_until_match(
+                hub,
+                agent_status(box.agent_id, active_run_id=ACTIVE_RUN_CLEARED),
+                limit=60,
+                mapper=lambda m: m,
+            )
+            assert_that(
+                acc2, has_item(agent_status(box.agent_id, active_run_id=ACTIVE_RUN_CLEARED))
+            )

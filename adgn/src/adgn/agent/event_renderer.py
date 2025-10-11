@@ -5,16 +5,18 @@ import json
 import shlex
 from typing import Any
 
+from adgn.mcp._shared.constants import (
+    RUNTIME_EXEC_TOOL_NAME,
+    RUNTIME_SERVER_NAME,
+)
+from adgn.mcp._shared.naming import parse_mcp_function
 from adgn.openai_utils.model import ReasoningItem
 
 from .handler import AssistantText, ToolCall, ToolCallOutput, UserText
 from .loop_control import NoLoopDecision
-from .mcp_manager import parse_mcp_function
 from .reducer import BaseHandler
 
-# Shared server/tool name constants
-DOCKER_SERVER_NAME = "docker"
-DOCKER_EXEC_TOOL_NAME = "docker_exec"
+# Use shared server/tool name constants directly from constants module
 
 
 class DisplayEventsHandler(BaseHandler):
@@ -49,11 +51,8 @@ class DisplayEventsHandler(BaseHandler):
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._calls[evt.call_id] = evt
         # For docker_exec: render a concise bash-like input line here and skip JSON args
-        try:
-            server, tool = parse_mcp_function(evt.name or "")
-        except Exception:
-            server, tool = "", ""
-        if (server, tool) == (DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME):
+        server, tool = parse_mcp_function(evt.name)
+        if (server, tool) == (RUNTIME_SERVER_NAME, RUNTIME_EXEC_TOOL_NAME):
             call_args = _parse_json_or_none(evt.args_json) or {}
             if isinstance(call_args, dict) and (cmd := call_args.get("cmd")) is not None:
                 cmd_line = shlex.join([str(x) for x in cmd]) if isinstance(cmd, list) else str(cmd)
@@ -78,7 +77,10 @@ class DisplayEventsHandler(BaseHandler):
     # Rendering helpers ------------------------------------------------------
 
     def _render_tool_call(self, tc: ToolCall) -> str:
-        name = tc.name or "<unknown>"
+        # Require a valid namespaced tool name; do not synthesize placeholders
+        if not tc.name:
+            raise ValueError("ToolCall.name must be a non-empty namespaced tool name")
+        name = tc.name
         parsed: Any | None = _parse_json_or_none(tc.args_json)
         args = parsed if parsed is not None else ({"_raw": tc.args_json} if tc.args_json else {})
         header = f"▶ {name} input:"
@@ -90,23 +92,25 @@ class DisplayEventsHandler(BaseHandler):
         output: ToolCallOutput,
     ) -> str:
         result = output.result
-        structured = result.structuredContent
+        structured = result.structured_content
         if structured is not None:
             data: Any = structured
         elif result.content:
-            data = [block.model_dump(by_alias=True) for block in result.content]
+            try:
+                data = [block.model_dump(by_alias=True) for block in result.content]
+            except AttributeError:
+                # Fallback: leave content blocks as-is if not Pydantic models
+                data = result.content
         else:
-            data = {"isError": result.isError}
+            data = {"isError": result.is_error}
 
         if call:
-            try:
-                server, tool = parse_mcp_function(call.name or "")
-            except Exception:
-                server, tool = "", ""
-            if (server, tool) == (DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME):
+            server, tool = parse_mcp_function(call.name)
+            if (server, tool) == (RUNTIME_SERVER_NAME, RUNTIME_EXEC_TOOL_NAME):
                 return self._render_docker_exec(call.name or "tool_output", call, data)
 
-        return f"◀ {(call.name if call else 'tool_output')}:\n{self._pp_json(data)}"
+        label = call.name if call is not None else "tool_output"
+        return f"◀ {label}:\n{self._pp_json(data)}"
 
     def _render_docker_exec(self, name: str, call: ToolCall, data: object) -> str:
         # Prefer structured keys when available; otherwise fall back to pretty JSON
@@ -149,7 +153,7 @@ class DisplayEventsHandler(BaseHandler):
     def _pp_json(self, obj: object) -> str:
         try:
             text = json.dumps(obj, ensure_ascii=False, indent=2)
-        except Exception:
+        except (TypeError, ValueError):
             text = str(obj)
         return self._truncate_text(text)
 
@@ -159,7 +163,7 @@ def _parse_json_or_none(s: str | None) -> Any | None:
         return None
     try:
         return json.loads(s)
-    except Exception:
+    except json.JSONDecodeError:
         return None
 
 
@@ -168,5 +172,5 @@ def _coerce_str(x: object) -> str:
         return x
     try:
         return json.dumps(x, ensure_ascii=False)
-    except Exception:
+    except (TypeError, ValueError):
         return str(x)

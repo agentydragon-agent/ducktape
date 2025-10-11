@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from mcp import types as mcp_types
+from fastmcp.client.client import CallToolResult
 
 from adgn.agent.server.protocol import (
     ApprovalApprove,
@@ -80,14 +80,21 @@ def test_function_output_updates_exec_stream():
             call_id="c4",
         ),
     )
-    result = mcp_types.CallToolResult(
+    result = CallToolResult(
         content=[],
-        structuredContent={"stdout": "ok", "stderr": "", "exit_code": 0},
-        isError=False,
+        structured_content={"stdout": "ok", "stderr": "", "exit_code": 0},
+        is_error=False,
     )
     s2 = reduce_ui_state(
         s1,
-        FunctionCallOutput(call_id="c4", result=result.model_dump(mode="json", exclude_none=True)),
+        FunctionCallOutput(
+            call_id="c4",
+            result={
+                "content": result.content,
+                "structured_content": result.structured_content,
+                "is_error": result.is_error,
+            },
+        ),
     )
     it = s2.items[0]
     assert it.kind == "Tool"
@@ -103,14 +110,17 @@ def test_function_output_updates_json_output_when_not_exec():
         ToolCall(name="mcp__kv__get", args_json=json.dumps({"key": "k"}), call_id="c5"),
     )
     payload = {"value": {"a": 1}}
-    result = mcp_types.CallToolResult(
-        content=[], structuredContent=payload, isError=False
-    ).model_dump(mode="json", exclude_none=True)
-    s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c5", result=result))
+    result = CallToolResult(content=[], structured_content=payload, is_error=False)
+    result_dict = {
+        "content": result.content,
+        "structured_content": result.structured_content,
+        "is_error": result.is_error,
+    }
+    s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c5", result=result_dict))
     it = s2.items[0]
     assert it.kind == "Tool"
     assert it.content.content_kind == "Json"
-    assert it.content.result == result
+    assert it.content.result == result_dict
 
 
 def test_ui_message_becomes_assistant_markdown():

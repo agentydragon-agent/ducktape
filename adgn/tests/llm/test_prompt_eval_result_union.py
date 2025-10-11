@@ -2,15 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from adgn.agent.mcp_manager import McpManager
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import (
     FunctionToolParam,
     ResponsesRequest,
 )
 from adgn.props.critic import CriticSubmitPayload
 import adgn.props.prompt_eval.server
-from adgn.props.prompt_eval.server import build_server
+from adgn.props.prompt_eval.server import PromptEvalArgs, PromptEvalOutput, build_server
 from tests.fixtures.responses import (
     ResponsesFactory,
 )  # single factory for adapter responses
@@ -30,10 +29,10 @@ async def _behavior_ok(req):
         for t in tools:
             if isinstance(t, FunctionToolParam):
                 names.append(t.name)
-        if any(
-            n in ("grader_submit__submit_result", "mcp__grader_submit__submit_result")
-            for n in names
-        ):
+        # Inspect offered tool names for debugging
+        print("[test] offered tools:", names)
+        target = build_mcp_function("grader_submit", "submit_result")
+        if target in names:
             args = {
                 "result": {
                     "true_positive_ids": [],
@@ -44,9 +43,7 @@ async def _behavior_ok(req):
                     "message_md": "ok",
                 }
             }
-            return responses_factory.make(
-                responses_factory.tool_call("mcp__grader_submit__submit_result", args)
-            )
+            return responses_factory.make(responses_factory.tool_call(target, args))
 
     # Otherwise: critic path → simple assistant text
     inp = req.input
@@ -68,8 +65,8 @@ async def _behavior_ok(req):
     ],
     indirect=True,
 )
-async def test_prompt_eval_returns_failure_on_critic_error(
-    openai_client_param, tmp_path: Path
+async def test_prompt_eval_signals_tool_error_on_critic_error(
+    openai_client_param, tmp_path: Path, make_typed_mcp
 ) -> None:
     # Build server with provided client (mock/live)
     mcp_server, _state = build_server(
@@ -84,17 +81,12 @@ async def test_prompt_eval_returns_failure_on_critic_error(
     # Limit to one real specimen to keep test deterministic and fast while exercising real data
     adgn.props.prompt_eval.server.list_specimen_names = lambda base: ["2025-09-02-ducktape_wt"]
 
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("prompt_eval_test", make_inproc_slot_spec(mcp_server))
-        res = await mcp.call_tool_typed(
-            "prompt_eval_test",
-            "test_prompt",
-            {"prompt": "dummy"},
-            adgn.props.prompt_eval.server.PromptEvalResult,
-        )
-        assert isinstance(res, adgn.props.prompt_eval.server.PromptEvalFailure), (
-            f"expected PromptEvalFailure, got {type(res)!r}"
-        )
+    async with make_typed_mcp(mcp_server, "prompt_eval_test") as (client, _sess):
+        # Expect an isError tool payload; assert via TypedClient.error
+        payload = PromptEvalArgs(prompt="dummy")
+        get_err = client.error("test_prompt")
+        msg = await get_err(payload)
+        assert "simulated critic failure" in msg
 
 
 @pytest.mark.asyncio
@@ -106,7 +98,9 @@ async def test_prompt_eval_returns_failure_on_critic_error(
     ],
     indirect=True,
 )
-async def test_prompt_eval_returns_success_on_all_ok(openai_client_param, tmp_path: Path) -> None:
+async def test_prompt_eval_returns_metrics_on_success(
+    openai_client_param, tmp_path: Path, make_typed_mcp
+) -> None:
     # Build server with provided client (mock/live)
     mcp_server, _state = build_server(
         client=openai_client_param, name="prompt_eval_test2", run_dir_base=tmp_path
@@ -128,14 +122,8 @@ async def test_prompt_eval_returns_success_on_all_ok(openai_client_param, tmp_pa
     # Limit to one real specimen for a focused test run
     adgn.props.prompt_eval.server.list_specimen_names = lambda base: ["2025-09-02-ducktape_wt"]
 
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("prompt_eval_test2", make_inproc_slot_spec(mcp_server))
-        res = await mcp.call_tool_typed(
-            "prompt_eval_test2",
-            "test_prompt",
-            {"prompt": "dummy"},
-            adgn.props.prompt_eval.server.PromptEvalResult,
-        )
-        assert isinstance(res, adgn.props.prompt_eval.server.PromptEvalSuccess), (
-            f"expected PromptEvalSuccess, got {type(res)!r}"
-        )
+    async with make_typed_mcp(mcp_server, "prompt_eval_test2") as (client, _sess):
+        payload = PromptEvalArgs(prompt="dummy")
+        out = await client.test_prompt(payload)
+        assert isinstance(out, PromptEvalOutput)
+        assert isinstance(out.metrics, list)

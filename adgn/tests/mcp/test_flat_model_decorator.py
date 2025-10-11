@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from typing import Optional
+
+from pydantic import BaseModel, Field
+import pytest
+
+from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+
+
+class InModel(BaseModel):
+    a: int = Field(description="required int")
+    b: Optional[str] = Field(default=None, description="optional text")
+
+
+class OutModel(BaseModel):
+    ok: bool
+    note: str | None = None
+
+
+@pytest.mark.asyncio
+async def test_flat_model_infers_types_and_emits_schema():
+    m = NotifyingFastMCP("decorator_test")
+
+    @mcp_flat_model(m, structured_output=True)
+    def demo(input: InModel) -> OutModel:
+        """Demo tool docstring used as description."""
+        return OutModel(ok=True, note=str(input.b) if input.b is not None else None)
+
+    tools = await m.list_tools()
+
+    assert len(tools) == 1
+    t = tools[0]
+    # Name defaults to function name when not provided
+    assert t.name == "demo"
+    assert t.description == "Demo tool docstring used as description."
+    # Input schema is flat with properties a and b
+    schema = t.inputSchema
+    assert isinstance(schema, dict)
+    assert schema.get("type") == "object"
+    props = schema.get("properties") or {}
+    assert "a" in props and "b" in props
+    # Required contains 'a' (since 'b' is optional)
+    required = set(schema.get("required") or [])
+    assert "a" in required
+    # Ensure output schema present (structured_output=True)
+    out_schema = t.outputSchema
+    assert isinstance(out_schema, dict)
+    out_props = out_schema.get("properties") or {}
+    assert "ok" in out_props
+
+
+def test_structured_requires_return_annotation():
+    m = NotifyingFastMCP("decorator_test2")
+
+    with pytest.raises(TypeError):
+
+        @mcp_flat_model(m, structured_output=True)
+        def bad(input: InModel):  # type: ignore[no-redef]
+            return {"ok": True}

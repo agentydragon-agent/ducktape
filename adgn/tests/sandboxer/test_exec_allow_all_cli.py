@@ -9,21 +9,20 @@ import yaml
 @pytest.mark.macos
 @pytest.mark.shell
 def test_sandboxer_cli_allow_all_runs_echo(tmp_path: Path, require_sandbox_exec):
-    run = tmp_path
-    (run / "tmp").mkdir(parents=True, exist_ok=True)
-    policy = run / "policy_allow_all.yaml"
+    (tmp_path / "tmp").mkdir(parents=True, exist_ok=True)
+    policy = tmp_path / "policy_allow_all.yaml"
     policy_dict = {
         "env": {
             "set": {
-                "TMPDIR": (run / "tmp").as_posix(),
-                "HOME": run.as_posix(),
+                "TMPDIR": (tmp_path / "tmp").as_posix(),
+                "HOME": tmp_path.as_posix(),
                 "PYTHONUNBUFFERED": "1",
             },
             "passthrough": [],
         },
         "fs": {
             "read_paths": ["/"],
-            "write_paths": [run.as_posix()],
+            "write_paths": [tmp_path.as_posix()],
         },
         "net": {"mode": "open"},
         "platform": {

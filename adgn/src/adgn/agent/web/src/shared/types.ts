@@ -6,10 +6,30 @@ export type AgentRow = {
   live?: boolean
   working?: boolean
   last_updated?: string
+  metadata: { preset: string }
+  lifecycle?: 'persisted_only' | 'starting' | 'ready'
 }
 
 export type AgentListResponse = { agents: AgentRow[] }
-export type AgentStatus = { id: string; live: boolean; active_run_id?: string | null }
+export type McpServerState = 'initializing' | 'running' | 'failed'
+export type McpState = { entries: Record<string, ServerEntry> }
+export type PolicyState = { version?: number | null }
+export type UiStateLite = { ready: boolean }
+export type ContainerState = { present: boolean; id?: string | null; ephemeral?: boolean }
+
+export type AgentStatus = {
+  id: string
+  live: boolean
+  active_run_id?: string | null
+  lifecycle?: 'persisted_only' | 'starting' | 'ready' | 'closing' | 'closed' | 'error'
+  run_phase?: 'idle' | 'sampling' | 'waiting_tool' | 'tools_running' | 'waiting_approval' | 'sending_output' | 'error'
+  policy?: PolicyState
+  ui?: UiStateLite
+  mcp?: McpState
+  container?: ContainerState
+  pending_approvals?: number | null
+  last_event_at?: string | null
+}
 export type DeleteResponse = { ok: boolean; error?: string }
 
 // MCP tool definition as sent by backend
@@ -20,32 +40,62 @@ export type McpTool = {
   inputSchema?: Record<string, any>
 }
 
-export type InitializeView = {
-  instructions?: string | null
-  server_info?: any
-  protocol_version?: string | null
-  capabilities?: any
+// Align with InitializeResult (camelCase) from MCP types; the backend passes it as-is now.
+export type ServerResourcesCaps = {
+  resources?: { subscribe?: boolean; listChanged?: boolean } | null
 }
 
-export type ServerEntry = {
-  name: string
-  state: 'running' | 'failed'
-  error?: string | null
-  supports_resources?: boolean | null
-  tools?: McpTool[]
-  initialize?: InitializeView | null
+export type InitializeView = {
+  instructions?: string | null
+  serverInfo?: any
+  capabilities?: ServerResourcesCaps | null
 }
+
+export type ServerEntryInitializing = { state: 'initializing' }
+
+export type ServerEntryRunning = { state: 'running'; initialize: InitializeView; tools?: McpTool[] }
+
+export type ServerEntryFailed = { state: 'failed'; error?: string | null }
+
+export type ServerEntry = ServerEntryInitializing | ServerEntryRunning | ServerEntryFailed
 
 export type SamplingSnapshot = {
   ts?: string
   servers: ServerEntry[]
 }
 
+// ---- Approval policy (shared) ----
+export type PolicyErrorCode = 'read_error' | 'parse_error'
+
+export type PolicyError = {
+  stage: 'read' | 'parse' | 'tests'
+  code: PolicyErrorCode
+  index?: number
+  length?: number
+  message?: string | null
+}
+
+
+export type Proposal = {
+  id: string
+  status?: 'pending' | 'approved' | 'rejected'
+}
+
+export type ApprovalPolicyInfo = {
+  content: string
+  version: number
+  proposals?: Proposal[]
+}
+
+export type SnapshotDetails = {
+  run_state: { status: string; pending_approvals: any[] }
+  sampling: SamplingSnapshot
+  approval_policy: ApprovalPolicyInfo
+}
+
 export type SnapshotPayload = {
   type: 'snapshot'
-  sampling?: SamplingSnapshot
-  run_state?: { status?: string; pending_approvals?: any[] }
-  approval_policy?: { content: string; version: number; proposals?: Array<{ id: string; status: string; rationale?: string; source: string }> }
+  details?: SnapshotDetails
 }
 
 // ---- UiState (server-owned) ----
@@ -116,9 +166,11 @@ export type UiStateSnapshotPayload = { type: 'ui_state_snapshot'; state: UiState
 export type UiStateUpdatedPayload = { type: 'ui_state_updated'; state: UiState }
 export type RunStatusPayload = { type: 'run_status'; run_state?: { status?: string } }
 export type ApprovalPendingPayload = { type: 'approval_pending'; call_id: string; tool_key: string; args_json?: string | null }
-export type ApprovalDecisionPayload = { type: 'approval_decision'; call_id: string; decision: any }
+export type ApprovalDecisionPayload = { type: 'approval_decision'; call_id: string; decision: ApprovalKind }
 export type AcceptedPayload = { type: 'accepted' }
 export type ErrorPayload = { type: 'error'; code: string; message?: string }
+
+// Optional resource-updated notification proxy (backend may emit in future)
 
 export type IncomingPayload =
   | SnapshotPayload

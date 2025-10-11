@@ -4,7 +4,6 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loop_control import Abort, Auto, Continue
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import BaseHandler
 
 
@@ -26,15 +25,21 @@ class SyntheticOnceHandler(BaseHandler):
 async def test_mini_codex_handles_synthetic_action_without_api_calls(
     fake_openai_client_factory,
     responses_factory,
+    make_pg_compositor,
+    approval_policy_reader_allow_all,
 ) -> None:
     client = fake_openai_client_factory(
         [responses_factory.make_assistant_message("should_not_be_used")],
     )
-    async with McpManager({}) as mcp:
+    # Build a compositor with no extra servers (just policy gateway)
+    async with make_pg_compositor({"approval_policy": approval_policy_reader_allow_all}) as (
+        mcp_client,
+        _comp,
+    ):
         resp = responses_factory.make_assistant_message("hello")
         agent = await MiniCodex.create(
             model=responses_factory.model,
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="You are a code agent.",
             client=client,
             handlers=[SyntheticOnceHandler(resp.output)],

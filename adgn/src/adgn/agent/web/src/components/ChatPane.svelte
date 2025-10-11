@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
   import { uiState as uiStateStore, lastError as lastErrorStore, runStatus as runStatusStore } from '../features/chat/stores'
-  import { sendPrompt as wsSendPrompt, abortRun as wsAbortRun } from '../features/chat/stores'
+  import { sendPrompt, abortRun } from '../features/chat/stores'
   import { currentAgentId } from '../features/agents/stores'
   import { renderMarkdown as renderMarkdownHtml } from '../shared/markdown'
   import DOMPurify from 'dompurify'
@@ -20,9 +20,9 @@
   $: busy = runStatus === 'running' || runStatus === 'awaiting_approval' || runStatus === 'starting' || runStatus === 'aborting'
 
 
-  function sendPrompt() {
+  function sendPromptLocal() {
     if (busy || !prompt.trim()) return
-    wsSendPrompt(prompt)
+    sendPrompt(prompt)
     // Clear the prompt immediately on submit and persist cleared draft
     const id = $currentAgentId
     prompt = ''
@@ -36,7 +36,7 @@
     if ((allowSend || modSend) && !busy && prompt.trim()) {
       e.preventDefault()
       e.stopPropagation()
-      sendPrompt()
+      sendPromptLocal()
     }
   }
   function onPromptInput() {
@@ -110,8 +110,6 @@
   const COLLAPSED_TOOLS = new Set<string>([
     'mcp__resources__list',
     'mcp__resources__read',
-    'mcp__approval_policy__propose',
-    'mcp__approval_policy__withdraw',
     // Lean browser tools (concise tokens by default)
     'mcp__lean_browser__search',
     'mcp__lean_browser__find_in_page',
@@ -194,7 +192,7 @@
     {/if}
   </div>
 
-  <form class="composer" on:submit|preventDefault={sendPrompt}>
+  <form class="composer" on:submit|preventDefault={sendPromptLocal}>
     <textarea
       bind:this={promptEl}
       bind:value={prompt}
@@ -204,7 +202,7 @@
       on:keydown={onPromptKeydown}
     ></textarea>
     {#if $runStatusStore === 'running' || $runStatusStore === 'starting'}
-      <button type="button" class="abort" title="Abort current run" on:click={() => wsAbortRun()}>Abort</button>
+      <button type="button" class="abort" title="Abort current run" on:click={() => abortRun()}>Abort</button>
     {/if}
     <button type="submit" disabled={busy || !prompt.trim()} aria-disabled={busy || !prompt.trim()}>Send</button>
   </form>

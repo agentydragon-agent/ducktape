@@ -26,6 +26,7 @@ class ToolCallPayload(BaseModel):
 
 class FunctionCallOutputPayload(BaseModel):
     call_id: str
+    # Embed Pydantic MCP CallToolResult (full content when available)
     result: mcp_types.CallToolResult
 
 
@@ -82,11 +83,9 @@ def parse_event(d: dict[str, Any]) -> EventRecord:
             call_id=str(payload_raw.get("call_id") or d.get("call_id") or ""),
         )
     elif et == EventType.FUNCTION_CALL_OUTPUT:
+        # Persisted payload is the Pydantic MCP CallToolResult JSON (alias field names)
         result = TypeAdapter(mcp_types.CallToolResult).validate_python(payload_raw)
-        payload = FunctionCallOutputPayload(
-            call_id=str(payload_raw.get("call_id") or d.get("call_id") or ""),
-            result=result,
-        )
+        payload = FunctionCallOutputPayload(call_id=str(d.get("call_id") or ""), result=result)
     elif et == EventType.REASONING:
         payload = ReasoningPayload(text=str(payload_raw.get("text", "")))
     elif et == EventType.RESPONSE:

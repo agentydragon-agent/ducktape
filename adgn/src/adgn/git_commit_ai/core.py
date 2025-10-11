@@ -84,6 +84,25 @@ def _format_unified_diff(repo: pygit2.Repository, include_all: bool) -> str:
     return _diff(repo, include_all).patch or ""
 
 
+def include_all_from_passthru(passthru: list[str]) -> bool:
+    """Return True if '-a' or '--all' flags are present."""
+    return ("-a" in passthru) or ("--all" in passthru)
+
+
+# Unified mapping for status letters to human text (commit template rendering)
+STATUS_LETTER_TO_TEXT: dict[str, str] = {
+    "A": "new file:",
+    "M": "modified:",
+    "D": "deleted:",
+    "R": "renamed:",
+    "T": "typechange:",
+}
+
+
+def status_letter_text(letter: str) -> str:
+    return STATUS_LETTER_TO_TEXT.get(letter, f"{letter}:")
+
+
 def _format_status_porcelain(repo: pygit2.Repository) -> str:
     """Return a minimal porcelain-like status using pygit2 flags.
 
@@ -182,7 +201,7 @@ def _build_ai_context(repo: pygit2.Repository, include_all: bool) -> str:
 
 
 def diffstat(repo: pygit2.Repository, passthru: list[str]) -> str:
-    include_all = ("-a" in passthru) or ("--all" in passthru)
+    include_all = include_all_from_passthru(passthru)
     diff = _diff(repo, include_all)
     # Emulate a minimal --stat: path and change status
     lines: list[str] = []
@@ -207,7 +226,7 @@ def build_prompt(
     passthru: list[str],
     previous_message: str | None = None,
 ) -> str:
-    include_all = ("-a" in passthru) or ("--all" in passthru)
+    include_all = include_all_from_passthru(passthru)
     context = _build_ai_context(repo, include_all)
     if previous_message:
         prompt = f"""Update and refine this existing commit message based on the current changes.

@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import statistics
-from typing import Any
 
 import matplotlib
 import pandas as pd
@@ -49,10 +48,20 @@ class IterationSummary(BaseModel):
     timestamp: str
 
 
+class PlotDataPoint(BaseModel):
+    iteration: int
+    facet: str
+    mean: float
+    stdev: float
+    ci_lower: float
+    ci_upper: float
+    count: int
+
+
 def create_plot_data_point(
     iter_data: IterationSummary,
     facet_name: str,
-) -> dict[str, Any]:
+) -> PlotDataPoint:
     """Create a plot data point for a given iteration and facet."""
     stats = iter_data.overall if facet_name == "overall" else iter_data.facets[facet_name]
 
@@ -66,15 +75,15 @@ def create_plot_data_point(
     else:
         ci_lower = ci_upper = mean
 
-    return {
-        "iteration": iter_data.iteration,
-        "facet": facet_name,
-        "mean": mean,
-        "stdev": stats.stdev,
-        "ci_lower": ci_lower,
-        "ci_upper": ci_upper,
-        "count": count,
-    }
+    return PlotDataPoint(
+        iteration=iter_data.iteration,
+        facet=facet_name,
+        mean=mean,
+        stdev=stats.stdev,
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+        count=count,
+    )
 
 
 class ScoreStatistics:
@@ -117,7 +126,7 @@ class ScoreEvolutionPlotter:
     def generate_plots(self, run_dir: Path) -> tuple[Path, Path]:
         """Generate score evolution plots using plotnine."""
 
-        plot_data: list[dict[str, Any]] = []
+        plot_data: list[PlotDataPoint] = []
         for iter_data in self.iterations_data:
             plot_data.append(create_plot_data_point(iter_data, "overall"))
 
@@ -126,7 +135,7 @@ class ScoreEvolutionPlotter:
                 for iter_data in self.iterations_data:
                     plot_data.append(create_plot_data_point(iter_data, facet_name))
 
-        plot_df = pd.DataFrame(plot_data)
+        plot_df = pd.DataFrame([p.model_dump() for p in plot_data])
 
         combined_plot = self._create_combined_plot(plot_df)
         faceted_plot = self._create_faceted_plot(plot_df)
@@ -350,12 +359,34 @@ class ScoreEvolutionTracker:
 # Rollout analysis functions for token usage estimation
 
 
-def analyze_rollout_logs(log_path: Path) -> dict[str, Any]:
+class TokenStats(BaseModel):
+    min: int
+    max: int
+    avg: float
+    median: float
+
+
+class RolloutDetail(BaseModel):
+    task_tokens: int
+    code_tokens: int
+    messages_tokens: int
+    total_tokens: int
+    task_id: str
+    iteration: int
+
+
+class AnalysisStats(BaseModel):
+    total_rollouts: int
+    token_stats: dict[str, TokenStats]
+    rollout_details: list[RolloutDetail]
+
+
+def analyze_rollout_logs(log_path: Path) -> AnalysisStats | None:
     """Analyze rollout logs to estimate token usage."""
 
     if not log_path.exists():
         logger.warning("Log file not found", log_path=str(log_path))
-        return {}
+        return None
 
     # Initialize tiktoken encoder (using gpt-4o model for consistency)
     enc = tiktoken.encoding_for_model("gpt-4o")
@@ -382,10 +413,10 @@ def analyze_rollout_logs(log_path: Path) -> dict[str, Any]:
 
     if not rollouts:
         logger.warning("No rollouts found in log file")
-        return {}
+        return None
 
     # Analyze each rollout
-    rollout_data = []
+    rollout_data: list[RolloutDetail] = []
 
     for rollout in rollouts:
         # Extract key fields
@@ -405,67 +436,84 @@ def analyze_rollout_logs(log_path: Path) -> dict[str, Any]:
         total_tokens = task_tokens + code_tokens + messages_tokens
 
         rollout_data.append(
-            {
-                "task_tokens": task_tokens,
-                "code_tokens": code_tokens,
-                "messages_tokens": messages_tokens,
-                "total_tokens": total_tokens,
-                "task_id": rollout.get("agent_id", "unknown"),
-                "iteration": rollout.get("iteration", 1),
-            },
+            RolloutDetail(
+                task_tokens=task_tokens,
+                code_tokens=code_tokens,
+                messages_tokens=messages_tokens,
+                total_tokens=total_tokens,
+                task_id=str(rollout.get("agent_id", "unknown")),
+                iteration=int(rollout.get("iteration", 1)),
+            ),
         )
 
     # Create DataFrame for efficient statistics computation
     rollout_df = pd.DataFrame(rollout_data)
 
     # Calculate statistics using pandas
-    token_stats = {}
+    token_stats: dict[str, TokenStats] = {}
     for col in ["total_tokens", "code_tokens", "messages_tokens"]:
-        token_stats[col] = {
-            "min": rollout_df[col].min(),
-            "max": rollout_df[col].max(),
-            "avg": rollout_df[col].mean(),
-            "median": rollout_df[col].median(),
-        }
+        token_stats[col] = TokenStats(
+            min=int(rollout_df[col].min()),
+            max=int(rollout_df[col].max()),
+            avg=float(rollout_df[col].mean()),
+            median=float(rollout_df[col].median()),
+        )
 
-    return {
-        "total_rollouts": len(rollout_data),
-        "token_stats": token_stats,
-        "rollout_details": rollout_data,
-    }
+    return AnalysisStats(
+        total_rollouts=len(rollout_data),
+        token_stats=token_stats,
+        rollout_details=rollout_data,
+    )
+
+
+class CapacityEstimate(BaseModel):
+    by_average: int
+    by_median: int
+    conservative_max: int
+
+
+class CapacityResult(BaseModel):
+    context_limit: int
+    overhead_tokens: int
+    usable_context: int
+    avg_rollout_size: float
+    max_rollout_size: float
+    median_rollout_size: float
+    estimated_capacity: CapacityEstimate
+    rollout_stats: AnalysisStats
 
 
 def analyze_rollout_capacity(
     log_path: Path,
     context_limit: int = 200000,
-) -> dict[str, Any]:
+) -> CapacityResult | None:
     """Analyze rollout logs and estimate context capacity."""
     stats = analyze_rollout_logs(log_path)
     if not stats:
-        return {}
+        return None
 
-    avg_rollout_size = stats["token_stats"]["total_tokens"]["avg"]
-    max_rollout_size = stats["token_stats"]["total_tokens"]["max"]
-    median_rollout_size = stats["token_stats"]["total_tokens"]["median"]
+    avg_rollout_size = stats.token_stats["total_tokens"].avg
+    max_rollout_size = stats.token_stats["total_tokens"].max
+    median_rollout_size = stats.token_stats["total_tokens"].median
 
     # Estimate capacity (leaving room for system message and prompt engineering overhead)
     overhead_tokens = 5000  # Conservative estimate for system message + PE overhead
     usable_context = context_limit - overhead_tokens
 
-    return {
-        "context_limit": context_limit,
-        "overhead_tokens": overhead_tokens,
-        "usable_context": usable_context,
-        "avg_rollout_size": avg_rollout_size,
-        "max_rollout_size": max_rollout_size,
-        "median_rollout_size": median_rollout_size,
-        "estimated_capacity": {
-            "by_average": int(usable_context // avg_rollout_size),
-            "by_median": int(usable_context // median_rollout_size),
-            "conservative_max": int(usable_context // max_rollout_size),
-        },
-        "rollout_stats": stats,
-    }
+    return CapacityResult(
+        context_limit=context_limit,
+        overhead_tokens=overhead_tokens,
+        usable_context=int(usable_context),
+        avg_rollout_size=float(avg_rollout_size),
+        max_rollout_size=float(max_rollout_size),
+        median_rollout_size=float(median_rollout_size),
+        estimated_capacity=CapacityEstimate(
+            by_average=int(usable_context // avg_rollout_size),
+            by_median=int(usable_context // median_rollout_size),
+            conservative_max=int(usable_context // max_rollout_size),
+        ),
+        rollout_stats=stats,
+    )
 
 
 def print_rollout_analysis_report(
@@ -486,24 +534,24 @@ def print_rollout_analysis_report(
         return
 
     # Print rollout analysis
-    print(f"Total rollouts analyzed: {stats['total_rollouts']}")
+    print(f"Total rollouts analyzed: {stats.total_rollouts}")
     print()
     print("Token usage per rollout:")
     print(
-        f"  Total tokens - Min: {stats['token_stats']['total_tokens']['min']:,}, "
-        f"Max: {stats['token_stats']['total_tokens']['max']:,}, "
-        f"Avg: {stats['token_stats']['total_tokens']['avg']:,.0f}, "
-        f"Median: {stats['token_stats']['total_tokens']['median']:,.0f}",
+        f"  Total tokens - Min: {stats.token_stats['total_tokens'].min:,}, "
+        f"Max: {stats.token_stats['total_tokens'].max:,}, "
+        f"Avg: {stats.token_stats['total_tokens'].avg:,.0f}, "
+        f"Median: {stats.token_stats['total_tokens'].median:,.0f}",
     )
     print(
-        f"  Code tokens - Min: {stats['token_stats']['code_tokens']['min']:,}, "
-        f"Max: {stats['token_stats']['code_tokens']['max']:,}, "
-        f"Avg: {stats['token_stats']['code_tokens']['avg']:,.0f}",
+        f"  Code tokens - Min: {stats.token_stats['code_tokens'].min:,}, "
+        f"Max: {stats.token_stats['code_tokens'].max:,}, "
+        f"Avg: {stats.token_stats['code_tokens'].avg:,.0f}",
     )
     print(
-        f"  Messages tokens - Min: {stats['token_stats']['messages_tokens']['min']:,}, "
-        f"Max: {stats['token_stats']['messages_tokens']['max']:,}, "
-        f"Avg: {stats['token_stats']['messages_tokens']['avg']:,.0f}",
+        f"  Messages tokens - Min: {stats.token_stats['messages_tokens'].min:,}, "
+        f"Max: {stats.token_stats['messages_tokens'].max:,}, "
+        f"Avg: {stats.token_stats['messages_tokens'].avg:,.0f}",
     )
     print()
 
@@ -511,15 +559,13 @@ def print_rollout_analysis_report(
     for context_limit in context_limits:
         capacity = analyze_rollout_capacity(log_path, context_limit)
         print(f"Context limit: {context_limit:,} tokens")
-        print(f"  Usable context: {capacity['usable_context']:,} tokens")
+        if not capacity:
+            continue
+        print(f"  Usable context: {capacity.usable_context:,} tokens")
         print("  Estimated capacity:")
+        print(f"    By average rollout size: {capacity.estimated_capacity.by_average} rollouts")
+        print(f"    By median rollout size: {capacity.estimated_capacity.by_median} rollouts")
         print(
-            f"    By average rollout size: {capacity['estimated_capacity']['by_average']} rollouts",
-        )
-        print(
-            f"    By median rollout size: {capacity['estimated_capacity']['by_median']} rollouts",
-        )
-        print(
-            f"    Conservative (max size): {capacity['estimated_capacity']['conservative_max']} rollouts",
+            f"    Conservative (max size): {capacity.estimated_capacity.conservative_max} rollouts"
         )
         print()

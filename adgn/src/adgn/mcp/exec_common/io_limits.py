@@ -2,8 +2,20 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Annotated
+
+from pydantic import Field
+
+# Cap for stdout/stderr/stdin bytes in exec-like servers
 
 MAX_BYTES_CAP = 100_000
+
+# Cap for execution timeout across exec-like servers (milliseconds)
+# Keep reasonably low to avoid runaway processes; tune per product needs.
+MAX_EXEC_TIMEOUT_MS = 300_000
+
+# Pydantic-validated timeout type (milliseconds)
+TimeoutMs = Annotated[int, Field(gt=0, le=MAX_EXEC_TIMEOUT_MS)]
 
 
 class MaxBytesValidationError(ValueError):
@@ -20,6 +32,9 @@ def validate_max_bytes(n: int) -> int:
     if n > MAX_BYTES_CAP:
         raise MaxBytesValidationError(f"max_bytes must be <= {MAX_BYTES_CAP}")
     return n
+
+
+# Note: prefer using the above Annotated types directly in Pydantic models
 
 
 @dataclass(slots=True)

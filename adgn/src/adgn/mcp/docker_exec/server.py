@@ -8,14 +8,14 @@ FastMCP server: per-session Docker container exec.
 - Network mode configurable (default: none); RO/RW volumes as provided; working_dir is writable
 - Single source of truth for container contents: host-side docker image history (CreatedBy)
 - Tool:
-  - exec(cmd, cwd?, env?, user?, tty?, shell?, timeout_secs?) -> {exit_code, timed_out, stdout, stderr}
+  - exec(cmd, cwd?, env?, user?, tty?, shell?, timeout_ms) -> {exit_code, timed_out, stdout, stderr}
 
-Use make_container_exec_mcp(...) to construct a server instance.
+Use make_container_exec_server(...) to construct a server instance.
 """
 
 from __future__ import annotations
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 from .._shared.container_session import (
     ContainerOptions,
@@ -23,21 +23,40 @@ from .._shared.container_session import (
     register_container,
 )
 
-# Shared names for wiring and renderers
-SERVER_NAME = "docker"
-TOOL_EXEC_NAME = "docker_exec"
 
-
-def make_container_exec_mcp(opts: ContainerOptions) -> SafeFastMCP:
+def make_container_exec_server(
+    opts: ContainerOptions,
+    *,
+    name: str = "docker",
+    tool_exec_name: str = "exec",
+) -> NotifyingFastMCP:
     """Create a generic per-session container exec FastMCP server.
 
     Callers must pass a fully constructed ContainerOptions (no kwargs).
     """
     lifespan = make_container_lifespan(opts)
-    server = SafeFastMCP(
-        SERVER_NAME,
+    server = NotifyingFastMCP(
+        name,
         instructions="Per-session container exec. See resource container.info for details.",
         lifespan=lifespan,
     )
-    register_container(server, tool_name=TOOL_EXEC_NAME)
+    register_container(server, opts, tool_name=tool_exec_name)
     return server
+
+
+async def attach_container_exec(
+    comp,
+    opts: ContainerOptions,
+    *,
+    server_name: str = "docker",
+    tool_exec_name: str = "exec",
+    init_timeout_secs: float | None = None,
+):
+    """Attach a per-session container exec server (no auth, in-proc)."""
+    server = make_container_exec_server(
+        opts,
+        name=server_name,
+        tool_exec_name=tool_exec_name,
+    )
+    # Compositor mount path (preferred)
+    await comp.mount_inproc(server_name, server)

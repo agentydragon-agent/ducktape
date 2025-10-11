@@ -5,15 +5,15 @@ import json
 from pathlib import Path
 from typing import cast
 
+from fastmcp.client import Client
 from pydantic import BaseModel, Field
 import yaml
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.mcp_manager import McpManager
 from adgn.agent.reducer import GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP  # type: ignore
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP  # type: ignore
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.prop_utils import pkg_dir
@@ -55,7 +55,7 @@ def load_unknowns(paths: Iterable[Path]) -> list[UnknownIssue]:
             idx = parts.index("unknowns")
             specimen = parts[idx - 1]
             run_ts = parts[idx - 2]
-        except Exception:
+        except (ValueError, IndexError):
             specimen = "UNKNOWN"
             run_ts = ""
         iid = str(core.get("id") or "")
@@ -99,65 +99,63 @@ async def cluster_unknowns_async(
             self.result: list[ClusterSpec] | None = None
 
     state = ClusterSubmitState()
-    mcp = SafeFastMCP(
-        "cluster_submit",
-        instructions=(
-            "Submit clusters via submit_result once and only once. The payload must be "
-            "a JSON array of objects: [{name: string, issues: [string, ...]}]."
-        ),
+
+    def _builder(s: NotifyingFastMCP) -> None:
+        @s.tool()
+        def submit_result(payload: ClusterSubmitPayload) -> str:  # type: ignore[no-redef]
+            # Validate coverage: every uid appears in >=1 submitted cluster
+            seen: set[str] = set()
+            for c in payload.clusters:
+                for it in c.issues:
+                    seen.add(it)
+            all_uids = {u.uid for u in issues}
+            missing = sorted(all_uids - seen)
+            if missing:
+                raise ValueError(
+                    f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}",
+                )
+            state.result = payload.clusters
+            return "ok"
+
+    comp = Compositor("compositor")
+    srv = NotifyingFastMCP("cluster_submit", instructions="Cluster submit")
+    _builder(srv)
+    await comp.mount_inproc("cluster_submit", srv)
+    system = (
+        "You cluster semantically equivalent issues. You MUST call cluster_submit.submit_result exactly once with: "
+        "[{name:string, issues:[string,...]}]."
     )
-
-    @mcp.tool()
-    def submit_result(payload: ClusterSubmitPayload) -> str:  # type: ignore[no-redef]
-        # Validate coverage: every uid appears in >=1 submitted cluster
-        seen: set[str] = set()
-        for c in payload.clusters:
-            for it in c.issues:
-                seen.add(it)
-        all_uids = {u.uid for u in issues}
-        missing = sorted(all_uids - seen)
-        if missing:
-            raise ValueError(
-                f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}",
-            )
-        state.result = payload.clusters
-        return "ok"
-
-    async with McpManager({}) as mcp_mgr:
-        await mcp_mgr.attach_server("cluster_submit", make_inproc_slot_spec(mcp))
-        system = (
-            "You cluster semantically equivalent issues. You MUST call cluster_submit.submit_result exactly once with: "
-            "[{name:string, issues:[string,...]}]."
+    input_lines = "\n".join(
+        json.dumps(
+            i.model_dump(exclude={"yaml_path", "specimen"}),
+            ensure_ascii=False,
         )
-        input_lines = "\n".join(
-            json.dumps(
-                i.model_dump(exclude={"yaml_path", "specimen"}),
-                ensure_ascii=False,
-            )
-            for i in issues
-        )
+        for i in issues
+    )
+    async with Client(comp) as mcp_client:
+
+        def _ready_state() -> bool:
+            return state.result is not None
+
         agent = await MiniCodex.create(
             model=model,
-            mcp=mcp_mgr,
+            mcp_client=mcp_client,
             system=system,
             client=client,
-            handlers=[
-                TranscriptHandler(dest_dir=out_root),
-                GateUntil(lambda: state.result is not None),
-            ],
+            handlers=[TranscriptHandler(dest_dir=out_root), GateUntil(_ready_state)],
             parallel_tool_calls=True,
         )
         user = (
             "Cluster the following issues. Every uid must appear in >=1 cluster.\n\n" + input_lines
         )
         await agent.run(user)
-        if state.result is None:
-            raise RuntimeError("cluster_submit.submit_result not called")
-        (out_root / "clusters.json").write_text(
-            json.dumps([c.model_dump() for c in state.result], indent=2),
-            encoding="utf-8",
-        )
-        return out_root
+    if state.result is None:
+        raise RuntimeError("cluster_submit.submit_result not called")
+    (out_root / "clusters.json").write_text(
+        json.dumps([c.model_dump() for c in state.result], indent=2),
+        encoding="utf-8",
+    )
+    return out_root
 
 
 def cluster_unknowns(

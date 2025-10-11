@@ -25,17 +25,25 @@ export const InprocSpecZ = z.object({
   kwargs: z.record(z.any()).default({}),
 }).strict()
 
-export const McpServerSpecZ = z.discriminatedUnion('transport', [
+export const HttpSpecZ = z
+  .object({
+    transport: z.literal('http'),
+    url: z.string().min(1, 'url required'),
+    headers: z.record(z.string()).optional().default({}),
+    auth: z.string().optional(),
+    timeout_secs: z.number().int().positive().default(30),
+    sse_read_timeout_secs: z.number().int().positive().default(300),
+  })
+  .strict()
+
+export const TransportSpecZ = z.discriminatedUnion('transport', [
   StdioSpecZ,
   SseSpecZ,
   InprocSpecZ,
+  HttpSpecZ,
 ])
 
-export type McpServerSpec = z.infer<typeof McpServerSpecZ>
-
-// Map of name -> spec (mirrors Python dict[str, McpServerSpec])
-export const McpServerSpecMapZ = z.record(z.string().min(1), McpServerSpecZ)
-export type McpServerSpecMap = z.infer<typeof McpServerSpecMapZ>
+export type TransportSpec = z.infer<typeof TransportSpecZ>
 
 function safeParseJson<T>(text: string, fallback: T): T {
   try { return JSON.parse(text) } catch { return fallback }
@@ -49,7 +57,7 @@ function addFieldErr(map: FieldErrors, key: string, msg: string) {
 }
 
 export function buildSpecFromForm(input: {
-  transport: 'stdio' | 'sse' | 'inproc'
+  transport: 'stdio' | 'sse' | 'inproc' | 'http'
   stdioCommand?: string
   stdioArgs?: string
   stdioEnv?: string
@@ -57,13 +65,18 @@ export function buildSpecFromForm(input: {
   sseHeaders?: string
   sseTimeout?: number | string
   sseReadTimeout?: number | string
+  httpUrl?: string
+  httpHeaders?: string
+  httpAuth?: string
+  httpTimeout?: number | string
+  httpReadTimeout?: number | string
   inprocFactory?: string
   inprocArgs?: string
   inprocKwargs?: string
-}): { spec?: McpServerSpec, errors: string[], fieldErrors: FieldErrors } {
+}): { spec?: TransportSpec, errors: string[], fieldErrors: FieldErrors } {
   const errs: string[] = []
   const fieldErrors: FieldErrors = {}
-  let candidate: any
+  let candidate: unknown
   switch (input.transport) {
     case 'stdio': {
       const args = safeParseJson(input.stdioArgs || '[]', null)
@@ -113,6 +126,36 @@ export function buildSpecFromForm(input: {
           addFieldErr(fieldErrors, key, issue.message)
         }
         errs.push('Invalid sse spec')
+        return { errors: errs, fieldErrors }
+      }
+      return { spec: res.data, errors: [], fieldErrors }
+    }
+    case 'http': {
+      const headers = safeParseJson(input.httpHeaders || '{}', null)
+      if (!(headers === null || typeof headers === 'object')) addFieldErr(fieldErrors, 'httpHeaders', 'headers must be JSON object')
+      const timeout = Number(input.httpTimeout ?? 30)
+      const rto = Number(input.httpReadTimeout ?? 300)
+      candidate = {
+        transport: 'http',
+        url: input.httpUrl || '',
+        headers,
+        auth: input.httpAuth || undefined,
+        timeout_secs: timeout,
+        sse_read_timeout_secs: rto,
+      }
+      const res = HttpSpecZ.safeParse(candidate)
+      if (!res.success) {
+        for (const issue of res.error.issues) {
+          const p0 = issue.path[0]
+          let key = 'http'
+          if (p0 === 'url') key = 'httpUrl'
+          else if (p0 === 'headers') key = 'httpHeaders'
+          else if (p0 === 'auth') key = 'httpAuth'
+          else if (p0 === 'timeout_secs' || p0 === 'timeout') key = 'httpTimeout'
+          else if (p0 === 'sse_read_timeout_secs' || p0 === 'sse_read_timeout') key = 'httpReadTimeout'
+          addFieldErr(fieldErrors, key, issue.message)
+        }
+        errs.push('Invalid http spec')
         return { errors: errs, fieldErrors }
       }
       return { spec: res.data, errors: [], fieldErrors }

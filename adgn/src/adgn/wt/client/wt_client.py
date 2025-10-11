@@ -159,11 +159,14 @@ class WtClient:
                         f"Incompatible daemon protocol version {protocol_version}, expected 1",
                     )
 
-                if handshake_data.get("success"):
-                    logger.info("Daemon startup handshake ok")
+                if handshake_data.get("success") and handshake_data.get("ready"):
+                    logger.info("Daemon startup handshake ok (ready)")
                     return
-                error_message = handshake_data.get("error", "Unknown startup error")
-                raise RuntimeError(f"Daemon startup failed:\n{error_message}")
+                if not handshake_data.get("success"):
+                    error_message = handshake_data.get("error", "Unknown startup error")
+                    raise RuntimeError(f"Daemon startup failed:\n{error_message}")
+                # Guard: success without ready indicates premature closure; treat as error to avoid races
+                raise RuntimeError("Daemon startup did not signal ready")
 
             except TimeoutError as e:
                 timeout_secs = self.config.startup_timeout.total_seconds()
@@ -248,11 +251,13 @@ class WtClient:
             raise RuntimeError("No handshake pipe available")
 
         with os.fdopen(self._handshake_pipe, "r") as pipe_file:
-            last_obj = None
+            last_obj: dict[str, object] | None = None
+            last_ready = False
             while True:
                 line = pipe_file.readline()
                 if not line:
-                    if last_obj:
+                    # Only accept closure if we already saw ready=True
+                    if last_ready and last_obj is not None:
                         return last_obj
                     diag = self._collect_daemon_diagnostics()
                     msg = "Daemon closed handshake pipe before ready"
@@ -268,11 +273,13 @@ class WtClient:
                     obj = StartupMessage.model_validate_json(line)
                 except ValidationError:
                     continue
-                last_obj = cast(dict[str, object], obj.model_dump())
+                d = cast(dict[str, object], obj.model_dump())
+                last_obj = d
+                last_ready = bool(d.get("ready", False))
                 if not obj.success:
-                    return last_obj
-                if obj.ready:
-                    return last_obj
+                    return d
+                if last_ready:
+                    return d
 
     async def get_status(
         self,
@@ -385,9 +392,17 @@ class WtClient:
     ) -> WorktreeCreateResult:
         """Create a new worktree via RPC."""
         await self._start_daemon_if_needed()
-
         if not self.config.daemon_socket_path.exists():
-            raise RuntimeError("Daemon socket not available")
+            for _ in range(20):  # up to ~200ms
+                await asyncio.sleep(0.01)
+                if self.config.daemon_socket_path.exists():
+                    break
+            else:
+                diag = self._collect_daemon_diagnostics()
+                msg = "Daemon socket not available"
+                if diag:
+                    msg += "\n" + diag
+                raise RuntimeError(msg)
 
         request_id = uuid.uuid4()
         params = WorktreeCreateParams(
@@ -474,8 +489,15 @@ class WtClient:
         result_adapter: TypeAdapter[T],
     ) -> T:
         await self._start_daemon_if_needed()
+        # Guard against a short race where the socket file is created just after the check.
+        # Try a brief, bounded wait for the socket to appear to make CLI flows robust under load.
         if not self.config.daemon_socket_path.exists():
-            raise RuntimeError("Daemon socket not available")
+            for _ in range(20):  # up to ~200ms
+                await asyncio.sleep(0.01)
+                if self.config.daemon_socket_path.exists():
+                    break
+            else:
+                raise RuntimeError("Daemon socket not available")
         if isinstance(params_model, BaseModel):
             params = params_model.model_dump()
         elif isinstance(params_model, dict):

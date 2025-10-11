@@ -37,7 +37,7 @@ from .config_factory import ConfigFactory
 from .mock_factory import MockFactory, ServiceBuilder
 from .repo_factory import GitRepoFactory
 from .test_data import TestData
-from .test_utils import run_cli_command
+from .test_utils import run_cli_command, wait_until
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -260,11 +260,13 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
         raise AssertionError(f"kill-daemon invocation failed for {wt_dir}: {e}") from e
 
     # Wait up to ~1s for files to be removed by daemon shutdown
-    deadline = time.time() + 1.0
-    while time.time() < deadline:
-        if not pid_file.exists() and not sock_file.exists():
-            return
-        time.sleep(0.05)
+    removed = wait_until(
+        lambda: (not pid_file.exists()) and (not sock_file.exists()),
+        timeout_seconds=1.0,
+        interval_seconds=0.05,
+    )
+    if removed:
+        return
 
     # If still present, declare failure (leak); do not unlink to preserve evidence
     details = (result.stdout or "") + ("\n" + (result.stderr or ""))
@@ -350,16 +352,20 @@ class WtCLI:
         *args: str,
         timeout: timedelta = timedelta(seconds=30),
         cwd: Path | None = None,
+        stdin=None,
     ):
-        return run_cli_command(["sh", *args], env=self.env, timeout=timeout, cwd=cwd)
+        return run_cli_command(["sh", *args], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin)
 
     def sh_c(
         self,
         cmd: str,
         timeout: timedelta = timedelta(seconds=30),
         cwd: Path | None = None,
+        stdin=None,
     ):
-        return run_cli_command(["create", "--yes", cmd], env=self.env, timeout=timeout, cwd=cwd)
+        return run_cli_command(
+            ["create", "--yes", cmd], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin
+        )
 
     def status(
         self,
@@ -408,6 +414,16 @@ def wt_cli(real_env) -> WtCLI:
     """Fixture returning a typed wrapper bound to the real environment."""
 
     return WtCLI(real_env)
+
+
+@pytest.fixture
+def wtcli():
+    """Factory fixture: wtcli(env) -> WtCLI bound to env."""
+
+    def _make(env: dict[str, str]) -> WtCLI:
+        return WtCLI(env)
+
+    return _make
 
 
 @pytest.fixture

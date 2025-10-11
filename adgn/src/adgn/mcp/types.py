@@ -11,30 +11,28 @@ from mcp.types import InitializeResult
 
 # Canonical OpenFn protocol — single lifetime boundary
 #
-# Design decision: every transport factory (OpenFn) MUST accept the manager's
-# AsyncExitStack and return an async context manager yielding an
-# UNINITIALIZED mcp.client.session.ClientSession when entered via that stack.
+# Design decision: every transport factory (OpenFn) MUST accept an AsyncExitStack
+# from the lifetime owner (e.g., container/runner) and return an async context manager
+# yielding an UNINITIALIZED mcp.client.session.ClientSession when entered via that stack.
 #
 # Rationale:
 # - mcp's ServerSession / ClientSession and transport helpers (stdio_client, sse_client)
 #   create their own anyio task-groups and cancel scopes during __aenter__.
-# - anyio enforces that a cancel scope must be *entered* and *exited* in the
-#   same task. If different tasks perform enter/exit, a RuntimeError is raised
-#   ("Attempted to exit cancel scope in a different task than it was entered in").
-# - To make resource lifetime deterministic and avoid subtle cross-task races,
-#   the McpManager is the single lifetime owner. Openers therefore must register
-#   their subordinate contexts (streams, task-groups, sessions) by calling
-#   stack.enter_async_context(...) so enter/exit happen under the manager's
-#   AsyncExitStack and within the same cancel scope/task.
+# - anyio enforces that a cancel scope must be entered and exited in the same task.
+#   To keep lifetime deterministic and avoid cross-task races, subordinate contexts
+#   (streams, task-groups, sessions) should be registered by calling
+#   stack.enter_async_context(...), keeping enter/exit under the same stack/scope.
 #
-# This file's ServerSlotSpec.open() will call stack.enter_async_context(open_uninitialized(stack))
-# and then call ClientSession.initialize() — this is the ONE supported API.
+# ServerSlotSpec.open() will call stack.enter_async_context(open_uninitialized(stack)) and then
+# call ClientSession.initialize() — this is the supported API.
 # See related modules:
-# - adgn_llm/mcp/inproc_transport.py (in-proc FastMCP wiring)
-# - adgn_llm/mini_codex/mcp_manager.py (slot_from_spec implementations)
+# - adgn/mcp/inproc_transport.py (in-proc FastMCP wiring)
 # - mcp/shared/session.py (BaseSession: creates its own task group on enter)
 # - mcp/server/lowlevel/server.py (Server.run uses AsyncExitStack + task group)
 OpenFn = Callable[[AsyncExitStack], AbstractAsyncContextManager[ClientSession]]
+
+# Module-level logger (AGENTS.md: declare at top)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,7 +47,7 @@ class ServerSlot:
 class ServerSlotSpec:
     """Recipe for opening a server slot (returns an uninitialized session).
 
-    The McpManager dict key is the authoritative server name; the spec does not
+    The registry key (mount name) is the authoritative server name; the spec does not
     need to carry a duplicate name field.
     """
 
@@ -59,7 +57,6 @@ class ServerSlotSpec:
     init_timeout_secs: float | None = None
 
     async def open(self, stack: AsyncExitStack) -> ServerSlot:
-        logger = logging.getLogger(__name__)
         async with self.lock:
             logger.info(
                 "[SlotSpec] open: about to enter open_uninitialized; timeout=%s",
@@ -74,33 +71,17 @@ class ServerSlotSpec:
             try:
                 if self.init_timeout_secs is None or self.init_timeout_secs <= 0:
                     logger.info("[SlotSpec] calling initialize (no timeout)")
-                    try:
-                        print("[SlotSpec] initialize start (no-timeout)")
-                    except Exception:
-                        pass
                     init = await sess.initialize()
                 else:
                     logger.info(
                         "[SlotSpec] calling initialize with timeout=%s",
                         self.init_timeout_secs,
                     )
-                    try:
-                        print(f"[SlotSpec] initialize start (timeout={self.init_timeout_secs})")
-                    except Exception:
-                        pass
                     init = await asyncio.wait_for(
                         sess.initialize(), timeout=float(self.init_timeout_secs)
                     )
                 logger.info("[SlotSpec] initialize ok")
-                try:
-                    print("[SlotSpec] initialize ok")
-                except Exception:
-                    pass
             except Exception as e:
                 logger.exception("[SlotSpec] initialize failed: %s", e)
-                try:
-                    print(f"[SlotSpec] initialize failed: {type(e).__name__}: {e}")
-                except Exception:
-                    pass
                 raise
             return ServerSlot(session=sess, init_result=init)

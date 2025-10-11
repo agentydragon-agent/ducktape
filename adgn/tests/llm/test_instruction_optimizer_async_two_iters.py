@@ -27,6 +27,7 @@ import adgn.inop.engine.optimizer
 import adgn.inop.engine.runner_factory
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.runners.base import AgentRunner
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import (
     FunctionCallItem,
     FunctionToolParam,
@@ -100,7 +101,7 @@ class FakeModelLayer:
             # Always propose a prompt when tool is required (outer PE agent)
             self._pe_counter += 1
             call = mk_func_call(
-                name="mcp__prompt_feedback__propose_prompt",
+                name=build_mcp_function("prompt_feedback", "propose_prompt"),
                 args={"prompt": f"PROMPT_V{self._pe_counter}"},
                 call_id=f"pe-{self._pe_counter}",
             )

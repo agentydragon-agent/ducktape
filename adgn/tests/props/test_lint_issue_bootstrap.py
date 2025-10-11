@@ -9,11 +9,9 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.mcp_manager import McpManager
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp._shared.types import ExecInput
-from adgn.mcp.docker_exec.server import make_container_exec_mcp
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.mcp.docker_exec.server import make_container_exec_server
 from adgn.openai_utils.model import (
     AssistantMessage,
     FakeOpenAIModel,
@@ -32,7 +30,7 @@ def _make_seq() -> list:
         responses_factory.make(
             responses_factory.tool_call(
                 "mcp__docker__docker_exec",
-                ExecInput(cmd=["bash", "-lc", "echo from_llm"]).model_dump(),
+                ExecInput(cmd=["bash", "-lc", "echo from_llm"], timeout_ms=10_000).model_dump(),
             )
         ),
         responses_factory.make_assistant_message("FINAL"),
@@ -53,7 +51,9 @@ def content_root() -> Path:
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-async def test_lint_issue_bootstrap_small_files(content_root: Path):
+async def test_lint_issue_bootstrap_small_files(
+    content_root: Path, make_pg_compositor, approval_policy_reader_allow_all
+):
     # Arrange: create a tiny workspace with two small files
     # Colima note: bind mounts from /tmp are blocked; place workspace under XDG cache dir.
     content_root.mkdir(parents=True, exist_ok=True)
@@ -70,13 +70,14 @@ async def test_lint_issue_bootstrap_small_files(content_root: Path):
     # We'll create the PropertiesDockerWiring after we build the inproc spec below and assign it directly.
 
     # Real MCP manager (in-proc docker exec) and mocked OpenAI client
-    spec = make_inproc_slot_spec(
-        make_container_exec_mcp(
+    runtime_server = (
+        make_container_exec_server(
             ContainerOptions(
                 image="python:3.12-slim",
                 working_dir="/workspace",
                 volumes={str(content_root): {"bind": "/workspace", "mode": "ro"}},
                 describe=False,
+                ephemeral=True,
             )
         ),
     )
@@ -85,7 +86,7 @@ async def test_lint_issue_bootstrap_small_files(content_root: Path):
 
     # Now create the controller with real wiring
     wiring = PropertiesDockerWiring(
-        server_spec=spec,
+        server_factory=lambda verifier: runtime_server,
         working_dir=Path("/workspace"),
         definitions_container_dir=None,
         image_name="n/a",
@@ -97,11 +98,12 @@ async def test_lint_issue_bootstrap_small_files(content_root: Path):
         docker_wiring=wiring,
     )
 
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("docker", spec)
+    async with make_pg_compositor(
+        {"runtime": runtime_server, "approval_policy": approval_policy_reader_allow_all}
+    ) as (mcp_client, _comp):
         agent = await MiniCodex.create(
             model="gpt-5",
-            mcp=mcp,
+            mcp_client=mcp_client,
             system="test",
             client=client,
             handlers=[ctrl, DisplayEventsHandler()],

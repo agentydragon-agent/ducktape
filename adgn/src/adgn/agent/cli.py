@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import os
 from pathlib import Path
@@ -12,27 +11,22 @@ import sys
 import threading
 from typing import Any
 
-from pydantic import TypeAdapter
+from fastmcp.client import Client as McpClient
+from fastmcp.mcp_config import MCPConfig
 import typer
 from typer.main import get_command
 import uvicorn
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.mcp_manager import McpManager
-from adgn.agent.reducer import AutoHandler, NotificationsHandler
-from adgn.agent.runtime.handlers import build_handlers
-from adgn.agent.runtime.specs import McpServerSpec
+from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
-from adgn.agent.server.runtime import ConnectionManager
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.llm.logging_config import configure_logging
-from adgn.mcp.approval_policy.server import ApprovalPolicyServer
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp.ui.server import make_ui_mcp
+from adgn.mcp._shared.config_loader import build_mcp_config
+from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 
 # Defaults via environment with sensible fallbacks
@@ -98,7 +92,7 @@ def _pick_free_port(start: int, host: str = "127.0.0.1", max_tries: int = 100) -
 
 def _print_enabled(servers: list[str]) -> None:
     print("MCP servers enabled:", ", ".join(servers) if servers else "<none>")
-    print("Tip: for inproc servers, see src/adgn/agent/example.mcp.json")
+    print("Tip: prefer HTTP specs; inproc factory specs are embedded over HTTP")
 
 
 def _configure_logging_info() -> None:
@@ -126,60 +120,44 @@ def _configure_logging_debug() -> None:
     logging.getLogger("websockets.server").setLevel(logging.INFO)
 
 
-def _make_handlers(mcp: McpManager, ui_bus: ServerBus | None = None) -> list[Any]:
-    # UI mode: single handler for notifications + RequireAny
-    if ui_bus is not None:
+def _make_handlers(*, ui_bus: ServerBus | None = None, poll_notifications=None) -> list[Any]:
+    # UI mode: use ServerModeHandler with notifications poller when provided
+    if ui_bus is not None and callable(poll_notifications):
         return [
-            ServerModeHandler(bus=ui_bus, poll_notifications=mcp.poll_notifications),
+            ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications),
             DisplayEventsHandler(),
         ]
     # Headless/default: allow agent to sample normally via AutoHandler
-    return [AutoHandler(), NotificationsHandler(mcp), DisplayEventsHandler()]
+    return [AutoHandler(), DisplayEventsHandler()]
 
 
-def _build_specs_and_print(mcp_configs: list[Path]) -> dict[str, McpServerSpec]:
-    specs = _build_specs(mcp_configs)
-    _print_enabled(list(specs.keys()))
-    return specs
-
-
-def load_mcp_file(path: Path) -> dict[str, McpServerSpec]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    servers = data.get("mcpServers") or {}
-    if not isinstance(servers, dict):
-        raise ValueError(".mcp.json: mcpServers must be object")
-    TA = TypeAdapter(dict[str, McpServerSpec])
-    return TA.validate_python(servers)
-
-
-def _build_specs(mcp_configs: list[Path]) -> dict[str, McpServerSpec]:
-    baseline = Path.cwd() / ".mcp.json"
-    specs: dict[str, McpServerSpec] = {}
-    if baseline.exists():
-        specs.update(load_mcp_file(baseline))
-    for p in mcp_configs or []:
-        if not p.exists():
-            raise FileNotFoundError(f"--mcp-config not found: {p}")
-        specs.update(load_mcp_file(p))
-    return specs
+def _build_cfg_and_print(mcp_configs: list[Path]) -> MCPConfig:
+    cfg = build_mcp_config(mcp_configs)
+    _print_enabled(list(cfg.mcpServers.keys()))
+    return cfg
 
 
 async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> None:
     _configure_logging_info()
     print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
 
-    specs = _build_specs_and_print(mcp_configs)
+    cfg = _build_cfg_and_print(mcp_configs)
 
-    # Build our Pydantic-only client with retries at the entrypoint
+    # Build model client
     client = build_client(model)
 
-    async with McpManager(specs) as mcp:
+    # Build in-proc Compositor and mount servers
+
+    comp = Compositor("compositor")
+    for name, spec in cfg.mcpServers.items():
+        await comp.mount_server(name, spec)
+    async with McpClient(comp) as mcp_client:
         agent = await MiniCodex.create(
             model=model,
-            mcp=mcp,
+            mcp_client=mcp_client,
             system=system,
             client=client,
-            handlers=_make_handlers(mcp),
+            handlers=_make_handlers(),
         )
         async with agent:
             for line in sys.stdin:
@@ -212,68 +190,9 @@ async def _serve_async(
 
     print("mini-codex serve: starting agent + UI server")
 
-    specs = _build_specs_and_print(mcp_configs)
-    # Create per-agent UI bus and prepare in-proc UI server separately
-    ui_bus = ServerBus()
-    ui_spec = make_inproc_slot_spec(make_ui_mcp("ui", ui_bus))
-
-    # Create approval system components
-    approval_engine = ApprovalPolicyEngine()
-    approval_hub = ApprovalHub()
-
-    # Add the approval policy MCP server so the agent can manage policies
-    approval_server = ApprovalPolicyServer(approval_engine)
-    # Apply a short initialize timeout to surface init issues quickly
-    approval_spec = make_inproc_slot_spec(approval_server, init_timeout_secs=2)
-
-    # Build the FastAPI app and attach an agent factory so the agent (and MCP manager)
-    # are created on the uvicorn event loop thread, avoiding cross-loop awaits.
+    _ = _build_cfg_and_print(mcp_configs)
+    # Build the FastAPI app; agent lifecycle is handled by the runtime container (registry)
     app = create_app()
-    # expose per-agent UI bus to the UI server for draining/snapshotting
-    app.state.ui_bus = ui_bus
-    # Wire approval engine so the UI can access it
-    app.state.approval_engine = approval_engine
-    app.state.approval_hub = approval_hub
-
-    async def _agent_factory() -> MiniCodex:
-        # Create independent client/manager bound to the uvicorn loop
-        inner_client = build_client(model, enable_debug_logging=True)
-        inner_mcp = McpManager(specs)
-        await inner_mcp.__aenter__()
-        # Attach in-proc servers (UI and approval) after manager is entered
-        await inner_mcp.attach_server("ui", ui_spec)
-        await inner_mcp.attach_server("approval_policy", approval_spec)
-        # Build handlers using shared builder
-        manager = ConnectionManager()
-        persist = app.state.persistence
-
-        def _get_run_id() -> str | None:
-            sess = app.state.session
-            return sess.active_run.run_id if sess.active_run else None
-
-        handlers, persist_handler, _ = build_handlers(
-            mcp=inner_mcp,
-            manager=manager,
-            persistence=persist,
-            approval_engine=approval_engine,
-            approval_hub=approval_hub,
-            get_run_id=_get_run_id,
-            ui_bus=ui_bus,
-        )
-        agent = await MiniCodex.create(
-            model=model,
-            mcp=inner_mcp,
-            system=_effective_ui_system(system),
-            client=inner_client,
-            handlers=handlers,
-        )
-        # CLI environment may not expose a session; handlers are attached regardless.
-        # Stash for potential shutdown handling (future)
-        app.state._inner_mcp = inner_mcp
-        app.state._inner_agent = agent
-        return agent
-
-    app.state.agent_factory = _agent_factory
 
     def _run() -> None:
         uvicorn.run(app, host=host, port=port, log_level="debug")
@@ -329,10 +248,8 @@ def dev(
         typer.echo(f"web UI directory not found: {web_dir}")
         raise typer.Exit(code=2)
 
-    # Build specs now so the agent factory can reuse them on the uvicorn loop
-    specs = _build_specs_and_print(mcp_configs)
-    # Create per-agent UI bus; in-proc servers are attached after manager creation
-    ui_bus = ServerBus()
+    # Print merged config for visibility; the UI will attach via presets/API
+    _ = _build_cfg_and_print(mcp_configs)
 
     # Pick free ports starting from requested bases
     backend_port = _pick_free_port(port, host)
@@ -344,7 +261,9 @@ def dev(
 
     # Prepare Vite environment so frontend can reach backend on a different port
     vite_env = os.environ.copy()
-    vite_env["VITE_BACKEND_ORIGIN"] = f"http://{host}:{backend_port}"
+    from urllib.parse import urlunparse
+
+    vite_env["VITE_BACKEND_ORIGIN"] = urlunparse(("http", f"{host}:{backend_port}", "", "", "", ""))
 
     # Start Vite dev server (HMR)
     vite_cmd = [
@@ -366,70 +285,16 @@ def dev(
         raise typer.Exit(code=2)
 
     try:
-        url = f"http://{host}:{frontend_dev_port}"
+        url = urlunparse(("http", f"{host}:{frontend_dev_port}", "", "", "", ""))
         typer.echo(f"Frontend (HMR): {url}")
-        typer.echo(f"Backend (WS/API): http://{host}:{backend_port}")
+        backend_url = urlunparse(("http", f"{host}:{backend_port}", "", "", "", ""))
+        typer.echo(f"Backend (WS/API): {backend_url}")
         if open_browser:
             with contextlib.suppress(Exception):
                 subprocess.Popen(["open", url])
 
-        # Create approval system components
-        approval_engine = ApprovalPolicyEngine()
-        approval_hub = ApprovalHub()
-
-        # Prepare approval policy MCP server for attachment later
-        approval_server = ApprovalPolicyServer(approval_engine)
-
-        # Build FastAPI app and attach an agent factory created on the uvicorn loop
+        # Build FastAPI app; agent lifecycle is handled by the runtime container (registry)
         app_fastapi = create_app()
-        # expose per-agent UI bus to the UI server for draining/snapshotting
-        app_fastapi.state.ui_bus = ui_bus
-        # Wire approval system
-        app_fastapi.state.approval_engine = approval_engine
-        app_fastapi.state.approval_hub = approval_hub
-
-        async def _agent_factory() -> MiniCodex:
-            inner_client = build_client(model, enable_debug_logging=True)
-            inner_mcp = McpManager(specs)
-            await inner_mcp.__aenter__()
-            # Attach in-proc UI and approval servers after manager is entered
-            await inner_mcp.attach_server(
-                "ui",
-                make_inproc_slot_spec(make_ui_mcp("ui", ui_bus)),
-            )
-            await inner_mcp.attach_server(
-                "approval_policy",
-                make_inproc_slot_spec(approval_server, init_timeout_secs=2),
-            )
-            manager = ConnectionManager()
-            persist = app_fastapi.state.persistence
-
-            def _get_run_id2() -> str | None:
-                sess = app_fastapi.state.session
-                return sess.active_run.run_id if sess.active_run else None
-
-            handlers, persist_handler2, _ = build_handlers(
-                mcp=inner_mcp,
-                manager=manager,
-                persistence=persist,
-                approval_engine=approval_engine,
-                approval_hub=approval_hub,
-                get_run_id=_get_run_id2,
-                ui_bus=ui_bus,
-            )
-            agent = await MiniCodex.create(
-                model=model,
-                mcp=inner_mcp,
-                system=_effective_ui_system(system),
-                client=inner_client,
-                handlers=handlers,
-            )
-            # Dev environment may not expose a session; handlers are attached regardless.
-            app_fastapi.state._inner_mcp = inner_mcp
-            app_fastapi.state._inner_agent = agent
-            return agent
-
-        app_fastapi.state.agent_factory = _agent_factory
 
         # Run uvicorn (restart this command when backend changes for now)
         uvicorn.run(app_fastapi, host=host, port=backend_port, log_level="debug")

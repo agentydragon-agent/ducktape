@@ -27,15 +27,19 @@ def _read(path: Path) -> str:
     "allow_general",
     [False, True],
 )
-def test_specimen_check_dry_run_renders(allow_general):
-    # Use the Typer CLI (cli_app) for specimen-check dry-run
+def test_run_specimen_dry_run_renders(allow_general):
+    # Use the unified runner for dry-run prompt rendering
     argv = [
-        "specimen-check",
+        "run",
+        "--specimen",
         SPECIMEN_NAME,
         "--dry-run",
     ]
+    # Map 'allow_general' to the 'open' preset; else default 'find'
     if allow_general:
-        argv.append("--allow-general-findings")
+        argv.extend(["--preset", "open"])
+    else:
+        argv.extend(["--preset", "find"])
     runner = CliRunner()
     result = runner.invoke(app, argv)
     assert result.exit_code == 0, result.output
@@ -50,9 +54,19 @@ def test_specimen_check_dry_run_renders(allow_general):
     assert "\n- LineRange\n```json" in text
 
 
-def test_specimen_discover_dry_run_renders():
+def test_run_specimen_discover_dry_run_renders():
     runner = CliRunner()
-    result = runner.invoke(app, ["specimen-discover", SPECIMEN_NAME, "--dry-run"])
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--specimen",
+            SPECIMEN_NAME,
+            "--preset",
+            "discover",
+            "--dry-run",
+        ],
+    )
     assert result.exit_code == 0, result.output
     out = result.output
     saved = _extract_saved_prompt_path(out)
@@ -62,15 +76,17 @@ def test_specimen_discover_dry_run_renders():
     assert "Input Schemas:" in text
 
 
-def test_specimen_grade_dry_run_renders(tmp_path: Path):
-    # The Typer specimen-grade command does not support --dry-run.
-    # For prompt rendering checks, validate that specimen-check --dry-run composes schemas.
+def test_run_specimen_grade_dry_run_renders(tmp_path: Path):
+    # For prompt rendering checks, validate that run --dry-run composes schemas.
     runner = CliRunner()
     result = runner.invoke(
         app,
         [
-            "specimen-check",
+            "run",
+            "--specimen",
             SPECIMEN_NAME,
+            "--preset",
+            "find",
             "--dry-run",
         ],
     )

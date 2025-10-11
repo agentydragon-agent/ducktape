@@ -11,10 +11,11 @@ import shutil
 import socket
 import subprocess
 import sys
-import time
-from typing import IO, Union
+from typing import IO
 
-StrPath = Union[str, os.PathLike[str]]
+from adgn.util.net import wait_for_port
+
+StrPath = str | os.PathLike[str]
 
 
 def _pick_free_port() -> int:
@@ -73,14 +74,8 @@ def _start_jupyter_server(
 
     proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, env=env)
 
-    # Wait briefly for readiness
-    deadline = time.time() + 12
-    while time.time() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), 0.5):
-                break
-        except OSError:
-            time.sleep(0.25)
+    # Wait for readiness (up to 12s)
+    wait_for_port("127.0.0.1", port, timeout_secs=12.0)
     return proc
 
 
@@ -140,7 +135,10 @@ def run_jupyter_mcp(
         )
         return 3
 
-    print(f"[launch] jupyter @ http://127.0.0.1:{eff_port} token=REDACTED", file=sys.stderr)
+    from urllib.parse import urlunparse
+
+    jpy_url = urlunparse(("http", f"127.0.0.1:{eff_port}", "", "", "", ""))
+    print(f"[launch] jupyter @ {jpy_url} token=REDACTED", file=sys.stderr)
 
     jl = _start_jupyter_server(
         workspace=workspace,
@@ -159,13 +157,13 @@ def run_jupyter_mcp(
         "--provider",
         "jupyter",
         "--document-url",
-        f"http://127.0.0.1:{eff_port}",
+        jpy_url,
         "--document-id",
         ".mcp/auto.ipynb",
         "--document-token",
         eff_token,
         "--runtime-url",
-        f"http://127.0.0.1:{eff_port}",
+        jpy_url,
         "--runtime-token",
         eff_token,
         "--start-new-runtime",
@@ -192,16 +190,19 @@ def main() -> int:
     ap.add_argument(
         "--config",
         required=True,
+        type=Path,
         help="Path to Jupyter config dir (contains jupyter_server_config.py)",
     )
     ap.add_argument(
         "--kernels",
         required=True,
+        type=Path,
         help="Path to kernels dir (kernelspecs)",
     )
     ap.add_argument(
         "--workspace",
         required=True,
+        type=Path,
         help="Absolute path to workspace (ServerApp.root_dir)",
     )
     ap.add_argument(
@@ -223,6 +224,7 @@ def main() -> int:
     ap.add_argument(
         "--log-dir",
         default=None,
+        type=Path,
         help="Optional directory for Jupyter/MCP logs",
     )
     args = ap.parse_args()

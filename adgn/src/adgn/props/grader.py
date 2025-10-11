@@ -10,23 +10,26 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
 from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.mcp._shared.types import SimpleOk
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.props.critic import CriticSubmitPayload
+from adgn.props.ids import (
+    CANON_FP_PREFIX,
+    CANON_TP_PREFIX,
+    ensure_crit_id,
+    ensure_with_prefix,
+)
 from adgn.props.specimens.registry import IssueRecord, SpecimenRecord
 
-# Shared ID prefix constants (single source of truth)
-CANON_TP_PREFIX = "canon_tp_"
-CANON_FP_PREFIX = "canon_fp_"
-CRIT_PREFIX = "crit_"
+# Shared ID prefix constants (single source of truth) live in adgn.props.ids
 
 
 class GradeMetrics(BaseModel):
@@ -51,6 +54,14 @@ class GradeMetrics(BaseModel):
     recall: float = Field(
         ...,
         description="TP / expected (known-positives); 0.0 if undefined",
+    )
+    # Fractional coverage-based recall in [0,1], computed from coverage credits when expected>0
+    coverage_recall: float | None = Field(
+        default=None,
+        description=(
+            "Fractional recall in [0,1] derived from per-canonical coverage credits "
+            "(sum of credits per canonical clamped to 1.0, averaged over expected)."
+        ),
     )
 
     model_config = ConfigDict(extra="forbid")
@@ -85,6 +96,33 @@ class GradeSubmitInput(BaseModel):
         description="Optional Markdown summary/notes; may include tables of examples",
     )
 
+    # REQUIRED fractional coverage credits attributed per critique issue.
+    # Each entry assigns a fraction of credit [0,1] from a critique item to a canonical positive.
+    # The grader server aggregates across critique items, clamps per-canonical totals to 1.0,
+    # and computes coverage_recall accordingly.
+    coverage_credits: list["CoverageCredit"] = Field(
+        ...,
+        description="Per-critique fractional credits toward canonical positives",
+    )
+
+    @model_validator(mode="after")
+    def _validate_coverage_totals(self) -> "GradeSubmitInput":
+        """Ensure total credit per canonical does not exceed 1.0.
+
+        Credits are already constrained to [0,1] individually; this aggregates by
+        canonical id and enforces totals ≤ 1.0 (with a small epsilon for FP rounding).
+        """
+        totals: dict[str, float] = {}
+        for c in self.coverage_credits:
+            totals[c.canon_id] = totals.get(c.canon_id, 0.0) + float(c.credit)
+        # Allow tiny FP tolerance
+        bad = {k: v for k, v in totals.items() if v > 1.0 + 1e-6}
+        if bad:
+            raise ValueError(
+                f"coverage_credits total exceeds 1.0 for canonical ids: {bad}",
+            )
+        return self
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -118,17 +156,13 @@ class GradeInputs:
     round: int | None = None
 
 
-def make_grader_submit_server(
+def build_grader_submit_tools(
+    mcp: NotifyingFastMCP,
     state: GradeSubmitState,
     *,
-    name: str = "grader_submit",
     inputs: GradeInputs,
-) -> SafeFastMCP:
-    """Exposes submit_result(result: GradeSubmitInput) -> {ok: True}.
-
-    Validates returned IDs and computes metrics server-side using specimen + critique context.
-    """
-
+) -> None:
+    """Register grader submit tool on an existing server (tools‑builder pattern)."""
     # Derive allowed ID sets and counts from specimen and critique
 
     def _prefixed_ids(items: Iterable[IssueRecord], prefix: str) -> set[str]:
@@ -136,37 +170,38 @@ def make_grader_submit_server(
         for rec in items:
             cid = rec.core.id
             if cid:
-                out.add(f"{prefix}{cid}")
+                norm = ensure_with_prefix(cid, prefix)
+                if norm:
+                    out.add(norm)
         return out
 
     allowed_canon_ids: set[str] = _prefixed_ids(
         inputs.specimen.issues.values(),
-        "canon_tp_",
+        CANON_TP_PREFIX,
     )
     if inputs.specimen.false_positives:
         allowed_canon_ids |= _prefixed_ids(
             inputs.specimen.false_positives.values(),
-            "canon_fp_",
+            CANON_FP_PREFIX,
         )
+
+    # Only true positives are eligible for fractional coverage credit
+    allowed_tp_ids: set[str] = _prefixed_ids(
+        inputs.specimen.issues.values(),
+        CANON_TP_PREFIX,
+    )
 
     allowed_critique_ids: set[str] = set()
     for it in inputs.critique.issues:
-        cid = it.id
+        cid = ensure_crit_id(it.id)
         if cid:
-            allowed_critique_ids.add(
-                cid if str(cid).startswith("crit_") else f"crit_{cid}",
-            )
+            allowed_critique_ids.add(cid)
 
     expected_count = len(inputs.specimen.issues)
     reported_count = len(inputs.critique.issues)
 
-    mcp = SafeFastMCP(
-        name,
-        instructions="Final grader submission for specimen critique evaluation",
-    )
-
-    @mcp.tool()
-    async def submit_result(result: GradeSubmitInput) -> dict[str, Any]:
+    @mcp.flat_model()
+    async def submit_result(result: GradeSubmitInput) -> SimpleOk:
         """Submit the final grading result (IDs only)."""
         # Optional validation of ID sets
         if allowed_canon_ids is not None:
@@ -189,6 +224,32 @@ def make_grader_submit_server(
         exp = expected_count or 0
         rep = reported_count or 0
         fn = max(0, exp - tp)
+        # Aggregate fractional coverage credits (required); compute coverage_recall when exp>0
+        coverage_recall_val: float | None = None
+        if exp > 0:
+            # Validate IDs and aggregate credits per canonical TP
+            per_canon: dict[str, float] = {}
+            for credit in result.coverage_credits:
+                cid = credit.canon_id
+                rid = credit.crit_id
+                # Validate canonical ID (must be TP set)
+                if cid not in allowed_tp_ids:
+                    raise ValueError(
+                        f"coverage_credits contains non-canonical TP id: {cid}",
+                    )
+                # Validate critique ID if known
+                if allowed_critique_ids and rid not in allowed_critique_ids:
+                    raise ValueError(
+                        f"coverage_credits contains non-critique id: {rid}",
+                    )
+                # Accumulate credit; clamp later when computing recall
+                per_canon[cid] = per_canon.get(cid, 0.0) + float(credit.credit)
+            # Compute recall as average of clamped per-canonical totals
+            total = 0.0
+            for v in per_canon.values():
+                total += min(1.0, max(0.0, v))
+            coverage_recall_val = max(0.0, min(1.0, total / exp))
+
         metrics = GradeMetrics(
             expected=exp,
             reported=rep,
@@ -198,6 +259,7 @@ def make_grader_submit_server(
             false_negatives=fn,
             precision=float(result.precision),
             recall=float(result.recall),
+            coverage_recall=coverage_recall_val,
         )
         state.result = GradeSubmitPayload(
             metrics=metrics,
@@ -206,9 +268,45 @@ def make_grader_submit_server(
             unknown_critique_ids=list(result.unknown_critique_ids),
             message_md=result.message_md,
         )
-        return {"ok": True}
+        return SimpleOk(ok=True)
+
+
+def make_grader_submit_server(
+    state: GradeSubmitState,
+    *,
+    name: str = "grader_submit",
+    inputs: GradeInputs,
+) -> NotifyingFastMCP:
+    """Exposes submit_result(result: GradeSubmitInput) -> {ok: True}.
+
+    Validates returned IDs and computes metrics server-side using specimen + critique context.
+    """
+
+    mcp = NotifyingFastMCP(
+        name,
+        instructions="Final grader submission for specimen critique evaluation",
+    )
+    build_grader_submit_tools(mcp, state, inputs=inputs)
 
     return mcp
+
+
+class CoverageCredit(BaseModel):
+    """Fractional credit from a critique item to a canonical positive.
+
+    - crit_id: critique item ID (must be in the critique set; prefixed with crit_)
+    - canon_id: canonical positive ID (must be in the canonical TP set; prefixed with canon_tp_)
+    - credit: fraction in [0.0, 1.0]; server aggregates across critique items and clamps per-canonical totals to 1.0
+    """
+
+    crit_id: str = Field(..., description="Critique item ID (crit_ prefix)")
+    canon_id: str = Field(..., description="Canonical positive ID (canon_tp_ prefix)")
+    credit: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Fractional credit [0,1] from this critique item toward the canonical",
+    )
 
 
 def make_grader_submit_server_from_inputs(
@@ -216,7 +314,7 @@ def make_grader_submit_server_from_inputs(
     *,
     name: str = "grader_submit",
     inputs: GradeInputs,
-) -> SafeFastMCP:
+) -> NotifyingFastMCP:
     """Thin wrapper: pass GradeInputs through to the primary builder.
 
     The main make_grader_submit_server() derives allowed IDs and counts internally.
@@ -244,6 +342,8 @@ def _render_grade_submit_payload(obj: GradeSubmitPayload):  # type: ignore[misc]
             ("precision", f"{m.precision:.3f}"),
             ("recall", f"{m.recall:.3f}"),
         ]
+        if m.coverage_recall is not None:
+            rows.append(("coverage_recall", f"{m.coverage_recall:.3f}"))
         for k, v in rows:
             tbl.add_row(k, v)
         bits.append(tbl)

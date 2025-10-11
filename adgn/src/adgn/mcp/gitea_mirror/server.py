@@ -3,10 +3,6 @@
 
 """Host-side MCP server for managing Gitea pull mirrors.
 
-Tools:
-  - ensure_mirror_and_sync(url: str): ensure a pull mirror exists for the upstream
-    repository, trigger a sync, and wait for mirror_updated to change.
-
 Configuration (env or kwargs):
   GITEA_BASE_URL: base URL to the Gitea instance (required)
   GITEA_TOKEN: access token with write:repository scope for target org/user (required)
@@ -25,7 +21,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict
 import requests
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 
 @dataclass
@@ -159,13 +155,13 @@ def _resolve_owner(base_url: str, token: str) -> str:
     return login
 
 
-def make_gitea_mirror_mcp(
+def make_gitea_mirror_server(
     *,
     base_url: str | None = None,
     token: str | None = None,
     poll_interval_secs: float | None = None,
     poll_timeout_secs: float | None = None,
-) -> SafeFastMCP:
+) -> NotifyingFastMCP:
     cfg = MirrorConfig(
         base_url=str(base_url or os.environ.get("GITEA_BASE_URL", "")),
         token=str(token or os.environ.get("GITEA_TOKEN", "")),
@@ -183,24 +179,19 @@ def make_gitea_mirror_mcp(
     if not cfg.base_url or not cfg.token:
         raise ValueError("Gitea mirror MCP requires GITEA_BASE_URL and GITEA_TOKEN")
 
-    server = SafeFastMCP(
-        "gitea_mirror",
+    server = NotifyingFastMCP(
+        "Gitea Mirror",
         instructions=(
-            "Host-side Gitea mirror manager. ensure_mirror_and_sync(url) will ensure a pull mirror "
-            "exists, trigger a sync, and wait for mirror_updated to change."
+            "Host-side Gitea mirror manager. Ensures a pull mirror exists, triggers a sync, "
+            "and waits for the repository to update."
         ),
     )
 
-    @mcp_flat_model(
-        server,
-        name="ensure_mirror_and_sync",
-        title="Ensure mirror and sync",
-        description="Ensure a Gitea pull mirror exists and syncs",
-        structured_output=True,
-    )
+    @server.flat_model()
     def ensure_mirror_and_sync(
         input: EnsureMirrorAndSyncArgs,
     ) -> EnsureMirrorAndSyncResponse:
+        """Ensure a Gitea pull mirror exists and syncs before returning."""
         owner = _resolve_owner(cfg.base_url, cfg.token)
         repo = _derive_repo_name(input.url)
         _ensure_mirror(cfg, input.url, owner, repo)

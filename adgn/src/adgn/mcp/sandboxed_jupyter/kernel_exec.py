@@ -41,7 +41,7 @@ def main() -> int:
         _ensure_parent(log_path)
         # Redirect stderr to the log file (append mode)
         try:
-            fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
             os.dup2(fd, 2)
             os.close(fd)
         except Exception as e:

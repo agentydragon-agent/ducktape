@@ -5,45 +5,27 @@ import os
 import pytest
 
 from adgn.agent.agent import AgentResult, MiniCodex
-from adgn.agent.mcp_manager import McpManager, build_mcp_function
 from adgn.agent.reducer import AutoHandler
-from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import ExecInput, ExecResult
-from adgn.mcp.docker_exec.server import (
-    SERVER_NAME as DOCKER_SERVER_NAME,
-    TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
-    make_container_exec_mcp,
-)
-from adgn.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.mcp.testing.typed_stubs import TypedClient
 from adgn.openai_utils.client_factory import build_client
 
 # Use /bin/echo -n for portability and to avoid trailing newline
 ECHO_CMD = ["/bin/echo", "-n", "hello"]
 
+SERVER_NAME = "box"
 
-def _make_docker_slot():
-    return make_inproc_slot_spec(
-        make_container_exec_mcp(
-            ContainerOptions(
-                image="python:3.12-slim",
-                working_dir="/workspace",
-                volumes=None,
-                describe=True,
-            )
-        )
+
+async def _assert_exec_echo(sess) -> None:
+    # Call via compositor using namespaced tool key
+    from adgn.mcp.testing.typed_stubs import call_tool_typed
+
+    res: ExecResult = await call_tool_typed(
+        sess,
+        f"mcp__{SERVER_NAME}__exec",
+        ExecInput(cmd=ECHO_CMD, timeout_ms=10_000),
+        ExecResult,
     )
-
-
-async def _assert_exec_echo(mcp: McpManager) -> None:
-    sess = await mcp.get_session("docker")
-    # Introspect the in-proc FastMCP server to get typed models
-    typed = TypedClient.from_server(
-        make_container_exec_mcp(ContainerOptions(image="python:3.12-slim")), sess
-    )
-    ExecArgs = typed.models["docker_exec"].Input or ExecInput
-    ExecOut = typed.models["docker_exec"].Output or ExecResult
-    res: ExecOut = await typed.docker_exec(ExecArgs(cmd=ECHO_CMD))
     assert res.exit_code == 0
     assert (res.stdout or "") == "hello"
     assert (res.stderr or "") == ""
@@ -51,11 +33,10 @@ async def _assert_exec_echo(mcp: McpManager) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-async def test_exec_roundtrip_echo() -> None:
+async def test_exec_roundtrip_echo(make_pg_compositor_box) -> None:
     """Spin up real Docker container and roundtrip an echo via exec."""
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("docker", _make_docker_slot())
-        await _assert_exec_echo(mcp)
+    async with make_pg_compositor_box() as (mcp_client, _comp):
+        await _assert_exec_echo(mcp_client)
 
 
 @pytest.mark.live_llm
@@ -64,20 +45,19 @@ async def test_exec_roundtrip_echo() -> None:
     reason="Requires OpenAI API key",
 )
 @pytest.mark.asyncio
-async def test_live_llm_exec_echo() -> None:
+async def test_live_llm_exec_echo(make_pg_compositor_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
 
-    async with McpManager({}) as mcp:
-        await mcp.attach_server("docker", _make_docker_slot())
+    async with make_pg_compositor_box() as (mcp_client, _comp):
         model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
         client = build_client(model_name)
         agent = await MiniCodex.create(
             model=model_name,
-            mcp=mcp,
+            mcp_client=mcp_client,
             system=(
                 "You are testing an MCP exec tool.\n"
                 "Call the tool "
-                f"{build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)} "
+                f"{build_mcp_function(SERVER_NAME, 'exec')} "
                 f"with cmd={ECHO_CMD!r} and return exactly the stdout."
             ),
             client=client,

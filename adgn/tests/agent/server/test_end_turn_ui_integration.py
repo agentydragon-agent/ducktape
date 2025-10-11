@@ -4,6 +4,7 @@ from adgn.agent.server.bus import ServerBus, UiEndTurn
 from adgn.agent.server.protocol import FunctionCallOutput, ToolCall, UiEndTurnEvt
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import new_state
+from adgn.mcp._shared.naming import build_mcp_function
 
 
 def test_end_turn_tool_filtering():
@@ -11,7 +12,7 @@ def test_end_turn_tool_filtering():
     state = new_state()
 
     # ToolCall for end_turn should be filtered out
-    tool_call = ToolCall(name="mcp__ui__end_turn", call_id="test-123")
+    tool_call = ToolCall(name=build_mcp_function("ui", "end_turn"), call_id="test-123")
     after_call = reduce_ui_state(state, tool_call)
 
     # Function output for end_turn should also be filtered out
@@ -51,8 +52,8 @@ def test_ui_send_message_still_filtered():
     state = new_state()
 
     # Both tools should be filtered
-    send_msg_call = ToolCall(name="mcp__ui__send_message", call_id="msg-123")
-    end_turn_call = ToolCall(name="mcp__ui__end_turn", call_id="end-123")
+    send_msg_call = ToolCall(name=build_mcp_function("ui", "send_message"), call_id="msg-123")
+    end_turn_call = ToolCall(name=build_mcp_function("ui", "end_turn"), call_id="end-123")
 
     after_send = reduce_ui_state(state, send_msg_call)
     after_end = reduce_ui_state(after_send, end_turn_call)
@@ -67,10 +68,12 @@ def test_regular_tools_not_affected():
 
     # Regular tool should create a Tool item
     regular_call = ToolCall(
-        name="mcp__echo__echo", call_id="echo-123", args_json='{"text": "test"}'
+        name=build_mcp_function("echo", "echo"), call_id="echo-123", args_json='{"text": "test"}'
     )
     after_regular = reduce_ui_state(state, regular_call)
 
     assert len(after_regular.items) == 1, "Regular tools should create items"
     assert after_regular.items[0].kind == "Tool", "Should create Tool item"
-    assert after_regular.items[0].tool == "mcp__echo__echo", "Should preserve tool name"
+    assert after_regular.items[0].tool == build_mcp_function("echo", "echo"), (
+        "Should preserve tool name"
+    )

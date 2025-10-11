@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import ast
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from adgn.mcp._shared.fastmcp_helpers import SafeFastMCP, mcp_flat_model
-from mcp.server.fastmcp import FastMCP
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 PYTHON_SUFFIXES = {".py", ".pyi"}
 
@@ -103,17 +103,23 @@ class SaveResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EditorOutcome(str, Enum):
+    """Explicit outcome selector for the editor's done() tool."""
+
+    SUCCESS = "success"
+    FAILURE = "failure"
+
+
 class DoneInput(BaseModel):
     """Single-argument payload for the done() tool.
 
-    outcome: explicit algebraic outcome selector ("success"|"failure")
-    summary: optional human-readable note to include in the result
+    - outcome: enum EditorOutcome (success|failure)
+    - summary: optional note included in the result
     """
 
-    outcome: Literal["success", "failure"] = "success"
+    outcome: EditorOutcome = EditorOutcome.SUCCESS
     summary: str | None = None
 
-    # Strict: no legacy aliases accepted (force new format everywhere)
     model_config = ConfigDict(extra="forbid")
 
 
@@ -142,47 +148,22 @@ class EditorState:
     original: str  # original buffer for aborts
 
 
-def _load_text(p: Path) -> str:
-    return p.read_text(encoding="utf-8")
+## Simple file IO helpers are inlined at call sites to avoid trivial indirection
 
 
-def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> SafeFastMCP:
-    p = Path(file_path)
-    text = _load_text(p)
-    state = EditorState(file_path=p, content=text, original=text)
-
-    @asynccontextmanager
-    async def lifespan(_server: FastMCP):  # type: ignore[type-arg]  # yields EditorState
-        try:
-            yield state
-        finally:
-            # no-op; tools manage persistence explicitly
-            pass
-
-    mcp = SafeFastMCP(name, instructions="In-process file editor", lifespan=lifespan)
-
-    @mcp_flat_model(
-        mcp,
-        name="read_info",
-        title="Read file info",
-        description="Return basic info about the current file",
-        structured_output=True,
-    )
+def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
+    @mcp.flat_model()
     def read_info(input: ReadInfoArgs) -> ReadInfoResult:
+        """Return basic info about the current file."""
         return ReadInfoResult(
             ok=True,
             path=str(state.file_path),
             lines=len(state.content.splitlines()),
         )
 
-    @mcp_flat_model(
-        mcp,
-        name="read_line_range",
-        title="Read line range",
-        description="Return lines in the given [start,end] (1-based)",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def read_line_range(input: ReadLineRangeArgs) -> ReadLineRangeResult:
+        """Return lines in the given [start,end] (1-based)."""
         lines = state.content.splitlines()
         end = input.start if input.end is None else input.end
         start_idx = max(1, input.start) - 1
@@ -195,49 +176,38 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> SafeFastM
         body = "\n".join(f"{i + 1:4d}: {lines[i]}" for i in range(start_idx, end_idx + 1))
         return ReadLineRangeResult(ok=True, body=body)
 
-    @mcp_flat_model(
-        mcp,
-        name="replace_text",
-        title="Replace text",
-        description="Replace one occurrence of old_text with new_text (fails if multiple)",
-        structured_output=True,
-    )
+    def _do_replace(
+        old_text: str, new_text: str, replace_all: bool
+    ) -> tuple[bool, int, str | None]:
+        if not old_text:
+            return False, 0, "old_text required"
+        if old_text not in state.content:
+            return False, 0, "old_text not found"
+        count = state.content.count(old_text)
+        if not replace_all and count > 1:
+            return False, 0, "old_text appears multiple times; be more specific"
+        state.content = (
+            state.content.replace(old_text, new_text)
+            if replace_all
+            else state.content.replace(old_text, new_text, 1)
+        )
+        return True, (count if replace_all else 1), None
+
+    @mcp.flat_model()
     def replace_text(input: ReplaceTextArgs) -> ReplaceTextResult:
-        if not input.old_text:
-            return ReplaceTextResult(ok=False, error="old_text required")
-        if input.old_text not in state.content:
-            return ReplaceTextResult(ok=False, error="old_text not found")
-        if state.content.count(input.old_text) > 1:
-            return ReplaceTextResult(
-                ok=False, error="old_text appears multiple times; be more specific"
-            )
-        state.content = state.content.replace(input.old_text, input.new_text)
-        return ReplaceTextResult(ok=True)
+        """Replace one occurrence of old_text with new_text (fails if multiple)."""
+        ok, _count, err = _do_replace(input.old_text, input.new_text, False)
+        return ReplaceTextResult(ok=ok, error=err)
 
-    @mcp_flat_model(
-        mcp,
-        name="replace_text_all",
-        title="Replace all",
-        description="Replace all occurrences of old_text with new_text",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def replace_text_all(input: ReplaceTextAllArgs) -> ReplaceTextAllResult:
-        if not input.old_text:
-            return ReplaceTextAllResult(ok=False, error="old_text required")
-        if input.old_text not in state.content:
-            return ReplaceTextAllResult(ok=False, error="old_text not found")
-        count = state.content.count(input.old_text)
-        state.content = state.content.replace(input.old_text, input.new_text)
-        return ReplaceTextAllResult(ok=True, replacements=count)
+        """Replace all occurrences of old_text with new_text."""
+        ok, count, err = _do_replace(input.old_text, input.new_text, True)
+        return ReplaceTextAllResult(ok=ok, replacements=(count if ok else None), error=err)
 
-    @mcp_flat_model(
-        mcp,
-        name="delete_line",
-        title="Delete line",
-        description="Delete a specific line (1-based)",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def delete_line(input: DeleteLineArgs) -> DeleteLineResult:
+        """Delete a specific line (1-based)."""
         lines = state.content.splitlines()
         if input.line_number < 1 or input.line_number > len(lines):
             return DeleteLineResult(
@@ -248,14 +218,9 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> SafeFastM
         state.content = "\n".join(lines)
         return DeleteLineResult(ok=True, deleted=deleted)
 
-    @mcp_flat_model(
-        mcp,
-        name="add_line_after",
-        title="Add line after",
-        description="Insert a line after the given line (0 inserts at start)",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def add_line_after(input: AddLineAfterArgs) -> AddLineAfterResult:
+        """Insert a line after the given line (0 inserts at start)."""
         lines = state.content.splitlines()
         if input.line_number < 0 or input.line_number > len(lines):
             return AddLineAfterResult(
@@ -269,50 +234,52 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> SafeFastM
         state.content = "\n".join(lines)
         return AddLineAfterResult(ok=True)
 
-    @mcp_flat_model(
-        mcp,
-        name="save",
-        title="Save file",
-        description="Persist current buffer to disk",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def save(input: SaveArgs) -> SaveResult:
+        """Persist current buffer to disk."""
         state.file_path.write_text(state.content.rstrip("\n") + "\n", encoding="utf-8")
         return SaveResult(ok=True)
 
-    @mcp_flat_model(
-        mcp,
-        name="done",
-        title="Finish editing",
-        description="Finish the editing session with Success|Failure",
-        structured_output=True,
-    )
+    @mcp.flat_model()
     def done(input: DoneInput) -> DoneResponse:
-        """Finish the editing session with Success|Failure (legacy shape kept for tests).
+        """Finish the editing session with Success|Failure using early bailouts.
 
-        - On outcome=="success": for Python files, perform a quick syntax check; if it fails, do NOT save,
-          revert in-memory buffer to original, and return Failure with a summary.
-        - On outcome=="failure": revert in-memory buffer to original and return Failure with the given summary.
-        - On success with no syntax errors: save current buffer to disk and return Success.
+        - On failure: revert immediately and return Failure.
+        - On success: for Python files, syntax-check; on error, revert and return Failure.
+          Otherwise, save and return Success.
         """
-        if input.outcome == "success":
-            if is_python_path(state.file_path):
-                try:
-                    ast.parse(state.content + "\n")
-                except SyntaxError as e:
-                    # Revert in-memory buffer on failure so callers can inspect original state
-                    state.content = state.original
-                    return Failure(
-                        summary=f"Cannot complete: syntax error line {e.lineno}: {e.msg}",
-                    )
-            # Save edited contents
-            state.file_path.write_text(
-                state.content.rstrip("\n") + "\n",
-                encoding="utf-8",
-            )
-            return Success(summary=input.summary)
-        # Explicit failure: revert in-memory buffer
-        state.content = state.original
-        return Failure(summary=input.summary)
+        if input.outcome is EditorOutcome.FAILURE:
+            state.content = state.original
+            return Failure(summary=input.summary)
 
-    return mcp
+        # Success path
+        if is_python_path(state.file_path):
+            try:
+                ast.parse(state.content + "\n")
+            except SyntaxError as e:
+                state.content = state.original
+                return Failure(summary=f"Cannot complete: syntax error line {e.lineno}: {e.msg}")
+
+        state.file_path.write_text(state.content.rstrip("\n") + "\n", encoding="utf-8")
+        return Success(summary=input.summary)
+
+
+async def attach_editor(
+    comp: Compositor,
+    file_path: Path,
+    *,
+    name: str = "editor",
+):
+    """Attach the editor MCP in-proc (encapsulated)."""
+    server = make_editor_server(file_path, name=name)
+    await comp.mount_inproc(name, server)
+    return server
+
+
+def make_editor_server(file_path: Path, *, name: str = "editor") -> NotifyingFastMCP:
+    """Construct an in-process editor server for the given file with standard tools."""
+    text = file_path.read_text(encoding="utf-8")
+    state = EditorState(file_path=file_path, content=text, original=text)
+    server = NotifyingFastMCP(name, instructions="In-process file editor")
+    _build_editor_tools(server, state)
+    return server

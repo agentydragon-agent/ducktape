@@ -8,7 +8,7 @@ from typing import Any, Sequence
 from hamcrest import all_of, assert_that, contains_string, has_item, has_properties
 from uvicorn import Config, Server
 
-from adgn.agent.server.protocol import ErrorCode, ServerMessage
+from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
 
 
 def pick_free_port(host: str = "127.0.0.1") -> int:
@@ -60,7 +60,6 @@ def api_create_agent(
     *,
     preset: str = "default",
     system: str | None = None,
-    metadata: dict | None = None,
 ) -> str:
     """Create an agent via HTTP POST /api/agents and return its id.
 
@@ -71,12 +70,40 @@ def api_create_agent(
     body: dict[str, object] = {"preset": preset}
     if system is not None:
         body["system"] = system
-    if metadata is not None:
-        body["metadata"] = metadata
+    # Freeform metadata removed; preset is tracked internally only.
     resp = requests.post(f"{base_url}/api/agents", json=body)
     resp.raise_for_status()
     data = resp.json()
     return str(data.get("id"))
+
+
+# ------------------------------
+# HTTP agent endpoint helpers
+# ------------------------------
+
+
+def agent_endpoint(agent_id: str, suffix: str | None = None) -> str:
+    base = f"/api/agents/{agent_id}"
+    return f"{base}/{suffix}" if suffix else base
+
+
+def http_prompt(client, agent_id: str, text: str):
+    return client.post(agent_endpoint(agent_id, "prompt"), json={"text": text})
+
+
+def http_abort(client, agent_id: str):
+    return client.post(agent_endpoint(agent_id, "abort"))
+
+
+def http_snapshot(client, agent_id: str):
+    return client.get(agent_endpoint(agent_id, "snapshot"))
+
+
+def http_set_policy(client, agent_id: str, content: str, proposal_id: str | None = None):
+    body: dict[str, object] = {"content": content}
+    if proposal_id is not None:
+        body["proposal_id"] = proposal_id
+    return client.post(agent_endpoint(agent_id, "policy"), json=body)
 
 
 # --------------------------------
@@ -103,5 +130,7 @@ def expect_run_finished(payloads: Sequence[ServerMessage]) -> None:
     """Assert that a finished run_status is present in payloads (typed, hamcrest)."""
     assert_that(
         payloads,
-        has_item(has_properties(type="run_status", run_state=has_properties(status="finished"))),
+        has_item(
+            has_properties(type="run_status", run_state=has_properties(status=RunStatus.FINISHED))
+        ),
     )

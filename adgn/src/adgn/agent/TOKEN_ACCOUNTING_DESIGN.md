@@ -208,7 +208,7 @@ class DisplayEventsHandler(BaseHandler):
 
 TranscriptLogger as a Handler (shape)
 ```python
-class TranscriptLoggerHandler(BaseHandler):
+class TranscriptHandler(BaseHandler):
     def __init__(self, run_dir: Path) -> None:
         self._path = run_dir / "transcript.jsonl"
     def _emit(self, event: Event) -> None:
@@ -222,7 +222,7 @@ class TranscriptLoggerHandler(BaseHandler):
 
 Usage in MiniCodex.create (example)
 ```python
-handlers=[AutoHandler(), DisplayEventsHandler(), TranscriptLoggerHandler(run_dir)]
+handlers=[AutoHandler(), DisplayEventsHandler(), TranscriptHandler(dest_dir=run_dir)]
 # Logger will receive: Response → AssistantText → [ToolCall]* → [FunctionCallOutput]* (as applicable)
 ```
 Deduplication and retries (minimal)
@@ -296,7 +296,7 @@ TranscriptLogger as a Handler
 - Interim approach: Keep the existing on_event sink until typed events land. Then switch TranscriptLogger to a Handler and remove the on_event path to avoid duplication.
 
 Callsite switch checklist (replace legacy logger with handler)
-- Goal: All MiniCodex users wire TranscriptLoggerHandler explicitly; remove legacy on_event logger.
+- Goal: All MiniCodex users wire TranscriptHandler explicitly; remove legacy on_event logger.
 - Affected create() callsites (grep):
   - src/adgn_llm/properties/lint_issue.py:364
   - src/adgn_llm/llm_edit.py:55
@@ -317,34 +317,38 @@ Callsite switch checklist (replace legacy logger with handler)
 
 Change pattern per callsite (once typed events are wired):
 ```python
-from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
+from adgn.agent.transcript_handler import TranscriptHandler
 
 # existing handlers
-handlers = [AutoHandler(), DisplayEventsHandler(), TranscriptLoggerHandler(run_dir)]
-agent = await MiniCodex.create(
-    model=model,
-    mcp=mcp_manager,
-    handlers=handlers,
-    # remove on_event argument entirely
-)
+handlers = [AutoHandler(), DisplayEventsHandler(), TranscriptHandler(dest_dir=run_dir)]
+from fastmcp.client import Client
+
+# Build MiniCodex against the Compositor (no manager)
+async with Client(compositor) as mcp_client:
+    agent = await MiniCodex.create(
+        model=model,
+        mcp_client=mcp_client,
+        handlers=handlers,
+        # remove on_event argument entirely
+    )
 ```
 
 Agent logging init changes (remove legacy on_event logger):
 - In src/adgn_llm/mini_codex/agent.py:_init_logging
   - Keep run_dir creation and run.json write.
   - Remove TranscriptLogger + on_event chaining entirely.
-  - Rely on TranscriptLoggerHandler being present in handlers to produce transcript.jsonl.
+  - Rely on TranscriptHandler being present in handlers to produce transcript.jsonl/events.jsonl.
 
 Rollout order (safe):
-1) Land typed events + TranscriptLoggerHandler.
+1) Land typed events + TranscriptHandler.
 2) Update Reducer and in-repo handlers to typed signatures.
-3) Switch all callsites to pass TranscriptLoggerHandler; remove any on_event args.
+3) Switch all callsites to pass TranscriptHandler; remove any on_event args.
 4) Delete legacy TranscriptLogger and on_event plumbing from MiniCodex._init_logging.
 
 Migration plan (incremental)
 1) Implement normalize_usage_from_response(resp) and unit tests with fake responses.
-2) Introduce typed Event classes and add TranscriptLoggerHandler; provide a temporary adapter for legacy handlers if needed.
+2) Introduce typed Event classes and add TranscriptHandler; provide a temporary adapter for legacy handlers if needed.
 3) Wire usage extraction and emit Response event in _single_turn() (non‑streaming only).
 4) Update BaseHandler and Reducer to the typed signatures; convert in‑tree handlers (AutoHandler, DisplayEventsHandler); add typed events for system_note and tool_error or a generic Event.
-5) Switch callsites to TranscriptLoggerHandler and remove on_event usage; then remove legacy logger from MiniCodex._init_logging.
+5) Switch callsites to TranscriptHandler and remove on_event usage; then remove legacy logger from MiniCodex._init_logging.
 6) Add tests for assistant_text and tool‑call‑only turns; caching and no‑usage paths.
