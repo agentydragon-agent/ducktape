@@ -37,7 +37,6 @@ dev = [
   "mypy>=1.14",
   "types-colorama",
   "types-psutil",
-  "types-PyGithub",
   "types-PyYAML",
   "types-tabulate",
 ]
@@ -45,7 +44,6 @@ dev = [
 [project.scripts]
 wt = "wt.cli:main"
 wt-install = "wt.shell.install:main"
-wt_demo = "wt.demo_plugin"
 
 [project.entry-points."wt.plugins"]
 wt_demo = "wt.demo_plugin"

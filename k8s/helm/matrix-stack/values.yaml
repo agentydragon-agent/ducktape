@@ -51,6 +51,8 @@ synapse:
     localpartTemplate: "{{ user.preferred_username }}"
     emailTemplate: "{{ user.email }}"
     clientSecretKey: oidc-client-secret
+    debug:
+      enableParseLogging: true
 
   secrets:
     name: synapse-secrets

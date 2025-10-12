@@ -54,6 +54,7 @@ Authentik SSO
 - Create Authentik users/groups (e.g. `agentydragon`, `matrix-agent`, `matrix-users`) so Synapse can require membership via `claimRequirements`.
 - The Synapse `homeserver.yaml` template renders via `envsubst`, so `${REGISTRATION_SHARED_SECRET}` and `${OIDC_CLIENT_SECRET}` are injected at runtime from the shared secret instead of being stored in the ConfigMap.
 - PKCE is currently disabled (`pkce_method: never`) because Authentik returns `unsupported_algorithm` for both `plain` and `S256` challenges; re-enable once the IdP handles those properly.
+- Set `synapse.oidc.debug.enableParseLogging=true` to wrap Synapse's OIDC handler so failures log the raised exception and the first 256 characters of the offending `id_token`. Remember to turn this off once the issue is resolved because the logs can contain sensitive token data.
 
 
 Install

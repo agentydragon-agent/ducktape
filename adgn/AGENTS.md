@@ -32,9 +32,6 @@ See `README.md` for a shorter overview.
   - Inside `adgn/`: `pytest tests`
   - From repo root: `direnv exec adgn pytest adgn/tests`
   - Single test: `pytest tests/tana_export/test_convert.py::test_node_export`
-  - WT daemon/CLI tests: many `wt` tests start a local daemon bound to a UNIX socket. In sandboxed environments (e.g., Codex CLI sandbox) AF_UNIX bind may be blocked, causing startup handshake failures. Run these tests outside the sandbox or with escalation enabled.
-    - From repo root (non‑sandboxed): `direnv exec adgn pytest tests/wt -q`
-    - In Codex CLI: run with command escalation turned on when invoking pytest for `tests/wt/*`.
 - Lint/format: `ruff format .`, `ruff check . --fix`
 - Type check: `mypy --config-file pyproject.toml`
 - Pre-commit: `pre-commit install`, `pre-commit run -a`
@@ -58,8 +55,6 @@ See `README.md` for a shorter overview.
   - `convert.py` (Markdown/TanaPaste), `export_node_subset.py`, `materialize_searches.py`, `tana_lib/*` (models/helpers)
 - Response cache (`src/adgn/rspcache/`)
   - `responses_db.py`; CLI `rspcache`
-- Worktree tools (`../wt/` project)
-  - CLI/plugins (`wt.cli`, `wt.plugins`), server/handlers (`wt.server.*`), client (`wt.client.*`), shared/types (`wt.shared.*`)
 - LLM toolkit and agent (`src/adgn/llm/*`, `src/adgn/agent/*`, `src/adgn/mcp/*`, `src/adgn/props/*`)
   - MiniCodex UI/server, MCP utilities, instruction optimizer, properties/specimens
 
@@ -225,7 +220,6 @@ Approval Policy
 - Tests marked `real_github` or `live_llm` talk to network/services; run explicitly
 
 ## References and Further Reading
-- Worktree tools: `../wt/README.md`, `../wt/docs/ARCHITECTURE.md`, `../wt/docs/WT_REFACTOR_PLAN.md`, `../wt/docs/WORKTREE_IDEAS.md`
 - MCP servers and presets: `docs/special_mcp_servers.md`
 - Approval policy implementation: `src/adgn/agent/approvals.py`
 - LLM docs: `docs/llm/*`

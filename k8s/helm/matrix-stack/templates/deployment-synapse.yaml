@@ -22,7 +22,12 @@ spec:
         - name: synapse
           image: {{ .Values.synapse.image }}
           imagePullPolicy: IfNotPresent
-          command: ["python","-m","synapse.app.homeserver","--config-path","/config/homeserver.yaml"]
+          command:
+{{- if and .Values.synapse.oidc.enabled (dig "debug" "enableParseLogging" false .Values.synapse.oidc) }}
+            ["python","/synapse-debug/synapse_oidc_debug.py","--config-path","/config/homeserver.yaml"]
+{{- else }}
+            ["python","-m","synapse.app.homeserver","--config-path","/config/homeserver.yaml"]
+{{- end }}
           ports:
             - name: http
               containerPort: 8008
@@ -33,6 +38,11 @@ spec:
               mountPath: /config
             - name: data
               mountPath: /data
+{{- if and .Values.synapse.oidc.enabled (dig "debug" "enableParseLogging" false .Values.synapse.oidc) }}
+            - name: synapse-debug
+              mountPath: /synapse-debug
+              readOnly: true
+{{- end }}
       volumes:
         - name: homeserver-tmpl
           configMap:
@@ -48,4 +58,9 @@ spec:
             claimName: {{ include "matrix-stack.fullname" . }}-synapse-data
 {{- else }}
           emptyDir: {}
+{{- end }}
+{{- if and .Values.synapse.oidc.enabled (dig "debug" "enableParseLogging" false .Values.synapse.oidc) }}
+        - name: synapse-debug
+          configMap:
+            name: {{ include "matrix-stack.fullname" . }}-synapse-debug
 {{- end }}
