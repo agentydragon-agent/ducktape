@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from adgn.agent.loop_control import Abort, Continue, RequireAny
 from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.mcp.ui.server import EndTurnInput, SendMessageInput, make_ui_server
+from adgn.agent.notifications.types import NotificationsBatch
 
 
 @pytest.fixture
@@ -38,7 +37,7 @@ async def test_ui_send_message_and_end_turn_bus(bus, make_typed_mcp) -> None:
 
 def test_ui_handler_abort_on_end_turn(bus) -> None:
     def dummy_poll():
-        return SimpleNamespace(resources_updated=[])
+        return NotificationsBatch()
 
     h = ServerModeHandler(bus=bus, poll_notifications=dummy_poll)
 

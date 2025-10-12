@@ -14,8 +14,6 @@ spec:
     spec:
       serviceAccountName: {{ include "matrix-stack.fullname" . }}-ember-bootstrap
       restartPolicy: OnFailure
-      initContainers:
-{{ include "matrix-stack.render-config-init" . | indent 8 }}
       containers:
         - name: register-ember
           image: python:3.12-alpine
@@ -24,39 +22,33 @@ spec:
             - sh
             - -c
             - >-
-              pip install --no-cache-dir kubernetes requests && python /scripts/ember_bootstrap.py
-{{ include "matrix-stack.render-config-env" . | indent 10 }}
+              pip install --no-cache-dir kubernetes requests &&
+              python /scripts/ember_bootstrap.py
+          env:
             - name: SYNAPSE_HOMESERVER
               value: {{ include "matrix-stack.synapse-internal-url" . | quote }}
+            - name: REGISTRATION_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "matrix-stack.matrixSecretName" . }}
+                  key: registration_shared_secret
             - name: EMBER_USERNAME
-              value: {{ .Values.synapse.ember.user | quote }}
+              value: {{ .Values.bootstrap.ember.username | quote }}
             - name: EMBER_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ ternary .Values.sealedSecrets.name .Values.synapse.secrets.name .Values.sealedSecrets.enabled }}
-                  key: ember-password
+                  name: {{ include "matrix-stack.bootstrapSecretName" . }}
+                  key: {{ .Values.bootstrap.ember.passwordKey | default "ember-password" | quote }}
             - name: EMBER_NAMESPACE
-              value: {{ .Values.synapse.ember.namespace | quote }}
+              value: {{ .Values.bootstrap.ember.namespace | quote }}
             - name: EMBER_SECRET_NAME
-              value: {{ .Values.synapse.ember.secretName | quote }}
+              value: {{ .Values.bootstrap.ember.secretName | quote }}
           volumeMounts:
-            - name: config
-              mountPath: /config
-            - name: secrets
-              mountPath: /secrets
-            - name: bootstrap-scripts
+            - name: scripts
               mountPath: /scripts
               readOnly: true
       volumes:
-        - name: homeserver-tmpl
+        - name: scripts
           configMap:
-            name: {{ include "matrix-stack.fullname" . }}-homeserver-tmpl
-        - name: config
-          emptyDir: {}
-        - name: secrets
-          secret:
-            secretName: {{ include "matrix-stack.secret-name" . }}
-        - name: bootstrap-scripts
-          configMap:
-            name: {{ include "matrix-stack.fullname" . }}-ember-bootstrap
+            name: {{ include "matrix-stack.fullname" . }}-bootstrap-scripts
             defaultMode: 0750

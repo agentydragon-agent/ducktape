@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
-from typing import Iterable, Optional, Set
+from typing import Iterable
 
 from nio import AsyncClient, RoomMessageText
 from nio.events.invite_events import InviteMemberEvent
@@ -19,9 +18,17 @@ from nio.responses import (
     WhoamiResponse,
 )
 
+from pydantic import BaseModel, ConfigDict, ValidationError
+
 from .config import MatrixSettings
 
 logger = logging.getLogger(__name__)
+
+
+class _ControlRoomStorePayload(BaseModel):
+    rooms: list[str] = []
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class _ControlRoomStore:
@@ -30,27 +37,32 @@ class _ControlRoomStore:
     def __init__(self, path: Path) -> None:
         self._path = path
 
-    def load(self) -> Set[str]:
+    def load(self) -> set[str]:
         try:
-            with self._path.open("r", encoding="utf-8") as handle:
-                data = json.load(handle)
+            raw = self._path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return set()
-        except json.JSONDecodeError as exc:
+        except OSError as exc:
+            logger.warning("Failed to open control room store %s: %s", self._path, exc)
+            return set()
+
+        try:
+            payload = _ControlRoomStorePayload.model_validate_json(raw)
+        except ValidationError as exc:
+            logger.warning("Control room store %s validation error: %s", self._path, exc)
+            return set()
+        except ValueError as exc:
             logger.warning("Failed to parse control room store %s: %s", self._path, exc)
             return set()
-        rooms = data.get("rooms", [])
-        if not isinstance(rooms, list):
-            logger.warning("Control room store %s malformed; expected list", self._path)
-            return set()
-        return {str(room) for room in rooms}
+
+        return set(payload.rooms)
 
     def save(self, rooms: Iterable[str]) -> None:
-        serialised = {"rooms": sorted(set(rooms))}
+        payload = _ControlRoomStorePayload(rooms=sorted({str(room) for room in rooms}))
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self._path.with_suffix(".tmp")
         with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(serialised, handle, indent=2, sort_keys=True)
+            handle.write(payload.model_dump_json(indent=2, sort_keys=True))
             handle.write("\n")
         tmp_path.replace(self._path)
 
@@ -69,10 +81,12 @@ class MatrixClient:
         self._debounce = max(debounce_seconds, 0.1)
         self._control_rooms: set[str] = set()
         self._store = _ControlRoomStore(settings.control_rooms_path)
+        self._token_secret = settings.access_token_secret
+        self._active_access_token: str | None = None
 
     @property
     def configured(self) -> bool:
-        return bool(self._settings.base_url and self._settings.access_token)
+        return bool(self._settings.base_url and self._token_secret.value())
 
     async def start(self) -> None:
         if not self.configured:
@@ -100,6 +114,7 @@ class MatrixClient:
         if self._client is not None:
             await self._client.close()
             self._client = None
+        self._active_access_token = None
 
     async def close(self) -> None:
         await self.stop()
@@ -147,20 +162,7 @@ class MatrixClient:
         assert self._client is not None
         try:
             while not self._stop_event.is_set():
-                try:
-                    response = await self._client.sync(timeout=30_000, since=self._since)
-                except Exception as exc:  # noqa: BLE001 - propagate diagnostics, keep loop alive
-                    logger.exception("Matrix sync failed: %s", exc)
-                    await asyncio.sleep(5)
-                    continue
-
-                if isinstance(response, SyncError):
-                    logger.error("Matrix sync error: %s", response.message)
-                    await asyncio.sleep(5)
-                    continue
-
-                if not isinstance(response, SyncResponse):
-                    logger.error("Unexpected Matrix sync response: %r", response)
+                if (response := await self._sync_once()) is None:
                     await asyncio.sleep(5)
                     continue
 
@@ -172,8 +174,7 @@ class MatrixClient:
             raise
 
     async def _handle_invites(self, response: SyncResponse) -> None:
-        invites = response.rooms.invite or {}
-        if not invites:
+        if not (invites := response.rooms.invite):
             return
 
         for room_id, invite in invites.items():
@@ -187,7 +188,7 @@ class MatrixClient:
                 continue
 
             timeline = room.timeline.events or []
-            last_event_id: Optional[str] = None
+            last_event_id: str | None = None
             for event in timeline:
                 if isinstance(event, RoomMessageText) and not self._is_self_message(event):
                     await self._queue.put(event)
@@ -201,11 +202,9 @@ class MatrixClient:
                 await self._mark_read(room_id, last_event_id)
 
     async def _handle_left_rooms(self, response: SyncResponse) -> None:
-        left = response.rooms.leave or {}
-        if not left:
+        if not (left := response.rooms.leave):
             return
-        removed = set(left.keys()) & self._control_rooms
-        if not removed:
+        if not (removed := set(left) & self._control_rooms):
             return
         self._control_rooms.difference_update(removed)
         self._store.save(self._control_rooms)
@@ -265,14 +264,14 @@ class MatrixClient:
 
     async def _create_client(self) -> AsyncClient:
         base_url = self._settings.base_url
-        token = self._settings.access_token
-        if base_url is None or token is None:
+        if base_url is None:
             raise RuntimeError("Matrix base URL and access token must be configured")
 
         homeserver = base_url.rstrip("/")
         client = AsyncClient(homeserver=homeserver)
+        token = self._refresh_access_token(force=True)
         client.access_token = token
-        client.device_id = client.device_id or "agentd-device"
+        client.device_id = client.device_id or "ember-device"
 
         whoami = await client.whoami()
         if isinstance(whoami, WhoamiError):
@@ -286,3 +285,34 @@ class MatrixClient:
 
     def _is_self_message(self, event: RoomMessageText) -> bool:
         return bool(self._user_id and event.sender == self._user_id)
+
+    async def _sync_once(self) -> SyncResponse | None:
+        self._refresh_access_token()
+        try:
+            response = await self._client.sync(timeout=30_000, since=self._since)
+        except Exception as exc:  # noqa: BLE001 - propagate diagnostics, keep loop alive
+            logger.exception("Matrix sync failed: %s", exc)
+            return None
+
+        if isinstance(response, SyncError):
+            logger.error("Matrix sync error: %s", response.message)
+            return None
+
+        if not isinstance(response, SyncResponse):
+            logger.error("Unexpected Matrix sync response: %r", response)
+            return None
+
+        return response
+
+    def _refresh_access_token(self, *, force: bool = False) -> str:
+        token, changed = self._token_secret.refresh()
+        if token is None:
+            raise RuntimeError("Matrix access token is not configured")
+
+        if force or changed or self._active_access_token != token:
+            self._active_access_token = token
+            if self._client is not None:
+                self._client.access_token = token
+            if changed:
+                logger.info("Matrix access token refreshed")
+        return token

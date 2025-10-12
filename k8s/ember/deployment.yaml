@@ -20,8 +20,8 @@ spec:
     spec:
       restartPolicy: Always
       containers:
-        - name: agentd
-          image: registry.k3s.local/ember-agentd:latest
+        - name: emberd
+          image: registry.k3s.local/emberd:latest
           imagePullPolicy: Always
           ports:
             - name: http
@@ -57,34 +57,12 @@ spec:
                 configMapKeyRef:
                   name: ember-config
                   key: pilot_state_dir
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: openai-api
-                  key: api_key
-            - name: MATRIX_ACCESS_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: matrix-ember-token
-                  key: access_token
-            - name: GITEA_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: gitea-ember-token
-                  key: username
-            - name: GITEA_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: gitea-ember-token
-                  key: token
-            - name: GITEA_TOKEN_NAME
-              valueFrom:
-                secretKeyRef:
-                  name: gitea-ember-token
-                  key: token_name
           volumeMounts:
             - name: history
               mountPath: /var/lib/ember
+            - name: runtime-secrets
+              mountPath: /var/run/ember/secrets
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /healthz
@@ -110,3 +88,25 @@ spec:
         - name: history
           persistentVolumeClaim:
             claimName: ember-history
+        - name: runtime-secrets
+          projected:
+            sources:
+              - secret:
+                  name: matrix-ember-token
+                  items:
+                    - key: access_token
+                      path: matrix_access_token
+              - secret:
+                  name: gitea-ember-token
+                  items:
+                    - key: username
+                      path: gitea_username
+                    - key: token
+                      path: gitea_token
+                    - key: token_name
+                      path: gitea_token_name
+              - secret:
+                  name: openai-api
+                  items:
+                    - key: api_key
+                      path: openai_api_key

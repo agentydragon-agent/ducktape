@@ -80,6 +80,7 @@ async def test_agent_runs_shell_command(monkeypatch: pytest.MonkeyPatch, setting
         "exit_code": 0,
         "stdout": "ran echo hi",
         "stderr": "",
+        "timed_out": False,
     }
 
     await client.close()

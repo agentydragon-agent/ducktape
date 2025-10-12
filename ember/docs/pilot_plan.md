@@ -1,7 +1,7 @@
 # Ember – Pilot Plan (v0)
 
-This pilot delivers the smallest possible end-to-end loop: run the agent inside
-its own container (`agentd`), let it watch a Matrix room, and talk to OpenAI
+This pilot delivers the smallest possible end-to-end loop: run Ember inside
+its own container (`emberd`), let it watch a Matrix room, and talk to OpenAI
 (`gpt-5`) strictly via tool calls. There is deliberately no policy gateway, no
 approvals, and no extra MCP surfaces yet.
 
@@ -24,11 +24,13 @@ approvals, and no extra MCP surfaces yet.
 ## Steps
 
 1. **Container image**
-   - Build `agentd` image with Python, matrix-nio, OpenAI SDK, and the runtime.
+   - Build `emberd` image with Python, matrix-nio, OpenAI SDK, and the runtime.
    - Provide the direnv-managed editable install locally for quick iteration.
 2. **Matrix/OpenAI wiring**
-   - Inject `MATRIX_BASE_URL`, `MATRIX_ACCESS_TOKEN`, and `MATRIX_ADMIN_USER_ID`.
-   - Inject `OPENAI_API_KEY` (optional `OPENAI_MODEL`, defaults to `gpt-5`).
+   - Inject `MATRIX_BASE_URL` and `MATRIX_ADMIN_USER_ID` via the config map.
+   - Project the Matrix token (`matrix_access_token`) and OpenAI API key
+     (`openai_api_key`) into `/var/run/ember/secrets` (optional `OPENAI_MODEL`,
+     defaults to `gpt-5`).
    - Never enqueue events that originated from the agent itself.
 3. **Runtime loop**
    - Poll Matrix, debounce room updates, wake the agent with a compact batch

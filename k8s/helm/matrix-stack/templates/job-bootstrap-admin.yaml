@@ -4,6 +4,7 @@ metadata:
   name: {{ include "matrix-stack.fullname" . }}-bootstrap-admin
   labels:
     app.kubernetes.io/name: {{ include "matrix-stack.name" . }}
+    app.kubernetes.io/component: bootstrap
 spec:
   template:
     metadata:
@@ -12,47 +13,36 @@ spec:
         app.kubernetes.io/component: bootstrap
     spec:
       restartPolicy: OnFailure
-      initContainers:
-{{ include "matrix-stack.render-config-init" . | indent 8 }}
       containers:
         - name: register-admin
-          image: {{ .Values.synapse.image }}
+          image: python:3.12-alpine
           command:
             - sh
             - -c
-            - |
-              # Wait for Synapse to be ready
-              until curl -s -f {{ include "matrix-stack.synapse-internal-url" . }}/_matrix/client/versions > /dev/null 2>&1; do
-                echo "Waiting for Synapse..."
-                sleep 2
-              done
-              # Register admin user
-              register_new_matrix_user \
-                -c /config/homeserver.yaml \
-                -u {{ .Values.synapse.admin.user | quote }} \
-                -p $(cat /secrets/admin-password) \
-                -a \
-                {{ include "matrix-stack.synapse-internal-url" . }} || echo "admin may already exist"
+            - >-
+              pip install --no-cache-dir requests &&
+              python /scripts/admin_bootstrap.py
+          env:
+            - name: SYNAPSE_HOMESERVER
+              value: {{ include "matrix-stack.synapse-internal-url" . | quote }}
+            - name: REGISTRATION_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "matrix-stack.matrixSecretName" . }}
+                  key: registration_shared_secret
+            - name: ADMIN_USERNAME
+              value: {{ .Values.bootstrap.admin.username | quote }}
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "matrix-stack.bootstrapSecretName" . }}
+                  key: {{ .Values.bootstrap.admin.passwordKey | default "admin-password" | quote }}
           volumeMounts:
-            - name: config
-              mountPath: /config
-            - name: secrets
-              mountPath: /secrets
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
       volumes:
-        - name: homeserver-tmpl
+        - name: scripts
           configMap:
-            name: {{ include "matrix-stack.fullname" . }}-homeserver-tmpl
-        - name: config
-          emptyDir: {}
-        - name: secrets
-          secret:
-            secretName: {{ include "matrix-stack.secret-name" . }}
-            items:
-              - key: admin-password
-                path: admin-password
-              - key: registration-shared-secret
-                path: registration-shared-secret
-{{- if .Values.synapse.oidc.enabled }}
-              - key: {{ .Values.synapse.oidc.clientSecretKey }}
-                path: {{ .Values.synapse.oidc.clientSecretKey }}
-{{- end }}
+            name: {{ include "matrix-stack.fullname" . }}-bootstrap-scripts
+            defaultMode: 0750

@@ -5,7 +5,7 @@ pilot described in `ember/docs/pilot_plan.md`.
 
 The pilot intentionally keeps the feature set extremely small:
 
-- the agent loop runs inside a dedicated container (`agentd`)
+- the agent loop runs inside a dedicated container (`emberd`)
 - the only integration is Matrix chat (accessed directly using a scoped token)
 - no policy gateway, approvals, or additional MCP tool surfaces
 - health, restart, and shutdown are exposed via a tiny HTTP API
@@ -13,6 +13,8 @@ The pilot intentionally keeps the feature set extremely small:
   traces are stored alongside tool calls in the on-disk history
 - Reasoning replay follows the encrypted reasoning guidance in the OpenAI
   Responses API docs
+- Container image ships the repository docs under `/opt/emberd/docs` so Ember can
+  read its own reference material at runtime.
 
 The code here is **not** production ready. It gives the agent a sandbox that can
 be iterated on while the surrounding control plane remains minimal.
@@ -20,15 +22,13 @@ be iterated on while the surrounding control plane remains minimal.
 ## Kubernetes integration
 
 The k3s deployment provisions Ember-specific credentials inside the `ember`
-namespace:
+namespace and projects them into the pod as a shared secrets directory. The
+Matrix bootstrap job still writes `matrix-ember-token`; the Gitea bootstrap job
+still writes `gitea-ember-token`; a sealed secret `openai-api` stores the OpenAI
+key. A projected volume merges them under `/var/run/ember/secrets` so Ember can
+reload credentials in-place without a restart.
 
-- `matrix-ember-token` (Secret) – written by the matrix-stack Helm chart’s
-  bootstrap job; contains the Matrix `access_token` for the `ember-bot` user.
-- `gitea-ember-token` (Secret) – minted by the Gitea bootstrap job via the
-  `gitea admin` CLI; includes `username`, `token`, and `token_name` fields.
-
-Both jobs are idempotent; reapply the charts whenever you need to rotate the
-credentials:
+Reapply the charts whenever you need to rotate the credentials:
 
 ```bash
 # Matrix credentials
@@ -40,6 +40,9 @@ kubectl apply -k k8s/gitea
 
 The namespace definition lives at `k8s/ember/namespace.yaml` so GitOps can keep
 it in sync with the rest of the stack.
+
+Consult `docs/agent_ontology.md` for the vocabulary Ember uses to describe the
+runner, the LLM core, and the surrounding control loop.
 
 ## Running locally
 
@@ -62,11 +65,15 @@ export OPENAI_API_KEY="sk-..."
 # export OPENAI_MODEL="gpt-5.1"
 
 # run the control API + runtime loop
-agentd
+emberd
 
 # or use uvicorn directly:
 # uvicorn ember.app:create_app --factory --reload
 ```
+
+On k3s, the OpenAI API key is supplied via the projected secret file rather than
+an environment variable; the env var export above is only required for local
+development.
 
 With that running you can:
 

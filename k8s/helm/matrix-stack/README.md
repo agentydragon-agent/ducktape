@@ -1,74 +1,71 @@
-Matrix Stack (Synapse + Element) — Helm Chart
+# Matrix Stack (Synapse + Element)
 
-This chart deploys a minimal Matrix homeserver (Synapse) and optional Element Web UI.
-It uses SealedSecrets by default for sensitive values.
+This chart is now a thin wrapper around the upstream [`matrix`](https://github.com/remram44/matrix-helm) Helm chart. The dependency ships Synapse, Element, and (optionally) PostgreSQL. Our wrapper keeps the declarative bits we rely on:
 
-Values (defaults in values.yaml)
-- synapse.serverName: server name (e.g., matrix.example.com)
-- synapse.publicBaseUrl: client base URL (e.g., https://matrix.example.com/)
-- synapse.reportStats: false
-- synapse.persistence: PVC for /data (enable/size/sc)
-- synapse.service/ingress: exposure options
-- synapse.admin.user: bootstrap admin username (password via secret)
-- synapse.oidc: enable OIDC login (idp info, scopes, templates, clientSecretKey)
-- sealedSecrets.enabled: true — provide SealedSecret encryptedData
-- sealedSecrets.name: synapse-secrets (creates Secret of same name at runtime)
-- sealedSecrets.encryptedData:
-  - registration-shared-secret: sealed value
-  - admin-password: sealed value
-  - oidc-client-secret: sealed value
-- element.enabled: true/false; Element Web + config + service + optional ingress
+- Traefik-friendly ingress values that serve Element at `/` and Synapse APIs under `/_matrix`, `/_synapse`, and `/.well-known` on the same host.
+- Bootstrap Jobs for the Synapse admin account and the Ember bot (injecting the registration-shared secret flow, passwords, and delivering the Ember access token into `ember` namespace).
+- Secrets delivered through SealedSecrets so we never store cleartext credentials in git.
+- A single values file (`values.yaml`) that configures Synapse OIDC, Element, and the bootstrap helpers.
 
-Secrets
-Use kubeseal to produce encryptedData for the chart. The init container now runs
-`python /tmpl/render_homeserver.py` to render `homeserver.yaml` from the
-ConfigMap template, replacing `${REGISTRATION_SHARED_SECRET}` (and
-`${OIDC_CLIENT_SECRET}` when enabled) with the sealed values at runtime. This
-keeps secrets out of the ConfigMap itself.
+## Key values
 
-Steps to generate the sealed secret:
-1) Create a temporary Secret manifest locally (not applied):
-   kubectl create secret generic synapse-secrets \
-      --from-literal=registration-shared-secret="<random-long-secret>" \
-      --from-literal=admin-password="<admin-password>" \
-      --from-literal=oidc-client-secret="<authentik-client-secret>" \
-      --dry-run=client -o yaml > /tmp/synapse-secrets.yaml
+All defaults live in `values.yaml` and can be overridden in your own file:
 
-2) Seal it (namespace must match your target):
-   kubeseal --format yaml --name synapse-secrets --namespace matrix \
-     < /tmp/synapse-secrets.yaml > sealed-synapse-secrets.yaml
+- `matrix.*` — forwarded directly to the upstream chart. Important entries we set by default:
+  - `matrix.homeserverConfig.server_name`, `public_baseurl`, `web_client_location`.
+  - `matrix.homeserverConfig.oidc_providers` describing the Authentik IdP (client secret is supplied separately via `matrix.extraConfig`).
+  - `matrix.extraConfig[0]` injects the OIDC client secret from the bootstrap secret without committing it to git (keep the secret name in sync with `bootstrap.secret.name` if you customise it).
+  - `matrix.ingress` and `matrix.element.ingress` expose both services on `https://matrix.k3s.agentydragon.com/` using Traefik.
+- `bootstrap.secret.*` — name of the secret (defaults to `matrix-stack-bootstrap`) plus the base64-encoded values used when `sealedSecrets.enabled: false`.
+- `bootstrap.admin.*` — admin username and the key inside the bootstrap secret that contains its password.
+- `bootstrap.ember.*` — Ember bot username, target namespace, destination secret name for the token, and password key inside the bootstrap secret.
+- `sealedSecrets.*` — enablement flag and the encrypted data for `admin-password`, `ember-password`, and `oidc-client-secret`. When enabled (default), the template renders a `SealedSecret` named `matrix-stack-bootstrap` which the controller then unwraps into the runtime secret that both the bootstrap Jobs and Synapse consume.
 
-3) Copy the encryptedData into values.yaml:
-   sealedSecrets:
-     enabled: true
-     name: synapse-secrets
-     encryptedData:
-       registration-shared-secret: <sealed>
-       admin-password: <sealed>
-       oidc-client-secret: <sealed>
+## Sealed secret workflow
 
-Authentik SSO
-- Point an Authentik OAuth2/OIDC application at `https://matrix.k3s.agentydragon.com/_synapse/client/oidc/callback`.
-- Set `synapse.oidc.*` in your values file (issuer, clientId, scopes, templates, claimRequirements).
-- Seal the Authentik client secret into `sealedSecrets.encryptedData.oidc-client-secret`.
-- Create Authentik users/groups (e.g. `agentydragon`, `matrix-agent`, `matrix-users`) so Synapse can require membership via `claimRequirements`.
-- The Synapse `homeserver.yaml` template renders via `envsubst`, so `${REGISTRATION_SHARED_SECRET}` and `${OIDC_CLIENT_SECRET}` are injected at runtime from the shared secret instead of being stored in the ConfigMap.
-- PKCE is currently disabled (`pkce_method: never`) because Authentik returns `unsupported_algorithm` for both `plain` and `S256` challenges; re-enable once the IdP handles those properly.
-- Set `synapse.oidc.debug.enableParseLogging=true` to wrap Synapse's OIDC handler so failures log the raised exception and the first 256 characters of the offending `id_token`. Remember to turn this off once the issue is resolved because the logs can contain sensitive token data.
+If you need to regenerate the bootstrap credentials:
 
+```bash
+kubectl create secret generic matrix-stack-bootstrap \
+  --from-literal=admin-password='<admin-password>' \
+  --from-literal=ember-password='<ember-password>' \
+  --from-literal=oidc-client-secret='<authentik-client-secret>' \
+  --dry-run=client -o yaml > /tmp/matrix-stack-bootstrap.yaml
 
-Install
+kubeseal --format yaml \
+  --name matrix-stack-bootstrap \
+  --namespace matrix \
+  < /tmp/matrix-stack-bootstrap.yaml > sealed-matrix-stack-bootstrap.yaml
+```
+
+Copy the resulting `encryptedData` values into `values.yaml` under `sealedSecrets.encryptedData`.
+
+## Authentik SSO setup
+
+- Configure an Authentik OAuth2 provider with redirect URI `https://matrix.k3s.agentydragon.com/_synapse/client/oidc/callback`.
+- Place the issuer URL and client ID in `matrix.homeserverConfig.oidc_providers[0]`.
+- Seal the client secret into the bootstrap secret; it is injected at runtime via `matrix.extraConfig` so it never appears in plain text in the chart.
+- Enforce membership in the `matrix-users` group via `claim_requirements` (already part of the default values).
+- PKCE is required (`pkce_method: always`) which lines up with Authentik advertising `S256`.
+
+## Install / upgrade
+
+```bash
+helm dependency update k8s/helm/matrix-stack
 helm upgrade --install matrix k8s/helm/matrix-stack \
   -n matrix --create-namespace \
   -f your-values.yaml
+```
 
-Bootstrap admin
-A one-shot Job (job-bootstrap-admin) runs register_new_matrix_user to ensure the admin exists.
-It reads homeserver.yaml (rendered from ConfigMap + secret) and admin-password from the same Secret.
+The upstream chart handles Synapse, Element, and (if enabled) PostgreSQL. Once those pods are up, our bootstrap Jobs will:
 
-Element Web UI
-Enable via values.element.enabled=true. You can expose it by enabling element.ingress
-or via a Service/port-forward for testing.
+1. Create or confirm the admin user (password pulled from the bootstrap secret).
+2. Provision the Ember bot, login, and write the access token into the `ember` namespace secret referenced by your controllers.
 
-Local dev (optional)
-For local Docker-based development (no k8s), see matrix/ in this repo: docker-compose.yml + scripts.
+## Element
+
+Element is served from `/` on `matrix.k3s.agentydragon.com`, matching the upstream chart defaults. No more `/element` path rewrites or Traefik CRDs are required.
+
+## Local development
+
+If you want a non-Kubernetes setup for experimentation, see the `matrix/` directory in the repo for docker-compose files and helper scripts.

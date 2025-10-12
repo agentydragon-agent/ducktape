@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel, ConfigDict
 
-from .config import PilotSettings, load_settings
+from .config import EmberSettings, load_settings
 from .runtime import PilotRuntime
 
 logger = logging.getLogger(__name__)
@@ -35,14 +35,17 @@ class ShutdownResponse(BaseModel):
 
 
 @lru_cache(maxsize=1)
-def _settings() -> PilotSettings:
+def _settings() -> EmberSettings:
     settings = load_settings()
     if not settings.matrix.configured:
-        raise RuntimeError("Matrix settings incomplete; set MATRIX_BASE_URL and MATRIX_ACCESS_TOKEN")
+        raise RuntimeError(
+            "Matrix settings incomplete; set MATRIX_BASE_URL and provide a Matrix access token "
+            "(env MATRIX_ACCESS_TOKEN or /var/run/ember/secrets/matrix_access_token)"
+        )
     return settings
 
 
-def create_app(settings: PilotSettings | None = None) -> FastAPI:
+def create_app(settings: EmberSettings | None = None) -> FastAPI:
     settings = settings or _settings()
     runtime = PilotRuntime(settings)
 

@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Iterable
 
 from openai.types.responses import Response, ResponseInputItemParam, ResponseInputParam
+from openai.types.responses.easy_input_message import EasyInputMessage
+from openai.types.responses.response_input_text import ResponseInputText
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -46,23 +48,15 @@ class ConversationHistory:
 
     def build_input_items(self, system_prompt: str) -> ResponseInputParam:
         items: list[ResponseInputItemParam] = []
-        items.append(
-            _INPUT_ITEM_ADAPTER.validate_python(
-                {
-                    "type": "message",
-                    "role": "system",
-                    "content": [{"type": "input_text", "text": system_prompt}],
-                }
-            )
-        )
+        items.append(_build_system_prompt_item(system_prompt))
 
         for record in self._records:
-            if record.input_item is not None:
-                items.append(record.input_item)
+            if (input_item := record.input_item) is not None:
+                items.append(input_item)
                 continue
-            if record.response is None:
+            if (response := record.response) is None:
                 continue
-            for output in record.response.output:
+            for output in response.output:
                 try:
                     items.append(
                         _INPUT_ITEM_ADAPTER.validate_python(
@@ -95,6 +89,15 @@ class ConversationHistory:
                     yield HistoryRecord.model_validate_json(line)
                 except ValidationError as exc:
                     logger.debug("Skipping invalid history record: %s", exc)
+
+
+def _build_system_prompt_item(system_prompt: str) -> ResponseInputItemParam:
+    message = EasyInputMessage(
+        type="message",
+        role="system",
+        content=[ResponseInputText(type="input_text", text=system_prompt)],
+    )
+    return _INPUT_ITEM_ADAPTER.validate_python(message.model_dump(mode="python", exclude_none=True))
 
 
 def _utcnow() -> datetime:

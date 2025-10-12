@@ -6,7 +6,7 @@ import logging
 from nio import RoomMessageText
 from openai import AsyncOpenAI
 
-from .config import PilotSettings
+from .config import EmberSettings
 from .history import ConversationHistory
 from .matrix_client import MatrixClient
 from .openai_agent import OpenAIAgent
@@ -15,14 +15,11 @@ logger = logging.getLogger(__name__)
 
 
 class PilotRuntime:
-    def __init__(self, settings: PilotSettings) -> None:
+    def __init__(self, settings: EmberSettings) -> None:
         self._settings = settings
-        self._history = ConversationHistory(settings.history_path)
-        self._matrix_client = MatrixClient(settings.matrix)
-        self._openai_client = AsyncOpenAI(api_key=settings.openai.api_key)
-        self._agent = OpenAIAgent(settings.openai, self._history, self._openai_client)
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
+        self._initialise_components()
 
     async def start(self) -> None:
         logger.info("Starting pilot runtime")
@@ -45,11 +42,14 @@ class PilotRuntime:
 
     async def restart(self) -> None:
         await self.stop()
+        self._initialise_components()
+        await self.start()
+
+    def _initialise_components(self) -> None:
         self._history = ConversationHistory(self._settings.history_path)
         self._matrix_client = MatrixClient(self._settings.matrix)
         self._openai_client = AsyncOpenAI(api_key=self._settings.openai.api_key)
         self._agent = OpenAIAgent(self._settings.openai, self._history, self._openai_client)
-        await self.start()
 
     async def _loop(self) -> None:
         try:
@@ -58,9 +58,22 @@ class PilotRuntime:
                     continue
                 message_text = _format_events(events)
                 logger.info("Received Matrix batch:\n%s", message_text)
+                await self._refresh_openai_client()
                 await self._agent.handle_user_message(message_text)
         except asyncio.CancelledError:
             raise
+
+    async def _refresh_openai_client(self) -> None:
+        api_key, changed = self._settings.openai.api_key_secret.refresh()
+        if api_key is None:
+            raise RuntimeError("OpenAI API key is not configured")
+        if not changed:
+            return
+
+        logger.info("OpenAI API key refreshed; recreating client")
+        await self._openai_client.close()
+        self._openai_client = AsyncOpenAI(api_key=api_key)
+        self._agent = OpenAIAgent(self._settings.openai, self._history, self._openai_client)
 
 
 def _format_events(events: list[RoomMessageText]) -> str:

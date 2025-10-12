@@ -2,12 +2,21 @@
 # This should be applied to Authentik to automatically configure the OAuth2 provider
 apiVersion: v1
 kind: ConfigMap
+{{- $giteaChecksum := "" -}}
+{{- if .Values.gitea.clientSecretCiphertext }}
+{{- $giteaChecksum = sha256sum .Values.gitea.clientSecretCiphertext }}
+{{- end }}
 metadata:
   name: authentik-blueprints-gitea
   namespace: authentik
+  {{- if $giteaChecksum }}
+  annotations:
+    blueprints.goauthentik.io/revision: {{ $giteaChecksum | quote }}
+  {{- end }}
 data:
+  {{ $_ := set . "GiteaBlueprintChecksum" $giteaChecksum }}
   gitea.yaml: |
-    version: 1
+{{ tpl (.Files.Get "blueprints/gitea.yaml") . | indent 4 }}
     metadata:
       name: Gitea OAuth2 Setup
       labels:
@@ -91,4 +100,3 @@ data:
         attrs:
           name: gitea-admins
           is_superuser: false
-
