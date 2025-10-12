@@ -81,6 +81,7 @@ element:
     className: traefik
     host: matrix.k3s.agentydragon.com
     path: /element
+    priority: 100
     tlsSecretName: ""
     entrypoints: web,websecure
     annotations: {}

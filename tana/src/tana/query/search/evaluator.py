@@ -5,10 +5,7 @@ from functools import singledispatch
 
 from tana.domain.constants import EVENT_TYPE_ID, MEETING_TYPE_ID
 from tana.domain.nodes import BaseNode
-from tana.domain.types import NodeId
-from tana.graph.workspace import TanaGraph
-from tana.query.filters import filter_by_field_value, filter_by_tag, filter_nodes
-from tana.query.search.parser import (
+from tana.domain.search import (
     BooleanOperator,
     BooleanSearch,
     FieldSearch,
@@ -17,6 +14,9 @@ from tana.query.search.parser import (
     TextSearch,
     TypeSearch,
 )
+from tana.domain.types import NodeId
+from tana.graph.workspace import TanaGraph
+from tana.query.filters import filter_by_field_value, filter_by_tag, filter_nodes
 
 
 class SearchEvaluator:

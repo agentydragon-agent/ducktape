@@ -8,7 +8,7 @@ from tana.domain.nodes import BaseNode
 from tana.domain.types import NodeId
 from tana.graph.workspace import TanaGraph
 from tana.io.json import load_workspace
-from tana.query.search.materializer import compare_search_results, materialize_search
+from tana.services.search import SearchService
 
 
 class Workspace:
@@ -16,6 +16,7 @@ class Workspace:
 
     def __init__(self, graph: TanaGraph) -> None:
         self.graph = graph
+        self._search = SearchService(graph)
 
     @classmethod
     def load(cls, path: Path | str) -> "Workspace":
@@ -30,8 +31,10 @@ class Workspace:
 
         return export_node_as_tanapaste(self.graph, self.node(node_id))
 
-    def materialize_search(self, node_id: NodeId | str) -> list[NodeId]:
-        return materialize_search(self.graph, self.node(node_id))
+    def materialize_search(self, node_id: NodeId) -> list[NodeId]:
+        node = self.node(node_id)
+        return self._search.materialize(node)
 
-    def compare_search_results(self, node_id: NodeId | str) -> dict[str, Iterable[NodeId]]:
-        return compare_search_results(self.graph, self.node(node_id))
+    def compare_search_results(self, node_id: NodeId) -> dict[str, Iterable[NodeId]]:
+        node = self.node(node_id)
+        return self._search.compare_results(node)

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-
 from tana.domain.constants import (
     AND_OPERATOR_ID,
     MIN_TUPLE_CHILDREN,
@@ -11,57 +8,17 @@ from tana.domain.constants import (
     SEARCH_EXPRESSION_KEY_ID,
 )
 from tana.domain.nodes import BaseNode, TupleNode
+from tana.domain.search import (
+    BooleanOperator,
+    BooleanSearch,
+    FieldSearch,
+    SearchExpression,
+    TagSearch,
+    TextSearch,
+    TypeSearch,
+)
 from tana.domain.types import NodeId
 from tana.graph.workspace import TanaGraph
-
-
-class BooleanOperator(Enum):
-    """Boolean operators for search expressions."""
-
-    AND = "AND"
-    OR = "OR"
-    NOT = "NOT"
-
-
-class SearchExpression:
-    """Base class for search expressions."""
-
-
-@dataclass
-class TagSearch(SearchExpression):
-    """Search for nodes with a specific tag."""
-
-    tag_node_id: NodeId
-
-
-@dataclass
-class TypeSearch(SearchExpression):
-    """Search for nodes of a specific system type."""
-
-    type_node_id: NodeId
-
-
-@dataclass
-class TextSearch(SearchExpression):
-    """Search for nodes matching text criteria."""
-
-    text: str
-
-
-@dataclass
-class FieldSearch(SearchExpression):
-    """Search for nodes with specific field values."""
-
-    field_name: str
-    values: list[str]
-
-
-@dataclass
-class BooleanSearch(SearchExpression):
-    """Boolean combination of search expressions."""
-
-    operator: BooleanOperator
-    operands: list[SearchExpression]
 
 
 class SearchParseError(Exception):
@@ -186,9 +143,8 @@ def _parse_tuple_operator(store: TanaGraph, node: TupleNode) -> SearchExpression
                 values.append(value_node.name)
 
         if values:
-            return FieldSearch(operator_node.name, values)
-        # Unsupported operator - treat as text search
-        return TextSearch(f"<{operator_node.name}>")
+            return FieldSearch(field_name=operator_node.name, values=values)
+        return TextSearch(text=f"<{operator_node.name}>")
 
     # Unknown operator
     raise SearchParseError(
@@ -220,18 +176,18 @@ def _parse_single_component(
 
     # Check if it's a system type
     if node.id.startswith("SYS_T"):
-        return TypeSearch(node.id)
+        return TypeSearch(type_id=node.id)
 
     # Check if it has a name - could be text search or tag
     if node.name:
         # If the node has supertags, it's likely a tag definition
         if store.get_supertags(node.id):
-            return TagSearch(node.id)
+            return TagSearch(tag_id=node.id)
         # Otherwise treat as text search
-        return TextSearch(node.name)
+        return TextSearch(text=node.name)
 
     # Default to tag search by ID
-    return TagSearch(node.id)
+    return TagSearch(tag_id=node.id)
 
 
 def _parse_boolean_expression(
@@ -251,4 +207,4 @@ def _parse_boolean_expression(
         The parsed boolean expression or None
     """
     operands = [expr for op_id in operand_ids if (expr := _parse_single_component(store, op_id))]
-    return BooleanSearch(operator, operands) if operands else None
+    return BooleanSearch(operator=operator, operands=operands) if operands else None

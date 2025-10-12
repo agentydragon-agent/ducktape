@@ -10,4 +10,3 @@ def is_wrapper(node: BaseNode) -> bool:
     return node.props.doc_type in _WRAPPER_DOC_TYPES
 
 
-__all__ = ["is_wrapper"]

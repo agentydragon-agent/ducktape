@@ -93,4 +93,3 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
         self._supertag_index = dict(idx)
 
 
-__all__ = ["TanaGraph"]
