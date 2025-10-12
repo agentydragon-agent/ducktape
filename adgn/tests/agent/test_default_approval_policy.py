@@ -9,9 +9,8 @@ from adgn.mcp._shared.naming import build_mcp_function
 
 def _make_policy_for_decision(decision_enum: str) -> str:
     return (
-        "from adgn.agent.policies.helpers import ApprovalDecision, WellKnownTools, PolicyRequest\n"
+        "from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest\n"
         "from adgn.agent.policies.scaffold import run\n"
-        "from adgn.mcp._shared.constants import UI_SERVER_NAME\n"
         + (
             """
 def decide(ctx: PolicyRequest):

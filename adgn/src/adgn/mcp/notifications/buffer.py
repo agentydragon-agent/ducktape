@@ -10,6 +10,7 @@ from fastmcp.server.server import has_resource_prefix
 from mcp import types as mcp_types
 
 from adgn.agent.notifications.types import NotificationsBatch, ResourceUpdateEvent
+from adgn.mcp.compositor.server import Compositor
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,8 @@ class NotificationsBuffer:
     """
 
     def __init__(
-        self, *, client: Client | None = None, compositor
-    ) -> None:  # compositor: Compositor
+        self, *, client: Client | None = None, compositor: Compositor
+    ) -> None:
         self._client = client
         self._compositor = compositor
         self._updates: list[ResourceUpdateEvent] = []
@@ -48,10 +49,17 @@ class NotificationsBuffer:
         self._raw: list[
             mcp_types.ResourceUpdatedNotification | mcp_types.ResourceListChangedNotification
         ] = []
-        self._hooks: list[Callable[[], Awaitable[None] | None]] = []
+        self._hooks: list[Callable[[], Awaitable[None]]] = []
         self.handler: MessageHandler = _Handler(self)
+        # Subscribe to compositor-level notifications when available so we don't
+        # rely solely on client message forwarding (which may be disabled for
+        # in-proc mounts).
+        self._compositor.add_resource_updated_listener(self._on_resource_listener)
+        self._compositor.add_list_changed_listener(self._on_list_listener)
+        # Capture any pending list-changed signals emitted before the buffer attached
+        self._list_changed.update(self._compositor.pop_recent_list_changed())
 
-    def add_hook(self, hook: Callable[[], Awaitable[None] | None]) -> None:
+    def add_hook(self, hook: Callable[[], Awaitable[None]]) -> None:
         self._hooks.append(hook)
 
     def clear_hooks(self) -> None:
@@ -82,14 +90,7 @@ class NotificationsBuffer:
         self._updates.append(ResourceUpdateEvent(server=server, uri=uri_str))
         # Append the typed notification for debugging/inspection
         self._raw.append(message)
-        # Fire hooks best-effort
-        for h in list(self._hooks):
-            try:
-                res = h()
-                if asyncio.iscoroutine(res):
-                    asyncio.create_task(res)
-            except Exception:
-                logger.debug("notifications hook failed", exc_info=True)
+        await self._run_hooks()
 
     async def _on_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
         # Attribute origin using compositor-captured child notifications when available
@@ -97,11 +98,7 @@ class NotificationsBuffer:
         self._list_changed.update(names)
         # Record the typed notification
         self._raw.append(message)
-        # Fire hooks
-        for h in list(self._hooks):
-            res = h()
-            if asyncio.iscoroutine(res):
-                await res
+        await self._run_hooks()
 
     async def _derive_server(self, uri: str) -> str:
         # Do not guess on format. Require compositor to provide the resource prefix format;
@@ -114,3 +111,20 @@ class NotificationsBuffer:
             if has_resource_prefix(uri, name_str, fmt):
                 return name_str
         return "unknown"
+
+    async def _on_resource_listener(self, name: str, uri: str) -> None:
+        self._updates.append(ResourceUpdateEvent(server=name, uri=uri))
+        await self._run_hooks()
+
+    async def _on_list_listener(self, name: str) -> None:
+        self._list_changed.add(name)
+        await self._run_hooks()
+
+    async def _run_hooks(self) -> None:
+        if not self._hooks:
+            return
+        for hook in list(self._hooks):
+            try:
+                await hook()
+            except Exception:
+                logger.debug("notifications hook failed", exc_info=True)

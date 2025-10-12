@@ -12,10 +12,10 @@ from adgn.seatbelt.model import (
     Subpath,
 )
 from adgn.seatbelt.runner import run_sandboxed_async
+from tests._markers import REQUIRES_SANDBOX_EXEC
 
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
-@pytest.mark.macos
-@pytest.mark.shell
 # Incremental widening to document exactly which additions were insufficient on this host.
 # A: map-only (deny default) → dyld missing cache/parents → SIGABRT
 # B: + metadata on /, /System/Library, /usr/lib → still SIGABRT (metadata alone insufficient)

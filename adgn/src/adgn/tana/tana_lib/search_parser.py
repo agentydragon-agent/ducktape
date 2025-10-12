@@ -12,14 +12,13 @@ from enum import Enum
 
 from .constants import (
     AND_OPERATOR_ID,
+    MIN_TUPLE_CHILDREN,
     NOT_OPERATOR_ID,
     OR_OPERATOR_ID,
     SEARCH_EXPRESSION_KEY_ID,
 )
 from .models import BaseNode, NodeStore, TupleNode
 from .types import NodeId
-
-MIN_TUPLE_CHILDREN = 2
 
 
 class BooleanOperator(Enum):

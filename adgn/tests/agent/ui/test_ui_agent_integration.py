@@ -11,6 +11,7 @@ from adgn.agent.notifications.types import NotificationsBatch
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.ui.server import make_ui_server
 from tests.agent.ui.typed_asserts import assert_typed_items_have_one, is_assistant_markdown
 from tests.fixtures.responses import ResponsesFactory
@@ -27,14 +28,14 @@ def _make_ui_behavior(rf: ResponsesFactory):
             return rf.make(
                 rf.tool_call(
                     call_id="call_1",
-                    name="mcp__ui__send_message",
+                    name=build_mcp_function("ui", "send_message"),
                     arguments=json.loads(args_json),
                 )
             )
         return rf.make(
             rf.tool_call(
                 call_id="call_2",
-                name="mcp__ui__end_turn",
+                name=build_mcp_function("ui", "end_turn"),
                 arguments={},
             )
         )
@@ -46,7 +47,8 @@ def _make_ui_behavior(rf: ResponsesFactory):
 async def test_ui_server_with_mock_agent_produces_ui_state_updates(
     responses_factory: ResponsesFactory,
     make_pg_compositor,
-    approval_policy_reader_allow_all,
+    stub_approval_policy_engine,
+    approval_policy_reader_stub,
 ):
     # Per-agent bus and UI MCP server
     bus = ServerBus()
@@ -66,6 +68,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
     sess = AgentSession(mgr, persistence=_NoopPersist())
     # Wire the per-agent bus so manager drains it on function outputs
     sess.ui_bus = bus
+    sess.approval_engine = stub_approval_policy_engine
 
     # Patch send_json to capture envelopes
     orig_send_json = mgr.send_json
@@ -88,9 +91,10 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
 
     mgr.send_json = _capture  # type: ignore[assignment]
 
-    async with make_pg_compositor(
-        {"ui": ui_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as (mcp_client, _comp):
+    async with make_pg_compositor({"ui": ui_server, "approval_policy": approval_policy_reader_stub}) as (
+        mcp_client,
+        _comp,
+    ):
         handlers = [ServerModeHandler(bus=bus, poll_notifications=lambda: NotificationsBatch())]
         agent = await MiniCodex.create(
             model="test-model",

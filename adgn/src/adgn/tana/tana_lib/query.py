@@ -6,9 +6,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from .constants import MIN_TUPLE_CHILDREN
 from .models import BaseNode, NodeStore, TupleNode
-
-MIN_TUPLE_CHILDREN = 2
 
 
 def get_field_values(

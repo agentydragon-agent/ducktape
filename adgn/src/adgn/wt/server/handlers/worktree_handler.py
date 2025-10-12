@@ -45,7 +45,7 @@ async def worktree_list(git: GitService, config: Configuration) -> WorktreeListR
             WorktreeInfo(
                 wtid=worktree_id,
                 name=worktree_name,
-                absolute_path=str(info.path),
+                absolute_path=info.path,
                 branch_name=info.branch,
                 exists=info.exists,
                 is_main=False,
@@ -146,7 +146,7 @@ async def worktree_create(
     return WorktreeCreateResult(
         wtid=worktree_id,
         name=params.name,
-        absolute_path=str(worktree_path),
+        absolute_path=worktree_path,
         branch_name=branch_name,
         success=True,
         post_hook=(HookRunResult(**post) if post else None),
@@ -263,7 +263,7 @@ async def worktree_get_by_name(
             wtid=make_worktree_id(worktree_name),
             name=worktree_name,
             exists=True,
-            absolute_path=str(found_worktree.path),
+            absolute_path=found_worktree.path,
         )
     else:
         result = WorktreeGetByNameResult(

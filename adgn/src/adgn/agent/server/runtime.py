@@ -298,8 +298,8 @@ class AgentSession:
         if self._persistence is not None and self.agent_id:
             rows = await self._persistence.list_policy_proposals(self.agent_id)
             for r in rows:
-                pid = str(r.get("id"))
-                raw = str(r.get("status"))
+                pid = str(r.id)
+                raw = str(r.status)
                 # Strict mapping; surface invalid data rather than swallowing
                 status = ProposalStatus(raw)
                 proposals.append(ProposalInfo(id=pid, status=status))
@@ -328,6 +328,7 @@ class AgentSession:
                 active_run_id=(self.active_run.run_id if self.active_run else None),
                 run_counter=self._run_counter,
             ),
+            approval_policy=approval_policy,
             details=details,
         )
 

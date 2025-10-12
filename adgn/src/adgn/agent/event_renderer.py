@@ -9,7 +9,7 @@ from adgn.mcp._shared.constants import (
     RUNTIME_EXEC_TOOL_NAME,
     RUNTIME_SERVER_NAME,
 )
-from adgn.mcp._shared.naming import parse_mcp_function
+from adgn.mcp._shared.naming import build_mcp_function, tool_matches
 from adgn.openai_utils.model import ReasoningItem
 
 from .handler import AssistantText, ToolCall, ToolCallOutput, UserText
@@ -51,8 +51,7 @@ class DisplayEventsHandler(BaseHandler):
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._calls[evt.call_id] = evt
         # For docker_exec: render a concise bash-like input line here and skip JSON args
-        server, tool = parse_mcp_function(evt.name)
-        if (server, tool) == (RUNTIME_SERVER_NAME, RUNTIME_EXEC_TOOL_NAME):
+        if tool_matches(evt.name, server=RUNTIME_SERVER_NAME, tool=RUNTIME_EXEC_TOOL_NAME):
             call_args = _parse_json_or_none(evt.args_json) or {}
             if isinstance(call_args, dict) and (cmd := call_args.get("cmd")) is not None:
                 cmd_line = shlex.join([str(x) for x in cmd]) if isinstance(cmd, list) else str(cmd)
@@ -105,9 +104,12 @@ class DisplayEventsHandler(BaseHandler):
             data = {"isError": result.is_error}
 
         if call:
-            server, tool = parse_mcp_function(call.name)
-            if (server, tool) == (RUNTIME_SERVER_NAME, RUNTIME_EXEC_TOOL_NAME):
-                return self._render_docker_exec(call.name or "tool_output", call, data)
+            if tool_matches(call.name, server=RUNTIME_SERVER_NAME, tool=RUNTIME_EXEC_TOOL_NAME):
+                return self._render_docker_exec(
+                    call.name or build_mcp_function(RUNTIME_SERVER_NAME, RUNTIME_EXEC_TOOL_NAME),
+                    call,
+                    data,
+                )
 
         label = call.name if call is not None else "tool_output"
         return f"◀ {label}:\n{self._pp_json(data)}"

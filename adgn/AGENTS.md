@@ -119,8 +119,8 @@ See `README.md` for a shorter overview.
 
 ## Conventions and Tips
 - MCP naming
-  - When composing MCP tool names programmatically, use `build_mcp_function(server, tool)` and `parse_mcp_function(name)` from `adgn.mcp._shared.naming`.
-  - Avoid hard-coded strings like `mcp__server__tool` in code. Literal forms in docs/examples are illustrative only.
+  - When composing MCP tool names programmatically, use `build_mcp_function(server, tool)` from `adgn.mcp._shared.naming`.
+  - Avoid hard-coded strings like `server_tool` in code. Literal forms in docs/examples are illustrative only.
 - FastMCP error handling
   - Do not wrap tool bodies in broad try/except. Uncaught exceptions become MCP errors (`isError=true`) with messages.
   - Prefer Pydantic models for inputs/outputs; validation errors surface as MCP errors automatically.
@@ -133,6 +133,24 @@ See `README.md` for a shorter overview.
 - Arg0 virtual CLIs
   - Virtual commands are exposed by argv0 name on PATH, e.g., `apply_patch` (`applypatch` alias) to apply OpenAI‑style patch envelopes
   - Symlink creation is strict; failures abort startup
+- Import aliases
+  - Avoid renaming imports unless there is a real collision or a widely
+    accepted alias for the library.
+- Paths
+  - Prefer working with `pathlib.Path` objects directly; only call
+    `str(path)` when an external API requires a string.
+- MCP CallToolResult handling
+  - Normalize FastMCP client results immediately by calling `to_pydantic`. Downstream helpers should only accept `mcp.types.CallToolResult`.
+- Typing discipline
+  - Handle exact runtime types. When an external API returns a loose object, convert it at the boundary so the rest of the code sees a single concrete type.
+  - During typing passes, scan for broad annotations (`Any`, `object`, large `Union`, untyped `dict`) with `rg` and tighten or document each occurrence. Treat unexplained permissive types as findings.
+- Centralize boundary conversions (e.g., `_normalize_result`/`_call_structured`) instead of duplicating `isinstance` + conversion logic.
+- Pydantic construction
+  - Instantiate models with keyword arguments (e.g., `Model(field=value)`)
+    rather than passing raw dictionaries.
+  - When validating payloads, prefer `Model.model_validate(data)` and reserve
+    `TypeAdapter(...).validate_python` for cases where no concrete model
+    exists.
 - MCP servers with agent‑specific state
   - Prefer constructors that accept per‑agent state (no hidden globals/singletons)
   - In‑proc servers are mounted on a `Compositor` (via `mount_inproc(...)`)
@@ -171,6 +189,8 @@ See `README.md` for a shorter overview.
   - Run `ruff format .` and `ruff check . --fix` locally. Fix E402 (imports not at top) by moving imports to the top; do not add ignore rules unless explicitly approved.
 - Mypy
   - Run `mypy --config-file pyproject.toml`. Do not add new excludes or ignore patterns without explicit approval. If vendor packages cause false positives (e.g., duplicate module name errors), scope checks to the edited subpackages (e.g., `mypy src/adgn/mcp/...`) while keeping the configuration unchanged.
+- Codemod
+  - Run `trivial-patterns --scope tests tests` alongside Ruff and mypy before handing off patches. Add more scopes with repeated flags or comma-separated values (e.g., `--scope tests,src/adgn`). Omit `--scope` to scan the entire project. The CLI wraps `adgn-trivial-patterns`; review its findings and fix or justify each one. Skip patterns live under `[tool.adgn.trivial-patterns]` in `pyproject.toml`.
 
 ### CallToolResult Conventions (MCP)
 - Typed vs. client results
@@ -193,7 +213,7 @@ Runtime exec
 
 Approval Policy
 - Policies are standalone Python programs executed in Docker. They read a JSON request from stdin and write a JSON response to stdout.
-  - Input: `{name: "mcp__<server>__<tool>", arguments: {...}}`
+  - Input: `{name: "<server>_<tool>", arguments: {...}}`
   - Output: `{decision: "allow|deny_continue|deny_abort|ask", rationale?: str}`
 - The active policy lives behind the MCP resource `resource://approval-policy/policy.py`. Proposals are managed via the approval policy server and persistence (no host volumes).
 - A packaged minimal policy program is provided at `adgn.agent.policies.default_policy`.
@@ -230,6 +250,8 @@ General
 - No dead code: Remove unused code, unused imports, and historical comments that no longer reflect the behavior.
 - Imports at module top unless a documented circular dependency requires deferring (must be commented at the call site).
  - Place all imports at the top of files. Only use in‑function imports to break a proven circular dependency, and add a one‑line comment at that import explaining the cycle it avoids. Do not move imports into functions for scoping/perf.
+
+- Avoid unnecessary renamed imports. Prefer `import foo` over `import foo as foo`/`import foo as bar` unless disambiguation is required; include a comment when the alias prevents a collision.
 - No getattr/hasattr/setattr probing unless justified and documented.
 - Tests should not use getattr/hasattr. Prefer direct attribute access with precise expectations; adjust fixtures or assertions instead of dynamic probing.
 - Do not swallow exceptions. Either allow the framework to surface them or raise domain errors with structured details. Use narrow exception handling (catch specific exception types) and never use broad `except Exception:` unless you immediately re‑raise after adding context.
@@ -238,10 +260,12 @@ General
   - Do not add redundant try/except that simply re‑raises. If you want failures to surface, call the typed function directly and let exceptions bubble. Example: when enriching sampling snapshots (e.g., calling `list_tools()` on a child server), do not wrap in a `try/except: raise`; omit the wrapper entirely.
 - Prefer concise comprehensions and idiomatic patterns; keep public interfaces typed with Pydantic where appropriate.
 - Full test suite passing; ruff + mypy clean.
+ - Run `trivial-patterns --scope tests tests` alongside `ruff` and `mypy`; add scope entries for every directory you touched (`--scope tests --scope src/adgn`) or omit the flag to cover the whole project. Update `[tool.adgn.trivial-patterns]` in `pyproject.toml` if you need additional skip globs. Review both trivial alias and renamed import warnings before sending patches.
  - Prefer precise types. When values are heterogeneous, use discriminated unions, Protocols, TypedDicts, or concrete Pydantic models. For arbitrary JSON fields, use Pydantic’s `JsonValue` inline (do not create a project‑level alias). Using `Any`/`object` is acceptable only when a field truly allows any value (including non‑JSON types) and no stronger contract exists; document such cases.
  - Concurrency messages must be typed. Actor/mailbox patterns should use explicit dataclasses (or Pydantic models) for messages and result types — never `dict[str, T]`. This keeps cross‑task communication precise and verifiable.
  - Antipattern: do not use `dict.get(...)` on Pydantic/typed models. Access fields directly (`model.field`). If data starts as a dict, parse it into a typed model at the boundary and operate on typed fields. Only use `dict.get(...)` for truly untyped external payloads (e.g., raw DB rows, HTTP headers, environment vars), and prefer explicit `is None` checks over "or []" defaulting.
  - Antipattern: do not `model_dump()` just to re‑parse fields for logic. Use the typed attributes on the Pydantic object (e.g., `ReadResourceResult.contents`, `InitializeResult.capabilities`). Dump only at I/O boundaries (logging/serialization).
+- Instantiate Pydantic models with keyword arguments (`Model(field=value)`) rather than passing dictionaries. When validating external payloads, prefer `Model.model_validate(data)` to `TypeAdapter(...).validate_python(...)` unless you explicitly need adapter semantics.
 
 Runtime containerization / approval policy specifics
 - Evaluation ALWAYS runs in Docker using a one‑off container. No `/trusted` or `/rw` mounts are used.
@@ -250,8 +274,8 @@ Runtime containerization / approval policy specifics
 
 - Policy evaluation (server/tool)
 - The policy middleware calls a private tool `decide({name, arguments}) -> {decision, rationale}` hosted on the `policy_reader` server. By default this tool is hidden; it may be exposed for testing.
-- Backend detail is internal to the server (not DI): it may evaluate by spawning a one‑off container (`python -c <policy_source>`) or another curated backend. The runtime image is built from `docker/runtime/Dockerfile` and is selected via `ADGN_POLICY_EVAL_IMAGE` (default `adgn-runtime:latest`).
-- Env: `ADGN_POLICY_EVAL_IMAGE`, `ADGN_POLICY_EVAL_TIMEOUT_SECS`, `ADGN_POLICY_EVAL_MEM`, `ADGN_POLICY_EVAL_NANO_CPUS`.
+- Backend detail is internal to the server (not DI): it may evaluate by spawning a one‑off container (`python -c <policy_source>`) or another curated backend. The runtime image is built from `docker/runtime/Dockerfile` and is selected via `ADGN_RUNTIME_IMAGE` (default `adgn-runtime:latest`).
+- Env: `ADGN_RUNTIME_IMAGE`, `ADGN_POLICY_EVAL_TIMEOUT_SECS`, `ADGN_POLICY_EVAL_MEM`, `ADGN_POLICY_EVAL_NANO_CPUS`.
 
 Testing policy decisions (advisory)
 - Optional: expose `policy_reader.decide` to agent/human tokens for testing and planning.
@@ -262,12 +286,11 @@ Docker images
 - Do not silently ignore missing Docker images. Image lookups must raise when an image is not present (e.g., `docker.errors.ImageNotFound`). Avoid `try/except: pass` around image checks.
 
 ### Building images
-- Policy evaluator image (required for `container` mode):
+- Runtime/policy container image (required for `container` mode):
 - Build the shared base: `docker build -t adgn-runtime:latest -f docker/runtime/Dockerfile .`
-- Optionally tag a policy-eval alias: `docker tag adgn-runtime:latest adgn-policy-eval:latest`
 - Properties critic image:
   - `docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .`
-- Override the image via `ADGN_POLICY_EVAL_IMAGE` if you tag it differently.
+- Override the runtime/policy image via `ADGN_RUNTIME_IMAGE` if you tag it differently.
 
 Tests
 - Use explicit Pydantic IO types (e.g., `ExecInput`, `ExecResult`) with typed test clients; avoid guessing models from introspection maps.

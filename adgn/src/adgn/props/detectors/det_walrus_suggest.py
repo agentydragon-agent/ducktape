@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .models import Detection, LineRange
 from .registry import DetectorSpec, register
-from .utils import iter_py_files, read_snippet
+from .utils import make_root_detector, read_snippet
 
 DET_NAME = "walrus_suggest"
 PROP = "python/walrus"
@@ -87,11 +87,7 @@ def _find_in_file(path: Path) -> list[Detection]:
     return out
 
 
-def find(root: Path) -> list[Detection]:
-    out: list[Detection] = []
-    for p in iter_py_files(root):
-        out.extend(_find_in_file(p))
-    return out
+find = make_root_detector(_find_in_file)
 
 
 register(DetectorSpec(name=DET_NAME, target_property=PROP, finder=find))

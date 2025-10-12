@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-ember-bootstrap
+  namespace: gitea
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ember-secret-writer
+  namespace: ember
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ember-secret-writer
+  namespace: ember
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ember-secret-writer
+subjects:
+  - kind: ServiceAccount
+    name: gitea-ember-bootstrap
+    namespace: gitea

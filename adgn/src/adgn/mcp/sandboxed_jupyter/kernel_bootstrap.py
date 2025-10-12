@@ -18,7 +18,7 @@ try:
     launch_new_instance()
 except SystemExit as e:
     # Normal exit path; still record it
-    log(f"bootstrap: SystemExit code={getattr(e, 'code', None)}")
+    log(f"bootstrap: SystemExit code={e.code}")
     raise
 except Exception:
     log(

@@ -2,18 +2,19 @@
 
 A tiny FastMCP server that provides neutral loop control tools independent of any specific UI. Its purpose is to let the agent yield or coordinate turns without coupling to the UI server.
 
-## Tools (server `loop`; model sees `mcp__loop__*`)
+## Tools (server `loop`; model sees `loop_*`)
 
 
 
-- `yield_turn({}) -> {ok}` → exposed as `mcp__loop__yield_turn`
-  - Signal the agent loop to yield control. Safe to allow unconditionally in policy.
+- `yield_turn({}) -> {ok}` → exposed as `loop_yield_turn`
+  - Triggers a latch consumed by the loop-control handler. On the next `on_before_sample`, that handler returns `Abort()` and the turn ends. The handler also appends an end-turn marker to `UiState` so the timeline reflects the transition.
+  - Keep always-allow in policy; it is the neutral, prompt-aligned way for the model to finish a turn.
 
-Server name: `loop` → tools exposed to the model as `mcp__loop__yield_turn`. See also <overview.md> and <../vision.md>.
+Server name: `loop` → tools exposed to the model as `loop_yield_turn`. See also <overview.md> and <../vision.md>.
 
 ## Wiring
 
-- Mount via the Compositor as a proxy so tools appear under `mcp__loop__*`:
+- Mount via the Compositor as a proxy so tools appear under `loop_*`:
   - In‑proc loop app: `Compositor.mount_inproc("loop", control_app)`
   - Remote loop service: `Compositor.mount_server("loop", spec)` (typed HTTP/stdio)
 - Do not attach directly to the manager; keep a single aggregation surface via the Compositor.
@@ -26,6 +27,6 @@ Server name: `loop` → tools exposed to the model as `mcp__loop__yield_turn`. S
 
 ## Notes
 
-- Deprecates `ui.end_turn` on the UI server. Keep UI’s `end_turn` for transition, but prefer `loop.yield_turn` in prompts and handler injections.
+- Deprecates `ui.end_turn` on the UI server. Keep UI’s `end_turn` only while the transition to the loop server completes; prompts and handler injections should prefer `loop.yield_turn`.
 - Pairs well with handler‑injected chat reads: the orchestrator can synthetically insert a `loop.yield_turn` after injecting chat read tool results to immediately hand control back to the model.
-- Yield semantics are owned by the orchestrator/handlers: `yield_turn` transitions into a sleep_until_user state defined by Loop Control. The policy middleware does not define wake semantics; approvals do not wake. See the overview for details.
+- Yield semantics are owned by the loop-control handler: `yield_turn` flips the latch, the handler aborts the turn, and the orchestrator enters whatever “sleep until user” state it defines. The policy middleware does not define wake semantics; approvals do not wake. See the overview for details.

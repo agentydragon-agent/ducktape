@@ -46,46 +46,40 @@ def _raise_if_reserved_code(e: McpError, name: str) -> None:
     code: int | None = None
     msg: str | None = None
     stamped: bool = False
-    if getattr(e, "error", None):
-        try:
-            code = int(e.error.code)  # type: ignore[union-attr]
-        except Exception:
-            code = None
-        try:
-            msg = str(e.error.message)  # type: ignore[union-attr]
-        except Exception:
-            msg = None
-        try:
-            data = getattr(e.error, "data", None)  # type: ignore[union-attr]
-            if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
-                stamped = True
-        except Exception:
-            stamped = False
+    error = e.error
+    try:
+        code = int(error.code)
+    except Exception:
+        code = None
+    try:
+        msg = str(error.message)
+    except Exception:
+        msg = None
+    data = error.data
+    if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
+        stamped = True
     if msg is None:
         msg = str(e)
     # Inspect args for embedded ErrorData/dict with stamp (in-proc raises may drop .error)
     if not stamped:
-        try:
-            for a in getattr(e, "args", ()):  # type: ignore[attr-defined]
-                if isinstance(a, mtypes.ErrorData):
-                    d = getattr(a, "data", None)
-                    if isinstance(d, dict) and d.get(POLICY_GATEWAY_STAMP_KEY) is True:
+        for a in e.args:
+            if isinstance(a, mtypes.ErrorData):
+                data = a.data
+                if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
+                    stamped = True
+                    break
+            if isinstance(a, dict):
+                try:
+                    ad = mtypes.ErrorData.model_validate(a)
+                    data = ad.data
+                    if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
                         stamped = True
                         break
-                if isinstance(a, dict):
-                    try:
-                        ad = mtypes.ErrorData.model_validate(a)
-                        d = getattr(ad, "data", None)
-                        if isinstance(d, dict) and d.get(POLICY_GATEWAY_STAMP_KEY) is True:
-                            stamped = True
-                            break
-                    except Exception:
-                        d = a.get("data")
-                        if isinstance(d, dict) and d.get(POLICY_GATEWAY_STAMP_KEY) is True:
-                            stamped = True
-                            break
-        except Exception:
-            stamped = False
+                except Exception:
+                    data = a.get("data")
+                    if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
+                        stamped = True
+                        break
 
     if stamped or (
         code in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
@@ -157,9 +151,9 @@ class PolicyGatewayMiddleware(Middleware):
 
         # Evaluate decision via MCP reader server when available; fallback to local evaluator
         try:
-            res = await self._policy_reader.decide(PolicyRequest(name=name, arguments=arguments))
-            decision = res.decision
-            rationale = res.rationale
+            decision_res = await self._policy_reader.decide(PolicyRequest(name=name, arguments=arguments))
+            decision = decision_res.decision
+            rationale = decision_res.rationale
         except Exception as e:  # policy engine failure → explicit evaluator error
             logger.warning("policy evaluator error", exc_info=e)
             raise McpError(
@@ -180,15 +174,15 @@ class PolicyGatewayMiddleware(Middleware):
             if self._record is not None:
                 await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_ALLOW)
             try:
-                res = await call_next(context)
+                call_result = await call_next(context)
                 # If downstream returned an error ToolResult instead of raising,
                 # remap reserved policy codes/messages here using typed parsing when available.
-                if bool(getattr(res, "is_error", False)):
+                if bool(getattr(call_result, "is_error", False)):
                     # Attempt to parse structured error details
                     msg: str | None = None
                     code_val: int | None = None
                     stamped_downstream: bool = False
-                    err = getattr(res, "error", None)
+                    err = getattr(call_result, "error", None)
                     if err is not None:
                         # Prefer typed validation if raw dict
                         if isinstance(err, dict):
@@ -215,7 +209,7 @@ class PolicyGatewayMiddleware(Middleware):
                             except Exception:
                                 code_val = None
                     if msg is None:
-                        msg = getattr(res, "message", None)
+                        msg = getattr(call_result, "message", None)
                     if stamped_downstream or (
                         code_val
                         in (
@@ -242,7 +236,7 @@ class PolicyGatewayMiddleware(Middleware):
                                 },
                             )
                         )
-                return res
+                return call_result
             except McpError as e:
                 _raise_if_reserved_code(e, name)
                 raise

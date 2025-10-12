@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
+from adgn.agent.policies.approve_all import decide
 from adgn.agent.policies.scaffold import run
 
 
-def decide(_req: PolicyRequest) -> PolicyResponse:
-    return PolicyResponse(decision=ApprovalDecision.ALLOW, rationale="allow all")
+__all__ = ["decide"]
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
+from mcp import types as mcp_types
 
 # ---- Display items (normalized, UI-friendly) ----
 
@@ -53,7 +54,7 @@ class ExecContent(BaseModel):
 class JsonContent(BaseModel):
     content_kind: Literal["Json"] = "Json"
     args: Any | None = None
-    result: dict | None = None
+    result: mcp_types.CallToolResult | None = None
     is_error: bool | None = None
     model_config = ConfigDict(extra="forbid")
 

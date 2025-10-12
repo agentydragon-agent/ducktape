@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.helpers import api_create_agent
 
 pytestmark = pytest.mark.usefixtures()
@@ -39,21 +40,23 @@ def test_ui_e2e_create_chat_and_restore(page: Page, run_server, responses_factor
         state["i"] = i + 1
         if i == 0:
             return responses_factory.make_tool_call(
-                "mcp__ui__send_message",
+                build_mcp_function("ui", "send_message"),
                 {"mime": "text/markdown", "content": "**r1**"},
                 call_id="call_ui_msg_r1",
             )
         if i == 1:
             return responses_factory.make_tool_call(
-                "mcp__ui__end_turn", {}, call_id="call_ui_end_r1"
+                build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r1"
             )
         if i == 2:
             return responses_factory.make_tool_call(
-                "mcp__ui__send_message",
+                build_mcp_function("ui", "send_message"),
                 {"mime": "text/markdown", "content": "**r2**"},
                 call_id="call_ui_msg_r2",
             )
-        return responses_factory.make_tool_call("mcp__ui__end_turn", {}, call_id="call_ui_end_r2")
+        return responses_factory.make_tool_call(
+            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r2"
+        )
 
     # Inject deterministic OpenAI model via DI
     from tests.llm.support.openai_mock import make_mock

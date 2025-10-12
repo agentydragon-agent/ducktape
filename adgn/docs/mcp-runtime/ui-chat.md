@@ -2,21 +2,20 @@
 
 
 
-This document describes the UI chat server used for human↔agent messaging, and an optional MCP‑native delivery mode. See also <overview.md> and <../vision.md> for how chat fits into the broader runtime.
+This document describes the chat MCP servers that handle human↔agent messaging. The legacy `ui` server (with `send_message` / `end_turn`) is being retired; forward-looking design routes all chat through the dedicated chat servers plus `loop.yield_turn` for end-of-turn signalling. See also <overview.md> and <../vision.md> for how chat fits into the broader runtime.
 
-## V1 (bus‑only chat)
+## Architecture snapshot (sidecar model)
 
-- Server: `adgn.mcp.ui.server` (UI MCP server)
-  - Tools (server `ui`; model sees `mcp__ui__*`):
-    - `send_message({mime, content}) -> UiMessage` — exposed as `mcp__ui__send_message`; agent→UI output. The UI renders markdown; no plain assistant text outside this tool.
-    - `end_turn({}) -> UiEndTurn` — exposed as `mcp__ui__end_turn`; signal end of turn to the UI (transitional; prefer `mcp__loop__yield_turn`).
-- Bus: messages are posted to a process‑local bus and shown in the UI. This is considered a temporary coupling; the MCP resource mode below is the recommended path.
-- Delivery to the model: the runtime orchestrator/handlers inject user messages observed by the UI backend as system/user text for the next sampling turn. No MCP resource subscription is used in V1. The policy middleware does not own chat delivery.
-- UI: may be minimal (no MCP subscriptions, no `resources/read`), focused on approvals and chat rendering.
+- Human chat traffic lives in its own MCP server ("chat human"), mounted **outside** the Compositor. The frontend (or an HTTP bridge) calls this server directly to post user messages.
+- The runtime keeps a dedicated FastMCP client to that sidecar. It pins a subscription to the inbox resource and, on each `resources/updated`, reads the payload and raises a `UserText` event. That event flows through `reduce_ui_state`, so `UiState` (and the WebSocket timeline) is the single source of truth for chat history.
+- Assistant responses use the chat sidecar as well (e.g., `chat.assistant.post`). There is no plain assistant text channel—every message the model emits must go through the chat tool. The runtime raises the corresponding timeline marker (`AssistantMarkdownItem`) so `UiState` remains the authoritative view.
+- With this split, the chat server provides shared storage and notifications; the Compositor remains the aggregated tool surface, and the frontend keeps rendering whatever arrives via `UiState`.
 
-## Recommended (near‑term): MCP‑native chat delivery with dual subscriptions
+## MCP‑native chat delivery (target)
 
 Expose chat via a resource + notifications so both the orchestrator and the Human UI subscribe/read like other servers. This removes the in‑proc bus coupling while keeping a simple UI.
+
+- Sidecar client: the runtime (or any observer) must create a dedicated FastMCP client to the human chat server and subscribe directly; these notifications do **not** traverse the Compositor.
 
 - Resource
   - URI: `ui://chat/inbox`
@@ -39,29 +38,30 @@ Expose chat via a resource + notifications so both the orchestrator and the Huma
     - Human UI: subscribes and reads the resource to render messages. The Human UI can ignore params extras and call `resources/read` for full fidelity; it does not have to rely on notification payloads.
 
 - Tools (optional)
-  - `chat_read_since({after_id, limit?}) -> {messages: [...], last_id}` — exposed as `mcp__ui__chat_read_since`; deterministic, stateless catch‑up after restart (orchestrator tracks `after_id`).
-  - `send_message(...)` — unchanged (agent→UI output).
+  - `chat_read_since({after_id, limit?}) -> {messages: [...], last_id}` — deterministic, stateless catch‑up after restart (orchestrator tracks `after_id`).
+  - `chat.human.post({mime, content})` — human message submission.
+  - `chat.assistant.post({mime, content})` — assistant output (used by the runtime instead of `ui.send_message`).
 
 ## Sample sequences (dual subscriptions)
 
 Startup/hydration
 1) Orchestrator enables chat‑via‑MCP mode and pins a subscription to `ui://chat/inbox`. Human UI also subscribes (or hydrates on view mount).
-2) Orchestrator has a persisted `last_id` → call `ui.chat_read_since({after_id})`; otherwise `resources/read`. Human UI calls `resources/read` to render the current inbox (does not rely on extras).
+2) Orchestrator has a persisted `last_id` → call `chat.read_since({after_id})`; otherwise `resources/read`. Human UI calls `resources/read` to render the current inbox (does not rely on extras).
 3) Orchestrator injects each message (no skipping) in order; persists the new `last_id`. Human UI renders them as they arrive or after read.
 
 New user message
-1) UI server appends to inbox; emits `notifications/resources/updated uri=ui://chat/inbox`.
-2) Orchestrator receives notify → call `resources/read`/`ui.chat_read_since` and inject messages as system text. Human UI receives the same notify and calls `resources/read` to render the inbox (or renders from params.messages[] if provided).
+1) Human chat server appends to inbox; emits `notifications/resources/updated uri=ui://chat/inbox`.
+2) Orchestrator (via its sidecar client) receives notify → call `resources/read`/`chat.read_since`, raises a `UserText` event, and reduces it into `UiState`. Human UI receives the same notify and calls `resources/read` to render the inbox (or renders from params.messages[] if provided).
 3) Orchestrator persists new `last_id`.
 
 Agent sends message
-1) Agent calls `ui.send_message(...)`; UI renders it and may append to inbox.
-2) No notification emitted for self‑authored entries. Human UI already shows it (local echo). No additional orchestrator echo required.
+1) Runtime calls `chat.assistant.post(...)`; the assistant chat server persists the message but suppresses notifications (no self‑echo). Human clients see it via their own local echo or periodic reads; the human chat server will emit notifications only for messages authored by the human side.
+2) Runtime emits an assistant timeline item (`AssistantMarkdownItem`) so the frontend updates immediately. Optionally mirror the message into the human inbox if you want all parties to rely on the same resource.
 
 Crash/reconnect
 1) Orchestrator restarts with persisted `last_id`.
-2) Orchestrator calls `ui.chat_read_since({after_id})` (or windowed `resources/read`) to fetch missed user messages.
-3) Orchestrator injects messages; persists new `last_id`.
+2) Orchestrator (through the sidecar client) calls `ui.chat_read_since({after_id})` (or windowed `resources/read`) to fetch missed user messages.
+3) Orchestrator injects messages by emitting `UserText` events; persists new `last_id`.
 
 ## Notes
 - Preferred path going forward: Dual MCP subscriptions (orchestrator + Human UI) against `ui://chat/inbox`.
@@ -87,32 +87,22 @@ These flows illustrate end‑to‑end behavior for both V1 (bus‑only) and the 
    }
    ```
 4) Model responds with tool calls (no plain text). Example:
-   - Call `mcp__ui__send_message({ mime: "text/markdown", content: "Acknowledged. Running deployment…" })`
-   - Then call `mcp__ui__end_turn({})` (transitional; prefer `mcp__loop__yield_turn`)
+   - Call `ui_send_message({ mime: "text/markdown", content: "Acknowledged. Running deployment…" })`
+   - Then call `loop_yield_turn({})` (or, for legacy flows, `ui_end_turn({})`)
 5) The Compositor (with policy middleware) gates/forwards the tool calls; UI renders the assistant message and ends the turn.
 
 ### Human → Agent (MCP‑native resource mode)
 
 1) Human writes in UI → UI server appends to `ui://chat/inbox` and emits `notifications/resources/updated uri=ui://chat/inbox`.
-2) The orchestrator (subscribed) either consumes `params.messages[]` or calls `resources/read`/`mcp__ui__chat_read_since`.
+2) The orchestrator (subscribed) either consumes `params.messages[]` or calls `resources/read`/`ui_chat_read_since`.
 3) The orchestrator injects each new user message (no skipping) into the next sampling turn (same JSON as above).
-4) Model calls `mcp__ui__send_message` and `mcp__ui__end_turn`; the Compositor forwards; UI renders.
+4) Model calls `ui_send_message` followed by `loop_yield_turn`; the Compositor forwards; UI renders.
 
 ### Agent → Human (both modes)
 
-1) Model initiates with a tool call (no plain text):
-   ```jsonc
-   {
-     "tool": "mcp__ui__send_message",
-     "arguments": {
-       "mime": "text/markdown",
-       "content": "Hi! I can help you deploy. Say \"deploy\" to proceed."
-     }
-   }
-   ```
-2) The Compositor gates/forwards; UI renders the message immediately.
-3) Model calls `ui.end_turn({})` to finish.
-4) In MCP‑native mode, the UI server may append the assistant message to `ui://chat/inbox` but MUST NOT notify (no self‑echo). Human UI already shows the local echo.
+1) Model submits `chat.assistant.post({mime, content})` (no plain text outside tools).
+2) Runtime emits `UiMessageEvt` and optionally mirrors the message to human clients that rely on the chat resource.
+3) Model calls `loop.yield_turn({})` to finish the turn.
 
 ---
 
@@ -150,10 +140,7 @@ These flows illustrate end‑to‑end behavior for both V1 (bus‑only) and the 
 ## Yielding turns (deprecate ui.end_turn)
 
 - Problem: `ui.end_turn` couples yielding to a specific UI.
-- Recommendation: introduce a neutral tool (e.g., `loop.yield_turn({})` on a small control server) for the agent to signal a yield regardless of UI implementation.
-- Migration:
-  - V1: continue supporting `ui.end_turn`.
-  - New path: expose `loop.yield_turn` and update the agent/tool catalog to prefer it. The UI can ignore it or use it to adjust rendering.
+- Recommendation: use the neutral Loop Control server (`loop.yield_turn({})`) for the agent to signal a yield regardless of UI implementation. The `ui.end_turn` tool is deprecated and will be removed alongside the `ui` server.
 
 ### Tool call with approval (illustrative)
 

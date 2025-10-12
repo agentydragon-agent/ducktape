@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from adgn.agent.server.app import create_app
+from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.helpers import api_create_agent, start_uvicorn_app
 from tests.llm.support.openai_mock import make_mock
 
@@ -50,9 +51,11 @@ def test_approvals_delivery_and_user_approve(page: Page, run_server, responses_f
         state["i"] = i + 1
         if i == 0:
             return responses_factory.make_tool_call(
-                "mcp__echo__echo", {"text": "hello"}, call_id="call_echo"
+                build_mcp_function("echo", "echo"), {"text": "hello"}, call_id="call_echo"
             )
-        return responses_factory.make_tool_call("mcp__ui__end_turn", {}, call_id="call_ui_end")
+        return responses_factory.make_tool_call(
+            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
+        )
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -64,7 +67,7 @@ def test_approvals_delivery_and_user_approve(page: Page, run_server, responses_f
     spec = {
         "echo": {
             "transport": "inproc",
-            "factory": "adgn.mcp.echo.server:make_echo_mcp",
+            "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp",
         }
     }
     patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})

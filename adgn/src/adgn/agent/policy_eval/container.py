@@ -6,6 +6,7 @@ import os
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.agent.policy_eval.runner import run_policy_source
+from adgn.agent.runtime.images import resolve_runtime_image
 from docker import DockerClient
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ class ContainerPolicyEvaluator:
         if not agent_id:
             raise ValueError("ContainerPolicyEvaluator requires agent_id")
         self.agent_id = agent_id
-        self.image: str = image or os.getenv("ADGN_POLICY_EVAL_IMAGE", "adgn-runtime:latest")  # type: ignore[assignment]
+        self.image: str = image or resolve_runtime_image()  # type: ignore[assignment]
         self.timeout_secs = (
             timeout_secs
             if timeout_secs is not None

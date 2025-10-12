@@ -32,7 +32,7 @@
 - V1 (sync):
   - All tool calls from the model are gated synchronously inside the Compositor by the policy middleware; denials return JSON‑RPC errors.
   - Yielding is explicit via an agent‑only `loop.yield_turn` tool (Loop Control server).
-  - Chat/inbox flows are out of scope for the initial implementation; an MCP resource mode is documented for near term.
+- Chat/inbox flows are out of scope for the initial implementation; an MCP resource mode (human + assistant chat servers) is documented for near term.
 - Container‑initiated calls MUST go through the Compositor (policy middleware enforces). A minimal async signaling layer is introduced to reflect concurrent programmatic calls without changing V1 tool return shapes.
 
 ---
@@ -46,7 +46,7 @@
   - Enforces approvals globally (model calls + container calls) as a pre‑dispatch filter on `tools/call`
   - Does not own chat/inbox; approvals never act as wake triggers
 - Compositor (FastMCP)
-  - Proxy‑mounts in‑proc and remote servers under prefixes like `mcp__git_*`
+  - Proxy‑mounts in‑proc and remote servers under prefixes like `git_*`
   - Reuses upstream sessions; relays resources and notifications
   - Standard MCP surface: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `resources.subscribe/unsubscribe`, `prompts/list`, `prompts/get`
 - Resources server (dedicated) — see `docs/mcp-runtime/resources.md`
@@ -57,7 +57,7 @@
   - Initial V1: out of scope
   - Near‑term: resource `ui://chat/inbox`; orchestrator tracks last delivered id; dual subscriptions (orchestrator + Human UI)
 - Loop Control server (agent‑only)
-  - `loop.yield_turn` (neutral yield tool), mounted under `mcp__loop__*`
+  - `loop.yield_turn` (neutral yield tool), mounted under `loop_*`
 
 ---
 
@@ -81,7 +81,7 @@
 
 ## Naming & Routing
 
-- Namespacing: `mcp__{server}__{tool}` is the canonical function name surfaced to the model.
+- Namespacing: `{server}_{tool}` is the canonical function name surfaced to the model.
 - Compositor: use FastMCP proxy mounting for in‑proc servers and typed transports for remote.
 - Routing:
   - In‑proc agent calls → Compositor (policy middleware enforces) → mounted servers
@@ -148,8 +148,8 @@ Policy servers (split: reader, approver, proposer) & UI integration
 - Sync contract: the model does not see pending approvals; only final outcomes reach the MCP call.
 
 Testing policy decisions (advisory)
-- Optional: expose `mcp__policy_reader__decide` to agent/human tokens for testing and planning.
-  - Call shape: `decide({name, arguments}) -> {decision, rationale}` where `name` is a namespaced tool (e.g., `mcp__runtime__exec`).
+- Optional: expose `policy_reader_decide` to agent/human tokens for testing and planning.
+  - Call shape: `decide({name, arguments}) -> {decision, rationale}` where `name` is a namespaced tool (e.g., `runtime_exec`).
   - Advisory only: does not create approval items or execute anything; real enforcement happens in the policy middleware at tools/call time.
   - UI affordance: a “Test decision” control can call `policy_reader.decide(...)` on the current tool payload and show the result inline with a warning that enforcement occurs at execution time.
 
@@ -187,9 +187,9 @@ Day In The Life (V1 Sync)
 - Recommended near‑term (MCP‑native):
   - Resource: `ui://chat/inbox` (append‑only; messages + `last_id`)
   - Notifications: `notifications/resources/updated` uri=ui://chat/inbox
-  - Tools (on server `ui`): `chat_read_since({after_id, limit?})` (aggregator exposes as `mcp__ui__chat_read_since`)
+  - Tools (on server `ui`): `chat_read_since({after_id, limit?})` (aggregator exposes as `ui_chat_read_since`)
   - Dual subscriptions: orchestrator (pinned) and Human UI (optional/preferred)
-  - Handler‑injection: on notify, inject results of `chat_read_since` (and optionally a synthetic `mcp__loop__yield_turn`) so the model sees messages as a normal tool result without an extra round
+  - Handler‑injection: on notify, inject results of `chat_read_since` (and optionally a synthetic `loop_yield_turn`) so the model sees messages as a normal tool result without an extra round
 - See: `ui-chat.md` for schemas, sequences, and examples.
 
 Resource‑specific rendering policy (summary)
@@ -232,7 +232,7 @@ Runtime container interaction
 Images (shared Dockerfile)
 - Base Dockerfile: `docker/runtime/Dockerfile` builds a minimal image with the `adgn` package installed (includes `rg`).
 - Runtime exec container: build/tag (e.g., `adgn-runtime:latest`) from the same Dockerfile; typically long‑lived per agent/session.
-- Policy evaluation container: same image and runtime flags as the runtime exec container. You may still choose to launch per‑call.
+- Policy evaluation container: reuse the runtime image (configured via `ADGN_RUNTIME_IMAGE`) with the same runtime flags; typically launched per policy decision.
 
 Compositor HTTP access (container → host)
 - Host mounts the Compositor in‑proc and also exposes a Streamable HTTP endpoint with bearer auth.
@@ -244,7 +244,7 @@ Compositor HTTP access (container → host)
   - `ADGN_AGENT_TOKEN` (Bearer token for agent principal)
 - Principal separation: do not place any human token inside the container. Human‑only tools (e.g., policy approvals) are forbidden for the agent principal.
 
-Minimal example (in‑container Python via `mcp__runtime__exec`)
+Minimal example (in‑container Python via `runtime_exec`)
 ```python
 import os, asyncio
 from fastmcp.client import Client
@@ -268,7 +268,7 @@ Container layout & mounts (for code visibility)
 - For now, do not use a `/trusted` volume; code is read from the installed package inside the container.
 
 OpenAI SDK Adapter (V1/Stage 2 surface)
-- Function catalog: enumerate `tools/list` from the Compositor and expose tool names unchanged (e.g., `mcp__git__clone`).
+- Function catalog: enumerate `tools/list` from the Compositor and expose tool names unchanged (e.g., `git_clone`).
 - Per‑turn listing: the agent builds the tool catalog fresh each turn from the Compositor; no explicit refresh handling is required for correctness.
 - Optional refresh: if a cached/static catalog is introduced, listen for `notifications/tools/list_changed` emitted by the Compositor and refresh on receipt and reconnect.
 - Resource helpers (SDK adapter convenience; not MCP tools):
@@ -339,7 +339,7 @@ State Machine & Exactly‑Once (Stage 3)
   ```
 - Evaluator error (timeout/exception while deciding):
   ```json
-  { "jsonrpc": "2.0", "error": { "code": -32953, "message": "policy_evaluator_error", "data": { "name": "mcp__server__tool", "reason": "TimeoutError: …" } }, "id": 17 }
+  { "jsonrpc": "2.0", "error": { "code": -32953, "message": "policy_evaluator_error", "data": { "name": "server_tool", "reason": "TimeoutError: …" } }, "id": 17 }
   ```
 - Subscribe unsupported:
   ```json

@@ -923,7 +923,9 @@ def _load_preset_text(name: str) -> str:
     try:
         return res.read_text(encoding="utf-8")  # type: ignore[attr-defined]
     except Exception as e:
-        raise typer.BadParameter(f"Failed to load preset '{name}' from resources: {rel} ({e})")
+        raise typer.BadParameter(
+            f"Failed to load preset '{name}' from resources: {rel} ({e})"
+        ) from e
 
 
 # (Jinja rendering helpers are inlined at call sites; plain Markdown passes through unchanged)

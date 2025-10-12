@@ -2,7 +2,7 @@ import asyncio
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
-from mcp import types as mcp_types
+from mcp import types
 import pytest
 
 from adgn.mcp.chat.server import attach_chat_servers
@@ -13,7 +13,7 @@ class _Capture(MessageHandler):
     def __init__(self) -> None:
         self.updated: list[str] = []
 
-    async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
+    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
         self.updated.append(str(message.params.uri))
 
 

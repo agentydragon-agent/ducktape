@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 # Ensure detectors register themselves via module imports
-import adgn.props.detectors.__main__ as detectors_main  # noqa: F401
+import adgn.props.detectors.__main__  # noqa: F401
 from adgn.props.detectors.registry import run_all
 from tests.detectors.fixture_utils import copy_fixture
 

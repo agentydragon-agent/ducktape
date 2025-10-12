@@ -7,10 +7,9 @@ through the existing `real_env` fixture and helpers.
 from datetime import timedelta
 from pathlib import Path
 
-from hamcrest import assert_that, contains_string
 import pytest
 
-from tests.wt.asserts import extract_status_rows, status_row_ok
+from tests.wt.asserts import assert_output_contains, extract_status_rows, status_row_ok
 
 from ..test_utils import wait_until
 
@@ -24,7 +23,7 @@ def test_status_lists_multiple_worktrees(real_temp_repo, wt_cli):
     # Initial status should succeed; header should include component summary
     result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
-    assert_that(result.stdout, contains_string("gitstatusd"))
+    assert_output_contains(result.stdout, "gitstatusd")
 
     # Create first worktree
     result = wt_cli.sh_c("alpha", timeout=timedelta(seconds=10.0))

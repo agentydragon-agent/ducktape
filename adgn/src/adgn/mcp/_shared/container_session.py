@@ -182,13 +182,6 @@ def register_container(
     """
 
     # Resource: single JSON describing container/session
-    @mcp.resource(
-        "resource://container.info",
-        mime_type="application/json",
-        name="container.info",
-        title="Container session metadata",
-        description="Docker container details for this session",
-    )
     def container_info_json(ctx: Context) -> dict[str, Any]:
         s = _session_state_from_ctx(ctx)
         img = s.docker_client.images.get(s.image)
@@ -202,6 +195,17 @@ def register_container(
             ephemeral=s.ephemeral,
         )
         return ci.model_dump(mode="json")
+
+    # Ensure the context annotation is preserved after future-annotations rewriting so
+    # FastMCP treats this as a static resource rather than a template.
+    container_info_json.__annotations__["ctx"] = Context
+    mcp.resource(
+        "resource://container.info",
+        mime_type="application/json",
+        name="container.info",
+        title="Container session metadata",
+        description="Docker container details for this session",
+    )(container_info_json)
 
     # Tool: container exec (flat MCP payload, validated via ExecInput)
     @mcp.tool(name=tool_name, flat=True, flat_output_model=ExecResult)

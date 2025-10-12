@@ -6,16 +6,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from .constants import SUPERTAG_KEY_ID
+from .constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
 from .models import BaseNode, NodeStore, TupleNode
-
-MIN_TUPLE_CHILDREN = 2
-
-
-def _is_wrapper(node: BaseNode) -> bool:
-    """Nodes that should *not* get their own bullet - just pass through."""
-    return node.props.doc_type in {"workspace", "viewDef", "layout"}
-
+from .wrapper_utils import is_wrapper
 
 def attach_supertag_property(store: NodeStore) -> None:
     """
@@ -53,7 +46,7 @@ def attach_supertag_property(store: NodeStore) -> None:
 
     # propagate wrapper tags to visible children
     for w in store.values():
-        if _is_wrapper(w):
+        if is_wrapper(w):
             for cid in w.children:
                 _add(cid, idx[w.id])
 

@@ -50,8 +50,16 @@ def test_agents_ws_initial_and_create_broadcast(ws_hub):
     assert _have_create_and_status(acc), acc
 
 
-def test_agents_ws_status_on_agent_ws_connect(ws_hub, agent_app_client):
+def test_agents_ws_status_on_agent_ws_connect(
+    ws_hub,
+    agent_app_client,
+    patch_agent_build_client,
+    responses_factory,
+):
     client, hub = ws_hub
+    patch_agent_build_client(
+        FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
+    )
     # Create an agent first
     r = client.post("/api/agents", json={"preset": "default"})
     assert r.status_code == 200

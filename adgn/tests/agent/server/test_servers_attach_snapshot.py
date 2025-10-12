@@ -32,11 +32,11 @@ def test_attach_server_populates_sampling_servers(agent_app_client):
 
         # Attach an in-proc echo server via HTTP API
         # The API expects typed attach spec per server name
-        # For tests, we use the in-proc factory form: { "inproc": { "factory": "adgn.mcp.echo.server.make_echo_mcp", "args": ["echo"], "kwargs": {} } }
+        # For tests, we use the in-proc factory form: { "inproc": { "factory": "adgn.mcp.testing.simple_servers.make_simple_mcp", "args": ["echo"], "kwargs": {} } }
         attach = {
             "echo": {
                 "type": "inproc",
-                "factory": "adgn.mcp.echo.server.make_echo_mcp",
+                "factory": "adgn.mcp.testing.simple_servers.make_simple_mcp",
                 "args": ["echo"],
                 "kwargs": {},
             }

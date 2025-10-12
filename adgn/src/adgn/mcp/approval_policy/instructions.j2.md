@@ -34,7 +34,7 @@ Approval policies are standalone Python programs executed inside Docker. The pro
 
 Input JSON (stdin):
 ```json
-{ "name": "mcp__<server>__<tool>", "arguments": { /* tool args */ } }
+{ "name": "<server>_<tool>", "arguments": { /* tool args */ } }
 ```
 
 Output JSON (stdout):
@@ -43,21 +43,21 @@ Output JSON (stdout):
 ```
 
 Notes:
-- The evaluator ALWAYS runs in Docker. The image must have the `adgn` package installed; import helpers from `adgn.agent.policies.helpers`.
+- The evaluator ALWAYS runs in Docker. The image must have the `adgn` package installed; import types from `adgn.agent.policies.policy_types` and naming helpers from `adgn.mcp._shared.naming`.
 - Your program must print exactly one JSON object to stdout and exit 0. Non‑zero exit or invalid JSON is treated as an error.
 - Do not swallow exceptions; let them surface to make failures visible and fixable.
 
 Minimal example (with helpers):
 ```python
 import sys
-from adgn.agent.policies.helpers import ApprovalDecision, PolicyRequest, PolicyResponse, split_tool_name
+from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
+from adgn.mcp._shared.naming import tool_matches
 
 req = PolicyRequest.model_validate_json(sys.stdin.read())
-server, tool = split_tool_name(req.name)
 
 decision = ApprovalDecision.ASK
 reason = "default: ask"
-if server == "resources" and tool == "read":
+if tool_matches(req.name, server="resources", tool="read"):
     decision = ApprovalDecision.ALLOW
     reason = "resources: read allowed"
 

@@ -1,5 +1,6 @@
 """Mock factory to reduce fixture proliferation and provide flexible test doubles."""
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
@@ -90,7 +91,7 @@ class MockFactory:
         mock.get_status.return_value = get_status_returns or default_response
         mock.create_worktree.return_value = Mock(
             success=True,
-            absolute_path="/test/path",
+            absolute_path=Path("/test/path"),
         )
         mock.delete_worktree.return_value = Mock(success=True)
         mock.list_worktrees.return_value = Mock(worktrees=[])

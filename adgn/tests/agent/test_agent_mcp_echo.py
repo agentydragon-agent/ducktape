@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastmcp.client.client import CallToolResult
+
+from adgn.mcp._shared.calltool import to_pydantic
+from mcp import types
 import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler, BaseHandler
-from adgn.mcp._shared.naming import build_mcp_function, parse_mcp_function
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import FakeOpenAIModel
 
 
@@ -32,14 +35,12 @@ class RecordingHandler(BaseHandler):
         self.rec.assistant_text.append(getattr(evt, "text", ""))
 
     def on_tool_result_event(self, evt) -> None:
-        res: CallToolResult = evt.result
-        self.rec.tool_outputs.append(
-            {
-                "content": res.content,
-                "structured_content": res.structured_content,
-                "is_error": res.is_error,
-            }
-        )
+        res = evt.result
+        if isinstance(res, CallToolResult):
+            res = to_pydantic(res)
+        if not isinstance(res, types.CallToolResult):
+            raise TypeError(f"unexpected tool result type: {type(res).__name__}")
+        self.rec.tool_outputs.append(res)
 
 
 @pytest.mark.asyncio
@@ -48,9 +49,6 @@ async def test_agent_mcp_echo_tool_use(
     responses_factory,
     make_pg_compositor_echo,
 ) -> None:
-    # Patch parse_mcp_function to use our naming convention if needed (no-op here)
-    assert parse_mcp_function("echo__echo") == ("echo", "echo") or True
-
     # Provide a two-step sequence via our shared Pydantic fake client
     client = FakeOpenAIModel(
         [
@@ -76,6 +74,7 @@ async def test_agent_mcp_echo_tool_use(
     # The tool output should be emitted (ToolCallOutput) and assistant text should follow
     assert rec.tool_outputs, "No tool outputs captured"
     out0 = rec.tool_outputs[0]
-    structured = out0.get("structured_content") or {}
-    assert structured == {"echo": "hello"}
+    first = rec.tool_outputs[0]
+    assert isinstance(first, types.CallToolResult)
+    assert first.structuredContent == {"echo": "hello"}
     assert res.text.strip() == "done"

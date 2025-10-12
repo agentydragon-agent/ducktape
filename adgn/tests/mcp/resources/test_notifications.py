@@ -3,7 +3,7 @@ import asyncio
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from fastmcp.server import FastMCP
-from mcp import types as mcp_types
+from mcp import types
 import pytest
 
 from adgn.mcp.resources.server import make_resources_server
@@ -15,14 +15,14 @@ class _DummyBackend:
 
     async def read_resource(self, server: str, uri: str):
         # Return empty typed ReadResourceResult for compatibility
-        return mcp_types.ReadResourceResult(contents=[])
+        return types.ReadResourceResult(contents=[])
 
 
 class _NotifyCatcher(MessageHandler):
     def __init__(self):
         self.events: list[str] = []
 
-    async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification):
+    async def on_resource_list_changed(self, message: types.ResourceListChangedNotification):
         self.events.append("list_changed")
 
 

@@ -8,6 +8,7 @@ authentik:
       - authentik-blueprint-grafana
       - authentik-blueprints-gitea
       - authentik-blueprints-users
+      - authentik-blueprints-matrix
 
   # Secret key for signing cookies and JWT tokens
   authentik:
@@ -97,6 +98,21 @@ authentik:
           secretKeyRef:
             name: gitea-oauth-shared
             key: client_secret
+      - name: MATRIX_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: authentik-secrets
+            key: matrix-client-secret
+      - name: MATRIX_SIGNING_KEY
+        valueFrom:
+          secretKeyRef:
+            name: authentik-matrix-signing
+            key: matrix-signing-key
+      - name: MATRIX_SIGNING_CERT
+        valueFrom:
+          secretKeyRef:
+            name: authentik-matrix-signing
+            key: matrix-signing-cert
 
   # Prometheus metrics
   monitoring:

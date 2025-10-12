@@ -410,3 +410,9 @@ def assert_function_call_output_structured(records: list[dict], **kvs):
             )
         ),
     )
+
+
+def is_ui_state_event():
+    """Matcher covering UiStateSnapshot/UiStateUpdated envelopes."""
+
+    return any_of(instance_of(UiStateSnapshot), instance_of(UiStateUpdated))

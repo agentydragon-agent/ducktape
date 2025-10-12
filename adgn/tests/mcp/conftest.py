@@ -16,7 +16,7 @@ from adgn.mcp.resources.server import make_resources_server
 @pytest.fixture
 def stdio_echo_spec() -> StdioMCPServer:
     """Launch packaged echo server module via -m as a stdio spec."""
-    return StdioMCPServer(command=sys.executable, args=["-m", "adgn.mcp.echo.stdio_app"])
+    return StdioMCPServer(command=sys.executable, args=["-m", "adgn.mcp.testing.stdio_app"])
 
 
 @pytest.fixture

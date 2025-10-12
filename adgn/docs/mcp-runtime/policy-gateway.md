@@ -46,14 +46,14 @@ HTTP (optional)
 ## 3. Interfaces
 
 3.1 Middleware surface (inside the Compositor)
-- Intercept `tools/call` pre‑dispatch; parse namespaced tool (`mcp__{server}__{tool}`) and evaluate policy
+- Intercept `tools/call` pre‑dispatch; compare the namespaced tool (`{server}_{tool}`) against policy rules
 - Allow: dispatch to the target mount and return result
 - Deny: map to JSON‑RPC error
 - Ask: create approval item; await resolution; then approve→dispatch or deny→error
 - Resources: no enforcement changes; normal Compositor behavior for `resources/*`
 
 3.2 Loop Control tools (agent‑only)
-- Mounted under Compositor as `loop` server: `mcp__loop__yield_turn({}) -> {ok}`
+- Mounted under Compositor as `loop` server: `loop_yield_turn({}) -> {ok}`
 - Visible/callable to agent only; hidden/denied to Human UI
 
 ---
@@ -69,7 +69,7 @@ Decisions
 Policy evaluation (via MCP tool on policy_reader)
 - The policy middleware calls `decide({name, arguments}) -> {decision, rationale}` on the `policy_reader` server.
 - Visibility: default hidden; may be exposed to agent/human tokens for testing/advisory checks. Enforcement still occurs only in the middleware when real tool calls are gated.
-- Backend selection (container, in‑proc, etc.) is an internal detail of the `policy_reader` server. The container backend launches a short‑lived Python process using `ADGN_POLICY_EVAL_IMAGE` (default `adgn-runtime:latest`).
+- Backend selection (container, in‑proc, etc.) is an internal detail of the `policy_reader` server. The container backend launches a short‑lived Python process using the runtime image resolved via `ADGN_RUNTIME_IMAGE` (default `adgn-runtime:latest`).
   - Transport note (important): avoid streaming request JSON over a hijacked HTTP connection into container stdin. On VM‑backed Docker engines (e.g., Colima, some Desktop setups), `attach_socket` + half‑closing stdin can stall or time out at the client. Instead, inject the request JSON and policy source via environment variables (e.g., `POLICY_INPUT`, `POLICY_SRC`) and run a tiny shim that feeds `POLICY_INPUT` into `sys.stdin` before executing the policy.
   - Environment size is ample for policy programs and request JSON: macOS exec argv+env limit is ~256 KB, typical Linux arg_max is ~2 MB. Our payloads are O(kB), well under limits.
 - Timeout/error → map to `policy_evaluator_error` (`code = -32953`); the policy middleware returns a structured JSON‑RPC error with `{name, reason}`.
@@ -145,7 +145,7 @@ The policy middleware does not persist chat or resource subscription state. Pers
 ```
 - Evaluator error (timeout/exception while deciding):
 ```json
-{ "jsonrpc": "2.0", "error": { "code": -32953, "message": "policy_evaluator_error", "data": { "name": "mcp__server__tool", "reason": "TimeoutError: …" } }, "id": 17 }
+{ "jsonrpc": "2.0", "error": { "code": -32953, "message": "policy_evaluator_error", "data": { "name": "server_tool", "reason": "TimeoutError: …" } }, "id": 17 }
 ```
 Note: resource subscribe/unsubscribe error mapping belongs to the resources/compositor docs. The policy middleware primarily maps approval denials on `tools/call`.
 
@@ -153,7 +153,7 @@ Note: resource subscribe/unsubscribe error mapping belongs to the resources/comp
 
 ## 10. Configuration
 
-- Policy evaluator: `ADGN_POLICY_EVAL_IMAGE`, optional timeouts and limits (`ADGN_POLICY_EVAL_TIMEOUT_SECS`, `ADGN_POLICY_EVAL_MEM`, `ADGN_POLICY_EVAL_NANO_CPUS`)
+- Policy evaluator: `ADGN_RUNTIME_IMAGE` selects the container image; optional limits set via `ADGN_POLICY_EVAL_TIMEOUT_SECS`, `ADGN_POLICY_EVAL_MEM`, `ADGN_POLICY_EVAL_NANO_CPUS`
 - Tokens (only when crossing processes): automation bearer (agent), human JWT
 
 ---
@@ -180,7 +180,7 @@ Note: resource subscribe/unsubscribe error mapping belongs to the resources/comp
 1) Install the policy middleware as pre‑dispatch inside the Compositor for `tools/call`.
 2) Remove any handler‑based enforcement; handlers may retain visibility/logging only.
 3) Use the dedicated Resources server for `resources/*` operations; the Compositor mounts it.
-4) Mount Loop Control via Compositor; update prompts/instructions to use `mcp__loop__yield_turn`.
+4) Mount Loop Control via Compositor; update prompts/instructions to use `loop_yield_turn`.
 5) Update container clients to call the Compositor loopback (host.docker.internal); do not expose upstream mounts directly.
 6) Optional: chat/inbox flows are documented in <ui-chat.md> and the overview; the policy middleware does not implement them.
 

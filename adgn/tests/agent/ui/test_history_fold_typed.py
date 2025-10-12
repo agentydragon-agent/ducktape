@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastmcp.client.client import CallToolResult as FMCallToolResult
+from fastmcp.client.client import CallToolResult
+
+from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.naming import build_mcp_function
 
 from adgn.agent.persist import EventType
 from adgn.agent.persist.events import (
@@ -17,10 +20,16 @@ from adgn.agent.server.history import fold_events_to_ui_state
 def test_fold_events_typed_ui_message() -> None:
     now = datetime.now(timezone.utc)
     # Simulate ui.send_message tool producing a CallToolResult with structured content
-    result = FMCallToolResult(
-        content=[],
-        is_error=False,
-        structured_content={"mime": "text/markdown", "content": "**hello**"},
+    result = to_pydantic(
+        CallToolResult(
+            content=[],
+            is_error=False,
+            structured_content={
+                "kind": "UiMessage",
+                "mime": "text/markdown",
+                "content": "**hello**",
+            },
+        )
     )
 
     events = [
@@ -29,7 +38,7 @@ def test_fold_events_typed_ui_message() -> None:
             seq=2,
             ts=now,
             type=EventType.TOOL_CALL,
-            payload=ToolCallPayload(name="mcp__ui__send_message", args_json=None, call_id="c1"),
+            payload=ToolCallPayload(name=build_mcp_function("ui", "send_message"), args_json=None, call_id="c1"),
             call_id="c1",
         ),
         EventRecord(

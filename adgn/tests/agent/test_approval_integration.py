@@ -28,7 +28,6 @@ async def test_approval_system_wired_and_blocks_on_ask(
     # Prepare approval engine with an ASK policy for echo.echo using shared factory
     engine = make_policy_engine(
         policy_make(decision_expr="PolicyDecision.ASK", server="echo", tool="echo", default="ask"),
-        agent_id="tests-approval",
     )
 
     # Model tries to call the tool then returns text
@@ -44,8 +43,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
     from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 
     reader = ApprovalPolicyServer(engine)
-    echo_map = make_echo_spec()
-    servers = echo_map()
+    servers = dict(make_echo_spec())
     servers["approval_policy"] = reader
     async with make_pg_compositor(servers, notifier=None) as (mcp_client, _comp):
         agent = await MiniCodex.create(

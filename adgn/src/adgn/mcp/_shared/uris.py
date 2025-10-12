@@ -5,9 +5,11 @@ from adgn.mcp._shared.constants import (
     APPROVAL_POLICY_RESOURCE_URI,
     COMPOSITOR_META_CAPABILITIES_URI_FMT,
     COMPOSITOR_META_INSTRUCTIONS_URI_FMT,
+    COMPOSITOR_META_SERVER_NAME,
     COMPOSITOR_META_STATE_URI_FMT,
     RESOURCES_SUBSCRIPTIONS_INDEX_URI,
 )
+from fastmcp.server.server import remove_resource_prefix
 
 """Helpers for building common MCP resource URIs.
 
@@ -67,6 +69,9 @@ def parse_compositor_state_server(uri: str) -> str | None:
     prefix = compositor_meta_state_prefix()
     if uri.startswith(prefix):
         return uri[len(prefix) :]
+    legacy = f"{COMPOSITOR_META_SERVER_NAME}/state/"
+    if uri.startswith(f"resource://{legacy}"):
+        return uri.split("/", 3)[-1]
     return None
 
 

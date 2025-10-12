@@ -5,18 +5,10 @@ from pathlib import Path
 
 from .models import Detection, LineRange
 from .registry import DetectorSpec, register
-from .utils import iter_py_files, read_snippet
+from .utils import is_broad_exception, make_root_detector, read_snippet
 
 DET_NAME = "broad_except_order"
 PROP = "python/scoped-try-except"
-
-
-def _is_broad(handler: ast.ExceptHandler) -> bool:
-    if handler.type is None:
-        return True
-    if isinstance(handler.type, ast.Name) and handler.type.id in {"Exception", "BaseException"}:
-        return True
-    return False
 
 
 def _find_in_file(path: Path) -> list[Detection]:
@@ -31,7 +23,7 @@ def _find_in_file(path: Path) -> list[Detection]:
             # Find first broad handler index
             first_broad = None
             for i, h in enumerate(handlers):
-                if _is_broad(h):
+                if is_broad_exception(h):
                     first_broad = i
                     break
             if first_broad is None:
@@ -39,7 +31,7 @@ def _find_in_file(path: Path) -> list[Detection]:
             # If any later handler is specific, report unreachable ordering
             for j in range(first_broad + 1, len(handlers)):
                 h = handlers[j]
-                if not _is_broad(h):
+                if not is_broad_exception(h):
                     sl = getattr(handlers[first_broad], "lineno", getattr(n, "lineno", 1))
                     el = getattr(handlers[first_broad], "end_lineno", sl)
                     out.append(
@@ -57,11 +49,7 @@ def _find_in_file(path: Path) -> list[Detection]:
     return out
 
 
-def find(root: Path) -> list[Detection]:
-    out: list[Detection] = []
-    for p in iter_py_files(root):
-        out.extend(_find_in_file(p))
-    return out
+find = make_root_detector(_find_in_file)
 
 
 register(DetectorSpec(name=DET_NAME, target_property=PROP, finder=find))

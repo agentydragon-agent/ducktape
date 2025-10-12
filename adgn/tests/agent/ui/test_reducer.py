@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 
 from fastmcp.client.client import CallToolResult
+from mcp import types
+
+from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.naming import build_mcp_function
 
 from adgn.agent.server.protocol import (
     ApprovalApprove,
@@ -35,11 +39,11 @@ def test_tool_call_exec_starts_exec_content_with_cmd():
     args = {"argv": ["echo", "hi there"]}
     s2 = reduce_ui_state(
         s,
-        ToolCall(name="mcp__seatbelt__sandbox_exec", args_json=json.dumps(args), call_id="c1"),
+        ToolCall(name=build_mcp_function("seatbelt", "sandbox_exec"), args_json=json.dumps(args), call_id="c1"),
     )
     assert s2.seq == 1
     assert_typed_items_have_one(
-        s2.items, is_tool_item(tool="mcp__seatbelt__sandbox_exec", call_id="c1")
+        s2.items, is_tool_item(tool=build_mcp_function("seatbelt", "sandbox_exec"), call_id="c1")
     )
     it = s2.items[0]
     assert it.decision is None
@@ -52,7 +56,7 @@ def test_tool_call_json_starts_json_content_with_args():
     s = new_state()
     args = {"foo": 1, "bar": "baz"}
     s2 = reduce_ui_state(
-        s, ToolCall(name="mcp__demo__inspect", args_json=json.dumps(args), call_id="c2")
+        s, ToolCall(name=build_mcp_function("demo", "inspect"), args_json=json.dumps(args), call_id="c2")
     )
     assert s2.seq == 1
     assert_typed_items_have_one(s2.items, is_tool_item(call_id="c2"))
@@ -63,7 +67,7 @@ def test_tool_call_json_starts_json_content_with_args():
 
 def test_approval_sets_single_decision():
     s = new_state()
-    s1 = reduce_ui_state(s, ToolCall(name="mcp__ui__noop", args_json="{}", call_id="c3"))
+    s1 = reduce_ui_state(s, ToolCall(name=build_mcp_function("ui", "noop"), args_json="{}", call_id="c3"))
     s2 = reduce_ui_state(s1, ApprovalDecisionEvt(call_id="c3", decision=ApprovalApprove()))
     it = s2.items[0]
     assert it.kind == "Tool"
@@ -75,7 +79,7 @@ def test_function_output_updates_exec_stream():
     s1 = reduce_ui_state(
         s,
         ToolCall(
-            name="mcp__seatbelt__sandbox_exec",
+            name=build_mcp_function("seatbelt", "sandbox_exec"),
             args_json=json.dumps({"argv": ["ls"]}),
             call_id="c4",
         ),
@@ -85,15 +89,12 @@ def test_function_output_updates_exec_stream():
         structured_content={"stdout": "ok", "stderr": "", "exit_code": 0},
         is_error=False,
     )
+    pydantic_result = to_pydantic(result)
     s2 = reduce_ui_state(
         s1,
         FunctionCallOutput(
             call_id="c4",
-            result={
-                "content": result.content,
-                "structured_content": result.structured_content,
-                "is_error": result.is_error,
-            },
+            result=pydantic_result,
         ),
     )
     it = s2.items[0]
@@ -107,20 +108,18 @@ def test_function_output_updates_json_output_when_not_exec():
     s = new_state()
     s1 = reduce_ui_state(
         s,
-        ToolCall(name="mcp__kv__get", args_json=json.dumps({"key": "k"}), call_id="c5"),
+        ToolCall(name=build_mcp_function("kv", "get"), args_json=json.dumps({"key": "k"}), call_id="c5"),
     )
     payload = {"value": {"a": 1}}
     result = CallToolResult(content=[], structured_content=payload, is_error=False)
-    result_dict = {
-        "content": result.content,
-        "structured_content": result.structured_content,
-        "is_error": result.is_error,
-    }
-    s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c5", result=result_dict))
+    pydantic_result = to_pydantic(result)
+    s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c5", result=pydantic_result))
     it = s2.items[0]
     assert it.kind == "Tool"
     assert it.content.content_kind == "Json"
-    assert it.content.result == result_dict
+    stored = it.content.result
+    assert isinstance(stored, types.CallToolResult)
+    assert stored.structuredContent == payload
 
 
 def test_ui_message_becomes_assistant_markdown():

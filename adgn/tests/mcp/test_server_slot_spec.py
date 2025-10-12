@@ -14,8 +14,8 @@ async def test_server_slot_spec_open_initializes_once() -> None:
         """Add two numbers"""
         return a + b
 
-    client = Client(app)
-    init = await client.initialize_result()
-    assert isinstance(init.protocolVersion, str)
-    tools = await client.list_tools()
-    assert any(t.name == "add" for t in tools.tools or []), tools
+    async with Client(app) as client:
+        init = client.initialize_result
+        assert isinstance(init.protocolVersion, str)
+        tools = await client.list_tools()
+        assert any(t.name == "add" for t in tools), tools

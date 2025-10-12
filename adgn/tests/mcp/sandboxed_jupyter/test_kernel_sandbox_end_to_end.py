@@ -6,8 +6,14 @@ import shutil
 
 import pytest
 
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
 # Run these stdio-handshake tests in a dedicated xdist group to avoid flakiness
-pytestmark = [pytest.mark.xdist_group("sj_stdio")]
+pytestmark = [
+    *REQUIRES_SANDBOX_EXEC,
+    pytest.mark.shell,
+    pytest.mark.xdist_group("sj_stdio"),
+]
 
 # Mark xfail if external tooling is not available
 if not shutil.which("jupyter-mcp-server"):
@@ -23,8 +29,6 @@ if os.environ.get("ADGN_RUN_SJ_STDIO") != "1":
 # Ensure required jupyter kernel/server packages are present — with pyproject deps these should be installed
 
 
-@pytest.mark.macos
-@pytest.mark.shell
 @pytest.mark.asyncio
 async def test_kernel_runs_minimal(
     tmp_path: Path, launch_proc, mcp_stdio_protocol, pkg_src_env_update

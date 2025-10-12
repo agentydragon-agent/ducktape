@@ -9,6 +9,9 @@ from adgn.seatbelt.model import (
     Subpath,
 )
 from adgn.seatbelt.runner import run_sandboxed_async
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
 
 @pytest.fixture
@@ -24,8 +27,6 @@ def allow_all_policy() -> SBPLPolicy:
     )
 
 
-@pytest.mark.macos
-@pytest.mark.shell
 @pytest.mark.asyncio
 async def test_exec_allow_all_runs_echo(allow_all_policy: SBPLPolicy):
     res = await run_sandboxed_async(allow_all_policy, ["/bin/sh", "-c", "echo ALLOW_ALL_OK"])

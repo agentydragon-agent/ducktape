@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ember
+  namespace: ember
+  labels:
+    app.kubernetes.io/name: ember
+    app.kubernetes.io/component: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ember
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ember
+        app.kubernetes.io/component: agent
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: agentd
+          image: registry.k3s.local/ember-agentd:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: MATRIX_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ember-config
+                  key: matrix_base_url
+            - name: MATRIX_ADMIN_USER_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: ember-config
+                  key: matrix_admin_user_id
+            - name: OPENAI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: ember-config
+                  key: openai_model
+            - name: OPENAI_REASONING_EFFORT
+              valueFrom:
+                configMapKeyRef:
+                  name: ember-config
+                  key: openai_reasoning_effort
+            - name: OPENAI_INCLUDE_ENCRYPTED_REASONING
+              valueFrom:
+                configMapKeyRef:
+                  name: ember-config
+                  key: openai_include_encrypted_reasoning
+            - name: PILOT_STATE_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: ember-config
+                  key: pilot_state_dir
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-api
+                  key: api_key
+            - name: MATRIX_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: matrix-ember-token
+                  key: access_token
+            - name: GITEA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-ember-token
+                  key: username
+            - name: GITEA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-ember-token
+                  key: token
+            - name: GITEA_TOKEN_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-ember-token
+                  key: token_name
+          volumeMounts:
+            - name: history
+              mountPath: /var/lib/ember
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: history
+          persistentVolumeClaim:
+            claimName: ember-history

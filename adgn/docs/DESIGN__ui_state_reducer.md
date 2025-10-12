@@ -81,7 +81,7 @@ Appendix: example UiState (v1)
   "seq": 5,
   "items": [
     { "kind": "UserMessage", "ts": "...", "text": "run ls -la" },
-    { "kind": "ToolGroup", "ts": "...", "tool": "mcp__seatbelt__sandbox_exec", "call_id": "abc", "cmd": "ls -la", "approvals": ["approve"], "stdout": "...", "stderr": "", "exit_code": 0 },
+    { "kind": "ToolGroup", "ts": "...", "tool": "seatbelt_sandbox_exec", "call_id": "abc", "cmd": "ls -la", "approvals": ["approve"], "stdout": "...", "stderr": "", "exit_code": 0 },
     { "kind": "AssistantMarkdown", "ts": "...", "md": "Here are the results..." }
   ]
 }

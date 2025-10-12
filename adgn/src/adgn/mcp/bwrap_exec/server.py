@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from shutil import which
-import subprocess
 import sys
 
 from fastmcp.exceptions import ToolError
@@ -16,46 +15,11 @@ from adgn.mcp.exec_common.io_limits import (
     validate_max_bytes,
 )
 from adgn.mcp.exec_common.models import StreamOut
+from adgn.mcp.exec_common.subprocess_utils import emit_stream, run_proc
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
-
-
-def _emit_stream(out_b: bytes, limit: int) -> str | StreamOut:
-    total = len(out_b)
-    if total <= limit:
-        return out_b.decode("utf-8", errors="replace")
-    return StreamOut(
-        truncated_text=out_b[:limit].decode("utf-8", errors="replace"),
-        total_bytes=total,
-    )
-
-
-def _run_proc(
-    argv: list[str],
-    timeout_s: float,
-    cwd: Path | None = None,
-    stdin_b: bytes | None = None,
-) -> tuple[int, bytes, bytes]:
-    p = subprocess.Popen(
-        argv,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=False,
-        cwd=cwd,
-    )
-    try:
-        out, err = p.communicate(input=(stdin_b or b""), timeout=timeout_s)
-        return (p.returncode, out or b"", err or b"")
-    except subprocess.TimeoutExpired:
-        p.kill()
-        try:
-            out, err = p.communicate(timeout=5)
-        except Exception:
-            out, err = b"", b""
-        return (124, out or b"", (err or b"") + b"\n[TIMEOUT]")
 
 
 def _run_in_bwrap(
@@ -102,7 +66,7 @@ def _run_in_bwrap(
     ]
 
     # chdir handled inside bwrap; pass cwd=None to subprocess
-    return _run_proc(argv, timeout_s=timeout_s, cwd=None, stdin_b=stdin_b)
+    return run_proc(argv, timeout_s=timeout_s, cwd=None, stdin_b=stdin_b)
 
 
 class BwrapExecArgs(BaseModel):
@@ -154,8 +118,8 @@ def make_bwrap_exec_server(
         code, out_b, err_b = _run_in_bwrap(input.cmd, timeout_s, cwd_val, stdin_b)
         return BwrapExecResult(
             exit=code,
-            stdout=_emit_stream(out_b, max_b) if out_b is not None else "",
-            stderr=_emit_stream(err_b, max_b) if err_b is not None else "",
+            stdout=emit_stream(out_b, max_b) if out_b is not None else "",
+            stderr=emit_stream(err_b, max_b) if err_b is not None else "",
         )
 
     return mcp

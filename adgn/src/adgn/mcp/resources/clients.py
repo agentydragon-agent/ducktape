@@ -1,35 +1,15 @@
 from __future__ import annotations
 
 from fastmcp.client import Client
-from pydantic import BaseModel, ConfigDict
 
 from adgn.mcp._shared.client_helpers import call_simple_ok
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp._shared.uris import subscriptions_index_uri
-
-
-class SubscriptionSummary(BaseModel):
-    server: str
-    uri: str
-    pinned: bool
-    present: bool
-    active: bool
-    last_error: str | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-class ListSubscriptionSummary(BaseModel):
-    server: str
-    present: bool
-    active: bool
-    model_config = ConfigDict(extra="forbid")
-
-
-class SubscriptionsIndex(BaseModel):
-    subscriptions: list[SubscriptionSummary]
-    list_subscriptions: list[ListSubscriptionSummary] = []
-    model_config = ConfigDict(extra="forbid")
-
+from adgn.mcp.resources.types import (
+    ListSubscriptionSummary,
+    SubscriptionSummary,
+    SubscriptionsIndex,
+)
 
 class ResourcesClient:
     """Typed client helpers for the `resources` server.

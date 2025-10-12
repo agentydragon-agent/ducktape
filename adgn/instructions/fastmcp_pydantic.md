@@ -74,7 +74,7 @@ asyncio.run(main())
 
 ## Our wiring (FastMCP → OpenAI/Claude)
 - We map MCP list_tools into OpenAI/Anthropic tool definitions:
-  - name: mcp__<server>__<tool>
+  - name: <server>_<tool>
   - description: FastMCP tool description
   - parameters: inputSchema as returned by FastMCP (JSON Schema)
 - If your tool is correctly typed, the model sees the exact parameter schema and can call it without extra prompt instructions.
@@ -128,11 +128,11 @@ class Failure(BaseModel):
 DoneResponse = Annotated[Success | Failure, Field(discriminator="kind")]
 
 @mcp.tool()
-def done(payload: DoneInput) -> DoneResponse:
-    # payload is already a validated DoneInput (no TypeAdapter needed)
-    if payload.outcome == "success":
-        return Success(summary=payload.summary or "ok")
-    return Failure(summary=payload.summary or "aborted")
+def done(input: DoneInput) -> DoneResponse:
+    # input is already a validated DoneInput (no TypeAdapter needed)
+    if input.outcome == "success":
+        return Success(summary=input.summary or "ok")
+    return Failure(summary=input.summary or "aborted")
 ```
 
 Testing and ad‑hoc parsing (TypeAdapter)

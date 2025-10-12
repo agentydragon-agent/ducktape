@@ -202,6 +202,7 @@ class Snapshot(BaseModel):
     type: Literal["snapshot"] = "snapshot"
     v: str
     session_state: SessionState
+    approval_policy: ApprovalPolicyInfo | None = None
     # Preferred: a single optional bundle; each item inside is non-nullable
     details: SnapshotDetails | None = None
     model_config = ConfigDict(extra="forbid")

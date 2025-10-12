@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
 
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,43 +12,8 @@ from adgn.mcp.exec_common.io_limits import (
     validate_max_bytes,
 )
 from adgn.mcp.exec_common.models import StreamOut
+from adgn.mcp.exec_common.subprocess_utils import emit_stream, run_proc
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-
-
-def _emit_stream(out_b: bytes, limit: int) -> str | StreamOut:
-    total = len(out_b)
-    if total <= limit:
-        return out_b.decode("utf-8", errors="replace")
-    return StreamOut(
-        truncated_text=out_b[:limit].decode("utf-8", errors="replace"),
-        total_bytes=total,
-    )
-
-
-def _run_proc(
-    argv: list[str],
-    timeout_s: float,
-    cwd: Path | None = None,
-    stdin_b: bytes | None = None,
-) -> tuple[int, bytes, bytes]:
-    p = subprocess.Popen(
-        argv,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=False,
-        cwd=cwd,
-    )
-    try:
-        out, err = p.communicate(input=(stdin_b or b""), timeout=timeout_s)
-        return (p.returncode, out or b"", err or b"")
-    except subprocess.TimeoutExpired:
-        p.kill()
-        try:
-            out, err = p.communicate(timeout=5)
-        except Exception:
-            out, err = b"", b""
-        return (124, out or b"", (err or b"") + b"\n[TIMEOUT]")
 
 
 class DirectExecArgs(BaseModel):
@@ -99,11 +63,11 @@ def make_direct_exec_server(
         # Preserve sub-second precision derived from timeout_ms
         timeout_s = max(0.001, float(int(input.timeout_ms)) / 1000.0)
 
-        code, out_b, err_b = _run_proc(input.cmd, timeout_s, cwd_val, stdin_b)
+        code, out_b, err_b = run_proc(input.cmd, timeout_s, cwd_val, stdin_b)
         return DirectExecResult(
             exit=code,
-            stdout=_emit_stream(out_b, max_b) if out_b is not None else "",
-            stderr=_emit_stream(err_b, max_b) if err_b is not None else "",
+            stdout=emit_stream(out_b, max_b) if out_b is not None else "",
+            stderr=emit_stream(err_b, max_b) if err_b is not None else "",
         )
 
     return mcp

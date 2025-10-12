@@ -3,8 +3,14 @@ import shutil
 
 import pytest
 
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
 # Run these stdio-handshake tests in a dedicated xdist group to avoid flakiness
-pytestmark = [pytest.mark.xdist_group("sj_stdio")]
+pytestmark = [
+    *REQUIRES_SANDBOX_EXEC,
+    pytest.mark.shell,
+    pytest.mark.xdist_group("sj_stdio"),
+]
 
 # Mark xfail if external tooling is not available
 if not shutil.which("jupyter-mcp-server"):

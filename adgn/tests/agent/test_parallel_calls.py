@@ -50,14 +50,14 @@ def _make_slow_server(per_call_secs: float = 0.30) -> FastMCP:
     mcp = FastMCP("dummy")
 
     @mcp.tool()
-    async def slow(**kwargs: Any) -> dict[str, Any]:
+    async def slow() -> dict[str, Any]:
         await asyncio.sleep(per_call_secs)
-        return {"ok": True, "tool": "slow", "args": kwargs}
+        return {"ok": True, "tool": "slow", "args": {}}
 
     @mcp.tool()
-    async def slow2(**kwargs: Any) -> dict[str, Any]:
+    async def slow2() -> dict[str, Any]:
         await asyncio.sleep(per_call_secs)
-        return {"ok": True, "tool": "slow2", "args": kwargs}
+        return {"ok": True, "tool": "slow2", "args": {}}
 
     return mcp
 

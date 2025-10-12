@@ -25,6 +25,9 @@ from adgn.seatbelt.model import (
     TraceConfig,
 )
 
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
+pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
 
 @pytest.fixture
 def open_seatbelt_session(sqlite_persistence):
@@ -74,8 +77,6 @@ def _extract_payload(resp):
     return resp
 
 
-@pytest.mark.requires_sandbox_exec
-@pytest.mark.shell
 @pytest.mark.asyncio
 async def test_sandbox_exec_echo_roundtrip(open_seatbelt_session) -> None:
     async with open_seatbelt_session() as (_server, session):
@@ -105,8 +106,6 @@ async def test_sandbox_exec_echo_roundtrip(open_seatbelt_session) -> None:
         assert isinstance(res.duration_ms, int) and res.duration_ms >= 0
 
 
-@pytest.mark.requires_sandbox_exec
-@pytest.mark.shell
 @pytest.mark.asyncio
 async def test_sandbox_exec_write_denied(open_seatbelt_session) -> None:
     """Attempt a file write that should be denied by the sandbox policy."""
@@ -140,8 +139,6 @@ async def test_sandbox_exec_write_denied(open_seatbelt_session) -> None:
         # TODO(mpokorny): Revisit trace enablement and policy for reliable capture
 
 
-@pytest.mark.requires_sandbox_exec
-@pytest.mark.shell
 @pytest.mark.asyncio
 async def test_sandbox_exec_timeout(open_seatbelt_session) -> None:
     """Command exceeding timeout should return timeout=True and no exit_code."""
@@ -163,8 +160,6 @@ async def test_sandbox_exec_timeout(open_seatbelt_session) -> None:
         assert isinstance(res.duration_ms, int) and res.duration_ms >= 0
 
 
-@pytest.mark.requires_sandbox_exec
-@pytest.mark.shell
 @pytest.mark.asyncio
 async def test_sandbox_exec_cwd_and_env(tmp_path: Path, open_seatbelt_session) -> None:
     """Verify cwd and env injection (async)."""

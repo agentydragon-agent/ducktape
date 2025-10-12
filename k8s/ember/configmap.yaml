@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ember-config
+  namespace: ember
+  labels:
+    app.kubernetes.io/name: ember
+    app.kubernetes.io/component: runtime
+data:
+  matrix_base_url: https://matrix.k3s.agentydragon.com
+  matrix_admin_user_id: "@agentydragon:matrix.k3s.agentydragon.com"
+  pilot_state_dir: /var/lib/ember
+  openai_model: gpt-5
+  openai_reasoning_effort: medium
+  openai_include_encrypted_reasoning: "true"

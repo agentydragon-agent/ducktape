@@ -13,6 +13,10 @@ from typing import IO, Any, Iterator
 
 import pytest
 
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
+pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
+
 
 def _read_line_json(inp: IO[bytes] | None, timeout: float | None = None) -> dict[str, Any] | None:
     assert inp is not None

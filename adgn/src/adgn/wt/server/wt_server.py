@@ -253,8 +253,6 @@ class WtDaemon:
             logger.info("Registered RPC methods: %s", sorted(rpc.list_methods()))
 
     def _record_error(self, error_type: str, error_message: str):
-        """Record an error and update daemon health status."""
-
         logger.error(f"{error_type}: {error_message}")
 
         self.daemon_health.last_error = f"{error_type}: {error_message}"
@@ -267,16 +265,12 @@ class WtDaemon:
             self.daemon_health.gitstatusd_errors += 1
 
     def _record_github_error(self, error_message: str):
-        """Record a GitHub-specific error."""
         self._record_error("GitHub", error_message)
 
     def _record_gitstatusd_error(self, error_message: str):
-        """Record a gitstatusd-specific error."""
         self._record_error("GitStatusd", error_message)
 
     def _clear_errors_if_healthy(self):
-        """Clear daemon error state if recent operations are succeeding."""
-
         if (
             self.daemon_health.status == DaemonHealthStatus.ERROR
             and self.daemon_health.last_error_time
@@ -514,8 +508,7 @@ class WtDaemon:
 
         try:
             # Read request line
-            data = await reader.readline()
-            if not data:
+            if not (data := await reader.readline()):
                 return
 
             # Parse JSON-RPC request

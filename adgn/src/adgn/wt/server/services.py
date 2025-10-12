@@ -20,7 +20,7 @@ from ..shared.protocol import (
 )
 from .git_manager import GitManager, WorktreeInfo as GMWorktreeInfo
 from .gitstatus_refresh import DebouncedGitstatusRefresh
-from .gitstatusd_listener import GitstatusdListener
+from .gitstatusd_listener import GitstatusWorkingSummary, GitstatusdListener
 from .pr_service import PRCacheError, PRCacheOk, PRService
 from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
@@ -116,10 +116,10 @@ class GitstatusdService:
     def get_cached_status(
         self,
         path: Path,
-    ) -> tuple[int, int, datetime | None, bool, str | None]:
+    ) -> GitstatusWorkingSummary:
         client = self._get_client(path)
         if not client:
-            return 0, 0, None, False, None
+            return GitstatusWorkingSummary.empty()
         return client.get_cached_working_status()
 
     def is_running(self, path: Path) -> bool:

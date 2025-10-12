@@ -26,7 +26,7 @@ None available
 
 {% if caps %}
 ## Capabilities (raw)
-{{ caps | model_dump_json(mode='json') }}
+{{ caps | model_dump_json() }}
 
 Semantics: resources.subscribe/listChanged → notifications support; presence of a section implies feature is supported.
 {% endif %}

@@ -1,8 +1,8 @@
 import asyncio
 
-from fastmcp.client import Client as McpClient
+from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
-from mcp import types as mcp_types
+from mcp import types
 import pytest
 
 from adgn.mcp.chat.server import (
@@ -23,7 +23,7 @@ async def test_chat_flow_user_to_agent_then_agent_to_user() -> None:
     assistant = make_chat_server(name="chat.assistant", author=ChatAuthor.ASSISTANT, store=store)
     store.register_servers(human=human, assistant=assistant)
 
-    async with McpClient(human) as human_sess, McpClient(assistant) as assistant_sess:
+    async with Client(human) as human_sess, Client(assistant) as assistant_sess:
         h = TypedClient.from_server(human, human_sess)
         a = TypedClient.from_server(assistant, assistant_sess)
 
@@ -58,7 +58,7 @@ class _Capture(MessageHandler):
     def __init__(self) -> None:
         self.updated: list[str] = []
 
-    async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
+    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
         self.updated.append(str(message.params.uri))
 
 
@@ -72,8 +72,8 @@ async def test_chat_head_notifications_other_participant() -> None:
     # Assistant notifications on human posts
     cap_assist = _Capture()
     async with (
-        McpClient(assistant, message_handler=cap_assist) as assist_sess,
-        McpClient(human) as human_sess,
+        Client(assistant, message_handler=cap_assist) as assist_sess,
+        Client(human) as human_sess,
     ):
         h = TypedClient.from_server(human, human_sess)
         await h.post(PostInput(mime="text/markdown", content="hello"))
@@ -83,8 +83,8 @@ async def test_chat_head_notifications_other_participant() -> None:
     # Human notifications on assistant posts
     cap_human = _Capture()
     async with (
-        McpClient(human, message_handler=cap_human) as human_sess,
-        McpClient(assistant) as assist_sess,
+        Client(human, message_handler=cap_human) as human_sess,
+        Client(assistant) as assist_sess,
     ):
         a = TypedClient.from_server(assistant, assist_sess)
         await a.post(PostInput(mime="text/markdown", content="roger"))
@@ -103,8 +103,8 @@ async def test_chat_last_read_updates_with_read_pending() -> None:
     # Attach a capture handler to the assistant server where read_pending is called
     cap_assist = _Capture()
     async with (
-        McpClient(assistant, message_handler=cap_assist) as assistant_sess,
-        McpClient(human) as human_sess,
+        Client(assistant, message_handler=cap_assist) as assistant_sess,
+        Client(human) as human_sess,
     ):
         h = TypedClient.from_server(human, human_sess)
         a = TypedClient.from_server(assistant, assistant_sess)

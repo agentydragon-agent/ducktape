@@ -11,6 +11,9 @@ CHECKBOX_KEY_ID = NodeId("SYS_A55")  # Checkbox attribute
 LANGUAGE_KEY_ID = NodeId("SYS_A70")  # Code language attribute
 MEDIA_KEY_ID = NodeId("SYS_T15")  # Media/image URL
 
+# Common numeric thresholds
+MIN_TUPLE_CHILDREN = 2
+
 # Search-related IDs
 SEARCH_EXPRESSION_KEY_ID = NodeId("SYS_A15")  # Search expression attribute
 AND_OPERATOR_ID = NodeId("SYS_A41")  # AND operator

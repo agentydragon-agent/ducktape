@@ -183,15 +183,10 @@ def _call_tool_result_from_json(output: str) -> CallToolResult:
 
     Expects native snake_case keys; raises ValueError on invalid payload.
     """
-    try:
-        # Parse directly into the FastMCP CallToolResult type (no manual copy)
-        res = TypeAdapter(CallToolResult).validate_json(output)
-    except Exception as exc:  # pragma: no cover - defensive
-        raise ValueError("invalid CallToolResult JSON") from exc
-    return res
+    return TypeAdapter(CallToolResult).validate_json(output)
 
 
-# Namespaced tool form: mcp__{server}__{tool}
+# Namespaced tool form: mcp_{server}_{tool}
 ToolMap = dict[str, Any]
 
 SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
@@ -322,7 +317,11 @@ class MiniCodex:
                 if not isinstance(val, dict):
                     raise ValueError("tool arguments must be a JSON object")
                 args = val
-            raw = await self._mcp_client.call_tool(function_call.name, args)
+            raw = await self._mcp_client.call_tool(
+                function_call.name,
+                args,
+                raise_on_error=False,
+            )
             res = copy.deepcopy(raw)
             if res.is_error:
                 return ToolCallFailure(result=res, reason=_maybe_error_message(res))

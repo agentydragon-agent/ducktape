@@ -3,7 +3,7 @@ import pytest
 
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
-from tests.util.notifications import enable_resources_caps
+from tests.util.notifications import enable_resources_caps, install_subscription_recorder
 
 
 @pytest.mark.asyncio
@@ -19,18 +19,8 @@ async def test_client_resource_subscribe_and_unsubscribe(make_pg_compositor):
     # Compositor with a simple origin that exposes the resource to subscribe to
     comp = Compositor("comp")
     origin = NotifyingFastMCP("origin")
+    recorder = install_subscription_recorder(origin)
     enable_resources_caps(origin, subscribe=True)
-
-    # Register minimal subscribe/unsubscribe handlers on the origin
-    ll = origin._mcp_server  # low-level server
-
-    @ll.subscribe_resource()
-    async def _sub(_uri):  # type: ignore[no-redef]
-        return None
-
-    @ll.unsubscribe_resource()
-    async def _unsub(_uri):  # type: ignore[no-redef]
-        return None
 
     @origin.resource("resource://foo/bar", name="dummy", mime_type="text/plain")
     async def _foo_bar() -> str:
@@ -46,3 +36,5 @@ async def test_client_resource_subscribe_and_unsubscribe(make_pg_compositor):
             # Subscribe to the resource and then unsubscribe
             await rc.subscribe(server="origin", uri="resource://foo/bar")
             await rc.unsubscribe(server="origin", uri="resource://foo/bar")
+            assert recorder.subscribed, "expected origin to receive subscribe"
+            assert recorder.unsubscribed, "expected origin unsubscribe call"

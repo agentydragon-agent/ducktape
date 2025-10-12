@@ -5,6 +5,9 @@ import pytest
 from adgn.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from adgn.seatbelt.runner import run_sandboxed_async
 from adgn.seatbelt.validate import make_runtime_context, validate
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
 # This file documents observed dyld/startup behavior under seatbelt on this host.
 # Key anchors and why:
@@ -29,7 +32,6 @@ from adgn.seatbelt.validate import make_runtime_context, validate
 # - If minimal remains brittle across 13–15, recommend compromise: allow file-read* "/" while denying /Users and limiting writes.
 
 
-@pytest.mark.macos
 def test_default_deny_without_dyld_roots_emits_warning():
     # Default-deny policy with only file-map-executable but no file-read* roots
     pol = SBPLPolicy(
@@ -42,8 +44,6 @@ def test_default_deny_without_dyld_roots_emits_warning():
     assert any("default deny" in m and "/System" in m for m in msgs), msgs
 
 
-@pytest.mark.macos
-@pytest.mark.shell
 @pytest.mark.asyncio
 @pytest.mark.xfail(
     reason="Document current abort signature for too-narrow default-deny; not stable across macOS versions",
@@ -63,8 +63,6 @@ async def test_default_deny_narrow_policy_exec_aborts_or_fails():
     assert (res.trace_text or "") == ""
 
 
-@pytest.mark.macos
-@pytest.mark.shell
 @pytest.mark.asyncio
 @pytest.mark.xfail(
     reason="Even with explicit dyld roots, this host still aborts; will refine once stable",

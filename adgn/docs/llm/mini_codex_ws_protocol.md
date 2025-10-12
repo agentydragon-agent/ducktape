@@ -43,7 +43,7 @@ State models (server authoritative)
   - transcript_window: list[TranscriptItem]  (windowed; full transcript retrievable via snapshot)
 - ApprovalBrief
   - call_id: str
-  - tool_key: str  (e.g., "mcp__server__tool")
+- tool_key: str  (e.g., "server_tool")
   - args: dict
 
 Transcript items (subset)

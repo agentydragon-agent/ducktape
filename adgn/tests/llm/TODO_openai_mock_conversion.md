@@ -34,7 +34,7 @@ Pattern reference
   - Target: shared trunk with `openai_client_param` and behavior that handles both agents
   - Expectations:
     - Critic phase: assistant text suffices unless function calls are expected
-    - Grader phase: emit `responses_factory.make_tool_call("mcp__grader_submit__submit_result", <GradeSubmitInput dict>)`
+    - Grader phase: emit `responses_factory.make_tool_call("grader_submit_submit_result", <GradeSubmitInput dict>)`
     - Ensure grader GateUntil is satisfied (submit_result is called)
 
 - [ ] adgn/tests/wt/e2e/test_github_pr_display_real.py (real_github)

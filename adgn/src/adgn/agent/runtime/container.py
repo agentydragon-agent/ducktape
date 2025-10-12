@@ -27,6 +27,7 @@ from adgn.agent.server.protocol import ApprovalPendingEvt
 from adgn.agent.server.rendering import render_compositor_instructions
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.agent.server.system_message import get_ui_system_message
+from adgn.agent.runtime.images import resolve_runtime_image
 
 # Avoid importing seatbelt_exec server at module import time; use a local import where needed
 from adgn.mcp._shared.constants import (
@@ -139,6 +140,12 @@ class _DetachOneMsg(_ActorMsg):
 logger = logging.getLogger(__name__)
 
 
+def default_client_factory(model: str) -> OpenAIModelProto:
+    """Default LLM client factory used when no custom factory is provided."""
+
+    return build_client(model, enable_debug_logging=True)
+
+
 @dataclass
 class UiFacet:
     manager: ConnectionManager
@@ -156,6 +163,7 @@ class AgentContainer:
     agent_id: str
     persistence: SQLitePersistence
     model: str
+    client_factory: Callable[[str], OpenAIModelProto]
     docker_client: DockerClient
     with_ui: bool = True
     # Runtime exec server characteristics (wired during attach)
@@ -171,8 +179,6 @@ class AgentContainer:
     ui: UiFacet | None = None
     # Optional system prompt override (e.g., from preset)
     system_override: str | None = None
-    # Optional DI: override model factory
-    client_factory: Callable[[str], OpenAIModelProto] | None = None
     # Bound docker client for volume IO (injected by registry/app)
     # Optional initial policy to apply on first start (creation only)
     initial_policy: str | None = None
@@ -264,11 +270,7 @@ class AgentContainer:
                 sess.approval_engine = self.approval_engine
 
                 # LLM client
-                client = (
-                    self.client_factory(self.model)
-                    if self.client_factory is not None
-                    else build_client(self.model, enable_debug_logging=True)
-                )
+                client = self.client_factory(self.model)
                 # Initialize AsyncExitStack and enter contexts through it
                 await self._stack.__aenter__()
                 # In-proc Compositor (embedded)
@@ -578,7 +580,7 @@ class AgentContainer:
             )
 
             # Runtime exec server (no host mounts)
-            runtime_image = os.getenv("ADGN_RUNTIME_IMAGE", "python:3.12-slim")
+            runtime_image = resolve_runtime_image()
             opts = ContainerOptions(image=runtime_image, volumes=None, ephemeral=True)
             runtime_server = make_runtime_server(opts)
             # Ensure tool is exposed under expected name
@@ -663,9 +665,9 @@ async def build_container(
     mcp_config: MCPConfig,
     persistence: SQLitePersistence,
     model: str,
+    client_factory: Callable[[str], OpenAIModelProto],
     with_ui: bool = True,
     system: str | None = None,
-    client_factory: Callable[[str], OpenAIModelProto] | None = None,
     docker_client: DockerClient,
     initial_policy: str | None = None,
 ) -> AgentContainer:
@@ -673,10 +675,10 @@ async def build_container(
         agent_id=agent_id,
         persistence=persistence,
         model=model,
+        client_factory=client_factory,
         with_ui=with_ui,
         docker_client=docker_client,
         system_override=system,
-        client_factory=client_factory,
         initial_policy=initial_policy,
     )
     await c.start(mcp_config=mcp_config)

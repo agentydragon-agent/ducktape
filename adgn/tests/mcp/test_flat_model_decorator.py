@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import inspect
 from typing import Optional
 
 from pydantic import BaseModel, Field
 import pytest
+
+from fastmcp.client import Client
+from fastmcp.server.context import Context
 
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -28,7 +32,8 @@ async def test_flat_model_infers_types_and_emits_schema():
         """Demo tool docstring used as description."""
         return OutModel(ok=True, note=str(input.b) if input.b is not None else None)
 
-    tools = await m.list_tools()
+    async with Client(m) as client:
+        tools = await client.list_tools()
 
     assert len(tools) == 1
     t = tools[0]
@@ -49,6 +54,52 @@ async def test_flat_model_infers_types_and_emits_schema():
     assert isinstance(out_schema, dict)
     out_props = out_schema.get("properties") or {}
     assert "ok" in out_props
+
+
+def test_flat_model_signature_exposed():
+    m = NotifyingFastMCP("decorator_signature")
+
+    @mcp_flat_model(m)
+    def demo(input: InModel) -> OutModel:
+        return OutModel(ok=True)
+
+    sig = inspect.signature(demo)
+    params = list(sig.parameters.values())
+    assert len(params) == 2
+    assert params[0].name == "a"
+    assert params[1].name == "b"
+    assert params[0].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+@pytest.mark.asyncio
+async def test_flat_model_invocation_accepts_flat_kwargs():
+    m = NotifyingFastMCP("decorator_call")
+
+    @m.flat_model()
+    async def echo(input: InModel) -> OutModel:
+        return OutModel(ok=input.a > 0, note=input.b)
+
+    async with Client(m) as client:
+        res = await client.call_tool("echo", {"a": 3, "b": "hi"})
+
+    assert res.structured_content == {"ok": True, "note": "hi"}
+
+
+@pytest.mark.asyncio
+async def test_flat_model_passes_context_kwarg():
+    m = NotifyingFastMCP("decorator_context")
+    seen: dict[str, Context] = {}
+
+    @m.flat_model()
+    async def capture(input: InModel, context: Context) -> OutModel:
+        seen["context"] = context
+        return OutModel(ok=True, note=input.b)
+
+    async with Client(m) as client:
+        await client.call_tool("capture", {"a": 5})
+
+    assert "context" in seen
+    assert isinstance(seen["context"], Context)
 
 
 def test_structured_requires_return_annotation():

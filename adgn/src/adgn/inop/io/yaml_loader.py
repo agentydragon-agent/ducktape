@@ -75,7 +75,7 @@ class YamlLoader:
         return self._graders_models
 
 
-def load_yaml_files(seeds_yaml_path: str, graders_yaml_path: str) -> YamlLoader:
+def load_yaml_files(seeds_yaml_path: Path | str, graders_yaml_path: Path | str) -> YamlLoader:
     """Create and return a configured YAML loader."""
     return YamlLoader(
         seeds_yaml_path=Path(seeds_yaml_path),

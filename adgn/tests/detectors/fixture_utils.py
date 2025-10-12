@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from importlib import resources as ires
+from importlib import resources
 from pathlib import Path
 
 
-def _copy_tree(trav: ires.abc.Traversable, dest: Path) -> None:  # type: ignore[attr-defined]
+def _copy_tree(trav: resources.abc.Traversable, dest: Path) -> None:  # type: ignore[attr-defined]
     if trav.is_file():
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(trav.read_text(encoding="utf-8"), encoding="utf-8")
@@ -25,7 +25,7 @@ def copy_fixture(root: Path, package: str, name: str, dest_rel: str) -> Path:
     - dest_rel: relative destination path under root
     Returns the destination path (file or directory path).
     """
-    base = ires.files(package)
+    base = resources.files(package)
     trav = base.joinpath(name)
     dest = root / dest_rel
     _copy_tree(trav, dest)

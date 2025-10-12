@@ -27,7 +27,25 @@ from openai.types.responses import Response
 from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict
 
-from adgn.openai_utils.probe.core import ErrorCode, Family
+from adgn.openai_utils.probe.core import (
+    ErrorCode,
+    FAMILY_PRIORITY,
+    FATAL_CODES,
+    Family,
+    ModelProbe,
+    ProbeRun,
+    family_of,
+)
+
+__all__ = [
+    "ErrorCode",
+    "Family",
+    "FAMILY_PRIORITY",
+    "FATAL_CODES",
+    "ModelProbe",
+    "ProbeRun",
+    "family_of",
+]
 
 # ---------- Constants & utilities ----------
 
@@ -334,30 +352,7 @@ class ModelListRecord(BaseModel):
 
 # Model family heuristic
 
-FAMILY_RULES: dict[Family, str] = {
-    Family.GPT_5: r"^gpt[-_]?5(?!-(mini|nano))",
-    Family.O3: r"^o3(?!-mini)",
-    Family.O4_MINI: r"^o4-mini",
-    Family.O1: r"^o1(?!-mini)",
-    Family.GPT_41: r"^gpt[-_]?4\.1(?!-(mini|nano))",
-}
-FAMILY_RES = {fam: re.compile(pattern, re.IGNORECASE) for fam, pattern in FAMILY_RULES.items()}
 FAMILY_DROP: set[Family] = set()
-
-FAMILY_PRIORITY: list[Family] = [
-    Family.GPT_5,
-    Family.O3,
-    Family.O4_MINI,
-    Family.O1,
-    Family.GPT_41,
-]
-
-
-def family_of(mid: str) -> Family:
-    for fam, rx in FAMILY_RES.items():
-        if rx.search(mid):
-            return fam
-    return Family.OTHER
 
 
 def is_excluded(mid: str) -> bool:
@@ -385,19 +380,6 @@ ERROR_RULES: Mapping[ErrorCode, tuple[str, Callable[[str], bool]]] = {
     ),
     # ... rules elided for brevity ...
 }
-
-FATAL_CODES: set[ErrorCode] = {
-    ErrorCode.TTS_MODEL,
-    ErrorCode.INVALID_REQUEST,
-    ErrorCode.INVALID_HEADERS,
-    ErrorCode.AUDIO_REQUIRED,
-    ErrorCode.FORBIDDEN,
-    ErrorCode.TOOLS_UNSUPPORTED,
-    ErrorCode.NOT_FOUND,
-    ErrorCode.NOT_CHAT,
-    ErrorCode.RESP_ONLY,
-}
-
 
 def _squeeze_one_line(text: str, max_len: int = 120) -> str:
     s = " ".join(str(text).split())
@@ -640,39 +622,6 @@ class ProbeResult:
         if self.kind == "responses" and isinstance(self.raw, Response):
             return self.raw
         return None
-
-
-@dataclass(frozen=True)
-class ProbeRun:
-    model_id: str
-    calls: list[ProbeResult]
-
-    @property
-    def ok(self) -> bool:
-        return any(c.ok for c in self.calls)
-
-    @property
-    def avg_latency_s(self) -> float | None:
-        vals = [c.latency_s for c in self.calls if c.ok and c.latency_s is not None]
-        return (sum(vals) / len(vals)) if vals else None
-
-    @property
-    def first_error(self) -> BaseException | None:
-        for c in self.calls:
-            if not c.ok:
-                return c.exc
-        return None
-
-
-@dataclass(frozen=True)
-class ModelProbe:
-    model_id: str
-    responses: ProbeRun
-    chat: ProbeRun
-
-    @property
-    def any_ok(self) -> bool:
-        return self.responses.ok or self.chat.ok
 
 
 def make_limiter(qps: float) -> AsyncLimiter:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from hamcrest import assert_that, has_item, has_items, instance_of, is_not
 import pytest
 
 from adgn.agent.agent import MiniCodex
@@ -17,6 +16,16 @@ from adgn.openai_utils.model import (
     ResponsesResult,
 )
 from tests.fixtures.responses import ResponsesFactory
+from tests.agent.ui.typed_asserts import (
+    assert_items_exclude_instance,
+    assert_items_include_instances,
+)
+
+
+@pytest.fixture
+def approval_policy_reader_allow_all(approval_policy_reader_stub):
+    """Override policy reader with a stub that approves without Docker."""
+    return approval_policy_reader_stub
 
 # Use our shared Pydantic-only fake model client
 
@@ -69,10 +78,7 @@ async def test_stateless_reasoning_forwarding(
         msgs = agent.messages
 
         # Typed presence checks using Hamcrest (combined)
-        assert_that(
-            msgs,
-            has_items(instance_of(ReasoningItem), instance_of(AssistantMessage)),
-        )
+        assert_items_include_instances(msgs, ReasoningItem, AssistantMessage)
 
 
 @pytest.mark.asyncio
@@ -103,10 +109,7 @@ async def test_function_call_and_function_call_output_replay(
     assert client.calls == 2
     # Captured request input holds our typed InputItem models
     input_items = list(client.captured[1].input or [])
-    assert_that(
-        input_items,
-        has_items(instance_of(FunctionCallItem), instance_of(FunctionCallOutputItem)),
-    )
+    assert_items_include_instances(input_items, FunctionCallItem, FunctionCallOutputItem)
 
 
 @pytest.mark.asyncio
@@ -139,14 +142,12 @@ async def test_mixed_reasoning_fc_ordering(
     # Expect exactly two calls; validate second call input ordering/types (typed InputItems)
     assert client.calls == 2
     input_items = list(client.captured[1].input or [])
-    assert_that(
+    assert_items_include_instances(
         input_items,
-        has_items(
-            instance_of(ReasoningItem),
-            instance_of(FunctionCallItem),
-            instance_of(FunctionCallOutputItem),
-            instance_of(AssistantMessage),
-        ),
+        ReasoningItem,
+        FunctionCallItem,
+        FunctionCallOutputItem,
+        AssistantMessage,
     )
 
 
@@ -176,7 +177,7 @@ async def test_no_synthesized_reasoning_items(
     idx = min(1, len(client.captured) - 1)
     input_items = list(client.captured[idx].input or [])
     # No synthesized ReasoningItem entries should be present
-    assert_that(input_items, is_not(has_item(instance_of(ReasoningItem))))
+    assert_items_exclude_instance(input_items, ReasoningItem)
 
 
 @pytest.mark.asyncio
@@ -207,6 +208,6 @@ async def test_model_provided_tool_output_records_without_execution(
         await agent.run("say hi")
 
     msgs = agent.messages
-    assert_that(msgs, has_item(instance_of(FunctionCallOutputItem)))
+    assert_items_include_instances(msgs, FunctionCallOutputItem)
     assert not agent.pending_function_calls
     assert client.calls == 1

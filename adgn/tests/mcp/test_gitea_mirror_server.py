@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from adgn.mcp.gitea_mirror import server as gitea_server
+from adgn.mcp.gitea_mirror import server
 from adgn.mcp.gitea_mirror.server import (
     EnsureMirrorAndSyncArgs,
     EnsureMirrorAndSyncResponse,
@@ -83,21 +83,21 @@ async def test_tool_success_flow(monkeypatch: pytest.MonkeyPatch, make_typed_mcp
             raise AssertionError("GET called more times than expected") from exc
         return _DummyResponse(200, payload=payload)
 
-    monkeypatch.setattr(gitea_server.requests, "post", fake_post)
-    monkeypatch.setattr(gitea_server.requests, "get", fake_get)
-    monkeypatch.setattr(gitea_server, "_resolve_owner", lambda *_: "mirror-user")
+    monkeypatch.setattr(server.requests, "post", fake_post)
+    monkeypatch.setattr(server.requests, "get", fake_get)
+    monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
     monotonic_values = _iter([0.0, 0.2, 0.4])
-    monkeypatch.setattr(gitea_server.time, "monotonic", lambda: next(monotonic_values))
-    monkeypatch.setattr(gitea_server.time, "sleep", lambda _: None)
+    monkeypatch.setattr(server.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(server.time, "sleep", lambda _: None)
 
-    server = gitea_server.make_gitea_mirror_server(
+    mirror_server = server.make_gitea_mirror_server(
         base_url="https://gitea.local",
         token="secret-token",
         poll_interval_secs=0.01,
         poll_timeout_secs=1,
     )
 
-    async with make_typed_mcp(server, "gitea_mirror") as (client, _):
+    async with make_typed_mcp(mirror_server, "gitea_mirror") as (client, _):
         res: EnsureMirrorAndSyncResponse = await client.ensure_mirror_and_sync(
             EnsureMirrorAndSyncArgs(url="https://example.com/org/repo.git")
         )
@@ -124,20 +124,20 @@ async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch, make_t
             return _DummyResponse(500, text="boom")
         raise AssertionError("mirror-sync should not be called")
 
-    monkeypatch.setattr(gitea_server.requests, "post", fake_post)
-    monkeypatch.setattr(gitea_server, "_resolve_owner", lambda *_: "mirror-user")
+    monkeypatch.setattr(server.requests, "post", fake_post)
+    monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
 
     def unexpected_get(*_, **__):  # pragma: no cover - helper
         raise AssertionError("GET not expected")
 
-    monkeypatch.setattr(gitea_server.requests, "get", unexpected_get)
+    monkeypatch.setattr(server.requests, "get", unexpected_get)
 
-    server = gitea_server.make_gitea_mirror_server(
+    mirror_server = server.make_gitea_mirror_server(
         base_url="https://gitea.local",
         token="secret-token",
     )
 
-    async with make_typed_mcp(server, "gitea_mirror") as (client, _):
+    async with make_typed_mcp(mirror_server, "gitea_mirror") as (client, _):
         # Error assertion path: expect tool error and capture message
         err_msg = await client.error("ensure_mirror_and_sync")(
             EnsureMirrorAndSyncArgs(url="https://example.com/org/repo")
@@ -148,4 +148,4 @@ async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch, make_t
 def test_make_mcp_requires_configuration() -> None:
     # Use a raw regex for the generic message match
     with pytest.raises(ValueError, match=r"."):
-        gitea_server.make_gitea_mirror_server()
+        server.make_gitea_mirror_server()

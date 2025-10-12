@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from contextlib import AsyncExitStack
 from datetime import datetime
-from enum import StrEnum
 import logging
 import os
 from pathlib import Path
@@ -25,11 +24,18 @@ from adgn.agent.persist.events import EventRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import AgentPreset, discover_presets
 from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
+from adgn.agent.runtime.container import default_client_factory
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession
-from adgn.agent.server.status_shared import ContainerState, RunPhase, build_agent_status_core
+from adgn.agent.server.status_shared import (
+    AgentLifecycle,
+    AgentStatusCore,
+    ContainerState,
+    RunPhase,
+    build_agent_status_core,
+)
 from adgn.agent.server.ws import register_ws
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.clients import PolicyApproverClient
@@ -40,7 +46,7 @@ from adgn.mcp.approval_policy.server import (
 from adgn.mcp.snapshots import ServerEntry
 
 # (runtime container constants used only in shared status builder)
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import OpenAIModelProto, FakeOpenAIModel
 import docker  # type: ignore
 
 PROTOCOL_VERSION = "1.0.0"
@@ -104,38 +110,9 @@ class AgentInfo(BaseModel):
     live: bool
 
 
-class AgentLifecycle(StrEnum):
-    PERSISTED_ONLY = "persisted_only"
-    STARTING = "starting"
-    READY = "ready"
-
-
-class PolicyState(BaseModel):
-    version: int | None = None
-
-
-class UiStateLite(BaseModel):
-    ready: bool
-
-
-class McpState(BaseModel):
-    entries: dict[str, ServerEntry]
-
-
 # Typed status bundle (references component models defined above)
-class AgentStatus(BaseModel):
-    id: str
-    live: bool
-    active_run_id: UUID | None = None
-    # Enriched lifecycle details (required)
-    lifecycle: AgentLifecycle
-    run_phase: RunPhase
-    policy: PolicyState
-    ui: UiStateLite
-    mcp: McpState
-    container: ContainerState
-    pending_approvals: int
-    last_event_at: datetime | None = None
+class AgentStatus(AgentStatusCore):
+    """HTTP response model for agent status; mirrors shared core schema."""
 
 
 class SetPolicyBody(BaseModel):
@@ -203,7 +180,6 @@ class BootAgentResult(BaseModel):
 def create_app(
     *,
     require_static_assets: bool = True,
-    client_factory: Callable[[str], OpenAIModelProto] | None = None,
 ) -> FastAPI:
     app = FastAPI()
     STATIC_DIR = Path(__file__).with_name("static")
@@ -244,15 +220,17 @@ def create_app(
     # Async resource stack for long-lived clients created by the app
     app.state.stack = AsyncExitStack()
     # Wire SQLite persistence at creation; ensure schema during startup
-    db_path = os.getenv("ADGN_AGENT_DB_PATH") or str(Path("logs") / "agent.sqlite")
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    raw_db_path = os.getenv("ADGN_AGENT_DB_PATH")
+    db_path = Path(raw_db_path) if raw_db_path else Path("logs") / "agent.sqlite"
+    db_path = db_path.expanduser()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     app.state.persistence = SQLitePersistence(db_path)
     # Construct a single Docker client and pass through to the registry/containers
     app.state.docker_client = docker.from_env()
     app.state.registry = AgentRegistry(
         persistence=app.state.persistence,
         model=DEFAULT_MODEL,
-        client_factory=client_factory,
+        client_factory=default_client_factory,
         docker_client=app.state.docker_client,
     )
     # Initialize the agents WS hub explicitly (no lazy creation in route registrar)
@@ -276,7 +254,7 @@ def create_app(
 
         # Ensure persistence schema (generic agent store) — fail startup on error
         await app.state.persistence.ensure_schema()
-        logger.info("persistence ready", extra={"db_path": db_path})
+        logger.info("persistence ready", extra={"db_path": str(db_path)})
 
         # Multi-agent: agents should be created via API after startup
         app.state.ready.set()
@@ -511,8 +489,8 @@ def create_app(
     async def api_get_snapshot(agent_id: str) -> Snapshot:
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="agent not found")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail="agent not found") from e
         sess: AgentSession | None = container.session
         if sess is None:
             raise HTTPException(status_code=500, detail="no session")
@@ -533,13 +511,13 @@ def create_app(
         # Route through the agent container's policy approver client
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="agent_not_found")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail="agent_not_found") from e
         approver_client: PolicyApproverClient = container.policy_approver
         try:
             await approver_client.set_policy_text(body.content)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"policy_set_failed: {e}")
+            raise HTTPException(status_code=400, detail=f"policy_set_failed: {e}") from e
         # If proposal id provided, delete it from store
         if body.proposal_id:
             await app.state.persistence.delete_policy_proposal(agent_id, body.proposal_id)
@@ -556,8 +534,8 @@ def create_app(
     async def api_approve(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="agent_not_found")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail="agent_not_found") from e
         sess = container.session
         if sess is None:
             raise HTTPException(status_code=500, detail="no_session")
@@ -572,8 +550,8 @@ def create_app(
     async def api_deny_continue(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="agent_not_found")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail="agent_not_found") from e
         sess = container.session
         if sess is None:
             raise HTTPException(status_code=500, detail="no_session")
@@ -592,13 +570,13 @@ def create_app(
     async def api_approve_proposal(agent_id: str, proposal_id: str) -> SimpleOk:
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="agent_not_found")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail="agent_not_found") from e
         approver_client: PolicyApproverClient = container.policy_approver
         try:
             await approver_client.approve_proposal(ApproveProposalArgs(id=proposal_id))
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"approve_proposal_failed: {e}")
+            raise HTTPException(status_code=400, detail=f"approve_proposal_failed: {e}") from e
         await app.state.persistence.approve_policy_proposal(agent_id, proposal_id)
         # Push snapshot update to UIs (do not swallow errors)
         if container.ui is not None:
@@ -612,21 +590,21 @@ def create_app(
     async def api_reject_proposal(agent_id: str, proposal_id: str) -> SimpleOk:
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="agent_not_found")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail="agent_not_found") from e
         approver_client: PolicyApproverClient = container.policy_approver
         try:
             await approver_client.reject_proposal(RejectProposalArgs(id=proposal_id))
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"reject_proposal_failed: {e}")
+            raise HTTPException(status_code=400, detail=f"reject_proposal_failed: {e}") from e
         return SimpleOk(ok=True)
 
     @app.post("/api/agents/{agent_id}/deny_abort", response_model=SimpleOk)
     async def api_deny_abort(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="agent_not_found")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail="agent_not_found") from e
         sess = container.session
         if sess is None:
             raise HTTPException(status_code=500, detail="no_session")
@@ -642,9 +620,9 @@ def create_app(
     async def api_prompt(agent_id: str, body: PromptBody = Body(...)) -> SimpleOk:
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError:
+        except KeyError as e:
             logger.info("api_prompt: agent_not_found", extra={"agent_id": agent_id})
-            raise HTTPException(status_code=404, detail="agent_not_found")
+            raise HTTPException(status_code=404, detail="agent_not_found") from e
         sess = container.session
         if sess is None:
             logger.info("api_prompt: no session", extra={"agent_id": agent_id})
@@ -658,8 +636,8 @@ def create_app(
     async def api_abort(agent_id: str) -> SimpleOk:
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="agent_not_found")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail="agent_not_found") from e
         sess = container.session
         if sess is None:
             raise HTTPException(status_code=500, detail="no_session")

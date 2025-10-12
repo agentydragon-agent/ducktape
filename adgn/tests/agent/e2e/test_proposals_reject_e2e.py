@@ -4,9 +4,8 @@ from typing import Any, Callable
 
 import pytest
 
-from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.server.app import create_app
-from tests.agent.conftest import policy_allow_all as _policy_allow_all  # noqa: F401
+from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.helpers import api_create_agent, start_uvicorn_app
 from tests.llm.support.openai_mock import make_mock
 
@@ -36,13 +35,15 @@ def _patch_model(monkeypatch: pytest.MonkeyPatch, create_fn: Callable[[Any], Any
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_policy_proposal_reject_updates_ui(
-    page: Page, run_server, responses_factory, policy_allow_all: str, tmp_path
+    page: Page, run_server, responses_factory, policy_allow_all: str, sqlite_persistence
 ):
     """E2E: a policy proposal appears; rejecting it removes it from Open Proposals without reload."""
 
     # No model tool calls needed for proposal authoring in this flow
     async def responses_create(_req):
-        return responses_factory.make_tool_call("mcp__ui__end_turn", {}, call_id="call_ui_end")
+        return responses_factory.make_tool_call(
+            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
+        )
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -55,12 +56,8 @@ async def test_policy_proposal_reject_updates_ui(
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Create a proposal directly via persistence (no named volumes)
-    db_path = tmp_path / "agent.sqlite"
-    p = SQLitePersistence(str(db_path))
-    # Ensure schema (harmless if already created by app startup)
-    await p.ensure_schema()
     # Insert a proposal for this agent
-    await p.create_policy_proposal(agent_id, "p-e2e", policy_allow_all)
+    await sqlite_persistence.create_policy_proposal(agent_id, "p-e2e", policy_allow_all)
     # Open UI and connect WS
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)

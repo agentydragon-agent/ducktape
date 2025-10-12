@@ -27,7 +27,7 @@ class ReadInfoArgs(BaseModel):
 
 class ReadInfoResult(BaseModel):
     ok: bool
-    path: str
+    path: Path
     lines: int
     model_config = ConfigDict(extra="forbid")
 
@@ -157,7 +157,7 @@ def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
         """Return basic info about the current file."""
         return ReadInfoResult(
             ok=True,
-            path=str(state.file_path),
+            path=state.file_path,
             lines=len(state.content.splitlines()),
         )
 
@@ -240,7 +240,7 @@ def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
         state.file_path.write_text(state.content.rstrip("\n") + "\n", encoding="utf-8")
         return SaveResult(ok=True)
 
-    @mcp.flat_model()
+    @mcp.flat_model(output_model=DoneResponse)
     def done(input: DoneInput) -> DoneResponse:
         """Finish the editing session with Success|Failure using early bailouts.
 

@@ -34,11 +34,11 @@ This ensures each test runs in complete isolation without daemon interference.
 
 import os
 
-from hamcrest import assert_that, contains_string
 import pygit2
 import pytest
 
 from adgn.wt.shared.git_utils import git_run
+from tests.wt.asserts import assert_output_contains
 
 # from ..conftest import kill_daemon_at_wt_dir
 
@@ -99,7 +99,7 @@ class TestCLIIntegration:
         # List worktrees
         result = wt_cli.sh("ls")
         assert result.returncode == 0
-        assert_that(result.stdout, contains_string("feature1"))
+        assert_output_contains(result.stdout, "feature1")
 
     def test_status_command_shows_worktrees(self, real_temp_repo, real_env, wt_cli):
         """Test that status command shows created worktrees."""
@@ -111,8 +111,7 @@ class TestCLIIntegration:
         # Check status
         result = wt_cli.status()
         assert result.returncode == 0
-        assert_that(result.stdout, contains_string("feature1"))
-        assert_that(result.stdout, contains_string("feature2"))
+        assert_output_contains(result.stdout, "feature1", "feature2")
 
     def test_create_worktree_reserved_name(self, real_temp_repo, wt_cli):
         """Test that creating worktrees with reserved names fails."""
@@ -141,7 +140,7 @@ class TestCLIIntegration:
         # Test path command
         result = wt_cli.sh("path", "path-test")
         assert result.returncode == 0
-        assert_that(result.stdout, contains_string("path-test"))
+        assert_output_contains(result.stdout, "path-test")
 
     def test_path_command_worktree_name(self, real_temp_repo, wt_cli):
         """ "x" resolves to the worktree directory (treat as worktree name)."""
@@ -152,7 +151,7 @@ class TestCLIIntegration:
 
         res = wt_cli.sh("path", "pth")
         assert res.returncode == 0
-        assert_that(res.stdout, contains_string(str(wt_path)))
+        assert_output_contains(res.stdout, wt_path)
 
     def test_path_command_relative_path(self, real_temp_repo, wt_cli):
         """ "./x" resolves to a path inside the current worktree (treat as path)."""
@@ -165,7 +164,7 @@ class TestCLIIntegration:
 
         res = wt_cli.sh("path", "./subdir", cwd=wt_path)
         assert res.returncode == 0
-        assert_that(res.stdout, contains_string(str(wt_path / "subdir")))
+        assert_output_contains(res.stdout, wt_path / "subdir")
 
 
 @pytest.mark.integration
@@ -247,7 +246,7 @@ class TestRealGitOperations:
         result = wt_cli.status()
         assert result.returncode == 0
         # Status should show the worktree (exact format depends on implementation)
-        assert_that(result.stdout, contains_string("status-test"))
+        assert_output_contains(result.stdout, "status-test")
 
     def test_sparse_empty_cone_then_extend(self, real_temp_repo, config_factory, wtcli):
         # Create a repo with nested content

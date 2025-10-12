@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
 import pytest
 
 from adgn.openai_utils import builders
+from fastmcp.client.client import CallToolResult
+from pydantic import TypeAdapter
+
 from adgn.openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
+    FunctionCallOutputItem,
     ReasoningItem,
     ResponsesResult,
     Usage,
@@ -101,10 +106,11 @@ class ResponsesFactory(builders.ItemFactory):
         output: Any,
         call_id: str | None = None,
     ) -> ResponsesResult:
-        call, tool_out = self.tool_call_with_output(
-            name=name, arguments=arguments, output=output, call_id=call_id
-        )
-        return self.make(call, tool_out)
+        call = self.tool_call(name, arguments, call_id)
+        result = CallToolResult(content=[], structured_content=output, data=None, is_error=False)
+        payload_json = TypeAdapter(CallToolResult).dump_json(result, by_alias=True)
+        out = FunctionCallOutputItem(call_id=call.call_id, output=payload_json)
+        return self.make(call, out)
 
 
 @pytest.fixture(scope="session")

@@ -4,10 +4,26 @@ This document tracks what’s left to tidy up after recent refactors. Closed ite
 
 ## Docs
 
-– (none)
-
+- [ ] Update MCP runtime docs once loop hooks + DB server land (ensure `docs/mcp-runtime/*` align with code).
+- [ ] Document the chat inbox architecture (human MCP sidecar + runtime bridge feeding UiState) once landing.
+- [ ] Promote `ember/docs/pilot_plan.md` after v0 bake (ensure README links stay accurate).
 - [ ] Cross-reference seatbelt TODO
   - Add a short note in relevant docs (sandboxer pages, MCP presets) pointing to `adgn/docs/seatbelt/TODO.md` for the living SBPL feature list and gaps.
+
+## Loop Hooks / DB surfaces
+
+- [ ] Implement loop hook tooling (`loop.enable_hook/disable_hook`) with per-hook resources (`loop://hooks/{id}`) and sandboxed execution.
+- [ ] Add orchestrator bridge delivering coalesced notifications into hooks (current handlers-only path).
+- [ ] Ship the read-only DB MCP server (`db://view/*` / `query`) plus hook input hydration.
+- [ ] Add coverage for hook enable/disable and hydrated inputs once APIs exist.
+
+## Chat / UI delivery
+
+- [ ] Promote the MCP-native chat inbox (`ui://chat/inbox`, `chat_read_since`) and dual subscriptions; retire the process bus once parity is confirmed.
+- [ ] Ensure runtime bridges human chat MCP notifications into `UiState` (user messages) and writes assistant outputs through `chat.assistant.post`.
+- [ ] Update UI handler prompts/tests to consume the new chat resource flow.
+- [ ] Add fixtures exercising the MCP chat inbox end-to-end.
+- [ ] Remove the legacy `ui` MCP server and migrate assistant output to `chat.assistant.post` plus `loop.yield_turn`.
 
 ## Seatbelt library polish (tracked primarily in adgn/docs/seatbelt/TODO.md)
 
@@ -41,6 +57,7 @@ This document tracks what’s left to tidy up after recent refactors. Closed ite
   - Exercise `resources.list/read` via typed clients to validate Pydantic types.
 - [ ] Add helper for invoking proposer MCP in tests (non-HTTP) if needed.
 - [ ] Confirm mount failure surfaces and tool listing via proxy in meta tests.
+- [ ] Implement pinned subscription semantics (respect `SubscriptionRecord.pinned`) and expose `list_resource_templates` once templates API is finalised.
 
 ## WT CLI / Daemon
 
@@ -59,7 +76,7 @@ This document tracks what’s left to tidy up after recent refactors. Closed ite
 
 ## CI / Tooling
 
-- [ ] Wire `tools/detect_trivial_aliases.py` into pre-commit/CI (report-only; scope to tests).
+- [ ] Wire `adgn-trivial-patterns` into pre-commit/CI (report-only; scope to tests).
 - [ ] Split CI lanes for WT (AF_UNIX enabled/escalated) and Docker-required tests (`-m requires_docker`).
 
 ## NotifyingFastMCP / Hooks

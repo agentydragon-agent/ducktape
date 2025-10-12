@@ -499,11 +499,8 @@ class TaskClaude:
         # Stream output in real-time
         if process.stdout is None:
             raise RuntimeError("Setup script process has no stdout pipe")
-        while True:
+        while line := await process.stdout.readline():
             try:
-                line = await process.stdout.readline()
-                if not line:
-                    break
                 line_text = line.decode("utf-8", errors="replace").rstrip()
                 if line_text:  # Only log non-empty lines
                     self._logger.info(

@@ -10,6 +10,7 @@ from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.reducer import BaseHandler
 from adgn.openai_utils.model import FakeOpenAIModel
+from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ws_helpers import assert_function_call_output_structured
 
 
@@ -45,7 +46,7 @@ async def test_tool_error_is_surfaced_in_sequence(
 
         client = FakeOpenAIModel(
             [
-                responses_factory.make_tool_call("mcp__editor__fail", {"x": 1}),
+                responses_factory.make_tool_call(build_mcp_function("editor", "fail"), {"x": 1}),
                 responses_factory.make_assistant_message("done"),
             ]
         )

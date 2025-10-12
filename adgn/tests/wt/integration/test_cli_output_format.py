@@ -1,9 +1,9 @@
 """Integration tests that verify actual CLI output formatting."""
 
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
-from hamcrest import assert_that, contains_string
 import pytest
 
 from adgn.wt.cli import app
@@ -12,6 +12,7 @@ from adgn.wt.shared.protocol import (
     StatusResult,
     WorktreeID,
 )
+from tests.wt.asserts import assert_output_contains
 
 
 @pytest.fixture
@@ -50,10 +51,10 @@ class TestCLIOutputFormat:
             WorktreeID("wtid:main"): StatusResult(
                 wtid=WorktreeID("wtid:main"),
                 name="main",
-                absolute_path="/test/main",
+                absolute_path=Path("/test/main"),
                 branch_name="master",
-                has_dirty_files=True,
-                has_untracked_files=True,
+                dirty_files_lower_bound=1,
+                untracked_files_lower_bound=1,
                 processing_time_ms=10.0,
                 last_updated_at=datetime.now(),
                 commit_info=commit_info,
@@ -65,10 +66,10 @@ class TestCLIOutputFormat:
             WorktreeID("wtid:feature-branch"): StatusResult(
                 wtid=WorktreeID("wtid:feature-branch"),
                 name="feature-branch",
-                absolute_path="/test/feature-branch",
+                absolute_path=Path("/test/feature-branch"),
                 branch_name="feature/test",
-                has_dirty_files=False,
-                has_untracked_files=False,
+                dirty_files_lower_bound=0,
+                untracked_files_lower_bound=0,
                 processing_time_ms=8.0,
                 last_updated_at=datetime.now(),
                 commit_info=commit_info,
@@ -86,8 +87,7 @@ class TestCLIOutputFormat:
         output = result.output
 
         # Verify content appears in output
-        assert_that(output, contains_string("main"))
-        assert_that(output, contains_string("feature-branch"))
+        assert_output_contains(output, "main", "feature-branch")
 
     @patch("adgn.wt.client.wt_client.WtClient.get_status")
     def test_status_unknown_when_not_cached(
@@ -105,10 +105,10 @@ class TestCLIOutputFormat:
             WorktreeID("wtid:test1"): StatusResult(
                 wtid=WorktreeID("wtid:test1"),
                 name="test1",
-                absolute_path="/test/test1",
+                absolute_path=Path("/test/test1"),
                 branch_name="test/test1",
-                has_dirty_files=False,
-                has_untracked_files=False,
+                dirty_files_lower_bound=0,
+                untracked_files_lower_bound=0,
                 processing_time_ms=1.0,
                 last_updated_at=datetime.now(),
                 commit_info=commit_info,
@@ -122,4 +122,4 @@ class TestCLIOutputFormat:
         status_response = build_status_response(results)
         result = cli_runner_with_env(status_response, [], mock_get_status)
         assert result.exit_code == 0
-        assert_that(result.output, contains_string("unknown"))
+        assert_output_contains(result.output, "unknown")

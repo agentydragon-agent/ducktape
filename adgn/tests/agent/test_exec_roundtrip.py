@@ -22,7 +22,7 @@ async def _assert_exec_echo(sess) -> None:
 
     res: ExecResult = await call_tool_typed(
         sess,
-        f"mcp__{SERVER_NAME}__exec",
+        build_mcp_function(SERVER_NAME, "exec"),
         ExecInput(cmd=ECHO_CMD, timeout_ms=10_000),
         ExecResult,
     )

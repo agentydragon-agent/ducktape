@@ -47,7 +47,7 @@ def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
             return responses_factory.make(
                 responses_factory.tool_call(
                     build_mcp_function("editor", "done"),
-                    {"payload": {"outcome": "success", "summary": "ok"}},
+                    {"outcome": "success", "summary": "ok"},
                 )
             )
         return responses_factory.make_assistant_message("done")
@@ -73,9 +73,9 @@ async def test_llm_edit_obvious_replace(openai_client_param, tmp_path: Path) -> 
     prompt = (
         "Replace the exact text HELLO_WORLD with GOODBYE_WORLD in the file. "
         "Call exactly these tools in order, and no others: "
-        "1) mcp__editor__replace_text with old_text='HELLO_WORLD' and new_text='GOODBYE_WORLD' (do NOT use replace_text_all); "
-        "2) mcp__editor__save; "
-        "3) mcp__editor__done with payload.outcome='success' and payload.summary='ok'."
+        f"1) {build_mcp_function('editor', 'replace_text')} with old_text='HELLO_WORLD' and new_text='GOODBYE_WORLD' (do NOT use replace_text_all); "
+        f"2) {build_mcp_function('editor', 'save')}; "
+        f"3) {build_mcp_function('editor', 'done')} with outcome='success' and summary='ok'."
     )
 
     code = await _execute(

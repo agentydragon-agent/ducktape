@@ -3,6 +3,7 @@ from __future__ import annotations
 from importlib import resources
 
 from jinja2 import Environment
+from pydantic import BaseModel
 
 from adgn.mcp.snapshots import ServerEntry
 
@@ -34,11 +35,9 @@ def render_compositor_instructions(states: dict[str, ServerEntry]) -> str:
     )
     env = Environment(autoescape=False)
 
-    # Filters: model_dump_json emits JSON string via Pydantic; default mode is "json"
+    # Filter: emit JSON using Pydantic's model_dump_json if available
     def _f_model_dump_json(value, *args, **kwargs):
-        if hasattr(value, "model_dump_json"):
-            if "mode" not in kwargs and (len(args) == 0):
-                kwargs["mode"] = "json"
+        if isinstance(value, BaseModel):
             return value.model_dump_json(*args, **kwargs)
         # Fall back to str() if not a Pydantic model
         return str(value)

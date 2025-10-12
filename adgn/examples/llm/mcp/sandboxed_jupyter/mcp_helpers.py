@@ -13,8 +13,7 @@ def send_line_json(out: IO[bytes] | None, payload: dict[str, Any]) -> None:
 def read_line_json(inp: IO[bytes] | None, timeout: float | None = None) -> dict[str, Any] | None:
     assert inp is not None
     # Naive blocking read; tests wrap with timeouts on the process
-    line = inp.readline()
-    if not line:
+    if not (line := inp.readline()):
         return None
     try:
         return json.loads(line.decode())

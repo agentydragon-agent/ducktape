@@ -53,7 +53,7 @@ class Forbid(ToolPolicy):
 
 # Constrained-required policy: require one of specific tool names
 # Note: Names should match the function names exposed to the model (e.g.,
-# "mcp__prompt_feedback__propose_prompt").
+# use build_mcp_function to compose "prompt_feedback" / "propose_prompt").
 @dataclass(frozen=True)
 class RequireSpecific(ToolPolicy):
     names: tuple[str, ...]

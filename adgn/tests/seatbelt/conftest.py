@@ -15,6 +15,19 @@ from adgn.seatbelt.model import (
 )
 from adgn.seatbelt.runner import apopen, run_sandboxed_async
 
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    for item in items:
+        if "tests/seatbelt" not in str(item.fspath):
+            continue
+        for mark in REQUIRES_SANDBOX_EXEC:
+            if item.get_closest_marker(mark.name) is None:
+                item.add_marker(mark)
+
 
 @pytest.fixture
 def allow_all_policy() -> SBPLPolicy:

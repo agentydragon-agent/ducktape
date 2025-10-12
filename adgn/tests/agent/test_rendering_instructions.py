@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from importlib import resources
 
-from mcp import types as mcp_types
+from mcp import types
 
 from adgn.agent.server.rendering import render_compositor_instructions
 from adgn.mcp.snapshots import RunningServerEntry
@@ -21,7 +21,12 @@ def test_render_empty_states_returns_empty() -> None:
 
 
 def test_render_single_running_with_instructions() -> None:
-    init = mcp_types.InitializeResult(instructions="Hello world", capabilities=None)
+    init = types.InitializeResult(
+        protocolVersion="1.0",
+        capabilities=types.ServerCapabilities(),
+        serverInfo=types.Implementation(name="docker_exec", version="0.0.0"),
+        instructions="Hello world",
+    )
     state = RunningServerEntry(initialize=init, tools=[])
     out = render_compositor_instructions({"docker_exec": state})
     assert "The following MCP servers" in out

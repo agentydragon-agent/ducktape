@@ -16,8 +16,8 @@ from .container import AgentContainer, build_container
 class AgentRegistry:
     persistence: SQLitePersistence
     model: str
+    client_factory: Callable[[str], OpenAIModelProto]
     docker_client: DockerClient
-    client_factory: Callable[[str], OpenAIModelProto] | None = None
     _items: dict[str, AgentContainer] = field(default_factory=dict)
 
     def get(self, agent_id: str) -> AgentContainer | None:

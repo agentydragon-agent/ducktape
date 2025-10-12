@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from concurrent.futures import CancelledError
 
-from hamcrest import any_of, instance_of
 import pytest
 
-from adgn.agent.server.protocol import UiStateSnapshot, UiStateUpdated
 from adgn.openai_utils.model import FakeOpenAIModel
 from tests.agent.ui_asserts import assert_ui_items_have, item_user_message
-from tests.agent.ws_helpers import assert_finished, drain_until_match
+from tests.agent.ws_helpers import assert_finished, drain_until_match, is_ui_state_event
 
 
 @pytest.mark.timeout(5)
@@ -41,7 +39,7 @@ def test_agents_list_status_and_history(
             # First, wait for a UiStateUpdated (or UiStateSnapshot) to assert UI reflects the user message
             payloads = drain_until_match(
                 box.ws,
-                any_of(instance_of(UiStateSnapshot), instance_of(UiStateUpdated)),
+                is_ui_state_event(),
                 limit=100,
                 mapper=lambda e: e.payload,
             )

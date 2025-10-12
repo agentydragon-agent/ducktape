@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
 
     token = args.token
     if not token and args.token_file:
-        token_path = Path(args.token_file)
+        token_path = args.token_file
         if not token_path.exists():
             parser.error(f"Token file not found: {token_path}")
         token = token_path.read_text(encoding="utf-8").strip()

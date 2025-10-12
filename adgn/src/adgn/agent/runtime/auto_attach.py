@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from fastmcp.mcp_config import MCPConfig
 
 from adgn.mcp._shared.constants import (
@@ -18,6 +16,7 @@ from adgn.mcp.approval_policy.server import (
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.runtime.server import attach_runtime
 from adgn.mcp.ui.server import attach_ui
+from .images import resolve_runtime_image
 
 # Names of servers that are auto‑attached by the runtime container and should not be
 # persisted in the agent's MCPConfig. Centralize here for both persistence filtering and
@@ -63,6 +62,6 @@ async def attach_default_servers(
     # Do not mount admin (approver) server into the compositor; UI uses a private client.
     await attach_approval_policy_proposer(comp, approval_engine)
     # Runtime exec server (no host mounts)
-    runtime_image = os.getenv("ADGN_RUNTIME_IMAGE", "python:3.12-slim")
+    runtime_image = resolve_runtime_image()
     opts = ContainerOptions(image=runtime_image, volumes=None, ephemeral=True)
     await attach_runtime(comp, opts)

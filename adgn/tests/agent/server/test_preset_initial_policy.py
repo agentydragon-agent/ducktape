@@ -4,12 +4,18 @@ from pydantic import TypeAdapter
 import yaml
 
 from adgn.agent.presets import AgentPreset
-from adgn.agent.server.protocol import Snapshot as UiSnapshot
+from adgn.agent.server.protocol import Snapshot
+from adgn.openai_utils.model import FakeOpenAIModel
 from tests.agent.ws_helpers import wait_for_accepted
 
 
 def test_preset_initial_policy_loaded_into_engine(
-    agent_app_client, tmp_path, monkeypatch, policy_ui_send_message_allow
+    agent_app_client,
+    tmp_path,
+    monkeypatch,
+    policy_ui_send_message_allow,
+    patch_agent_build_client,
+    responses_factory,
 ):
     # Prepare a preset with an explicit approval policy
     d = tmp_path / "presets"
@@ -26,7 +32,9 @@ def test_preset_initial_policy_loaded_into_engine(
     )
     monkeypatch.setenv("ADGN_AGENT_PRESETS_DIR", str(d))
 
-    app, c = agent_app_client
+    _app, c = agent_app_client
+    model_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
+    patch_agent_build_client(model_client)
     # Create agent from preset
     r = c.post("/api/agents", json={"preset": "policytest"})
     assert r.status_code == 200, r.text
@@ -40,7 +48,7 @@ def test_preset_initial_policy_loaded_into_engine(
             env = ws.receive_json()
             payload = env.get("payload", {})
             if payload.get("type") == "snapshot":
-                snap = TypeAdapter(UiSnapshot).validate_python(payload)
+                snap = TypeAdapter(Snapshot).validate_python(payload)
                 content = snap.approval_policy.content if snap.approval_policy else ""
                 assert "class ApprovalPolicy" in content and "TEST_CASES" in content
                 break
@@ -49,7 +57,12 @@ def test_preset_initial_policy_loaded_into_engine(
 
 
 def test_preset_policy_with_failing_tests_falls_back(
-    agent_app_client, tmp_path, monkeypatch, policy_failing_tests
+    agent_app_client,
+    tmp_path,
+    monkeypatch,
+    policy_failing_tests,
+    patch_agent_build_client,
+    responses_factory,
 ):
     # Prepare a preset with an explicit approval policy that fails its test
     d = tmp_path / "presets"
@@ -68,7 +81,9 @@ def test_preset_policy_with_failing_tests_falls_back(
     )
     monkeypatch.setenv("ADGN_AGENT_PRESETS_DIR", str(d))
 
-    app, c = agent_app_client
+    _app, c = agent_app_client
+    model_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
+    patch_agent_build_client(model_client)
     # Create agent from preset
     r = c.post("/api/agents", json={"preset": "policyfail"})
     assert r.status_code == 200, r.text
@@ -80,7 +95,7 @@ def test_preset_policy_with_failing_tests_falls_back(
             env = ws.receive_json()
             payload = env.get("payload", {})
             if payload.get("type") == "snapshot":
-                snap = TypeAdapter(UiSnapshot).validate_python(payload)
+                snap = TypeAdapter(Snapshot).validate_python(payload)
                 content = snap.approval_policy.content if snap.approval_policy else ""
                 assert marker not in content
                 assert "class ApprovalPolicy" in content

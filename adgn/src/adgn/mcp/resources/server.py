@@ -18,7 +18,12 @@ from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
 from adgn.mcp.compositor.server import Compositor, MountEvent
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.mcp.resources.types import ResourceEntry
+from adgn.mcp.resources.types import (
+    ListSubscriptionSummary,
+    ResourceEntry,
+    SubscriptionSummary,
+    SubscriptionsIndex,
+)
 from adgn.mcp.snapshots import RunningServerEntry
 
 ## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
@@ -70,29 +75,6 @@ class SubscriptionRecord(BaseModel):
     pinned: bool = False
     active: bool = False
     last_error: str | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-class SubscriptionSummary(BaseModel):
-    server: str
-    uri: str
-    pinned: bool
-    present: bool
-    active: bool
-    last_error: str | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-class ListSubscriptionSummary(BaseModel):
-    server: str
-    present: bool
-    active: bool
-    model_config = ConfigDict(extra="forbid")
-
-
-class SubscriptionsIndex(BaseModel):
-    subscriptions: list[SubscriptionSummary]
-    list_subscriptions: list[ListSubscriptionSummary] = Field(default_factory=list)
     model_config = ConfigDict(extra="forbid")
 
 
@@ -298,9 +280,7 @@ def make_resources_server(
         if entry is None:
             raise ToolError(f"Unknown server '{server}'")
         if not isinstance(entry, RunningServerEntry):
-            raise ToolError(
-                f"Server '{server}' is not running (state={getattr(entry, 'state', None)})"
-            )
+            raise ToolError(f"Server '{server}' is not running (state={entry.state})")
         return entry
 
     async def _ensure_capability(server: str, *, feature: ResourceCapabilityFeature) -> None:
@@ -313,7 +293,7 @@ def make_resources_server(
         entry = await _require_running_entry(server)
         try:
             caps = entry.initialize.capabilities
-            res_caps = getattr(caps, "resources", None)
+            res_caps = caps.resources
         except AttributeError as e:
             raise ToolError(
                 f"Server '{server}' does not advertise resources capabilities"
@@ -325,10 +305,10 @@ def make_resources_server(
             )
 
         if feature is ResourceCapabilityFeature.SUBSCRIBE:
-            ok = bool(getattr(res_caps, "subscribe", False))
+            ok = bool(res_caps.subscribe)
             needed = "resources.subscribe"
         elif feature is ResourceCapabilityFeature.LIST_CHANGED:
-            ok = bool(getattr(res_caps, "listChanged", False))
+            ok = bool(res_caps.listChanged)
             needed = "resources.listChanged"
         else:
             raise ToolError(f"Unknown capability feature: {feature}")

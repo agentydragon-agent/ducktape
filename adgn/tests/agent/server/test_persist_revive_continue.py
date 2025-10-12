@@ -10,6 +10,7 @@ from hamcrest import (
 import pytest
 
 from adgn.agent.server import protocol
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.agent.server.protocol import RunStatus, RunStatusEvt, UiStateSnapshot
 from tests.agent.ui_asserts import (
     assert_ui_items_have,
@@ -57,21 +58,21 @@ def test_persist_revive_continue_ui_flow(
         state["step"] += 1
         if step == 0:
             return responses_factory.make_tool_call(
-                "mcp__ui__send_message",
+                build_mcp_function("ui", "send_message"),
                 {"mime": "text/markdown", "content": "**hello**"},
                 call_id="call_ui_msg_1",
             )
         if step == 1:
             return responses_factory.make_tool_call(
-                "mcp__ui__end_turn", {}, call_id="call_ui_end_1"
+                build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_1"
             )
         if step == 2:
             return responses_factory.make_tool_call(
-                "mcp__ui__send_message",
+                build_mcp_function("ui", "send_message"),
                 {"mime": "text/markdown", "content": "**world**"},
                 call_id="call_ui_msg_2",
             )
-        return responses_factory.make_tool_call("mcp__ui__end_turn", {}, call_id="call_ui_end_2")
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_2")
 
     client = make_mock(responses_create)
 

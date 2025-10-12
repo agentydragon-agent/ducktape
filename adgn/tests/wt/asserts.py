@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Dict
 
+from hamcrest import assert_that, contains_string
+
 
 def extract_status_rows(output: str) -> Dict[str, str]:
     """Parse status output into a mapping of worktree name -> full line.
@@ -31,3 +33,10 @@ def status_row_ok(
     if not re.match(rf"^[^\s]+\s+{commit_re}", line):
         return False
     return all(part in line for part in must)
+
+
+def assert_output_contains(output: str, *snippets: str) -> None:
+    """Assert that CLI output contains each provided substring."""
+
+    for snippet in snippets:
+        assert_that(output, contains_string(str(snippet)))

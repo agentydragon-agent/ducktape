@@ -15,7 +15,7 @@ async def test_hello_world(docker_exec_server_alpine, make_typed_mcp) -> None:
         session,
     ):
         tools = await session.list_tools()
-        names = {t.name for t in tools.tools}
+        names = {t.name for t in tools}
         assert "docker_exec" in names
 
         res = await client.docker_exec(ExecInput(cmd=["/bin/echo", "hello"], timeout_ms=10_000))

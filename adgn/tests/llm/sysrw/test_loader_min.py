@@ -4,14 +4,7 @@ from __future__ import annotations
 from importlib import resources
 from pathlib import Path
 
-from hamcrest import (
-    any_of,
-    assert_that,
-    contains_string,
-    equal_to,
-    has_entries,
-    has_item,
-)
+from hamcrest import any_of, assert_that, contains_string, equal_to, has_entries, has_item
 import pytest
 
 from adgn.llm.sysrw.run_eval import read_dataset  # type: ignore
@@ -19,6 +12,12 @@ from adgn.llm.sysrw.schemas import CrushSample
 
 ROOT = Path(str(resources.files("adgn.llm.sysrw")))
 DATA = ROOT / "data" / "_test"
+
+
+def text_block_contains(fragment: str):
+    """Return a matcher that finds a text content block containing ``fragment``."""
+
+    return has_item(has_entries(type="text", text=contains_string(fragment)))
 
 
 @pytest.mark.asyncio
@@ -39,7 +38,7 @@ async def test_read_ccr_min():
         last_user,
         has_entries(
             content=any_of(
-                has_item(has_entries(type="text", text=contains_string("<bad>"))),
+                text_block_contains("<bad>"),
                 # Some datasets encode content as a plain string
                 contains_string("<bad>"),
             ),

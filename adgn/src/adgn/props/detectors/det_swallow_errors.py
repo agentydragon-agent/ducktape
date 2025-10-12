@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .models import Detection, LineRange
 from .registry import DetectorSpec, register
-from .utils import iter_py_files, read_snippet
+from .utils import is_broad_exception, make_root_detector, read_snippet
 
 DET_NAME = "swallow_errors"
 PROP = "python/no-swallowing-errors"
@@ -22,14 +22,6 @@ def _is_swallow_body(stmts: list[ast.stmt]) -> bool:
     return False
 
 
-def _is_broad(handler: ast.ExceptHandler) -> bool:
-    if handler.type is None:
-        return True
-    if isinstance(handler.type, ast.Name) and handler.type.id in {"Exception", "BaseException"}:
-        return True
-    return False
-
-
 def _find_in_file(path: Path) -> list[Detection]:
     out: list[Detection] = []
     try:
@@ -39,7 +31,7 @@ def _find_in_file(path: Path) -> list[Detection]:
     for n in ast.walk(node):
         if isinstance(n, ast.Try):
             for h in n.handlers:
-                if _is_broad(h) and _is_swallow_body(h.body):
+                if is_broad_exception(h) and _is_swallow_body(h.body):
                     sl = getattr(h, "lineno", getattr(n, "lineno", 1))
                     el = getattr(h, "end_lineno", sl)
                     out.append(
@@ -56,11 +48,7 @@ def _find_in_file(path: Path) -> list[Detection]:
     return out
 
 
-def find(root: Path) -> list[Detection]:
-    out: list[Detection] = []
-    for p in iter_py_files(root):
-        out.extend(_find_in_file(p))
-    return out
+find = make_root_detector(_find_in_file)
 
 
 register(DetectorSpec(name=DET_NAME, target_property=PROP, finder=find))

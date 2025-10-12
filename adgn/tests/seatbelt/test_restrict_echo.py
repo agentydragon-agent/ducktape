@@ -2,6 +2,9 @@ import pytest
 
 from adgn.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from adgn.seatbelt.runner import run_sandboxed_async
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
 
 @pytest.fixture
@@ -16,8 +19,6 @@ def restrictive_echo_policy() -> SBPLPolicy:
     )
 
 
-@pytest.mark.macos
-@pytest.mark.shell
 @pytest.mark.asyncio
 async def test_exec_minimal_restrictive_echo(restrictive_echo_policy: SBPLPolicy):
     res = await run_sandboxed_async(restrictive_echo_policy, ["/bin/echo", "HELLO_MINIMAL"])

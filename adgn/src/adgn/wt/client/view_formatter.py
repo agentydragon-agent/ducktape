@@ -145,13 +145,15 @@ class ViewFormatter:
 
     def _work_status_text(self, status: StatusResult) -> str:
         """Human-readable working directory status (shared)."""
+        dirty_present = status.has_dirty_files
+        untracked_present = status.has_untracked_files
         if not status.is_cached:
             return "unknown"
-        if status.has_dirty_files or status.has_untracked_files:
+        if dirty_present or untracked_present:
             parts = []
-            if status.has_dirty_files:
+            if dirty_present:
                 parts.append("modified")
-            if status.has_untracked_files:
+            if untracked_present:
                 parts.append("untracked")
             s = "+".join(parts)
             return f"{s} (stale)" if status.is_stale else s

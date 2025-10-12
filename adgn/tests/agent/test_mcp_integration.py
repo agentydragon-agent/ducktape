@@ -5,7 +5,13 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 import pytest
 
-from adgn.mcp.direct_exec.server import make_direct_exec_server
+from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.direct_exec.server import (
+    DirectExecArgs,
+    DirectExecResult,
+    make_direct_exec_server,
+)
+from adgn.mcp.testing.typed_stubs import call_tool_typed
 
 # FastMCP stdio client (hard import)
 
@@ -44,7 +50,7 @@ async def test_stdio_server_list_tools(make_compositor) -> None:
     async with make_compositor({"everything": spec}) as (sess, comp):
         tools = await sess.list_tools()
         assert isinstance(tools, list)
-        assert any(t.name.startswith("mcp__everything_") for t in tools)
+        assert any(t.name.startswith("everything_") for t in tools)
 
 
 @pytest.mark.asyncio
@@ -55,17 +61,16 @@ async def test_direct_inprocess_server(make_compositor) -> None:
     async with make_compositor({"local": srv}) as (sess, comp):
         tools = await sess.list_tools()
         # Tools are composed under the compositor with namespaced tool names
-        assert any(t.name == "mcp__local_exec" for t in tools)
-        # Sanity-call exec via the namespaced tool
-        res = await sess.call_tool(
-            name="mcp__local_exec",
-            arguments={
-                "cmd": ["/bin/echo", "hello"],
-                "max_bytes": 100000,
-                "timeout_ms": 5000,
-            },
+        tool_name = build_mcp_function("local", "exec")
+        assert any(t.name == tool_name for t in tools)
+        # Sanity-call exec via the namespaced tool using the typed helper
+        payload = DirectExecArgs(
+            cmd=["/bin/echo", "hello"],
+            max_bytes=100_000,
+            timeout_ms=5000,
         )
-        assert getattr(res, "is_error", False) is False
+        result = await call_tool_typed(sess, tool_name, payload, DirectExecResult)
+        assert result.exit == 0
 
 
 @pytest.mark.asyncio

@@ -4,9 +4,9 @@ These tests use Click's CliRunner with patched WtClient methods.
 """
 
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
-from hamcrest import assert_that, contains_string
 import pytest
 from typer.testing import CliRunner
 
@@ -18,6 +18,7 @@ from adgn.wt.shared.protocol import (
     WorktreeInfo,
     WorktreeListResult,
 )
+from tests.wt.asserts import assert_output_contains
 
 
 @pytest.mark.integration
@@ -35,7 +36,7 @@ class TestNewCLIIntegration:
         result = CliRunner().invoke(app, [])
 
         assert result.exit_code == 0
-        assert_that(result.output, contains_string("No worktrees found"))
+        assert_output_contains(result.output, "No worktrees found")
 
     @patch("adgn.wt.client.wt_client.WtClient.list_worktrees")
     def test_list_worktrees_command(
@@ -71,22 +72,22 @@ class TestNewCLIIntegration:
             name="test-worktree",
             branch_name="test/test-branch",
             upstream_branch="main",
-            absolute_path="/tmp/test-worktree",
-            has_dirty_files=False,
-            has_untracked_files=False,
+            absolute_path=Path("/tmp/test-worktree"),
             ahead_count=0,
             behind_count=0,
             pr_info=PRInfoDisabled(),
             commit_info=test_commit_info,
             processing_time_ms=25.0,
             last_updated_at=datetime.now(),
+            dirty_files_lower_bound=0,
+            untracked_files_lower_bound=0,
         )
         mock_list.return_value = WorktreeListResult(
             worktrees=[
                 WorktreeInfo(
                     wtid="test-worktree",
                     name="test-worktree",
-                    absolute_path="/tmp/test-worktree",
+                    absolute_path=Path("/tmp/test-worktree"),
                     branch_name="test/test-branch",
                     exists=True,
                     is_main=False,
@@ -98,7 +99,7 @@ class TestNewCLIIntegration:
 
         assert result.exit_code == 0
         # Should list the mocked worktree we provided
-        assert_that(result.output, contains_string("test-worktree"))
+        assert_output_contains(result.output, "test-worktree")
 
     def test_help_command(self, wt_env):
         """Test help command works with new CLI."""
@@ -106,8 +107,11 @@ class TestNewCLIIntegration:
         result = CliRunner().invoke(app, ["help"])
 
         assert result.exit_code == 0
-        assert_that(result.output, contains_string("wt - Enhanced worktree management"))
-        assert_that(result.output, contains_string("USAGE:"))
+        assert_output_contains(
+            result.output,
+            "wt - Enhanced worktree management",
+            "USAGE:",
+        )
 
     def test_help_flag(self, wt_env):
         """Test --help flag works with new CLI."""
@@ -116,7 +120,7 @@ class TestNewCLIIntegration:
 
         assert result.exit_code == 0
         # Click default help uses 'Usage:'; keep strict
-        assert_that(result.output, contains_string("Usage:"))
+        assert_output_contains(result.output, "Usage:")
 
     @patch("adgn.wt.client.wt_client.WtClient.get_status")
     def test_status_command_with_pr_flag(
@@ -138,19 +142,19 @@ class TestNewCLIIntegration:
             name="test-worktree",
             branch_name="test/test-branch",
             upstream_branch="main",
-            absolute_path="/tmp/test-worktree",
-            has_dirty_files=False,
-            has_untracked_files=False,
+            absolute_path=Path("/tmp/test-worktree"),
             ahead_count=0,
             behind_count=0,
             pr_info=PRInfoDisabled(),
             commit_info=test_commit_info,
             processing_time_ms=25.0,
             last_updated_at=datetime.now(),
+            dirty_files_lower_bound=0,
+            untracked_files_lower_bound=0,
         )
         mock_get_status.return_value = build_status_response({"test-worktree": test_result})
 
         result = CliRunner().invoke(app, [])
 
         assert result.exit_code == 0
-        assert_that(result.output, contains_string("test-worktree"))
+        assert_output_contains(result.output, "test-worktree")

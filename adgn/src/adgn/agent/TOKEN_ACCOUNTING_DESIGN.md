@@ -253,7 +253,7 @@ Examples (JSONL transcript lines)
 - Tool‑call only turn
   {
     "kind": "tool_call",
-    "name": "mcp__resources__list",
+    "name": "resources_list",
     "args": {"server": "local"},
     "call_id": "call_1",
     "usage": {

@@ -15,10 +15,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 import time
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 import requests
 
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -82,6 +82,34 @@ def _get_json(url: str, token: str, *, timeout: int = 15) -> dict[str, Any]:
     return cast(dict[str, Any], data)
 
 
+class _UserInfo(BaseModel):
+    login: str
+
+    # The user payload includes many fields we do not consume; ignore them so schema changes
+    # surface via targeted validation rather than mass field definitions.
+    model_config = ConfigDict(extra="ignore")
+
+
+class _RepositoryInfo(BaseModel):
+    mirror: bool
+    mirror_updated: str
+
+    # Gitea's repository payload carries numerous unrelated fields; ignore them and only
+    # validate the subset we require for mirror orchestration.
+    model_config = ConfigDict(extra="ignore")
+
+
+T_Model = TypeVar("T_Model", bound=BaseModel)
+
+
+def _get_typed_json(url: str, token: str, model_type: type[T_Model], *, timeout: int = 15) -> T_Model:
+    payload = _get_json(url, token, timeout=timeout)
+    try:
+        return model_type.model_validate(payload)
+    except ValidationError as exc:  # pragma: no cover - exercised via tests
+        raise MirrorError(f"Unexpected payload for {model_type.__name__}") from exc
+
+
 def _slug_component(value: str) -> str:
     slug = "".join(ch if ch.isalnum() else "-" for ch in value)
     slug = slug.strip("-")
@@ -121,38 +149,29 @@ def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
         )
 
 
-def _wait_for_update(cfg: MirrorConfig, owner: str, repo: str) -> dict[str, Any]:
+def _wait_for_update(cfg: MirrorConfig, owner: str, repo: str) -> _RepositoryInfo:
     repo_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}"
     deadline = time.monotonic() + cfg.poll_timeout_secs
     last_updated: str | None = None
     while time.monotonic() < deadline:
         try:
-            data = _get_json(repo_url, cfg.token)
+            data = _get_typed_json(repo_url, cfg.token, _RepositoryInfo)
         except requests.RequestException as exc:  # pragma: no cover - transient network
             raise MirrorError("failed to fetch repository metadata") from exc
         else:
-            mirror_flag = data.get("mirror")
-            if not isinstance(mirror_flag, bool) or not mirror_flag:
+            if not data.mirror:
                 raise MirrorError("repository is not marked as a mirror (mirror: boolean expected)")
-            updated_val = data.get("mirror_updated")
-            if not isinstance(updated_val, str):
-                raise MirrorError(
-                    "unexpected shape: Repository.mirror_updated must be a string (date-time)"
-                )
-            if updated_val != last_updated:
+            if data.mirror_updated != last_updated:
                 return data
-            last_updated = updated_val
+            last_updated = data.mirror_updated
         time.sleep(cfg.poll_interval_secs)
     raise MirrorError(f"mirror did not update within {cfg.poll_timeout_secs}s")
 
 
 def _resolve_owner(base_url: str, token: str) -> str:
     user_url = f"{base_url.rstrip('/')}/api/v1/user"
-    data = _get_json(user_url, token)
-    login = data.get("login")
-    if not isinstance(login, str) or not login:
-        raise MirrorError("unexpected shape: User.login (string) required")
-    return login
+    data = _get_typed_json(user_url, token, _UserInfo)
+    return data.login
 
 
 def make_gitea_mirror_server(
@@ -197,14 +216,11 @@ def make_gitea_mirror_server(
         _ensure_mirror(cfg, input.url, owner, repo)
         _trigger_sync(cfg, owner, repo)
         repo_data = _wait_for_update(cfg, owner, repo)
-        mu = repo_data.get("mirror_updated")
-        if not isinstance(mu, str) or not mu:
-            raise MirrorError("unexpected shape: Repository.mirror_updated (string) required")
         return EnsureMirrorAndSyncResponse(
             owner=owner,
             repo=repo,
             mirror_path=f"{owner}/{repo}.git",
-            mirror_updated=mu,
+            mirror_updated=repo_data.mirror_updated,
         )
 
     return server

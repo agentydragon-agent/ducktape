@@ -70,7 +70,7 @@ async def handle_resolve_path(
     config: Configuration,
     params: WorktreeResolvePathParams,
 ) -> WorktreeResolvePathResult:
-    current_path = Path(params.current_path)
+    current_path = params.current_path
     target_worktree, current_relative_path = _find_target_worktree(
         index,
         params.worktree_name,
@@ -82,7 +82,7 @@ async def handle_resolve_path(
         current_relative_path,
         params.worktree_name is None,
     )
-    return WorktreeResolvePathResult(absolute_path=str(resolved_path))
+    return WorktreeResolvePathResult(absolute_path=resolved_path)
 
 
 @rpc.method("worktree_teleport_target", params=WorktreeTeleportTargetParams)
@@ -91,7 +91,7 @@ async def handle_teleport_target(
     config: Configuration,
     params: WorktreeTeleportTargetParams,
 ) -> TeleportCdThere | TeleportDoesNotExist:
-    current_path = Path(params.current_path)
+    current_path = params.current_path
     target_wt = (
         index.main()
         if params.target_name == MAIN_WORKTREE_DISPLAY_NAME
@@ -102,4 +102,4 @@ async def handle_teleport_target(
     resolved = index.resolve_target(None, current_path)
     relative_path = resolved[1] if resolved else None
     cd_path = _compute_teleport_target_path(target_wt.path, relative_path)
-    return TeleportCdThere(type="cd_there", cd_path=str(cd_path))
+    return TeleportCdThere(type="cd_there", cd_path=cd_path)

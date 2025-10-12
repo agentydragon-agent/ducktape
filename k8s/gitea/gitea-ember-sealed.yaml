@@ -1,0 +1,13 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: gitea-ember-credentials
+  namespace: gitea
+spec:
+  encryptedData:
+    ember-password: AgDVa5Jh7fIWC9+Ol5QmJf14AfWODz/JIe+sYx0VzXmkGqRYVI+Twa4kz81Ef0BkaUE+JuPGzog7yTwAHHqexUUMUZkvXj30eE+rihIsZ0hYlftkNHA206OUypW+c4f+Owz0iOsVGluHv9brOgLMOQVYale3WEZ1T48zy4XRG/hFZN9bXiYXDiPEXfrsgRwALS1Z8zfJ3PcQLZBZd87ba0x3uBYh8XLcUrCsjUPCkTV7WlAl79Zy/UJHT5STO+7eJuR5yBZpMAOCeMasxFrRAmDE/013icR4duCPBhslTV/Q/37Z2pi9cB2l/Y3Jl0DbrHlFFy2qCOamy8XLgr99Xgjo7J783OA5wzd7fx4qqc2WBjZS5Bo5Vb1dNQRDhkUNwGZkNPoYTR8GlxwFijr2d2zEyy9JJFiQyv+f3ENeP1dO3p3A0A7hrxYD7HO6bHd2RLwuJX0qhNRvbpZb4/wTjLPP1GGXylneMB+Bi0G+vTY1fcmKAP+vfT3h3PO91k8mpqK9KTHR5SCy95/eJsqZPpZR+ce9QmY0+IInvSxkGc6OY+0SZR0K8/OcgU01a7b2thbdeJK8tu2YoS/MC6TWB/yGm5Zro8TbEaIfPli87jcfbDi1NXzC7lJrYxKLcJIv5XMuSkslgzIC/1UZ+f0lze8nEo9ES5FY6QylY2N2Mf2FfFpu7YyS5AqaBQ2boVcTa0pHN4fCGp9DNKEDRhgpXo7eqF0zoGbSkt8tRZUabwOgcQ==
+  template:
+    metadata:
+      name: gitea-ember-credentials
+      namespace: gitea

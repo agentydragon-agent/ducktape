@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from pydantic import BaseModel, Field
 import pytest
@@ -50,38 +51,49 @@ async def test_flat_schema_and_typed_invocation(make_typed_mcp):
         assert out.text == "HI"
 
         # Validate server advertises flat arguments (no nested 'input')
-        tools = getattr(server, "_tool_manager").list_tools()
+        tools = await sess.list_tools()
         tool = next(t for t in tools if t.name == "echo")
-        schema = tool.parameters
+        schema = tool.inputSchema or {}
         props = schema.get("properties", {})
         assert set(props.keys()) >= {"msg", "upper"}  # flat keys present
         # Ensure not wrapped
         assert "input" not in props
 
 
-def test_mcp_flat_model_backward_compatibility():
+@pytest.fixture
+def list_tools_via_client():
+    async def _list(server: FastMCP):
+        async with Client(server) as client:
+            return await client.list_tools()
+
+    return _list
+
+
+@pytest.mark.asyncio
+async def test_mcp_flat_model_backward_compatibility(list_tools_via_client):
     legacy = FastMCP("legacy")
 
     @mcp_flat_model(legacy, name="legacy_echo", structured_output=False)
     def legacy_echo(input: EchoInput):
         return {"text": input.msg}
 
-    tools = getattr(legacy, "_tool_manager").list_tools()
+    tools = await list_tools_via_client(legacy)
     tool = next(t for t in tools if t.name == "legacy_echo")
-    props = tool.parameters.get("properties", {})
+    props = (tool.inputSchema or {}).get("properties", {})
     assert "msg" in props
     assert "upper" in props
     assert "input" not in props
 
 
-def test_tool_flat_explicit_models():
+@pytest.mark.asyncio
+async def test_tool_flat_explicit_models(list_tools_via_client):
     mcp = FlatModelFastMCP("echo2")
 
     @mcp.tool(name="echo", flat=True, flat_output_model=EchoOutput)
     def echo_again(payload: EchoInput) -> EchoOutput:
         return EchoOutput(text=payload.msg)
 
-    tools = getattr(mcp, "_tool_manager").list_tools()
+    tools = await list_tools_via_client(mcp)
     tool = next(t for t in tools if t.name == "echo")
-    props = tool.parameters.get("properties", {})
+    props = (tool.inputSchema or {}).get("properties", {})
     assert set(props) >= {"msg", "upper"}

@@ -19,6 +19,7 @@ import uuid
 
 import click
 import psutil
+import pygit2
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from ..shared.configuration import Configuration
@@ -98,12 +99,12 @@ class WtClient:
         self._hook_output_callback = cb
 
     async def current_worktree_info(self) -> tuple[Path | None, str | None]:
-        res = await self.identify_worktree(str(Path.cwd()))
+        res = await self.identify_worktree(Path.cwd())
         if not res.is_worktree or not res.name:
             return None, None
         by_name = await self.get_worktree_by_name(res.name)
         if by_name.exists and by_name.absolute_path:
-            return Path(by_name.absolute_path), (res.relative_path or None)
+            return by_name.absolute_path, (res.relative_path or None)
         return None, None
 
     def _is_daemon_running(self) -> bool:
@@ -253,24 +254,14 @@ class WtClient:
         with os.fdopen(self._handshake_pipe, "r") as pipe_file:
             last_obj: dict[str, object] | None = None
             last_ready = False
-            while True:
-                line = pipe_file.readline()
-                if not line:
-                    # Only accept closure if we already saw ready=True
-                    if last_ready and last_obj is not None:
-                        return last_obj
-                    diag = self._collect_daemon_diagnostics()
-                    msg = "Daemon closed handshake pipe before ready"
-                    if diag:
-                        msg += "\n" + diag
-                    raise RuntimeError(msg)
+            while line := pipe_file.readline():
                 if self.verbose:
                     click.echo(f"[daemon-handshake] {line.rstrip()}")
-                line = line.strip()
-                if not line:
+                stripped = line.strip()
+                if not stripped:
                     continue
                 try:
-                    obj = StartupMessage.model_validate_json(line)
+                    obj = StartupMessage.model_validate_json(stripped)
                 except ValidationError:
                     continue
                 d = cast(dict[str, object], obj.model_dump())
@@ -280,6 +271,14 @@ class WtClient:
                     return d
                 if last_ready:
                     return d
+            # Only accept closure if we already saw ready=True
+            if last_ready and last_obj is not None:
+                return last_obj
+            diag = self._collect_daemon_diagnostics()
+            msg = "Daemon closed handshake pipe before ready"
+            if diag:
+                msg += "\n" + diag
+            raise RuntimeError(msg)
 
     async def get_status(
         self,
@@ -299,7 +298,7 @@ class WtClient:
         """Get working directory status for a single worktree via daemon response flags."""
         # Use server-side identification to safely convert path to WorktreeID
         try:
-            identify_result = await self.identify_worktree(str(worktree_path))
+            identify_result = await self.identify_worktree(worktree_path)
             if identify_result.wtid is None:
                 return [], []
             status_response = await self.get_status([identify_result.wtid])
@@ -316,9 +315,35 @@ class WtClient:
         item = next(iter(status_response.items.values()))
         result = item.status
 
-        # Convert boolean flags back to file lists for backward compatibility
-        dirty_files = ["<files present>"] if result.has_dirty_files else []
-        untracked_files = ["<files present>"] if result.has_untracked_files else []
+        repo_path = result.absolute_path
+        try:
+            repository = pygit2.Repository(str(repo_path))
+        except (pygit2.GitError, ValueError, TypeError):
+            return [], []
+
+        dirty_flags = {
+            pygit2.GIT_STATUS_INDEX_MODIFIED,
+            pygit2.GIT_STATUS_INDEX_DELETED,
+            pygit2.GIT_STATUS_INDEX_RENAMED,
+            pygit2.GIT_STATUS_INDEX_TYPECHANGE,
+            pygit2.GIT_STATUS_INDEX_NEW,
+            pygit2.GIT_STATUS_WT_MODIFIED,
+            pygit2.GIT_STATUS_WT_DELETED,
+            pygit2.GIT_STATUS_WT_RENAMED,
+            pygit2.GIT_STATUS_WT_TYPECHANGE,
+            pygit2.GIT_STATUS_CONFLICTED,
+        }
+        dirty_files: list[str] = []
+        untracked_files: list[str] = []
+        repo_root = Path(repo_path)
+        for file_path, flags in repository.status().items():
+            abs_path = str(repo_root / file_path)
+            if flags & pygit2.GIT_STATUS_WT_NEW:
+                untracked_files.append(abs_path)
+                continue
+            if any(flags & flag for flag in dirty_flags):
+                dirty_files.append(abs_path)
+
         return dirty_files, untracked_files
 
     async def _read_jsonrpc_with_events(
@@ -331,10 +356,7 @@ class WtClient:
         response_json: dict | None = None
         progress_cb = self._progress_callback
         hook_cb: Callable[[HookOutputEvent], None] | None = self._hook_output_callback
-        while True:
-            line = await reader.readline()
-            if not line:
-                break
+        while line := await reader.readline():
             text = line.decode().strip()
             if not text:
                 continue
@@ -467,11 +489,15 @@ class WtClient:
         await self._start_daemon_if_needed()
         return await self._rpc("worktree_list", {}, TypeAdapter(WorktreeListResult))
 
-    async def identify_worktree(self, absolute_path: str) -> WorktreeIdentifyResult:
+    async def identify_worktree(
+        self,
+        absolute_path: Path | str,
+    ) -> WorktreeIdentifyResult:
         await self._start_daemon_if_needed()
+        path = Path(absolute_path)
         return await self._rpc(
             "worktree_identify",
-            WorktreeIdentifyParams(absolute_path=absolute_path),
+            WorktreeIdentifyParams(absolute_path=path),
             TypeAdapter(WorktreeIdentifyResult),
         )
 
@@ -541,7 +567,7 @@ class WtClient:
                 base = base + "\n" + diag
             raise RuntimeError(base) from e
 
-    async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
+    async def resolve_path(self, params: WorktreeResolvePathParams) -> Path:
         result: WorktreeResolvePathResult = await self._rpc(
             "worktree_resolve_path",
             params,
@@ -557,9 +583,9 @@ class WtClient:
         params = WorktreeResolvePathParams(
             worktree_name=worktree_name,
             path_spec=path_spec,
-            current_path=str(Path.cwd()),
+            current_path=Path.cwd(),
         )
-        return Path(await self.resolve_path(params))
+        return await self.resolve_path(params)
 
     def _collect_daemon_diagnostics(self) -> str:
         """Collect a short diagnostic summary including daemon.log tail.
@@ -589,13 +615,13 @@ class WtClient:
     async def teleport_target(
         self,
         target_name: str,
-        current_path: str,
+        current_path: Path | str,
     ) -> TeleportCdThere | TeleportDoesNotExist:
         return await self._rpc(
             "worktree_teleport_target",
             WorktreeTeleportTargetParams(
                 target_name=target_name,
-                current_path=current_path,
+                current_path=Path(current_path),
             ),
             TypeAdapter(TeleportResult),
         )
@@ -604,7 +630,7 @@ class WtClient:
         res = await self.get_worktree_by_name(name)
         if not res.exists or not res.absolute_path:
             raise RuntimeError(f"Worktree '{name}' not found")
-        return Path(res.absolute_path)
+        return res.absolute_path
 
     async def create_worktree_convenience(
         self,
@@ -624,10 +650,10 @@ class WtClient:
                 source_wtid=src.wtid,
                 source_branch=from_branch,
             )
-            return Path(result.absolute_path)
+            return result.absolute_path
         if from_default:
             result = await self.create_worktree(name, source_branch=from_branch)
-            return Path(result.absolute_path)
+            return result.absolute_path
         raise RuntimeError(
             "Invalid create_worktree request: no source and from_default=False",
         )

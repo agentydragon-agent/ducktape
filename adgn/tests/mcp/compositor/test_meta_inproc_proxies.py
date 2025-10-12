@@ -5,10 +5,7 @@ import pytest
 
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp._shared.uris import compositor_meta_state_uri
-from adgn.mcp.snapshots import (
-    RunningServerEntry,
-    ServerEntry as CompositorStateValue,
-)
+from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 
 def _make_backend(name: str = "backend") -> FastMCP:
@@ -36,7 +33,7 @@ async def test_meta_presents_inproc_mounts(make_pg_compositor, approval_policy_r
 
         # Read state via helper and validate JSON has a discriminator
         entry = await read_text_json_typed(
-            sess.session, compositor_meta_state_uri("backend"), CompositorStateValue
+            sess.session, compositor_meta_state_uri("backend"), ServerEntry
         )
         # In-proc mounts should be running when read via compositor_meta
         assert isinstance(entry, RunningServerEntry)

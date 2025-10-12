@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from mcp import types as mtypes
 from pydantic import BaseModel
@@ -57,6 +57,12 @@ _CODE_TO_KIND: dict[int, PolicyGatewayErrorKind] = {code: kind for code, _msg, k
 _MSG_TO_KIND: dict[str, PolicyGatewayErrorKind] = {msg: kind for _code, msg, kind in _KINDS}
 
 
+@runtime_checkable
+class _ErrorFields(Protocol):
+    code: Any
+    message: Any
+
+
 def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
     """Attempt to coerce various error representations to mcp.types.ErrorData.
 
@@ -71,16 +77,20 @@ def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
         except Exception:
             try:
                 # Minimal acceptance: just code+message fields
-                return mtypes.ErrorData(code=int(obj.get("code")), message=str(obj.get("message")))
+                code_val = obj.get("code")
+                msg_val = obj.get("message")
+                if code_val is None or msg_val is None:
+                    return None
+                return mtypes.ErrorData(code=int(code_val), message=str(msg_val))
             except Exception:
                 return None
     # Attribute-style fallback
-    try:
-        code = getattr(obj, "code")
-        msg = getattr(obj, "message")
-        return mtypes.ErrorData(code=int(code), message=str(msg))
-    except Exception:
-        return None
+    if isinstance(obj, _ErrorFields):
+        try:
+            return mtypes.ErrorData(code=int(obj.code), message=str(obj.message))
+        except Exception:
+            return None
+    return None
 
 
 def detect_policy_gateway_error(err: Any) -> PolicyGatewayError | None:
@@ -111,7 +121,7 @@ def detect_policy_gateway_error(err: Any) -> PolicyGatewayError | None:
         except Exception:
             code = None
         msg = str(error_data.message)
-        data = getattr(error_data, "data", None)
+        data = error_data.data
 
         # Only accept stamped errors as originating from the policy gateway.
         if not (isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True):

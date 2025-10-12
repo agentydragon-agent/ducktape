@@ -5,6 +5,7 @@ from concurrent.futures import CancelledError
 import pytest
 
 from adgn.agent.server import protocol
+from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ws_helpers import (
     assert_payloads_have,
     has_finished_run,
@@ -38,19 +39,19 @@ def test_ws_tool_multiturn(
         state["step"] += 1
         if step == 0:
             return responses_factory.make_tool_call(
-                "mcp__echo__echo", {"text": "hello"}, call_id="call_echo"
+                build_mcp_function("echo", "echo"), {"text": "hello"}, call_id="call_echo"
             )
         if step == 1:
             return responses_factory.make_tool_call(
-                "mcp__ui__send_message",
+                build_mcp_function("ui", "send_message"),
                 {"mime": "text/markdown", "content": "**hello**"},
                 call_id="call_ui_msg",
             )
-        return responses_factory.make_tool_call("mcp__ui__end_turn", {}, call_id="call_ui_end")
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     client = make_mock(responses_create)
 
-    specs = make_echo_spec()
+    specs = dict(make_echo_spec())
 
     try:
         with agent_ws_box(client, specs=specs, auto_approve=True) as box:

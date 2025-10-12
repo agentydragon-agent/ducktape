@@ -1,0 +1,11 @@
+# Authentik Blueprint for Matrix Synapse OIDC Provider
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprints-matrix
+  namespace: authentik
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+data:
+  matrix.yaml: |
+{{ .Files.Get "blueprints/matrix.yaml" | indent 4 }}

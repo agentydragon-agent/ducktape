@@ -111,10 +111,10 @@ async def get_status(
                 StatusResult(
                     wtid=wtid,
                     name=worktree_path.name,
-                    absolute_path=str(worktree_path),
+                    absolute_path=worktree_path,
                     branch_name=branch_name,
-                    has_dirty_files=bool(dirty_count),
-                    has_untracked_files=bool(untracked_count),
+                    dirty_files_lower_bound=dirty_count,
+                    untracked_files_lower_bound=untracked_count,
                     processing_time_ms=single_time,
                     last_updated_at=last_updated_at,
                     is_cached=is_cached,
@@ -133,25 +133,25 @@ async def get_status(
                 single_time,
             )
         try:
-            dirty_count, untracked_count, last_updated_at, have_cache, gs_last_error = (
-                gs_client.get_cached_working_status()
-            )
+            summary = gs_client.get_cached_working_status()
+            dirty_count = summary.dirty_lower_bound or 0
+            untracked_count = summary.untracked_lower_bound or 0
             cache_age_ms = (
-                (time.time() - last_updated_at.timestamp()) * 1000 if last_updated_at else None
+                (time.time() - summary.last_updated_at.timestamp()) * 1000
+                if summary.last_updated_at
+                else None
             )
-            if not have_cache:
+            if not summary.has_cache:
                 task = asyncio.create_task(gs_client.update_working_status())
                 _bg_tasks.add(task)
                 task.add_done_callback(lambda t: _bg_tasks.discard(t))
-            if last_updated_at is None:
-                last_updated_at = datetime.now()
-                cache_age_ms = None
+            last_updated_at = summary.last_updated_at or datetime.now()
             commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_status(
                 worktree_path
             )
             # Prefer gitstatusd-reported last_error if present
-            if gs_last_error:
-                worktree_last_error = gs_last_error
+            if summary.last_error:
+                worktree_last_error = summary.last_error
             wt_info = index.get_by_path(worktree_path)
             if wt_info:
                 wtid_cached = wt_info.wtid
@@ -169,7 +169,7 @@ async def get_status(
                 await prs.refresh_now(wtid_cached)
                 pr_info = prs.get_pr_info_cached(wtid_cached)
             prs.schedule_pr_refresh(wtid_cached, branch_name)
-            is_cached = have_cache
+            is_cached = summary.has_cache
             is_stale = bool(
                 cache_age_ms and timedelta(milliseconds=cache_age_ms) > config.cache_refresh_age,
             )
@@ -194,10 +194,10 @@ async def get_status(
             StatusResult(
                 wtid=wtid,
                 name=worktree_path.name,
-                absolute_path=str(worktree_path),
+                absolute_path=worktree_path,
                 branch_name=branch_name,
-                has_dirty_files=dirty_count > 0,
-                has_untracked_files=untracked_count > 0,
+                dirty_files_lower_bound=dirty_count,
+                untracked_files_lower_bound=untracked_count,
                 processing_time_ms=single_time,
                 last_updated_at=last_updated_at,
                 is_cached=is_cached,

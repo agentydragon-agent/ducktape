@@ -71,7 +71,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Materialize search nodes from Tana JSON exports",
     )
-    parser.add_argument("input", help="Tana JSON export file")
+    parser.add_argument("input", type=Path, help="Tana JSON export file")
     parser.add_argument(
         "--search-id",
         help="Specific search node ID to materialize",
@@ -90,7 +90,7 @@ def main():
     args = parser.parse_args()
 
     # Load the NodeStore
-    input_path = Path(args.input)
+    input_path = args.input
     if not input_path.exists():
         print(f"Error: Input file '{input_path}' not found.", file=sys.stderr)
         sys.exit(1)

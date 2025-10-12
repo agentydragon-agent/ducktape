@@ -1,6 +1,11 @@
 <script lang="ts">
   import type { ToolItem } from '../shared/types'
   import JsonDisclosure from './JsonDisclosure.svelte'
+  import {
+    LEAN_BROWSER_LABELS,
+    TOOL_RESOURCES_LIST,
+    TOOL_RESOURCES_READ,
+  } from '../lib/collapsedTools'
 
   export let items: ToolItem[] = []
 
@@ -35,29 +40,16 @@
   function collapsedLabelFor(it: ToolItem): string {
     const name = it.tool || ''
     const args: any = isJsonContent(it.content) ? (it.content as any).args : null
-    // Per-tool custom labels
-    // lean_browser
-    if (name === 'mcp__lean_browser__search') {
-      return 'Lean Browser Search'
+    const leanLabel = LEAN_BROWSER_LABELS[name]
+    if (leanLabel) {
+      return leanLabel
     }
-    if (name === 'mcp__lean_browser__find_in_page') {
-      return 'Lean Browser Find in Page'
-    }
-    if (name === 'mcp__lean_browser__open_page') {
-      return 'Lean Browser Open Page'
-    }
-    if (name === 'mcp__lean_browser__get_session_info') {
-      return 'Lean Browser Get Session Info'
-    }
-    if (name === 'mcp__lean_browser__navigate_back') {
-      return 'Lean Browser Navigate Back'
-    }
-    if (name === 'mcp__resources__list') {
+    if (name === TOOL_RESOURCES_LIST) {
       const s = args?.server ? `server=${args.server}` : 'server=*'
       const p = args?.uri_prefix ? `, prefix=${args.uri_prefix}` : ''
       return `List Resources(${s}${p})`
     }
-    if (name === 'mcp__resources__read') {
+    if (name === TOOL_RESOURCES_READ) {
       const s = args?.server ? `server=${args.server}` : ''
       const u = args?.uri ? `uri=${args.uri}` : ''
       const parts = [u, s].filter(Boolean).join(', ')

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from hamcrest import assert_that, has_item, has_items, has_properties
+from hamcrest import assert_that, has_item, has_items, has_properties, instance_of, is_not
 
 
 def is_user_message(text: str | None = None):
@@ -32,3 +32,18 @@ def assert_typed_items_have(items: list[object], *matchers):
 
 def assert_typed_items_have_one(items: list[object], matcher):
     assert_that(items, has_item(matcher))
+
+
+def assert_items_include_instances(items: list[object], *types: type[object]) -> None:
+    """Assert that ``items`` contains instances of each provided type."""
+
+    if not types:
+        raise ValueError("at least one type is required")
+    matchers = [instance_of(tp) for tp in types]
+    assert_that(items, has_items(*matchers))
+
+
+def assert_items_exclude_instance(items: list[object], typ: type[object]) -> None:
+    """Assert that ``items`` contains no instance of ``typ``."""
+
+    assert_that(items, is_not(has_item(instance_of(typ))))

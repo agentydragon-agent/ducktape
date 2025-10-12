@@ -83,11 +83,13 @@ def run(
             "MATRIX_ROOM_ID": room,
             "MATRIX_USER_ID": user_id,
         }
+        docker_exec_tool = build_mcp_function("docker", "exec")
+        matrix_yield_tool = build_mcp_function(MATRIX_CONTROL_SERVER_NAME, "yield")
         effective_system = (system or "").strip() or (
             "You are a Matrix-driven assistant. Do not emit plain text.\n"
             "I/O contract:\n"
-            "- Use mcp__docker__docker_exec to call Matrix HTTP APIs (curl) or your CLI from inside the container.\n"
-            "- Read new DMs, send replies, and when finished call mcp__matrix_control__yield().\n"
+            f"- Use {docker_exec_tool} to call Matrix HTTP APIs (curl) or your CLI from inside the container.\n"
+            f"- Read new DMs, send replies, and when finished call {matrix_yield_tool}().\n"
             "- Do not emit plain text; only use tools.\n"
         )
 

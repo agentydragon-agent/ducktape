@@ -22,7 +22,8 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
   - Server `runtime`, URI `resource://container.info` (JSON): `{id, image, platform, os, arch, adgn_version, python_paths, tools:{rg:true}}`
   - Purpose: adapt commands/reads to container reality.
 - compositor_meta per‑server state — implemented
-  - Server `compositor_meta`, resource `resource://compositor_meta/state/{server}` (typed union state).
+  - Server `compositor_meta`, resource `compositor://state/{server}` (typed union state).
+  - URIs appear under the compositor prefix (e.g., `compositor://compositor_meta/state/{server}`); use the resources server helper to translate back to the server name.
   - No dedicated mounts index resource; enumerate state resources via `resources/list` and watch `resources/list_changed` for attach/detach.
   - Instructions/capabilities are available via InitializeResult in the running state (no separate resources).
 - resources://subscriptions — implemented
@@ -84,7 +85,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
   - PolicyMiddleware → required for all mutating tools (admin + hooks enable/disable)
   - ResourcesServer → exposes compositor/runtime resources + subscriptions
   - RuntimeImage → executes hooks; contains rg + adgn package
-  - HTTPAccess (optional) → container→Compositor connection (bearer)
+  - HTTPAccess (optional) → container→host Compositor connection (bearer)
 - Surfaces
   - CompositorAdmin (attach/detach) ← PolicyMiddleware
   - CompositorResources (per‑server state via compositor_meta) ← ResourcesServer

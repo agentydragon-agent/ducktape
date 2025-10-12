@@ -111,6 +111,12 @@ def http_set_policy(client, agent_id: str, content: str, proposal_id: str | None
 # --------------------------------
 
 
+def _message_contains(fragment: str):
+    """Return a matcher ensuring an error message contains ``fragment``."""
+
+    return has_properties(message=contains_string(fragment))
+
+
 def expect_error(
     payloads: Sequence[ServerMessage], *, code: ErrorCode | str, message_substr: str | None = None
 ) -> None:
@@ -122,7 +128,7 @@ def expect_error(
     code_enum = ErrorCode(code) if isinstance(code, str) else code
     m = has_properties(type="error", code=code_enum)
     if message_substr:
-        m = all_of(m, has_properties(message=contains_string(message_substr)))
+        m = all_of(m, _message_contains(message_substr))
     assert_that(payloads, has_item(m))
 
 

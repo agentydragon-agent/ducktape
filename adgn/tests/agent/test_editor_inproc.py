@@ -22,7 +22,7 @@ async def test_editor_inproc_basic_ops(typed_editor_factory) -> None:
         assert isinstance(info, ReadInfoResult)
         assert info.ok is True
         assert info.lines == 1
-        assert Path(info.path) == target
+        assert info.path == target
 
         # replace_text modifies buffer (x=1 → x=2)
         sc = await client.replace_text(ReplaceTextArgs(old_text="x = 1", new_text="x = 2"))

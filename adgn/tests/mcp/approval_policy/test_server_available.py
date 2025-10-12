@@ -3,45 +3,25 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
-from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.openai_utils.model import FakeOpenAIModel
-import docker
 
 
 @pytest.mark.asyncio
+@pytest.mark.requires_docker
 async def test_approval_policy_server_is_available(
-    responses_factory, make_echo_spec, make_pg_compositor
+    responses_factory, make_echo_spec, make_pg_compositor, approval_engine
 ):
     """Test that the approval policy MCP server is available to the agent and lists tools."""
 
-    # Create approval components
-    # Engine with required context
-    p = SQLitePersistence(":memory:")
-    await p.ensure_schema()
-    engine = ApprovalPolicyEngine(
-        docker_client=docker.from_env(),
-        agent_id="tests",
-        persistence=p,
-        policy_source=load_default_policy_source(),
-    )
-
     # Add approval server to specs
-    reader = ApprovalPolicyServer(engine)
+    reader = ApprovalPolicyServer(approval_engine)
     from adgn.mcp.approval_policy.server import ApprovalPolicyProposerServer
 
-    proposer = ApprovalPolicyProposerServer(
-        engine=engine,
-        readonly=reader,
-        agent_id=engine.agent_id,
-        persistence=engine.persistence,
-        docker_client=engine.docker_client,
-    )
-    echo_specs = make_echo_spec()
-    servers = echo_specs()
+    proposer = ApprovalPolicyProposerServer(engine=approval_engine)
+    servers = dict(make_echo_spec())
     servers["approval_policy"] = reader
     servers["approval_policy.proposer"] = proposer
     async with make_pg_compositor(servers) as (mcp_client, _comp):

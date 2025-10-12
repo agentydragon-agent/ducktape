@@ -11,12 +11,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .constants import LANGUAGE_KEY_ID, MEDIA_KEY_ID, SUPERTAG_KEY_ID
+from .constants import LANGUAGE_KEY_ID, MEDIA_KEY_ID, MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
 from .query_core import get_tuple_value
 from .types import NodeId
-
-MIN_TUPLE_CHILDREN = 2
-
 
 class Props(BaseModel):
     created: int | None = None
@@ -207,11 +204,10 @@ class NodeStore(Mapping[NodeId, BaseNode]):
                 _add(n.id, list(idx[n.props.meta_node_id]))
 
         # Propagate wrapper tags to visible children
-        def _is_wrapper(node: BaseNode) -> bool:
-            return node.props.doc_type in {"workspace", "viewDef", "layout"}
+        from .wrapper_utils import is_wrapper  # avoids import cycle at module load time
 
         for w in self.values():
-            if _is_wrapper(w):
+            if is_wrapper(w):
                 for cid in w.children:
                     _add(cid, list(idx[w.id]))
 

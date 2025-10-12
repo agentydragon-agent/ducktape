@@ -35,8 +35,8 @@ class PolicyValidationError(Exception):
 
 
 # TODO(approval-policy follow-ups)
-# - Resource operations are exposed as MCP tools (e.g., mcp__resources__list,
-#   mcp__resources__read) and are gated by the Policy Gateway middleware.
+# - Resource operations are exposed as MCP tools (e.g., resources_list,
+#   resources_read) and are gated by the Policy Gateway middleware.
 #   The default policy allows RESOURCES server ops; tighten policy as needed.
 # - Policy sandboxing: Execute user policy code under a stricter sandbox. Today
 #   we execute with standard Python builtins and require explicit imports; future

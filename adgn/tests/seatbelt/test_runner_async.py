@@ -8,10 +8,11 @@ import pytest
 
 from adgn.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from adgn.seatbelt.runner import apopen, run_sandboxed_async
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
 
-@pytest.mark.macos
-@pytest.mark.shell
 @pytest.mark.asyncio
 async def test_apopen_interactive_echo_with_trace(tmp_path: Path):
     if not shutil.which("sandbox-exec"):
@@ -43,8 +44,6 @@ async def test_apopen_interactive_echo_with_trace(tmp_path: Path):
     p.cleanup()
 
 
-@pytest.mark.macos
-@pytest.mark.shell
 @pytest.mark.asyncio
 async def test_run_sandboxed_async_echo(tmp_path: Path):
     if not shutil.which("sandbox-exec"):

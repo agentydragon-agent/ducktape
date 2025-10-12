@@ -9,7 +9,11 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
-from tests.util.notifications import enable_resources_caps
+from tests.util.notifications import (
+    SubscriptionRecorder,
+    enable_resources_caps,
+    install_subscription_recorder,
+)
 
 
 class _StubGatewaySession:
@@ -29,8 +33,9 @@ class _StubGatewayClient:
         self.session = _StubGatewaySession()
 
 
-def _make_origin() -> FastMCP:
+def _make_origin() -> tuple[FastMCP, SubscriptionRecorder]:
     m = NotifyingFastMCP("origin")
+    recorder = install_subscription_recorder(m)
 
     @m.resource(
         "resource://foo/bar",
@@ -43,17 +48,17 @@ def _make_origin() -> FastMCP:
 
     # Ensure this origin advertises resources.subscribe for gating
     enable_resources_caps(m, subscribe=True)
-    return m
+    return m, recorder
 
 
 @pytest.mark.asyncio
 async def test_subscriptions_index_updates_on_unmount():
     # Compositor with one origin server mounted
     comp = Compositor("comp")
-    origin = _make_origin()
+    origin, hooks = _make_origin()
     await comp.mount_inproc("origin", origin)
 
-    # Resources server with a stub gateway client that records sub/unsub calls
+    # Resources server with a stub gateway client (subscribe logic uses child session)
     gw = _StubGatewayClient()
     res_server = make_resources_server(name="resources", gateway_client=gw, compositor=comp)
 
@@ -62,8 +67,8 @@ async def test_subscriptions_index_updates_on_unmount():
         rc = ResourcesClient(client)
         await rc.subscribe(server="origin", uri="resource://foo/bar")
 
-        # Verify call reached the stub and index reflects the subscription
-        assert gw.session.subscribed, "expected a subscribe call"
+        # Verify origin subscribe handler ran and index reflects the subscription
+        assert hooks.subscribed, "expected origin to receive subscribe"
         # Use typed client helper to parse the subscriptions index
         idx = await rc.list_subscriptions()
         assert_that(
@@ -76,7 +81,7 @@ async def test_subscriptions_index_updates_on_unmount():
         await comp.unmount_server("origin")
 
         # Ensure no unsubscribe call happened as a result of unmount
-        assert not gw.session.unsubscribed, "unexpected remote unsubscribe on unmount"
+        assert not hooks.unsubscribed, "unexpected origin unsubscribe on unmount"
 
         # Subscriptions index should be empty now
         idx2 = await rc.list_subscriptions()

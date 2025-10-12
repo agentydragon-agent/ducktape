@@ -1,0 +1,33 @@
+[project]
+name = "ember"
+version = "0.0.1"
+description = "Minimal containerised agent pilot (Matrix + OpenAI)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.22",
+    "matrix-nio>=0.23",
+    "openai>=1.62",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+agentd = "ember.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ember*" ]
+
+[tool.setuptools.package-data]
+"ember" = ["system_prompt.md"]

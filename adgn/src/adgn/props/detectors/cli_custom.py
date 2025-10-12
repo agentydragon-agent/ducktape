@@ -29,8 +29,8 @@ def main(argv: list[str] | None = None) -> int:
             "Agent should run Ruff/Vulture/Mypy separately."
         )
     )
-    ap.add_argument("--root", required=True, help="Path to scan (workspace root)")
-    ap.add_argument("--out", help="Write JSON to this file (default: stdout)")
+    ap.add_argument("--root", required=True, type=Path, help="Path to scan (workspace root)")
+    ap.add_argument("--out", type=Path, help="Write JSON to this file (default: stdout)")
     ap.add_argument(
         "--only",
         action="append",
@@ -44,12 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    root = Path(args.root).resolve()
+    root = args.root.resolve()
     dets = run_all(root, detector_names=args.only, workers=args.workers)
     payload: list[dict[str, Any]] = [d.model_dump(exclude_none=True) for d in dets]
     s = json.dumps(payload, indent=2)
     if args.out:
-        Path(args.out).write_text(s, encoding="utf-8")
+        args.out.write_text(s, encoding="utf-8")
     else:
         print(s)
     print(f"[detectors-custom] findings: {len(dets)}")

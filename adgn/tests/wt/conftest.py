@@ -66,10 +66,7 @@ def write_pr_fixtures():
         write_pr_fixtures(config, {"feature-x": PRFixtureEntry(number=123, ...)})
     """
 
-    def _write(config: Configuration, mapping: Mapping[str, PRFixtureEntry | dict]) -> Path:
-        return write_pr_fixtures_file(config, mapping)
-
-    return _write
+    return write_pr_fixtures_file
 
 
 @pytest.fixture(autouse=True)
@@ -391,8 +388,9 @@ class WtCLI:
                 }
                 f.write((json.dumps(req) + "\n").encode())
                 f.flush()
-                line = f.readline()
-                return json.loads(line.decode()) if line else {"error": "no response"}
+                if line := f.readline():
+                    return json.loads(line.decode())
+                return {"error": "no response"}
 
     def wait_for(
         self,

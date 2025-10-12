@@ -17,7 +17,6 @@ from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import Envelope, RunStatus, RunStatusEvt
 from adgn.mcp.editor_server import make_editor_server
 from adgn.mcp.testing.typed_stubs import TypedClient
-from adgn.mcp.types import ServerSlotSpec
 from adgn.openai_utils.model import FakeOpenAIModel, ResponsesResult
 import docker
 from tests.agent.ws_helpers import (
@@ -26,6 +25,7 @@ from tests.agent.ws_helpers import (
     collect_payloads_until_finished_auto_approve,
     wait_for_accepted,
 )
+
 
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
 
@@ -43,24 +43,6 @@ def policy_evaluator(approval_engine: ApprovalPolicyEngine) -> ContainerPolicyEv
     return ContainerPolicyEvaluator(
         agent_id="tests", docker_client=docker.from_env(), engine=approval_engine
     )
-
-
-@pytest.fixture
-def make_policy_engine(sqlite_persistence):
-    """Factory that builds an ApprovalPolicyEngine for a given policy source.
-
-    Reuses the shared sqlite_persistence to avoid duplication in tests.
-    """
-
-    def _make(policy_source: str, *, agent_id: str = "tests") -> ApprovalPolicyEngine:
-        return ApprovalPolicyEngine(
-            docker_client=docker.from_env(),
-            agent_id=agent_id,
-            persistence=sqlite_persistence,
-            policy_source=policy_source,
-        )
-
-    return _make
 
 
 @pytest.fixture
@@ -153,12 +135,9 @@ def policy_fetch_factory() -> Callable[[str], str]:
     Usage: policy_fetch("allow_all") → returns policy source text.
     """
 
-    from tests.agent.testdata.approval_policy import fetch_policy as _fetch
+    from tests.agent.testdata.approval_policy import fetch_policy
 
-    def _get(name: str) -> str:
-        return _fetch(name)
-
-    return _get
+    return fetch_policy
 
 
 @pytest.fixture(name="policy_make")
@@ -173,16 +152,9 @@ def policy_make_factory() -> Callable[..., str]:
       doc: optional docstring
     """
 
-    from tests.agent.testdata.approval_policy import make_policy as _make
+    from tests.agent.testdata.approval_policy import make_policy
 
-    def _builder(
-        *, decision_expr: str, server: str, tool: str, default: str = "ask", doc: str | None = None
-    ) -> str:
-        return _make(
-            decision_expr=decision_expr, server=server, tool=tool, default=default, doc=doc
-        )
-
-    return _builder
+    return make_policy
 
 
 # Shared model fixture for live tests that need a reasoning-capable model
@@ -234,22 +206,6 @@ def typed_editor_factory(tmp_path: Path, make_typed_mcp):
 # make_typed_mcp now provided globally in tests/conftest.py
 
 
-@pytest.fixture
-def make_echo_mcp_server() -> Callable[[], FastMCP]:
-    """Factory returning a simple echo MCP server producing structured data."""
-
-    def _make() -> FastMCP:
-        mcp = FastMCP("echo")
-
-        @mcp.tool()
-        def echo(text: str) -> dict[str, Any]:
-            return {"echo": text}
-
-        return mcp
-
-    return _make
-
-
 # make_echo_spec is provided at tests/conftest.py for all suites.
 
 
@@ -260,12 +216,12 @@ def create_live_agent():
         specs = specs or {}
         # Split into typed JSON specs vs runtime slot specs
         typed: dict[str, Any] = {}
-        runtime: dict[str, Any] = {}
+        inproc: dict[str, FastMCP] = {}
         for k, v in list(specs.items()):
-            if isinstance(v, ServerSlotSpec):
-                runtime[k] = v
-            else:
-                typed[k] = v
+            if isinstance(v, FastMCP):
+                inproc[k] = v
+                continue
+            typed[k] = v
         # Create agent via API using a preset
         resp = client.post("/api/agents", json={"preset": "default"})
         assert resp.status_code == 200, resp.text
@@ -282,21 +238,17 @@ def create_live_agent():
             # Send over HTTP; server rehydrates to typed McpServerSpec
             r = client.patch(f"/api/agents/{agent_id}/mcp", json={"attach": attach_json})
             assert r.status_code == 200, r.text
-        if runtime:
+        if inproc:
 
             async def _attach_async() -> None:
                 reg = client.app.state.registry
-                c = reg.get(agent_id)
-                assert c is not None
-                m = c.mcp
-                assert m is not None
-                for name, slot in runtime.items():
-                    # Inject runtime ServerSlotSpec directly (tests-only path to avoid MCPConfig)
-                    m._specs[name] = slot  # type: ignore[attr-defined]
-                    st = m._state(name)  # type: ignore[attr-defined]
-                    st.spec = slot
-                    st.error = None
-                    await m.ensure_open(name)
+                c = await reg.ensure_live(agent_id, with_ui=True)
+                comp = c._compositor
+                if comp is None:
+                    raise AssertionError("compositor not initialized on container")
+                for name, server in inproc.items():
+                    await comp.mount_inproc(name, server)
+                await c._push_snapshot_and_status()
 
             client.portal.call(_attach_async)
         return agent_id
@@ -329,9 +281,10 @@ def agent_app_client():
 
 
 @pytest.fixture
-def ws_hub(agent_app_client):
+def ws_hub(agent_app_client, patch_agent_build_client, responses_factory):
     """Yield (client, hub_ws) connected to /ws/agents, closes automatically."""
     app, client = agent_app_client
+    patch_agent_build_client(FakeOpenAIModel([responses_factory.make_assistant_message("ok")]))
     with client.websocket_connect("/ws/agents") as ws:
         yield client, ws
 
@@ -450,10 +403,7 @@ def make_agent_http():
                 body["proposal_id"] = proposal_id
             return self._c.post(self._ep("policy"), json=body)
 
-    def _factory(client, agent_id: str) -> _AgentHttp:
-        return _AgentHttp(client, agent_id)
-
-    return _factory
+    return _AgentHttp
 
 
 # ---- Combined agent WS box fixture ------------------------------------------

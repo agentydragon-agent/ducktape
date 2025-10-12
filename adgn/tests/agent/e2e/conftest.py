@@ -1,11 +1,61 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Iterator
+import os
+from typing import Any, Callable, TYPE_CHECKING
 
 import pytest
 
 from adgn.agent.server.app import create_app
 from tests.agent.helpers import start_uvicorn_app
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Browser, Page, Playwright
+
+
+@pytest.fixture
+def browser_name() -> str:
+    return os.environ.get("ADGN_E2E_BROWSER", "chromium")
+
+
+@pytest.fixture
+def e2e_headless() -> bool:
+    headless_env = os.environ.get("ADGN_E2E_HEADLESS")
+    if headless_env is None:
+        return True
+    return headless_env.strip().lower() not in {"0", "false", "no", "off"}
+
+
+@pytest.fixture(scope="session")
+def playwright_sync() -> Iterator[Playwright]:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as manager:
+        yield manager
+
+
+@pytest.fixture
+def browser(playwright_sync: Playwright, browser_name: str, e2e_headless: bool) -> Iterator[Browser]:
+    browser_type = getattr(playwright_sync, browser_name, None)
+    if browser_type is None:
+        raise RuntimeError(f"Unsupported Playwright browser: {browser_name}")
+    browser = browser_type.launch(headless=e2e_headless)
+    try:
+        yield browser
+    finally:
+        browser.close()
+
+
+@pytest.fixture
+def page(browser: Browser) -> Iterator[Page]:
+    context = browser.new_context()
+    page = context.new_page()
+    try:
+        yield page
+    finally:
+        try:
+            page.close()
+        finally:
+            context.close()
 
 
 @pytest.fixture

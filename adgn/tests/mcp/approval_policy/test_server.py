@@ -2,25 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
-from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.mcp._shared.constants import APPROVAL_POLICY_RESOURCE_URI
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
-import docker
 
 
 @pytest.mark.asyncio
-async def test_resources_list_and_read_policy(make_typed_mcp):
+@pytest.mark.requires_docker
+async def test_resources_list_and_read_policy(make_typed_mcp, approval_engine):
     """List and read resources directly from the server without a compositor."""
-    p = SQLitePersistence(":memory:")
-    await p.ensure_schema()
-    engine = ApprovalPolicyEngine(
-        docker_client=docker.from_env(),
-        agent_id="tests",
-        persistence=p,
-        policy_source=load_default_policy_source(),
-    )
-    server = ApprovalPolicyServer(engine)
+    server = ApprovalPolicyServer(approval_engine)
 
     async with make_typed_mcp(server, "approval_policy") as (client, _sess):
         # Approval policy server exposes a single canonical resource for the active policy

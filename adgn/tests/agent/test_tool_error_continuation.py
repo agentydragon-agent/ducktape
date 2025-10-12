@@ -17,6 +17,7 @@ from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.reducer import BaseHandler
 from adgn.openai_utils.model import FakeOpenAIModel
+from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ws_helpers import assert_function_call_output_structured
 
 
@@ -64,12 +65,12 @@ async def test_tool_error_continues_turn(
             [
                 # First attempt with wrong mime type
                 responses_factory.make_tool_call(
-                    "mcp__validator__send_message",
+                    build_mcp_function("validator", "send_message"),
                     {"mime": "text/plain", "content": "Hello"},
                 ),
                 # After error, agent retries with correct mime type
                 responses_factory.make_tool_call(
-                    "mcp__validator__send_message",
+                    build_mcp_function("validator", "send_message"),
                     {"mime": "text/markdown", "content": "Hello"},
                 ),
                 # Final message

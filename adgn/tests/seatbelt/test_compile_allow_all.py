@@ -12,6 +12,9 @@ from adgn.seatbelt.model import (
     SystemRule,
     TraceConfig,
 )
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
 
 def test_compile_allow_all_effectively_no_sandbox():

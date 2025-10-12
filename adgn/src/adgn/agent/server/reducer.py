@@ -15,6 +15,7 @@ from adgn.agent.server.protocol import (
     UserText,
 )
 from adgn.mcp._shared.constants import UI_SERVER_NAME
+from adgn.mcp._shared.calltool import as_minimal_json
 from adgn.mcp._shared.naming import build_mcp_function
 
 from .state import (
@@ -149,7 +150,7 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
             return state
 
         # Serialize typed result once at the boundary for JSON display
-        result_payload: dict | None = res.model_dump(mode="json", by_alias=True)
+        result_payload = as_minimal_json(res)
         return update_tool_json_output(
             state,
             evt.call_id,

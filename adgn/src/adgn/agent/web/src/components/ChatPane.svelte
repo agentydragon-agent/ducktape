@@ -9,6 +9,7 @@
   import ToolJson from './ToolJson.svelte'
   import CollapsedToolsGroup from './CollapsedToolsGroup.svelte'
   import type { UiDisplayItem, ToolItem as TToolItem } from '../shared/types'
+  import { isCollapsedToolKey } from '../lib/collapsedTools'
 
   export let renderMarkdown: boolean = true
 
@@ -107,21 +108,12 @@
   })
 
   // Collapsing logic: group consecutive tool items from a configured set
-  const COLLAPSED_TOOLS = new Set<string>([
-    'mcp__resources__list',
-    'mcp__resources__read',
-    // Lean browser tools (concise tokens by default)
-    'mcp__lean_browser__search',
-    'mcp__lean_browser__find_in_page',
-    'mcp__lean_browser__open_page',
-  ])
-
   type RenderBlock =
     | { kind: 'group'; items: TToolItem[] }
     | { kind: 'item'; item: UiDisplayItem }
 
   function isCollapsedTool(it: UiDisplayItem): it is TToolItem {
-    return it?.kind === 'Tool' && COLLAPSED_TOOLS.has((it as TToolItem).tool)
+    return it?.kind === 'Tool' && isCollapsedToolKey((it as TToolItem).tool)
   }
 
   function renderItems(items: UiDisplayItem[]): RenderBlock[] {

@@ -6,6 +6,7 @@ import json
 from typing import cast
 import uuid
 from uuid import UUID
+from pathlib import Path
 
 import aiosqlite
 from fastmcp.mcp_config import MCPConfig
@@ -25,8 +26,8 @@ def _now() -> datetime:
 
 
 class SQLitePersistence(Persistence):
-    def __init__(self, db_path: str) -> None:
-        self.db_path = db_path
+    def __init__(self, db_path: Path) -> None:
+        self.db_path = Path(db_path)
 
     # Centralized connection helpers to keep row_factory consistent
     @asynccontextmanager

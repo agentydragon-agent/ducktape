@@ -2,17 +2,15 @@ from __future__ import annotations
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
-from mcp import types as mcp_types
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field
 
 from adgn.mcp._shared.client_helpers import call_simple_ok
-from adgn.mcp._shared.constants import COMPOSITOR_ADMIN_SERVER_NAME
-from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.resources import read_text_json
-from adgn.mcp._shared.uris import (
-    parse_compositor_state_server,
+from adgn.mcp._shared.constants import (
+    COMPOSITOR_ADMIN_SERVER_NAME,
 )
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.snapshots import ServerEntry as CompositorStateValue
+from adgn.mcp.compositor.server import Compositor
 
 
 class _AttachServerArgs(BaseModel):
@@ -28,7 +26,7 @@ class CompositorAdminClient:
     """Typed client for the compositor_admin server tools.
 
     Expects a Client connected to the Compositor front door. Calls use fully
-    namespaced tool names (mcp__compositor_admin__<tool>).
+    namespaced tool names ({server}_{tool}).
     """
 
     def __init__(self, client: Client) -> None:
@@ -63,23 +61,11 @@ class CompositorMetaClient:
         return self._client
 
     async def list_states(self) -> dict[str, CompositorStateValue]:
-        # Enumerate per-server state resources and read each typed value.
-        # Filter to compositor_meta state resources using canonical helpers.
-        resources = await self._client.list_resources()
-        out: dict[str, CompositorStateValue] = {}
-        for r in resources:
-            if not isinstance(r, mcp_types.Resource):
-                raise TypeError(
-                    f"list_resources returned unsupported item type: {type(r).__name__}"
-                )
-            uri_str = str(r.uri)
-            name = parse_compositor_state_server(uri_str)
-            if name is None:
-                continue
-            raw = await read_text_json(self._client.session, uri_str)
-            state: CompositorStateValue = TypeAdapter(CompositorStateValue).validate_python(raw)
-            out[name] = state
-        return out
+        comp = getattr(getattr(self._client, "transport", None), "server", None)
+        if not isinstance(comp, Compositor):
+            raise RuntimeError("CompositorMetaClient requires an in-process Compositor transport")
+        entries = await comp.server_entries()
+        return dict(entries)
 
 
 # Internal helper; prefer explicit imports

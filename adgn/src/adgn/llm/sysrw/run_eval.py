@@ -10,10 +10,11 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Any, cast
+from typing import Any, Iterable, cast
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 from pydantic import TypeAdapter
 import tiktoken
 
@@ -24,6 +25,22 @@ from adgn.openai_utils.retry import (
 )
 
 from .constants import TOOLS_HEADER
+from .openai_typing import (
+    dump_chat_messages,
+    dump_response_messages,
+    iter_resolved_text,
+    iter_tool_calls_from_response,
+    message_content,
+    message_content_as_text,
+    message_role,
+    message_tool_calls,
+    parse_chat_messages,
+    parse_response,
+    parse_response_messages,
+    parse_response_parts,
+    parse_tool_params,
+    tool_call_arguments,
+)
 from .schemas import (
     CCRRequest,
     CCRSample,
@@ -144,17 +161,18 @@ def estimate_tokens(text: str) -> int:
     return len(enc.encode(text, disallowed_special=()))
 
 
-def tokens_for_chat_messages(msgs: list[dict[str, Any]]) -> int:
+def tokens_for_chat_messages(msgs: Any) -> int:
+    messages = parse_chat_messages(msgs)
     parts: list[str] = []
-    for m in msgs:
-        parts.append(str(m.get("role", "")))
-        c = m.get("content")
-        if isinstance(c, str):
-            parts.append(c)
-        elif isinstance(c, list):
-            for p in c:
-                if isinstance(p, dict) and isinstance(p.get("text"), str):
-                    parts.append(p["text"])
+    for message in messages:
+        parts.append(message_role(message))
+        text = message_content_as_text(message)
+        if text:
+            parts.append(text)
+        for call in message_tool_calls(message):
+            args = tool_call_arguments(call)
+            if args:
+                parts.append(args)
     return estimate_tokens("\n".join(parts))
 
 
@@ -162,15 +180,9 @@ def flatten_system_string(sys: Any) -> str:
     if isinstance(sys, str):
         return sys
     if isinstance(sys, list):
-        parts: list[str] = []
-        for it in sys:
-            if (
-                isinstance(it, dict)
-                and it.get("type") == "text"
-                and isinstance(it.get("text"), str)
-            ):
-                parts.append(it["text"])
-        return "\n\n".join(parts)
+        parts = parse_response_parts(sys)
+        if parts:
+            return "\n\n".join(iter_resolved_text(parts))
     return ""
 
 
@@ -204,115 +216,89 @@ MODEL_PREFIX = "You are powered by the model"
 MCP_HEADER = "# MCP Server Instructions"
 
 
-def prev_assistant_index(msgs: list[dict[str, Any]]) -> int | None:
-    """Return the index of the last assistant message before the final item, or None."""
-    if not isinstance(msgs, list):
-        return None
-    for i in range(len(msgs) - 2, -1, -1):
-        if isinstance(msgs[i], dict) and msgs[i].get("role") == "assistant":
+def index_of_last_assistant_before_final(msgs: Any) -> int | None:
+    typed = parse_chat_messages(msgs)
+    for i in range(len(typed) - 2, -1, -1):
+        if message_role(typed[i]) == "assistant":
             return i
     return None
 
 
-def map_tools_for_chat(tools_val):
-    """Map Responses-style tools to Chat Completions function tool schema."""
-
-    def _to_chat_tool(t: Any):
-        if not isinstance(t, dict):
-            return None
-        # Normalize to a bare function dict first
-        if t.get("type") == "function" and isinstance(t.get("function"), dict):
-            fn = dict(t["function"])  # shallow copy
+def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, Any]] | None:
+    tools = parse_tool_params(tools_val)
+    if not tools:
+        return None
+    normalized: list[dict[str, Any]] = []
+    for tool in tools:
+        if hasattr(tool, "model_dump"):
+            payload = tool.model_dump(mode="json", exclude_none=True)  # type: ignore[no-untyped-call]
         else:
-            fn = dict(t)
-        # Convert Responses API shape -> Chat Completions shape
-        if "input_schema" in fn and "parameters" not in fn:
-            fn["parameters"] = fn.pop("input_schema")
-        # Remove unsupported keys
-        fn.pop("strict", None)
-        # Keep only standard Chat function keys
-        out_fn = {k: v for k, v in fn.items() if k in ("name", "description", "parameters")}
-        if not isinstance(out_fn.get("name"), str):
-            return None
-        if "parameters" not in out_fn:
-            return None
-        return {"type": "function", "function": out_fn}
-
-    out = []
-    if isinstance(tools_val, list):
-        for t in tools_val:
-            if ct := _to_chat_tool(t):
-                out.append(ct)
-    return out or None
+            payload = dict(tool)
+        normalized.append(payload)
+    return normalized
 
 
 def anthro_to_openai_messages(
     body: dict[str, Any],
     new_system_text: str | None,
-) -> list[dict[str, Any]]:
-    """Translate Anthropic messages into OpenAI Chat format, preserving:
-    - assistant tool_calls (from Anthropic tool_use parts)
-    - tool results as role="tool" messages (from Anthropic tool_result parts)
-    - user/assistant plain text
-    Avoid emitting empty messages.
-    """
+) -> list[ChatCompletionMessageParam]:
+    """Translate Anthropics-style messages into OpenAI Chat format, returning SDK models."""
 
-    def _join_text_parts(parts: list[dict[str, Any]]) -> str:
+    def _join_text_parts(parts: Iterable[dict[str, Any]]) -> str:
         texts: list[str] = []
-        for p in parts:
-            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str):
-                texts.append(p["text"])
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            ptype = part.get("type")
+            if ptype in {"text", "input_text"} and isinstance(part.get("text"), str):
+                texts.append(part["text"])
+                continue
+            if isinstance(part.get("content"), str):
+                texts.append(part["content"])
         return "\n".join(texts)
 
-    out: list[dict[str, Any]] = []
+    raw_messages: list[dict[str, Any]] = []
     if new_system_text:
-        out.append({"role": "system", "content": new_system_text})
+        raw_messages.append({"role": "system", "content": new_system_text})
 
-    for m in body.get("messages", []):
-        role = m.get("role")
-        content = m.get("content")
+    for message in body.get("messages", []):
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        content = message.get("content")
 
-        # Simple string content
         if isinstance(content, str):
             if role in ("user", "assistant") and content.strip():
-                out.append({"role": role, "content": content})
-            # ignore system here (we already injected rewritten system)
+                raw_messages.append({"role": role, "content": content})
             continue
 
-        # Structured content list
         if isinstance(content, list):
+            part_dicts: list[dict[str, Any]] = []
+            for part in content:
+                if hasattr(part, "model_dump"):
+                    part_dicts.append(part.model_dump(mode="json", exclude_none=True))
+                elif isinstance(part, dict):
+                    part_dicts.append(part)
+                else:
+                    continue
+
             if role == "assistant":
                 text_buf: list[str] = []
                 tool_calls: list[dict[str, Any]] = []
-                for part in content:
-                    if not isinstance(part, dict):
-                        continue
+                for part in part_dicts:
                     ptype = part.get("type")
                     if ptype == "text" and isinstance(part.get("text"), str):
                         text_buf.append(part["text"])
                     elif ptype == "tool_use":
-                        # Map to OpenAI function call with required id
                         name = part.get("name")
                         args = part.get("input")
                         tcid = part.get("id") or part.get("tool_use_id")
-                        # Remove extra nesting if input is a singleton list: [ {...} ] -> {...}
                         if isinstance(args, list) and len(args) == 1:
                             args = args[0]
-                        # Preserve original JSON argument string if already a string; else serialize deterministically
                         if isinstance(args, str):
-                            args_str = args  # preserve exactly
+                            args_str = args
                         else:
-                            try:
-                                # Minified JSON, preserve key order (no sort_keys), no spaces
-                                args_str = json.dumps(
-                                    args if args is not None else {},
-                                    ensure_ascii=False,
-                                    separators=(",", ":"),
-                                )
-                            except Exception as e:
-                                raise RuntimeError(
-                                    f"FATAL: Unserializable tool_use.input for function '{name}'",
-                                ) from e
+                            args_str = json.dumps(args if args is not None else {}, ensure_ascii=False, separators=(",", ":"))
                         tool_call: dict[str, Any] = {
                             "type": "function",
                             "function": {
@@ -327,43 +313,29 @@ def anthro_to_openai_messages(
                     msg: dict[str, Any] = {"role": "assistant"}
                     if text_buf:
                         msg["content"] = "\n".join(text_buf)
-                    else:
-                        msg["content"] = None  # no empty-string content when only tool_calls
                     if tool_calls:
                         msg["tool_calls"] = tool_calls
-                    out.append(msg)
+                    raw_messages.append(msg)
                 continue
 
             if role == "user":
                 text_parts: list[dict[str, Any]] = []
                 tool_msgs: list[dict[str, Any]] = []
-                for part in content:
-                    if not isinstance(part, dict):
-                        continue
+                for part in part_dicts:
                     ptype = part.get("type")
-                    if ptype == "text":
+                    if ptype in {"text", "input_text"}:
                         text_parts.append(part)
                     elif ptype == "tool_result":
-                        # Emit as a tool role message
                         tcid = part.get("tool_use_id") or part.get("id")
-                        # tool_result content may itself be list-of-text or string
                         tcontent = part.get("content")
                         if isinstance(tcontent, str):
                             tool_text = tcontent
                         elif isinstance(tcontent, list):
-                            tool_text = _join_text_parts(tcontent)
+                            tool_text = _join_text_parts(
+                                [item if isinstance(item, dict) else {} for item in tcontent],
+                            )
                         else:
-                            try:
-                                tool_text = json.dumps(
-                                    tcontent,
-                                    ensure_ascii=False,
-                                    sort_keys=True,
-                                )
-                            except Exception as e:
-                                raise RuntimeError(
-                                    "FATAL: Unserializable tool_result.content",
-                                ) from e
-                        # Emit tool result; if missing id, keep but mark unknown to avoid silent drop
+                            tool_text = json.dumps(tcontent, ensure_ascii=False, sort_keys=True)
                         if tcid:
                             tool_msgs.append(
                                 {
@@ -372,40 +344,34 @@ def anthro_to_openai_messages(
                                     "content": tool_text or "",
                                 },
                             )
-                        # If tcid missing, drop the tool message to avoid invalid Chat linkage
-                # Order: tool messages first (to mirror CCR), then user text (if any)
-                out.extend(
-                    [tm for tm in tool_msgs if (tm.get("content") or tm.get("tool_call_id"))],
-                )
+                raw_messages.extend(tool_msgs)
                 txt = _join_text_parts(text_parts)
                 if txt.strip():
-                    out.append({"role": "user", "content": txt})
+                    raw_messages.append({"role": "user", "content": txt})
                 continue
 
             if role == "tool":
-                # Allow direct tool messages in source (e.g., when normalizing from other formats)
-                content_val = None
+                tcid = (
+                    message.get("tool_call_id")
+                    or message.get("tool_use_id")
+                    or message.get("id")
+                )
+                if not tcid:
+                    continue
+                content_val = ""
                 if isinstance(content, str):
                     content_val = content
-                elif isinstance(content, list):
-                    content_val = _join_text_parts(content)
-                # Preserve explicit tool_call_id if present on the message
-                tcid = m.get("tool_call_id") or m.get("tool_use_id") or m.get("id")
-                if tcid:
-                    out.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": str(tcid),
-                            "content": content_val or "",
-                        },
-                    )
-                # If tcid missing, drop this tool message
-                continue
+                elif part_dicts:
+                    content_val = _join_text_parts(part_dicts)
+                raw_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": str(tcid),
+                        "content": content_val,
+                    },
+                )
 
-            # Ignore any other roles or system lists here
-            continue
-
-    return out
+    return parse_chat_messages(raw_messages)
 
 
 def anthro_to_responses_input(
@@ -447,7 +413,8 @@ def anthro_to_responses_input(
                     "content": [{"type": "input_text", "text": text}],
                 },
             )
-    return out
+    validated = parse_response_messages(out)
+    return dump_response_messages(validated)
 
 
 def build_grader_prompt(
@@ -512,16 +479,19 @@ GRADE_TOOL = {
 
 
 def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
-    data = resp_obj if isinstance(resp_obj, dict) else resp_obj.model_dump()
-    _out = data.get("output")
-    out = _out if _out is not None else []
-    for item in out:
-        if item.get("type") == "function_call" and item.get("name") == "grade":
-            args = item.get("arguments", "{}")
-            # Validate/coerce into dict[str, Any] to avoid Any leakage
-            if isinstance(args, str):
-                return TypeAdapter(dict[str, Any]).validate_json(args)
-            return TypeAdapter(dict[str, Any]).validate_python(args)
+    response = parse_response(resp_obj)
+
+    for tool_call in iter_tool_calls_from_response(response):
+        fn = getattr(tool_call, "function", None)
+        if fn is None:
+            continue
+        name = getattr(fn, "name", None)
+        if name != "grade":
+            continue
+        args = getattr(fn, "arguments", None)
+        if isinstance(args, str):
+            return TypeAdapter(dict[str, Any]).validate_json(args)
+        return TypeAdapter(dict[str, Any]).validate_python(args or {})
     raise RuntimeError("No grade tool call in responses output")
 
 
@@ -540,61 +510,48 @@ async def run_eval(
     def _responses_join_text(parts: Any) -> str:
         if isinstance(parts, str):
             return parts
-        if isinstance(parts, list):
-            texts: list[str] = []
-            for c in parts:
-                if isinstance(c, dict):
-                    t = c.get("text") or c.get("input_text") or c.get("content")
-                    if isinstance(t, str):
-                        texts.append(t)
-            return "\n".join(texts)
-        return ""
+        parsed_parts = parse_response_parts(parts)
+        if not parsed_parts:
+            return ""
+        return "\n".join(iter_resolved_text(parsed_parts))
 
     def responses_prev_assistant_index(inp: Any) -> int | None:
-        if not isinstance(inp, list):
-            return None
-        for i in range(len(inp) - 2, -1, -1):
-            it = inp[i]
-            if isinstance(it, dict) and (it.get("role") or "").lower() == "assistant":
+        parsed = parse_response_messages(inp)
+        for i in range(len(parsed) - 2, -1, -1):
+            if message_role(parsed[i]) == "assistant":
                 return i
         return None
 
     def responses_extract_system_text(inp: Any) -> str:
-        if not isinstance(inp, list):
-            return ""
+        parsed = parse_response_messages(inp)
         buf: list[str] = []
-        for it in inp:
-            if not isinstance(it, dict):
+        for it in parsed:
+            if message_role(it) != "system":
                 continue
-            if (it.get("role") or "").lower() != "system":
-                continue
-            buf.append(_responses_join_text(it.get("content")))
+            buf.append(message_content_as_text(it))
         return "\n\n".join([t for t in buf if t])
 
     def responses_slice_prefix(inp: Any, end_idx: int) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
-        if not isinstance(inp, list):
-            return out
-        for it in inp[:end_idx]:
-            if not isinstance(it, dict):
-                continue
-            role = (it.get("role") or "").lower()
+        parsed = parse_response_messages(inp)
+        for it in parsed[:end_idx]:
+            role = message_role(it)
             if role not in ("user", "assistant"):
                 continue
-            # Keep content shape as-is (Responses input parts)
-            out.append({"role": role, "content": it.get("content")})
+            content = message_content(it)
+            if isinstance(content, list):
+                parts = parse_response_parts(content)
+                content = [p.model_dump(mode="json", exclude_none=True) for p in parts]
+            out.append({"role": role, "content": content})
         return out
 
     def responses_to_ccr_messages(inp: Any) -> list[dict[str, Any]]:
         msgs: list[dict[str, Any]] = []
-        if not isinstance(inp, list):
-            return msgs
-        for it in inp:
-            if not isinstance(it, dict):
-                continue
-            role = (it.get("role") or "").lower()
+        parsed = parse_response_messages(inp)
+        for it in parsed:
+            role = message_role(it)
             if role in ("user", "assistant"):
-                txt = _responses_join_text(it.get("content"))
+                txt = message_content_as_text(it)
                 if txt.strip():
                     msgs.append({"role": role, "content": txt})
         return msgs
@@ -684,7 +641,7 @@ async def run_eval(
                 new_sys = rewrite_system_with_template(sys_val, template_path)
                 # 2) Build OpenAI sampling request BEFORE the bad assistant turn
                 msgs = ar.messages
-                prev_asst_idx = prev_assistant_index(msgs)
+                prev_asst_idx = index_of_last_assistant_before_final(msgs)
                 if prev_asst_idx is None:
                     log_event(
                         {
@@ -719,10 +676,10 @@ async def run_eval(
                     min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS),
                 )
                 tools_param = ar.tools
-                chat_tools = map_tools_for_chat(tools_param)
+                chat_tools = convert_responses_tools_to_chat_functions(tools_param)
                 samp_req = {
                     "model": SAMPLER_MODEL,
-                    "messages": oai_messages,
+                    "messages": dump_chat_messages(oai_messages),
                     "tools": chat_tools,
                     "tool_choice": "auto",
                     "parallel_tool_calls": True,
@@ -794,7 +751,9 @@ async def run_eval(
                 }
                 # For grader context later, build ephemeral CCR-like messages
                 msgs_for_grader = responses_to_ccr_messages(inp)
-                prev_asst_idx_for_grader = prev_assistant_index(msgs_for_grader) or 0
+                prev_asst_idx_for_grader = (
+                    index_of_last_assistant_before_final(msgs_for_grader) or 0
+                )
 
             # 4) Build grading inputs
             msgs = msgs_for_grader
@@ -1170,7 +1129,7 @@ async def run_eval(
                         template_file,
                     )
                     msgs_disp = responses_to_ccr_messages(rin)
-                    idx = prev_assistant_index(msgs_disp)
+                    idx = index_of_last_assistant_before_final(msgs_disp)
                     if idx is None:
                         shared_prefix = msgs_disp
                         bad_branch = []
@@ -1187,7 +1146,7 @@ async def run_eval(
                     )
                     _msgs = ar.get("messages")
                     msgs = _msgs if _msgs is not None else []
-                    idx = prev_assistant_index(msgs)
+                    idx = index_of_last_assistant_before_final(msgs)
                     if idx is None:
                         shared_prefix = msgs
                         bad_branch = []

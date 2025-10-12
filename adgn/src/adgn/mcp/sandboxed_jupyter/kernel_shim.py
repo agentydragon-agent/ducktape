@@ -67,7 +67,7 @@ def main() -> int:
         runpy.run_module("ipykernel_launcher", run_name="__main__")
         return 0
     except SystemExit as e:
-        log(f"shim: SystemExit code={getattr(e, 'code', None)}")
+        log(f"shim: SystemExit code={e.code}")
         raise
     except Exception:
         log("shim: unhandled exception:\n" + traceback.format_exc())

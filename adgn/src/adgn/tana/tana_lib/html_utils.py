@@ -13,10 +13,9 @@ from collections.abc import Callable
 import html
 from html.parser import HTMLParser
 from io import StringIO
-import json
 import re
-from typing import Any
 
+from .inline_refs import parse_inline_date
 from .types import NodeId
 
 # Regex patterns for Tana-specific HTML elements
@@ -86,33 +85,6 @@ class HTMLToMarkdownParser(HTMLParser):
 
     def get_markdown(self) -> str:
         return self.output.getvalue()
-
-
-def parse_inline_date(date_ref_data: str) -> str:
-    """
-    Parse a Tana inline date reference.
-
-    Args:
-        date_ref_data: The escaped JSON data from the date span
-
-    Returns:
-        ISO-formatted date string with timezone notation
-    """
-    data: dict[str, Any] = json.loads(html.unescape(date_ref_data))
-    date_str: str = str(data["dateTimeString"])  # ensure precise type for mypy
-    timezone: str = str(data.get("timezone", "")) if data.get("timezone", "") else ""
-
-    # Check if it's a date-only value (no time component)
-    # Date-only formats: YYYY, YYYY-MM, YYYY-MM-DD, YYYY-Www
-    if ("T" not in date_str) and ("/" not in date_str):
-        # Date-only values don't include timezone
-        return date_str
-    if "/" in date_str and timezone:
-        # Date range - need to add timezone to each date
-        dates = date_str.split("/")
-        return f"{dates[0]}[{timezone}]/{dates[1]}[{timezone}]"
-    # Single DateTime value
-    return f"{date_str}[{timezone}]" if timezone else date_str
 
 
 def html_to_markdown(html_text: str) -> str:

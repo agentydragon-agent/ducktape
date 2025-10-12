@@ -19,6 +19,7 @@ from .tana_lib.constants import (
     CHECKBOX_CHECKED_ID,
     CHECKBOX_KEY_ID,
     CHECKBOX_UNCHECKED_ID,
+    MIN_TUPLE_CHILDREN,
     SUPERTAG_KEY_ID,
     URL_KEY_ID,
 )
@@ -38,9 +39,7 @@ from .tana_lib.models import (
     VisualNode,
 )
 from .tana_lib.query_core import get_tuple_value
-
-# Small constants to clarify tuple arity checks
-MIN_TUPLE_CHILDREN = 2
+from .tana_lib.wrapper_utils import is_wrapper
 
 # ──────────────────────────  Headline  ────────────────────────── #
 
@@ -54,11 +53,6 @@ def _journal_headline(name: str) -> str:
         return dt.strftime("%a, %b %-d")  # "Tue, May 6"
     except (ValueError, IndexError):
         return name
-
-
-def _is_wrapper(node: BaseNode) -> bool:
-    """Nodes that should *not* get their own bullet - just pass through."""
-    return node.props.doc_type in {"workspace", "viewDef", "layout"}
 
 
 def _is_supertag_tuple(t: TupleNode) -> bool:
@@ -224,7 +218,7 @@ class RenderContext:
                 yield from self.render_node(val_node)
 
     def render_node(self, n: BaseNode):
-        if _is_wrapper(n):
+        if is_wrapper(n):
             for child in n.child_nodes:
                 yield from self.render_node(child)
             return

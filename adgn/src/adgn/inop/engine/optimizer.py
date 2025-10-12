@@ -519,7 +519,7 @@ Examples:
 
     parser.add_argument(
         "--config-dir",
-        type=str,
+        type=Path,
         required=True,
         help="Directory containing config.yaml, task_types.yaml, runners.yaml (all loaded from here)",
     )
@@ -534,23 +534,24 @@ Examples:
     setup_signal_handlers()
 
     # Load ALL configuration explicitly from --config-dir
-    config_dir = Path(args.config_dir)
+    config_dir = args.config_dir
     cfg_path = config_dir / "config.yaml"
     cfg = OptimizerConfig.from_file(cfg_path)
 
     # Resolve seeds/graders relative to config_dir when relative paths are provided
-    if not Path(cfg.seeds_file).is_absolute():
-        cfg.seeds_file = str((config_dir / cfg.seeds_file).resolve())
-    if not Path(cfg.graders_file).is_absolute():
-        cfg.graders_file = str((config_dir / cfg.graders_file).resolve())
+    seeds_path = Path(cfg.seeds_file)
+    if not seeds_path.is_absolute():
+        seeds_path = (config_dir / seeds_path).resolve()
+    graders_path = Path(cfg.graders_file)
+    if not graders_path.is_absolute():
+        graders_path = (config_dir / graders_path).resolve()
 
     # Load task types and runner configurations from explicit directory
-    config_dir = Path(args.config_dir)
     task_types = load_task_types(config_dir / "task_types.yaml")
     runner_configs = load_runner_configs(config_dir / "runners.yaml")
 
     # Load tasks from seeds file - now using TaskDefinition format
-    all_tasks = load_task_definitions(cfg.seeds_file, task_types)
+    all_tasks = load_task_definitions(seeds_path, task_types)
 
     # Convert string to AgentTaskType enum
     task_type_enum = AgentTaskType(args.task_type)
@@ -560,7 +561,7 @@ Examples:
 
     if not seed_tasks:
         logger.error(
-            f"No tasks found with type '{task_type_enum.value}' in {cfg.seeds_file}",
+            f"No tasks found with type '{task_type_enum.value}' in {seeds_path}",
         )
         sys.exit(1)
 
@@ -570,7 +571,7 @@ Examples:
 
     # Load grading criteria from YAML
     logger.info("Loading grading criteria")
-    yaml_loader = load_yaml_files(cfg.seeds_file, cfg.graders_file)
+    yaml_loader = load_yaml_files(seeds_path, graders_path)
 
     # Load grading criteria
     criteria = []

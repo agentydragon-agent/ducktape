@@ -3,7 +3,7 @@ from __future__ import annotations
 import anyio
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
-import mcp.types as mcp_types
+from mcp import types
 import pytest
 
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -16,7 +16,7 @@ class _Recorder(MessageHandler):
         self._evt_updated = anyio.Event()
         self._evt_list = anyio.Event()
 
-    async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
+    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
         # Record and signal
         try:
             uri = str(message.params.uri)
@@ -26,7 +26,7 @@ class _Recorder(MessageHandler):
         self._evt_updated.set()
 
     async def on_resource_list_changed(
-        self, message: mcp_types.ResourceListChangedNotification
+        self, message: types.ResourceListChangedNotification
     ) -> None:  # type: ignore[override]
         self.list_changed += 1
         self._evt_list.set()

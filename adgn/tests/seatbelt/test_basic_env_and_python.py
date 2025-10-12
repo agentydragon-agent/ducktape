@@ -6,10 +6,11 @@ import sys
 import pytest
 
 from adgn.seatbelt.runner import run_sandboxed_async
+from tests._markers import REQUIRES_SANDBOX_EXEC
+
+pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
 
-@pytest.mark.macos
-@pytest.mark.shell
 @pytest.mark.parametrize(
     ("cmd", "set_env", "passthrough", "expect_substring"),
     [

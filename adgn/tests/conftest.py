@@ -4,6 +4,8 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from importlib import resources
 import os
 import platform
+import re
+from typing import Callable
 
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
@@ -12,6 +14,7 @@ import pytest
 
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, load_default_policy_source
 from adgn.agent.persist.sqlite import SQLitePersistence
+from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.clients import PolicyReaderClient
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
@@ -19,6 +22,7 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.docker_exec.server import make_container_exec_server
 from adgn.mcp.policy_gateway.middleware import install_policy_gateway
+from adgn.mcp.testing.simple_servers import make_simple_mcp
 
 # Top-level imports for fixtures
 from adgn.mcp.testing.typed_stubs import TypedClient
@@ -27,12 +31,10 @@ import docker
 # Ensure shared fixtures from tests/fixtures are always registered, even when
 # running a subset of tests or in parallel workers where the module wouldn't be
 # imported implicitly.
-pytest_plugins = [
+pytest_plugins = (
     "tests.fixtures.responses",
-    # Ensure pytest-asyncio plugin is loaded in all workers so async tests run properly
-    "pytest_asyncio",
-]
-
+    "pytest_asyncio",  # Ensure async fixtures work in worker processes
+)
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("adgn")
@@ -56,9 +58,36 @@ def pytest_configure(config: pytest.Config) -> None:
         os.environ["ADGN_TEST_TRACE_WS"] = "0"
     else:
         os.environ["ADGN_TEST_TRACE_WS"] = "1"
-    # Policy eval runs the shim as a module; require adgn installed in the image.
-    # Use the runtime image built from docker/runtime/Dockerfile.
-    os.environ.setdefault("ADGN_POLICY_EVAL_IMAGE", "adgn-runtime:latest")
+    # Ensure runtime/policy evaluation containers use a single image tag.
+    os.environ.setdefault("ADGN_RUNTIME_IMAGE", DEFAULT_RUNTIME_IMAGE)
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    for item in items:
+        if item.get_closest_marker("requires_sandbox_exec") is not None:
+            item.add_marker(pytest.mark.macos)
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    if (
+        item.get_closest_marker("requires_sandbox_exec") is not None
+        and platform.system() != "Darwin"
+    ):
+        pytest.skip("seatbelt sandbox tests require macOS (sandbox-exec unavailable)")
+    if item.get_closest_marker("macos") is not None and platform.system() != "Darwin":
+        pytest.skip("macOS-only test")
+    if item.get_closest_marker("requires_docker") is None:
+        return
+    try:
+        client = docker.from_env()
+        client.ping()
+    except docker.errors.DockerException as exc:
+        pytest.skip(f"Docker not available: {exc}")
+    else:
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 @pytest.fixture(autouse=True)
@@ -73,9 +102,28 @@ def _per_test_agent_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
 
 @pytest.fixture
 async def sqlite_persistence(tmp_path):
-    p = SQLitePersistence(str(tmp_path / "agent.sqlite"))
+    p = SQLitePersistence(tmp_path / "agent.sqlite")
     await p.ensure_schema()
     return p
+
+
+@pytest.fixture
+def make_policy_engine(
+    sqlite_persistence, request: pytest.FixtureRequest
+):
+    """Factory producing ApprovalPolicyEngine instances with per-test defaults."""
+
+    def _make(policy_source: str, *, agent_id: str | None = None) -> ApprovalPolicyEngine:
+        default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
+        effective_id = agent_id or default_id
+        return ApprovalPolicyEngine(
+            docker_client=docker.from_env(),
+            agent_id=effective_id,
+            persistence=sqlite_persistence,
+            policy_source=policy_source,
+        )
+
+    return _make
 
 
 @pytest.fixture
@@ -104,6 +152,18 @@ def make_typed_mcp():
             yield client, sess
 
     return _open
+
+
+@pytest.fixture
+def make_backend_server() -> Callable[[str], FastMCP]:
+    """Factory for lightweight FastMCP backends used across tests."""
+
+    return make_simple_mcp
+
+
+@pytest.fixture
+def backend_server(make_backend_server) -> FastMCP:
+    return make_backend_server()
 
 
 @pytest.fixture
@@ -137,12 +197,10 @@ def make_pg_compositor(approval_hub: ApprovalHub):
         reader = servers.get("approval_policy")
         if reader is None:
             raise RuntimeError("approval_policy server required for policy gateway tests")
-        from fastmcp.client import Client as _Client
-
         stack = AsyncExitStack()
         await stack.__aenter__()
         try:
-            _reader_client = await stack.enter_async_context(_Client(reader))
+            _reader_client = await stack.enter_async_context(Client(reader))
             policy_reader = PolicyReaderClient(_reader_client)
             install_policy_gateway(
                 comp,
@@ -205,7 +263,7 @@ def make_pg_compositor_box(approval_policy_reader_allow_all, make_pg_compositor)
                 describe=True,
                 ephemeral=True,
             ),
-            server_name="box",
+            name="box",
         )
         async with make_pg_compositor(
             {"box": server, "approval_policy": approval_policy_reader_allow_all}
@@ -226,8 +284,8 @@ def make_pg_compositor_echo(make_echo_spec, approval_policy_reader_allow_all, ma
 
     @asynccontextmanager
     async def _open():
-        specs = make_echo_spec()
-        servers = {**specs(), "approval_policy": approval_policy_reader_allow_all}
+        spec_factory = make_echo_spec
+        servers = {**spec_factory(), "approval_policy": approval_policy_reader_allow_all}
         async with make_pg_compositor(servers) as pair:
             yield pair
 
@@ -362,6 +420,26 @@ async def approval_policy_reader_allow_all(sqlite_persistence) -> FastMCP:
 
 
 @pytest.fixture
+def stub_approval_policy_engine():
+    class _StubApprovalPolicyEngine:
+        def get_policy(self) -> tuple[str, int]:
+            return ("# allow all\n", 1)
+
+    return _StubApprovalPolicyEngine()
+
+
+@pytest.fixture
+def approval_policy_reader_stub() -> FastMCP:
+    server = FastMCP("approval_policy")
+
+    @server.tool(name="decide")
+    def _decide(name: str, arguments: dict | None = None) -> dict[str, str]:
+        return {"decision": "allow", "rationale": "stub"}
+
+    return server
+
+
+@pytest.fixture
 def require_sandbox_exec():
     """Gate shell sandbox tests to supported platforms.
 
@@ -376,17 +454,10 @@ def require_sandbox_exec():
 
 
 @pytest.fixture
-def make_echo_spec() -> callable:
-    """Return a factory that yields a runtime slot spec map for an echo MCP.
-
-    Uses in-proc embedding via make_inproc_slot_spec and attaches through the
-    TestClient portal, avoiding HTTP JSON rehydration.
-    """
+def make_echo_spec(make_backend_server) -> callable:
+    """Return a factory that produces in-proc FastMCP servers for echo tests."""
 
     def _spec() -> dict[str, object]:
-        from adgn.mcp.echo.server import make_echo_server
-
-        server = make_echo_server("echo")
-        return {"echo": server}
+        return {"echo": make_backend_server("echo")}
 
     return _spec

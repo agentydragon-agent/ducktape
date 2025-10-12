@@ -68,7 +68,7 @@ async def handle_list_worktrees(daemon_client, formatter) -> None:
     # Use dedicated RPC for listing
     listing = await daemon_client.list_worktrees()
     formatter.render_worktree_list(
-        [(wt.name, Path(wt.absolute_path), wt.exists) for wt in listing.worktrees],
+        [(wt.name, wt.absolute_path, wt.exists) for wt in listing.worktrees],
     )
 
 
@@ -232,12 +232,12 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
     info = await daemon_client.get_worktree_by_name(worktree_name)
 
     if info.exists and info.absolute_path:
-        emit_cd_command(Path(info.absolute_path), main_repo=config.main_repo)
+        emit_cd_command(info.absolute_path, main_repo=config.main_repo)
         return
 
-    tt = await daemon_client.teleport_target(worktree_name, str(Path.cwd()))
+    tt = await daemon_client.teleport_target(worktree_name, Path.cwd())
     if isinstance(tt, TeleportCdThere):
-        emit_cd_command(Path(tt.cd_path), main_repo=config.main_repo)
+        emit_cd_command(tt.cd_path, main_repo=config.main_repo)
         return
 
     # Test-mode auto-create (Option B): avoid prompts in tests

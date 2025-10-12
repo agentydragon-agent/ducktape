@@ -33,9 +33,9 @@ Out of scope
 Compositor metadata (introspection)
 - Exposed via a dedicated server `compositor_meta` mounted under the Compositor.
 - Per‑server state resource (implemented):
-  - `resource://compositor_meta/state/{server}` (typed JSON):
+  - `compositor://state/{server}` (typed JSON). When the server is mounted under the Compositor, the path is prefixed (e.g., `compositor://compositor_meta/state/{server}`); the resources server resolves that prefix when mapping back to the origin server.
     - `{state: "initializing"}` | `{state: "running", initialize: <InitializeResult>, tools: [...]}` | `{state: "failed", error}`.
-  - No dedicated mounts index; enumerate `resource://compositor_meta/state/{server}` via `resources/list` and watch `resources/list_changed` for attach/detach.
+  - No dedicated mounts index; enumerate `compositor://state/{server}` (prefixed form) via `resources/list` and watch `resources/list_changed` for attach/detach.
   - Instructions/capabilities are available via the InitializeResult returned in the running state; no separate resources are exposed.
 Status: implemented per‑server state; clients compose a mounts map by listing state resources.
 

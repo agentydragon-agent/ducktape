@@ -53,6 +53,13 @@ in
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
 
+  nix.package = pkgs.nix;
+
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
+
   # Claude Code Router config and transformers via Home Manager
   programs.claudeCodeRouter = {
     enable = true;

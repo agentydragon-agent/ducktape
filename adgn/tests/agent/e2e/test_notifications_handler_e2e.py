@@ -5,7 +5,6 @@ import asyncio
 from fastmcp.mcp_config import MCPConfig
 import pytest
 
-from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.container import build_container
 from adgn.openai_utils.model import (
     InputTextPart,
@@ -25,26 +24,12 @@ def _policy_source_allow() -> str:
     )
 
 
-def _docker_available() -> bool:
-    try:
-        client = docker.from_env()
-        client.ping()
-        return True
-    except Exception:
-        return False
-
-
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-@pytest.mark.skipif(not _docker_available(), reason="docker not available")
 async def test_notifications_handler_in_container_inserts_system_message(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    sqlite_persistence, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Persistence and container
-    db = tmp_path / "agent.sqlite"
-    p = SQLitePersistence(str(db))
-    await p.ensure_schema()
-
     # Capture OpenAI requests
     captured: list[ResponsesRequest] = []
 
@@ -56,15 +41,13 @@ async def test_notifications_handler_in_container_inserts_system_message(
         return ResponsesFactory("test-model").make_assistant_message("done")
 
     client = make_mock(_create)
-    # Patch container model factory to our mock client
-    monkeypatch.setattr("adgn.agent.runtime.container.build_client", lambda *a, **k: client)
-
     # Build container headless (no UI) with allow-all policy
     container = await build_container(
         agent_id="notif-e2e",
         mcp_config=MCPConfig(),
-        persistence=p,
+        persistence=sqlite_persistence,
         model="test-model",
+        client_factory=lambda _model: client,
         with_ui=False,
         docker_client=docker.from_env(),
         initial_policy=_policy_source_allow(),

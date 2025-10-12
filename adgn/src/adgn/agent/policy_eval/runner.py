@@ -5,6 +5,7 @@ import logging
 import os
 
 from adgn.agent.policies.policy_types import PolicyResponse
+from adgn.agent.runtime.images import resolve_runtime_image
 import docker
 from docker import DockerClient
 
@@ -24,8 +25,7 @@ def run_policy_source(
     Synchronous helper intended for sanity checks when activating policy text.
     """
     # Resolve image to a concrete string (no Optional)
-    env_img = os.getenv("ADGN_POLICY_EVAL_IMAGE") or "adgn-runtime:latest"
-    img: str = image if image else env_img
+    img: str = image if image else resolve_runtime_image()
     tmo = (
         timeout_secs
         if timeout_secs is not None
@@ -60,6 +60,7 @@ def run_policy_source(
         read_only=True,
         mem_limit=os.getenv("ADGN_POLICY_EVAL_MEM", "128m"),
         nano_cpus=int(os.getenv("ADGN_POLICY_EVAL_NANO_CPUS", str(500_000_000))),
+        auto_remove=True,
     )
     try:
         container.start()

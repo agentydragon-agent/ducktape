@@ -9,6 +9,12 @@ import re
 from typing import Any
 
 from ..extract_common import iter_wire_lines
+from ..openai_typing import (
+    dump_response_messages,
+    message_content_as_text,
+    message_role,
+    parse_response_messages,
+)
 
 PROVIDER_WIRE = Path(
     os.environ.get(
@@ -44,28 +50,18 @@ def maybe_extract_payload(obj: dict[str, Any]) -> dict[str, Any] | None:
 
 def extract_system_text_from_responses_input(payload: dict[str, Any]) -> str:
     inp = payload.get("input")
-    if not isinstance(inp, list):
+    parsed = parse_response_messages(inp)
+    if not parsed:
         return ""
     sys_parts: list[str] = []
     seen_user = False
-    for item in inp:
-        if not isinstance(item, dict):
-            continue
-        role = (item.get("role") or item.get("message_role") or "").lower()
-        content = item.get("content")
-        texts: list[str] = []
-        if isinstance(content, str):
-            texts = [content]
-        elif isinstance(content, list):
-            for c in content:
-                if isinstance(c, dict):
-                    t = c.get("text") or c.get("input_text") or c.get("content")
-                    if isinstance(t, str):
-                        texts.append(t)
+    for item in parsed:
+        role = message_role(item)
+        text = message_content_as_text(item)
         if role == "user":
             seen_user = True
-        if (role in ("", "system") and not seen_user) and texts:
-            sys_parts.append("\n".join(texts))
+        if (role in ("", "system") and not seen_user) and text:
+            sys_parts.append(text)
     return "\n\n".join(p for p in sys_parts if p)
 
 
@@ -142,26 +138,30 @@ def build_rewritten_request(
                 "content": [{"type": "input_text", "text": new_system_text}],
             },
         ]
-        return req
-    # Keep only first 2 non-system items for readability
-    # Find first explicit user index
-    first_user = None
-    for i, it in enumerate(inp):
-        if (
-            isinstance(it, dict)
-            and (it.get("role") or it.get("message_role") or "").lower() == "user"
-        ):
-            first_user = i
-            break
-    tail = inp[first_user:] if first_user is not None else []
-    tail = tail[:2]
-    req["input"] = [
-        {
-            "role": "system",
-            "content": [{"type": "input_text", "text": new_system_text}],
-        },
-        *tail,
-    ]
+    else:
+        # Keep only first 2 non-system items for readability
+        # Find first explicit user index
+        first_user = None
+        for i, it in enumerate(inp):
+            if (
+                isinstance(it, dict)
+                and (it.get("role") or it.get("message_role") or "").lower() == "user"
+            ):
+                first_user = i
+                break
+        tail = inp[first_user:] if first_user is not None else []
+        tail = tail[:2]
+        req["input"] = [
+            {
+                "role": "system",
+                "content": [{"type": "input_text", "text": new_system_text}],
+            },
+            *tail,
+        ]
+
+    validated = parse_response_messages(req.get("input"))
+    if validated:
+        req["input"] = dump_response_messages(validated)
     return req
 
 

@@ -29,24 +29,25 @@ echo "  Client ID: ${OAUTH_CLIENT_ID}"
 echo "  Client Secret: ${OAUTH_SECRET}"
 ```
 
+### 1b. Generate Ember Gitea password (rotate as needed)
+
+```bash
+EMBER_PASSWORD=$(openssl rand -base64 24)
+
+kubectl create secret generic gitea-ember-credentials \
+  --namespace=gitea \
+  --from-literal=ember-password="${EMBER_PASSWORD}" \
+  --dry-run=client -o yaml | kubeseal --format yaml > gitea-ember-sealed.yaml
+
+echo "Ember Gitea password saved to sealed secret"
+```
+
 ### 2. Deploy Components
 
 ```bash
 # Install Reflector for secret sharing (if not already installed)
 kubectl apply -f reflector.yaml
 kubectl wait --for=condition=available --timeout=60s deployment/reflector -n kube-system
-
-# Create namespace
-kubectl apply -f namespace.yaml
-
-# Deploy sealed secret
-kubectl apply -f gitea-oauth-sealed.yaml
-
-# Wait for secret to be unsealed and reflected
-until kubectl get secret gitea-oauth-shared -n authentik >/dev/null 2>&1; do
-  echo "Waiting for secret to be reflected to authentik namespace..."
-  sleep 2
-done
 
 # Update Authentik to include Gitea blueprint
 # The blueprint is already integrated in k8s/helm/authentik/
@@ -66,8 +67,8 @@ helm upgrade --install gitea gitea-charts/gitea \
   --wait \
   --timeout 10m
 
-# Configure OAuth2 in Gitea
-kubectl apply -f gitea-oauth-setup-job.yaml
+# Apply jobs and sealed secrets (OAuth setup + Ember PAT)
+kubectl apply -k .
 
 # Get admin password (if needed for emergency access)
 echo "Admin password: $(kubectl get secret -n gitea gitea-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
@@ -88,19 +89,26 @@ The deployment automatically:
 2. Configures Gitea with OAuth2 authentication
 3. Sets up groups: `gitea-users` and `gitea-admins`
 4. Shares credentials securely between services
+5. Boots an `ember-bot` service account with a personal access token published to the `ember` namespace
 
 ### Files
 
 - `namespace.yaml` - Gitea namespace definition
+- `ember-rbac.yaml` - ServiceAccount + Role/Binding for writing Ember secrets
 - `values.yaml` - Helm values for Gitea deployment
 - `gitea-oauth-setup-job.yaml` - Post-install OAuth2 configuration job
+- `gitea-ember-token-job.yaml` - Bootstrap job that drives the Gitea `admin user` CLI to mint Ember's PAT
 - `reflector.yaml` - Kubernetes Reflector for cross-namespace secret sharing
 - `gitea-oauth-sealed.yaml` - Sealed secret with OAuth2 credentials (generated)
+- `gitea-ember-sealed.yaml` - Sealed secret containing the Ember Gitea password
+- `kustomization.yaml` - Bundles manifests and mounts the Python bootstrap script
+- `scripts/ember_pat.py` - Python helper that orchestrates the CLI token generation and secret sync
 - **Authentik blueprint**: Integrated in `../helm/authentik/templates/gitea-provider-blueprint.yaml`
 
 ## Access
 
 After deployment:
+- Ember's PAT lives in secret `gitea-ember-token` in the `ember` namespace with fields `username`, `token`, and `token_name`.
 - **URL**: https://git.k3s.agentydragon.com
 - **Admin**: agentydragon (password shown after deploy)
 - **SSO**: Click "Sign in with Authentik"
@@ -142,6 +150,8 @@ kubectl get secret -n gitea gitea-admin-secret \
 ```bash
 kubectl get secrets -n gitea gitea-oauth-shared
 kubectl get secrets -n authentik gitea-oauth-shared
+kubectl get secrets -n gitea gitea-ember-credentials
+kubectl get secrets -n ember gitea-ember-token
 ```
 
 ### Check Authentik Blueprint

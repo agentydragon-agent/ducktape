@@ -11,6 +11,7 @@ import pytest
 from adgn.agent.reducer import format_notifications_message
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifications.buffer import NotificationsBuffer
+from adgn.mcp._shared.naming import build_mcp_function
 from tests.util.notifications import parse_system_notification_payload
 
 
@@ -47,11 +48,11 @@ async def test_stdio_child_notifications_envelope(tmp_path: Path):
     buf = NotificationsBuffer(compositor=comp)
     async with Client(comp, message_handler=buf.handler) as sess:
         # Fire notifications via namespaced tool
-        await sess.call_tool(name="mcp__stdio_child_emit", arguments={})
+        await sess.call_tool(name=build_mcp_function("stdio_child", "emit"), arguments={})
         batch = buf.poll()
         msg = format_notifications_message(batch)
         assert msg is not None
-        payload = parse_system_notification_payload(msg.text)
+        payload = parse_system_notification_payload(msg)
         resources = payload.get("resources")
         assert isinstance(resources, dict)
         assert "stdio_child" in resources

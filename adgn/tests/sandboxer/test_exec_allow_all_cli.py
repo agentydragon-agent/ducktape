@@ -6,8 +6,6 @@ import pytest
 import yaml
 
 
-@pytest.mark.macos
-@pytest.mark.shell
 def test_sandboxer_cli_allow_all_runs_echo(tmp_path: Path, require_sandbox_exec):
     (tmp_path / "tmp").mkdir(parents=True, exist_ok=True)
     policy = tmp_path / "policy_allow_all.yaml"

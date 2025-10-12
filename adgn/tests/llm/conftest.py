@@ -5,11 +5,7 @@ from typing import Awaitable, Callable
 
 import pytest
 
-from .git_repo_utils import (
-    _commit as util_commit,
-    _init_repo as util_init_repo,
-    _stage as util_stage,
-)
+from . import git_repo_utils
 
 
 @pytest.fixture
@@ -27,7 +23,7 @@ def temp_repo(author_name: str, author_email: str, tmp_path: Path):
     """Temporary git repository for LLM tests (separate from WT helpers)."""
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir(parents=True, exist_ok=True)
-    repo = util_init_repo(str(repo_dir), name=author_name, email=author_email)
+    repo = git_repo_utils._init_repo(str(repo_dir), name=author_name, email=author_email)
     yield repo
 
 
@@ -35,8 +31,8 @@ def temp_repo(author_name: str, author_email: str, tmp_path: Path):
 def repo_helpers() -> dict[str, Callable]:
     """Provide stage/commit helpers to tests without re-defining them inline."""
     return {
-        "stage": util_stage,
-        "commit": util_commit,
+        "stage": git_repo_utils._stage,
+        "commit": git_repo_utils._commit,
     }
 
 

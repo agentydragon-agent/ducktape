@@ -19,7 +19,7 @@ import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 # FastMCP-only: no TokenVerifier in server construction
 from pydantic import BaseModel, Field
@@ -170,8 +170,8 @@ class RevParseInput(BaseModel):
 
 
 class RevParseResult(BaseModel):
-    kind: str  # "oid" | "toplevel"
-    value: str
+    kind: Literal["oid", "toplevel"]
+    value: str | Path
 
 
 class LsFilesInput(BaseModel):
@@ -498,9 +498,12 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         root = state.git_repo
         repo = _open_repo(root)
         if input.arg == "--show-toplevel":
+            workdir = repo.workdir
+            if not workdir:
+                raise ValueError("Repository has no working directory")
             return RevParseResult(
                 kind="toplevel",
-                value=str(Path(repo.workdir).resolve()),
+                value=Path(workdir).resolve(),
             )
         obj = repo.revparse_single(input.arg)
         oid = get_oid(obj)

@@ -26,8 +26,8 @@ from .registry import all_detectors, run_all
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Run properties detectors (standalone)")
-    ap.add_argument("--root", required=True, help="Repo root or path to scan")
-    ap.add_argument("--out", help="Write JSON to this file (default: stdout)")
+    ap.add_argument("--root", required=True, type=Path, help="Repo root or path to scan")
+    ap.add_argument("--out", type=Path, help="Write JSON to this file (default: stdout)")
     # Vulture adapter removed: prefer running Vulture directly when needed
     ap.add_argument(
         "--workers",
@@ -42,12 +42,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    root = Path(args.root).resolve()
+    root = args.root.resolve()
     dets = run_all(root, detector_names=args.only, workers=args.workers)
     payload: list[dict[str, Any]] = [d.model_dump(exclude_none=True) for d in dets]
     s = json.dumps(payload, indent=2)
     if args.out:
-        Path(args.out).write_text(s, encoding="utf-8")
+        args.out.write_text(s, encoding="utf-8")
     else:
         print(s)
     # Print a tiny summary to stderr-esque (keep exit 0)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.reducer import format_notifications_message
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from tests.util.notifications import parse_system_notification_payload
 
@@ -25,12 +26,12 @@ def _make_notifier(name: str = "child") -> NotifyingFastMCP:
 async def test_notifications_envelope_with_real_mcp(make_buffered_client):
     child = _make_notifier("child")
     async with make_buffered_client({"child": child}) as (sess, _comp, buf):
-        await sess.call_tool(name="mcp__child__emit", arguments={})
+        await sess.call_tool(name=build_mcp_function("child", "emit"), arguments={})
         batch = buf.poll()
         # Format and parse the system notification payload
         msg = format_notifications_message(batch)
         assert msg is not None
-        payload = parse_system_notification_payload(msg.text)
+        payload = parse_system_notification_payload(msg)
         # Expect grouped resources mapping with the child listed (list_changed best-effort)
         resources = payload.get("resources")
         assert isinstance(resources, dict)
@@ -45,18 +46,18 @@ async def test_notifications_envelope_with_real_mcp(make_buffered_client):
 async def test_notifications_envelope_after_remount(make_buffered_client):
     child = _make_notifier("child")
     async with make_buffered_client({"child": child}) as (sess, comp, buf):
-        await sess.call_tool(name="mcp__child__emit", arguments={})
+        await sess.call_tool(name=build_mcp_function("child", "emit"), arguments={})
         _ = buf.poll()
 
         # Unmount and re-mount a fresh notifier to simulate reconnect/new client path
         await comp.unmount_server("child")
         await comp.mount_inproc("child", _make_notifier("child"))
 
-        await sess.call_tool(name="mcp__child__emit", arguments={})
+        await sess.call_tool(name=build_mcp_function("child", "emit"), arguments={})
         batch = buf.poll()
         msg = format_notifications_message(batch)
         assert msg is not None
-        payload = parse_system_notification_payload(msg.text)
+        payload = parse_system_notification_payload(msg)
         resources = payload.get("resources")
         assert isinstance(resources, dict)
         assert "child" in resources and resources["child"].get("list_changed") is True

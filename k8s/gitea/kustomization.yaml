@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: gitea
+
+resources:
+  - namespace.yaml
+  - ember-rbac.yaml
+  - reflector.yaml
+  - gitea-oauth-sealed.yaml
+  - gitea-oauth-setup-job.yaml
+  - gitea-ember-sealed.yaml
+  - gitea-ember-token-job.yaml
+
+configMapGenerator:
+  - name: gitea-ember-bootstrap
+    files:
+      - ember_pat.py=scripts/ember_pat.py
+
+generatorOptions:
+  disableNameSuffixHash: true

@@ -84,8 +84,8 @@ Notes:
 
 ### Resources MCP Server
 - A synthetic `resources` MCP server is automatically injected by the runtime. It aggregates resources across all attached servers and exposes two tools:
-  - `mcp__resources__list` — list resources with optional `server` and `uri_prefix` filters
-  - `mcp__resources__read` — windowed read for text/base64 contents (`start_offset`, `max_bytes`)
+- `resources_list` — list resources with optional `server` and `uri_prefix` filters
+- `resources_read` — windowed read for text/base64 contents (`start_offset`, `max_bytes`)
 - Discovery is capability‑gated: only servers that advertise `initialize.capabilities.resources` are queried.
 - See docs/mcp/resources_server.md for API details and usage patterns.
 

@@ -15,7 +15,7 @@ from adgn.inop.config import (
 )
 from adgn.inop.engine.models import (
     AgentTaskType,
-    AssistantMessage as TrMsg,
+    AssistantMessage,
     Criterion,
     MessageBasedGrading,
     Rollout,
@@ -160,7 +160,7 @@ async def test_optimize_prompts_two_iterations_async(
             (tmp_path / "ws").mkdir(parents=True, exist_ok=True)
 
         async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:  # noqa: D401
-            traj = [TrMsg(text="default")]
+            traj = [AssistantMessage(text="default")]
             files = {"README.md": f"prompt: {agent_instructions}"}
             return Rollout(
                 task_id=task.id,

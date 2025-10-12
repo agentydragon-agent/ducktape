@@ -64,7 +64,7 @@ class MountEvent(StrEnum):
 class Compositor(FastMCP):
     """Aggregates upstream MCP servers under a single FastMCP surface.
 
-    - Namespaces tools as mcp__{server}__{tool}
+    - Namespaces tools as {server}_{tool}
     - Reuses persistent upstream sessions per mount
     - Relays resource updates as notifications
     - Exposes a Python management API (mount/unmount); state is served via the
@@ -303,18 +303,14 @@ class Compositor(FastMCP):
         # Cache initialize result and notify state (always on mount)
         mount.cached_init = base_client.initialize_result
         await self._notify_mount_listeners(name, MountEvent.STATE)
-        # Mount using a prefix that results in names 'mcp__{server}__{tool}'
-        # FastMCP composes as 'prefix_tool', so add trailing underscore.
-        self.mount(proxy, prefix=f"mcp__{name}_")
+        # Mount using a prefix that results in names '{server}_{tool}'
+        self.mount(proxy, prefix=name)
         await self._notify_mount_listeners(name, MountEvent.MOUNTED)
 
     async def mount_inproc(
         self, name: str, app: FastMCP, prefix: str | None = None, *, pinned: bool = False
     ) -> None:
-        """Mount a local FastMCP server directly (no HTTP/stdio), keeping a client for status.
-
-        Tools are exposed under the namespaced prefix 'mcp__{name}_<tool>'.
-        """
+        """Mount a local FastMCP server directly (no HTTP/stdio), keeping a client for status."""
         if not name or "__" in name:
             raise ValueError("invalid mount name; must be non-empty and not contain '__'")
         prefix = prefix or name
@@ -335,7 +331,7 @@ class Compositor(FastMCP):
 
         # Ensure proxy uses the persistent child client session
         proxy.client_factory = lambda: base_client
-        self.mount(proxy, prefix=f"mcp__{name}_")
+        self.mount(proxy, prefix=name)
         # Cache initialize result and notify state (always on mount)
         mount.cached_init = base_client.initialize_result
         await self._notify_mount_listeners(name, MountEvent.STATE)

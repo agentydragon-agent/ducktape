@@ -9,13 +9,14 @@ See: https://github.com/romkatv/gitstatus for full protocol specification.
 
 import asyncio
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 import logging
 import shutil
 import subprocess
 import uuid
+from typing import Literal, Self
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,74 @@ class GitStatusdResponse:
         """True if local branch is behind upstream."""
         return bool(self.commits_behind_upstream)
 
+
+@dataclass(frozen=True)
+class GitstatusdCountLimits:
+    """Configured count limits used when spawning gitstatusd."""
+
+    staged: int
+    unstaged: int
+    conflicted: int
+    untracked: int
+
+    def limit_hit(
+        self,
+        value: int | None,
+        kind: Literal["staged", "unstaged", "conflicted", "untracked"],
+    ) -> bool:
+        limits = {
+            "staged": self.staged,
+            "unstaged": self.unstaged,
+            "conflicted": self.conflicted,
+            "untracked": self.untracked,
+        }
+        limit = limits[kind]
+        return limit >= 0 and value is not None and value >= limit
+
+
+@dataclass(frozen=True)
+class GitstatusWorkingSummary:
+    """Snapshot of staged/unstaged/untracked counts surfaced to callers."""
+
+    staged_changes: int | None
+    unstaged_changes: int | None
+    conflicted_changes: int | None
+    untracked_files: int | None
+    staged_limit_hit: bool
+    unstaged_limit_hit: bool
+    untracked_limit_hit: bool
+    last_updated_at: datetime | None
+    has_cache: bool
+    last_error: str | None
+
+    @property
+    def dirty_lower_bound(self) -> int | None:
+        if self.staged_changes is None or self.unstaged_changes is None:
+            return None
+        return self.staged_changes + self.unstaged_changes
+
+    @property
+    def dirty_limit_hit(self) -> bool:
+        return self.staged_limit_hit or self.unstaged_limit_hit
+
+    @property
+    def untracked_lower_bound(self) -> int | None:
+        return self.untracked_files
+
+    @classmethod
+    def empty(cls, *, last_error: str | None = None) -> Self:
+        return cls(
+            staged_changes=None,
+            unstaged_changes=None,
+            conflicted_changes=None,
+            untracked_files=None,
+            staged_limit_hit=False,
+            unstaged_limit_hit=False,
+            untracked_limit_hit=False,
+            last_updated_at=None,
+            has_cache=False,
+            last_error=last_error,
+        )
 
 SHA_HEX_LEN = 40
 
@@ -327,25 +396,6 @@ class GitStatusdProtocol:
         raise GitStatusdValidationError(f"Unknown repository state: {value}")
 
 
-def gitstatusd_response_to_legacy_format(
-    response: GitStatusdResponse,
-) -> tuple[list[str], list[str]]:
-    """Convert GitStatusdResponse to legacy (dirty_files, untracked_files) format."""
-    if not response.is_git_repository:
-        return [], []
-
-    # Create placeholder lists based on counts (gitstatusd doesn't return filenames by default)
-    dirty_files = []
-    if response.has_dirty_files:
-        dirty_files.append("<staged/unstaged files present>")
-
-    untracked_files = []
-    if response.has_untracked_files:
-        untracked_files.append("<untracked files present>")
-
-    return dirty_files, untracked_files
-
-
 def find_gitstatusd(config) -> tuple[str | None, str | None]:
     """Find and validate gitstatusd binary using config or PATH.
 
@@ -405,9 +455,13 @@ class GitstatusdListener:
         self.git_manager = git_manager
         self.error_callback = error_callback
         self.process: asyncio.subprocess.Process | None = None
-        # Cache for working status
-        self.cached_working_status: tuple[list[str], list[str]] | None = None
-        self.last_updated_at: datetime | None = None
+        self._count_limits = GitstatusdCountLimits(
+            staged=-1,
+            unstaged=-1,
+            conflicted=-1,
+            untracked=-1,
+        )
+        self._status_summary: GitstatusWorkingSummary = GitstatusWorkingSummary.empty()
         self._status_updating: bool = False
         self.last_error: str | None = None
 
@@ -427,6 +481,7 @@ class GitstatusdListener:
             "--num-threads=8",
             "--max-num-staged=-1",
             "--max-num-unstaged=-1",
+            "--max-num-conflicted=-1",
             "--max-num-untracked=-1",
             "--max-commit-summary-length=0",
             "--repo-ttl-seconds=3600",
@@ -476,11 +531,8 @@ class GitstatusdListener:
             response = await self.process.stdout.readuntil(b"\x1e")
             response_str = response.decode("utf-8")
             parsed_response = GitStatusdProtocol.parse_response(response_str)
-            dirty_files, untracked_files = gitstatusd_response_to_legacy_format(
-                parsed_response,
-            )
-            self.cached_working_status = (dirty_files, untracked_files)
-            self.last_updated_at = datetime.now()
+            summary = self._build_summary(parsed_response)
+            self._status_summary = summary
             self.last_error = None
         except Exception:
             logger.exception(
@@ -498,10 +550,43 @@ class GitstatusdListener:
         finally:
             self._status_updating = False
 
-    def get_cached_working_status(
-        self,
-    ) -> tuple[int, int, datetime | None, bool, str | None]:
-        if self.cached_working_status and self.last_updated_at:
-            df, uf = self.cached_working_status
-            return len(df), len(uf), self.last_updated_at, True, self.last_error
-        return 0, 0, None, False, self.last_error
+    def _build_summary(self, response: GitStatusdResponse) -> GitstatusWorkingSummary:
+        now = datetime.now()
+        if not response.is_git_repository:
+            return GitstatusWorkingSummary(
+                staged_changes=0,
+                unstaged_changes=0,
+                conflicted_changes=0,
+                untracked_files=0,
+                staged_limit_hit=False,
+                unstaged_limit_hit=False,
+                untracked_limit_hit=False,
+                last_updated_at=now,
+                has_cache=True,
+                last_error=None,
+            )
+
+        staged = response.staged_changes if response.staged_changes is not None else 0
+        unstaged = response.unstaged_changes if response.unstaged_changes is not None else 0
+        conflicted = response.conflicted_changes if response.conflicted_changes is not None else 0
+        untracked = response.untracked_files if response.untracked_files is not None else 0
+
+        staged_limit_hit = self._count_limits.limit_hit(staged, "staged")
+        unstaged_limit_hit = self._count_limits.limit_hit(unstaged, "unstaged")
+        untracked_limit_hit = self._count_limits.limit_hit(untracked, "untracked")
+
+        return GitstatusWorkingSummary(
+            staged_changes=staged,
+            unstaged_changes=unstaged,
+            conflicted_changes=conflicted,
+            untracked_files=untracked,
+            staged_limit_hit=staged_limit_hit,
+            unstaged_limit_hit=unstaged_limit_hit,
+            untracked_limit_hit=untracked_limit_hit,
+            last_updated_at=now,
+            has_cache=True,
+            last_error=None,
+        )
+
+    def get_cached_working_status(self) -> GitstatusWorkingSummary:
+        return replace(self._status_summary, last_error=self.last_error)

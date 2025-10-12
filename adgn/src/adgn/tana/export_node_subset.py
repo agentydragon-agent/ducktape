@@ -17,21 +17,16 @@ import sys
 from typing import Any
 
 from .convert import RenderContext
-from .tana_lib.constants import SUPERTAG_KEY_ID
+from .tana_lib.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
 from .tana_lib.models import _DOC_CLASS, BaseNode, NodeStore, TupleNode, UnknownNode
 from .tana_lib.supertags import attach_supertag_property
 from .tana_lib.types import NodeId
+from .tana_lib.wrapper_utils import is_wrapper
 
-MIN_TUPLE_CHILDREN = 2
 PRETTY_PRINT_LIMIT = 10
 
 # Constants from convert.py
 _SUPERTAG_KEY_ID = NodeId(SUPERTAG_KEY_ID)
-
-
-def _is_wrapper(node: BaseNode) -> bool:
-    """Nodes that should *not* get their own bullet - just pass through."""
-    return node.props.doc_type in {"workspace", "viewDef", "layout"}
 
 
 class TrackingNodeStore(NodeStore):
@@ -109,7 +104,7 @@ def collect_supertag_dependencies(store: NodeStore, node_ids: set[str]) -> set[s
         # Check if this node is owned by a wrapper that might propagate tags
         if node.props.owner_id and node.props.owner_id in store:
             owner = store[NodeId(node.props.owner_id)]
-            if _is_wrapper(owner):
+            if is_wrapper(owner):
                 dependencies.add(owner.id)
                 to_process.add(owner.id)
 
@@ -229,7 +224,7 @@ def main():
     args = parser.parse_args()
 
     # Load the original JSON
-    json_path = Path(args.json_file)
+    json_path = args.json_file
     with json_path.open(encoding="utf-8") as f:
         original_data = json.load(f)
 
@@ -255,7 +250,7 @@ def main():
 
     # Determine output prefix
     if args.output_prefix:
-        output_prefix = Path(args.output_prefix)
+        output_prefix = args.output_prefix
     else:
         output_prefix = json_path.with_suffix("") / f"node_{args.node_id}"
         output_prefix.parent.mkdir(exist_ok=True)

@@ -149,7 +149,7 @@ class WorktreeIdentifyParams(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    absolute_path: str = Field(..., description="Absolute filesystem path")
+    absolute_path: Path = Field(..., description="Absolute filesystem path")
 
 
 class WorktreeGetByNameParams(BaseModel):
@@ -178,7 +178,7 @@ class WorktreeResolvePathParams(BaseModel):
         description="Target worktree name, or None for current",
     )
     path_spec: str = Field(..., description="Path to resolve (/, ./, or unprefixed)")
-    current_path: str = Field(
+    current_path: Path = Field(
         ...,
         description="Current working directory for relative resolution",
     )
@@ -190,7 +190,7 @@ class WorktreeTeleportTargetParams(BaseModel):
     model_config = {"extra": "forbid"}
 
     target_name: str = Field(..., description="Target worktree name")
-    current_path: str = Field(..., description="Current working directory")
+    current_path: Path = Field(..., description="Current working directory")
 
 
 # Method result schemas
@@ -227,12 +227,15 @@ class StatusResult(BaseModel):
 
     wtid: WorktreeID = Field(..., description="Worktree identifier")
     name: str = Field(..., description="Human-readable name")
-    absolute_path: str = Field(..., description="Absolute filesystem path")
+    absolute_path: Path = Field(..., description="Absolute filesystem path")
     branch_name: str = Field(..., description="Git branch name")
-    has_dirty_files: bool = Field(..., description="Whether there are modified files")
-    has_untracked_files: bool = Field(
+    dirty_files_lower_bound: int = Field(
         ...,
-        description="Whether there are untracked files",
+        description="Lower bound on modified file count reported by gitstatusd",
+    )
+    untracked_files_lower_bound: int = Field(
+        ...,
+        description="Lower bound on untracked file count reported by gitstatusd",
     )
     processing_time_ms: float = Field(
         ...,
@@ -287,6 +290,16 @@ class StatusResult(BaseModel):
         default=None,
         description="Last error message if any",
     )
+
+    @property
+    def has_dirty_files(self) -> bool:
+        """True if gitstatusd reported any staged or unstaged changes."""
+        return self.dirty_files_lower_bound > 0
+
+    @property
+    def has_untracked_files(self) -> bool:
+        """True if gitstatusd reported any untracked files."""
+        return self.untracked_files_lower_bound > 0
 
 
 class StatusItem(BaseModel):
@@ -364,7 +377,7 @@ class WorktreeInfo(BaseModel):
 
     wtid: WorktreeID = Field(..., description="Worktree identifier")
     name: str = Field(..., description="Human-readable name")
-    absolute_path: str = Field(..., description="Absolute filesystem path")
+    absolute_path: Path = Field(..., description="Absolute filesystem path")
     branch_name: str = Field(..., description="Git branch name")
     exists: bool = Field(..., description="Whether directory exists")
     is_main: bool = Field(..., description="Whether this is main repo")
@@ -397,7 +410,7 @@ class WorktreeCreateResult(BaseModel):
 
     wtid: WorktreeID = Field(..., description="Created worktree ID")
     name: str = Field(..., description="Human-readable name")
-    absolute_path: str = Field(..., description="Absolute filesystem path")
+    absolute_path: Path = Field(..., description="Absolute filesystem path")
     branch_name: str = Field(..., description="Git branch name")
     success: bool = Field(..., description="Operation success")
     post_hook: HookRunResult | None = Field(
@@ -438,18 +451,18 @@ class WorktreeGetByNameResult(BaseModel):
     wtid: WorktreeID | None = Field(..., description="Worktree ID if found")
     name: str | None = Field(..., description="Human-readable name if found")
     exists: bool = Field(..., description="Whether worktree exists")
-    absolute_path: str | None = Field(..., description="Absolute path if found")
+    absolute_path: Path | None = Field(..., description="Absolute path if found")
 
 
 class WorktreeResolvePathResult(BaseModel):
     """Result for path resolution within worktrees."""
 
-    absolute_path: str = Field(..., description="Resolved absolute filesystem path")
+    absolute_path: Path = Field(..., description="Resolved absolute filesystem path")
 
 
 class TeleportCdThere(BaseModel):
     type: Literal["cd_there"] = "cd_there"
-    cd_path: str
+    cd_path: Path
 
 
 class TeleportDoesNotExist(BaseModel):

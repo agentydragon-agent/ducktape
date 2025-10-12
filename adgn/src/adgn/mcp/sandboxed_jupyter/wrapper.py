@@ -17,17 +17,11 @@ import yaml
 
 from adgn.llm.sandboxer import Policy
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
+from adgn.mcp.sandboxed_jupyter._paths import ensure_dir
 from adgn.util.net import wait_for_port
 import docker
 
 StrPath = str | PathLike[str]
-
-
-# Utilities
-
-
-def _ensure_dir(p: Path) -> None:
-    p.mkdir(parents=True, exist_ok=True)
 
 
 def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
@@ -330,11 +324,11 @@ def _seatbelt(
     trace: bool,
 ) -> int:
     # Ensure fresh runtime dir for logs/config; use provided run_root
-    _ensure_dir(run_root / "runtime")
-    _ensure_dir(run_root / "config")
-    _ensure_dir(run_root / "data")
-    _ensure_dir(run_root / "mpl")
-    _ensure_dir(run_root / "scratch")
+    ensure_dir(run_root / "runtime")
+    ensure_dir(run_root / "config")
+    ensure_dir(run_root / "data")
+    ensure_dir(run_root / "mpl")
+    ensure_dir(run_root / "scratch")
 
     # Jupyter Server config (keep compact and explicit)
     jsc = (
@@ -490,11 +484,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     run_root = Path(args.run_root)
-    _ensure_dir(run_root)
-    _ensure_dir(run_root / "runtime")
-    _ensure_dir(run_root / "config")
-    _ensure_dir(run_root / "data")
-    _ensure_dir(run_root / "mpl")
+    ensure_dir(run_root)
+    ensure_dir(run_root / "runtime")
+    ensure_dir(run_root / "config")
+    ensure_dir(run_root / "data")
+    ensure_dir(run_root / "mpl")
 
     # Diagnostics
     if args.trace:
@@ -502,11 +496,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "seatbelt":
         # Resolve workspace from positional or legacy flag
-        ws_arg = (
-            args.workspace
-            if getattr(args, "workspace", None)
-            else getattr(args, "workspace_opt", None)
-        )
+        ws_arg = args.workspace or args.workspace_opt
         if not ws_arg:
             parser.error("workspace is required (positional or --workspace)")
         return run_seatbelt(
