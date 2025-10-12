@@ -18,6 +18,9 @@ spec:
       containers:
         - name: element
           image: {{ .Values.element.image }}
+          env:
+            - name: PUBLIC_URL
+              value: "{{ trimSuffix "/" (default "/element" .Values.element.ingress.path) }}/"
           ports:
             - containerPort: 80
           volumeMounts:
@@ -29,4 +32,3 @@ spec:
           configMap:
             name: {{ include "matrix-stack.fullname" . }}-element-config
 {{- end }}
-

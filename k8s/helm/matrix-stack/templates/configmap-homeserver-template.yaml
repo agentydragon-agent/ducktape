@@ -34,6 +34,9 @@ data:
         issuer: {{ .Values.synapse.oidc.issuer | quote }}
         client_id: {{ .Values.synapse.oidc.clientId | quote }}
         client_secret: "${OIDC_CLIENT_SECRET}"
+{{ if .Values.synapse.oidc.pkce_method }}
+        pkce_method: {{ .Values.synapse.oidc.pkce_method | quote }}
+{{ end }}
 {{ if .Values.synapse.oidc.scopes }}
         scopes:
 {{ range .Values.synapse.oidc.scopes }}

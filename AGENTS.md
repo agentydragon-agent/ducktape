@@ -102,7 +102,7 @@ These components exist but see minimal recent changes:
 
 ### Knowledge Management
 - **Trilium Notes** (`trilium/`): Extensions and widgets
-- **Tana Export** (`experimental/tana_export/`): Export utilities
+- **Tana Export** (`tana/`): Export utilities
 
 ### Other Tools
 - **InventTree** (`inventree_utils/`): Inventory management plugins

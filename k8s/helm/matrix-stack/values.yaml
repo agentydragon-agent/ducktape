@@ -37,7 +37,7 @@ synapse:
     idpName: "Sign in with Authentik"
     issuer: https://auth.k3s.agentydragon.com/application/o/matrix/
     clientId: matrix-synapse
-    pkce_method: never  # TODO(agentydragon): PKCE (plain/S256) currently triggers Authentik "unsupported_algorithm"; re-enable when fixed
+    pkce_method: always  # Require PKCE (S256) to align with Authentik's advertised capabilities
     scopes:
       - openid
       - profile
@@ -79,7 +79,8 @@ element:
   ingress:
     enabled: true
     className: traefik
-    host: element.k3s.agentydragon.com
+    host: matrix.k3s.agentydragon.com
+    path: /element
     tlsSecretName: ""
     entrypoints: web,websecure
     annotations: {}

@@ -17,7 +17,7 @@ Environment and setup (direnv + devenv)
 - Run all tests (tests live under `adgn/tests`):
   - Inside `adgn/`.: `pytest tests`
   - From repo root: `direnv exec adgn pytest adgn/tests`
-- Single test file/case: `pytest tests/tana_export/test_convert.py::test_node_export`
+- Single test file/case: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
 - Lint/format: `ruff format .`, `ruff check . --fix`
 - Pre-commit: `pre-commit install`, `pre-commit run -a`
 - Optional extras: `python -m pip install -e '.[gnome]'` (GNOME console script deps - system libs required)

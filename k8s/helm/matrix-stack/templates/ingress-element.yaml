@@ -7,6 +7,9 @@ metadata:
 {{- if .Values.element.ingress.entrypoints }}
     traefik.ingress.kubernetes.io/router.entrypoints: {{ .Values.element.ingress.entrypoints | quote }}
 {{- end }}
+    traefik.ingress.kubernetes.io/router.priority: "{{ .Values.element.ingress.priority | default 10 }}"
+    # Strip the /element prefix and redirect bare /element to /element/
+    traefik.ingress.kubernetes.io/router.middlewares: {{ include "matrix-stack.fullname" . }}-redirect-element@kubernetescrd,{{ include "matrix-stack.fullname" . }}-strip-element@kubernetescrd
 {{- if .Values.element.ingress.annotations }}
 {{ toYaml .Values.element.ingress.annotations | indent 4 }}
 {{- end }}
@@ -15,8 +18,15 @@ spec:
   rules:
     - host: {{ .Values.element.ingress.host | quote }}
       http:
-        paths:
-          - path: /
+       paths:
+          - path: {{ default "/element" .Values.element.ingress.path | quote }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "matrix-stack.fullname" . }}-element
+                port:
+                  number: {{ .Values.element.service.port }}
+          - path: {{ printf "%s/" (trimSuffix "/" (default "/element" .Values.element.ingress.path)) | quote }}
             pathType: Prefix
             backend:
               service:

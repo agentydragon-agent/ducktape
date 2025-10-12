@@ -31,7 +31,7 @@ See `README.md` for a shorter overview.
 - Tests (under `tests/`):
   - Inside `adgn/`: `pytest tests`
   - From repo root: `direnv exec adgn pytest adgn/tests`
-  - Single test: `pytest tests/tana_export/test_convert.py::test_node_export`
+- Single test: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
 - Lint/format: `ruff format .`, `ruff check . --fix`
 - Type check: `mypy --config-file pyproject.toml`
 - Pre-commit: `pre-commit install`, `pre-commit run -a`
@@ -51,8 +51,8 @@ See `README.md` for a shorter overview.
 
 ## High‑Level Module Map
 - Packaging: name `adgn`, Python `>=3.11,<3.14`, src layout under `src/`
-- Tana export (`src/adgn/tana_export/`)
-  - `convert.py` (Markdown/TanaPaste), `export_node_subset.py`, `materialize_searches.py`, `tana_lib/*` (models/helpers)
+- Tana export tooling now lives in the sibling `tana/` project (`src/tana/export/`).
+  - Key entry points: `convert.py`, `materialize_searches.py`, `export_node_subset.py`, plus helpers under `tana/export/lib/*`.
 - Response cache (`src/adgn/rspcache/`)
   - `responses_db.py`; CLI `rspcache`
 - LLM toolkit and agent (`src/adgn/llm/*`, `src/adgn/agent/*`, `src/adgn/mcp/*`, `src/adgn/props/*`)
@@ -216,7 +216,7 @@ Approval Policy
 
 ## Notes and Caveats
 - GNOME console script deps require system libraries and are not in the default install; use the `[gnome]` extra as needed
-- Some `tana_lib` modules import lazily to avoid circular imports (accepted here)
+- See `tana/export/lib` for the low-level parser modules (some use lazy imports to avoid cycles).
 - Tests marked `real_github` or `live_llm` talk to network/services; run explicitly
 
 ## References and Further Reading

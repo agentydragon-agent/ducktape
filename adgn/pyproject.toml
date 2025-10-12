@@ -108,11 +108,6 @@ where = ["src"]
 include = ["adgn*"]
 
 [tool.setuptools.package-data]
-"adgn.tana" = [
-  "references/*",
-  "references/**/*",
-  "SEARCH_README.md",
-]
 "adgn.props" = [
   "definitions/*.md",
   "definitions/**/*.md",

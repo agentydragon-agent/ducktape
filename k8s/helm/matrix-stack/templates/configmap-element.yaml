@@ -12,9 +12,9 @@ data:
           "server_name": "{{ .Values.synapse.serverName }}"
         }
       },
+      "default_server_name": "{{ .Values.synapse.serverName }}",
       "disable_custom_urls": false,
       "brand": "Element",
       "showLabsSettings": true
     }
 {{- end }}
-
