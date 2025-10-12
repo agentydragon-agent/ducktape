@@ -58,8 +58,8 @@ See `README.md` for a shorter overview.
   - `convert.py` (Markdown/TanaPaste), `export_node_subset.py`, `materialize_searches.py`, `tana_lib/*` (models/helpers)
 - Response cache (`src/adgn/rspcache/`)
   - `responses_db.py`; CLI `rspcache`
-- Worktree tools (`src/adgn/wt/`)
-  - CLI/plugins (`adgn.wt.cli`, `adgn.wt.plugins`), server/handlers (`wt.server.*`), client (`wt.client.*`), shared/types (`wt.shared.*`)
+- Worktree tools (`../wt/` project)
+  - CLI/plugins (`wt.cli`, `wt.plugins`), server/handlers (`wt.server.*`), client (`wt.client.*`), shared/types (`wt.shared.*`)
 - LLM toolkit and agent (`src/adgn/llm/*`, `src/adgn/agent/*`, `src/adgn/mcp/*`, `src/adgn/props/*`)
   - MiniCodex UI/server, MCP utilities, instruction optimizer, properties/specimens
 
@@ -225,7 +225,7 @@ Approval Policy
 - Tests marked `real_github` or `live_llm` talk to network/services; run explicitly
 
 ## References and Further Reading
-- Worktree tools: `src/adgn/wt/README.md`, `docs/wt/ARCHITECTURE.md`, `docs/wt/WT_REFACTOR_PLAN.md`, `docs/wt/WORKTREE_IDEAS.md`
+- Worktree tools: `../wt/README.md`, `../wt/docs/ARCHITECTURE.md`, `../wt/docs/WT_REFACTOR_PLAN.md`, `../wt/docs/WORKTREE_IDEAS.md`
 - MCP servers and presets: `docs/special_mcp_servers.md`
 - Approval policy implementation: `src/adgn/agent/approvals.py`
 - LLM docs: `docs/llm/*`

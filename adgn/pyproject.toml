@@ -129,9 +129,6 @@ include = ["adgn*"]
 "adgn.agent.templates" = [
   "*.j2",
 ]
-"adgn.wt.shell" = [
-  "wt.sh",
-]
 "adgn.mcp.approval_policy" = [
   "instructions.md",
 ]
@@ -191,8 +188,6 @@ skip-globs = ["tests/detectors/fixtures/**"]
 [project.scripts]
 switch_gnome_terminal_profile = "adgn.gnome.switch_gnome_terminal_profile:run"
 rspcache = "adgn.rspcache.cli:main"
-wt = "adgn.wt.cli:main"
-wt-install = "adgn.wt.shell.install:main"
 # LLM console scripts
 adgn-sysrw = "adgn.llm.sysrw.cli:app"
 adgn-mini-codex = "adgn.agent.cli:main"
@@ -210,9 +205,6 @@ adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
 adgn-matrix-bot = "adgn.agent.matrix_bot:main"
 adgn-detectors-custom = "adgn.props.detectors.cli_custom:main"
 adgn-mcp-seatbelt-exec = "adgn.mcp.seatbelt_exec.stdio_main:main"
-
-[project.entry-points."wt.plugins"]
-wt_demo = "adgn.wt.demo_plugin"
 
 [tool.mypy]
 python_version = "3.12"

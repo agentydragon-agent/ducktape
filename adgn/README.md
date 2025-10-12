@@ -39,11 +39,10 @@ Environment and setup (direnv + devenv)
   - System prompt in the preset is combined with an MCP servers header at agent start
 
 ## Console scripts
-- wt → adgn.wt.cli:main
-- wt-install → adgn.wt.shell.install:main
 - rspcache → adgn.rspcache.cli:main
 - switch_gnome_terminal_profile → adgn.gnome.switch_gnome_terminal_profile:run
 - LLM: adgn-mini-codex, adgn-llm-edit, adgn-sysrw, adgn-properties, sandbox-jupyter
+- Worktree tooling (`wt`, `wt-install`) now lives in the sibling `wt/` project
 
 ## More details
 - See ./CLAUDE.md for a deeper guide (test config, module map, LLM toolkit notes).
