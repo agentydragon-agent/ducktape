@@ -61,7 +61,7 @@ def test_node_export_minimal_json(folder, node_id):
     """Test that generated TanaPaste from minimal JSON files match reference files."""
     # Load from the minimal JSON file in the feature folder
     base = TESTDATA_PATH / folder
-    store = NodeStore.from_file(base / f"{node_id}.json")
+    store = load_workspace(base / f"{node_id}.json")
     actual = export_node_as_tanapaste(store, store[node_id])
     expected = (base / f"{node_id}.tanapaste").read_text()
     check_content_match(actual, expected, f"{node_id} using minimal JSON")

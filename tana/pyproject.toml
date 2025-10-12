@@ -26,6 +26,7 @@ dev = [
 ]
 
 [project.scripts]
+tana-export = "tana.export.cli:main"
 tana-export-convert = "tana.export.convert:main"
 tana-export-searches = "tana.export.materialize_searches:main"
 tana-export-issues = "tana.export.tana_issues_to_tanapaste:main"
@@ -65,5 +66,3 @@ target-version = "py311"
 packages = ["tana"]
 python_version = "3.11"
 ignore_missing_imports = true
-[project.scripts]
-tana-export-convert = "tana.export.cli:main"
