@@ -21,7 +21,7 @@ spec:
       restartPolicy: Always
       containers:
         - name: emberd
-          image: registry.k3s.local/emberd:latest
+          image: registry.registry.svc.cluster.local:5000/emberd:latest
           imagePullPolicy: Always
           ports:
             - name: http
@@ -57,6 +57,11 @@ spec:
                 configMapKeyRef:
                   name: ember-config
                   key: pilot_state_dir
+            - name: EMBER_WORKSPACE_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: ember-config
+                  key: workspace_dir
           volumeMounts:
             - name: history
               mountPath: /var/lib/ember

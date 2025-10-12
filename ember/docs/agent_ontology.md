@@ -13,8 +13,11 @@ model and executes the tool calls it returns.
   and acts on them. The LLM itself has no direct I/O; everything must flow
   through tools.
 - **Pilot state** – persisted under `PILOT_STATE_DIR` (typically
-  `/var/lib/ember`). Stores accepted rooms, conversation history metadata, and
-  encrypted reasoning traces.
+  `/var/lib/ember`). Stores conversation history metadata and encrypted reasoning
+  traces; room membership is sourced live from the homeserver on startup.
+- **Workspace** – `${EMBER_WORKSPACE_DIR:-/var/lib/ember/workspace}` is a
+  persistent scratch area mounted from the same PVC. Ember drops temporary
+  scripts, notes, or multi-step artifacts there between Matrix turns.
 - **Secrets surface** – `/var/run/ember/secrets/`, where Kubernetes projects the
   Matrix, Gitea, and OpenAI credentials. emberd monitors this directory so tokens can
   rotate without pod restarts.

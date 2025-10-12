@@ -18,7 +18,7 @@ class MatrixSettings(BaseModel):
     base_url: str | None
     access_token_secret: ProjectedSecret
     admin_user_id: str | None = None
-    control_rooms_path: Path
+    state_store: Path
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     @property
@@ -53,6 +53,7 @@ class EmberSettings(BaseModel):
     openai: OpenAISettings
     history_path: Path
     state_dir: Path
+    workspace_path: Path
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
@@ -60,6 +61,8 @@ def load_settings() -> EmberSettings:
     """Load Ember settings from environment variables and mounted secrets."""
 
     state_dir = Path(os.getenv("PILOT_STATE_DIR", "/var/lib/ember")).expanduser()
+    workspace_dir = os.getenv("EMBER_WORKSPACE_DIR")
+    workspace_path = (Path(workspace_dir) if workspace_dir else state_dir / "workspace").expanduser()
     history_path = state_dir / "pilot_history.jsonl"
 
     matrix_access_token = ProjectedSecret(
@@ -77,7 +80,7 @@ def load_settings() -> EmberSettings:
                 base_url=os.getenv("MATRIX_BASE_URL"),
                 access_token_secret=matrix_access_token,
                 admin_user_id=os.getenv("MATRIX_ADMIN_USER_ID"),
-                control_rooms_path=state_dir / "control_rooms.json",
+                state_store=state_dir / "matrix_state.json",
             ),
             openai=OpenAISettings(
                 api_key_secret=openai_api_key,
@@ -90,6 +93,7 @@ def load_settings() -> EmberSettings:
             ),
             history_path=history_path,
             state_dir=state_dir,
+            workspace_path=workspace_path,
         )
     except ValidationError as exc:  # pragma: no cover - configuration errors should surface loudly
         raise RuntimeError(f"Invalid pilot configuration: {exc}") from exc

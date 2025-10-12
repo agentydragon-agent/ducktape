@@ -48,6 +48,7 @@ class PilotRuntime:
     def _initialise_components(self) -> None:
         self._history = ConversationHistory(self._settings.history_path)
         self._matrix_client = MatrixClient(self._settings.matrix)
+        self._settings.workspace_path.mkdir(parents=True, exist_ok=True)
         self._openai_client = AsyncOpenAI(api_key=self._settings.openai.api_key)
         self._agent = OpenAIAgent(self._settings.openai, self._history, self._openai_client)
 
@@ -58,8 +59,17 @@ class PilotRuntime:
                     continue
                 message_text = _format_events(events)
                 logger.info("Received Matrix batch:\n%s", message_text)
-                await self._refresh_openai_client()
-                await self._agent.handle_user_message(message_text)
+                room_ids = {getattr(event, "room_id", None) for event in events}
+                room_ids.discard(None)
+
+                if room_ids:
+                    await self._matrix_client.set_typing(room_ids, True)
+                try:
+                    await self._refresh_openai_client()
+                    await self._agent.handle_user_message(message_text)
+                finally:
+                    if room_ids:
+                        await self._matrix_client.set_typing(room_ids, False)
         except asyncio.CancelledError:
             raise
 

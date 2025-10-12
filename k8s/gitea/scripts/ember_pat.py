@@ -26,6 +26,7 @@ class Settings:
     namespace: str
     secret_name: str
     token_name: str
+    token_scopes: list[str]
 
 
 def load_settings() -> Settings:
@@ -36,6 +37,12 @@ def load_settings() -> Settings:
     secret_name = _env("EMBER_SECRET_NAME")
     token_name = _env("EMBER_TOKEN_NAME", "ember-agent-token")
     email = os.environ.get("EMBER_EMAIL", f"{username}@local")
+    scopes_raw = os.environ.get(
+        "EMBER_TOKEN_SCOPES",
+        "read:user,write:user,read:repository,write:repository,read:organization,write:organization,"
+        "read:package,write:package,read:issue,write:issue,read:notification,write:notification",
+    )
+    scopes = [scope.strip() for scope in scopes_raw.split(",") if scope.strip()]
     return Settings(
         base_url=base_url,
         username=username,
@@ -44,6 +51,7 @@ def load_settings() -> Settings:
         namespace=namespace,
         secret_name=secret_name,
         token_name=token_name,
+        token_scopes=scopes,
     )
 
 
@@ -98,11 +106,15 @@ def ensure_user(settings: Settings) -> None:
 def create_token(settings: Settings) -> tuple[str, str]:
     token_name = f"{settings.token_name}-{int(time.time())}"
     print(f"Generating access token '{token_name}'", flush=True)
+    scopes_arg = ""
+    if settings.token_scopes:
+        scopes_arg = f"--scopes {','.join(settings.token_scopes)} "
     result = run_git(
         (
             "HOME=/data/git /app/gitea/gitea admin user generate-access-token "
             f"--username {settings.username} "
             f"--token-name {token_name} "
+            f"{scopes_arg}"
             "--raw"
         ),
         capture_output=True,

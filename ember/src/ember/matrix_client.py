@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import Iterable
 
 from nio import AsyncClient, RoomMessageText
@@ -18,53 +17,9 @@ from nio.responses import (
     WhoamiResponse,
 )
 
-from pydantic import BaseModel, ConfigDict, ValidationError
-
 from .config import MatrixSettings
 
 logger = logging.getLogger(__name__)
-
-
-class _ControlRoomStorePayload(BaseModel):
-    rooms: list[str] = []
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class _ControlRoomStore:
-    """Persist control room identifiers across restarts."""
-
-    def __init__(self, path: Path) -> None:
-        self._path = path
-
-    def load(self) -> set[str]:
-        try:
-            raw = self._path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return set()
-        except OSError as exc:
-            logger.warning("Failed to open control room store %s: %s", self._path, exc)
-            return set()
-
-        try:
-            payload = _ControlRoomStorePayload.model_validate_json(raw)
-        except ValidationError as exc:
-            logger.warning("Control room store %s validation error: %s", self._path, exc)
-            return set()
-        except ValueError as exc:
-            logger.warning("Failed to parse control room store %s: %s", self._path, exc)
-            return set()
-
-        return set(payload.rooms)
-
-    def save(self, rooms: Iterable[str]) -> None:
-        payload = _ControlRoomStorePayload(rooms=sorted({str(room) for room in rooms}))
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self._path.with_suffix(".tmp")
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            handle.write(payload.model_dump_json(indent=2, sort_keys=True))
-            handle.write("\n")
-        tmp_path.replace(self._path)
 
 
 class MatrixClient:
@@ -74,13 +29,13 @@ class MatrixClient:
         self._settings = settings
         self._client: AsyncClient | None = None
         self._since: str | None = None
+        self._state_store = settings.state_store
         self._user_id: str | None = None
         self._sync_task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
         self._queue: asyncio.Queue[RoomMessageText] = asyncio.Queue()
         self._debounce = max(debounce_seconds, 0.1)
         self._control_rooms: set[str] = set()
-        self._store = _ControlRoomStore(settings.control_rooms_path)
         self._token_secret = settings.access_token_secret
         self._active_access_token: str | None = None
 
@@ -94,10 +49,19 @@ class MatrixClient:
         if self._sync_task and not self._sync_task.done():
             return
 
+        logger.info("Starting Matrix client for homeserver %s", self._settings.base_url)
+
         self._since = None
         self._queue = asyncio.Queue()
         self._client = await self._create_client()
         self._control_rooms = await self._initialise_control_rooms()
+        self._since = self._load_since_token()
+
+        logger.info(
+            "Initialized Matrix client; tracking %d joined rooms: %s",
+            len(self._control_rooms),
+            ", ".join(sorted(self._control_rooms)) or "(none)",
+        )
 
         self._stop_event.clear()
         self._sync_task = asyncio.create_task(self._sync_loop(), name="matrix-sync-loop")
@@ -136,11 +100,7 @@ class MatrixClient:
 
     async def _initialise_control_rooms(self) -> set[str]:
         assert self._client is not None
-        rooms = self._store.load()
-        joined = await self._fetch_joined_rooms()
-        rooms &= joined
-        self._store.save(rooms)
-        return rooms
+        return await self._fetch_joined_rooms()
 
     async def _fetch_joined_rooms(self) -> set[str]:
         assert self._client is not None
@@ -166,7 +126,16 @@ class MatrixClient:
                     await asyncio.sleep(5)
                     continue
 
+                logger.debug(
+                    "Matrix sync succeeded; next_batch=%s, joined=%d, invite=%d, leave=%d",
+                    response.next_batch,
+                    len(response.rooms.join or {}),
+                    len(response.rooms.invite or {}),
+                    len(response.rooms.leave or {}),
+                )
+
                 self._since = response.next_batch
+                self._persist_since_token(response.next_batch)
                 await self._handle_invites(response)
                 await self._handle_joined_rooms(response)
                 await self._handle_left_rooms(response)
@@ -184,19 +153,29 @@ class MatrixClient:
     async def _handle_joined_rooms(self, response: SyncResponse) -> None:
         joined = response.rooms.join or {}
         for room_id, room in joined.items():
-            if room_id not in self._control_rooms:
-                continue
-
             timeline = room.timeline.events or []
+            logger.debug(
+                "Matrix room %s timeline has %d events (limited=%s)",
+                room_id,
+                len(timeline),
+                room.timeline.limited if room.timeline else None,
+            )
             last_event_id: str | None = None
             for event in timeline:
-                if isinstance(event, RoomMessageText) and not self._is_self_message(event):
+                if isinstance(event, RoomMessageText):
                     await self._queue.put(event)
                     last_event_id = event.event_id
                     body = event.body
                     if not isinstance(body, str):
                         body = str(body)
-                    logger.info("[matrix] %s %s: %s", event.sender, event.event_id, body)
+                    logger.info("[matrix] room=%s sender=%s event=%s: %s", room_id, event.sender, event.event_id, body)
+                else:
+                    logger.debug(
+                        "Matrix room %s ignoring event type=%s from %s",
+                        room_id,
+                        type(event).__name__,
+                        getattr(event, "sender", "unknown"),
+                    )
 
             if last_event_id is not None:
                 await self._mark_read(room_id, last_event_id)
@@ -207,9 +186,30 @@ class MatrixClient:
         if not (removed := set(left) & self._control_rooms):
             return
         self._control_rooms.difference_update(removed)
-        self._store.save(self._control_rooms)
         for room_id in removed:
             logger.info("Removed control room %s after leave", room_id)
+
+    async def set_typing(self, room_ids: Iterable[str], typing: bool, timeout_ms: int = 30000) -> None:
+        """Send typing notifications for the given rooms."""
+
+        if self._client is None:
+            return
+
+        for room_id in room_ids:
+            try:
+                await self._client.room_typing(
+                    room_id,
+                    typing_state=typing,
+                    timeout=timeout_ms if typing else 0,
+                )
+                logger.debug(
+                    "Sent typing=%s notification for room %s (timeout=%sms)",
+                    typing,
+                    room_id,
+                    timeout_ms,
+                )
+            except Exception as exc:  # noqa: BLE001 - keep loop alive
+                logger.warning("Failed to send typing notification for %s: %s", room_id, exc)
 
     async def _should_accept_invite(self, room_id: str, invite: InviteInfo) -> bool:
         admin_user = self._settings.admin_user_id
@@ -247,7 +247,6 @@ class MatrixClient:
             return
 
         self._control_rooms.add(room_id)
-        self._store.save(self._control_rooms)
         logger.info("Joined control room %s", room_id)
 
     async def _mark_read(self, room_id: str, event_id: str) -> None:
@@ -316,3 +315,24 @@ class MatrixClient:
             if changed:
                 logger.info("Matrix access token refreshed")
         return token
+
+    def _load_since_token(self) -> str | None:
+        try:
+            data = self._state_store.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            logger.warning("Failed to read Matrix state store %s: %s", self._state_store, exc)
+            return None
+
+        token = data.strip() or None
+        if token:
+            logger.info("Loaded Matrix sync token from %s", self._state_store)
+        return token
+
+    def _persist_since_token(self, token: str) -> None:
+        try:
+            self._state_store.parent.mkdir(parents=True, exist_ok=True)
+            self._state_store.write_text(token, encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Failed to persist Matrix sync token to %s: %s", self._state_store, exc)

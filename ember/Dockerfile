@@ -9,17 +9,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /opt/emberd
 
-RUN python -m venv /opt/emberd/.venv
-
-ENV PATH="/opt/emberd/.venv/bin:${PATH}"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl jq git \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md uv.lock ./
 COPY src ./src
 COPY docs ./docs
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip \
-    && pip install --no-cache-dir .
+    python3 -m pip install --upgrade pip \
+    && python3 -m pip install --no-cache-dir .
 
 EXPOSE 8000
 

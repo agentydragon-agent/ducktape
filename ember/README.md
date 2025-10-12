@@ -41,6 +41,11 @@ kubectl apply -k k8s/gitea
 The namespace definition lives at `k8s/ember/namespace.yaml` so GitOps can keep
 it in sync with the rest of the stack.
 
+Ember gets a persistent scratch workspace at `/var/lib/ember/workspace`
+(configurable via `EMBER_WORKSPACE_DIR`). The agent writes temporary scripts or
+other helper artifacts there between Matrix turns, so expect that directory to
+hold ad-hoc tooling and clean it up only when coordinating with the agent.
+
 Consult `docs/agent_ontology.md` for the vocabulary Ember uses to describe the
 runner, the LLM core, and the surrounding control loop.
 
@@ -86,6 +91,7 @@ assistant is expected to use the `run_shell_command` tool to post replies (for
 example via a CLI utility). No additional tool surfaces are exposed in this v0
 pilot.
 
-The runtime accepts invites from the `MATRIX_ADMIN_USER_ID` account. Accepted rooms
-are persisted inside the pilot state directory so restarts automatically resume
-listening in the same spaces.
+The runtime accepts invites from the `MATRIX_ADMIN_USER_ID` account. Joined rooms
+are discovered directly from the homeserver (`/_matrix/client/v3/joined_rooms`)
+when Ember starts, so the agent will resume listening in the same spaces after a
+restart without relying on local cache files.

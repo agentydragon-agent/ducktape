@@ -104,24 +104,40 @@ class OpenAIAgent:
         )
         self._history.append_input(_serialize_input_item(user_message))
 
-        input_payload = self._history.build_input_items(self._settings.system_prompt)
-        response = await self._client.responses.create(
-            model=self._model,
-            input=input_payload,
-            tools=self.tools,
-            tool_choice="required",
-            include=self._settings.include,
-            reasoning=_build_reasoning_payload(self._settings.reasoning_effort),
-        )
-        self._history.append_response(response)
-        if not (
-            tool_calls := [
+        await self._model_loop()
+
+    async def _model_loop(self) -> None:
+        iteration = 0
+        while True:
+            iteration += 1
+            input_payload = self._history.build_input_items(self._settings.system_prompt)
+            logger.info("Sampling model (iteration %d)", iteration)
+            response = await self._client.responses.create(
+                model=self._model,
+                input=input_payload,
+                tools=self.tools,
+                tool_choice="required",
+                include=self._settings.include,
+                reasoning=_build_reasoning_payload(self._settings.reasoning_effort),
+            )
+            self._history.append_response(response)
+
+            tool_calls = [
                 output for output in response.output if isinstance(output, ResponseFunctionToolCall)
             ]
-        ):
-            raise RuntimeError("Model must return at least one tool call")
-        for tool_call in tool_calls:
-            await self._execute_tool(tool_call)
+            if not tool_calls:
+                logger.warning(
+                    "Model response contained no tool calls; stopping after %d iterations",
+                    iteration,
+                )
+                break
+
+            for tool_call in tool_calls:
+                await self._execute_tool(tool_call)
+
+            if self._wait_for_matrix:
+                logger.info("Model yielded control after %d iterations", iteration)
+                break
 
     async def _execute_tool(self, tool_call: ResponseFunctionToolCall) -> None:
         spec = self.tool_specs.get(tool_call.name)

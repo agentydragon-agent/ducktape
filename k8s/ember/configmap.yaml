@@ -10,6 +10,7 @@ data:
   matrix_base_url: https://matrix.k3s.agentydragon.com
   matrix_admin_user_id: "@agentydragon:matrix.k3s.agentydragon.com"
   pilot_state_dir: /var/lib/ember
+  workspace_dir: /var/lib/ember/workspace
   openai_model: gpt-5
   openai_reasoning_effort: medium
   openai_include_encrypted_reasoning: "true"
