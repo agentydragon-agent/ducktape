@@ -259,7 +259,7 @@ in
     python312Packages.numpy
 
     # Kubernetes tools
-    kubectl kubernetes-helm kubeseal helmfile
+    kubectl kubernetes-helm kubeseal helmfile kubernetes-helmPlugins.helm-diff
 
     # Dotfile management (keeping rcm approach)
     rcm

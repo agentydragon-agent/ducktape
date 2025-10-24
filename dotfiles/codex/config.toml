@@ -35,6 +35,9 @@ sandbox_permissions = [
     # Allow writing to sccache.
     # (Alternative would be read-only + SCCACHE_LOCAL_RW_MODE=READ_ONLY.)
     "disk-write-folder=/home/agentydragon/.cache/sccache",
+    # Allow building Nix
+    "disk-write-folder=/nix",
+    "disk-write-folder=/nix/var/nix",
 ]
 
 [[auto_allow]]
