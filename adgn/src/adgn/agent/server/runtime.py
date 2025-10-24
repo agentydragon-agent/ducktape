@@ -155,15 +155,14 @@ class ConnectionManager(BaseHandler):
                 await self._send_and_reduce(UiEndTurnEvt())
 
     async def send_payload(self, payload: ServerMessage) -> None:
-        evt_id = self._next_event_id()
-        envelope = Envelope(
-            session_id=self._session_id,
-            event_id=evt_id,
-            event_ts=datetime.now(UTC),
-            payload=payload,
+        await self.send_json(
+            Envelope(
+                session_id=self._session_id,
+                event_id=self._next_event_id(),
+                event_ts=datetime.now(UTC),
+                payload=payload,
+            ).model_dump(mode="json")
         )
-        env_dict = envelope.model_dump(mode="json")
-        await self.send_json(env_dict)
         # Mirror run status events to agents hub
         if isinstance(payload, RunStatusEvt):
             st = payload.run_state.status
@@ -281,9 +280,11 @@ class AgentSession:
                 ApprovalBrief(
                     call_id=req.tool_call.call_id,
                     tool_key=req.tool_key,
-                    args=json.loads(req.tool_call.args_json or "{}")
-                    if req.tool_call.args_json
-                    else {},
+                    args=(
+                        json.loads(req.tool_call.args_json or "{}")
+                        if req.tool_call.args_json
+                        else {}
+                    ),
                 )
                 for req in self.approval_hub._requests.values()
             ]

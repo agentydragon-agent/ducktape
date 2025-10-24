@@ -43,16 +43,8 @@ class APIKeyRevokedEvent(EventBase):
 
 EventPayload = ResponseStatusEvent | FrameAppendedEvent | APIKeyCreatedEvent | APIKeyRevokedEvent
 
-_EVENT_ADAPTER = TypeAdapter(EventPayload)
-
-
-def serialize_event(event: EventPayload) -> str:
-    """Serialize an event payload to JSON for transport."""
-
-    return event.model_dump_json()
+_EVENT_ADAPTER: TypeAdapter[EventPayload] = TypeAdapter(EventPayload)
 
 
 def parse_event(data: str) -> EventPayload:
-    """Parse a JSON payload into an event model."""
-
     return _EVENT_ADAPTER.validate_json(data)

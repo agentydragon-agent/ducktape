@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 from nio import RoomMessageText
@@ -31,10 +32,8 @@ class PilotRuntime:
         self._stop_event.set()
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
         await self._matrix_client.close()
         await self._openai_client.close()

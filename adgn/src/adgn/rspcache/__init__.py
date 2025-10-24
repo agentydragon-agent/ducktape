@@ -16,9 +16,9 @@ import httpx
 from openai.types.responses import Response as OpenAIResponse, ResponseUsage
 
 from adgn.rspcache.models import (
+    FRAME_ADAPTER,
     ErrorPayload,
     parse_response,
-    parse_stream_event,
     stream_event_final_response,
     stream_event_response_id,
     stream_event_usage,
@@ -192,7 +192,7 @@ async def _proxy_stream(
             if not parsed:
                 continue
             for frame in parsed:
-                frame_payload = parse_stream_event(frame)
+                frame_payload = FRAME_ADAPTER.validate_python(frame)
                 ordinal += 1
                 maybe_response_id = stream_event_response_id(frame_payload)
                 if maybe_response_id and response_id != maybe_response_id:
@@ -212,7 +212,7 @@ async def _proxy_stream(
                 )
         trailing_frames = _extract_remaining(text_buffer)
         for frame in trailing_frames:
-            frame_payload = parse_stream_event(frame)
+            frame_payload = FRAME_ADAPTER.validate_python(frame)
             ordinal += 1
             maybe_response_id = stream_event_response_id(frame_payload)
             if maybe_response_id and response_id != maybe_response_id:

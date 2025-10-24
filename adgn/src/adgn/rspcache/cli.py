@@ -85,10 +85,10 @@ def _resolve_key_id(client: httpx.Client, name: Optional[str], key_id: Optional[
     if resp.status_code != 200:
         typer.secho(f"Failed to list keys: {resp.status_code} {resp.text}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    payload = APIKeyListModel.model_validate(resp.json())
+    payload: APIKeyListModel = APIKeyListModel.model_validate(resp.json())
     for item in payload.items:
         if item.name == name:
-            return item.id
+            return UUID(str(item.id))
     typer.secho(f"No key found with name '{name}'.", fg=typer.colors.RED)
     raise typer.Exit(code=1)
 
@@ -127,7 +127,7 @@ def list_keys(
         if resp.status_code != 200:
             typer.secho(f"Failed to list keys: {resp.status_code} {resp.text}", fg=typer.colors.RED)
             raise typer.Exit(code=1)
-        payload = APIKeyListModel.model_validate(resp.json())
+        payload: APIKeyListModel = APIKeyListModel.model_validate(resp.json())
     items = payload.items
     if not items:
         typer.echo("No keys found.")

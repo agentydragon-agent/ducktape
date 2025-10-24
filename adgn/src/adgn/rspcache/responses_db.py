@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import hashlib
 import os
 import secrets
-from typing import Any, AsyncIterator, Sequence
+from typing import Any, AsyncIterator, Sequence, cast
 import uuid
 
 import asyncpg
@@ -41,18 +41,15 @@ from adgn.rspcache.events import (
     FrameAppendedEvent,
     ResponseStatusEvent,
     parse_event,
-    serialize_event,
 )
 from adgn.rspcache.models import (
     ErrorPayload,
     FinalResponseSnapshot,
     ResponseStatus,
     dump_response,
-    dump_stream_event,
     dump_usage,
     stream_event_event_id,
     stream_event_response_id,
-    stream_event_type,
 )
 
 __all__ = [
@@ -282,10 +279,10 @@ class ResponsesDB:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(ClientAPIKey).order_by(ClientAPIKey.created_ts.desc())
-            )
-            return result.scalars().all()
+            stmt = select(ClientAPIKey).order_by(ClientAPIKey.created_ts.desc())
+            result = await session.execute(stmt)
+            records = list(result.scalars())
+        return records
 
     async def revoke_api_key(self, key_id: uuid.UUID) -> bool:
         if self._session_factory is None:
@@ -296,13 +293,14 @@ class ResponsesDB:
                 .where(ClientAPIKey.id == key_id, ClientAPIKey.revoked_ts.is_(None))
                 .values(revoked_ts=datetime.now(timezone.utc))
             )
-            if result.rowcount:
+            rowcount = int(result.rowcount or 0)
+            if rowcount > 0:
                 await self._emit_event(
                     session,
                     APIKeyRevokedEvent(id=str(key_id)),
                 )
             await session.commit()
-            return result.rowcount > 0
+            return rowcount > 0
 
     async def verify_api_key(self, token: str) -> APIKeyRecord | None:
         if self._session_factory is None:
@@ -356,7 +354,8 @@ class ResponsesDB:
         )
         async with self._session_factory() as session:
             result = await session.execute(stmt)
-            inserted = result.rowcount == 1
+            rowcount = int(result.rowcount or 0)
+            inserted = rowcount == 1
             if inserted:
                 await self._emit_event(
                     session,
@@ -407,18 +406,17 @@ class ResponsesDB:
     ) -> int:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
-        frame_payload = frame_obj
-        derived_response_id = stream_event_response_id(frame_payload)
+        derived_response_id = stream_event_response_id(frame_obj)
         if response_id is None and derived_response_id is not None:
             response_id = derived_response_id
-        frame_type = stream_event_type(frame_payload)
-        event_id = stream_event_event_id(frame_payload)
+        frame_type = frame_obj.type
+        event_id = stream_event_event_id(frame_obj)
         async with self._session_factory() as session:
             assigned_ordinal = await self._insert_frame(
                 session,
                 key=key,
                 ordinal=ordinal,
-                frame_obj=frame_payload,
+                frame_obj=frame_obj,
                 response_id=response_id,
                 frame_type=frame_type,
                 event_id=event_id,
@@ -532,34 +530,30 @@ class ResponsesDB:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
-            result = await session.execute(
+            stmt = (
                 select(Response)
                 .options(selectinload(Response.api_key), selectinload(Response.snapshot))
                 .order_by(Response.created_ts.desc())
                 .offset(offset)
                 .limit(limit)
             )
+            result = await session.execute(stmt)
             items = result.scalars().all()
-            total = await session.scalar(select(func.count()).select_from(Response))
-        return items, int(total or 0)
+            total_value = await session.scalar(select(func.count()).select_from(Response))
+        return items, int(total_value or 0)
 
     async def get_response(self, identifier: str) -> Response | None:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
-            if identifier.startswith("resp_"):
-                result = await session.execute(
-                    select(Response)
-                    .options(selectinload(Response.api_key), selectinload(Response.snapshot))
-                    .where(Response.response_id == identifier)
-                )
-                return result.scalar_one_or_none()
+            column = Response.response_id if identifier.startswith("resp_") else Response.key
             result = await session.execute(
                 select(Response)
                 .options(selectinload(Response.api_key), selectinload(Response.snapshot))
-                .where(Response.key == identifier)
+                .where(column == identifier)
             )
-            return result.scalar_one_or_none()
+            record = cast(Response | None, result.scalar_one_or_none())
+            return record
 
     async def get_frames(
         self,
@@ -590,7 +584,8 @@ class ResponsesDB:
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
-            return result.scalars().all()
+            frames = list(result.scalars())
+            return cast(list[ResponseFrame], frames)
 
     # ------------------------------------------------------------------
     # Event streaming
@@ -607,7 +602,6 @@ class ResponsesDB:
         frame_type: str | None,
         event_id: str | None,
     ) -> int:
-        payload = frame_obj
         if ordinal is None:
             result = await session.execute(
                 select(func.max(ResponseFrame.ordinal)).where(ResponseFrame.key == key)
@@ -616,7 +610,7 @@ class ResponsesDB:
             assigned_ordinal = max_ordinal + 1
         else:
             assigned_ordinal = ordinal
-        serialized = dump_stream_event(payload)
+        serialized = frame_obj.model_dump(mode="json")
         frame = ResponseFrame(
             key=key,
             response_id=response_id,
@@ -639,7 +633,7 @@ class ResponsesDB:
             snapshot_model = snapshot.to_model()
             if snapshot_model.status != ResponseStatus.COMPLETE or snapshot_model.response is None:
                 return None
-            return dump_response(snapshot_model.response)
+            return cast(dict[str, Any] | None, dump_response(snapshot_model.response))
 
     async def get_response_detail(self, identifier: str) -> ResponseDetail | None:
         if self._session_factory is None:
@@ -669,7 +663,7 @@ class ResponsesDB:
     async def _emit_event(self, session: AsyncSession, payload: EventPayload) -> None:
         await session.execute(
             text("SELECT pg_notify(:channel, :payload)"),
-            {"channel": CHANNEL_NAME, "payload": serialize_event(payload)},
+            {"channel": CHANNEL_NAME, "payload": payload.model_dump_json()},
         )
 
     async def _upsert_snapshot(

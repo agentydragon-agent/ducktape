@@ -14,13 +14,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
-from adgn.rspcache.events import serialize_event
 from adgn.rspcache.models import (
+    FRAME_ADAPTER,
     dump_error,
     dump_response,
-    dump_stream_event,
     dump_usage,
-    parse_stream_event,
     stream_event_event_id,
 )
 from adgn.rspcache.responses_db import (
@@ -193,13 +191,13 @@ def _to_response_model(
 
 
 def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:
-    payload = parse_stream_event(frame.frame_json)
+    payload = FRAME_ADAPTER.validate_python(frame.frame_json)
     return FrameRecordModel(
         ordinal=frame.ordinal,
         frame_type=frame.frame_type or payload.type,
         event_id=frame.event_id or stream_event_event_id(payload),
         created_ts=frame.created_ts,
-        frame=dump_stream_event(payload),
+        frame=payload.model_dump(mode="json"),
     )
 
 
@@ -266,7 +264,7 @@ async def live_updates(db: ResponsesDB = Depends(get_db)) -> StreamingResponse:
     async def event_generator() -> AsyncIterator[str]:
         try:
             async for event in db.subscribe_events():
-                yield f"data: {serialize_event(event)}\n\n"
+                yield f"data: {event.model_dump_json()}\n\n"
         except asyncio.CancelledError:
             raise
 

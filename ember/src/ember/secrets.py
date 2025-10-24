@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,57 +27,29 @@ class ProjectedSecret:
         self._env_var = env_var
         self._strip = strip
 
-        self._cached_value: str | None = None
-        self._cached_signature: tuple[str, Any] | None = None
-
     def value(self, *, required: bool = False) -> str | None:
         """Return the current value, raising if required and missing."""
 
-        value, _ = self.refresh()
+        value = self._read_raw()
         if required and not value:
             raise RuntimeError(f"{self._file_name} is not configured")
         return value
 
-    def refresh(self) -> tuple[str | None, bool]:
-        """Refresh the underlying secret and return (value, changed)."""
-
-        value, signature = self._read_raw()
-        changed = (signature != self._cached_signature) or (value != self._cached_value)
-        if changed:
-            self._cached_signature = signature
-            self._cached_value = value
-        return value, changed
-
-    def _read_raw(self) -> tuple[str | None, tuple[str, Any]]:
+    def _read_raw(self) -> str | None:
         if self._env_var:
             raw = os.getenv(self._env_var)
             if raw is not None:
-                value = raw.strip() if self._strip else raw
-                return value, ("env", value)
+                return raw.strip() if self._strip else raw
 
-        path = self.path
-        try:
-            stat = path.stat()
-        except FileNotFoundError:
-            return None, ("path", None)
-        except OSError as exc:
-            logger.warning("Failed to stat secret %s at %s: %s", self._file_name, path, exc)
-            return None, ("path", None)
-
-        signature = ("path", stat.st_mtime_ns)
-        if self._cached_signature == signature:
-            # No need to reread; cache is fresh.
-            return self._cached_value, signature
-
+        path = SECRETS_ROOT / self._file_name
         try:
             raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
         except OSError as exc:
-            logger.warning("Failed to read secret %s at %s: %s", self._file_name, path, exc)
-            return None, ("path", None)
+            logger.warning(
+                "Failed to stat secret %s at %s: %s", self._file_name, path, exc
+            )
+            return None
 
-        value = raw.strip() if self._strip else raw
-        return value, signature
-
-    @property
-    def path(self) -> Path:
-        return SECRETS_ROOT / self._file_name
+        return raw.strip() if self._strip else raw

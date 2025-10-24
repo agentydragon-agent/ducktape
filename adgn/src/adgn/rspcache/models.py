@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Mapping, cast
 
 from openai.types.responses import (
     Response as OpenAIResponse,
@@ -11,10 +11,10 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
-FRAME_ADAPTER = TypeAdapter(ResponseStreamEvent)
-RESPONSE_ADAPTER = TypeAdapter(OpenAIResponse)
-ERROR_ADAPTER = TypeAdapter(ResponseError)
-USAGE_ADAPTER = TypeAdapter(ResponseUsage)
+FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
+RESPONSE_ADAPTER: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
+ERROR_ADAPTER: TypeAdapter[ResponseError] = TypeAdapter(ResponseError)
+USAGE_ADAPTER: TypeAdapter[ResponseUsage] = TypeAdapter(ResponseUsage)
 
 
 class ResponseStatus(StrEnum):
@@ -67,56 +67,51 @@ class FinalResponseSnapshot(BaseModel):
         }
 
 
-def parse_stream_event(data: Any) -> ResponseStreamEvent:
-    return FRAME_ADAPTER.validate_python(data)
-
-
-def dump_stream_event(event: ResponseStreamEvent) -> dict[str, Any]:
-    return event.model_dump(mode="json")
-
-
-def stream_event_type(event: ResponseStreamEvent) -> str:
-    return getattr(event, "type")
-
-
 def stream_event_event_id(event: ResponseStreamEvent) -> str | None:
-    payload = dump_stream_event(event)
-    return payload.get("event_id")
+    payload = event.model_dump(mode="python")
+    event_id = payload.get("event_id")
+    return event_id if isinstance(event_id, str) else None
 
 
 def stream_event_response_id(event: ResponseStreamEvent) -> str | None:
-    payload = dump_stream_event(event)
+    payload = event.model_dump(mode="python")
     response_id = payload.get("response_id")
-    if response_id:
+    if isinstance(response_id, str):
         return response_id
     response = payload.get("response")
-    if isinstance(response, dict):
-        return response.get("id")
+    if isinstance(response, Mapping):
+        value = response.get("id")
+        if isinstance(value, str):
+            return value
     return None
 
 
 def stream_event_usage(event: ResponseStreamEvent) -> ResponseUsage | None:
-    payload = dump_stream_event(event)
-    usage = payload.get("usage")
-    if usage is not None:
-        return parse_usage(usage)
+    payload = event.model_dump(mode="python")
+    usage_candidate = payload.get("usage")
+    if isinstance(usage_candidate, ResponseUsage):
+        return usage_candidate
+    if isinstance(usage_candidate, Mapping):
+        return parse_usage(usage_candidate)
     response = payload.get("response")
-    if isinstance(response, dict):
-        usage = response.get("usage")
-        if usage is not None:
-            return parse_usage(usage)
+    if isinstance(response, Mapping):
+        usage_value = response.get("usage")
+        if isinstance(usage_value, ResponseUsage):
+            return usage_value
+        if isinstance(usage_value, Mapping):
+            return parse_usage(usage_value)
     return None
 
 
 def stream_event_final_response(event: ResponseStreamEvent) -> OpenAIResponse | None:
-    payload = dump_stream_event(event)
-    response = payload.get("response")
-    if response is not None:
-        return parse_response(response)
+    payload = event.model_dump(mode="python")
+    response_payload = payload.get("response")
+    if response_payload is not None:
+        return parse_response(response_payload)
     return None
 
 
-def parse_response(value: Any) -> OpenAIResponse:
+def parse_response(value: OpenAIResponse | Mapping[str, object]) -> OpenAIResponse:
     if value is None:
         raise ValueError("response payload cannot be None")
     if isinstance(value, OpenAIResponse):
@@ -124,10 +119,10 @@ def parse_response(value: Any) -> OpenAIResponse:
     return RESPONSE_ADAPTER.validate_python(value)
 
 
-def dump_response(value: OpenAIResponse | None) -> Any:
+def dump_response(value: OpenAIResponse | None) -> dict[str, Any] | None:
     if value is None:
         return None
-    return value.model_dump(mode="json")
+    return cast(dict[str, Any], value.model_dump(mode="json"))
 
 
 def parse_error(value: Any) -> ErrorPayload:
@@ -142,19 +137,19 @@ def parse_error(value: Any) -> ErrorPayload:
     return ErrorPayload.model_validate(value)
 
 
-def dump_error(value: ErrorPayload | None) -> Any:
+def dump_error(value: ErrorPayload | None) -> dict[str, Any] | None:
     if value is None:
         return None
-    return value.model_dump(mode="json")
+    return cast(dict[str, Any], value.model_dump(mode="json"))
 
 
-def parse_usage(value: Any) -> ResponseUsage:
+def parse_usage(value: ResponseUsage | Mapping[str, object]) -> ResponseUsage:
     if isinstance(value, ResponseUsage):
         return value
     return USAGE_ADAPTER.validate_python(value)
 
 
-def dump_usage(value: ResponseUsage | None) -> Any:
+def dump_usage(value: ResponseUsage | None) -> dict[str, Any] | None:
     if value is None:
         return None
-    return value.model_dump(mode="json")
+    return cast(dict[str, Any], value.model_dump(mode="json"))
