@@ -7,6 +7,7 @@ return {
 	event = "BufReadPre",
 	config = function()
 		-- Example: enable Pyright LSP for Python (add other language servers as needed)
-		require("lspconfig").pyright.setup({})
+		vim.lsp.config("pyright", {})
+		vim.lsp.enable("pyright")
 	end,
 }

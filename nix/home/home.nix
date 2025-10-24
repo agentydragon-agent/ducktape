@@ -24,6 +24,10 @@ let
   oldPkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-23.11.tar.gz") {};
   unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") {};
   nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};
+  homeManagerMaster = fetchTarball {
+    url = "https://github.com/nix-community/home-manager/archive/82b58f38202540bce4e5e00759d115c5a43cab85.tar.gz";
+    sha256 = "sha256-RGXBgoUJEEbchClOKl8k5SelfOqV8Nzgqwk+dU6n9rI=";
+  };
 
   solarizedLight = nix-colors.colorSchemes.solarized-light;
   solarizedDark = nix-colors.colorSchemes.solarized-dark;
@@ -41,6 +45,7 @@ in
   imports = [
     ./modules/claude-code-router.nix
     ./packages/google-drive-service.nix
+    "${homeManagerMaster}/modules/programs/codex.nix"
   ];
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
@@ -51,7 +56,10 @@ in
   home.stateVersion = "25.05";
 
   # Let Home Manager install and manage itself.
-  programs.home-manager.enable = true;
+  programs.home-manager = {
+    enable = true;
+    path = homeManagerMaster;
+  };
 
   nix.package = pkgs.nix;
 
@@ -279,6 +287,22 @@ in
 
     # Command-line fuzzy finder
     fzf
+    # Find alternative with sensible defaults
+    fd
+    # Fast recursive search to pair with fd and fzf
+    ripgrep
+    # Rich TUI resource monitors for system overview
+    btop
+    bottom
+    # Modern process viewer with structured output
+    procs
+    # Disk usage visualizer with intuitive tree view
+    dust
+    # Source lines of code analyzer grouped by language
+    tokei
+    # Network diagnostics (per-process usage and path tracing)
+    bandwhich
+    mtr
 
     # GNOME Shell Extensions (migrated from Ansible gui role)
     # These extensions were installed via petermosmans.customize-gnome role:
@@ -830,6 +854,13 @@ in
   # Powerlevel10k configuration
   # Sourced in zsh-init.sh
   home.file.".p10k.zsh".source = ./p10k.zsh;
+
+  programs.codex = {
+    enable = true;
+    package = openai-codex;
+    custom-instructions = builtins.readFile ../../dotfiles/codex/instructions.md;
+    settings = import ./codex-settings.nix;
+  };
 
   # Create Worthy config directory
   home.file.".config/worthy/.keep".text = "";

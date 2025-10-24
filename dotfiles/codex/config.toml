@@ -24,21 +24,6 @@ require_double_ctrl_d = true
 set = { CODEX_AGENT = "1" }
 
 [sandbox]
-sandbox_permissions = [
-    "disk-full-read-access",
-    "disk-write-cwd",
-    "disk-write-platform-global-temp-folder",
-    "disk-write-platform-user-temp-folder",
-    # not sufficient: "disk-write-folder=/home/agentydragon/.pyenv/shims",
-    "disk-write-folder=/home/agentydragon/.pyenv",
-
-    # Allow writing to sccache.
-    # (Alternative would be read-only + SCCACHE_LOCAL_RW_MODE=READ_ONLY.)
-    "disk-write-folder=/home/agentydragon/.cache/sccache",
-    # Allow building Nix
-    "disk-write-folder=/nix",
-    "disk-write-folder=/nix/var/nix",
-]
 
 [[auto_allow]]
 script = "/home/agentydragon/.codex/approve_predicate.py"

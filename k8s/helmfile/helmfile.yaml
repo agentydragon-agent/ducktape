@@ -55,3 +55,16 @@ releases:
   - name: rspcache
     namespace: rspcache
     chart: ../helm/rspcache
+
+  - name: guacamole-postgresql
+    namespace: guacamole
+    chart: bitnami/postgresql
+    version: 18.1.1
+    values:
+      - values/guacamole-postgresql.yaml
+
+  - name: guacamole
+    namespace: guacamole
+    chart: ../helm/guacamole
+    values:
+      - values/guacamole.yaml

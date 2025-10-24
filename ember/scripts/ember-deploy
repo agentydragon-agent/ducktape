@@ -1,33 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE_TAG="localhost:5000/emberd:latest"
-NAMESPACE="ember"
-DEPLOYMENT="ember"
-REGISTRY_FWD_PID=""
-
-die() {
-  local code=$?
-  if [[ -n "${REGISTRY_FWD_PID}" ]]; then
-    kill "${REGISTRY_FWD_PID}" >/dev/null 2>&1 || true
-  fi
-  exit $code
-}
-
-trap die EXIT
+IMAGE_REGISTRY="${IMAGE_REGISTRY:-registry.k3s.local}"
+IMAGE_NAME="${IMAGE_NAME:-emberd}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+IMAGE_REF="${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+NAMESPACE="${NAMESPACE:-ember}"
+DEPLOYMENT="${DEPLOYMENT:-ember}"
 
 echo "[ember-deploy] Building container image"
-docker build --progress=plain -t emberd:local .
+docker build --progress=plain -t "${IMAGE_NAME}:local" .
 
-echo "[ember-deploy] Starting registry port-forward"
-(kubectl port-forward -n registry svc/registry 5000:5000 >/tmp/ember-registry-port-forward.log 2>&1 &)
-REGISTRY_FWD_PID=$!
-# Give port-forward a moment to establish
-sleep 2
+echo "[ember-deploy] Tagging image as ${IMAGE_REF}"
+docker tag "${IMAGE_NAME}:local" "${IMAGE_REF}"
 
-echo "[ember-deploy] Tagging and pushing image to registry"
-docker tag emberd:local "$IMAGE_TAG"
-docker push "$IMAGE_TAG"
+echo "[ember-deploy] Pushing ${IMAGE_REF}"
+docker push "${IMAGE_REF}"
 
 echo "[ember-deploy] Restarting deployment $DEPLOYMENT in namespace $NAMESPACE"
 kubectl -n "$NAMESPACE" rollout restart "deployment/$DEPLOYMENT"
