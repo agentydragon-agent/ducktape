@@ -11,3 +11,7 @@ build/
 dist/
 *.egg-info/
 tests/
+.uv-cache/
+.venv/
+.direnv/
+.ruff_cache/
