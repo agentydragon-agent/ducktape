@@ -35,16 +35,34 @@ Reapply the charts whenever you need to rotate the credentials:
 helm upgrade matrix k8s/helm/matrix-stack -n matrix -f k8s/helm/matrix-stack/values.yaml
 
 # Gitea credentials
-kubectl apply -k k8s/gitea
+helm upgrade gitea k8s/helm/gitea -n gitea --create-namespace
+
+# Ember chart
+helm upgrade ember k8s/helm/ember -n ember --create-namespace
 ```
 
-The namespace definition lives at `k8s/ember/namespace.yaml` so GitOps can keep
-it in sync with the rest of the stack.
+The Helm chart replicates the old namespace definition and PVC setup, so a
+plain `--create-namespace` is enough to bootstrap the space.
 
 Ember gets a persistent scratch workspace at `/var/lib/ember/workspace`
 (configurable via `EMBER_WORKSPACE_DIR`). The agent writes temporary scripts or
 other helper artifacts there between Matrix turns, so expect that directory to
 hold ad-hoc tooling and clean it up only when coordinating with the agent.
+
+To inspect the logs of the current pod without looking up its name first:
+
+```bash
+kubectl logs -n ember $(kubectl get pods -n ember -l 'app.kubernetes.io/name=ember,app.kubernetes.io/component=agent' -o jsonpath='{.items[0].metadata.name}') -f
+```
+
+Drop `-f` to print once or add `--tail` to scope the output as needed.
+
+To roll the pod after updating manifests or secrets:
+
+```bash
+kubectl -n ember rollout restart deployment/ember
+kubectl -n ember rollout status deployment/ember
+```
 
 Consult `docs/agent_ontology.md` for the vocabulary Ember uses to describe the
 runner, the LLM core, and the surrounding control loop.
@@ -59,21 +77,34 @@ direnv allow    # creates .venv and installs the package in editable mode
 ```
 
 ```bash
-export MATRIX_BASE_URL="https://matrix.example.com"
+cat <<'EOF' > ember.toml
+[matrix]
+base_url = "https://matrix.example.com"
+admin_user_id = "@agentydragon:matrix.example.com"
+
+[state]
+dir = "${PWD}/.pilot-state"
+workspace_dir = "${PWD}/.pilot-workspace"
+
+[openai]
+model = "gpt-5-codex"
+reasoning_effort = "medium"
+include_encrypted_reasoning = true
+EOF
+
 export MATRIX_ACCESS_TOKEN="s3cret"
-export MATRIX_ADMIN_USER_ID="@agentydragon:matrix.example.com"
-export PILOT_STATE_DIR="${PWD}/.pilot-state"
-
 export OPENAI_API_KEY="sk-..."
+export EMBER_CONFIG_FILE="${PWD}/ember.toml"
 
-# optional: override the default model (gpt-5) if needed
+# optional overrides
+# export EMBER_STATE_DIR="${PWD}/.pilot-state"
+# export EMBER_WORKSPACE_DIR="${PWD}/.pilot-workspace"
 # export OPENAI_MODEL="gpt-5.1"
 
-# run the control API + runtime loop
 emberd
 
 # or use uvicorn directly:
-# uvicorn ember.app:create_app --factory --reload
+# EMBER_CONFIG_FILE=${PWD}/ember.toml uvicorn ember.app:create_app --factory --reload
 ```
 
 On k3s, the OpenAI API key is supplied via the projected secret file rather than
@@ -91,7 +122,7 @@ assistant is expected to use the `run_shell_command` tool to post replies (for
 example via a CLI utility). No additional tool surfaces are exposed in this v0
 pilot.
 
-The runtime accepts invites from the `MATRIX_ADMIN_USER_ID` account. Joined rooms
+The runtime accepts invites from the `matrix.admin_user_id` account. Joined rooms
 are discovered directly from the homeserver (`/_matrix/client/v3/joined_rooms`)
 when Ember starts, so the agent will resume listening in the same spaces after a
 restart without relying on local cache files.

@@ -49,8 +49,10 @@ class PilotRuntime:
         self._history = ConversationHistory(self._settings.history_path)
         self._matrix_client = MatrixClient(self._settings.matrix)
         self._settings.workspace_path.mkdir(parents=True, exist_ok=True)
-        self._openai_client = AsyncOpenAI(api_key=self._settings.openai.api_key)
-        self._agent = OpenAIAgent(self._settings.openai, self._history, self._openai_client)
+        self._openai_client = self._create_openai_client(self._settings.openai.api_key)
+        self._agent = OpenAIAgent(
+            self._settings.openai, self._history, self._openai_client
+        )
 
     async def _loop(self) -> None:
         try:
@@ -74,16 +76,13 @@ class PilotRuntime:
             raise
 
     async def _refresh_openai_client(self) -> None:
-        api_key, changed = self._settings.openai.api_key_secret.refresh()
-        if api_key is None:
-            raise RuntimeError("OpenAI API key is not configured")
-        if not changed:
-            return
+        api_key = self._settings.openai.api_key_secret.value(required=True)
+        self._openai_client.api_key = api_key
+        if self._settings.openai.api_base:
+            self._openai_client.base_url = self._settings.openai.api_base
 
-        logger.info("OpenAI API key refreshed; recreating client")
-        await self._openai_client.close()
-        self._openai_client = AsyncOpenAI(api_key=api_key)
-        self._agent = OpenAIAgent(self._settings.openai, self._history, self._openai_client)
+    def _create_openai_client(self, api_key: str) -> AsyncOpenAI:
+        return AsyncOpenAI(api_key=api_key, base_url=self._settings.openai.api_base)
 
 
 def _format_events(events: list[RoomMessageText]) -> str:

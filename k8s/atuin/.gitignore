@@ -1,8 +1,0 @@
-# Never commit unencrypted secrets
-secrets.yaml
-temp-secret.yaml
-*.secret
-*.key
-
-# But DO commit sealed secrets
-!sealed-secrets.yaml

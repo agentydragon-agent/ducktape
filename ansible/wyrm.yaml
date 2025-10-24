@@ -83,11 +83,9 @@
     # TODO: Disable screen blanking further?
 
     # Storage configuration for tankshare
-    - name: Check if tankshare is mounted
-      ansible.builtin.stat:
-        path: /mnt/tankshare
-      register: tankshare_mount
-      tags: [storage]
+    - include_role:
+        name: tankshare
+      tags: [storage, docker]
 
     - name: Create Docker storage directory on tankshare
       ansible.builtin.file:
@@ -185,3 +183,7 @@
         # - Temperature sensors as "dragon fire intensity"
         # Keep 00-header for basic system info (OS version, kernel)
       tags: [motd]
+
+    - include_role:
+        name: docker_registry_client
+      tags: [docker, registry]

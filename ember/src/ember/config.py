@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from openai.types.responses import ResponseIncludable
 from openai.types.shared.reasoning_effort import ReasoningEffort
 from pydantic import BaseModel, ConfigDict, ValidationError
+import tomllib
 
-from .system_prompt import load_system_prompt
 from .secrets import ProjectedSecret
+from .system_prompt import load_system_prompt
 
 
 class MatrixSettings(BaseModel):
@@ -30,6 +31,7 @@ class OpenAISettings(BaseModel):
     api_key_secret: ProjectedSecret
     model: str
     system_prompt: str
+    api_base: str | None = None
     reasoning_effort: ReasoningEffort = "medium"
     include_encrypted_reasoning: bool = True
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
@@ -58,11 +60,41 @@ class EmberSettings(BaseModel):
 
 
 def load_settings() -> EmberSettings:
-    """Load Ember settings from environment variables and mounted secrets."""
+    """Load Ember settings from TOML configuration and mounted secrets."""
 
-    state_dir = Path(os.getenv("PILOT_STATE_DIR", "/var/lib/ember")).expanduser()
-    workspace_dir = os.getenv("EMBER_WORKSPACE_DIR")
-    workspace_path = (Path(workspace_dir) if workspace_dir else state_dir / "workspace").expanduser()
+    config_path = Path(
+        os.getenv("EMBER_CONFIG_FILE", "/etc/ember/ember.toml")
+    ).expanduser()
+    config_data: dict[str, Any] = {}
+    if config_path.exists():
+        try:
+            config_data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:  # pragma: no cover
+            raise RuntimeError(f"Invalid Ember config file: {exc}") from exc
+
+    matrix_cfg = (
+        config_data.get("matrix", {})
+        if isinstance(config_data.get("matrix"), dict)
+        else {}
+    )
+    state_cfg = (
+        config_data.get("state", {})
+        if isinstance(config_data.get("state"), dict)
+        else {}
+    )
+    openai_cfg = (
+        config_data.get("openai", {})
+        if isinstance(config_data.get("openai"), dict)
+        else {}
+    )
+
+    state_dir = Path(
+        os.getenv("EMBER_STATE_DIR") or state_cfg.get("dir", "/var/lib/ember")
+    ).expanduser()
+    workspace_dir = os.getenv("EMBER_WORKSPACE_DIR") or state_cfg.get("workspace_dir")
+    workspace_path = (
+        Path(workspace_dir) if workspace_dir else state_dir / "workspace"
+    ).expanduser()
     history_path = state_dir / "pilot_history.jsonl"
 
     matrix_access_token = ProjectedSecret(
@@ -74,28 +106,42 @@ def load_settings() -> EmberSettings:
         env_var="OPENAI_API_KEY",
     )
 
+    api_base = openai_cfg.get("api_base")
+    if api_base and "OPENAI_API_BASE" not in os.environ:
+        os.environ["OPENAI_API_BASE"] = str(api_base)
+
     try:
         return EmberSettings(
             matrix=MatrixSettings(
-                base_url=os.getenv("MATRIX_BASE_URL"),
+                base_url=os.getenv("MATRIX_BASE_URL") or matrix_cfg.get("base_url"),
                 access_token_secret=matrix_access_token,
-                admin_user_id=os.getenv("MATRIX_ADMIN_USER_ID"),
+                admin_user_id=os.getenv("MATRIX_ADMIN_USER_ID")
+                or matrix_cfg.get("admin_user_id"),
                 state_store=state_dir / "matrix_state.json",
             ),
             openai=OpenAISettings(
                 api_key_secret=openai_api_key,
-                model=os.getenv("OPENAI_MODEL", "gpt-5"),
+                model=os.getenv("OPENAI_MODEL")
+                or openai_cfg.get("model", "gpt-5-codex"),
                 system_prompt=load_system_prompt(),
+                api_base=openai_cfg.get("api_base"),
                 reasoning_effort=cast(
-                    ReasoningEffort, os.getenv("OPENAI_REASONING_EFFORT", "medium")
+                    ReasoningEffort,
+                    os.getenv("OPENAI_REASONING_EFFORT")
+                    or openai_cfg.get("reasoning_effort", "medium"),
                 ),
-                include_encrypted_reasoning=_env_flag("OPENAI_INCLUDE_ENCRYPTED_REASONING", default=True),
+                include_encrypted_reasoning=_env_flag(
+                    "OPENAI_INCLUDE_ENCRYPTED_REASONING",
+                    default=bool(openai_cfg.get("include_encrypted_reasoning", True)),
+                ),
             ),
             history_path=history_path,
             state_dir=state_dir,
             workspace_path=workspace_path,
         )
-    except ValidationError as exc:  # pragma: no cover - configuration errors should surface loudly
+    except (
+        ValidationError
+    ) as exc:  # pragma: no cover - configuration errors should surface loudly
         raise RuntimeError(f"Invalid pilot configuration: {exc}") from exc
 
 

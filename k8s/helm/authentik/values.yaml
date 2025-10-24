@@ -7,6 +7,7 @@ authentik:
     configMaps:
       - authentik-blueprint-grafana
       - authentik-blueprints-gitea
+      - authentik-blueprints-rspcache
       - authentik-blueprints-users
       - authentik-blueprints-matrix
 

@@ -1,177 +1,753 @@
-"""Async SQLite-backed storage for OpenAI Responses proxy (S2 schema).
-
-Implements the two-table schema:
- - responses(key PK, model, input_json, kwargs_json, response_summary_json, status, created_ts)
- - response_frames(id PK, key, seq, frame_json)
-
-Provides async methods used by the proxy:
- - init()/close()
- - claim_key(key, model, input_obj, kwargs_obj) -> bool
- - get_status(key) -> str | None
- - get_complete_response(key) -> dict | None
- - append_frame(key, seq, frame_obj)
- - finalize_response(key, response_obj, summary_obj=None)
- - get_frames(key) -> list[dict]
-
-Small, dependency: aiosqlite
-"""
-
 from __future__ import annotations
 
-import json
-from pathlib import Path
-import time
-from typing import Any
+import asyncio
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
+import os
+import secrets
+from typing import Any, AsyncIterator, Sequence
+import uuid
 
-import aiosqlite
-from platformdirs import user_cache_path
+import asyncpg
+from openai.types.responses import Response as OpenAIResponse, ResponseStreamEvent, ResponseUsage
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    func,
+    select,
+    text,
+    update,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert as pg_insert
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, selectinload
+
+from adgn.rspcache.events import (
+    APIKeyCreatedEvent,
+    APIKeyRevokedEvent,
+    EventPayload,
+    FrameAppendedEvent,
+    ResponseStatusEvent,
+    parse_event,
+    serialize_event,
+)
+from adgn.rspcache.models import (
+    ErrorPayload,
+    FinalResponseSnapshot,
+    ResponseStatus,
+    dump_response,
+    dump_stream_event,
+    dump_usage,
+    stream_event_event_id,
+    stream_event_response_id,
+    stream_event_type,
+)
+
+__all__ = [
+    "APIKeyRecord",
+    "ClientAPIKey",
+    "Response",
+    "ResponseFrame",
+    "ResponseSnapshot",
+    "ResponseDetail",
+    "ResponsesDB",
+]
+
+CHANNEL_NAME = "rspcache_events"
 
 
-def _default_db_path() -> Path:
-    """Determine per-user cache directory using platformdirs.
-
-    Uses platformdirs.user_cache_path("adgn-llm") for cross-platform correctness
-    while preserving a final subdirectory for the responses DB.
-    """
-    cache_dir = Path(user_cache_path("adgn-llm", appauthor=False))
-    root = cache_dir / "openai-responses-db"
-    root.mkdir(parents=True, exist_ok=True)
-    return root / "responses.db"
+class Base(DeclarativeBase):
+    pass
 
 
-CREATE_TABLES_SQL = """
-CREATE TABLE IF NOT EXISTS responses (
-    key TEXT PRIMARY KEY,
-    model TEXT,
-    input_json TEXT,
-    kwargs_json TEXT,
-    response_summary_json TEXT,
-    status TEXT NOT NULL DEFAULT 'in_progress',
-    created_ts INTEGER
-);
+class ClientAPIKey(Base):
+    __tablename__ = "client_api_keys"
 
-CREATE TABLE IF NOT EXISTS response_frames (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    key TEXT NOT NULL,
-    seq INTEGER NOT NULL,
-    frame_json TEXT NOT NULL
-);
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    token_prefix: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    token_salt: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    upstream_alias: Mapped[str] = mapped_column(
+        "openai_key_alias",
+        String,
+        nullable=False,
+        default="default",
+        doc="Logical name for selecting an upstream OpenAI API key (see _load_openai_keys).",
+    )
+    created_ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    revoked_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-CREATE INDEX IF NOT EXISTS idx_responses_model ON responses(model);
-CREATE INDEX IF NOT EXISTS idx_responses_created_ts ON responses(created_ts);
-CREATE INDEX IF NOT EXISTS idx_response_frames_key_seq ON response_frames(key, seq);
-"""
+    responses: Mapped[list["Response"]] = relationship(
+        back_populates="api_key", cascade="all, delete-orphan"
+    )
+
+
+class ResponseFrame(Base):
+    __tablename__ = "response_frames"
+    __table_args__ = (
+        Index("idx_response_frames_key_ordinal", "key", "ordinal"),
+        Index("idx_response_frames_response_id_ordinal", "response_id", "ordinal"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(
+        String, ForeignKey("responses.key", ondelete="CASCADE"), nullable=False
+    )
+    response_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    frame_type: Mapped[str | None] = mapped_column(String)
+    event_id: Mapped[str | None] = mapped_column(String)
+    created_ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    frame_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    response: Mapped["Response"] = relationship(back_populates="frames")
+
+
+class Response(Base):
+    __tablename__ = "responses"
+    __table_args__ = (
+        Index("idx_responses_created_ts", "created_ts"),
+        Index("idx_responses_model", "model"),
+        Index("idx_responses_response_id", "response_id"),
+    )
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    response_id: Mapped[str | None] = mapped_column(String, unique=True)
+    api_key_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("client_api_keys.id")
+    )
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    request_body_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    status_reason: Mapped[str | None] = mapped_column(String)
+    created_ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_update_ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    token_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+    api_key: Mapped[ClientAPIKey | None] = relationship(back_populates="responses")
+    frames: Mapped[list[ResponseFrame]] = relationship(
+        back_populates="response", cascade="all, delete-orphan"
+    )
+    snapshot: Mapped["ResponseSnapshot | None"] = relationship(
+        back_populates="response", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class ResponseSnapshot(Base):
+    __tablename__ = "response_snapshots"
+
+    key: Mapped[str] = mapped_column(
+        String, ForeignKey("responses.key", ondelete="CASCADE"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    response_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    token_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    response: Mapped[Response] = relationship(back_populates="snapshot")
+
+    def to_model(self) -> FinalResponseSnapshot:
+        return FinalResponseSnapshot.from_db(
+            status=self.status,
+            response_json=self.response_json,
+            error_json=self.error_json,
+            token_usage_json=self.token_usage_json,
+        )
+
+
+@dataclass(slots=True)
+class APIKeyRecord:
+    id: uuid.UUID
+    name: str
+    token_prefix: str
+    upstream_alias: str
+    created_ts: datetime
+    revoked_ts: datetime | None
+
+
+@dataclass(slots=True)
+class ResponseDetail:
+    record: Response
+    snapshot: FinalResponseSnapshot | None
 
 
 class ResponsesDB:
-    def __init__(self, db_path: Path | str | None = None):
-        self._db_path = Path(db_path) if db_path else _default_db_path()
-        self._conn: aiosqlite.Connection | None = None
+    def __init__(self, db_url: str | None = None):
+        self._db_url = db_url or os.environ.get("ADGN_RESP_DB_URL")
+        self._engine: AsyncEngine | None = None
+        self._session_factory: async_sessionmaker[AsyncSession] | None = None
+        self._listener_conn: asyncpg.Connection | None = None
+        self._listeners: set[asyncio.Queue[EventPayload]] = set()
+        self._listeners_lock = asyncio.Lock()
 
     async def init(self) -> None:
-        self._conn = await aiosqlite.connect(str(self._db_path))
-        await self._conn.execute("PRAGMA journal_mode=WAL;")
-        await self._conn.executescript(CREATE_TABLES_SQL)
-        await self._conn.commit()
+        if self._engine is not None:
+            return
+        if not self._db_url:
+            raise RuntimeError("ADGN_RESP_DB_URL must be set to a Postgres connection string")
+        self._engine = create_async_engine(self._db_url, future=True)
+        self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
+        async with self._engine.begin() as conn:
+            await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+            await conn.execute(
+                text("ALTER TABLE IF EXISTS client_api_keys DROP COLUMN IF EXISTS notes")
+            )
+            await conn.run_sync(Base.metadata.create_all)
+
+    def _asyncpg_dsn(self) -> str:
+        if not self._db_url:
+            raise RuntimeError("ADGN_RESP_DB_URL must be set to a Postgres connection string")
+        if self._db_url.startswith("postgresql+asyncpg://"):
+            return "postgresql://" + self._db_url[len("postgresql+asyncpg://") :]
+        return self._db_url
 
     async def close(self) -> None:
-        if self._conn:
-            await self._conn.close()
-            self._conn = None
+        if self._listener_conn is not None:
+            await self._listener_conn.remove_listener(CHANNEL_NAME, self._notify_queues)
+            await self._listener_conn.close()
+            self._listener_conn = None
+        if self._engine:
+            await self._engine.dispose()
+            self._engine = None
+            self._session_factory = None
+
+    # ------------------------------------------------------------------
+    # API key helpers
+    # ------------------------------------------------------------------
+
+    async def create_api_key(
+        self,
+        name: str,
+        alias: str = "default",
+    ) -> tuple[str, APIKeyRecord]:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        token_core = secrets.token_hex(24)
+        token = f"sk-rsp_{token_core}"
+        prefix = token_core[:8]
+        salt = os.urandom(16)
+        digest = hashlib.sha256(salt + token.encode("utf-8")).digest()
+        async with self._session_factory() as session:
+            record = ClientAPIKey(
+                name=name,
+                token_prefix=prefix,
+                token_hash=digest,
+                token_salt=salt,
+                upstream_alias=alias,
+            )
+            session.add(record)
+            await self._emit_event(
+                session,
+                APIKeyCreatedEvent(
+                    id=str(record.id),
+                    name=name,
+                    upstream_alias=alias,
+                ),
+            )
+            await session.commit()
+            await session.refresh(record)
+        return token, self._to_api_key_record(record)
+
+    async def list_api_keys(self) -> Sequence[ClientAPIKey]:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(ClientAPIKey).order_by(ClientAPIKey.created_ts.desc())
+            )
+            return result.scalars().all()
+
+    async def revoke_api_key(self, key_id: uuid.UUID) -> bool:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            result = await session.execute(
+                update(ClientAPIKey)
+                .where(ClientAPIKey.id == key_id, ClientAPIKey.revoked_ts.is_(None))
+                .values(revoked_ts=datetime.now(timezone.utc))
+            )
+            if result.rowcount:
+                await self._emit_event(
+                    session,
+                    APIKeyRevokedEvent(id=str(key_id)),
+                )
+            await session.commit()
+            return result.rowcount > 0
+
+    async def verify_api_key(self, token: str) -> APIKeyRecord | None:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        if not token.startswith("sk-rsp_"):
+            return None
+        core = token[len("sk-rsp_") :]
+        if len(core) < 8:
+            return None
+        prefix = core[:8]
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(ClientAPIKey).where(
+                    ClientAPIKey.token_prefix == prefix, ClientAPIKey.revoked_ts.is_(None)
+                )
+            )
+            record = result.scalar_one_or_none()
+        if record is None:
+            return None
+        digest = hashlib.sha256(record.token_salt + token.encode("utf-8")).digest()
+        if not secrets.compare_digest(record.token_hash, digest):
+            return None
+        return self._to_api_key_record(record)
+
+    # ------------------------------------------------------------------
+    # Response lifecycle
+    # ------------------------------------------------------------------
 
     async def claim_key(
         self,
         key: str,
         model: str,
-        input_obj: Any,
-        kwargs_obj: Any,
+        request_body: dict[str, Any],
+        api_key: APIKeyRecord | None,
     ) -> bool:
-        """Try to create a new responses row in 'in_progress' state. Return True if claimed (inserted).
-        If the key already exists, return False.
-        """
-        assert self._conn is not None, "DB not initialized"
-        created = int(time.time())
-        input_json = json.dumps(input_obj, ensure_ascii=False)
-        kwargs_json = json.dumps(kwargs_obj or {}, ensure_ascii=False)
-        try:
-            await self._conn.execute(
-                (
-                    "INSERT INTO responses (key, model, input_json, kwargs_json, status, created_ts) "
-                    "VALUES (?, ?, ?, ?, 'in_progress', ?)"
-                ),
-                (key, model, input_json, kwargs_json, created),
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        now = datetime.now(timezone.utc)
+        stmt = (
+            pg_insert(Response)
+            .values(
+                key=key,
+                model=model,
+                request_body_json=request_body,
+                status="queued",
+                created_ts=now,
+                last_update_ts=now,
+                api_key_id=api_key.id if api_key else None,
             )
-            await self._conn.commit()
-            return True
-        except aiosqlite.IntegrityError:
-            return False
-
-    async def get_status(self, key: str) -> str | None:
-        assert self._conn is not None, "DB not initialized"
-        cur = await self._conn.execute(
-            "SELECT status FROM responses WHERE key = ?",
-            (key,),
+            .on_conflict_do_nothing(index_elements=[Response.key])
         )
-        row = await cur.fetchone()
-        await cur.close()
-        return row[0] if row else None
+        async with self._session_factory() as session:
+            result = await session.execute(stmt)
+            inserted = result.rowcount == 1
+            if inserted:
+                await self._emit_event(
+                    session,
+                    ResponseStatusEvent(
+                        key=key,
+                        response_id=None,
+                        status="queued",
+                    ),
+                )
+            await session.commit()
+            return inserted
 
-    async def get_complete_response(self, key: str) -> dict[str, Any] | None:
-        """Return full response (summary JSON) if status == 'complete', else None."""
-        assert self._conn is not None, "DB not initialized"
-        cur = await self._conn.execute(
-            "SELECT response_summary_json, status FROM responses WHERE key = ?",
-            (key,),
-        )
-        row = await cur.fetchone()
-        await cur.close()
-        if not row:
-            return None
-        resp_json_str, status = row
-        if status != "complete":
-            return None
-        try:
-            return json.loads(resp_json_str) if resp_json_str else None
-        except json.JSONDecodeError:
-            return None
+    async def mark_in_progress(
+        self,
+        key: str,
+        response_id: str | None,
+    ) -> None:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            update_result = await session.execute(
+                update(Response)
+                .where(Response.key == key)
+                .values(
+                    status="in_progress",
+                    response_id=response_id,
+                    last_update_ts=datetime.now(timezone.utc),
+                )
+            )
+            if update_result.rowcount:
+                await self._emit_event(
+                    session,
+                    ResponseStatusEvent(
+                        key=key,
+                        response_id=response_id,
+                        status="in_progress",
+                    ),
+                )
+            await session.commit()
 
-    async def append_frame(self, key: str, seq: int, frame_obj: Any) -> None:
-        assert self._conn is not None, "DB not initialized"
-        frame_json = json.dumps(frame_obj, ensure_ascii=False)
-        await self._conn.execute(
-            "INSERT INTO response_frames (key, seq, frame_json) VALUES (?, ?, ?)",
-            (key, seq, frame_json),
-        )
-        await self._conn.commit()
+    async def append_frame(
+        self,
+        key: str,
+        frame_obj: ResponseStreamEvent,
+        *,
+        ordinal: int | None = None,
+        response_id: str | None = None,
+    ) -> int:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        frame_payload = frame_obj
+        derived_response_id = stream_event_response_id(frame_payload)
+        if response_id is None and derived_response_id is not None:
+            response_id = derived_response_id
+        frame_type = stream_event_type(frame_payload)
+        event_id = stream_event_event_id(frame_payload)
+        async with self._session_factory() as session:
+            assigned_ordinal = await self._insert_frame(
+                session,
+                key=key,
+                ordinal=ordinal,
+                frame_obj=frame_payload,
+                response_id=response_id,
+                frame_type=frame_type,
+                event_id=event_id,
+            )
+            await session.execute(
+                update(Response)
+                .where(Response.key == key)
+                .values(
+                    response_id=response_id,
+                    last_update_ts=datetime.now(timezone.utc),
+                )
+            )
+            await self._emit_event(
+                session,
+                FrameAppendedEvent(
+                    key=key,
+                    response_id=response_id,
+                    ordinal=assigned_ordinal,
+                    frame_type=frame_type,
+                    event_id=event_id,
+                ),
+            )
+            await session.commit()
+            return assigned_ordinal
 
     async def finalize_response(
         self,
         key: str,
-        response_obj: Any,
-        summary_obj: Any | None = None,
+        *,
+        response_id: str | None,
+        response_obj: OpenAIResponse | None,
+        latency_ms: int | None,
+        token_usage: ResponseUsage | None,
     ) -> None:
-        assert self._conn is not None, "DB not initialized"
-        summary_json = json.dumps(summary_obj or response_obj or {}, ensure_ascii=False)
-        await self._conn.execute(
-            ("UPDATE responses SET status = 'complete', response_summary_json = ? WHERE key = ?"),
-            (summary_json, key),
-        )
-        # In case the row didn't exist (race), ensure it's present
-        await self._conn.execute(
-            (
-                "INSERT OR IGNORE INTO responses (key, model, input_json, kwargs_json, "
-                "response_summary_json, status, created_ts) VALUES (?, '', '', '', ?, 'complete', ?)"
-            ),
-            (key, summary_json, int(time.time())),
-        )
-        await self._conn.commit()
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            await session.execute(
+                update(Response)
+                .where(Response.key == key)
+                .values(
+                    status=ResponseStatus.COMPLETE.value,
+                    response_id=response_id,
+                    latency_ms=latency_ms,
+                    token_usage_json=dump_usage(token_usage),
+                    last_update_ts=datetime.now(timezone.utc),
+                )
+            )
+            snapshot = FinalResponseSnapshot(
+                status=ResponseStatus.COMPLETE,
+                response=response_obj,
+                error=None,
+                token_usage=token_usage,
+            )
+            await self._upsert_snapshot(session, key=key, snapshot=snapshot)
+            await self._emit_event(
+                session,
+                ResponseStatusEvent(
+                    key=key,
+                    response_id=response_id,
+                    status=snapshot.status.value,
+                ),
+            )
+            await session.commit()
 
-    async def get_frames(self, key: str) -> list[dict[str, Any]]:
-        assert self._conn is not None, "DB not initialized"
-        cur = await self._conn.execute(
-            ("SELECT frame_json FROM response_frames WHERE key = ? ORDER BY seq"),
-            (key,),
+    async def record_error(
+        self,
+        key: str,
+        *,
+        status_reason: str | None,
+        response_id: str | None,
+        error: ErrorPayload | None,
+    ) -> None:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            await session.execute(
+                update(Response)
+                .where(Response.key == key)
+                .values(
+                    status=ResponseStatus.ERROR.value,
+                    status_reason=status_reason,
+                    response_id=response_id,
+                    last_update_ts=datetime.now(timezone.utc),
+                )
+            )
+            snapshot = FinalResponseSnapshot(
+                status=ResponseStatus.ERROR,
+                response=None,
+                error=error,
+                token_usage=None,
+            )
+            await self._upsert_snapshot(session, key=key, snapshot=snapshot)
+            await self._emit_event(
+                session,
+                ResponseStatusEvent(
+                    key=key,
+                    response_id=response_id,
+                    status=snapshot.status.value,
+                    status_reason=status_reason,
+                ),
+            )
+            await session.commit()
+
+    async def list_responses(
+        self,
+        *,
+        limit: int,
+        offset: int = 0,
+    ) -> tuple[list[Response], int]:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(Response)
+                .options(selectinload(Response.api_key), selectinload(Response.snapshot))
+                .order_by(Response.created_ts.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+            items = result.scalars().all()
+            total = await session.scalar(select(func.count()).select_from(Response))
+        return items, int(total or 0)
+
+    async def get_response(self, identifier: str) -> Response | None:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            if identifier.startswith("resp_"):
+                result = await session.execute(
+                    select(Response)
+                    .options(selectinload(Response.api_key), selectinload(Response.snapshot))
+                    .where(Response.response_id == identifier)
+                )
+                return result.scalar_one_or_none()
+            result = await session.execute(
+                select(Response)
+                .options(selectinload(Response.api_key), selectinload(Response.snapshot))
+                .where(Response.key == identifier)
+            )
+            return result.scalar_one_or_none()
+
+    async def get_frames(
+        self,
+        identifier: str,
+        *,
+        limit: int | None = None,
+        after_ordinal: int | None = None,
+    ) -> list[ResponseFrame]:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            key_stmt = select(Response.key).where(
+                Response.response_id == identifier
+                if identifier.startswith("resp_")
+                else Response.key == identifier
+            )
+            key_result = await session.execute(key_stmt)
+            key_value = key_result.scalar_one_or_none()
+            if key_value is None:
+                return []
+            stmt = (
+                select(ResponseFrame)
+                .where(ResponseFrame.key == key_value)
+                .order_by(ResponseFrame.ordinal.asc())
+            )
+            if after_ordinal is not None:
+                stmt = stmt.where(ResponseFrame.ordinal > after_ordinal)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await session.execute(stmt)
+            return result.scalars().all()
+
+    # ------------------------------------------------------------------
+    # Event streaming
+    # ------------------------------------------------------------------
+
+    async def _insert_frame(
+        self,
+        session: AsyncSession,
+        *,
+        key: str,
+        ordinal: int | None,
+        frame_obj: ResponseStreamEvent,
+        response_id: str | None,
+        frame_type: str | None,
+        event_id: str | None,
+    ) -> int:
+        payload = frame_obj
+        if ordinal is None:
+            result = await session.execute(
+                select(func.max(ResponseFrame.ordinal)).where(ResponseFrame.key == key)
+            )
+            max_ordinal = result.scalar_one_or_none() or 0
+            assigned_ordinal = max_ordinal + 1
+        else:
+            assigned_ordinal = ordinal
+        serialized = dump_stream_event(payload)
+        frame = ResponseFrame(
+            key=key,
+            response_id=response_id,
+            ordinal=assigned_ordinal,
+            frame_type=frame_type or serialized.get("type"),
+            event_id=event_id,
+            frame_json=serialized,
         )
-        rows = await cur.fetchall()
-        await cur.close()
-        return [json.loads(frame_json) for (frame_json,) in rows]
+        session.add(frame)
+        await session.flush()
+        return assigned_ordinal
+
+    async def get_cached_response_payload(self, key: str) -> dict[str, Any] | None:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            snapshot = await session.get(ResponseSnapshot, key)
+            if snapshot is None:
+                return None
+            snapshot_model = snapshot.to_model()
+            if snapshot_model.status != ResponseStatus.COMPLETE or snapshot_model.response is None:
+                return None
+            return dump_response(snapshot_model.response)
+
+    async def get_response_detail(self, identifier: str) -> ResponseDetail | None:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            if identifier.startswith("resp_"):
+                result = await session.execute(
+                    select(Response)
+                    .options(selectinload(Response.api_key), selectinload(Response.snapshot))
+                    .where(Response.response_id == identifier)
+                )
+            else:
+                result = await session.execute(
+                    select(Response)
+                    .options(selectinload(Response.api_key), selectinload(Response.snapshot))
+                    .where(Response.key == identifier)
+                )
+            record = result.scalar_one_or_none()
+            if record is None:
+                return None
+            snapshot_model = record.snapshot.to_model() if record.snapshot else None
+            return ResponseDetail(
+                record=record,
+                snapshot=snapshot_model,
+            )
+
+    async def _emit_event(self, session: AsyncSession, payload: EventPayload) -> None:
+        await session.execute(
+            text("SELECT pg_notify(:channel, :payload)"),
+            {"channel": CHANNEL_NAME, "payload": serialize_event(payload)},
+        )
+
+    async def _upsert_snapshot(
+        self,
+        session: AsyncSession,
+        *,
+        key: str,
+        snapshot: FinalResponseSnapshot,
+    ) -> None:
+        existing = await session.get(ResponseSnapshot, key)
+        payload = snapshot.to_db_payload()
+        if existing is None:
+            new_row = ResponseSnapshot(
+                key=key,
+                status=payload["status"],
+                response_json=payload["response_json"],
+                error_json=payload["error_json"],
+                token_usage_json=payload["token_usage_json"],
+            )
+            session.add(new_row)
+        else:
+            existing.status = payload["status"]
+            existing.response_json = payload["response_json"]
+            existing.error_json = payload["error_json"]
+            existing.token_usage_json = payload["token_usage_json"]
+
+    async def subscribe_events(self) -> AsyncIterator[EventPayload]:
+        queue: asyncio.Queue[EventPayload] = asyncio.Queue()
+        async with self._listeners_lock:
+            self._listeners.add(queue)
+        try:
+            while True:
+                payload = await queue.get()
+                yield payload
+        finally:
+            async with self._listeners_lock:
+                self._listeners.discard(queue)
+
+    async def ensure_event_listener(self) -> None:
+        if self._engine is None:
+            raise RuntimeError("Database not initialized")
+        if self._listener_conn is not None:
+            return
+        self._listener_conn = await asyncpg.connect(self._asyncpg_dsn())
+        await self._listener_conn.add_listener(CHANNEL_NAME, self._notify_queues)
+
+    async def stop_event_listener(self) -> None:
+        if self._listener_conn is None:
+            return
+        await self._listener_conn.remove_listener(CHANNEL_NAME, self._notify_queues)
+        await self._listener_conn.close()
+        self._listener_conn = None
+
+    # ------------------------------------------------------------------
+
+    def _notify_queues(self, _conn: Any, _pid: int, _channel: str, payload: str) -> None:
+        event = parse_event(payload)
+        asyncio.create_task(self._fanout(event))
+
+    async def _fanout(self, event: EventPayload) -> None:
+        async with self._listeners_lock:
+            listeners = list(self._listeners)
+        for queue in listeners:
+            await queue.put(event)
+
+    @asynccontextmanager
+    async def acquire_session(self) -> AsyncIterator[AsyncSession]:
+        if self._session_factory is None:
+            raise RuntimeError("Database not initialized")
+        async with self._session_factory() as session:
+            yield session
+
+    def _to_api_key_record(self, obj: ClientAPIKey) -> APIKeyRecord:
+        return APIKeyRecord(
+            id=obj.id,
+            name=obj.name,
+            token_prefix=obj.token_prefix,
+            upstream_alias=obj.upstream_alias,
+            created_ts=obj.created_ts,
+            revoked_ts=obj.revoked_ts,
+        )

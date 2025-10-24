@@ -196,6 +196,16 @@ in
     source = ./mc-solarized.ini;
   };
 
+  # AppImageLauncher configuration (migrated from dotfiles/config/appimagelauncher.cfg)
+  xdg.configFile."appimagelauncher.cfg".text = ''
+    [AppImageLauncher]
+    %23%20%23%20additional_directories_to_watch=~/otherApplications:/even/more/applications
+    %23%20%23%20monitor_mounted_filesystems=false
+    ask_to_move=true
+    destination=/home/agentydragon/.local/appimages
+    enable_daemon=true
+  '';
+
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
   home.packages = with pkgs; [
     python312Packages.autopep8

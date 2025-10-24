@@ -1,0 +1,118 @@
+namespace:
+  create: true
+  name: rspcache
+
+appImage:
+  repository: registry.registry.svc.cluster.local:5000/rspcache
+  tag: latest
+  pullPolicy: Always
+
+config:
+  requireApiKey: true
+
+postgres:
+  enabled: true
+  name: rspcache-postgres
+  image:
+    repository: postgres
+    tag: "16"
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+
+sealedSecrets:
+  db:
+    enabled: true
+    name: rspcache-db
+    encryptedData:
+      ADGN_RESP_DB_URL: AgC4j4uG05Rv6+WKQgqr5KhB7BZ/oC0RT/KGp+M5YlXFB4jJ2TNQN3BlTLtxhWvkHgYTg0rAcqRcVr7vjCfbFHc3gRUKDE/yvXqyp/lA6rSpnIxEMw5fvecnlCPzzbBSTOfsZXFANJklWsyFTkkO3na2o0hYDDi7wiXSwXKVL0QrKgBP9fE0cSe/0JCcKMcVCHi3ZbjN8zURD1jVFnAA0Uq+l5iwJSEC42GFZdx2CQZpsIPahjEFs+h1clAc/dJ8RjUdnzfXcPwPLvNq89UcoIPAFfmgEgyD5lECuTyipftlQGuMpGwEKnLzsdho7jh+wV63lef36zZEISCbzyAhF71hzWiRceB4tB5MyhCzqEJUP6Y9ItdO6Oeq5UtFWJH+WsDK3CYriObti5Nj2o4NYhJcJZyYq8J8y4qAK7DHuQhyJs+5VhktFaiT17L8IqVm43GEZRWY/NBOm6VXP4g/FhVimPQ+QE69GTHm6NimqDQQNmWV5cRu3u8l6IE/XROm/LaGk4PGY8/oBHJYRFEq0No5jnnALW93PRjMSFFtk2mSx4M4o+NlLve6Y0a0hEdiNb6NPQFYTXxbz+8GvlDGMjztvKzgX3IXtEVxySLNAvDlj2nbsCHMCRtV+GfTSarfyq7Jlb2LeYv5WRT9wmTgHCNzQklWFtpdtu1ZioT3EMyhHbIcfXhXNUE7sY07db6oUkFp66mZ3QIqWpTx8jNw1hqEyAxkOeuC/QLiWufLUDzYpLMXNAZzIbcdUH3/kXbvyurG/Bt8u+6Mu6CZlYxwz/06sW3U5suQWAoeCp0wxRicb5zwbyHejg==
+      POSTGRES_DB: AgAylyIOXSQv9ciIzJjKiZPXpU/kAJgC34xKuwav14or2VqOQHbubmUunTzyzUcAVoeYaW3JCiwz1NQDfDkrYjK4lowOs+shzbGJ7eV2f7P4v1iSAwjFcY8+xtH9KdGA6GMu7Ej2dwqIJ65CHcdkzBTa94UTJBiPqP42Ja1SRj6Wv8hZK08Jlj20NccBeMimmRK7G/8gMZXmWp1Nm0lYTgFHWKBjprg9AF/ec3+Tcqb/AO8c6BP1CnrAJfnvDQy6vso3e3daV5FB6d4Lwgibe92kwIE6yKkRT2KvK2+DR+XNAHixIRkTkDUZwh5eSqKJMuO6cJln2/36xE+UQFKuMw0lkM3VhI62Xf8e5y7h1JgX2wxSIswT3r8HOH80KhsMLndHG8OpDvw/EH/l5kwbMiOcWqcoTOpkCx7DUlAQG/4/KL1FItFs3AFWTeZhLrqxpH/8zNNYxV8MJGVi//dEt2aEO8g+YorBc7712GwP3aVpmunq8Mk4JoyNFcEZz6QhdmjXpfA4P0kz6RmuCPWsw2nSjUmMo9HpOBKnBpltD6v+JYgN1xL4KWg7sqteEiFnqdtDfBie3RpbL5nHs3Cb+uKfZQXHThOAoPSGPRQituD1c3/u3U5wOeJFR2WzfAhGavzreFgJLfewWiFwOsI7DrIsveefSOReO8Mch9yCzMRQBGwnnHI0a9Jo0JiiEoDGfSaf3fLVMW4dBA==
+      POSTGRES_PASSWORD: AgAgiPiVF0XT0B7qH3xHomufaTff0jwxLavLugcWW1E44mDotoWg911p80k8yfZ3RqehDqvH5jgzGRxhhBbMRmwa7M/LUCArSoGeA6ve9+DgIZn5D7XXdQJgUcB0lC10TIK4/VakZ3PbZgf/G5HOJiKFmEOJF7RyvvWO3JHjOnStWTFKAVyfkeMaSR596qnen3Q2bJyXiDrstrEIg6GH/92rH4MseZTNYnnJqbpTU6xCJL1HwVnIGU4CHp49CQp+yEbvbcFDsZYeWDh6LyPuPiBjpVWWlvT0Gf9Tm8CnAUN89WM61cJq+iZZdI6Gsnuh/t9DDC5naxSXhKE4r59uIUK7QjUHu+a+yG+UvPxhFR8fZKJBheyFJhta/Ni9Lwn1iF1p3xJvsaw/yQ/cJ9g3jRasi5aL0//zU5iwyg7cGkWtM4a0sKaYk8+Uuw3czMPEKKCzC8PMXvf3yZKb0K6F2YnQA4t5n7Kx8zaPVBYma8GR5ifoStGxh/a5IrlfTIoqZDC8tbzX88ZScgsvTjgFBci4ZYAkqXn2q4yq18QVE3X9pTTTe4RzuD+SwrYVgFNegAuUFBrDzKAfrpWNzTiO1fQO6tuv/KyeSYz6t2+RjZZJ0xnZEZ8Dk9OUi3VO4KEW46l4CPuqlISY6vTkfjxjfbkNtlJoGIGplukTdu0PQSXQJAebvXnAMM9Roo1UzpHdO3dLv2qZ0Q2tVUzbQF9l5Kp3MlJH1mG5N5JRXhQBG2BxRw==
+      POSTGRES_USER: AgCWKiAwPbPw1Ur6DRwBjghCvv7klZU5RAGA/F9cU69ImrYCvw6pSfD8Gv8rYgKZE7keDNPzvn4jwu/y+iKVdtwknj2B7EkV+NdWq6VkCquQtHjXnUzAyNV4xv8cIwv6R4zjyczuBc0zT2wcHjKcDYcs1HmxsD9UWVtP/3d7Yya1kboDIfvcDpwF7pc5GuxyIVhZcZoYkRH7Q47H5jB76wLahPdIkO/uoq6TBRSjEFREic5n/vKUCrNxkz/MTJAJzhisaWtxfXbf4kzEJbQhNzCX2s4KzGB1XThlAYvvZXtcKJkVSriqBVsuvltvJP7XKJd1jqaqW8I66HZTCxaHKap+ugoyw+yCVmoGYhVfq+aggm4woYq18Xn8g4lgo4imTj19QDr0UCfEyRfNOOvd/80wEO/nAnLkx0kXN56yle72CgfYtWtoKKkOSh0tabSclY1SvhqipMD7/gW4ySTDpApq1Ue/dNLwQlguldmb08pQu142DJjpM9nRqIldJBNdrBlNq5JunY/dwSHElOAXUoJJMcG4cX2tGA08Kno46XPosgyu1b32MGOwvWlSONLIeiHTPpJW4cU+hFiPegy0FWUJBPOD1YgrCEaln6jcLO8aKueynI7PNYqtd9U+gyeBsK7oFU1EOWdXOG8XreuMx6eI0dK0pgV9dVL5L0REf5M+y3nTyiIjCOplpSEkOZ5S2r7DYeemQiCWRA==
+
+proxy:
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 8000
+  env:
+    dbSecret: rspcache-db
+    dbUrlKey: ADGN_RESP_DB_URL
+    openaiSecret: rspcache-openai
+    openaiApiKeyKey: OPENAI_API_KEY
+    openaiKeysKey: ADGN_OPENAI_KEYS
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+admin:
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 8100
+  readinessProbe:
+    httpGet:
+      path: /api/responses
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 20
+  livenessProbe:
+    httpGet:
+      path: /api/responses
+      port: http
+    initialDelaySeconds: 20
+    periodSeconds: 30
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: homelab-ca-issuer
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: authentik-authentik-forwardauth@kubernetescrd
+    hosts:
+      - host: rspcache-admin.k3s.agentydragon.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      enabled: true
+      secretName: rspcache-admin-tls
+
+resources: {}
+nodeSelector: {}
+affinity: {}
+tolerations: []

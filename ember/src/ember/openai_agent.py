@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+from typing import Awaitable, get_type_hints
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, TypeVar, Union
+import logging
+from typing import Any, Callable, TypeVar, Union
 
 from openai import AsyncOpenAI
 from openai.types.responses import (
     FunctionToolParam,
-    Response,
     ResponseFunctionToolCall,
     ResponseInputItemParam,
 )
@@ -74,11 +74,16 @@ class YieldControlResult(BaseModel):
 
 
 class OpenAIAgent:
-    def __init__(self, settings: OpenAISettings, history: ConversationHistory, client: AsyncOpenAI) -> None:
+    def __init__(
+        self,
+        settings: OpenAISettings,
+        history: ConversationHistory,
+        client: AsyncOpenAI,
+    ) -> None:
         self._settings = settings
         self._history = history
         self._client = client
-        self._model = settings.model
+        self.model = settings.model
         self._wait_for_matrix = False
 
     @property
@@ -110,7 +115,9 @@ class OpenAIAgent:
         iteration = 0
         while True:
             iteration += 1
-            input_payload = self._history.build_input_items(self._settings.system_prompt)
+            input_payload = self._history.build_input_items(
+                self._settings.system_prompt
+            )
             logger.info("Sampling model (iteration %d)", iteration)
             response = await self._client.responses.create(
                 model=self._model,
@@ -123,7 +130,9 @@ class OpenAIAgent:
             self._history.append_response(response)
 
             tool_calls = [
-                output for output in response.output if isinstance(output, ResponseFunctionToolCall)
+                output
+                for output in response.output
+                if isinstance(output, ResponseFunctionToolCall)
             ]
             if not tool_calls:
                 logger.warning(
@@ -147,14 +156,10 @@ class OpenAIAgent:
         payload = await spec.handler(args)
         self._history.append_input(_function_call_output(tool_call.call_id, payload))
 
-    async def _handle_run_shell_command(
-        self, args: RunShellCommandArgs
-    ) -> ToolPayload:
+    async def _handle_run_shell_command(self, args: RunShellCommandArgs) -> ToolPayload:
         return await _run_command(args.command)
 
-    async def _handle_yield_control(
-        self, args: YieldControlArgs
-    ) -> ToolPayload:
+    async def _handle_yield_control(self, args: YieldControlArgs) -> ToolPayload:
         self._wait_for_matrix = True
         return YieldControlResult()
 
@@ -181,6 +186,7 @@ class OpenAIAgent:
     @property
     def tools(self) -> list[FunctionToolParam]:
         return [spec.to_param() for spec in self.tool_specs.values()]
+
 
 def _json_schema_from_model(model: type[BaseModel]) -> dict[str, Any]:
     schema = model.model_json_schema()
@@ -212,9 +218,6 @@ def _parse_arguments(model: type[TArgs], raw: str | None) -> TArgs:
 
 
 def _first_handler_arg(handler: ToolHandler) -> type[BaseModel]:
-    from inspect import signature
-    from typing import get_type_hints
-
     sig = signature(handler)
     params = list(sig.parameters.values())
     if not params:
@@ -223,8 +226,14 @@ def _first_handler_arg(handler: ToolHandler) -> type[BaseModel]:
     hints = get_type_hints(handler)
     first_param = params[0]
     annotation = hints.get(first_param.name, first_param.annotation)
-    if annotation is first_param.empty or not isinstance(annotation, type) or not issubclass(annotation, BaseModel):
-        raise RuntimeError("Tool handler argument must be a Pydantic BaseModel subclass")
+    if (
+        annotation is first_param.empty
+        or not isinstance(annotation, type)
+        or not issubclass(annotation, BaseModel)
+    ):
+        raise RuntimeError(
+            "Tool handler argument must be a Pydantic BaseModel subclass"
+        )
     return annotation
 
 
@@ -237,7 +246,7 @@ async def _run_command(command: str) -> ShellCommandResult:
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
-    except asyncio.TimeoutError as exc:  # pragma: no cover - safety guard
+    except asyncio.TimeoutError:  # pragma: no cover - safety guard
         proc.kill()
         stdout, stderr = await proc.communicate()
         stdout = stdout or b""
@@ -251,7 +260,9 @@ async def _run_command(command: str) -> ShellCommandResult:
 
     stdout_text = _decode_stream(stdout)
     stderr_text = _decode_stream(stderr)
-    return ShellCommandResult(exit_code=proc.returncode or 0, stdout=stdout_text, stderr=stderr_text)
+    return ShellCommandResult(
+        exit_code=proc.returncode or 0, stdout=stdout_text, stderr=stderr_text
+    )
 
 
 def _decode_stream(payload: bytes, limit: int = 4000) -> str:
@@ -263,11 +274,16 @@ def _serialize_input_item(model: BaseModel) -> ResponseInputItemParam:
         model.model_dump(mode="python", exclude_none=True)
     )
 
+
 def _function_call_output(call_id: str, payload: ToolPayload) -> ResponseInputItemParam:
     output = payload.model_dump_json() if isinstance(payload, BaseModel) else payload
     return _serialize_input_item(
-        ResponseFunctionCallOutput(type="function_call_output", call_id=call_id, output=output)
+        ResponseFunctionCallOutput(
+            type="function_call_output", call_id=call_id, output=output
+        )
     )
 
 
-_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(ResponseInputItemParam)
+_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(
+    ResponseInputItemParam
+)

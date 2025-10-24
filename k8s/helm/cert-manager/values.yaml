@@ -1,0 +1,16 @@
+selfSignedClusterIssuer:
+  name: selfsigned-cluster-issuer
+
+caCertificate:
+  name: homelab-ca
+  namespace: cert-manager
+  commonName: Homelab CA
+  secretName: homelab-ca-secret
+  duration: 87600h
+  renewBefore: 720h
+  organizations:
+    - homelab
+
+caClusterIssuer:
+  name: homelab-ca-issuer
+  secretName: homelab-ca-secret

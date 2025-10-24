@@ -18,3 +18,4 @@ entries:
       groups:
         - !Find [authentik_core.group, [name, gitea-admins]]
         - !Find [authentik_core.group, [name, gitea-users]]
+        - !Find [authentik_core.group, [name, rspcache-admins]]

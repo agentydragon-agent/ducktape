@@ -1,0 +1,18 @@
+dependencies:
+- name: observability-base
+  repository: file://./base
+  version: 0.1.0
+- name: observability-openai-probe
+  repository: file://./openai-probe
+  version: 0.1.0
+- name: observability-timescaledb
+  repository: file://./timescaledb
+  version: 0.1.0
+- name: grafana-operator
+  repository: file://./grafana/operator
+  version: 0.1.0
+- name: grafana-dashboards
+  repository: file://./grafana/dashboards
+  version: 0.1.0
+digest: sha256:e4fd8c010239191e74c23af7e93cbfc075cf4afa182cc462bd3844d21bc50b40
+generated: "2025-10-24T00:45:21.078206119-07:00"

@@ -1,55 +1,99 @@
 # Helm Charts
 
-This directory contains Helm charts for the k3s observability stack.
+This directory houses all Helm packaging for Ducktape workloads. The goal is to have every Kubernetes workload described as a chart so installs and upgrades are uniform.
 
-## Chart Organization
+## Chart Standards
+
+- **Structure**
+  - Every workload gets its own chart directory with `Chart.yaml`, `values.yaml`, `values.schema.json` (optional) and a `templates/` tree.
+  - Reusable helpers live in the `common-lib` library chart; individual charts should depend on it and invoke helpers such as `common.labels` and `common.blueprintLabels`.
+- **Values Schema**
+  - Reserve top-level keys for high-signal toggles: `image`, `service`, `ingress`, `resources`, `postgres`, `secrets`.
+  - Cluster-specific overrides belong in `values/<cluster>.yaml`; keep defaults production-safe.
+- **Templating Conventions**
+  - Apply `{{ include "common.labels" . }}` to metadata labels and `{{ include "common.selectorLabels" . }}` for pod selectors.
+  - Config file blobs come from `files/` using `Files.Get` helpers.
+  - Secrets should be represented either as SealedSecret templates or external references (never plain secrets in defaults).
+- **Testing**
+  - Run `helm lint` and `helm template --debug --values values/<cluster>.yaml` before committing changes.
+
+## Shared Library (`common-lib/`)
+
+`common-lib` is a Helm library chart that publishes reusable helpers for naming, labels, and other shared resources. To use it, add a dependency in your chart’s `Chart.yaml`:
+
+```yaml
+dependencies:
+  - name: common-lib
+    version: ^0.1.0
+    repository: \"file://../common-lib\"
+```
+
+Then call helpers from templates, for example:
+
+```yaml
+metadata:
+  labels:
+{{ include \"common.labels\" . | indent 4 }}
+```
+
+Additional shared templates (e.g., Postgres StatefulSets, sealed secret scaffolds) will be added here as services are migrated.
+
+## Existing Charts
+
+### `authentik/`
+Authentik deployment along with blueprints and supporting services.
 
 ### `grafana-operator/`
-**Purpose:** Deploys the main Grafana instance
-- Uses the official Grafana Helm chart as a dependency
-- Contains configuration in `values.yaml` for:
-  - TimescaleDB datasource setup
-  - Admin credentials
-  - Ingress configuration
-  - Dashboard provisioning
-
-**Deployment:**
-```bash
-cd grafana-operator
-helm dependency update
-helm upgrade --install grafana . --namespace observability
-```
+Deploys the main Grafana instance using the official Grafana chart as a dependency. Configuration lives in `values.yaml` (datasources, ingress, admin user, dashboards).
 
 ### `grafana-dashboards/`
-**Purpose:** Manages custom dashboard ConfigMaps
-- Contains dashboard definitions as SQL + JSON
-- SQL queries are externalized to `sql/` directory
-- Uses Helm templating with `Files.Get` for clean organization
+Manages custom Grafana dashboard ConfigMaps. Dashboard JSON/SQL sources live under `sql/` and are injected via `Files.Get`.
 
-**Deployment:**
+### `gitea/`
+Wraps the upstream Gitea chart with Authentik OAuth bootstrap jobs, sealed secrets, and reflector deployment for secret reflection.
+
+### `rspcache/`
+Deploys the rspcache proxy, admin dashboard, and backing PostgreSQL database plus required secrets/config.
+
+### `matrix-stack/`
+Umbrella chart for matrix-synapse and related services.
+
+### `registry/`
+Single-node Docker registry with optional external LoadBalancer and TLS ingress.
+
+### `traefik/`
+DaemonSet-based Traefik ingress controller with RBAC, MetalLB LoadBalancer, and IngressClass setup.
+
+### `metallb/`
+Configures MetalLB IP address pools and L2 advertisements.
+
+### `cert-manager/`
+Bootstraps self-signed and CA ClusterIssuers for the homelab certificate authority.
+
+### `sealed-secrets-controller/`
+Deploys the Bitnami sealed-secrets controller, RBAC, services, and optional CRD.
+
+### `observability/base/`
+Creates the `observability` namespace (labels configurable via values).
+
+### `observability/openai-probe/`
+Runs the OpenAI probe deployment and service, with optional SealedSecret templating for the API key.
+
+### `observability/timescaledb/`
+Provision TimescaleDB StatefulSet, service, and sealed secret used by observability workloads.
+
+### `observability/`
+Umbrella chart that installs the namespace, probe, and TimescaleDB components together.
+
+## Deployment Flow
+
+General commands:
+
 ```bash
-cd grafana-dashboards
-helm upgrade --install grafana-dashboards . --namespace observability
+helm dependency update            # refresh common-lib or other deps
+helm lint                         # validate templating
+helm template --values values/k3s.yaml .
+helm upgrade --install <release> . --namespace <ns>
 ```
 
-## Architecture
-
-```
-Grafana Stack:
-├── grafana-operator (Helm chart)
-│   ├── Main Grafana deployment
-│   ├── TimescaleDB datasource config
-│   └── Dashboard provisioning setup
-└── grafana-dashboards (Helm chart)
-    ├── OpenAI probe dashboard
-    ├── SQL queries (external files)
-    └── Dashboard JSON templates
-```
-
-## Dependencies
-
-1. Deploy TimescaleDB first
-2. Deploy grafana-operator
-3. Deploy grafana-dashboards
-
-The main Grafana deployment will automatically pick up dashboard ConfigMaps created by the grafana-dashboards chart.
+Refer to each chart’s README for workload-specific notes (extra dependencies, job ordering, etc.).

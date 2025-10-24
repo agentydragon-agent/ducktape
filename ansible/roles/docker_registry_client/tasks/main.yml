@@ -1,0 +1,59 @@
+---
+# Configure Docker on build hosts (e.g. wyrm) to trust the homelab registry
+
+- name: Ensure Docker cert directory exists for registry
+  ansible.builtin.file:
+    path: /etc/docker/certs.d/registry.k3s.local
+    state: directory
+    mode: '0755'
+
+- name: Install homelab CA certificate for Docker
+  ansible.builtin.copy:
+    src: ../../../../infra/certs/homelab-ca.crt
+    dest: /etc/docker/certs.d/registry.k3s.local/ca.crt
+    mode: '0644'
+
+- name: Install homelab CA in system trust store
+  ansible.builtin.copy:
+    src: ../../../../infra/certs/homelab-ca.crt
+    dest: /usr/local/share/ca-certificates/homelab-ca.crt
+    mode: '0644'
+
+- name: Update CA certificates
+  ansible.builtin.command: update-ca-certificates
+  register: update_ca
+  changed_when: "'.crt' in update_ca.stdout"
+
+- name: Ensure docker daemon config exists
+  ansible.builtin.stat:
+    path: /etc/docker/daemon.json
+  register: docker_daemon_json
+
+- name: Read existing docker daemon config
+  ansible.builtin.slurp:
+    src: /etc/docker/daemon.json
+  register: docker_daemon_raw
+  when: docker_daemon_json.stat.exists
+
+- name: Build merged docker daemon configuration
+  ansible.builtin.set_fact:
+    docker_daemon_config: "{{ (docker_daemon_raw['content'] | b64decode | from_json if docker_daemon_json.stat.exists else {})
+      | combine({
+          'tlscacert': '/etc/docker/certs.d/registry.k3s.local/ca.crt',
+          'registry-mirrors': [],
+          'insecure-registries': []
+        }, recursive=True) }}"
+
+- name: Write docker daemon configuration
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: "{{ docker_daemon_config | to_nice_json }}\n"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Restart docker
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+    enabled: yes

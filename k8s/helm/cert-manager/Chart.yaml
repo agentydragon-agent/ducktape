@@ -1,0 +1,11 @@
+apiVersion: v2
+name: cert-manager
+description: Homelab CA and issuers for cert-manager
+version: 0.1.0
+appVersion: "1"
+type: application
+
+dependencies:
+  - name: common-lib
+    version: ^0.1.0
+    repository: file://../common-lib

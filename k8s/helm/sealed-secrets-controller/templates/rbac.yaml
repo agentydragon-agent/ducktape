@@ -1,0 +1,106 @@
+{{- if .Values.rbac.create }}
+{{- $fullname := include "common.fullname" . -}}
+{{- $labels := include "common.componentLabels" (dict "context" . "component" "sealed-secrets-controller") | fromYaml -}}
+{{- $sa := include "common.serviceAccountName" (dict "default" $fullname "values" (default (dict) .Values.controller.serviceAccount)) -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}-secrets-unsealer
+  labels:
+{{ toYaml $labels | indent 4 }}
+rules:
+  - apiGroups: ["bitnami.com"]
+    resources: [sealedsecrets]
+    verbs: [get, list, watch]
+  - apiGroups: ["bitnami.com"]
+    resources: [sealedsecrets/status]
+    verbs: [update]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, create, update, delete, watch]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullname }}
+  labels:
+{{ toYaml $labels | indent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullname }}-secrets-unsealer
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}-service-proxier
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ toYaml $labels | indent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [services]
+    resourceNames: [{{ $fullname }}]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [services/proxy]
+    resourceNames:
+      - http:{{ $fullname }}:
+      - http:{{ $fullname }}:http
+      - {{ $fullname }}
+    verbs: [create, get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}-service-proxier
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ toYaml $labels | indent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullname }}-service-proxier
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:authenticated
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}-key-admin
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ toYaml $labels | indent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}-key-admin
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ toYaml $labels | indent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullname }}-key-admin
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

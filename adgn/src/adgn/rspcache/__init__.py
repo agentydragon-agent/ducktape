@@ -1,298 +1,418 @@
-"""Lightweight OpenAI Responses-compatible proxy (SQLite authoritative store).
-
-# Hello-world and standup instructions
-
-## Start the proxy (in one shell):
-
-export OPENAI_API_KEY=sk-...
-rspcache --host 127.0.0.1 --port 8000   # start using the console script
-
-# or run directly with uvicorn
-uvicorn adgn.rspcache:APP --host 127.0.0.1 --port 8000
-
-## Point a client at the proxy and fire a request (in another shell):
-
-# direct the OpenAI SDK to use the local proxy as the API base
-export OPENAI_API_BASE=http://127.0.0.1:8000
-
-### Example: non-streaming Python call
-
->> import asyncio
->> from openai import AsyncOpenAI
->> client = AsyncOpenAI()
->> asyncio.run(client.responses_create(
->>     model="o4-mini",
->>     input=[{"role":"user","content":"Hello"}],
->> ))
-
-### Example: streaming Python call (proxy will forward chunks as they arrive)
-
->> async def main():
->>    client = AsyncOpenAI()
->>    maybe_iter = await client.responses_create(
->>        model="o4-mini",
->>        input=[{"role":"user","content":"Stream 1..3"}],
->>        stream=True,
->>    )
->>    async for event in maybe_iter:
->>        print(event)
->>
->> asyncio.run(main())
-
-## Proxy behavior notes (important)
-- Uses SQLite as store (responses + response_frames). Derives deterministic key from request fields
-  (model, input, explicitly-included knobs).
-- Streaming: proxy forwards chunks to client immediately as upstream sends them
-  (does not buffer and send only at the end).
-- NDJSON/SSE frames are parsed and persisted in DB once stream completes successfully.
-- Non-streaming: proxy forwards request, waits for full JSON response, then persists in DB.
-- Proxy requires OPENAI_API_KEY in environment to talk to backend; API key is not needed to talk to frontend.
-
-## Security
-- Do not expose publicly without proper auth; DB may contain sensitive content.
-- Protect host with firewall or auth if needed.
-"""
+"""FastAPI apps for the rspcache proxy and supporting admin surfaces."""
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 import hashlib
 import json
 import os
+import time
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
+from openai.types.responses import Response as OpenAIResponse, ResponseUsage
 
-from adgn.rspcache.responses_db import ResponsesDB
+from adgn.rspcache.models import (
+    ErrorPayload,
+    parse_response,
+    parse_stream_event,
+    stream_event_final_response,
+    stream_event_response_id,
+    stream_event_usage,
+)
+from adgn.rspcache.responses_db import APIKeyRecord, ResponsesDB
 
 HTTP_ERROR_MIN = 400
+SSE_PREFIX = "data:"
 
-APP = FastAPI(title="adgn-llm OpenAI Responses proxy (diskcache)")
+_db = ResponsesDB()
 
 
-# Upstream OpenAI Responses endpoint base
-def _openai_base_url() -> str:
-    # Allow overriding via OPENAI_API_BASE (common pattern)
-    base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com")
-    return base.rstrip("/") + "/v1/responses"
+def get_db() -> ResponsesDB:
+    return _db
+
+
+def _require_api_keys() -> bool:
+    value = os.environ.get("RSPCACHE_REQUIRE_API_KEY", "0")
+    return value.lower() in {"1", "true", "yes"}
+
+
+def _load_openai_keys() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    default = os.environ.get("OPENAI_API_KEY")
+    if default:
+        mapping.setdefault("default", default)
+    mapping_env = os.environ.get("ADGN_OPENAI_KEYS")
+    if mapping_env:
+        for item in mapping_env.split(","):
+            if not item.strip() or "=" not in item:
+                continue
+            alias, key = item.split("=", 1)
+            mapping[alias.strip()] = key.strip()
+    prefix = "ADGN_OPENAI_KEY_"
+    for env_key, env_val in os.environ.items():
+        if env_key.startswith(prefix):
+            alias = env_key[len(prefix) :].lower()
+            mapping[alias] = env_val
+    return mapping
+
+
+def _resolve_openai_api_key(alias: str | None) -> str:
+    alias = alias or "default"
+    mapping = _load_openai_keys()
+    api_key = mapping.get(alias)
+    if not api_key:
+        raise HTTPException(
+            status_code=500, detail=f"OPENAI API key not configured for alias '{alias}'"
+        )
+    return api_key
+
+
+def _extract_client_token(
+    request: Request,
+    authorization: str | None,
+    x_api_key: str | None,
+) -> str | None:
+    if x_api_key:
+        token = x_api_key.strip()
+        if token:
+            return token
+    if authorization:
+        for prefix in ("Bearer ", "bearer "):
+            stripped = authorization.removeprefix(prefix)
+            if stripped != authorization:
+                token = stripped.strip()
+                if token:
+                    return token
+    header_token = request.headers.get("X-API-Key")
+    if header_token:
+        token = header_token.strip()
+        if token:
+            return token
+    return None
 
 
 def canonical_json(obj: Any) -> str:
-    """Canonical, stable JSON encoding for key derivation."""
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
 def make_key_from_body(body: dict[str, Any]) -> str:
-    """Derive deterministic key for cache from body.
-
-    Primary rule: include `model` and `input` in canonical form. Also include other
-    stable request fields except known non-deterministic fields.
-    """
-    # Collect non-transient args, including model, input
     keyed = {
         k: body[k]
         for k in sorted(body.keys())
-        # Exclude fields that are normally transient or not affecting response semantics
         if k not in {"request_id", "request_timestamp", "nonce", "__meta__"}
     }
-
-    h = hashlib.sha256()
-    h.update(canonical_json(keyed).encode("utf-8"))
-    return h.hexdigest()
-
-
-SSE_PREFIX = "data:"
+    digest = hashlib.sha256()
+    digest.update(canonical_json(keyed).encode("utf-8"))
+    return digest.hexdigest()
 
 
-def _process_complete_lines(text_buffer: str, frames: list[dict]) -> str:
-    """Process complete newline-delimited lines from text_buffer and append JSON frames.
-
-    Returns the trailing partial line (may be empty).
-    """
-    if "\n" not in text_buffer:
-        return text_buffer
-    parts = text_buffer.split("\n")
+def _extract_frames(buffer: str) -> tuple[str, list[dict[str, Any]]]:
+    if "\n" not in buffer:
+        return buffer, []
+    parts = buffer.split("\n")
+    remainder = parts[-1]
+    frames: list[dict[str, Any]] = []
     for part in parts[:-1]:
         line = part.strip()
         if not line:
             continue
         content = line.removeprefix(SSE_PREFIX).lstrip()
         if content == "[DONE]":
-            # Sentinel; skip storing
             continue
         try:
-            obj = json.loads(content)
-        except Exception as e:
+            frames.append(json.loads(content))
+        except json.JSONDecodeError as exc:
             raise HTTPException(
                 status_code=502,
                 detail=f"Non-JSON NDJSON frame: {content[:200]!r}",
-            ) from e
-        frames.append(obj)
-    return parts[-1]
+            ) from exc
+    return remainder, frames
 
 
-def _append_remaining_buffer(remaining: str, frames: list[dict]) -> None:
-    """Append the final trailing buffer as a JSON frame if present."""
-    remaining = remaining.strip()
-    if not remaining:
-        return
-    remaining = remaining.removeprefix(SSE_PREFIX).lstrip()
+def _extract_remaining(buffer: str) -> list[dict[str, Any]]:
+    buffer = buffer.strip()
+    if not buffer:
+        return []
+    buffer = buffer.removeprefix(SSE_PREFIX).lstrip()
     try:
-        obj = json.loads(remaining)
-    except Exception as e:
+        return [json.loads(buffer)]
+    except json.JSONDecodeError as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Non-JSON trailing NDJSON partial: {remaining[:200]!r}",
-        ) from e
-    frames.append(obj)
+            detail=f"Non-JSON trailing NDJSON partial: {buffer[:200]!r}",
+        ) from exc
 
 
-async def _proxy_stream(
-    upstream_url: str,
-    headers: dict[str, str],
-    body: dict[str, Any],
-    key: str,
-) -> AsyncIterator[bytes]:
-    """Proxy upstream streaming response, yielding raw bytes and persisting frames."""
-    text_buffer = ""
-    frames: list[dict] = []
-    async with httpx.AsyncClient(timeout=None) as client:
-        try:
-            async with client.stream("POST", upstream_url, json=body, headers=headers) as resp:
-                if resp.status_code >= HTTP_ERROR_MIN:
-                    t = await resp.aread()
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"Upstream error: {t.decode(errors='ignore')} (status={resp.status_code})",
-                    )
-                async for chunk in resp.aiter_bytes():
-                    if not chunk:
-                        continue
-                    yield chunk
-                    text_buffer += chunk.decode("utf-8")
-                    text_buffer = _process_complete_lines(text_buffer, frames)
-            _append_remaining_buffer(text_buffer, frames)
-        finally:
-            try:
-                if frames:
-                    db = ResponsesDB()
-                    await db.init()
-                    try:
-                        await db.finalize_response(
-                            key,
-                            response_obj=None,
-                            summary_obj={"ndjson_frames": frames},
-                        )
-                    finally:
-                        await db.close()
-            except Exception:
-                print(f"WARNING: failed to write DB entry key={key} after streaming")
+proxy_app = FastAPI(title="adgn-llm OpenAI Responses proxy")
+APP = proxy_app
 
 
-@APP.get("/health")
+@proxy_app.on_event("startup")
+async def _startup() -> None:
+    await _db.init()
+
+
+@proxy_app.on_event("shutdown")
+async def _shutdown() -> None:
+    await _db.close()
+
+
+@proxy_app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@APP.post("/v1/responses")
+async def _proxy_stream(
+    resp: httpx.Response,
+    *,
+    db: ResponsesDB,
+    key: str,
+    response_id: str | None,
+    start_time: float,
+) -> AsyncIterator[bytes]:
+    text_buffer = ""
+    ordinal = 0
+    token_usage: ResponseUsage | None = None
+    latest_response: OpenAIResponse | None = None
+    try:
+        async for chunk in resp.aiter_bytes():
+            if not chunk:
+                continue
+            yield chunk
+            try:
+                decoded = chunk.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            text_buffer += decoded
+            text_buffer, parsed = _extract_frames(text_buffer)
+            if not parsed:
+                continue
+            for frame in parsed:
+                frame_payload = parse_stream_event(frame)
+                ordinal += 1
+                maybe_response_id = stream_event_response_id(frame_payload)
+                if maybe_response_id and response_id != maybe_response_id:
+                    response_id = maybe_response_id
+                    await db.mark_in_progress(key, response_id)
+                usage = stream_event_usage(frame_payload)
+                if usage:
+                    token_usage = usage
+                response_candidate = stream_event_final_response(frame_payload)
+                if response_candidate is not None:
+                    latest_response = response_candidate
+                await db.append_frame(
+                    key,
+                    frame_payload,
+                    ordinal=ordinal,
+                    response_id=response_id,
+                )
+        trailing_frames = _extract_remaining(text_buffer)
+        for frame in trailing_frames:
+            frame_payload = parse_stream_event(frame)
+            ordinal += 1
+            maybe_response_id = stream_event_response_id(frame_payload)
+            if maybe_response_id and response_id != maybe_response_id:
+                response_id = maybe_response_id
+                await db.mark_in_progress(key, response_id)
+            usage = stream_event_usage(frame_payload)
+            if usage:
+                token_usage = usage
+            response_candidate = stream_event_final_response(frame_payload)
+            if response_candidate is not None:
+                latest_response = response_candidate
+            await db.append_frame(
+                key,
+                frame_payload,
+                ordinal=ordinal,
+                response_id=response_id,
+            )
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+        if latest_response is not None and latest_response.usage is not None:
+            token_usage = latest_response.usage
+        await db.finalize_response(
+            key,
+            response_id=response_id,
+            response_obj=latest_response,
+            latency_ms=latency_ms,
+            token_usage=token_usage,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        status_reason = "Streaming proxy failure"
+        await db.record_error(
+            key,
+            status_reason=status_reason,
+            response_id=response_id,
+            error=ErrorPayload(message=status_reason),
+        )
+        raise
+    finally:
+        await resp.aclose()
+
+
+def _relay_error_response(resp: httpx.Response) -> Response:
+    media_type = resp.headers.get("content-type")
+    body = resp.content
+    return Response(content=body, status_code=resp.status_code, media_type=media_type)
+
+
+@proxy_app.post("/v1/responses")
 async def responses_endpoint(
     request: Request,
-    x_cache_skip: str | None = Header(None),
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, convert_underscores=False),
+    db: ResponsesDB = Depends(get_db),
 ) -> Response:
-    """Minimal OpenAI Responses API-compatible endpoint
-
-    Accepts JSON body similar to OpenAI Responses.create(). Uses an exact-key cache.
-    Supports streaming by forwarding upstream stream chunks to the client and
-    capturing the full stream to store in cache after completion.
-    """
     try:
         body = await request.json()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}") from e
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {exc}") from exc
+    model = body.get("model")
+    if not isinstance(model, str):
+        raise HTTPException(status_code=400, detail="Request body must include model")
 
-    # allow explicit cache skip via header or payload
-    header_skip = x_cache_skip in ("1", "true", "True")
-    payload_skip = bool(body.get("cache_skip"))
-    cache_skip = header_skip or payload_skip
+    token = _extract_client_token(request, authorization, x_api_key)
+    api_keys_required = _require_api_keys()
+    api_key_record: APIKeyRecord | None = None
+    if token:
+        api_key_record = await db.verify_api_key(token)
+        if api_key_record is None:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+    elif api_keys_required:
+        raise HTTPException(status_code=401, detail="API key required")
 
+    upstream_alias = api_key_record.upstream_alias if api_key_record else "default"
+    upstream_key = _resolve_openai_api_key(upstream_alias)
+
+    cache_skip = body.get("cache_skip") in (True, "true", "True", 1)
     try:
         key = make_key_from_body(body)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Cache lookup (only for non-streaming; for streaming we still check to possibly short-circuit)
     is_stream = bool(body.get("stream"))
     if not cache_skip:
-        db = ResponsesDB()
-        await db.init()
-        try:
-            status = await db.get_status(key)
-            if status == "complete":
-                summary = await db.get_complete_response(key)
+        cached = await db.get_response(key)
+        if cached and cached.status == "complete":
+            cached_payload = await db.get_cached_response_payload(key)
+            if cached_payload is not None:
                 headers = {"X-Cache-Hit": "1", "X-Cache-Key": key}
-                return JSONResponse(
-                    content=summary or {},
-                    status_code=200,
-                    headers=headers,
-                )
-        finally:
-            await db.close()
+                return JSONResponse(content=cached_payload, status_code=200, headers=headers)
 
-    # Prepare upstream call
-    upstream_url = _openai_base_url()
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="OPENAI_API_KEY not configured in env",
-        )
+    await db.claim_key(key, model, body, api_key_record)
+    await db.mark_in_progress(key, None)
 
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    upstream_url = (
+        os.environ.get("OPENAI_API_BASE", "https://api.openai.com").rstrip("/") + "/v1/responses"
+    )
+    headers = {"Authorization": f"Bearer {upstream_key}", "Content-Type": "application/json"}
 
-    # If streaming requested, stream upstream and proxy chunks through while capturing
+    start_time = time.perf_counter()
+
     if is_stream:
+        client = httpx.AsyncClient(timeout=None)
+        request_obj = client.build_request("POST", upstream_url, json=body, headers=headers)
+        try:
+            resp = await client.send(request_obj, stream=True)
+        except Exception as exc:  # noqa: BLE001
+            await client.aclose()
+            await db.record_error(
+                key,
+                status_reason=str(exc),
+                response_id=None,
+                error=ErrorPayload(message=str(exc)),
+            )
+            raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
+        if resp.status_code >= HTTP_ERROR_MIN:
+            payload = await resp.aread()
+            await db.record_error(
+                key,
+                status_reason=f"Upstream status {resp.status_code}",
+                response_id=None,
+                error=ErrorPayload(
+                    message="Upstream error",
+                    detail={"status": resp.status_code, "body": payload.decode(errors="ignore")},
+                ),
+            )
+            await resp.aclose()
+            await client.aclose()
+            upstream_error = httpx.Response(
+                status_code=resp.status_code,
+                content=payload,
+                headers=resp.headers,
+            )
+            return _relay_error_response(upstream_error)
+
+        async def event_stream() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in _proxy_stream(
+                    resp, db=db, key=key, response_id=None, start_time=start_time
+                ):
+                    yield chunk
+            finally:
+                await client.aclose()
+
         return StreamingResponse(
-            _proxy_stream(upstream_url, headers, body, key),
+            event_stream(),
             media_type="text/event-stream",
             headers={"X-Cache-Hit": "0", "X-Cache-Key": key},
         )
 
-    # Non-streaming path: forward and wait for full JSON response
     async with httpx.AsyncClient(timeout=120.0) as client:
         try:
             resp = await client.post(upstream_url, json=body, headers=headers)
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}") from e
+        except Exception as exc:  # noqa: BLE001
+            await db.record_error(
+                key,
+                status_reason=str(exc),
+                response_id=None,
+                error=ErrorPayload(message=str(exc)),
+            )
+            raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
+
+    if resp.status_code >= HTTP_ERROR_MIN:
+        detail = resp.text
+        await db.record_error(
+            key,
+            status_reason=f"Upstream status {resp.status_code}",
+            response_id=None,
+            error=ErrorPayload(
+                message="Upstream error", detail={"status": resp.status_code, "body": detail}
+            ),
+        )
+        return _relay_error_response(resp)
 
     try:
         resp_json = resp.json()
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail="Upstream returned non-JSON response",
-        ) from e
+    except Exception as exc:  # noqa: BLE001
+        await db.record_error(
+            key,
+            status_reason="Upstream returned non-JSON response",
+            response_id=None,
+            error=ErrorPayload(
+                message="Upstream returned non-JSON response", detail={"body": resp.text}
+            ),
+        )
+        raise HTTPException(status_code=502, detail="Upstream returned non-JSON response") from exc
 
-    # Store into SQLite DB (authoritative single store)
-    try:
-        db = ResponsesDB()
-        await db.init()
-        try:
-            # Finalize or upsert the response summary
-            await db.finalize_response(
-                key,
-                response_obj=resp_json,
-                summary_obj=resp_json,
-            )
-        finally:
-            await db.close()
-    except Exception as e:
-        print(f"WARNING: failed to write DB key={key}: {e}")
+    response_model = parse_response(resp_json)
+    response_id = response_model.id
+    await db.mark_in_progress(key, response_id)
+    latency_ms = int((time.perf_counter() - start_time) * 1000)
+    token_usage = response_model.usage
+
+    await db.finalize_response(
+        key,
+        response_id=response_id,
+        response_obj=response_model,
+        latency_ms=latency_ms,
+        token_usage=token_usage,
+    )
 
     headers = {"X-Cache-Hit": "0", "X-Cache-Key": key}
-    return JSONResponse(
-        content=resp_json,
-        status_code=resp.status_code,
-        headers=headers,
-    )
+    return JSONResponse(content=resp_json, status_code=resp.status_code, headers=headers)

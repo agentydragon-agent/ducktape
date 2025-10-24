@@ -1,4 +1,0 @@
-# Never commit unencrypted secrets
-secrets.yaml
-*.unsealed.yaml
-openai-probe-secret.yaml

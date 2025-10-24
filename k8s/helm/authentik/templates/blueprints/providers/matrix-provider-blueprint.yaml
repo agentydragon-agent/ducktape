@@ -1,0 +1,20 @@
+# Authentik Blueprint for Matrix Synapse OIDC Provider
+apiVersion: v1
+kind: ConfigMap
+{{- $matrixChecksum := "" -}}
+{{- if .Values.matrix.clientSecretCiphertext }}
+{{- $matrixChecksum = sha256sum .Values.matrix.clientSecretCiphertext }}
+{{- end }}
+metadata:
+  name: authentik-blueprints-matrix
+  namespace: authentik
+  labels:
+{{- include "common.blueprintLabels" . | nindent 4 }}
+  {{- if $matrixChecksum }}
+  annotations:
+    blueprints.goauthentik.io/revision: {{ $matrixChecksum | quote }}
+  {{- end }}
+data:
+  {{ $_ := set . "MatrixBlueprintChecksum" $matrixChecksum }}
+  matrix.yaml: |
+{{ tpl (.Files.Get "blueprints/matrix.yaml") . | indent 4 }}

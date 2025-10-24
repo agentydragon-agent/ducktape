@@ -4,8 +4,7 @@
 
 ### Registry
 Container registry for in-cluster Docker images. Accessible at:
-- Internal: `registry.k3s.local` (via Traefik ingress with TLS)
-- External: `10.0.200.101:5000` (via LoadBalancer, HTTP only)
+- `registry.k3s.local` (via Traefik ingress with TLS)
 
 ### cert-manager & TLS Certificates
 

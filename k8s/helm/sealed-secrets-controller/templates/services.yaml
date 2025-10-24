@@ -1,0 +1,42 @@
+{{- $fullname := include "common.fullname" . -}}
+{{- $labels := include "common.componentLabels" (dict "context" . "component" "sealed-secrets-controller") | fromYaml -}}
+{{- $selector := include "common.componentSelectorLabels" (dict "context" . "component" "sealed-secrets-controller") | fromYaml -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}
+  labels:
+{{ toYaml $labels | indent 4 }}
+{{- if .Values.controller.serviceAnnotations }}
+  annotations:
+{{ toYaml .Values.controller.serviceAnnotations | indent 4 }}
+{{- end }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  selector:
+{{ toYaml $selector | indent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ toYaml $labels | indent 4 }}
+{{- if .Values.controller.metricsServiceAnnotations }}
+  annotations:
+{{ toYaml .Values.controller.metricsServiceAnnotations | indent 4 }}
+{{- end }}
+spec:
+  type: ClusterIP
+  selector:
+{{ toYaml $selector | indent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.service.metricsPort }}
+      targetPort: metrics

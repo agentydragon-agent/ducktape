@@ -1,0 +1,72 @@
+{{- $labels := include "common.componentLabels" (dict "context" . "component" "sealed-secrets-controller") | fromYaml -}}
+{{- $selector := include "common.componentSelectorLabels" (dict "context" . "component" "sealed-secrets-controller") | fromYaml -}}
+{{- $fullname := include "common.fullname" . -}}
+{{- $sa := include "common.serviceAccountName" (dict "default" $fullname "values" (default (dict) .Values.controller.serviceAccount)) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ toYaml $labels | indent 4 }}
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  minReadySeconds: {{ .Values.controller.minReadySeconds }}
+  revisionHistoryLimit: {{ .Values.controller.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+{{ toYaml $selector | indent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  template:
+    metadata:
+      labels:
+{{ toYaml $selector | indent 8 }}
+    spec:
+      serviceAccountName: {{ $sa }}
+{{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+{{- end }}
+      securityContext:
+{{ toYaml .Values.controller.securityContext | indent 8 }}
+      containers:
+        - name: sealed-secrets-controller
+          image: {{ printf "%s:%s" .Values.controller.image.repository .Values.controller.image.tag }}
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          command:
+            - controller
+{{- if .Values.extraArgs }}
+          args:
+{{ toYaml .Values.extraArgs | indent 12 }}
+{{- end }}
+{{- if .Values.extraEnv }}
+          env:
+{{ toYaml .Values.extraEnv | indent 12 }}
+{{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+{{ toYaml .Values.controller.containerSecurityContext | indent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+{{ toYaml .Values.controller.resources | indent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}

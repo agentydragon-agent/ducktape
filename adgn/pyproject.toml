@@ -32,6 +32,7 @@ dependencies = [
   "docker>=7.0.0",
   "pandas>=2.2.0",
   "tiktoken>=0.7.0",
+  "sqlalchemy[asyncio]>=2.0.32",
   "plotnine>=0.13.0",
   "claude-code-sdk<=0.0.21",
   "ipykernel>=6",
@@ -55,6 +56,7 @@ dependencies = [
   "unidiff>=0.7.5",
   "fastmcp>=2.12.4",
   "jinja2>=3.1",
+  "kubernetes>=29.0.0",
 ]
 
 [project.optional-dependencies]
@@ -182,7 +184,7 @@ skip-globs = ["tests/detectors/fixtures/**"]
 
 [project.scripts]
 switch_gnome_terminal_profile = "adgn.gnome.switch_gnome_terminal_profile:run"
-rspcache = "adgn.rspcache.cli:main"
+rspcache = "adgn.rspcache.cli:app"
 # LLM console scripts
 adgn-sysrw = "adgn.llm.sysrw.cli:app"
 adgn-mini-codex = "adgn.agent.cli:main"
