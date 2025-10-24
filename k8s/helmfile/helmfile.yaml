@@ -10,6 +10,8 @@ repositories:
     url: https://charts.goauthentik.io
   - name: bitnami
     url: https://charts.bitnami.com/bitnami
+  - name: jetstack
+    url: https://charts.jetstack.io
   - name: gitea-charts
     url: https://dl.gitea.io/charts/
   - name: grafana
@@ -29,7 +31,10 @@ releases:
 
   - name: cert-manager
     namespace: cert-manager
-    chart: ../helm/cert-manager
+    chart: jetstack/cert-manager
+    version: v1.19.1
+    values:
+      - values/cert-manager.yaml
 
   - name: authentik
     namespace: authentik

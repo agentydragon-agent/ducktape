@@ -185,11 +185,7 @@ in
   };
 
   # Dircolors configuration (migrated from dotfiles/dir_colors/dircolors)
-  programs.dircolors = {
-    enable = true;
-    # Use the Solarized Light theme
-    extraConfig = builtins.readFile ./dircolors-solarized;
-  };
+  programs.dircolors.enable = true;
 
   # Midnight Commander configuration (migrated from dotfiles/config/mc/solarized.ini)
   xdg.configFile."mc/solarized.ini" = {
