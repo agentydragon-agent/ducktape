@@ -190,7 +190,7 @@ in
     vimAlias = true;
     withNodeJs = false;
     withPython3 = false;
-    extraLuaConfig = builtins.readFile ../../dotfiles/config/nvim/init.lua;
+    extraLuaConfig = builtins.readFile ./config/nvim/init.lua;
   };
 
   # Delta - better git diffs
@@ -243,6 +243,12 @@ in
     destination=/home/agentydragon/.local/appimages
     enable_daemon=true
   '';
+
+  # Neovim configuration (sync entire dotfiles directory)
+  xdg.configFile."nvim" = {
+    source = ./config/nvim;
+    recursive = true;
+  };
 
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
   home.packages = with pkgs; [
