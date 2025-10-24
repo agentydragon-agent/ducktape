@@ -45,6 +45,7 @@ ingress:
   enabled: true
   className: traefik
   annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     ingress.kubernetes.io/proxy-body-size: "0"
     cert-manager.io/cluster-issuer: homelab-ca-issuer

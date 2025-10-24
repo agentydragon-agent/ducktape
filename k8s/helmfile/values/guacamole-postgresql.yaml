@@ -21,6 +21,7 @@ auth:
   secretKeys:
     userPasswordKey: password
     adminPasswordKey: postgres-password
+    replicationPasswordKey: replication-password
 
 tls:
   enabled: false

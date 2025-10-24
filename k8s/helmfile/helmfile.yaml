@@ -56,6 +56,12 @@ releases:
     namespace: rspcache
     chart: ../helm/rspcache
 
+  - name: guacamole-shared-secret
+    namespace: guacamole
+    chart: ../helm/shared-secret
+    values:
+      - values/guacamole-secret.yaml
+
   - name: guacamole-postgresql
     namespace: guacamole
     chart: bitnami/postgresql

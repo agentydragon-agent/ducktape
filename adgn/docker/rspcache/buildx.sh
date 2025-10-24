@@ -8,8 +8,8 @@ set -euo pipefail
 this_dir="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${this_dir}/../.." && pwd)"
 
-TAG="${TAG:-$(git -C "${repo_root}" rev-parse --short HEAD)}"
-REGISTRY="${REGISTRY:-registry.k3s.local:5000}"
+TAG="${TAG:-latest}"
+REGISTRY="${REGISTRY:-registry.k3s.local}"
 CACHE_REF="${CACHE_REF:-${REGISTRY}/rspcache:cache}"
 BUILDER_NAME="${BUILDER_NAME:-rspcache-buildx}"
 PLATFORMS="${PLATFORMS:-linux/amd64}"
@@ -28,6 +28,7 @@ docker buildx build \
     --platform "${PLATFORMS}" \
     --cache-from "type=registry,ref=${CACHE_REF}" \
     --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
+    --ulimit nofile=16384:16384 \
     --tag "${REGISTRY}/rspcache:${TAG}" \
     -f "${repo_root}/docker/rspcache/Dockerfile" \
     "${repo_root}" \

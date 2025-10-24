@@ -26,7 +26,7 @@ let
   nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};
   homeManagerMaster = fetchTarball {
     url = "https://github.com/nix-community/home-manager/archive/82b58f38202540bce4e5e00759d115c5a43cab85.tar.gz";
-    sha256 = "sha256-RGXBgoUJEEbchClOKl8k5SelfOqV8Nzgqwk+dU6n9rI=";
+    sha256 = "1glrqwsg3imzadm6w036jazi9lwpsi30lkfgnnqzd7fkk0526004";
   };
 
   solarizedLight = nix-colors.colorSchemes.solarized-light;
@@ -34,6 +34,28 @@ let
 
   # Custom packages
   openai-codex = pkgs.callPackage ./packages/openai-codex.nix {};
+
+  gnomeNvim = pkgs.vimUtils.buildVimPlugin {
+    pname = "gnome.nvim";
+    version = "2024-11-26";
+    src = pkgs.fetchFromGitHub {
+      owner = "willmcpherson2";
+      repo = "gnome.nvim";
+      rev = "87e850c1e9422310ede4b70df90a6a89c16bb9e1";
+      sha256 = "1zxq484k3mcppy21xiflmnji7j2n5zyc74ffbybhc9xasrgwa1nk";
+    };
+  };
+
+  vimLumen = pkgs.vimUtils.buildVimPlugin {
+    pname = "vim-lumen";
+    version = "2024-11-26";
+    src = pkgs.fetchFromGitHub {
+      owner = "vimpostor";
+      repo = "vim-lumen";
+      rev = "97157aac9f0d24c144a3defdfe5057ee61e18dcb";
+      sha256 = "1a32szs5hz9l1b1s1cfzbjvrn9wzqjkhffq9kaabvbpvlzd2hms9";
+    };
+  };
 
   # Shell initialization scripts (loaded from external files to avoid escaping hell)
   commonShellInit = builtins.readFile ./shell/common-init.sh;
@@ -110,8 +132,6 @@ in
   programs.git = {
     enable = true;
     package = pkgs.git.override { withLibsecret = true; };
-    userName = "Rai";
-    userEmail = "agentydragon@gmail.com";
 
     # Global gitignore file (migrated from dotfiles/config/git/ignore)
     ignores = [
@@ -123,7 +143,11 @@ in
       "oneoff__*"  # Temporary one-off scripts
     ];
 
-    extraConfig = {
+    settings = {
+      user = {
+        name = "Rai";
+        email = "agentydragon@gmail.com";
+      };
       core.autocrlf = false;
       color.ui = "auto";
       push.default = "upstream";
@@ -160,9 +184,19 @@ in
     };
   };
 
-  # Delta - better git diffs
-  programs.git.delta = {
+  programs.neovim = {
     enable = true;
+    viAlias = true;
+    vimAlias = true;
+    withNodeJs = false;
+    withPython3 = false;
+    extraLuaConfig = builtins.readFile ../../dotfiles/config/nvim/init.lua;
+  };
+
+  # Delta - better git diffs
+  programs.delta = {
+    enable = true;
+    enableGitIntegration = true;
     options = {
       navigate = true;
       light = false;  # Default to dark theme
@@ -252,9 +286,8 @@ in
     # Development tools
     direnv devenv
 
-    # Neovim and dependencies for configuration
-    unstablePkgs.neovim  # Latest neovim from unstable
-    tree-sitter  # For nvim-treesitter parser compilation
+    # Tree-sitter CLI for manual parser management
+    tree-sitter  # Used by nvim-treesitter auto_install
 
     # Formatters for conform.nvim
     stylua  # Lua formatter

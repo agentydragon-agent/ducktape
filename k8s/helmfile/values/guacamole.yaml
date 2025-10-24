@@ -1,7 +1,4 @@
 # Helmfile overrides for the guacamole chart.
-#
-# NOTE: Replace the placeholder ciphertext values in
-# `sealedSecrets.postgres.encryptedData` with output from `kubeseal`.
 nameOverride: ""
 fullnameOverride: ""
 
@@ -49,16 +46,6 @@ postgres:
     userPasswordKey: password
     adminPasswordKey: postgres-password
     envPasswordKey: POSTGRES_PASSWORD
-
-sealedSecrets:
-  postgres:
-    enabled: true
-    name: guacamole-db-credentials
-    encryptedData:
-      password: PLACEHOLDER_REPLACE_WITH_CIPHERTEXT
-      postgres-password: PLACEHOLDER_REPLACE_WITH_CIPHERTEXT
-      replication-password: PLACEHOLDER_REPLACE_WITH_CIPHERTEXT
-      POSTGRES_PASSWORD: PLACEHOLDER_REPLACE_WITH_CIPHERTEXT
 
 ingress:
   enabled: true

@@ -210,9 +210,7 @@ class ResponsesDB:
     async def init(self) -> None:
         if self._engine is not None:
             return
-        if not self._db_url:
-            raise RuntimeError("ADGN_RESP_DB_URL must be set to a Postgres connection string")
-        self._engine = create_async_engine(self._db_url, future=True)
+        self._engine = create_async_engine(self._require_db_url(), future=True)
         self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
         async with self._engine.begin() as conn:
             await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
@@ -222,10 +220,18 @@ class ResponsesDB:
             await conn.run_sync(Base.metadata.create_all)
 
     def _asyncpg_dsn(self) -> str:
+        db_url = self._require_db_url()
+        prefix = "postgresql+asyncpg://"
+        if not db_url.startswith(prefix):
+            raise RuntimeError(
+                "ADGN_RESP_DB_URL must use the postgresql+asyncpg:// scheme "
+                "(e.g. postgresql+asyncpg://user:pass@host:5432/dbname)"
+            )
+        return "postgresql://" + db_url[len(prefix) :]
+
+    def _require_db_url(self) -> str:
         if not self._db_url:
             raise RuntimeError("ADGN_RESP_DB_URL must be set to a Postgres connection string")
-        if self._db_url.startswith("postgresql+asyncpg://"):
-            return "postgresql://" + self._db_url[len("postgresql+asyncpg://") :]
         return self._db_url
 
     async def close(self) -> None:
