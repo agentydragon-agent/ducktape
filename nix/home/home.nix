@@ -260,7 +260,6 @@ in
 
     # Kubernetes tools
     kubectl kubernetes-helm kubeseal helmfile kubernetes-helmPlugins.helm-diff
-
     # Dotfile management (keeping rcm approach)
     rcm
 
@@ -329,6 +328,9 @@ in
 
     # pnpm global packages
     PNPM_HOME = "$HOME/.local/share/pnpm";
+
+    # Helm plugin path (diff plugin provided via Nix)
+    HELM_PLUGINS = "${pkgs.kubernetes-helmPlugins.helm-diff}";
   };
 
   # Wyrm-specific pip configuration for tankshare storage

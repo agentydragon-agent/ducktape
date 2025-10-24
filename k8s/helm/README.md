@@ -68,7 +68,10 @@ DaemonSet-based Traefik ingress controller with RBAC, MetalLB LoadBalancer, and 
 Configures MetalLB IP address pools and L2 advertisements.
 
 ### `cert-manager`
-Managed via Helmfile (`k8s/helmfile/helmfile.yaml`) using the upstream `jetstack/cert-manager` chart. The homelab CA and issuers are applied through the release's `extraDeploy` manifests (`values/cert-manager.yaml`).
+Managed via Helmfile (`k8s/helmfile/helmfile.yaml`) using the upstream `jetstack/cert-manager` chart. Bootstrap resources (self-signed issuer, CA certificate, homelab issuer) are packaged in `cert-manager-bootstrap/` and deployed as a separate release.
+
+### `cert-manager-bootstrap/`
+Applies the homelab CA certificate and cluster issuers that sit on top of the upstream cert-manager installation.
 
 ### `observability/base/`
 Creates the `observability` namespace (labels configurable via values).

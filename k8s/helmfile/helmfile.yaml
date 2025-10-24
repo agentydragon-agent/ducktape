@@ -36,6 +36,10 @@ releases:
     values:
       - values/cert-manager.yaml
 
+  - name: cert-manager-bootstrap
+    namespace: cert-manager
+    chart: ../helm/cert-manager-bootstrap
+
   - name: authentik
     namespace: authentik
     chart: ../helm/authentik
