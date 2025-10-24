@@ -17,8 +17,11 @@ repositories:
 
 releases:
   - name: sealed-secrets
-    namespace: sealed-secrets
-    chart: ../helm/sealed-secrets-controller
+    namespace: kube-system
+    chart: bitnami/sealed-secrets
+    version: 2.5.19
+    values:
+      - values/sealed-secrets.yaml
 
   - name: traefik
     namespace: traefik

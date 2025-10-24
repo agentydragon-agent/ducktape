@@ -4,7 +4,7 @@ This chart packages the full Ducktape Gitea deployment: the upstream Gitea Helm 
 
 ## Prerequisites
 
-- Sealed Secrets controller installed (see `k8s/helm/sealed-secrets-controller/`)
+- Sealed Secrets controller installed (Helmfile release `sealed-secrets`, Bitnami chart)
 - Authentik chart deployed (`k8s/helm/authentik/`) so the Gitea blueprint exists
 - A sealed secret for OAuth credentials and Ember bootstrap password (instructions below)
 

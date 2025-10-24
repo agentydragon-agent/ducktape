@@ -70,9 +70,6 @@ Configures MetalLB IP address pools and L2 advertisements.
 ### `cert-manager/`
 Bootstraps self-signed and CA ClusterIssuers for the homelab certificate authority.
 
-### `sealed-secrets-controller/`
-Deploys the Bitnami sealed-secrets controller, RBAC, services, and optional CRD.
-
 ### `observability/base/`
 Creates the `observability` namespace (labels configurable via values).
 
