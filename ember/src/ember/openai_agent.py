@@ -10,7 +10,6 @@ from openai.types.responses.response_input_item import (
 )
 from openai.types.responses.response_input_text import ResponseInputText
 from openai.types.shared.reasoning_effort import ReasoningEffort
-from openai.types.shared_params.reasoning import Reasoning
 from pydantic import BaseModel, TypeAdapter
 
 from .config import OpenAISettings
@@ -68,7 +67,11 @@ class OpenAIAgent:
                 tools=self._tool_params,
                 tool_choice="required",
                 include=self._settings.include,
-                reasoning=_build_reasoning_payload(self._settings.reasoning_effort),
+                reasoning=(
+                    {"summary": "auto", "effort": self._settings.reasoning_effort}
+                    if self._settings.reasoning_effort
+                    else {"summary": "auto"}
+                ),
             )
             self._history.append_response(response)
 
@@ -101,13 +104,6 @@ class OpenAIAgent:
 
     def _build_input_payload(self) -> list[ResponseInputItemParam]:
         return self._history.build_input_items(self._settings.system_prompt)
-
-
-def _build_reasoning_payload(effort: ReasoningEffort) -> Reasoning:
-    payload: Reasoning = {"summary": "auto"}
-    if effort:
-        payload["effort"] = effort
-    return payload
 
 
 def _parse_input_item(model: BaseModel) -> ResponseInputItemParam:

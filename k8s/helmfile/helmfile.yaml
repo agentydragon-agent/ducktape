@@ -1,0 +1,45 @@
+helmDefaults:
+  wait: true
+  timeout: 600
+  createNamespace: true
+
+repositories:
+  - name: traefik
+    url: https://helm.traefik.io/traefik
+  - name: goauthentik
+    url: https://charts.goauthentik.io
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+  - name: gitea-charts
+    url: https://dl.gitea.io/charts/
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
+
+releases:
+  - name: sealed-secrets
+    namespace: sealed-secrets
+    chart: ../helm/sealed-secrets-controller
+
+  - name: traefik
+    namespace: traefik
+    chart: ../helm/traefik
+
+  - name: cert-manager
+    namespace: cert-manager
+    chart: ../helm/cert-manager
+
+  - name: authentik
+    namespace: authentik
+    chart: ../helm/authentik
+
+  - name: gitea
+    namespace: gitea
+    chart: ../helm/gitea
+
+  - name: ember
+    namespace: ember
+    chart: ../helm/ember
+
+  - name: rspcache
+    namespace: rspcache
+    chart: ../helm/rspcache

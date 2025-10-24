@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import logging
 
-from nio import RoomMessageText
 from openai import AsyncOpenAI
 
 from .config import EmberSettings
@@ -58,10 +57,11 @@ class PilotRuntime:
             while not self._stop_event.is_set():
                 if not (events := await self._matrix_client.get_events(timeout=60.0)):
                     continue
-                message_text = _format_events(events)
+                message_text = "\n".join(
+                    f"{event.sender}: {event.body}" for event in events
+                )
                 logger.info("Received Matrix batch:\n%s", message_text)
-                room_ids = {getattr(event, "room_id", None) for event in events}
-                room_ids.discard(None)
+                room_ids = {event.room_id for event in events if event.room_id}
 
                 if room_ids:
                     await self._matrix_client.set_typing(room_ids, True)
@@ -82,10 +82,3 @@ class PilotRuntime:
 
     def _create_openai_client(self, api_key: str) -> AsyncOpenAI:
         return AsyncOpenAI(api_key=api_key, base_url=self._settings.openai.api_base)
-
-
-def _format_events(events: list[RoomMessageText]) -> str:
-    lines = []
-    for event in events:
-        lines.append(f"{event.sender}: {event.body}")
-    return "\n".join(lines)

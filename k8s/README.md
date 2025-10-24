@@ -67,6 +67,8 @@ image: registry.k3s.local/myapp:latest
 - MetalLB for LoadBalancer services
 - Traefik as ingress controller (LoadBalancer IP: 10.0.200.100)
 
+All high-level workloads have first-party Helm charts (`k8s/helm/`) and are orchestrated together via Helmfile (`k8s/helmfile/helmfile.yaml`). Use `helmfile apply` from that directory to roll the full stack once secrets and container images are in place.
+
 ## DNS Configuration
 
 All `*.k3s.local` domains resolve to the Traefik LoadBalancer at 10.0.200.100 (configured via dnsmasq on the host).

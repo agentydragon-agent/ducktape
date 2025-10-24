@@ -48,7 +48,16 @@ class ConversationHistory:
 
     def build_input_items(self, system_prompt: str) -> ResponseInputParam:
         items: list[ResponseInputItemParam] = []
-        items.append(_build_system_prompt_item(system_prompt))
+        system_message = EasyInputMessage(
+            type="message",
+            role="system",
+            content=[ResponseInputText(type="input_text", text=system_prompt)],
+        )
+        items.append(
+            _INPUT_ITEM_ADAPTER.validate_python(
+                system_message.model_dump(mode="python", exclude_none=True)
+            )
+        )
 
         for record in self._records:
             if (input_item := record.input_item) is not None:
@@ -89,16 +98,5 @@ class ConversationHistory:
                     yield HistoryRecord.model_validate_json(line)
                 except ValidationError as exc:
                     logger.debug("Skipping invalid history record: %s", exc)
-
-
-def _build_system_prompt_item(system_prompt: str) -> ResponseInputItemParam:
-    message = EasyInputMessage(
-        type="message",
-        role="system",
-        content=[ResponseInputText(type="input_text", text=system_prompt)],
-    )
-    return _INPUT_ITEM_ADAPTER.validate_python(message.model_dump(mode="python", exclude_none=True))
-
-
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)

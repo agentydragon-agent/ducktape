@@ -354,9 +354,7 @@ class ResponsesDB:
         )
         async with self._session_factory() as session:
             result = await session.execute(stmt)
-            rowcount = int(result.rowcount or 0)
-            inserted = rowcount == 1
-            if inserted:
+            if result.rowcount and result.rowcount > 0:
                 await self._emit_event(
                     session,
                     ResponseStatusEvent(
@@ -366,7 +364,7 @@ class ResponsesDB:
                     ),
                 )
             await session.commit()
-            return inserted
+            return bool(result.rowcount and result.rowcount > 0)
 
     async def mark_in_progress(
         self,
