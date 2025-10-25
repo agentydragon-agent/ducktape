@@ -27,6 +27,7 @@ entries:
       external_host: {{ .Values.registry.externalHost | quote }}
       internal_host: {{ .Values.registry.internalHost | quote }}
       skip_path_regex: ""
+      basic_auth_enabled: true
 
   - model: authentik_core.application
     id: registry-app

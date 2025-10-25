@@ -17,7 +17,7 @@ repos:
       - id: check-yaml
         args: ["--allow-multiple-documents"]
         # Skip Helm templates (contain Go templating, not valid YAML pre-render)
-        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$|^k8s/.*/templates/.*\.ya?ml$
+        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$|^k8s/.*\.ya?ml$
       - id: check-toml
 
       # TODO: this one should NOT fix within dotfiles e.g. OrcaSlicer
