@@ -51,5 +51,9 @@ spec:
       labels:
 {{ toYaml $labels | indent 8 }}
 {{- end }}
+{{- with $annotations }}
+      annotations:
+{{ toYaml . | indent 8 }}
+{{- end }}
     type: {{ $type }}
 {{- end -}}

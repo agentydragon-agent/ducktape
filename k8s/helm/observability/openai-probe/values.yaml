@@ -4,9 +4,16 @@ fullnameOverride: ""
 replicaCount: 1
 
 image:
-  repository: registry.registry.svc.cluster.local:5000/openai-probe
+  repository: registry.k3s.agentydragon.com/openai-probe
   tag: latest
   pullPolicy: Always
+
+imagePullSecrets:
+  create: false
+  name: registry-auth
+  registry: registry.k3s.agentydragon.com
+  username: ""
+  password: ""
 
 resources:
   requests:

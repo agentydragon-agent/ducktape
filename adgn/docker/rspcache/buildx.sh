@@ -9,7 +9,7 @@ this_dir="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${this_dir}/../.." && pwd)"
 
 TAG="${TAG:-latest}"
-REGISTRY="${REGISTRY:-registry.k3s.local}"
+REGISTRY="${REGISTRY:-registry.k3s.agentydragon.com}"
 CACHE_REF="${CACHE_REF:-${REGISTRY}/rspcache:cache}"
 BUILDER_NAME="${BUILDER_NAME:-rspcache-buildx}"
 PLATFORMS="${PLATFORMS:-linux/amd64}"

@@ -30,6 +30,20 @@
     - `fnm`: Fast, cross-platform, works with `.node-version` files
     - `Volta`: Rust-based, uses package.json for version config
     - Direct Nix shells: Create `shell.nix` per project
+- [ ] Evaluate full Neovim HM integration (plugins & settings) vs lazy.nvim
+  - Current: HM deploys `config/nvim/`, lazy handles plugins at runtime
+  - Future option: use `programs.neovim.plugins` and disable lazy bootstrap
+- [ ] Learn ranger + consider HM-managed config
+  - Maybe port ranger rc/colors over to `nix/home/config/ranger/`
+  - Would replace the ad-hoc setup in dotfiles
+- [ ] Fold readline/inputrc tweaks into Home Manager
+  - Right now `programs.readline` only sets `show-all-if-ambiguous`
+  - Need to mirror other readline customizations from dotfiles
+- [ ] Investigate bringing git-worktree-switcher under HM
+  - Understand current workflow (scripts? aliases?) and migrate settings
+  - Learn the tool well enough to document best practices
+- [ ] Consider using Home Manager for GitHub CLI (`gh`) config
+  - Capture auth/hosts config (if feasible) and any gh extensions
 
 ## Ansible migration items
 

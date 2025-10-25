@@ -4,13 +4,18 @@ import asyncio
 import logging
 from typing import Iterable
 
-from nio import AsyncClient, RoomMessageText
+from nio import AsyncClient, AsyncClientConfig, RoomMessageText
 from nio.events.invite_events import InviteMemberEvent
+from nio.events.room_events import MegolmEvent
+from nio.exceptions import LocalProtocolError
 from nio.responses import (
     InviteInfo,
     JoinedRoomsError,
     JoinedRoomsResponse,
     JoinError,
+    KeysClaimError,
+    KeysQueryError,
+    KeysUploadError,
     SyncError,
     SyncResponse,
     WhoamiError,
@@ -37,7 +42,9 @@ class MatrixClient:
         self._debounce = max(debounce_seconds, 0.1)
         self._control_rooms: set[str] = set()
         self._token_secret = settings.access_token_secret
-        self._active_access_token: str | None = None
+        self._store_dir = settings.store_dir
+        self._device_id = settings.device_id
+        self._pickle_key = settings.pickle_key
 
     @property
     def configured(self) -> bool:
@@ -78,7 +85,6 @@ class MatrixClient:
         if self._client is not None:
             await self._client.close()
             self._client = None
-        self._active_access_token = None
 
     async def close(self) -> None:
         await self.stop()
@@ -126,6 +132,8 @@ class MatrixClient:
                     await asyncio.sleep(5)
                     continue
 
+                await self._process_sync_with_client(response)
+
                 logger.debug(
                     "Matrix sync succeeded; next_batch=%s, joined=%d, invite=%d, leave=%d",
                     response.next_batch,
@@ -139,6 +147,7 @@ class MatrixClient:
                 await self._handle_invites(response)
                 await self._handle_joined_rooms(response)
                 await self._handle_left_rooms(response)
+                await self._crypto_housekeeping()
         except asyncio.CancelledError:
             raise
 
@@ -169,12 +178,27 @@ class MatrixClient:
                     if not isinstance(body, str):
                         body = str(body)
                     logger.info("[matrix] room=%s sender=%s event=%s: %s", room_id, event.sender, event.event_id, body)
+                elif isinstance(event, MegolmEvent):
+                    try:
+                        sender = event.sender
+                    except AttributeError:
+                        sender = "unknown"
+                    logger.debug(
+                        "Matrix room %s awaiting room keys for event %s from %s",
+                        room_id,
+                        event.event_id,
+                        sender,
+                    )
                 else:
+                    try:
+                        sender = event.sender
+                    except AttributeError:
+                        sender = "unknown"
                     logger.debug(
                         "Matrix room %s ignoring event type=%s from %s",
                         room_id,
                         type(event).__name__,
-                        getattr(event, "sender", "unknown"),
+                        sender,
                     )
 
             if last_event_id is not None:
@@ -267,10 +291,16 @@ class MatrixClient:
             raise RuntimeError("Matrix base URL and access token must be configured")
 
         homeserver = base_url.rstrip("/")
-        client = AsyncClient(homeserver=homeserver)
+        self._store_dir.mkdir(parents=True, exist_ok=True)
+        client = AsyncClient(
+            homeserver=homeserver,
+            user="",
+            device_id=self._device_id,
+            store_path=str(self._store_dir),
+            config=self._client_config(),
+        )
         token = self._refresh_access_token(force=True)
         client.access_token = token
-        client.device_id = client.device_id or "ember-device"
 
         whoami = await client.whoami()
         if isinstance(whoami, WhoamiError):
@@ -280,10 +310,8 @@ class MatrixClient:
 
         self._user_id = whoami.user_id
         client.user_id = whoami.user_id
+        await self._bootstrap_crypto(client)
         return client
-
-    def _is_self_message(self, event: RoomMessageText) -> bool:
-        return bool(self._user_id and event.sender == self._user_id)
 
     async def _sync_once(self) -> SyncResponse | None:
         self._refresh_access_token()
@@ -303,17 +331,23 @@ class MatrixClient:
 
         return response
 
+    async def _process_sync_with_client(self, response: SyncResponse) -> None:
+        if self._client is None:
+            return
+        try:
+            await self._client.receive_response(response)
+        except Exception as exc:  # noqa: BLE001 - keep sync loop alive
+            logger.warning("Matrix client failed to process sync response: %s", exc)
+
     def _refresh_access_token(self, *, force: bool = False) -> str:
-        token, changed = self._token_secret.refresh()
+        token = self._token_secret.value()
         if token is None:
             raise RuntimeError("Matrix access token is not configured")
 
-        if force or changed or self._active_access_token != token:
-            self._active_access_token = token
+        active = self._client.access_token if self._client else None
+        if force or active != token:
             if self._client is not None:
                 self._client.access_token = token
-            if changed:
-                logger.info("Matrix access token refreshed")
         return token
 
     def _load_since_token(self) -> str | None:
@@ -336,3 +370,45 @@ class MatrixClient:
             self._state_store.write_text(token, encoding="utf-8")
         except OSError as exc:
             logger.warning("Failed to persist Matrix sync token to %s: %s", self._state_store, exc)
+
+    def _client_config(self) -> AsyncClientConfig:
+        return AsyncClientConfig(
+            encryption_enabled=True,
+            pickle_key=self._pickle_key,
+            store_sync_tokens=True,
+        )
+
+    async def _bootstrap_crypto(self, client: AsyncClient) -> None:
+        if not client.config.encryption_enabled:
+            return
+        try:
+            client.load_store()
+        except LocalProtocolError as exc:
+            logger.warning("Unable to load Matrix crypto store: %s", exc)
+            return
+        await self._service_crypto_tasks(client)
+
+    async def _crypto_housekeeping(self) -> None:
+        client = self._client
+        if client is None or not client.config.encryption_enabled:
+            return
+        await self._service_crypto_tasks(client)
+
+    async def _service_crypto_tasks(self, client: AsyncClient) -> None:
+        try:
+            if client.should_upload_keys:
+                upload = await client.keys_upload()
+                if isinstance(upload, KeysUploadError):
+                    logger.warning("Matrix key upload failed: %s", upload.message)
+            if client.should_query_keys:
+                query = await client.keys_query()
+                if isinstance(query, KeysQueryError):
+                    logger.warning("Matrix key query failed: %s", query.message)
+            if client.should_claim_keys:
+                targets = client.get_users_for_key_claiming()
+                if targets:
+                    claim = await client.keys_claim(targets)
+                    if isinstance(claim, KeysClaimError):
+                        logger.warning("Matrix key claim failed: %s", claim.message)
+        except LocalProtocolError as exc:
+            logger.debug("Matrix crypto maintenance skipped: %s", exc)

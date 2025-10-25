@@ -1,4 +1,7 @@
 dependencies:
+- name: common-lib
+  repository: file://../common-lib
+  version: 0.1.0
 - name: authentik
   repository: https://charts.goauthentik.io
   version: 2025.8.3
@@ -8,5 +11,5 @@ dependencies:
 - name: redis
   repository: https://charts.bitnami.com/bitnami
   version: 20.3.0
-digest: sha256:82b0e41da188a4308f0d39d3d13c2dbd3acd975ac5659e1162e8f1501673fe9e
-generated: "2025-09-27T00:03:28.615096842-07:00"
+digest: sha256:0e8e2b3e69102fd96d391184ebb20599d794b405e98822ae1a89cf5a151ed409
+generated: "2025-10-24T17:06:28.231749297-07:00"

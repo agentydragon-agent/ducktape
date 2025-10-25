@@ -102,3 +102,37 @@ blueprints.goauthentik.io/instantiate: "true"
 {{- $default := index . "default" -}}
 {{- if $override }}{{ $override }}{{ else }}{{ ternary $default "default" $create }}{{ end }}
 {{- end -}}
+
+{{/* Optionally render a Docker registry secret from chart values */}}
+{{- define "common.dockerRegistrySecret" -}}
+{{- $root := . -}}
+{{- with $root.Values.imagePullSecrets }}
+{{- if .create }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .name }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+{{ include "common.labels" $root | indent 4 }}
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: |
+    {{- $username := default "" .username -}}
+    {{- $password := default "" .password -}}
+    {{- $auth := printf "%s:%s" $username $password | b64enc -}}
+    {{- $config := dict "auths" (dict .registry (dict "username" $username "password" $password "auth" $auth)) -}}
+    {{ $config | toJson }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/* Emit imagePullSecrets stanza for a workload if configured */}}
+{{- define "common.renderImagePullSecrets" -}}
+{{- with .Values.imagePullSecrets }}
+{{- if .name }}
+imagePullSecrets:
+  - name: {{ .name }}
+{{- end }}
+{{- end }}
+{{- end -}}

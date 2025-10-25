@@ -15,6 +15,7 @@ spec:
           labels:
             app: {{ printf "%s-rspcache-key-rotator" (include "ember.fullname" .) }}
         spec:
+{{ include "common.renderImagePullSecrets" . | indent 10 }}
           serviceAccountName: {{ include "ember.rotatorServiceAccountName" . }}
           restartPolicy: {{ .Values.rotator.restartPolicy }}
           containers:

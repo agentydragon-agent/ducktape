@@ -4,7 +4,7 @@
 
 ### Registry
 Container registry for in-cluster Docker images. Accessible at:
-- `registry.k3s.local` (via Traefik ingress with TLS)
+- `registry.k3s.agentydragon.com` (Traefik ingress with TLS + Authentik forward-auth)
 
 ### cert-manager & TLS Certificates
 
@@ -49,13 +49,13 @@ sudo systemctl restart docker
 After CA trust is configured:
 ```bash
 # Build and tag
-docker build -t registry.k3s.local/myapp:latest .
+docker build -t registry.k3s.agentydragon.com/myapp:latest .
 
-# Push via HTTPS
-docker push registry.k3s.local/myapp:latest
+# Push via HTTPS (Authentik-protected)
+docker push registry.k3s.agentydragon.com/myapp:latest
 
 # Use in k8s deployments
-image: registry.k3s.local/myapp:latest
+image: registry.k3s.agentydragon.com/myapp:latest
 ```
 
 ### Observability
@@ -71,4 +71,4 @@ All high-level workloads have first-party Helm charts (`k8s/helm/`) and are orch
 
 ## DNS Configuration
 
-All `*.k3s.local` domains resolve to the Traefik LoadBalancer at 10.0.200.100 (configured via dnsmasq on the host).
+All `*.k3s.agentydragon.com` domains resolve to the Traefik LoadBalancer at 10.0.200.100 (via PowerDNS on the VPS).

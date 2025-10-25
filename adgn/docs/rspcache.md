@@ -62,8 +62,8 @@ npm install
 npm run build
 
 cd ../../
-docker build -t registry.registry.svc.cluster.local:5000/rspcache:<tag> -f adgn/docker/rspcache/Dockerfile .
-docker push registry.registry.svc.cluster.local:5000/rspcache:<tag>
+docker build -t registry.k3s.agentydragon.com/rspcache:<tag> -f adgn/docker/rspcache/Dockerfile .
+docker push registry.k3s.agentydragon.com/rspcache:<tag>
 ```
 
 Deployments reference the image via the in-cluster registry; override the tag through Helm values if needed (`appImage.tag`).

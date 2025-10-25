@@ -26,6 +26,7 @@ spec:
         {{- end }}
       {{- end }}
     spec:
+{{ include "common.renderImagePullSecrets" . | indent 6 }}
       containers:
         - name: proxy
           image: "{{ .Values.appImage.repository }}:{{ .Values.appImage.tag }}"

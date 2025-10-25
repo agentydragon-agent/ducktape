@@ -25,7 +25,7 @@ resources:
     memory: 128Mi
 
 serviceAccount:
-  create: false
+  create: true
   annotations: {}
   name: ""
 
@@ -46,17 +46,18 @@ ingress:
   className: traefik
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: authentik-authentik-forwardauth@kubernetescrd
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     ingress.kubernetes.io/proxy-body-size: "0"
     cert-manager.io/cluster-issuer: homelab-ca-issuer
   hosts:
-    - host: registry.k3s.local
+    - host: registry.k3s.agentydragon.com
       paths:
         - path: /
           pathType: Prefix
   tls:
     - hosts:
-        - registry.k3s.local
+        - registry.k3s.agentydragon.com
       secretName: registry-tls
 
 persistence:

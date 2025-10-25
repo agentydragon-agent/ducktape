@@ -20,6 +20,11 @@ class MatrixSettings(BaseModel):
     access_token_secret: ProjectedSecret
     admin_user_id: str | None = None
     state_store: Path
+    store_dir: Path
+    device_id: str = "ember-device"
+    # TODO(k3s/ember): Source pickle_key from a k8s secret instead of TOML to
+    # keep Megolm session dumps encrypted at rest in prod.
+    pickle_key: str = "ember-matrix-store"
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     @property
@@ -118,6 +123,9 @@ def load_settings() -> EmberSettings:
                 admin_user_id=os.getenv("MATRIX_ADMIN_USER_ID")
                 or matrix_cfg.get("admin_user_id"),
                 state_store=state_dir / "matrix_state.json",
+                store_dir=state_dir / "matrix_store",
+                device_id=matrix_cfg.get("device_id", "ember-device"),
+                pickle_key=matrix_cfg.get("pickle_key", "ember-matrix-store"),
             ),
             openai=OpenAISettings(
                 api_key_secret=openai_api_key,

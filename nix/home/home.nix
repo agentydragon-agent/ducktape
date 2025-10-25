@@ -250,6 +250,10 @@ in
     recursive = true;
   };
 
+  home.file.".config/bazel/bazelrc" = {
+    source = ./config/bazelrc;
+  };
+
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
   home.packages = with pkgs; [
     python312Packages.autopep8
@@ -427,38 +431,36 @@ in
   # };
 
   # XDG autostart desktop entries (migrated from Ansible gui role)
-  xdg.configFile = {
-    "autostart/syncthing-gtk.desktop".text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=Syncthing-GTK
-      Exec=syncthing-gtk --minimized
-      Icon=syncthing-gtk
-      Terminal=false
-      Categories=Network;FileTransfer;
-      X-GNOME-Autostart-enabled=true
-    '';
-    "autostart/discord.desktop".text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=Discord (Minimized)
-      Exec=discord --start-minimized
-      Icon=discord
-      Terminal=false
-      Categories=Network;InstantMessaging;
-      X-GNOME-Autostart-enabled=true
-    '';
-    "autostart/flameshot.desktop".text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=Flameshot
-      Exec=flameshot
-      Icon=flameshot
-      Terminal=false
-      Categories=Graphics;
-      X-GNOME-Autostart-enabled=true
-    '';
-  };
+  xdg.configFile."autostart/syncthing-gtk.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Syncthing-GTK
+    Exec=syncthing-gtk --minimized
+    Icon=syncthing-gtk
+    Terminal=false
+    Categories=Network;FileTransfer;
+    X-GNOME-Autostart-enabled=true
+  '';
+  xdg.configFile."autostart/discord.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Discord (Minimized)
+    Exec=discord --start-minimized
+    Icon=discord
+    Terminal=false
+    Categories=Network;InstantMessaging;
+    X-GNOME-Autostart-enabled=true
+  '';
+  xdg.configFile."autostart/flameshot.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Flameshot
+    Exec=flameshot
+    Icon=flameshot
+    Terminal=false
+    Categories=Graphics;
+    X-GNOME-Autostart-enabled=true
+  '';
 
   # GNOME dconf settings (migrated from Ansible gui role)
   dconf = {

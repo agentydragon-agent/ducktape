@@ -5,9 +5,16 @@ namespace:
 replicaCount: 1
 
 image:
-  repository: registry.registry.svc.cluster.local:5000/emberd
+  repository: registry.k3s.agentydragon.com/emberd
   tag: latest
   pullPolicy: Always
+
+imagePullSecrets:
+  create: false
+  name: registry-auth
+  registry: registry.k3s.agentydragon.com
+  username: ""
+  password: ""
 
 service:
   type: ClusterIP
@@ -61,7 +68,7 @@ rotator:
   enabled: true
   schedule: "0 4 * * *"
   image:
-    repository: registry.registry.svc.cluster.local:5000/rspcache
+    repository: registry.k3s.agentydragon.com/rspcache
     tag: latest
     pullPolicy: IfNotPresent
   adminUrl: http://rspcache-admin.rspcache.svc.cluster.local:8100

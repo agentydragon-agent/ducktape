@@ -25,6 +25,7 @@ spec:
         {{- end }}
       {{- end }}
     spec:
+{{ include "common.renderImagePullSecrets" . | indent 6 }}
       restartPolicy: Always
       serviceAccountName: {{ include "ember.serviceAccountName" . }}
       containers:

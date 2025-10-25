@@ -25,6 +25,7 @@ spec:
 {{ toYaml .Values.podAnnotations | indent 8 }}
 {{- end }}
     spec:
+{{ include "common.renderImagePullSecrets" . | indent 6 }}
       containers:
         - name: probe
           image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag }}

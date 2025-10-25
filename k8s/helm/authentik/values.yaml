@@ -8,30 +8,28 @@ authentik:
       - authentik-blueprint-grafana
       - authentik-blueprints-gitea
       - authentik-blueprints-rspcache
+      - authentik-blueprints-registry
       - authentik-blueprints-users
       - authentik-blueprints-matrix
 
   # Secret key for signing cookies and JWT tokens
-  authentik:
-    # secret_key is provided via existingSecret
-    error_reporting:
-      enabled: false
-    postgresql:
-      host: "authentik-postgresql"
-      name: "authentik"
-      user: "authentik"
-      # password is provided via existingSecret
-    redis:
-      host: "authentik-redis-master"
-    email:
-      from: "authentik@k3s.agentydragon.com"
-      host: ""  # Optional SMTP config
-      port: 587
-      use_tls: false
-      use_ssl: false
-      timeout: 10
+  # secret_key is provided via existingSecret
+  error_reporting:
+    enabled: false
+  postgresql:
+    host: "authentik-postgresql"
+    name: "authentik"
+    user: "authentik"
+  redis:
+    host: "authentik-redis-master"
+  email:
+    from: "authentik@k3s.agentydragon.com"
+    host: ""
+    port: 587
+    use_tls: false
+    use_ssl: false
+    timeout: 10
 
-  # Server (API/Web interface)
   server:
     ingress:
       enabled: true
@@ -45,11 +43,9 @@ authentik:
         traefik.ingress.kubernetes.io/router.entrypoints: web
         ingress.kubernetes.io/force-ssl-redirect: "false"
 
-  # Worker (background tasks)
   worker:
     replicas: 1
 
-  # Global settings
   global:
     envFrom:
       - secretRef:
@@ -70,6 +66,12 @@ authentik:
           secretKeyRef:
             name: authentik-secrets
             key: redis-password
+      - name: AUTHENTIK_EMAIL__PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: authentik-secrets
+            key: email-password
+            optional: true
       - name: AUTHENTIK_BOOTSTRAP_PASSWORD
         valueFrom:
           secretKeyRef:
@@ -114,7 +116,6 @@ authentik:
           secretKeyRef:
             name: authentik-matrix-signing
             key: matrix-signing-cert
-
   # Prometheus metrics
   monitoring:
     serviceMonitor:
@@ -158,3 +159,11 @@ matrix:
   # Sealed-secret ciphertext for the Matrix Synapse OAuth client secret. Changing
   # this value (during a secret rotation) bumps the blueprint revision.
   clientSecretCiphertext: AgCM+dDa03q94A++BHvQy+lWS7nWfH7cal4TJJW98puyR805e48URqb0/Fs75MO9JBplpmYqDInvuAQY6y8XAJGKD0GqpMj6WAvJ3Q8Mks9HhqZgS7U1lvV33Mnvx+H2UYL/FNbGlw9QzqDyCxZN/AhUFk4zVlb3HTmG38zVHllURsKDid8PfSW1s6mb6On/IqbwDLIrb8E82oMOBb3/wnMJINKEz6TiKY4GVp/wzGYl/xR7rPM+PUe5BVAShBXRAAHkmA9VNniqi9zUhzAM4I6Vxx5ZAsMVJQp8Wxu+0QnRSEa9D4/yPVsNLDyiDHkC9KPC5zUYZ84sQAs/sM/Kd41rtJD5CcjlR7vvJwYGRMplr7iIbsqcxrxairDjqcsSdLSsYucj4rOUX/hFXOVtAKjwb82TDG9DvrZ2ZL1n/Y+SAidGqNHw63hFGkLJbOgWvE8sarYB23YyUiCUaL/cbMpVLcjEo2KXITPoyu/54jls0bH1ZMjrwZHGrtmqmAgoakktvb1fDheHy2wytA2OwIiOwFQbS2d1Nq3sMbHH/360QeFea9ckmA8XSzDc2x5DlkYAr7kk/w6c4RuxJW+UkVd9EW3oEs7NEuupRwFswMgZ9rSs3tt8YHVhJ8b+lO/EqBXOEKbX/3LVGROlyiOk/IrtY28mQPSGD3c+8aiZFqRf3ejih334RcPOxqZJdW8pabxoRxHkVD6T3LLHOdfr3UBCEoR9/ClDQzL29qi0HVEf5OHfW6/yhBRjIYxO
+# Registry forward-auth blueprint defaults
+registry:
+  externalHost: "https://registry.k3s.agentydragon.com"
+  internalHost: "http://registry.registry.svc.cluster.local:5000"
+  adminGroup: "registry-pushers"
+  adminUsers:
+    - agentydragon
+    - authentikadmin

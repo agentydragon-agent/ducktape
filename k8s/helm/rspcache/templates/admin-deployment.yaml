@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: {{ include "rspcache.adminName" . }}
         app.kubernetes.io/component: admin
     spec:
+{{ include "common.renderImagePullSecrets" . | indent 6 }}
       containers:
         - name: admin
           image: "{{ .Values.appImage.repository }}:{{ .Values.appImage.tag }}"

@@ -69,6 +69,12 @@ spec:
             runAsUser: 1000
           image: "{{ .Values.reflector.image.repository }}:{{ .Values.reflector.image.tag }}"
           imagePullPolicy: {{ .Values.reflector.image.pullPolicy }}
+          args:
+{{- if .Values.reflector.args }}
+{{ toYaml .Values.reflector.args | indent 12 }}
+{{- else }}
+            - --watch-all-namespaces
+{{- end }}
           env:
             - name: ES_Serilog__MinimumLevel__Default
               value: "Information"
