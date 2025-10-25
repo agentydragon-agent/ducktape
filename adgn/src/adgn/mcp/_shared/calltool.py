@@ -4,7 +4,7 @@ from typing import Any
 
 from fastmcp.client.client import CallToolResult as FMCallToolResult
 from mcp import types as mcp_types
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
 
 def _normalize_structured_content(sc: Any) -> Any:

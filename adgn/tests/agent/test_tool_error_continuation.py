@@ -16,8 +16,8 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.reducer import BaseHandler
-from adgn.openai_utils.model import FakeOpenAIModel
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.openai_utils.model import FakeOpenAIModel
 from tests.agent.ws_helpers import assert_function_call_output_structured
 
 

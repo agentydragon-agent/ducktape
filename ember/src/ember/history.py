@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime, timezone
 import logging
 from pathlib import Path
-from typing import Iterable
 
 from openai.types.responses import Response, ResponseInputItemParam, ResponseInputParam
 from openai.types.responses.easy_input_message import EasyInputMessage
@@ -12,7 +12,9 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 logger = logging.getLogger(__name__)
 
-_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(ResponseInputItemParam)
+_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(
+    ResponseInputItemParam
+)
 _INPUT_ADAPTER: TypeAdapter[ResponseInputParam] = TypeAdapter(ResponseInputParam)
 
 
@@ -73,7 +75,9 @@ class ConversationHistory:
                         )
                     )
                 except ValidationError as exc:
-                    logger.warning("Skipping response output due to validation error: %s", exc)
+                    logger.warning(
+                        "Skipping response output due to validation error: %s", exc
+                    )
                     continue
 
         # TODO: handle out-of-context errors by compacting history via OpenAI summarisation.
@@ -98,5 +102,7 @@ class ConversationHistory:
                     yield HistoryRecord.model_validate_json(line)
                 except ValidationError as exc:
                     logger.debug("Skipping invalid history record: %s", exc)
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)

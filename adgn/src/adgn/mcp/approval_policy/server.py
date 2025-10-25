@@ -4,6 +4,7 @@ from importlib import resources
 import logging
 import uuid
 
+from fastmcp.server.context import ServerSession
 from jinja2 import Template
 from pydantic import BaseModel
 
@@ -29,7 +30,6 @@ from adgn.mcp._shared.uris import (
 )
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from fastmcp.server.context import ServerSession
 
 # IO types unified: use engine-level PolicyRequest and PolicyResponse
 

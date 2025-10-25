@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import os
-from typing import Any, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -34,7 +34,9 @@ def playwright_sync() -> Iterator[Playwright]:
 
 
 @pytest.fixture
-def browser(playwright_sync: Playwright, browser_name: str, e2e_headless: bool) -> Iterator[Browser]:
+def browser(
+    playwright_sync: Playwright, browser_name: str, e2e_headless: bool
+) -> Iterator[Browser]:
     browser_type = getattr(playwright_sync, browser_name, None)
     if browser_type is None:
         raise RuntimeError(f"Unsupported Playwright browser: {browser_name}")

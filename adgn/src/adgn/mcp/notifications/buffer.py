@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Awaitable, Callable
 
@@ -39,9 +38,7 @@ class NotificationsBuffer:
     - Hooks can be registered to react to updates (e.g., push UI snapshots).
     """
 
-    def __init__(
-        self, *, client: Client | None = None, compositor: Compositor
-    ) -> None:
+    def __init__(self, *, client: Client | None = None, compositor: Compositor) -> None:
         self._client = client
         self._compositor = compositor
         self._updates: list[ResourceUpdateEvent] = []

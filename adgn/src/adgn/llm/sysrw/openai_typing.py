@@ -3,14 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, Iterable, Iterator, Sequence, Union, get_args, get_origin
 
-from pydantic import TypeAdapter
-
 from openai.types.chat import (
     ChatCompletionMessageParam,
     ChatCompletionMessageToolCallParam,
     ChatCompletionToolParam,
 )
 from openai.types.responses import Response
+from pydantic import TypeAdapter
 
 try:  # OpenAI responses <= 0.8 (ResponseMessage family available)
     from openai.types.responses import (  # type: ignore[attr-defined]
@@ -36,7 +35,9 @@ except ImportError:
     ResponseOutput = None  # type: ignore[assignment]
 
 try:
-    from openai.types.responses import ResponseOutputToolCall as _ResponseOutputToolCall  # type: ignore[attr-defined]
+    from openai.types.responses import (
+        ResponseOutputToolCall as _ResponseOutputToolCall,  # type: ignore[attr-defined]
+    )
 except ImportError:
     _ResponseOutputToolCall = None  # type: ignore[assignment]
 

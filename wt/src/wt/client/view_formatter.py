@@ -130,9 +130,7 @@ class ViewFormatter:
 
         # Format with nice alignment - commitish as separate column
         # Note: sync_status contains ANSI codes, so we pad the content to exactly 9 chars
-        return (
-            f"{name:<{name_width}} {commit_short:<10} {sync_status} {work_status:<10} {pr_status}"
-        )
+        return f"{name:<{name_width}} {commit_short:<10} {sync_status} {work_status:<10} {pr_status}"
 
     def render_worktree_list(self, worktrees: list[tuple[str, Path, bool]]) -> None:
         if worktrees:
@@ -202,7 +200,9 @@ class ViewFormatter:
             github_state = components.github.state.value
         elif summary:
             github_state = summary.github.value
-        x_of_y = f"{summary.with_gitstatusd}/{summary.total_worktrees}" if summary else "-/-"
+        x_of_y = (
+            f"{summary.with_gitstatusd}/{summary.total_worktrees}" if summary else "-/-"
+        )
         click.echo(
             f"{discovery} discovery | gitstatusd {x_of_y} | github {github_state}",
         )

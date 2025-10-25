@@ -6,10 +6,9 @@ from adgn.mcp._shared.client_helpers import call_simple_ok
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp._shared.uris import subscriptions_index_uri
 from adgn.mcp.resources.types import (
-    ListSubscriptionSummary,
-    SubscriptionSummary,
     SubscriptionsIndex,
 )
+
 
 class ResourcesClient:
     """Typed client helpers for the `resources` server.

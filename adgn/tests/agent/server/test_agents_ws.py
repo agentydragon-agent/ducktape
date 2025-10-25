@@ -57,9 +57,7 @@ def test_agents_ws_status_on_agent_ws_connect(
     responses_factory,
 ):
     client, hub = ws_hub
-    patch_agent_build_client(
-        FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
-    )
+    patch_agent_build_client(FakeOpenAIModel([responses_factory.make_assistant_message("ok")]))
     # Create an agent first
     r = client.post("/api/agents", json={"preset": "default"})
     assert r.status_code == 200

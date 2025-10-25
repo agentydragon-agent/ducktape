@@ -9,7 +9,6 @@ from adgn.mcp._shared.constants import (
     COMPOSITOR_META_STATE_URI_FMT,
     RESOURCES_SUBSCRIPTIONS_INDEX_URI,
 )
-from fastmcp.server.server import remove_resource_prefix
 
 """Helpers for building common MCP resource URIs.
 

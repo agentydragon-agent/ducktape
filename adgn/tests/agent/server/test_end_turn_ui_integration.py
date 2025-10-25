@@ -6,8 +6,8 @@ from adgn.agent.server.bus import ServerBus, UiEndTurn
 from adgn.agent.server.protocol import FunctionCallOutput, ToolCall, UiEndTurnEvt
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import new_state
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.naming import build_mcp_function
 
 
 def test_end_turn_tool_filtering():
@@ -21,7 +21,9 @@ def test_end_turn_tool_filtering():
     # Function output for end_turn should also be filtered out
     output = FunctionCallOutput(
         call_id="test-123",
-        result=to_pydantic(CallToolResult(content=[], structured_content={"ok": True}, is_error=False)),
+        result=to_pydantic(
+            CallToolResult(content=[], structured_content={"ok": True}, is_error=False)
+        ),
     )
     after_output = reduce_ui_state(after_call, output)
 

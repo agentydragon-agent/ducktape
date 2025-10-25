@@ -4,9 +4,9 @@ from typing import Callable
 
 import pytest
 
+from adgn.mcp._shared.constants import POLICY_EVALUATOR_ERROR_MSG
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
-from adgn.mcp._shared.constants import POLICY_EVALUATOR_ERROR_MSG
 
 BAD_POLICY_SRC: str
 
@@ -38,7 +38,5 @@ async def test_container_timeout_causes_deny_abort(
     ):
         # High-level client surfaces ToolError with message only; assert the canonical message
         with pytest.raises(Exception) as ei:
-            await sess.call_tool(
-                build_mcp_function("backend", "echo"), {"text": "timeout"}
-            )
+            await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "timeout"})
         assert POLICY_EVALUATOR_ERROR_MSG in str(ei.value)

@@ -6,13 +6,13 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.asserts import assert_output_contains
 from wt.cli import app
 from wt.shared.protocol import (
     CommitInfo,
     StatusResult,
     WorktreeID,
 )
-from tests.asserts import assert_output_contains
 
 
 @pytest.fixture

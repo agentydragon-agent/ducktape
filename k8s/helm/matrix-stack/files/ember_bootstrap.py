@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import hmac
 import os
 import time
-from dataclasses import dataclass
 
-import requests
 from kubernetes import client, config
 from kubernetes.client import ApiException
+import requests
 
 
 @dataclass
@@ -36,7 +36,9 @@ def load_settings() -> Settings:
     password = env("EMBER_PASSWORD")
     namespace = env("EMBER_NAMESPACE")
     secret_name = env("EMBER_SECRET_NAME")
-    return Settings(homeserver, registration_secret, username, password, namespace, secret_name)
+    return Settings(
+        homeserver, registration_secret, username, password, namespace, secret_name
+    )
 
 
 def wait_for_synapse(homeserver: str, timeout_seconds: int = 300) -> None:
@@ -55,13 +57,17 @@ def wait_for_synapse(homeserver: str, timeout_seconds: int = 300) -> None:
 
 def register_user(settings: Settings) -> None:
     session = requests.Session()
-    nonce_resp = session.get(f"{settings.homeserver}/_synapse/admin/v1/register", timeout=5)
+    nonce_resp = session.get(
+        f"{settings.homeserver}/_synapse/admin/v1/register", timeout=5
+    )
     nonce_resp.raise_for_status()
     nonce = nonce_resp.json()["nonce"]
 
     parts = [nonce, settings.username, settings.password, "notadmin"]
     mac_input = bytes([0]).join(part.encode() for part in parts)
-    mac = hmac.new(settings.registration_secret.encode(), mac_input, hashlib.sha1).hexdigest()
+    mac = hmac.new(
+        settings.registration_secret.encode(), mac_input, hashlib.sha1
+    ).hexdigest()
 
     payload = {
         "nonce": nonce,
@@ -70,7 +76,9 @@ def register_user(settings: Settings) -> None:
         "admin": False,
         "mac": mac,
     }
-    resp = session.post(f"{settings.homeserver}/_synapse/admin/v1/register", json=payload, timeout=5)
+    resp = session.post(
+        f"{settings.homeserver}/_synapse/admin/v1/register", json=payload, timeout=5
+    )
     if resp.status_code in (200, 201):
         print("Matrix user created", flush=True)
         return
@@ -81,10 +89,15 @@ def register_user(settings: Settings) -> None:
             data = {}
         errcode = data.get("errcode")
         message = data.get("error", resp.text)
-        if errcode in {"M_USER_IN_USE", "M_CONFLICT"} or "User ID already exists" in message:
+        if (
+            errcode in {"M_USER_IN_USE", "M_CONFLICT"}
+            or "User ID already exists" in message
+        ):
             print("Matrix user already exists", flush=True)
             return
-        raise RuntimeError(f"Failed to register Matrix user: {resp.status_code} {message}")
+        raise RuntimeError(
+            f"Failed to register Matrix user: {resp.status_code} {message}"
+        )
     resp.raise_for_status()
 
 
@@ -127,11 +140,17 @@ def upsert_secret(settings: Settings, token: str) -> None:
     config.load_incluster_config()
     api = client.CoreV1Api()
 
-    metadata = client.V1ObjectMeta(name=settings.secret_name, namespace=settings.namespace, labels={
-        "app.kubernetes.io/name": "ember",
-        "app.kubernetes.io/component": "credentials",
-    })
-    body = client.V1Secret(string_data={"access_token": token}, metadata=metadata, type="Opaque")
+    metadata = client.V1ObjectMeta(
+        name=settings.secret_name,
+        namespace=settings.namespace,
+        labels={
+            "app.kubernetes.io/name": "ember",
+            "app.kubernetes.io/component": "credentials",
+        },
+    )
+    body = client.V1Secret(
+        string_data={"access_token": token}, metadata=metadata, type="Opaque"
+    )
 
     try:
         api.replace_namespaced_secret(settings.secret_name, settings.namespace, body)

@@ -10,7 +10,6 @@ import shutil
 import socket
 import subprocess
 import time
-from typing import Mapping
 from unittest.mock import Mock
 import uuid
 
@@ -24,7 +23,7 @@ from wt.server.git_manager import GitManager
 from wt.server.worktree_service import WorktreeService
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
-from wt.shared.fixtures import PRFixtureEntry, write_pr_fixtures_file
+from wt.shared.fixtures import write_pr_fixtures_file
 from wt.shared.protocol import (
     DaemonHealth,
     DaemonHealthStatus,
@@ -212,7 +211,9 @@ def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = No
     if expected_branch:
         repo = pygit2.Repository(str(worktree_path))
         head_ref = repo.head.shorthand
-        assert head_ref == expected_branch, f"Expected branch {expected_branch}, got {head_ref}"
+        assert head_ref == expected_branch, (
+            f"Expected branch {expected_branch}, got {head_ref}"
+        )
 
 
 def assert_worktree_not_exists(worktree_path: Path):
@@ -351,7 +352,9 @@ class WtCLI:
         cwd: Path | None = None,
         stdin=None,
     ):
-        return run_cli_command(["sh", *args], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin)
+        return run_cli_command(
+            ["sh", *args], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin
+        )
 
     def sh_c(
         self,
@@ -361,7 +364,11 @@ class WtCLI:
         stdin=None,
     ):
         return run_cli_command(
-            ["create", "--yes", cmd], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin
+            ["create", "--yes", cmd],
+            env=self.env,
+            timeout=timeout,
+            cwd=cwd,
+            stdin=stdin,
         )
 
     def status(

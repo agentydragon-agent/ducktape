@@ -129,7 +129,9 @@ def test_path_watcher_full_lifecycle(wt_cli):
     )
 
     # Verify worktree was removed from filesystem
-    assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
+    assert not worktree_path.exists(), (
+        f"Worktree still exists after removal: {worktree_path}"
+    )
 
     # Wait for watcher to drop the worktree from status
     wait_for_status_not_contains(wt_cli, "feature-test")
@@ -182,15 +184,18 @@ def test_path_watcher_multiple_worktrees(wt_cli):
         last = {"out": ""}
         ok = wait_until(
             lambda: (
-                (lambda r: last.update({"out": r.stdout}) or (missing_name not in r.stdout))(
-                    wt_cli.status(timeout=timedelta(seconds=3.0))
-                )
+                (
+                    lambda r: last.update({"out": r.stdout})
+                    or (missing_name not in r.stdout)
+                )(wt_cli.status(timeout=timedelta(seconds=3.0)))
             ),
             timeout_seconds=timeout,
             interval_seconds=WATCHER_DEBOUNCE_SECS,
         )
         if not ok:
-            print(f"DEBUG last status while waiting removal of {missing_name}:\n{last['out']}")
+            print(
+                f"DEBUG last status while waiting removal of {missing_name}:\n{last['out']}"
+            )
         return ok
 
     for name in worktree_names:

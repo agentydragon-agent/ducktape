@@ -41,4 +41,3 @@ async def test_compositor_admin_attach_invalid_name_errors(admin_env, stdio_echo
     # Invalid name containing double underscore should fail
     with pytest.raises(Exception):
         await admin.attach_server(name="bad__name", spec=stdio_echo_spec)
-

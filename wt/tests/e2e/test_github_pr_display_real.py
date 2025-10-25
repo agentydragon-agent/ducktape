@@ -112,4 +112,6 @@ def test_github_pr_display_with_mocked_pygithub(
         interval_seconds=0.25,
     )
     if not ok:
-        raise AssertionError(f"PR details not shown in time. Last output:\n{last['out']}")
+        raise AssertionError(
+            f"PR details not shown in time. Last output:\n{last['out']}"
+        )

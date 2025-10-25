@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
+from .constants import TOOLS_HEADER
 from .openai_typing import (
     iter_resolved_text,
     message_content_as_text,
@@ -13,7 +14,6 @@ from .openai_typing import (
     parse_response_messages,
     parse_response_parts,
 )
-from .constants import TOOLS_HEADER
 
 
 def join_text_parts(content: Any) -> str:

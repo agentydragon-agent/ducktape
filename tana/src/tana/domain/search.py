@@ -52,5 +52,3 @@ SearchExpression = Annotated[
 
 
 BooleanSearch.model_rebuild()
-
-

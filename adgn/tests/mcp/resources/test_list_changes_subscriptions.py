@@ -71,4 +71,3 @@ async def test_list_changes_multiple_subscriptions_and_unsubscribe():
         await rc.unsubscribe_list_changes(server="a")
         idx2 = await rc.list_subscriptions()
         assert_that([x.server for x in idx2.list_subscriptions], contains("b"))
-

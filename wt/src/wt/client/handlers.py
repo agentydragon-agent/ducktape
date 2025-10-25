@@ -51,7 +51,11 @@ async def handle_status(daemon_client, formatter) -> None:
     components = all_status.components
     if components:
         msgs = []
-        if components.github and components.github.state and components.github.state.value != "ok":
+        if (
+            components.github
+            and components.github.state
+            and components.github.state.value != "ok"
+        ):
             last_err = components.github.last_error or ""
             msgs.append(f"github: {last_err}".strip())
         if components.gitstatusd and components.gitstatusd.metrics:

@@ -130,7 +130,9 @@ class Configuration:
 
         post_creation_script = None
         if config_file.post_creation_script:
-            post_creation_script = Path(config_file.post_creation_script).expanduser().resolve()
+            post_creation_script = (
+                Path(config_file.post_creation_script).expanduser().resolve()
+            )
 
         cfg = cls(
             wt_dir=wt_dir,

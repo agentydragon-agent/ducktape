@@ -14,7 +14,6 @@ from adgn.seatbelt.model import (
     Subpath,
 )
 from adgn.seatbelt.runner import apopen, run_sandboxed_async
-
 from tests._markers import REQUIRES_SANDBOX_EXEC
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC]

@@ -63,7 +63,7 @@ async def test_subscriptions_index_updates_on_unmount():
     async with Client(comp) as gw:
         res_server = make_resources_server(name="resources", gateway_client=gw, compositor=comp)
         async with Client(res_server) as client:
-        # Subscribe to an origin resource via the resources server tool
+            # Subscribe to an origin resource via the resources server tool
             rc = ResourcesClient(client)
             await rc.subscribe(server="origin", uri="resource://foo/bar")
             assert hooks.subscribed, "expected origin to receive subscribe"

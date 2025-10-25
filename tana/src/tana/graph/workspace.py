@@ -91,5 +91,3 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
                     _add(child_id, list(idx[wrapper.id]))
 
         self._supertag_index = dict(idx)
-
-

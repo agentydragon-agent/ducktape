@@ -15,17 +15,18 @@ from adgn.openai_utils.model import (
     ReasoningItem,
     ResponsesResult,
 )
-from tests.fixtures.responses import ResponsesFactory
 from tests.agent.ui.typed_asserts import (
     assert_items_exclude_instance,
     assert_items_include_instances,
 )
+from tests.fixtures.responses import ResponsesFactory
 
 
 @pytest.fixture
 def approval_policy_reader_allow_all(approval_policy_reader_stub):
     """Override policy reader with a stub that approves without Docker."""
     return approval_policy_reader_stub
+
 
 # Use our shared Pydantic-only fake model client
 

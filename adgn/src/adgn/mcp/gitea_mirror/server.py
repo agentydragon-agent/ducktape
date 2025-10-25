@@ -102,7 +102,9 @@ class _RepositoryInfo(BaseModel):
 T_Model = TypeVar("T_Model", bound=BaseModel)
 
 
-def _get_typed_json(url: str, token: str, model_type: type[T_Model], *, timeout: int = 15) -> T_Model:
+def _get_typed_json(
+    url: str, token: str, model_type: type[T_Model], *, timeout: int = 15
+) -> T_Model:
     payload = _get_json(url, token, timeout=timeout)
     try:
         return model_type.model_validate(payload)

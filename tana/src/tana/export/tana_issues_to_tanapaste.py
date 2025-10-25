@@ -3,7 +3,6 @@
 from pathlib import Path
 import sys
 
-from tana.domain.types import NodeId
 from tana.export.convert import RenderContext
 from tana.query.filters import filter_open_issues
 from tana.workspace import Workspace

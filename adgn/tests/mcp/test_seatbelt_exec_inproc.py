@@ -24,10 +24,10 @@ from adgn.seatbelt.model import (
     SystemRule,
     TraceConfig,
 )
-
 from tests._markers import REQUIRES_SANDBOX_EXEC
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
+
 
 @pytest.fixture
 def open_seatbelt_session(sqlite_persistence):

@@ -37,7 +37,9 @@ def test_approval_prompt_auto_appears(
                 build_mcp_function("echo", "echo"), {"text": "hello"}, call_id="call_echo"
             )
         # After approval, agent should end turn
-        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+        return responses_factory.make_tool_call(
+            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
+        )
 
     client = make_mock(responses_create)
     specs = make_echo_spec()

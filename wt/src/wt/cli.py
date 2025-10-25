@@ -301,7 +301,9 @@ def cmd_create(
       wt create foo -w dev
     """
     verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, _daemon_client, _plugin_manager = _create_cli_dependencies(verbose=verbose)
+    config, formatter, _daemon_client, _plugin_manager = _create_cli_dependencies(
+        verbose=verbose
+    )
     asyncio.run(
         handle_create_worktree(
             config,
@@ -335,7 +337,9 @@ def cmd_status(ctx: typer.Context, name: str | None = typer.Argument(None)):
 
 @app.command("cp")
 def cmd_cp(
-    ctx: typer.Context, source: str = typer.Argument(...), dest: str | None = typer.Argument(None)
+    ctx: typer.Context,
+    source: str = typer.Argument(...),
+    dest: str | None = typer.Argument(None),
 ):
     """Copy current or named worktree to a new worktree."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
@@ -347,7 +351,9 @@ def cmd_cp(
 def cmd_rm(
     ctx: typer.Context,
     name: str = typer.Argument(...),
-    force: bool = typer.Option(False, "--force", help="Force removal without confirmation"),
+    force: bool = typer.Option(
+        False, "--force", help="Force removal without confirmation"
+    ),
 ):
     """Remove a worktree."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
@@ -395,7 +401,9 @@ def cmd_sh(ctx: typer.Context):
     Interprets arbitrary arguments using the internal sh-style dispatcher.
     """
     verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
+        verbose=verbose
+    )
     asyncio.run(
         _async_sh_main(
             daemon_client,

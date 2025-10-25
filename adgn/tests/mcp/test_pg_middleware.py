@@ -7,9 +7,9 @@ import pytest
 from adgn.agent.handler import ContinueDecision
 from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.mcp._shared.constants import (
+    POLICY_BACKEND_RESERVED_MISUSE_MSG,
     POLICY_DENIED_ABORT_MSG,
     POLICY_DENIED_CONTINUE_MSG,
-    POLICY_BACKEND_RESERVED_MISUSE_MSG,
 )
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
@@ -28,9 +28,7 @@ def _policy_source(decision: ApprovalDecision) -> str:
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-async def test_pg_middleware_allow(
-    make_pg_compositor, make_policy_engine, backend_server
-):
+async def test_pg_middleware_allow(make_pg_compositor, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.ALLOW))
     reader = ApprovalPolicyServer(eng)
     async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (
@@ -45,9 +43,7 @@ async def test_pg_middleware_allow(
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-async def test_pg_middleware_deny_abort(
-    make_pg_compositor, make_policy_engine, backend_server
-):
+async def test_pg_middleware_deny_abort(make_pg_compositor, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.DENY_ABORT))
     reader = ApprovalPolicyServer(eng)
     async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (
@@ -61,9 +57,7 @@ async def test_pg_middleware_deny_abort(
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-async def test_pg_middleware_deny_continue(
-    make_pg_compositor, make_policy_engine, backend_server
-):
+async def test_pg_middleware_deny_continue(make_pg_compositor, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.DENY_CONTINUE))
     reader = ApprovalPolicyServer(eng)
     async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (
@@ -95,7 +89,9 @@ async def test_pg_middleware_reserved_backend_code_remap(
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-@pytest.mark.xfail(reason="In-proc raises drop ErrorData; stamp not inspectable at middleware layer")
+@pytest.mark.xfail(
+    reason="In-proc raises drop ErrorData; stamp not inspectable at middleware layer"
+)
 async def test_pg_middleware_backend_stamp_misuse(
     make_pg_compositor, approval_policy_reader_allow_all, backend_server
 ):
@@ -117,7 +113,6 @@ async def test_pg_middleware_backend_stamp_misuse_via_proxy(
 
     # Wrap backend in a FastMCP proxy so downstream errors arrive as result-path
     # CallToolResult (structured ErrorData preserved)
-    from fastmcp.server import FastMCP
 
     proxy = FastMCP.as_proxy(backend_server)
 

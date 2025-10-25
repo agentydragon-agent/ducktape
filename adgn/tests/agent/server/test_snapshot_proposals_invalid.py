@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import docker
-import pytest
-from hamcrest import assert_that, equal_to, has_length, not_none
-
 from fastmcp.mcp_config import MCPConfig
+from hamcrest import assert_that, equal_to, has_length, not_none
+import pytest
 
 from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
 from adgn.agent.persist import AgentMetadata
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
+import docker
 
 
 @pytest.mark.asyncio

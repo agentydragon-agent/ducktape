@@ -28,9 +28,9 @@ from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict
 
 from adgn.openai_utils.probe.core import (
-    ErrorCode,
     FAMILY_PRIORITY,
     FATAL_CODES,
+    ErrorCode,
     Family,
     ModelProbe,
     ProbeRun,
@@ -380,6 +380,7 @@ ERROR_RULES: Mapping[ErrorCode, tuple[str, Callable[[str], bool]]] = {
     ),
     # ... rules elided for brevity ...
 }
+
 
 def _squeeze_one_line(text: str, max_len: int = 120) -> str:
     s = " ".join(str(text).split())

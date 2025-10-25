@@ -36,6 +36,7 @@ pytest_plugins = (
     "pytest_asyncio",  # Ensure async fixtures work in worker processes
 )
 
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("adgn")
     group.addoption(
@@ -108,9 +109,7 @@ async def sqlite_persistence(tmp_path):
 
 
 @pytest.fixture
-def make_policy_engine(
-    sqlite_persistence, request: pytest.FixtureRequest
-):
+def make_policy_engine(sqlite_persistence, request: pytest.FixtureRequest):
     """Factory producing ApprovalPolicyEngine instances with per-test defaults."""
 
     def _make(policy_source: str, *, agent_id: str | None = None) -> ApprovalPolicyEngine:

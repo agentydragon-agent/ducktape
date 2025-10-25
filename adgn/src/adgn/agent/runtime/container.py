@@ -22,12 +22,12 @@ from adgn.agent.persist import ApprovalOutcome
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import discover_presets
+from adgn.agent.runtime.images import resolve_runtime_image
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.protocol import ApprovalPendingEvt
 from adgn.agent.server.rendering import render_compositor_instructions
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.agent.server.system_message import get_ui_system_message
-from adgn.agent.runtime.images import resolve_runtime_image
 
 # Avoid importing seatbelt_exec server at module import time; use a local import where needed
 from adgn.mcp._shared.constants import (

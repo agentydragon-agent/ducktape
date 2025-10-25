@@ -19,8 +19,8 @@ import uuid
 
 import click
 import psutil
-import pygit2
 from pydantic import BaseModel, TypeAdapter, ValidationError
+import pygit2
 
 from ..shared.configuration import Configuration
 from ..shared.env import is_test_mode
@@ -181,7 +181,9 @@ class WtClient:
             except (OSError, RuntimeError, ValueError) as e:
                 diag = self._collect_daemon_diagnostics()
                 raise RuntimeError(
-                    "Daemon startup failed.\n" + diag if diag else "Daemon startup failed.",
+                    "Daemon startup failed.\n" + diag
+                    if diag
+                    else "Daemon startup failed.",
                 ) from e
             finally:
                 self._handshake_pipe = None
@@ -366,9 +368,9 @@ class WtClient:
                 hook_ev: HookOutputEvent = HookOutputEvent.model_validate(obj)
                 if callable(hook_cb):
                     hook_cb(hook_ev)
-                (hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr).append(
-                    hook_ev.data
-                )
+                (
+                    hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr
+                ).append(hook_ev.data)
                 continue
             if ev == "progress":
                 prog_ev: ProgressEvent = ProgressEvent.model_validate(obj)
@@ -398,7 +400,9 @@ class WtClient:
                 _echo_io()
             if err == "timeout":
                 if (ts := post.timeout_secs) is not None:
-                    raise RuntimeError(f"Post-creation script timed out after {ts:.1f}s")
+                    raise RuntimeError(
+                        f"Post-creation script timed out after {ts:.1f}s"
+                    )
                 raise RuntimeError("Post-creation script timed out")
             raise RuntimeError(f"Post-creation script error: {err}")
         if not post.ran:
@@ -432,10 +436,14 @@ class WtClient:
             source_wtid=source_wtid,
             source_branch=source_branch,
         )
-        request = Request(method="worktree_create", params=params.model_dump(), id=request_id)
+        request = Request(
+            method="worktree_create", params=params.model_dump(), id=request_id
+        )
 
         try:
-            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_path)
+            reader, writer = await asyncio.open_unix_connection(
+                self.config.daemon_socket_path
+            )
             try:
                 # Send request
                 writer.write(request.model_dump_json().encode())
@@ -465,11 +473,15 @@ class WtClient:
                 return result
             except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as e:
                 logger.exception("Failed to parse daemon worktree_create response")
-                raise RuntimeError("Failed to parse daemon worktree_create response") from e
+                raise RuntimeError(
+                    "Failed to parse daemon worktree_create response"
+                ) from e
 
         except (TimeoutError, ConnectionError, FileNotFoundError, OSError) as e:
             if self.verbose:
-                logger.exception("Failed to communicate with daemon for worktree_create")
+                logger.exception(
+                    "Failed to communicate with daemon for worktree_create"
+                )
             raise RuntimeError("Daemon worktree_create communication failed") from e
 
     async def delete_worktree(

@@ -69,7 +69,9 @@ class RpcRegistry:
     def __init__(self) -> None:
         self._handlers: dict[
             str,
-            Callable[[Request, WtDaemon, Any, datetime], Awaitable[Response | ErrorResponse]],
+            Callable[
+                [Request, WtDaemon, Any, datetime], Awaitable[Response | ErrorResponse]
+            ],
         ] = {}
         self._stream_methods: set[str] = set()
 
@@ -104,7 +106,9 @@ class RpcRegistry:
         type_hints = get_type_hints(fn)
         for p in sig.parameters.values():
             anno = type_hints.get(p.name, p.annotation)
-            if stream_obj is not None and (anno is Stream or get_origin(anno) is Stream):
+            if stream_obj is not None and (
+                anno is Stream or get_origin(anno) is Stream
+            ):
                 args.append(stream_obj)
             elif params_obj is not None and anno is type(params_obj):
                 args.append(params_obj)
@@ -127,7 +131,9 @@ class RpcRegistry:
         ) -> Response | ErrorResponse:
             try:
                 params = (
-                    params_model.model_validate(req.params) if params_model is not None else None
+                    params_model.model_validate(req.params)
+                    if params_model is not None
+                    else None
                 )
             except ValidationError as e:
                 return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)

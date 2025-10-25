@@ -20,9 +20,7 @@ CallToolResult = mcp_types.CallToolResult
 
 T_Out = TypeVar("T_Out")
 
-_CALL_RESULT_TYPE_ERR = (
-    "expected fastmcp.client CallToolResult, got {typename}"
-)
+_CALL_RESULT_TYPE_ERR = "expected fastmcp.client CallToolResult, got {typename}"
 
 
 def _normalize_result(raw: object, *, tool_name: str) -> CallToolResult:
@@ -70,9 +68,7 @@ def _build_arguments(
     tool_name: str,
 ) -> dict[str, object] | None:
     if input_model is not None and not isinstance(payload, input_model):
-        raise TypeError(
-            f"{tool_name} expects {input_model.__name__}, got {type(payload).__name__}"
-        )
+        raise TypeError(f"{tool_name} expects {input_model.__name__}, got {type(payload).__name__}")
     if isinstance(payload, BaseModel):
         data = cast(dict[str, object], payload.model_dump(exclude_none=exclude_none))
     else:

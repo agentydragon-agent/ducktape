@@ -30,6 +30,7 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC]
 # - WebKit NetworkProcess sandbox (exec-mapped system paths and broad read allowances):
 #   https://github.com/apple-oss-distributions/WebKit/blob/main/Source/WebKit/NetworkProcess/mac/com.apple.WebKit.NetworkProcess.sb.in
 
+
 @pytest.mark.parametrize(
     ("label", "add_rules", "expect"),
     [

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 from pathlib import Path
-from typing import Mapping, cast
+from typing import cast
 
 from openai.types.responses import (
     FunctionTool,
@@ -18,7 +19,9 @@ import pytest
 
 from ember.history import ConversationHistory
 
-_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(ResponseInputItemParam)
+_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(
+    ResponseInputItemParam
+)
 
 
 @pytest.fixture
@@ -52,7 +55,10 @@ def test_history_persists_and_builds_input_items(history: ConversationHistory) -
     )
     history.append_input(function_output)
 
-    items = [cast(Mapping[str, object], item) for item in history.build_input_items("system prompt")]
+    items = [
+        cast(Mapping[str, object], item)
+        for item in history.build_input_items("system prompt")
+    ]
 
     assert items[0]["role"] == "system"
     reasoning_items = [item for item in items if item.get("type") == "reasoning"]
@@ -61,7 +67,9 @@ def test_history_persists_and_builds_input_items(history: ConversationHistory) -
     assert reasoning_model.encrypted_content == "ciphertext"
     assert reasoning_model.content in (None, [])
 
-    function_outputs = [item for item in items if item.get("type") == "function_call_output"]
+    function_outputs = [
+        item for item in items if item.get("type") == "function_call_output"
+    ]
     assert function_outputs and function_outputs[0]["call_id"] == "call-1"
 
     lines = history.path.read_text(encoding="utf-8").splitlines()
@@ -71,10 +79,13 @@ def test_history_persists_and_builds_input_items(history: ConversationHistory) -
 
     reloaded = ConversationHistory(history.path)
     reloaded_items = [
-        cast(Mapping[str, object], entry) for entry in reloaded.build_input_items("system prompt")
+        cast(Mapping[str, object], entry)
+        for entry in reloaded.build_input_items("system prompt")
     ]
     assert len(reloaded_items) == len(items)
-    assert [item.get("type") for item in reloaded_items] == [item.get("type") for item in items]
+    assert [item.get("type") for item in reloaded_items] == [
+        item.get("type") for item in items
+    ]
 
 
 def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Response:
@@ -101,12 +112,12 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
                 description="Execute shell command.",
                 parameters={
                     "type": "object",
-                "properties": {"command": {"type": "string"}},
-                "required": ["command"],
-            },
-            strict=False,
-            type="function",
-        ),
+                    "properties": {"command": {"type": "string"}},
+                    "required": ["command"],
+                },
+                strict=False,
+                type="function",
+            ),
             FunctionTool(
                 name="yield_control",
                 description="Yield control to runtime loop.",

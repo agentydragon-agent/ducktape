@@ -37,8 +37,8 @@ import os
 import pygit2
 import pytest
 
-from wt.shared.git_utils import git_run
 from tests.asserts import assert_output_contains
+from wt.shared.git_utils import git_run
 
 # from ..conftest import kill_daemon_at_wt_dir
 
@@ -86,7 +86,9 @@ class TestCLIIntegration:
 
         # Verify branch was created using pygit2
         repo = pygit2.Repository(str(real_temp_repo))
-        branch_names = [name for name in repo.references if name.startswith("refs/heads/test/")]
+        branch_names = [
+            name for name in repo.references if name.startswith("refs/heads/test/")
+        ]
         assert "refs/heads/test/new-feature" in branch_names
 
     def test_list_worktrees_with_existing(self, real_temp_repo, real_env, wt_cli):
@@ -186,7 +188,9 @@ class TestRealGitOperations:
 
         # Check that branch exists using pygit2
         repo = pygit2.Repository(str(real_temp_repo))
-        branch_names = [name for name in repo.references if name.startswith("refs/heads/test/")]
+        branch_names = [
+            name for name in repo.references if name.startswith("refs/heads/test/")
+        ]
         assert "refs/heads/test/test-branch" in branch_names
 
         # Check worktree is on correct branch

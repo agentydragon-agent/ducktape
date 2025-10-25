@@ -103,22 +103,18 @@ def _ensure_model_rebuild(model: type[BaseModel], *, kind: str) -> None:
     try:
         model.model_rebuild()
     except AttributeError as exc:
-        raise TypeError(
-            f"{kind} model must be a Pydantic BaseModel with model_rebuild()"
-        ) from exc
+        raise TypeError(f"{kind} model must be a Pydantic BaseModel with model_rebuild()") from exc
     except Exception as exc:  # pragma: no cover - debug logging path
         logger.debug("model_rebuild() on %s failed: %s", kind, exc)
 
 
 def _extract_signature_params(
-    fn: Callable[..., Any]
+    fn: Callable[..., Any],
 ) -> tuple[inspect.Parameter, inspect.Parameter | None, str | None]:
     sig = inspect.signature(fn)
     params = list(sig.parameters.values())
     if len(params) not in (1, 2):
-        raise TypeError(
-            "@mcp_flat_model expects the payload model parameter and optional Context"
-        )
+        raise TypeError("@mcp_flat_model expects the payload model parameter and optional Context")
     payload_param = params[0]
     context_param: inspect.Parameter | None = None
     if len(params) == 2:

@@ -274,7 +274,8 @@ class WtDaemon:
         if (
             self.daemon_health.status == DaemonHealthStatus.ERROR
             and self.daemon_health.last_error_time
-            and (datetime.now() - self.daemon_health.last_error_time) > timedelta(seconds=60)
+            and (datetime.now() - self.daemon_health.last_error_time)
+            > timedelta(seconds=60)
         ):
             self.daemon_health.status = DaemonHealthStatus.OK
             self.daemon_health.last_error = None
@@ -533,7 +534,9 @@ class WtDaemon:
 
         except Exception:
             logger.exception("Error handling client request")
-            rid = request.id if ("request" in locals() and request) else uuid.UUID(int=0)
+            rid = (
+                request.id if ("request" in locals() and request) else uuid.UUID(int=0)
+            )
             with contextlib.suppress(Exception):
                 await self._send_response(
                     writer,

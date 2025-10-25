@@ -6,7 +6,6 @@ from datetime import datetime
 import logging
 import os
 from pathlib import Path
-from typing import Callable
 from uuid import UUID
 
 from fastapi import Body, FastAPI, HTTPException, Response
@@ -30,10 +29,7 @@ from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession
 from adgn.agent.server.status_shared import (
-    AgentLifecycle,
     AgentStatusCore,
-    ContainerState,
-    RunPhase,
     build_agent_status_core,
 )
 from adgn.agent.server.ws import register_ws
@@ -43,10 +39,8 @@ from adgn.mcp.approval_policy.server import (
     ApproveProposalArgs,
     RejectProposalArgs,
 )
-from adgn.mcp.snapshots import ServerEntry
 
 # (runtime container constants used only in shared status builder)
-from adgn.openai_utils.model import OpenAIModelProto, FakeOpenAIModel
 import docker  # type: ignore
 
 PROTOCOL_VERSION = "1.0.0"

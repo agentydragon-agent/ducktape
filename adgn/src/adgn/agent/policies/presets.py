@@ -5,7 +5,6 @@ from __future__ import annotations
 from adgn.agent.policies.approve_all import decide
 from adgn.agent.policies.scaffold import run
 
-
 __all__ = ["decide"]
 
 

@@ -6,7 +6,6 @@ from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, Po
 from adgn.agent.policies.scaffold import run
 from adgn.mcp._shared.naming import build_mcp_function, server_matches
 
-
 UI_SEND = build_mcp_function("ui", "send_message")
 UI_END = build_mcp_function("ui", "end_turn")
 

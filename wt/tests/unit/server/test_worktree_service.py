@@ -22,7 +22,10 @@ class TestWorktreeService:
         )
 
         service = (
-            service_builder(config).with_real_git().with_mock_github().build_worktree_service()
+            service_builder(config)
+            .with_real_git()
+            .with_mock_github()
+            .build_worktree_service()
         )
         return service, config
 
@@ -41,7 +44,10 @@ class TestWorktreeService:
         config = factory.minimal(**minimal_kwargs)
 
         service = (
-            service_builder(config).with_real_git().with_mock_github().build_worktree_service()
+            service_builder(config)
+            .with_real_git()
+            .with_mock_github()
+            .build_worktree_service()
         )
         return service, config
 
@@ -158,7 +164,9 @@ echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
 
         worktree_path = service.create_worktree(config, "script-test")
 
-        result = await WorktreeService.run_post_creation_script(str(script_path), worktree_path)
+        result = await WorktreeService.run_post_creation_script(
+            str(script_path), worktree_path
+        )
         assert result["ran"] is True
         assert result["exit_code"] == 0
 

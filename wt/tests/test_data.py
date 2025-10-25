@@ -68,9 +68,7 @@ class TestData:
     class Files:
         """File content and names."""
 
-        README_CONTENT = (
-            "# Test Repository\n\nThis is a test repository for worktree management testing."
-        )
+        README_CONTENT = "# Test Repository\n\nThis is a test repository for worktree management testing."
         GITIGNORE_CONTENT = "*.pyc\n__pycache__/\n.pytest_cache/\n"
 
         # Standard test files

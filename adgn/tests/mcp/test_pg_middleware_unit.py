@@ -1,6 +1,5 @@
-import pytest
-
 from mcp import McpError, types
+import pytest
 
 from adgn.mcp._shared.constants import (
     POLICY_BACKEND_RESERVED_MISUSE_CODE,

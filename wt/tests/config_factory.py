@@ -55,7 +55,9 @@ class ConfigFactory:
         # Set up WT_DIR
         if wt_dir is None:
             wt_dir = (
-                self.temp_base_dir / TestData.Paths.TEST_WT_DIR_PARENT / TestData.Paths.WT_DIR_NAME
+                self.temp_base_dir
+                / TestData.Paths.TEST_WT_DIR_PARENT
+                / TestData.Paths.WT_DIR_NAME
             )
 
         # Create default configuration
@@ -131,7 +133,8 @@ class ConfigFactory:
         return [
             name
             for name in dir(ConfigPresets)
-            if not name.startswith("_") and isinstance(getattr(ConfigPresets, name), dict)
+            if not name.startswith("_")
+            and isinstance(getattr(ConfigPresets, name), dict)
         ]
 
 

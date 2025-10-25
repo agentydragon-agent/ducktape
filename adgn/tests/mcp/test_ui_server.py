@@ -3,10 +3,10 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.loop_control import Abort, Continue, RequireAny
+from adgn.agent.notifications.types import NotificationsBatch
 from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.mcp.ui.server import EndTurnInput, SendMessageInput, make_ui_server
-from adgn.agent.notifications.types import NotificationsBatch
 
 
 @pytest.fixture

@@ -25,7 +25,9 @@ async def test_ephemeral_exec_stdout_stderr_timeout(make_typed_mcp) -> None:
         r1 = await client.exec(ExecInput(cmd=["/bin/echo", "hello"], timeout_ms=5000))
         assert r1.exit_code == 0 and r1.timed_out is False and (r1.stdout or "").strip() == "hello"
         # stderr and nonzero exit
-        r2 = await client.exec(ExecInput(cmd=["sh", "-lc", "echo err 1>&2; exit 3"], timeout_ms=5000))
+        r2 = await client.exec(
+            ExecInput(cmd=["sh", "-lc", "echo err 1>&2; exit 3"], timeout_ms=5000)
+        )
         assert r2.exit_code == 3 and "err" in (r2.stderr or "")
         # timeout
         r3 = await client.exec(ExecInput(cmd=["sh", "-lc", "sleep 5"], timeout_ms=500))

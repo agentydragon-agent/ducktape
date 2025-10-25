@@ -9,8 +9,8 @@ from adgn.mcp._shared.constants import (
     COMPOSITOR_ADMIN_SERVER_NAME,
 )
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.snapshots import ServerEntry as CompositorStateValue
 from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.snapshots import ServerEntry as CompositorStateValue
 
 
 class _AttachServerArgs(BaseModel):

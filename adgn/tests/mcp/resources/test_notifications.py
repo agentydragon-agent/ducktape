@@ -47,4 +47,3 @@ async def test_resources_list_changed_notification():
                     break
                 await asyncio.sleep(0.01)
             assert "list_changed" in catcher.events
-

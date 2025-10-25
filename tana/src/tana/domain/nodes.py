@@ -141,5 +141,3 @@ DOC_CLASS: Mapping[str | None, type[BaseNode]] = {
     "codeblock": CodeBlockNode,
     None: UnknownNode,
 }
-
-

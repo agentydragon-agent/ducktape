@@ -53,7 +53,9 @@ def parse_system_notification_payload(message: str | UserMessage) -> dict:
     return json.loads(payload_str)
 
 
-def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed: bool | None = None) -> None:  # type: ignore[no-untyped-def]
+def enable_resources_caps(
+    server, *, subscribe: bool | None = None, list_changed: bool | None = None
+) -> None:  # type: ignore[no-untyped-def]
     """Monkeypatch a FastMCP/NotifyingFastMCP server to advertise resources capabilities.
 
     This wraps the server's low-level create_initialization_options() to inject
@@ -67,7 +69,9 @@ def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed
     base_create = ll.create_initialization_options
     base_get_caps = ll.get_capabilities
 
-    def patched_create_initialization_options(notification_options=None, experimental_capabilities=None, **kwargs):  # type: ignore[no-untyped-def]
+    def patched_create_initialization_options(
+        notification_options=None, experimental_capabilities=None, **kwargs
+    ):  # type: ignore[no-untyped-def]
         caps = dict(experimental_capabilities or {})
         res = dict(caps.get("resources") or {})
         if subscribe is not None:
@@ -102,11 +106,13 @@ def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed
     if subscribe:
         # Ensure subscribe/unsubscribe handlers exist so requests succeed.
         if types.SubscribeRequest not in ll.request_handlers:
+
             @ll.subscribe_resource()
             async def _test_subscribe(_uri):
                 return None
 
         if types.UnsubscribeRequest not in ll.request_handlers:
+
             @ll.unsubscribe_resource()
             async def _test_unsubscribe(_uri):
                 return None

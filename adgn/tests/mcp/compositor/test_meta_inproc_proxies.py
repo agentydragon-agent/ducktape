@@ -39,4 +39,3 @@ async def test_meta_presents_inproc_mounts(make_pg_compositor, approval_policy_r
         assert isinstance(entry, RunningServerEntry)
         assert entry.initialize is not None
         assert isinstance(entry.tools, list)
-

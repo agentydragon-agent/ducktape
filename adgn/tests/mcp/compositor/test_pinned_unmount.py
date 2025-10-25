@@ -29,4 +29,3 @@ async def test_unmount_pinned_server_errors_and_kept():
 
     specs = await comp.mount_specs()
     assert "backend" in specs, "pinned server should remain mounted after failed unmount"
-

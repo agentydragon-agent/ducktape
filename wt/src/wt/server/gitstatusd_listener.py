@@ -15,8 +15,8 @@ from enum import StrEnum
 import logging
 import shutil
 import subprocess
-import uuid
 from typing import Literal, Self
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +207,7 @@ class GitstatusWorkingSummary:
             last_error=last_error,
         )
 
+
 SHA_HEX_LEN = 40
 
 
@@ -251,7 +252,9 @@ class GitStatusdProtocol:
             try:
                 is_git_repository = int(fields[1]) == 1
             except (ValueError, IndexError) as e:
-                raise GitStatusdValidationError(f"Invalid git repository flag: {e}") from e
+                raise GitStatusdValidationError(
+                    f"Invalid git repository flag: {e}"
+                ) from e
 
             # If not a git repository, return minimal response
             if not is_git_repository:
@@ -357,7 +360,9 @@ class GitStatusdProtocol:
         try:
             return int(value)
         except ValueError as e:
-            raise GitStatusdValidationError(f"Invalid integer in field {index}: {e}") from e
+            raise GitStatusdValidationError(
+                f"Invalid integer in field {index}: {e}"
+            ) from e
 
     @staticmethod
     def _safe_get_commit_hash(fields: list[str], index: int) -> str | None:
@@ -367,7 +372,9 @@ class GitStatusdProtocol:
             return None
 
         # Validate commit hash format (40 hex characters)
-        if len(value) != SHA_HEX_LEN or not all(c in "0123456789abcdef" for c in value.lower()):
+        if len(value) != SHA_HEX_LEN or not all(
+            c in "0123456789abcdef" for c in value.lower()
+        ):
             raise GitStatusdValidationError(f"Invalid commit hash format: {value}")
 
         return value
@@ -567,9 +574,17 @@ class GitstatusdListener:
             )
 
         staged = response.staged_changes if response.staged_changes is not None else 0
-        unstaged = response.unstaged_changes if response.unstaged_changes is not None else 0
-        conflicted = response.conflicted_changes if response.conflicted_changes is not None else 0
-        untracked = response.untracked_files if response.untracked_files is not None else 0
+        unstaged = (
+            response.unstaged_changes if response.unstaged_changes is not None else 0
+        )
+        conflicted = (
+            response.conflicted_changes
+            if response.conflicted_changes is not None
+            else 0
+        )
+        untracked = (
+            response.untracked_files if response.untracked_files is not None else 0
+        )
 
         staged_limit_hit = self._count_limits.limit_hit(staged, "staged")
         unstaged_limit_hit = self._count_limits.limit_hit(unstaged, "unstaged")

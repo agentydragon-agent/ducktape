@@ -18,12 +18,32 @@ def _log_config() -> dict:
     config["formatters"]["default"]["fmt"] = default_fmt
     config["formatters"]["access"]["fmt"] = access_fmt
     config.setdefault("loggers", {})
-    config["loggers"][""] = {"handlers": ["default"], "level": "INFO", "propagate": True}
+    config["loggers"][""] = {
+        "handlers": ["default"],
+        "level": "INFO",
+        "propagate": True,
+    }
     config["loggers"]["uvicorn.error"] = {"level": "INFO"}
-    config["loggers"]["uvicorn.access"] = {"handlers": ["access"], "level": "INFO", "propagate": False}
-    config["loggers"]["uvicorn"] = {"handlers": ["default"], "level": "INFO", "propagate": False}
-    config["loggers"]["ember"] = {"handlers": ["default"], "level": "INFO", "propagate": False}
-    config["loggers"]["ember.matrix_client"] = {"handlers": ["default"], "level": "DEBUG", "propagate": False}
+    config["loggers"]["uvicorn.access"] = {
+        "handlers": ["access"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    config["loggers"]["uvicorn"] = {
+        "handlers": ["default"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    config["loggers"]["ember"] = {
+        "handlers": ["default"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    config["loggers"]["ember.matrix_client"] = {
+        "handlers": ["default"],
+        "level": "DEBUG",
+        "propagate": False,
+    }
     return config
 
 

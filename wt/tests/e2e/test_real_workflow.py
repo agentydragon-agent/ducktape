@@ -86,7 +86,9 @@ def test_real_workflow_with_existing_worktrees(
 
 
 @pytest.mark.timeout(10)
-def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env, wt_cli):
+def test_real_workflow_git_repo_to_worktrees_to_status(
+    real_temp_repo, real_env, wt_cli
+):
     """
     Test workflow: git repo -> make worktrees 1,2 -> jump to worktree -> rm other -> status
     This tests the ACTUAL UNMODIFIED UNMOCKED program with real git operations.
@@ -227,7 +229,9 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env, wt_cli):
 
     pid_file = daemon_dir / "daemon.pid"
     # Wait for daemon to start up
-    assert wait_until(lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
+    assert wait_until(
+        lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05
+    )
 
     # Step 3: Verify daemon is actually running
     assert pid_file.exists(), "Daemon PID file not created"
@@ -247,7 +251,9 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env, wt_cli):
     assert result.returncode == 0
 
     # Step 5: Verify daemon is no longer running
-    wait_until(lambda: not pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
+    wait_until(
+        lambda: not pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05
+    )
 
     try:
         os.kill(pid, 0)  # Check if process still exists

@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
+from tests.asserts import assert_output_contains
 from wt.cli import app
 from wt.shared.protocol import (
     CommitInfo,
@@ -18,7 +19,6 @@ from wt.shared.protocol import (
     WorktreeInfo,
     WorktreeListResult,
 )
-from tests.asserts import assert_output_contains
 
 
 @pytest.mark.integration
@@ -152,7 +152,9 @@ class TestNewCLIIntegration:
             dirty_files_lower_bound=0,
             untracked_files_lower_bound=0,
         )
-        mock_get_status.return_value = build_status_response({"test-worktree": test_result})
+        mock_get_status.return_value = build_status_response(
+            {"test-worktree": test_result}
+        )
 
         result = CliRunner().invoke(app, [])
 

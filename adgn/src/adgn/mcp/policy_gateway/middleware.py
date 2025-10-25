@@ -81,9 +81,16 @@ def _raise_if_reserved_code(e: McpError, name: str) -> None:
                         stamped = True
                         break
 
-    if stamped or (
-        code in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
-    ) or (msg in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG)):
+    if (
+        stamped
+        or (
+            code
+            in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
+        )
+        or (
+            msg in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG)
+        )
+    ):
         raise McpError(
             ErrorData(
                 code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
@@ -151,7 +158,9 @@ class PolicyGatewayMiddleware(Middleware):
 
         # Evaluate decision via MCP reader server when available; fallback to local evaluator
         try:
-            decision_res = await self._policy_reader.decide(PolicyRequest(name=name, arguments=arguments))
+            decision_res = await self._policy_reader.decide(
+                PolicyRequest(name=name, arguments=arguments)
+            )
             decision = decision_res.decision
             rationale = decision_res.rationale
         except Exception as e:  # policy engine failure → explicit evaluator error
@@ -195,7 +204,10 @@ class PolicyGatewayMiddleware(Middleware):
                                     code_val = None
                                 try:
                                     data = getattr(ed, "data", None)
-                                    if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
+                                    if (
+                                        isinstance(data, dict)
+                                        and data.get(POLICY_GATEWAY_STAMP_KEY) is True
+                                    ):
                                         stamped_downstream = True
                                 except Exception:
                                     stamped_downstream = False
@@ -210,19 +222,23 @@ class PolicyGatewayMiddleware(Middleware):
                                 code_val = None
                     if msg is None:
                         msg = getattr(call_result, "message", None)
-                    if stamped_downstream or (
-                        code_val
-                        in (
-                            POLICY_DENIED_ABORT_CODE,
-                            POLICY_DENIED_CONTINUE_CODE,
-                            POLICY_EVALUATOR_ERROR_CODE,
+                    if (
+                        stamped_downstream
+                        or (
+                            code_val
+                            in (
+                                POLICY_DENIED_ABORT_CODE,
+                                POLICY_DENIED_CONTINUE_CODE,
+                                POLICY_EVALUATOR_ERROR_CODE,
+                            )
                         )
-                    ) or (
-                        msg
-                        in (
-                            POLICY_DENIED_ABORT_MSG,
-                            POLICY_DENIED_CONTINUE_MSG,
-                            POLICY_EVALUATOR_ERROR_MSG,
+                        or (
+                            msg
+                            in (
+                                POLICY_DENIED_ABORT_MSG,
+                                POLICY_DENIED_CONTINUE_MSG,
+                                POLICY_EVALUATOR_ERROR_MSG,
+                            )
                         )
                     ):
                         raise McpError(
@@ -305,11 +321,11 @@ class PolicyGatewayMiddleware(Middleware):
             if self._record is not None:
                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
             raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, decision_obj.reason)
-        # No separate deny-continue decision; only abort is supported explicitly.
-        # If UI wants to deny without abort, close the approval request without resolving;
-        # the call will remain blocked until policy ALLOW arrives.
+            # No separate deny-continue decision; only abort is supported explicitly.
+            # If UI wants to deny without abort, close the approval request without resolving;
+            # the call will remain blocked until policy ALLOW arrives.
 
-        # Unknown decision type: internal error for visibility
+            # Unknown decision type: internal error for visibility
             raise McpError(
                 ErrorData(
                     code=-32603,

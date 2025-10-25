@@ -24,4 +24,3 @@ def load_workspace(path: Path) -> TanaGraph:
     payload = WorkspaceExport.model_validate_json(path.read_text(encoding="utf-8"))
     documents = [doc.model_dump(mode="python") for doc in payload.docs]
     return TanaGraph.from_documents(documents)
-

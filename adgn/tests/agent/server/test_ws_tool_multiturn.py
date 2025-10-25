@@ -47,7 +47,9 @@ def test_ws_tool_multiturn(
                 {"mime": "text/markdown", "content": "**hello**"},
                 call_id="call_ui_msg",
             )
-        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+        return responses_factory.make_tool_call(
+            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
+        )
 
     client = make_mock(responses_create)
 

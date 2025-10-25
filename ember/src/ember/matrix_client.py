@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 import logging
-from typing import Iterable
 
 from nio import AsyncClient, AsyncClientConfig, RoomMessageText
 from nio.events.invite_events import InviteMemberEvent
@@ -71,7 +71,9 @@ class MatrixClient:
         )
 
         self._stop_event.clear()
-        self._sync_task = asyncio.create_task(self._sync_loop(), name="matrix-sync-loop")
+        self._sync_task = asyncio.create_task(
+            self._sync_loop(), name="matrix-sync-loop"
+        )
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -112,7 +114,7 @@ class MatrixClient:
         assert self._client is not None
         try:
             response = await self._client.joined_rooms()
-        except Exception as exc:  # noqa: BLE001 - keep startup alive
+        except Exception as exc:
             logger.warning("Failed to fetch joined rooms: %s", exc)
             return set()
 
@@ -177,7 +179,13 @@ class MatrixClient:
                     body = event.body
                     if not isinstance(body, str):
                         body = str(body)
-                    logger.info("[matrix] room=%s sender=%s event=%s: %s", room_id, event.sender, event.event_id, body)
+                    logger.info(
+                        "[matrix] room=%s sender=%s event=%s: %s",
+                        room_id,
+                        event.sender,
+                        event.event_id,
+                        body,
+                    )
                 elif isinstance(event, MegolmEvent):
                     try:
                         sender = event.sender
@@ -213,7 +221,9 @@ class MatrixClient:
         for room_id in removed:
             logger.info("Removed control room %s after leave", room_id)
 
-    async def set_typing(self, room_ids: Iterable[str], typing: bool, timeout_ms: int = 30000) -> None:
+    async def set_typing(
+        self, room_ids: Iterable[str], typing: bool, timeout_ms: int = 30000
+    ) -> None:
         """Send typing notifications for the given rooms."""
 
         if self._client is None:
@@ -232,8 +242,10 @@ class MatrixClient:
                     room_id,
                     timeout_ms,
                 )
-            except Exception as exc:  # noqa: BLE001 - keep loop alive
-                logger.warning("Failed to send typing notification for %s: %s", room_id, exc)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to send typing notification for %s: %s", room_id, exc
+                )
 
     async def _should_accept_invite(self, room_id: str, invite: InviteInfo) -> bool:
         admin_user = self._settings.admin_user_id
@@ -262,7 +274,7 @@ class MatrixClient:
         assert self._client is not None
         try:
             response = await self._client.join(room_id)
-        except Exception as exc:  # noqa: BLE001 - keep loop alive
+        except Exception as exc:
             logger.warning("Failed to join invited room %s: %s", room_id, exc)
             return
 
@@ -282,8 +294,10 @@ class MatrixClient:
                 fully_read_event=event_id,
                 read_event=event_id,
             )
-        except Exception as exc:  # noqa: BLE001 - matrix SDK raises broad exceptions
-            logger.warning("Failed to update Matrix read marker for %s: %s", room_id, exc)
+        except Exception as exc:
+            logger.warning(
+                "Failed to update Matrix read marker for %s: %s", room_id, exc
+            )
 
     async def _create_client(self) -> AsyncClient:
         base_url = self._settings.base_url
@@ -299,8 +313,7 @@ class MatrixClient:
             store_path=str(self._store_dir),
             config=self._client_config(),
         )
-        token = self._refresh_access_token(force=True)
-        client.access_token = token
+        client.access_token = self._read_access_token()
 
         whoami = await client.whoami()
         if isinstance(whoami, WhoamiError):
@@ -314,10 +327,10 @@ class MatrixClient:
         return client
 
     async def _sync_once(self) -> SyncResponse | None:
-        self._refresh_access_token()
+        self._apply_access_token()
         try:
             response = await self._client.sync(timeout=30_000, since=self._since)
-        except Exception as exc:  # noqa: BLE001 - propagate diagnostics, keep loop alive
+        except Exception as exc:
             logger.exception("Matrix sync failed: %s", exc)
             return None
 
@@ -336,19 +349,19 @@ class MatrixClient:
             return
         try:
             await self._client.receive_response(response)
-        except Exception as exc:  # noqa: BLE001 - keep sync loop alive
+        except Exception as exc:
             logger.warning("Matrix client failed to process sync response: %s", exc)
 
-    def _refresh_access_token(self, *, force: bool = False) -> str:
+    def _read_access_token(self) -> str:
         token = self._token_secret.value()
         if token is None:
             raise RuntimeError("Matrix access token is not configured")
-
-        active = self._client.access_token if self._client else None
-        if force or active != token:
-            if self._client is not None:
-                self._client.access_token = token
         return token
+
+    def _apply_access_token(self) -> None:
+        if self._client is None:
+            return
+        self._client.access_token = self._read_access_token()
 
     def _load_since_token(self) -> str | None:
         try:
@@ -356,7 +369,9 @@ class MatrixClient:
         except FileNotFoundError:
             return None
         except OSError as exc:
-            logger.warning("Failed to read Matrix state store %s: %s", self._state_store, exc)
+            logger.warning(
+                "Failed to read Matrix state store %s: %s", self._state_store, exc
+            )
             return None
 
         token = data.strip() or None
@@ -369,7 +384,9 @@ class MatrixClient:
             self._state_store.parent.mkdir(parents=True, exist_ok=True)
             self._state_store.write_text(token, encoding="utf-8")
         except OSError as exc:
-            logger.warning("Failed to persist Matrix sync token to %s: %s", self._state_store, exc)
+            logger.warning(
+                "Failed to persist Matrix sync token to %s: %s", self._state_store, exc
+            )
 
     def _client_config(self) -> AsyncClientConfig:
         return AsyncClientConfig(

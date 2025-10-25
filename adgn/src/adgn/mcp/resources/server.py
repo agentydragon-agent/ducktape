@@ -21,8 +21,8 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.types import (
     ListSubscriptionSummary,
     ResourceEntry,
-    SubscriptionSummary,
     SubscriptionsIndex,
+    SubscriptionSummary,
 )
 from adgn.mcp.snapshots import RunningServerEntry
 
@@ -295,14 +295,10 @@ def make_resources_server(
             caps = entry.initialize.capabilities
             res_caps = caps.resources
         except AttributeError as e:
-            raise ToolError(
-                f"Server '{server}' does not advertise resources capabilities"
-            ) from e
+            raise ToolError(f"Server '{server}' does not advertise resources capabilities") from e
 
         if res_caps is None:
-            raise ToolError(
-                f"Server '{server}' does not advertise resources capabilities"
-            )
+            raise ToolError(f"Server '{server}' does not advertise resources capabilities")
 
         if feature is ResourceCapabilityFeature.SUBSCRIBE:
             ok = bool(res_caps.subscribe)

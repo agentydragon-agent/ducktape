@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
-import time
 from dataclasses import dataclass
-
 import hashlib
 import hmac
+import os
+import time
+
 import requests
+
 
 @dataclass
 class Settings:
@@ -48,13 +49,17 @@ def wait_for_synapse(homeserver: str, timeout_seconds: int = 300) -> None:
 
 def register_admin(settings: Settings) -> None:
     session = requests.Session()
-    nonce_resp = session.get(f"{settings.homeserver}/_synapse/admin/v1/register", timeout=5)
+    nonce_resp = session.get(
+        f"{settings.homeserver}/_synapse/admin/v1/register", timeout=5
+    )
     nonce_resp.raise_for_status()
     nonce = nonce_resp.json()["nonce"]
 
     parts = [nonce, settings.username, settings.password, "admin"]
     mac_input = bytes([0]).join(part.encode() for part in parts)
-    mac = hmac.new(settings.registration_secret.encode(), mac_input, hashlib.sha1).hexdigest()
+    mac = hmac.new(
+        settings.registration_secret.encode(), mac_input, hashlib.sha1
+    ).hexdigest()
 
     payload = {
         "nonce": nonce,
@@ -78,10 +83,15 @@ def register_admin(settings: Settings) -> None:
             data = {}
         errcode = data.get("errcode")
         message = data.get("error", resp.text)
-        if errcode in {"M_USER_IN_USE", "M_CONFLICT"} or "User ID already exists" in message:
+        if (
+            errcode in {"M_USER_IN_USE", "M_CONFLICT"}
+            or "User ID already exists" in message
+        ):
             print("Admin user already exists (password unchanged)", flush=True)
             return
-        raise RuntimeError(f"Failed to register admin user: {resp.status_code} {message}")
+        raise RuntimeError(
+            f"Failed to register admin user: {resp.status_code} {message}"
+        )
     resp.raise_for_status()
 
 

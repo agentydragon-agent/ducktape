@@ -15,6 +15,7 @@ try:  # Python ≥3.11 provides tomllib in the stdlib
 except ModuleNotFoundError:  # pragma: no cover
     tomllib = None
 
+
 @dataclass
 class AliasAssign:
     alias: str
@@ -234,7 +235,11 @@ class FileAnalyzer(ast.NodeVisitor):
         if not body:
             return
 
-        if isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+        if (
+            isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
             body = body[1:]
         body = [stmt for stmt in body if not isinstance(stmt, ast.Pass)]
         if len(body) != 1:
@@ -265,7 +270,9 @@ class FileAnalyzer(ast.NodeVisitor):
             else:
                 func_expr = "<call>"
 
-        name = node.name if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else "<lambda>"
+        name = (
+            node.name if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else "<lambda>"
+        )
         self.findings.append(
             f"{self.path}:{node.lineno}:{node.col_offset} TRIVIAL_FUNCTION {name} -> {func_expr} Thin wrapper around another call; inline or reuse callee."
         )
@@ -345,7 +352,9 @@ def detect_file(path: Path) -> List[str]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Detect renamed imports, fixture aliases, and trivial wrappers (report-only)")
+    parser = argparse.ArgumentParser(
+        description="Detect renamed imports, fixture aliases, and trivial wrappers (report-only)"
+    )
     parser.add_argument(
         "--scope",
         action="append",

@@ -29,6 +29,8 @@ def test_post_creation_script_failure_is_streamed_and_nonzero(failing_env, wtcli
     assert result.returncode != 0
     assert "hello from setup" in (result.stdout or "") + (result.stderr or "")
     assert "setup error" in (result.stdout or "") + (result.stderr or "")
-    assert "Post-creation script failed" in (result.stdout or "") + (result.stderr or "")
+    assert "Post-creation script failed" in (result.stdout or "") + (
+        result.stderr or ""
+    )
     wt_path = Path(repo) / "worktrees" / name
     assert wt_path.exists()

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
 import contextlib
-from datetime import datetime
 from pathlib import Path
 import time
 from weakref import WeakSet
@@ -20,7 +19,7 @@ from ..shared.protocol import (
 )
 from .git_manager import GitManager, WorktreeInfo as GMWorktreeInfo
 from .gitstatus_refresh import DebouncedGitstatusRefresh
-from .gitstatusd_listener import GitstatusWorkingSummary, GitstatusdListener
+from .gitstatusd_listener import GitstatusdListener, GitstatusWorkingSummary
 from .pr_service import PRCacheError, PRCacheOk, PRService
 from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
@@ -180,7 +179,10 @@ class PRServiceProvider:
         key = (wtid, branch)
         now = time.monotonic()
         # Skip if already running or completed very recently
-        if key in self._inflight or (now - self._recent.get(key, 0.0)) < self._recent_ttl_s:
+        if (
+            key in self._inflight
+            or (now - self._recent.get(key, 0.0)) < self._recent_ttl_s
+        ):
             return
 
         async def _run() -> None:
@@ -192,7 +194,9 @@ class PRServiceProvider:
                 self._recent[key] = time.monotonic()
                 if len(self._recent) > 1024:
                     cutoff = time.monotonic() - self._recent_ttl_s
-                    self._recent = {k: t for k, t in self._recent.items() if t >= cutoff}
+                    self._recent = {
+                        k: t for k, t in self._recent.items() if t >= cutoff
+                    }
 
         self._inflight.add(key)
         task = asyncio.create_task(_run())

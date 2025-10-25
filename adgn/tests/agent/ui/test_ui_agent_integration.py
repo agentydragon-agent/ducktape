@@ -91,7 +91,9 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
 
     mgr.send_json = _capture  # type: ignore[assignment]
 
-    async with make_pg_compositor({"ui": ui_server, "approval_policy": approval_policy_reader_stub}) as (
+    async with make_pg_compositor(
+        {"ui": ui_server, "approval_policy": approval_policy_reader_stub}
+    ) as (
         mcp_client,
         _comp,
     ):

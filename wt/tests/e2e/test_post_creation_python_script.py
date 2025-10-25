@@ -63,7 +63,9 @@ print("py post-create: hello from stderr", file=sys.stderr)
 
 
 @pytest.mark.parametrize("stdin_mode", ["open", "closed"])
-def test_post_creation_python_script_runs(real_env_with_python_post_script, stdin_mode, wtcli):
+def test_post_creation_python_script_runs(
+    real_env_with_python_post_script, stdin_mode, wtcli
+):
     env, repo = real_env_with_python_post_script
     name = "py-hooked"
 

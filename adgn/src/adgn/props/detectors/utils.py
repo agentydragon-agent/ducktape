@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Callable, Iterable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Iterable
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .models import Detection

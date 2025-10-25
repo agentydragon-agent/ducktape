@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
+from fastmcp.client.client import CallToolResult
+from pydantic import TypeAdapter
 import pytest
 
 from adgn.openai_utils import builders
-from fastmcp.client.client import CallToolResult
-from pydantic import TypeAdapter
-
 from adgn.openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,

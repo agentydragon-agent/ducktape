@@ -9,7 +9,6 @@ from openai.types.responses.response_input_item import (
     FunctionCallOutput as ResponseFunctionCallOutput,
 )
 from openai.types.responses.response_input_text import ResponseInputText
-from openai.types.shared.reasoning_effort import ReasoningEffort
 from pydantic import BaseModel, TypeAdapter
 
 from .config import OpenAISettings

@@ -5,9 +5,6 @@ import json
 from fastmcp.client.client import CallToolResult
 from mcp import types
 
-from adgn.mcp._shared.calltool import to_pydantic
-from adgn.mcp._shared.naming import build_mcp_function
-
 from adgn.agent.server.protocol import (
     ApprovalApprove,
     ApprovalDecisionEvt,
@@ -19,6 +16,8 @@ from adgn.agent.server.protocol import (
 )
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
+from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ui.typed_asserts import (
     assert_typed_items_have_one,
     is_assistant_markdown,
@@ -39,7 +38,11 @@ def test_tool_call_exec_starts_exec_content_with_cmd():
     args = {"argv": ["echo", "hi there"]}
     s2 = reduce_ui_state(
         s,
-        ToolCall(name=build_mcp_function("seatbelt", "sandbox_exec"), args_json=json.dumps(args), call_id="c1"),
+        ToolCall(
+            name=build_mcp_function("seatbelt", "sandbox_exec"),
+            args_json=json.dumps(args),
+            call_id="c1",
+        ),
     )
     assert s2.seq == 1
     assert_typed_items_have_one(
@@ -56,7 +59,10 @@ def test_tool_call_json_starts_json_content_with_args():
     s = new_state()
     args = {"foo": 1, "bar": "baz"}
     s2 = reduce_ui_state(
-        s, ToolCall(name=build_mcp_function("demo", "inspect"), args_json=json.dumps(args), call_id="c2")
+        s,
+        ToolCall(
+            name=build_mcp_function("demo", "inspect"), args_json=json.dumps(args), call_id="c2"
+        ),
     )
     assert s2.seq == 1
     assert_typed_items_have_one(s2.items, is_tool_item(call_id="c2"))
@@ -67,7 +73,9 @@ def test_tool_call_json_starts_json_content_with_args():
 
 def test_approval_sets_single_decision():
     s = new_state()
-    s1 = reduce_ui_state(s, ToolCall(name=build_mcp_function("ui", "noop"), args_json="{}", call_id="c3"))
+    s1 = reduce_ui_state(
+        s, ToolCall(name=build_mcp_function("ui", "noop"), args_json="{}", call_id="c3")
+    )
     s2 = reduce_ui_state(s1, ApprovalDecisionEvt(call_id="c3", decision=ApprovalApprove()))
     it = s2.items[0]
     assert it.kind == "Tool"
@@ -108,7 +116,9 @@ def test_function_output_updates_json_output_when_not_exec():
     s = new_state()
     s1 = reduce_ui_state(
         s,
-        ToolCall(name=build_mcp_function("kv", "get"), args_json=json.dumps({"key": "k"}), call_id="c5"),
+        ToolCall(
+            name=build_mcp_function("kv", "get"), args_json=json.dumps({"key": "k"}), call_id="c5"
+        ),
     )
     payload = {"value": {"a": 1}}
     result = CallToolResult(content=[], structured_content=payload, is_error=False)

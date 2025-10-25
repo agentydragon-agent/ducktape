@@ -298,7 +298,11 @@ def anthro_to_openai_messages(
                         if isinstance(args, str):
                             args_str = args
                         else:
-                            args_str = json.dumps(args if args is not None else {}, ensure_ascii=False, separators=(",", ":"))
+                            args_str = json.dumps(
+                                args if args is not None else {},
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            )
                         tool_call: dict[str, Any] = {
                             "type": "function",
                             "function": {
@@ -352,9 +356,7 @@ def anthro_to_openai_messages(
 
             if role == "tool":
                 tcid = (
-                    message.get("tool_call_id")
-                    or message.get("tool_use_id")
-                    or message.get("id")
+                    message.get("tool_call_id") or message.get("tool_use_id") or message.get("id")
                 )
                 if not tcid:
                     continue

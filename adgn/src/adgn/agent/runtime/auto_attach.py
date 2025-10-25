@@ -16,6 +16,7 @@ from adgn.mcp.approval_policy.server import (
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.runtime.server import attach_runtime
 from adgn.mcp.ui.server import attach_ui
+
 from .images import resolve_runtime_image
 
 # Names of servers that are auto‑attached by the runtime container and should not be

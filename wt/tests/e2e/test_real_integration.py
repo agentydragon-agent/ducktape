@@ -37,7 +37,9 @@ def test_real_program_workflow(real_temp_repo, wt_cli):
     # Status shows both (allow brief propagation)
     def _both_present() -> bool:
         r = wt_cli.status(timeout=timedelta(seconds=10.0))
-        return r.returncode == 0 and ("feature1" in r.stdout) and ("feature2" in r.stdout)
+        return (
+            r.returncode == 0 and ("feature1" in r.stdout) and ("feature2" in r.stdout)
+        )
 
     assert wt_cli.wait_for(_both_present, timeout=timedelta(seconds=5.0))
 
@@ -71,7 +73,9 @@ def test_real_daemon_startup_and_communication(real_temp_repo, wt_cli):
     assert daemon_dir.exists()
     pid_file = daemon_dir / "daemon.pid"
 
-    ok = wait_until(lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
+    ok = wait_until(
+        lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05
+    )
     assert ok, "daemon.pid not created in time"
     pid = int(pid_file.read_text().strip())
     try:

@@ -26,7 +26,6 @@ from tana.domain.nodes import BaseNode, CodeBlockNode, TupleNode, VisualNode
 from tana.domain.types import NodeId
 from tana.graph.workspace import TanaGraph
 from tana.graph.wrappers import is_wrapper
-from tana.io.json import load_workspace
 from tana.query.core import get_tuple_value
 
 # ──────────────────────────  Headline  ────────────────────────── #

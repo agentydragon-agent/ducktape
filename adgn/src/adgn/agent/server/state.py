@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
 from mcp import types as mcp_types
+from pydantic import BaseModel, ConfigDict, Field
 
 # ---- Display items (normalized, UI-friendly) ----
 

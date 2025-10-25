@@ -59,7 +59,9 @@ class GitManager:
     config: Configuration
 
     def __post_init__(self) -> None:
-        self._main_repo: pygit2.Repository = pygit2.Repository(str(self.config.main_repo))
+        self._main_repo: pygit2.Repository = pygit2.Repository(
+            str(self.config.main_repo)
+        )
 
     def branch_exists(self, branch_name: str) -> bool:
         return branch_name in self._main_repo.branches
@@ -82,7 +84,9 @@ class GitManager:
             untracked_files = []
 
             for file_path, flags in self._main_repo.status().items():
-                if flags & (pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_INDEX_MODIFIED):
+                if flags & (
+                    pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_INDEX_MODIFIED
+                ):
                     dirty_files.append(Path(self.config.main_repo) / file_path)
                 elif flags & pygit2.GIT_STATUS_WT_NEW:
                     untracked_files.append(Path(self.config.main_repo) / file_path)
@@ -132,7 +136,9 @@ class GitManager:
     def list_worktrees(self) -> list[WorktreeInfo]:
         """List all worktrees using pygit2 API."""
         current_branch = (
-            self._main_repo.head.shorthand if not self._main_repo.head_is_detached else None
+            self._main_repo.head.shorthand
+            if not self._main_repo.head_is_detached
+            else None
         )
 
         worktree_infos = [

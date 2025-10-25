@@ -4,13 +4,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastmcp.client.client import CallToolResult
-
-from adgn.mcp._shared.calltool import to_pydantic
 from mcp import types
 import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler, BaseHandler
+from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import FakeOpenAIModel
 

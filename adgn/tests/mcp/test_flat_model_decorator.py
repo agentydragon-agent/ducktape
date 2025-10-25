@@ -3,11 +3,10 @@ from __future__ import annotations
 import inspect
 from typing import Optional
 
-from pydantic import BaseModel, Field
-import pytest
-
 from fastmcp.client import Client
 from fastmcp.server.context import Context
+from pydantic import BaseModel, Field
+import pytest
 
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
