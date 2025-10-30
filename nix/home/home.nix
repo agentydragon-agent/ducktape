@@ -62,10 +62,13 @@ let
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.sh;
 
+  # Import claude-code-router HM module pinned to a specific commit
+  ccr = builtins.getFlake "github:agentydragon/claude-code-router/eca965e473ecdb3bd05115c793271451e7d83500";
+
 in
 {
   imports = [
-    ./modules/claude-code-router.nix
+    ccr.homeManagerModules.claude-code-router
     ./packages/google-drive-service.nix
     "${homeManagerMaster}/modules/programs/codex.nix"
   ];
@@ -96,6 +99,9 @@ in
 
     # Match reasoning models used by the router's transformer
     reasoningModelPatterns = [ "^o.(-mini)?$" "^gpt-5$" ];
+
+    # Optional: set OpenAI reasoning effort (o3/gpt-5)
+    reasoningEffort = "medium";
 
     systemReplace = {
       search = "Claude Code";
@@ -358,6 +364,8 @@ in
   ] ++ [
     # Get comby from older nixpkgs where it's not broken
     oldPkgs.comby
+    # Claude Code Router CLI from external flake (pinned via builtins.getFlake)
+    ccr.packages.${pkgs.system}.ccr-cli
   ];
 
   # Session variables (migrated from dotfiles/profile)
