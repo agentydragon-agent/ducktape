@@ -1,11 +1,12 @@
 {
   description = "ducktape: personal infra + HM modules (module-only flake)";
 
-  # No pinned inputs; adopts consumer's nixpkgs/home-manager versions.
+  # Note: claude-code-router HM module moved to
+  # github:agentydragon/claude-code-router and is consumed directly from there.
   outputs = { self, ... }: {
-    homeManagerModules = {
-      claude-code-router = import ./home/modules/claude-code-router.nix;
+    homeManagerModules = { };
+    darwinModules = {
+      claude-code-router = import ./nix/darwin/modules/claude-code-router.nix;
     };
   };
 }
-
