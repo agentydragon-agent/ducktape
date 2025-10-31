@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
+from datetime import datetime, timezone
 from contextlib import suppress
 import logging
 
 from nio import AsyncClient, AsyncClientConfig, RoomMessageText
+from pydantic import BaseModel, ConfigDict
 from nio.events.invite_events import InviteMemberEvent
 from nio.events.room_events import MegolmEvent
 from nio.exceptions import LocalProtocolError
@@ -28,6 +30,12 @@ from .config import MatrixSettings
 logger = logging.getLogger(__name__)
 
 
+class ConversationStatus(BaseModel):
+    last_user_message_at: datetime | None = None
+    last_agent_message_at: datetime | None = None
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+
 class MatrixClient:
     """Matrix client that streams new room messages via an async queue."""
 
@@ -46,6 +54,9 @@ class MatrixClient:
         self._store_dir = settings.store_dir
         self._device_id = settings.device_id
         self._pickle_key = settings.pickle_key
+        self._status_lock = asyncio.Lock()
+        self._room_status: dict[str, ConversationStatus] = {}
+        self._aggregate_status = ConversationStatus()
 
     @property
     def configured(self) -> bool:
@@ -61,6 +72,8 @@ class MatrixClient:
 
         self._since = None
         self._queue = asyncio.Queue()
+        self._room_status = {}
+        self._aggregate_status = ConversationStatus()
         self._client = await self._create_client()
         self._control_rooms = await self._initialise_control_rooms()
         self._since = self._load_since_token()
@@ -185,6 +198,7 @@ class MatrixClient:
                         event.event_id,
                         body,
                     )
+                    await self._record_message_event(room_id, event)
                 elif isinstance(event, MegolmEvent):
                     try:
                         sender = event.sender
@@ -211,6 +225,24 @@ class MatrixClient:
             if last_event_id is not None:
                 await self._mark_read(room_id, last_event_id)
 
+    async def _record_message_event(self, room_id: str, event: RoomMessageText) -> None:
+        timestamp = _event_timestamp(event)
+        async with self._status_lock:
+            tracker = self._room_status.setdefault(room_id, ConversationStatus())
+            if self._user_id is not None and event.sender == self._user_id:
+                tracker.last_agent_message_at = timestamp
+            else:
+                tracker.last_user_message_at = timestamp
+
+            self._aggregate_status = ConversationStatus(
+                last_user_message_at=_latest_timestamp(
+                    status.last_user_message_at for status in self._room_status.values()
+                ),
+                last_agent_message_at=_latest_timestamp(
+                    status.last_agent_message_at for status in self._room_status.values()
+                ),
+            )
+
     async def _handle_left_rooms(self, response: SyncResponse) -> None:
         if not (left := response.rooms.leave):
             return
@@ -219,6 +251,10 @@ class MatrixClient:
         self._control_rooms.difference_update(removed)
         for room_id in removed:
             logger.info("Removed control room %s after leave", room_id)
+
+    async def get_conversation_status(self) -> ConversationStatus:
+        async with self._status_lock:
+            return self._aggregate_status.model_copy()
 
     async def set_typing(
         self, room_ids: Iterable[str], typing: bool, timeout_ms: int = 30000
@@ -428,3 +464,18 @@ class MatrixClient:
                         logger.warning("Matrix key claim failed: %s", claim.message)
         except LocalProtocolError as exc:
             logger.debug("Matrix crypto maintenance skipped: %s", exc)
+
+
+
+def _event_timestamp(event: RoomMessageText) -> datetime:
+    return datetime.fromtimestamp(event.server_timestamp / 1000.0, tz=timezone.utc)
+
+
+def _latest_timestamp(values: Iterable[datetime | None]) -> datetime | None:
+    latest: datetime | None = None
+    for value in values:
+        if value is None:
+            continue
+        if latest is None or value > latest:
+            latest = value
+    return latest

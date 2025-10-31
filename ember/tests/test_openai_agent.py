@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 from typing import cast
@@ -16,12 +17,32 @@ from openai.types.responses import (
 from openai.types.responses.response_reasoning_item import Summary
 import pytest
 
-from ember.config import OpenAISettings
+from ember.config import (
+    EnforcedSleepUntilUserMessagePolicy,
+    OpenAISettings,
+)
 from ember.history import ConversationHistory
+from ember.matrix_client import ConversationStatus
 from ember.openai_agent import OpenAIAgent
 from ember.secrets import ProjectedSecret
 import ember.tools.run_shell_command as run_shell_tool
 from ember.tools.run_shell_command import ShellCommandResult
+from ember.tools.sleep_until_user_message import (
+    SleepUntilUserMessageArgs,
+    build_spec as build_sleep_until_user_message_spec,
+)
+
+
+class FakeMatrixClient:
+    def __init__(self, statuses: list[ConversationStatus] | None = None) -> None:
+        self._statuses = statuses or [ConversationStatus()]
+
+    async def get_conversation_status(self) -> ConversationStatus:
+        if not self._statuses:
+            return ConversationStatus()
+        if len(self._statuses) == 1:
+            return self._statuses[0]
+        return self._statuses.pop(0)
 
 
 @pytest.fixture
@@ -37,6 +58,11 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> OpenAISettings:
 @pytest.fixture
 def history(tmp_path: Path) -> ConversationHistory:
     return ConversationHistory(tmp_path / "history.jsonl")
+
+
+@pytest.fixture
+def matrix_client() -> FakeMatrixClient:
+    return FakeMatrixClient()
 
 
 def _make_openai_client(api_key: str, responses: list[Response]) -> AsyncOpenAI:
@@ -56,6 +82,7 @@ async def test_agent_runs_shell_command(
     monkeypatch: pytest.MonkeyPatch,
     settings: OpenAISettings,
     history: ConversationHistory,
+    matrix_client: FakeMatrixClient,
 ) -> None:
     client = _make_openai_client(
         settings.api_key_secret.value(required=True),
@@ -67,7 +94,7 @@ async def test_agent_runs_shell_command(
             ),
             _response_with_tool_call(
                 call_id="call-2",
-                tool_name="yield_control",
+                tool_name="sleep_until_user_message",
                 arguments="{}",
             ),
         ],
@@ -78,7 +105,7 @@ async def test_agent_runs_shell_command(
 
     monkeypatch.setattr(run_shell_tool, "_run_command", fake_run_command)
 
-    agent = OpenAIAgent(settings, history, client)
+    agent = OpenAIAgent(settings, history, client, matrix_client)
     await agent.handle_user_message("incoming message")
 
     assert agent.waiting_for_matrix
@@ -110,21 +137,23 @@ async def test_agent_runs_shell_command(
 
 
 @pytest.mark.asyncio
-async def test_agent_yield_control(
-    settings: OpenAISettings, history: ConversationHistory
+async def test_agent_sleep_until_user_message(
+    settings: OpenAISettings,
+    history: ConversationHistory,
+    matrix_client: FakeMatrixClient,
 ) -> None:
     client = _make_openai_client(
         settings.api_key_secret.value(required=True),
         [
             _response_with_tool_call(
-                call_id="call-yield",
-                tool_name="yield_control",
+                call_id="call-sleep",
+                tool_name="sleep_until_user_message",
                 arguments="{}",
             )
         ],
     )
 
-    agent = OpenAIAgent(settings, history, client)
+    agent = OpenAIAgent(settings, history, client, matrix_client)
     await agent.handle_user_message("ready to idle")
 
     assert agent.waiting_for_matrix
@@ -142,8 +171,8 @@ async def test_agent_yield_control(
         item for item in items if item.get("type") == "function_call_output"
     ]
     assert function_outputs
-    yield_payload = cast(str, function_outputs[-1]["output"])
-    assert json.loads(yield_payload) == {"status": "waiting_for_matrix"}
+    sleep_payload = cast(str, function_outputs[-1]["output"])
+    assert json.loads(sleep_payload) == {"status": "waiting_for_matrix", "reason": None}
 
     await client.close()
 
@@ -179,8 +208,8 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
                 type="function",
             ),
             FunctionTool(
-                name="yield_control",
-                description="Yield control to runtime loop.",
+                name="sleep_until_user_message",
+                description="Sleep until user message arrives.",
                 parameters={"type": "object", "properties": {}},
                 strict=False,
                 type="function",
@@ -198,3 +227,30 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
         tool_choice="required",
         tools=tools,
     )
+
+@pytest.mark.asyncio
+async def test_sleep_until_user_message_rejected_when_enforced_policy_blocks() -> None:
+    policy = EnforcedSleepUntilUserMessagePolicy(timeout_seconds=30)
+    now = datetime.now(timezone.utc)
+    status = ConversationStatus(
+        last_user_message_at=now,
+        last_agent_message_at=now - timedelta(seconds=60),
+    )
+
+    class Provider:
+        async def get_conversation_status(self) -> ConversationStatus:
+            return status
+
+    sleep_called = False
+
+    def _mark_sleep() -> None:
+        nonlocal sleep_called
+        sleep_called = True
+
+    spec = build_sleep_until_user_message_spec(_mark_sleep, Provider(), policy)
+    result = await spec.handler(SleepUntilUserMessageArgs())
+
+    assert result.status == "rejected"
+    assert result.reason
+    assert not sleep_called
+

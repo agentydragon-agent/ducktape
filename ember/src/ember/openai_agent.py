@@ -15,6 +15,7 @@ from .config import OpenAISettings
 from .history import ConversationHistory
 from .tool_execution import execute_tool, tool_params
 from .tools import build_tool_specs
+from .tools.sleep_until_user_message import ConversationStatusProvider
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +26,17 @@ class OpenAIAgent:
         settings: OpenAISettings,
         history: ConversationHistory,
         client: AsyncOpenAI,
+        status_provider: ConversationStatusProvider,
     ) -> None:
         self._settings = settings
         self._history = history
         self._client = client
         self._wait_for_matrix = False
-        self._tool_specs = build_tool_specs(self._request_yield_control)
+        self._tool_specs = build_tool_specs(
+            self._request_sleep_until_user_message,
+            status_provider,
+            settings.sleep_tool_policy,
+        )
         self._tool_params = tool_params(self._tool_specs.values())
 
     @property
@@ -98,7 +104,7 @@ class OpenAIAgent:
             )
         )
 
-    def _request_yield_control(self) -> None:
+    def _request_sleep_until_user_message(self) -> None:
         self._wait_for_matrix = True
 
     def _build_input_payload(self) -> list[ResponseInputItemParam]:
