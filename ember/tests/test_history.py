@@ -120,8 +120,8 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
                 type="function",
             ),
             FunctionTool(
-                name="yield_control",
-                description="Yield control to runtime loop.",
+                name="sleep_until_user_message",
+                description="Suspend agent until a new user message arrives.",
                 parameters={"type": "object", "properties": {}},
                 strict=False,
                 type="function",

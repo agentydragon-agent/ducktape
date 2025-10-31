@@ -15,7 +15,7 @@ approvals, and no extra MCP surfaces yet.
   model to call one of two tools:
   - `run_shell_command` to talk back to Matrix (the agent is expected to invoke
     a CLI from inside the container).
-  - `yield_control` to sleep until the Matrix poller finds new traffic.
+  - `sleep_until_user_message` to suspend until the Matrix poller finds new traffic.
 - Encrypted reasoning traces (`reasoning.encrypted_content`) and tool outputs
   are persisted to the local history for the next turn.
 - No timeline projections, MCP chat servers, approvals, or policy enforcement.
@@ -38,7 +38,7 @@ approvals, and no extra MCP surfaces yet.
    - Persist tool calls and outputs to the on-disk history file.
    - Persist the raw OpenAI response, including reasoning summaries and encrypted
      reasoning payloads, so the next turn can replay context without loss.
-   - Respect `yield_control` by pausing until the Matrix poller reports new
+   - Respect `sleep_until_user_message` by pausing until the Matrix poller reports new
      traffic.
 4. **Control API + health**
    - `/healthz`: check runtime readiness.
@@ -59,6 +59,6 @@ approvals, and no extra MCP surfaces yet.
 
 - Container exposes a healthy `/healthz` and can be restarted via control API.
 - Agent communicates exclusively through `run_shell_command` and
-  `yield_control`.
+  `sleep_until_user_message`.
 - Matrix room activity reflects the full conversation; no self-echo.
 - Documentation and Dockerfile allow others to run the pilot with minimal setup.

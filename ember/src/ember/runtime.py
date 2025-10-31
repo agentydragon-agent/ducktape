@@ -49,7 +49,10 @@ class PilotRuntime:
         self._settings.workspace_path.mkdir(parents=True, exist_ok=True)
         self._openai_client = self._create_openai_client()
         self._agent = OpenAIAgent(
-            self._settings.openai, self._history, self._openai_client
+            self._settings.openai,
+            self._history,
+            self._openai_client,
+            self._matrix_client,
         )
 
     async def _loop(self) -> None:

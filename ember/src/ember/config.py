@@ -1,16 +1,55 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, Literal, cast
 
 from openai.types.responses import ResponseIncludable
 from openai.types.shared.reasoning_effort import ReasoningEffort
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 import tomllib
 
 from .secrets import ProjectedSecret
 from .system_prompt import load_system_prompt
+
+
+class _SleepPolicyBase(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class LegacySleepUntilUserMessagePolicy(_SleepPolicyBase):
+    kind: Literal["legacy"] = "legacy"
+
+
+class EnforcedSleepUntilUserMessagePolicy(_SleepPolicyBase):
+    kind: Literal["enforced"] = "enforced"
+    timeout_seconds: int = 30
+
+    @field_validator("timeout_seconds")
+    @classmethod
+    def _validate_timeout(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        return value
+
+    @property
+    def timeout(self) -> timedelta:
+        return timedelta(seconds=self.timeout_seconds)
+
+
+SleepUntilUserMessagePolicy = Annotated[
+    LegacySleepUntilUserMessagePolicy | EnforcedSleepUntilUserMessagePolicy,
+    Field(discriminator="kind"),
+]
+_SLEEP_POLICY_ADAPTER = TypeAdapter(SleepUntilUserMessagePolicy)
 
 
 class MatrixSettings(BaseModel):
@@ -36,6 +75,7 @@ class OpenAISettings(BaseModel):
     api_key_secret: ProjectedSecret
     model: str
     system_prompt: str
+    sleep_tool_policy: SleepUntilUserMessagePolicy = LegacySleepUntilUserMessagePolicy()
     api_base: str | None = None
     reasoning_effort: ReasoningEffort = "medium"
     include_encrypted_reasoning: bool = True
@@ -87,6 +127,16 @@ def load_settings() -> EmberSettings:
         else {}
     )
 
+    sleep_tool_cfg = (
+        openai_cfg.get("sleep_tool", {})
+        if isinstance(openai_cfg.get("sleep_tool"), dict)
+        else {}
+    )
+
+    if "kind" not in sleep_tool_cfg and "mode" in sleep_tool_cfg:
+        sleep_tool_cfg = dict(sleep_tool_cfg)
+        sleep_tool_cfg["kind"] = sleep_tool_cfg.pop("mode")
+
     state_dir = Path(
         os.getenv("EMBER_STATE_DIR") or state_cfg.get("dir", "/var/lib/ember")
     ).expanduser()
@@ -103,6 +153,12 @@ def load_settings() -> EmberSettings:
     openai_api_key = ProjectedSecret(
         name="openai_api_key",
         env_var="OPENAI_API_KEY",
+    )
+
+    sleep_policy = (
+        _SLEEP_POLICY_ADAPTER.validate_python(sleep_tool_cfg)
+        if sleep_tool_cfg
+        else LegacySleepUntilUserMessagePolicy()
     )
 
     api_base = openai_cfg.get("api_base")
@@ -136,6 +192,7 @@ def load_settings() -> EmberSettings:
                     "OPENAI_INCLUDE_ENCRYPTED_REASONING",
                     default=bool(openai_cfg.get("include_encrypted_reasoning", True)),
                 ),
+                sleep_tool_policy=sleep_policy,
             ),
             history_path=history_path,
             state_dir=state_dir,
