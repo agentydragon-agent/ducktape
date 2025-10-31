@@ -1,0 +1,19 @@
+---
+dependencies: []
+
+galaxy_info:
+  author: agentydragon
+  description: Install and configure Nix package manager
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - bullseye
+    - name: Ubuntu
+      versions:
+        - jammy
+        - focal
+  galaxy_tags:
+    - nix
+    - package-manager
