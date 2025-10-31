@@ -9,6 +9,7 @@ authentik:
       - authentik-blueprints-gitea
       - authentik-blueprints-rspcache
       - authentik-blueprints-registry
+      - authentik-blueprints-forward-auth
       - authentik-blueprints-users
       - authentik-blueprints-matrix
 
@@ -164,6 +165,11 @@ registry:
   externalHost: "https://registry.k3s.agentydragon.com"
   internalHost: "http://registry.registry.svc.cluster.local:5000"
   adminGroup: "registry-pushers"
-  adminUsers:
-    - agentydragon
-    - authentikadmin
+
+# Embedded outpost configuration for forward-auth providers
+forwardAuth:
+  outpost:
+    name: "authentik Embedded Outpost"
+    providers:
+      - registry-forward-auth
+      - rspcache-admin

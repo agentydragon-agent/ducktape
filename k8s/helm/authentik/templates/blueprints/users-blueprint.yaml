@@ -6,4 +6,5 @@ metadata:
   labels:
 {{- include "common.blueprintLabels" . | nindent 4 }}
 data:
-  users.yaml: {{ .Files.Get "blueprints/users.yaml" | quote }}
+  users.yaml: |
+{{ tpl (.Files.Get "blueprints/users.yaml") . | indent 4 }}

@@ -57,13 +57,24 @@ let
     };
   };
 
+  # Helm/Helmfile wrapped with plugins (helm-diff)
+  myKubernetesHelm = pkgs.wrapHelm pkgs.kubernetes-helm {
+    plugins = with pkgs.kubernetes-helmPlugins; [
+      helm-diff
+    ];
+  };
+
+  myHelmfile = pkgs.helmfile-wrapped.override {
+    inherit (myKubernetesHelm.passthru) pluginsDir;
+  };
+
   # Shell initialization scripts (loaded from external files to avoid escaping hell)
   commonShellInit = builtins.readFile ./shell/common-init.sh;
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.sh;
 
   # Import claude-code-router HM module pinned to a specific commit
-  ccr = builtins.getFlake "github:agentydragon/claude-code-router/eca965e473ecdb3bd05115c793271451e7d83500";
+  ccr = builtins.getFlake "github:agentydragon/claude-code-router/2b7c2ca";
 
 in
 {
@@ -71,7 +82,7 @@ in
     ccr.homeManagerModules.claude-code-router
     ./packages/google-drive-service.nix
     "${homeManagerMaster}/modules/programs/codex.nix"
-  ];
+  ]; # codex module only exists on this pinned HM commit
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
@@ -315,8 +326,11 @@ in
     python312Packages.pytorch  # PyTorch
     python312Packages.numpy
 
-    # Kubernetes tools
-    kubectl kubernetes-helm kubeseal helmfile kubernetes-helmPlugins.helm-diff
+    # Kubernetes tools (with helm-diff plugin bundled)
+    kubectl
+    myKubernetesHelm
+    kubeseal
+    myHelmfile
     # Dotfile management (keeping rcm approach)
     rcm
 
@@ -364,8 +378,6 @@ in
   ] ++ [
     # Get comby from older nixpkgs where it's not broken
     oldPkgs.comby
-    # Claude Code Router CLI from external flake (pinned via builtins.getFlake)
-    ccr.packages.${pkgs.system}.ccr-cli
   ];
 
   # Session variables (migrated from dotfiles/profile)
@@ -404,8 +416,6 @@ in
     # pnpm global packages
     PNPM_HOME = "$HOME/.local/share/pnpm";
 
-    # Helm plugin path (diff plugin provided via Nix)
-    HELM_PLUGINS = "${pkgs.kubernetes-helmPlugins.helm-diff}";
   };
 
   # Wyrm-specific pip configuration for tankshare storage
@@ -911,16 +921,36 @@ in
     settings = import ./codex-settings.nix;
   };
 
+  programs.claude-code = {
+    enable = true;
+    settings = {
+      theme = "dark";
+      model = "claude-3-5-sonnet-20241022";
+      includeCoAuthoredBy = false;
+      permissions = {
+        allow = [
+          "Read"
+          "Edit"
+          "Write"
+          "MultiEdit"
+          "Search"
+          "Task"
+          "Bash(git status:*)"
+          "Bash(git diff:*)"
+        ];
+        ask = [
+          "Bash(*)"
+        ];
+        deny = [
+          "WebFetch"
+        ];
+        defaultMode = "ask";
+      };
+    };
+  };
+
   # Create Worthy config directory
   home.file.".config/worthy/.keep".text = "";
 
-  # Claude Code MCP configuration - SKIPPED
-  # TODO: .claude.json contains other Claude configuration beyond MCP servers
-  # We can't replace the entire file. Need to figure out how to merge MCP config
-  # into existing .claude.json without overwriting other settings.
-  # For now, manage MCP servers manually or via Ansible.
-
-  # home.file.".claude.json".text = builtins.toJSON {
-  #   mcpServers = { ... };
-  # };
+  # Additional Claude Code MCP wiring is handled via programs.claude-code.
 }

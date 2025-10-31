@@ -88,3 +88,16 @@ All high-level workloads have first-party Helm charts (`k8s/helm/`) and are orch
 ## DNS Configuration
 
 All `*.k3s.agentydragon.com` domains resolve to the Traefik LoadBalancer at 10.0.200.100 (via PowerDNS on the VPS).
+
+### Authenticating with Authentik
+
+1. In the Authentik UI (`https://auth.k3s.agentydragon.com`), open **Account → Security → Application passwords**.
+2. Hit **Create**, give it an identifier (e.g. `docker-registry`), optionally add a description, and copy the generated password.
+3. Log in to the registry once:
+   ```bash
+   docker login registry.k3s.agentydragon.com \
+     -u <authentik-username> \
+     -p '<application-password>'
+   ```
+   Docker writes the credential to `~/.docker/config.json`; if you run scripts with `DOCKER_CONFIG`, repeat the login for that directory.
+4. Rotate by deleting the old application password in Authentik and issuing a new one; subsequent `docker push` calls will fail until you log in again.
