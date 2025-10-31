@@ -45,12 +45,3 @@ entries:
       meta_launch_url: {{ .Values.registry.externalHost | quote }}
       meta_description: Private container registry protected by Authentik forward-auth.
       group: Infrastructure
-
-{{- range $user := .Values.registry.adminUsers }}
-  - model: authentik_core.membership
-    id: registry-membership-{{ $user }}
-    state: present
-    identifiers:
-      group: !KeyOf registry-admin-group
-      user: !Find [authentik_core.user, [username, {{ $user }}]]
-{{- end }}

@@ -41,17 +41,3 @@ entries:
       meta_launch_url: https://rspcache-admin.k3s.agentydragon.com
       meta_description: rspcache administration UI
       group: Infrastructure
-
-  - model: authentik_core.membership
-    id: rspcache-membership-agentydragon
-    state: present
-    identifiers:
-      group: !KeyOf rspcache-admins
-      user: !Find [authentik_core.user, [username, agentydragon]]
-
-  - model: authentik_core.membership
-    id: rspcache-membership-authentik-admin
-    state: present
-    identifiers:
-      group: !KeyOf rspcache-admins
-      user: !Find [authentik_core.user, [username, authentikadmin]]
