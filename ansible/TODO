@@ -1,4 +1,2 @@
-- test out authentik
-- authentik <-> google oauth, or possibly my own ==> authenticate to apache guacamole (vps) => persistent remote desktop
 - install powerlevel10k on vps
 - git-commit-ai: include standard diff scaffolding; show progress with rich or similar
