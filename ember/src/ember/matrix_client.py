@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
+from contextlib import suppress
 import logging
 
 from nio import AsyncClient, AsyncClientConfig, RoomMessageText
@@ -79,10 +80,8 @@ class MatrixClient:
         self._stop_event.set()
         if self._sync_task is not None:
             self._sync_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._sync_task
-            except asyncio.CancelledError:
-                pass
             self._sync_task = None
         if self._client is not None:
             await self._client.close()
@@ -259,14 +258,14 @@ class MatrixClient:
 
         events = invite.invite_state or []
         for event in events:
-            if isinstance(event, InviteMemberEvent):
-                if (
-                    event.sender == admin_user
-                    and event.state_key == self._user_id
-                    and event.membership == "invite"
-                ):
-                    logger.info("Accepting admin invite to %s", room_id)
-                    return True
+            if (
+                isinstance(event, InviteMemberEvent)
+                and event.sender == admin_user
+                and event.state_key == self._user_id
+                and event.membership == "invite"
+            ):
+                logger.info("Accepting admin invite to %s", room_id)
+                return True
         logger.debug("Invite to %s ignored; no admin invite event found", room_id)
         return False
 

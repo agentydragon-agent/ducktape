@@ -58,6 +58,22 @@ docker push registry.k3s.agentydragon.com/myapp:latest
 image: registry.k3s.agentydragon.com/myapp:latest
 ```
 
+##### Authenticating with Authentik
+
+The registry ingress sits behind Authentik forward-auth and now accepts HTTP Basic credentials. Every Docker host must log in using an Authentik application password (per-user PAT):
+
+1. In the Authentik UI (`https://auth.k3s.agentydragon.com`), create an *Application password* under **Account → Security → Application passwords**.
+2. On the build host, run:
+   ```bash
+   docker login registry.k3s.agentydragon.com \
+     -u <authentik-username> \
+     -p '<application-password>'
+   ```
+   This writes the base64 credential into `~/.docker/config.json`. If you use a custom `DOCKER_CONFIG`, run the login again with that path so scripts (e.g., `ember/scripts/ember-deploy`) can read the credential.
+3. Remove or rotate access by deleting the application password in Authentik; future `docker push` calls will fail until a new password is issued and `docker login` is repeated.
+
+For CI pipelines, keep the Authentik password in your secrets manager and feed it to `docker login --password-stdin`.
+
 ### Observability
 - OpenAI probe for API monitoring
 - TimescaleDB for metrics storage

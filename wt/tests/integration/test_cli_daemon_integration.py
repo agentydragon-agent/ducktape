@@ -38,7 +38,7 @@ import pygit2
 import pytest
 
 from tests.asserts import assert_output_contains
-from wt.shared.git_utils import git_run
+from wt.shared.git_utils import GitRunOptions, git_run
 
 # from ..conftest import kill_daemon_at_wt_dir
 
@@ -289,7 +289,7 @@ class TestRealGitOperations:
         git_run(
             ["sparse-checkout", "set", "--no-cone", "--stdin"],
             cwd=wt_path,
-            input=b"foo\n",
+            options=GitRunOptions(input_data=b"foo\n"),
         )
         git_run(["checkout", "-f"], cwd=wt_path)
         assert (wt_path / "foo" / "bar" / "baz.txt").exists()

@@ -4,8 +4,8 @@ metadata:
   labels:
     blueprints.goauthentik.io/type: gitea
     blueprints.goauthentik.io/instantiate: "true"
-    {{- if .GiteaBlueprintChecksum }}
-    blueprints.goauthentik.io/revision: {{ .GiteaBlueprintChecksum | quote }}
+    {{- if .BlueprintChecksum }}
+    blueprints.goauthentik.io/revision: {{ .BlueprintChecksum | quote }}
     {{- end }}
 entries:
   # Create custom scope mapping for Gitea groups (before provider)

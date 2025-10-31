@@ -10,7 +10,7 @@ from adgn.mcp.approval_policy.server import ApprovalPolicyProposerServer, Approv
 async def test_approval_policy_tool_schemas(make_typed_mcp, approval_engine):
     """Verify approval_policy tools are exposed with flat typed schemas."""
 
-    reader = ApprovalPolicyServer(approval_engine)
+    ApprovalPolicyServer(approval_engine)
     proposer = ApprovalPolicyProposerServer(engine=approval_engine)
 
     async with make_typed_mcp(proposer, "approval_policy.proposer") as (client, _sess):

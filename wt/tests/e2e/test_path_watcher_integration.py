@@ -182,13 +182,14 @@ def test_path_watcher_multiple_worktrees(wt_cli):
 
     def _wait_until_removed(wt_cli, missing_name: str, timeout: float = 6.0):
         last = {"out": ""}
+
+        def _is_removed() -> bool:
+            result = wt_cli.status(timeout=timedelta(seconds=3.0))
+            last["out"] = result.stdout
+            return missing_name not in result.stdout
+
         ok = wait_until(
-            lambda: (
-                (
-                    lambda r: last.update({"out": r.stdout})
-                    or (missing_name not in r.stdout)
-                )(wt_cli.status(timeout=timedelta(seconds=3.0)))
-            ),
+            _is_removed,
             timeout_seconds=timeout,
             interval_seconds=WATCHER_DEBOUNCE_SECS,
         )

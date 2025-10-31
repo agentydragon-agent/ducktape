@@ -72,7 +72,6 @@ async def test_agent_mcp_echo_tool_use(
 
     # The tool output should be emitted (ToolCallOutput) and assistant text should follow
     assert rec.tool_outputs, "No tool outputs captured"
-    out0 = rec.tool_outputs[0]
     first = rec.tool_outputs[0]
     assert isinstance(first, types.CallToolResult)
     assert first.structuredContent == {"echo": "hello"}

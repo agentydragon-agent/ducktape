@@ -6,7 +6,6 @@ import logging
 from pathlib import Path
 import time
 
-from ...shared.configuration import Configuration
 from ...shared.env import is_test_mode
 from ...shared.protocol import (
     CommitInfo,
@@ -23,16 +22,7 @@ from ...shared.protocol import (
     StatusResult,
     WorktreeID,
 )
-from ..rpc import rpc
-from ..services import (
-    DiscoveryService,
-    GitService,
-    GitstatusdService,
-    HealthService,
-    PRServiceProvider,
-    StatusService,
-    WorktreeIndexService,
-)
+from ..rpc import ServiceDependencies, rpc
 from ..worktree_ids import make_worktree_id, parse_worktree_id
 
 logger = logging.getLogger(__name__)
@@ -52,16 +42,16 @@ def _log_task_done(t: asyncio.Task) -> None:
 
 @rpc.method("get_status", params=StatusParams)
 async def get_status(
-    status: StatusService,
-    gitstat: GitstatusdService,
-    prs: PRServiceProvider,
-    index: WorktreeIndexService,
-    discovery: DiscoveryService,
-    health: HealthService,
-    git: GitService,
-    config: Configuration,
+    deps: ServiceDependencies,
     params: StatusParams,
 ) -> StatusResponse:
+    status = deps.status
+    gitstat = deps.gitstatusd
+    prs = deps.prs
+    index = deps.index
+    discovery = deps.discovery
+    health = deps.health
+    config = deps.config
     worktree_ids = params.worktree_ids
 
     if worktree_ids:

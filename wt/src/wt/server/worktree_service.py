@@ -271,14 +271,14 @@ class WorktreeService:
         if t2:
             await t2
         # Include truncated previews to aid diagnostics while avoiding duplication in client
-        PREVIEW_MAX = 8192
+        preview_max = 8192
         out_text = "".join(stdout_buf)
         err_text = "".join(stderr_buf)
         out_preview = (
-            out_text[-PREVIEW_MAX:] if len(out_text) > PREVIEW_MAX else out_text
+            out_text[-preview_max:] if len(out_text) > preview_max else out_text
         )
         err_preview = (
-            err_text[-PREVIEW_MAX:] if len(err_text) > PREVIEW_MAX else err_text
+            err_text[-preview_max:] if len(err_text) > preview_max else err_text
         )
         return {
             "ran": True,

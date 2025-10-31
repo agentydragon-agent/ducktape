@@ -107,7 +107,7 @@ def login(settings: Settings) -> str:
         "identifier": {"type": "m.id.user", "user": settings.username},
         "password": settings.password,
     }
-    for attempt in range(10):
+    for _ in range(10):
         response = requests.post(
             f"{settings.homeserver}/_matrix/client/v3/login",
             json=payload,

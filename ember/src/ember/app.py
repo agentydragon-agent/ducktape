@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import logging
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel, ConfigDict
@@ -66,16 +66,19 @@ def create_app(settings: EmberSettings | None = None) -> FastAPI:
     async def _get_runtime() -> PilotRuntime:
         return runtime
 
+    runtime_dep_annotation = Annotated[PilotRuntime, Depends(_get_runtime)]
+
     @app.post("/control/restart")
     async def control_restart(
-        request: RestartRequest, runtime_dep: PilotRuntime = Depends(_get_runtime)
+        request: RestartRequest,
+        runtime_dep: runtime_dep_annotation,
     ) -> RestartResponse:
         await runtime_dep.restart()
         return RestartResponse(status="restarted", reason=request.reason or "")
 
     @app.post("/control/shutdown")
     async def control_shutdown(
-        runtime_dep: PilotRuntime = Depends(_get_runtime),
+        runtime_dep: runtime_dep_annotation,
     ) -> ShutdownResponse:
         await runtime_dep.stop()
         return ShutdownResponse(status="shutting_down")

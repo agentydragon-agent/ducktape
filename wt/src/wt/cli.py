@@ -2,9 +2,11 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 import inspect
 import logging
 import sys
+from typing import Any
 
 import anyio
 import click
@@ -14,6 +16,7 @@ from typer.main import get_command
 
 from .client.cd_utils import emit_cd_command
 from .client.handlers import (
+    CreateWorktreeOptions,
     handle_copy_worktree,
     handle_create_worktree,
     handle_kill_daemon,
@@ -27,7 +30,7 @@ from .client.handlers import (
 from .client.view_formatter import ViewFormatter
 from .client.wt_client import WtClient
 from .plugins import get_manager, get_plugin_commands
-from .shared.configuration import load_config
+from .shared.configuration import Configuration, load_config
 from .shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
 
 COPY_MAX_ARGS = 2
@@ -99,6 +102,7 @@ app = typer.Typer(
     add_completion=False,
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
+_CTX_OPTION = typer.Option(None, hidden=True)
 
 
 @app.callback(invoke_without_command=True)
@@ -125,12 +129,14 @@ def _root(
             )
             anyio.run(
                 _async_sh_main,
-                daemon_client,
-                formatter,
-                config,
-                plugin_manager,
+                ShellDispatchContext(
+                    daemon_client=daemon_client,
+                    formatter=formatter,
+                    config=config,
+                    plugin_manager=plugin_manager,
+                    ctx=ctx,
+                ),
                 list(ctx.args) if ctx.args is not None else [],
-                ctx,
             )
         else:
             anyio.run(_async_main, effective_verbose)
@@ -146,6 +152,15 @@ def _create_cli_dependencies(verbose: bool = False):
     daemon_client = WtClient(config, verbose=verbose)
     plugin_manager = get_manager(config)
     return config, formatter, daemon_client, plugin_manager
+
+
+@dataclass(frozen=True)
+class ShellDispatchContext:
+    daemon_client: WtClient
+    formatter: ViewFormatter
+    config: Configuration
+    plugin_manager: Any
+    ctx: typer.Context
 
 
 async def _async_main(verbose: bool = False):
@@ -225,10 +240,12 @@ async def _cmd_create_sh(config, remaining_args, ctx, **_):
     await handle_create_worktree(
         config,
         name,
-        from_default=True,
-        from_branch=None,
-        from_worktree=None,
-        confirm=False,
+        CreateWorktreeOptions(
+            from_default=True,
+            from_branch=None,
+            from_worktree=None,
+            confirm=False,
+        ),
     )
 
 
@@ -237,14 +254,15 @@ _COMMAND_DISPATCH["create"] = _cmd_create_sh
 
 
 async def _async_sh_main(
-    daemon_client,
-    formatter,
-    config,
-    plugin_manager,
+    dispatch_ctx: ShellDispatchContext,
     filtered_args,
-    ctx,
 ):
     """Async version of sh command handler with low branching complexity."""
+    daemon_client = dispatch_ctx.daemon_client
+    formatter = dispatch_ctx.formatter
+    config = dispatch_ctx.config
+    plugin_manager = dispatch_ctx.plugin_manager
+    ctx = dispatch_ctx.ctx
     if not filtered_args:
         await handle_status(daemon_client, formatter)
         return
@@ -292,7 +310,7 @@ def cmd_create(
         None, "--from-worktree", "-w", help="Hydrate from existing worktree"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
-    ctx: typer.Context = typer.Option(None, hidden=True),
+    ctx: typer.Context = _CTX_OPTION,
 ):
     """Create a new worktree.
 
@@ -308,10 +326,12 @@ def cmd_create(
         handle_create_worktree(
             config,
             name,
-            from_default=from_worktree is None,
-            from_branch=from_branch,
-            from_worktree=from_worktree,
-            confirm=not yes,
+            CreateWorktreeOptions(
+                from_default=from_worktree is None,
+                from_branch=from_branch,
+                from_worktree=from_worktree,
+                confirm=not yes,
+            ),
         )
     )
 
@@ -406,12 +426,14 @@ def cmd_sh(ctx: typer.Context):
     )
     asyncio.run(
         _async_sh_main(
-            daemon_client,
-            formatter,
-            config,
-            plugin_manager,
+            ShellDispatchContext(
+                daemon_client=daemon_client,
+                formatter=formatter,
+                config=config,
+                plugin_manager=plugin_manager,
+                ctx=ctx,
+            ),
             (list(ctx.args) if ctx.args is not None else []),
-            ctx,
         )
     )
 

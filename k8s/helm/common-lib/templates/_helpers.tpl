@@ -94,6 +94,42 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 blueprints.goauthentik.io/instantiate: "true"
 {{- end -}}
 
+{{/* Render a ConfigMap wrapping an Authentik blueprint file. */}}
+{{- define "common.blueprintConfigMap" -}}
+{{- $ctx := index . "context" -}}
+{{- $name := index . "name" -}}
+{{- $filename := default "blueprint.yaml" (index . "filename") -}}
+{{- $checksum := index . "checksum" -}}
+{{- $body := index . "body" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ctx.Release.Namespace }}
+  labels:
+{{ include "common.blueprintLabels" $ctx | indent 4 }}
+{{- if $checksum }}
+    blueprints.goauthentik.io/revision: {{ $checksum | quote }}
+{{- end }}
+data:
+  {{ $filename }}: |
+{{ $body | indent 4 }}
+{{- end -}}
+
+{{/* Render a blueprint ConfigMap directly from a file and context, hashing the rendered content. */}}
+{{- define "common.blueprintConfigMapFromFile" -}}
+{{- $ctx := index . "context" -}}
+{{- $name := index . "name" -}}
+{{- $file := index . "file" -}}
+{{- $filename := default "blueprint.yaml" (index . "filename") -}}
+{{- $_ := set $ctx "BlueprintChecksum" "" -}}
+{{- $bodyNoChecksum := tpl ($ctx.Files.Get $file) $ctx -}}
+{{- $checksum := sha1sum $bodyNoChecksum -}}
+{{- $_ := set $ctx "BlueprintChecksum" $checksum -}}
+{{- $body := tpl ($ctx.Files.Get $file) $ctx -}}
+{{ include "common.blueprintConfigMap" (dict "context" $ctx "name" $name "filename" $filename "checksum" $checksum "body" $body) }}
+{{- end -}}
+
 {{/* Compute service account name given optional override */}}
 {{- define "common.serviceAccountName" -}}
 {{- $values := index . "values" -}}

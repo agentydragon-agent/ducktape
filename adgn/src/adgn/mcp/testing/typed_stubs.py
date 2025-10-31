@@ -8,12 +8,13 @@ from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult as FMCallToolResult
 from fastmcp.server import FastMCP
 from mcp import types as mcp_types
+from mcp.types import CallToolResult
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp._shared.client_helpers import extract_error_detail
 
-CallToolResult = mcp_types.CallToolResult
+StructuredContent = BaseModel | dict[str, Any] | list[Any] | str | int | float | bool | None
 
 # We use the concrete FastMCP Client type for sessions in tests
 
@@ -32,10 +33,8 @@ def _normalize_result(raw: object, *, tool_name: str) -> CallToolResult:
     return to_pydantic(raw)
 
 
-def _structured_content(
-    result: CallToolResult, *, tool_name: str
-) -> BaseModel | dict | list | str | int | float | bool | None:
-    sc = result.structuredContent
+def _structured_content(result: CallToolResult, *, tool_name: str) -> StructuredContent:
+    sc = cast(StructuredContent | None, result.structuredContent)
     if sc is None:
         raise RuntimeError(
             f"{tool_name!r} did not return structuredContent; tests require structured outputs"
@@ -53,7 +52,7 @@ async def _call_normalized(
 
 async def _call_structured(
     session: Client, tool_name: str, arguments: dict[str, object] | None
-) -> tuple[CallToolResult, BaseModel | dict | list | str | int | float | bool | None]:
+) -> tuple[CallToolResult, StructuredContent]:
     """Call a FastMCP tool and return both the normalized result and structured content."""
     result = await _call_normalized(session, tool_name, arguments)
     return result, _structured_content(result, tool_name=tool_name)
@@ -100,13 +99,15 @@ async def call_tool_typed(
         tool_name=name,
     )
     _result, structured = await _call_structured(session, name, args)
-    adapter = TypeAdapter(out_type)
+    adapter: TypeAdapter[Any] = TypeAdapter(out_type)
     try:
-        return adapter.validate_python(structured)
+        parsed = adapter.validate_python(structured)
     except ValidationError:
         if isinstance(structured, dict) and "result" in structured:
-            return adapter.validate_python(structured["result"])
-        raise
+            parsed = adapter.validate_python(structured["result"])
+        else:
+            raise
+    return cast(Any, parsed)
 
 
 class ToolStub(Generic[T_Out]):
@@ -170,7 +171,7 @@ class ToolModels:
 def _extract_error_message(resp: CallToolResult) -> str:
     detail = extract_error_detail(resp)
     if detail:
-        return detail
+        return cast(str, detail)
     nontext: list[str] = [
         type(block).__name__
         for block in resp.content or []
@@ -201,7 +202,7 @@ class TypedClient:
         self._exclude_none = exclude_none
         self._models: dict[str, ToolModels] = {}
 
-    def stub(self, name: str, out_type: object) -> ToolStub[T_Out]:
+    def stub(self, name: str, out_type: object) -> ToolStub[Any]:
         meta = self._models.get(name)
         input_model = meta.Input if meta else None
         wrapper_field = meta._wrapper_field if meta else None
@@ -333,10 +334,7 @@ class TypedClient:
         models = self._models.get(name)
         if not models:
             raise AttributeError(name)
-        exclude_none = self._exclude_none
-        session = self._session
-
-        tool_stub = self.stub(name, models.Output)
+        tool_stub: ToolStub[Any] = self.stub(name, models.Output)
 
         async def _call(payload: BaseModel) -> object:
             return await tool_stub(payload)

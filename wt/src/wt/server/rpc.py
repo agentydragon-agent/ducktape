@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from inspect import signature
 import logging
@@ -65,6 +66,28 @@ class RpcError(Exception):
 Handler = Callable[..., Awaitable[Any]]
 
 
+@dataclass(frozen=True)
+class ServiceDependencies:
+    config: Configuration
+    git: GitService
+    index: WorktreeIndexService
+    gitstatusd: GitstatusdService
+    prs: PRServiceProvider
+    status: StatusService
+    discovery: DiscoveryService
+    health: HealthService
+    coordinator: WorktreeCoordinator
+
+
+@dataclass(frozen=True)
+class InvocationContext:
+    daemon: WtDaemon
+    params_obj: BaseModel | None
+    writer: Any
+    start_time: datetime
+    stream_obj: Stream | None = None
+
+
 class RpcRegistry:
     def __init__(self) -> None:
         self._handlers: dict[
@@ -79,12 +102,12 @@ class RpcRegistry:
         self,
         fn,
         *,
-        daemon: WtDaemon,
-        params_obj: BaseModel | None,
-        writer,
-        start_time: datetime,
-        stream_obj=None,
+        context: InvocationContext,
     ):
+        daemon = context.daemon
+        params_obj = context.params_obj
+        start_time = context.start_time
+        stream_obj = context.stream_obj
         sig = signature(fn)
         c = Container()
 
@@ -102,6 +125,20 @@ class RpcRegistry:
         c.register(WorktreeCoordinator, instance=daemon.coordinator)
         # Also expose WorktreeService for orchestration flows (imported at module level)
         c.register(WorktreeService, instance=daemon.worktree_service)
+        c.register(
+            ServiceDependencies,
+            instance=ServiceDependencies(
+                config=daemon.config,
+                git=daemon.git_service,
+                index=daemon.index_service,
+                gitstatusd=daemon.gitstatusd_service,
+                prs=daemon.pr_provider,
+                status=daemon.status_service,
+                discovery=daemon.discovery_service,
+                health=daemon.health_service,
+                coordinator=daemon.coordinator,
+            ),
+        )
         args = []
         type_hints = get_type_hints(fn)
         for p in sig.parameters.values():
@@ -141,10 +178,12 @@ class RpcRegistry:
             try:
                 args = self._build_args(
                     handler,
-                    daemon=daemon,
-                    params_obj=params,
-                    writer=writer,
-                    start_time=start_time,
+                    context=InvocationContext(
+                        daemon=daemon,
+                        params_obj=params,
+                        writer=writer,
+                        start_time=start_time,
+                    ),
                 )
                 result = await handler(*args)
                 return Response(result=result, id=req.id)
@@ -178,11 +217,13 @@ class RpcRegistry:
                 stream = Stream(writer)
                 args = self._build_args(
                     handler,
-                    daemon=daemon,
-                    params_obj=params,
-                    writer=writer,
-                    start_time=start_time,
-                    stream_obj=stream,
+                    context=InvocationContext(
+                        daemon=daemon,
+                        params_obj=params,
+                        writer=writer,
+                        start_time=start_time,
+                        stream_obj=stream,
+                    ),
                 )
                 result = await handler(*args)
                 return Response(result=result, id=req.id)

@@ -204,15 +204,20 @@ class WtClient:
         env["WT_HANDSHAKE_FD"] = str(write_fd)
 
         # Launch daemon as a new session; do not inherit stdio; only the handshake FD is kept
-        log_file = None
+        log_stack = contextlib.ExitStack()
         # Explicitly annotate to satisfy mypy (Popen accepts int or IO[bytes])
         stdout_dest: int | IO[bytes]
         stderr_dest: int | IO[bytes]
         try:
             # In test mode, capture daemon stdout/stderr to WT_DIR/daemon.log for diagnostics
             if is_test_mode():
-                log_path = self.config.daemon_log_file
-                log_file = open(log_path, "ab", buffering=0)
+                log_path = Path(self.config.daemon_log_file)
+                log_file = await asyncio.to_thread(
+                    log_path.open,
+                    "ab",
+                    0,
+                )
+                log_stack.enter_context(log_file)
                 stdout_dest = log_file
                 stderr_dest = log_file
             else:
@@ -232,10 +237,7 @@ class WtClient:
             # Parent keeps only the read end; close write end in parent
             with contextlib.suppress(Exception):
                 os.close(write_fd)
-            if log_file is not None:
-                with contextlib.suppress(Exception):
-                    log_file.flush()
-                    log_file.close()
+            log_stack.close()
 
         # Store read pipe so _read_handshake_from_pipe can consume it
         self._handshake_pipe = read_fd

@@ -24,7 +24,7 @@ from ...shared.protocol import (
     WorktreeInfo,
     WorktreeListResult,
 )
-from ..rpc import RpcError, Stream, rpc
+from ..rpc import RpcError, ServiceDependencies, Stream, rpc
 from ..services import GitService, WorktreeCoordinator, WorktreeIndexService
 from ..types import DiscoveredWorktree
 from ..worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
@@ -57,13 +57,14 @@ async def worktree_list(git: GitService, config: Configuration) -> WorktreeListR
 
 @rpc.stream("worktree_create", params=WorktreeCreateParams)
 async def worktree_create(
-    git: GitService,
-    coordinator: WorktreeCoordinator,
+    deps: ServiceDependencies,
     svc: WorktreeService,
-    config: Configuration,
     params: WorktreeCreateParams,
     stream: Stream,
 ) -> WorktreeCreateResult:
+    git = deps.git
+    coordinator = deps.coordinator
+    config = deps.config
     if "/" in params.name:
         raise RpcError(
             code=ErrorCodes.INVALID_PARAMS,

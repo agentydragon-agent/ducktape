@@ -4,8 +4,8 @@ metadata:
   labels:
     blueprints.goauthentik.io/type: matrix
     blueprints.goauthentik.io/instantiate: "true"
-    {{- if .MatrixBlueprintChecksum }}
-    blueprints.goauthentik.io/revision: {{ .MatrixBlueprintChecksum | quote }}
+    {{- if .BlueprintChecksum }}
+    blueprints.goauthentik.io/revision: {{ .BlueprintChecksum | quote }}
     {{- end }}
 entries:
   - model: authentik_providers_oauth2.scopemapping

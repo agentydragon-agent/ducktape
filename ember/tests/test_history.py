@@ -70,7 +70,8 @@ def test_history_persists_and_builds_input_items(history: ConversationHistory) -
     function_outputs = [
         item for item in items if item.get("type") == "function_call_output"
     ]
-    assert function_outputs and function_outputs[0]["call_id"] == "call-1"
+    assert function_outputs, "No function call outputs recorded"
+    assert function_outputs[0]["call_id"] == "call-1"
 
     lines = history.path.read_text(encoding="utf-8").splitlines()
     records = [json.loads(line) for line in lines]

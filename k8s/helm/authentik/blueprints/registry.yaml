@@ -4,6 +4,9 @@ metadata:
   labels:
     blueprints.goauthentik.io/type: registry
     blueprints.goauthentik.io/instantiate: "true"
+    {{- if .BlueprintChecksum }}
+    blueprints.goauthentik.io/revision: {{ .BlueprintChecksum | quote }}
+    {{- end }}
 entries:
   - model: authentik_core.group
     id: registry-admin-group

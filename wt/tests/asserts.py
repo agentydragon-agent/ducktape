@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import re
-from typing import Dict
 
 from hamcrest import assert_that, contains_string
 
 
-def extract_status_rows(output: str) -> Dict[str, str]:
+def extract_status_rows(output: str) -> dict[str, str]:
     """Parse status output into a mapping of worktree name -> full line.
 
     Filters out spinner/header lines and reduces access to rows by name.
     """
     lines = [ln for ln in output.splitlines() if ln and not ln.startswith(("✓", "⟳"))]
-    rows: Dict[str, str] = {}
+    rows: dict[str, str] = {}
     for ln in lines:
         name = ln.split(maxsplit=1)[0]
         rows[name] = ln

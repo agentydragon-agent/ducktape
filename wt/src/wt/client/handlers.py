@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import signal
@@ -19,6 +20,14 @@ from ..shared.protocol import (
 )
 from .cd_utils import emit_cd_command
 from .wt_client import WtClient
+
+
+@dataclass(frozen=True)
+class CreateWorktreeOptions:
+    from_default: bool = True
+    from_branch: str | None = None
+    from_worktree: str | None = None
+    confirm: bool = False
 
 
 async def handle_status(daemon_client, formatter) -> None:
@@ -95,12 +104,14 @@ async def handle_status_single(daemon_client, formatter, worktree_name: str) -> 
 async def handle_create_worktree(
     config,
     name: str,
-    from_default: bool = True,
-    from_branch: str | None = None,
-    from_worktree: str | None = None,
-    confirm: bool = False,
+    options: CreateWorktreeOptions | None = None,
 ) -> None:
     """Handle worktree creation."""
+    opts = options or CreateWorktreeOptions()
+    from_default = opts.from_default
+    from_branch = opts.from_branch
+    from_worktree = opts.from_worktree
+    confirm = opts.confirm
     daemon_client = WtClient(config)
 
     def on_progress(evt: ProgressEvent):
@@ -249,8 +260,7 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         await handle_create_worktree(
             config,
             worktree_name,
-            from_default=True,
-            confirm=False,
+            CreateWorktreeOptions(from_default=True, confirm=False),
         )
         return
 
@@ -259,7 +269,11 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         default=False,
     ):
         # Delegate to shared create handler to reuse progress/hook streaming
-        await handle_create_worktree(config, worktree_name, from_default=True)
+        await handle_create_worktree(
+            config,
+            worktree_name,
+            CreateWorktreeOptions(from_default=True),
+        )
         return
     click.echo("Cancelled.")
 

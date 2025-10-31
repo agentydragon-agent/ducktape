@@ -14,6 +14,7 @@ from hamcrest import (
     has_item,
     has_items,
     has_properties,
+    instance_of,
     is_not,
     none,
 )

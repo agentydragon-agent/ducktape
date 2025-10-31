@@ -117,6 +117,7 @@ pip install -r requirements.txt
 python -m pytest
 pre-commit install  # For development
 ```
+- Target runtime version: Python 3.12 (stdlib features like `tomllib` are assumed available).
 
 ### Rust (Finance tools)
 ```bash

@@ -8,12 +8,8 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from functools import lru_cache
 from pathlib import Path
+import tomllib
 from typing import Dict, Iterable, List, Sequence, Set
-
-try:  # Python ≥3.11 provides tomllib in the stdlib
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    tomllib = None
 
 
 @dataclass
@@ -471,7 +467,7 @@ def load_config() -> Config:
     root = _project_root()
     skip: list[str] = []
     pyproject = root / "pyproject.toml"
-    if pyproject.is_file() and tomllib is not None:
+    if pyproject.is_file():
         try:
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         except Exception:  # pragma: no cover - config errors fall back to defaults

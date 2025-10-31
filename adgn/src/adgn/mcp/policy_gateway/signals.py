@@ -133,6 +133,4 @@ def detect_policy_gateway_error(err: Any) -> PolicyGatewayError | None:
         return PolicyGatewayError(kind=kind, code=code, message=msg, data=data)
 
     # Fallback: detect by message string on generic exceptions (e.g., ToolError)
-    s = str(err)
-    # No non-stamped fallbacks
     return None

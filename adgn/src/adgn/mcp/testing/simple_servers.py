@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Shared FastMCP helpers for unit tests and demos.
 
 These utilities provide a lightweight FastMCP server that exposes a handful of
@@ -15,6 +13,8 @@ simple tools used across the test suite:
 Tests previously duplicated these helpers (and imported ``adgn.mcp.echo``).
 Centralising them here keeps behaviour consistent and avoids redundant fixtures.
 """
+
+from __future__ import annotations
 
 from fastmcp.server import FastMCP
 from mcp import McpError, types as mtypes

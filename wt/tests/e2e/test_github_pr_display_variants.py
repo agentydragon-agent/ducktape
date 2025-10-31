@@ -1,18 +1,18 @@
 """E2E: real daemon/client + shadowed PyGithub; PR variants: open(can merge), merged, closed, no PR."""
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
 import re
 import socket
+from typing import Any
 import uuid
 
 import pytest
 
 from wt.shared.fixtures import PRFixtureEntry
-
-# Global conftest disables gh token via get_github_token
 
 
 def _write_shadow_github(mock_root: Path, variant: str):
@@ -123,16 +123,15 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
     ],
 )
 def test_github_pr_variants(
-    real_temp_repo,
-    config_factory,
-    tmp_path,
     variant,
     expects,
-    write_pr_fixtures,
-    wt_cli,
+    github_pr_env: "GithubPrEnv",
 ):
-    factory = config_factory(real_temp_repo)
+    env = github_pr_env
+    factory = env.config_factory(env.repo_path)
     config = factory.integration(github_enabled=True, github_repo="test/test")
+    wt_cli = env.wt_cli
+    write_pr_fixtures = env.write_pr_fixtures
 
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
@@ -152,7 +151,7 @@ def test_github_pr_variants(
             else 0,
             state="open" if variant == "open_mergeable" else "closed",
             draft=False,
-            mergeable=True if variant in {"open_mergeable", "merged"} else False,
+            mergeable=variant in {"open_mergeable", "merged"},
             merged_at=None if variant != "merged" else datetime.now().isoformat(),
             additions=10
             if variant == "open_mergeable"
@@ -200,3 +199,32 @@ def test_github_pr_variants(
     else:
         # No PR should render no #<n>
         assert not re.search(r"#\d+", out)
+
+
+# Global conftest disables gh token via get_github_token
+
+
+@dataclass(frozen=True)
+class GithubPrEnv:
+    repo_path: Path
+    config_factory: Any
+    tmp_path: Path
+    write_pr_fixtures: Any
+    wt_cli: Any
+
+
+@pytest.fixture
+def github_pr_env(
+    real_temp_repo,
+    config_factory,
+    tmp_path,
+    write_pr_fixtures,
+    wt_cli,
+) -> GithubPrEnv:
+    return GithubPrEnv(
+        repo_path=real_temp_repo,
+        config_factory=config_factory,
+        tmp_path=tmp_path,
+        write_pr_fixtures=write_pr_fixtures,
+        wt_cli=wt_cli,
+    )
