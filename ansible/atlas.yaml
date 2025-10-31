@@ -101,6 +101,10 @@
       tags: [desktop]
 
     - import_role:
+        name: system-inspection-nopasswd
+      tags: [sudo, system]
+
+    - import_role:
         name: tailscale-client
       tags: [tailscale]
 
@@ -109,6 +113,12 @@
       tags: [cli]
     
     # cli_nix_migrated excluded - atlas now uses Nix/home-manager for migrated packages
+
+    - import_role:
+        name: nix
+      tags: [nix]
+      vars:
+        nix_trusted_users: "root {{ my_user }}"
 
     - import_role:
         name: k3s

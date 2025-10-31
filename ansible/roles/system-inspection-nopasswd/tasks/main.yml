@@ -1,0 +1,21 @@
+---
+# TODO: Enhance to only grant sudo access for tools that are actually installed on the system
+# This would prevent cluttering sudoers with entries for non-existent commands
+# Could use ansible.builtin.stat or which to check existence before adding to template
+
+- name: Create sudoers.d directory
+  ansible.builtin.file:
+    path: /etc/sudoers.d
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Configure passwordless sudo for system inspection commands
+  ansible.builtin.template:
+    src: system-inspection-sudoers.j2
+    dest: /etc/sudoers.d/system-inspection-nopasswd
+    mode: '0440'
+    owner: root
+    group: root
+    validate: 'visudo -cf %s'
