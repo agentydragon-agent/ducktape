@@ -47,7 +47,7 @@ class PilotRuntime:
         self._history = ConversationHistory(self._settings.history_path)
         self._matrix_client = MatrixClient(self._settings.matrix)
         self._settings.workspace_path.mkdir(parents=True, exist_ok=True)
-        self._openai_client = self._create_openai_client(self._settings.openai.api_key)
+        self._openai_client = self._create_openai_client()
         self._agent = OpenAIAgent(
             self._settings.openai, self._history, self._openai_client
         )
@@ -80,5 +80,6 @@ class PilotRuntime:
         if self._settings.openai.api_base:
             self._openai_client.base_url = self._settings.openai.api_base
 
-    def _create_openai_client(self, api_key: str) -> AsyncOpenAI:
+    def _create_openai_client(self) -> AsyncOpenAI:
+        api_key = self._settings.openai.api_key_secret.value(required=True)
         return AsyncOpenAI(api_key=api_key, base_url=self._settings.openai.api_base)

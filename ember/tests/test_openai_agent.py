@@ -58,7 +58,7 @@ async def test_agent_runs_shell_command(
     history: ConversationHistory,
 ) -> None:
     client = _make_openai_client(
-        settings.api_key,
+        settings.api_key_secret.value(required=True),
         [
             _response_with_tool_call(
                 call_id="call-1",
@@ -114,7 +114,7 @@ async def test_agent_yield_control(
     settings: OpenAISettings, history: ConversationHistory
 ) -> None:
     client = _make_openai_client(
-        settings.api_key,
+        settings.api_key_secret.value(required=True),
         [
             _response_with_tool_call(
                 call_id="call-yield",

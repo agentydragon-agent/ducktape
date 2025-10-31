@@ -48,12 +48,6 @@ class OpenAISettings(BaseModel):
             includes.append(cast(ResponseIncludable, "reasoning.encrypted_content"))
         return includes
 
-    @property
-    def api_key(self) -> str:
-        value = self.api_key_secret.value(required=True)
-        assert value is not None  # for type-checkers
-        return value
-
 
 class EmberSettings(BaseModel):
     matrix: MatrixSettings
