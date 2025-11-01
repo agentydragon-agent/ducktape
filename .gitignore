@@ -38,3 +38,7 @@ k8s/helm/**/charts/
 adgn/src/adgn/rspcache/admin_ui_dist/
 adgn/rspcache_admin_ui/src/generated/
 adgn/openai_openapi.yaml
+
+# Ignore Helm dependency locks & vendor directories
+k8s/helm/**/Chart.lock
+k8s/helm/**/charts/

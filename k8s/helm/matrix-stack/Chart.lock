@@ -1,6 +1,0 @@
-dependencies:
-- name: matrix
-  repository: https://remram44.github.io/matrix-helm
-  version: 2.9.3
-digest: sha256:7cf8b72b887e3e7a99c4bc6710fab24f0bb5e1a3288c24c7fd592e32320ad773
-generated: "2025-10-12T01:36:06.398456157-07:00"
