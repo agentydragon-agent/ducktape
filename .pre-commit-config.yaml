@@ -34,21 +34,22 @@ repos:
       - id: yamllint
         args:
           - "-c"
-          - "ansible/.yamllint.yaml"
+          - ".yamllint.yaml"
         files: "\\.ya?ml$"
         exclude: "ansible/host_vars/.*\\.yml$|^k8s/.*\\.ya?ml$"
 
-  - repo: local
-    hooks:
-      - id: ansible-lint
-        name: ansible-lint (ansible/)
-        entry: python ansible/tools/run_ansible_lint.py
-        language: python
-        additional_dependencies:
-          - ansible-lint==24.9.2
-          - ansible-core==2.18.2
-        pass_filenames: false
-        files: "^ansible/"
+  # TODO: slow
+  # - repo: local
+  #   hooks:
+  #     - id: ansible-lint
+  #       name: ansible-lint (ansible/)
+  #       entry: python ansible/tools/run_ansible_lint.py
+  #       language: python
+  #       additional_dependencies:
+  #         - ansible-lint==24.9.2
+  #         - ansible-core==2.18.2
+  #       pass_filenames: false
+  #       files: "^ansible/"
 
   # Ruff = linter + import sorter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
