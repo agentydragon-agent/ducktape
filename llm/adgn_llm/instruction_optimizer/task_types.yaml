@@ -8,7 +8,7 @@ task_types:
     grading:
       strategy: file_based
       criteria_file: ../data/graders_consolidated.yaml
-  
+
   code_review:
     # Code review tasks - analyze existing code
     grading:
