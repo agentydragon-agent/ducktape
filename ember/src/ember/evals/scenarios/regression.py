@@ -70,8 +70,8 @@ class FileWriteSanityScenario(Scenario):
     async def run(self) -> None:
         notes_path = WORKSPACE_ROOT / "notes.txt"
         message_template = (
-            "Create {path} containing exactly 'run ${RUN_ID} complete'."
-        ).format(path=notes_path)
+            f"Create {notes_path} containing exactly 'run ${{RUN_ID}} complete'."
+        )
         await self.send_matrix_message(self.render(message_template))
         await self.wait_seconds(60)
         expected = self.render("run ${RUN_ID} complete\n")

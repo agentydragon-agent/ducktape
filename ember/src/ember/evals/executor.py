@@ -315,7 +315,7 @@ class ScenarioExecutor:
             scenario_dir.mkdir(parents=True, exist_ok=True)
             scenario = scenario_cls(self, scenario_dir)
 
-            description = f" – {scenario.description}" if scenario.description else ""
+            description = f" - {scenario.description}" if scenario.description else ""
             print(
                 f"[ember-eval][{self._request.run_id}] -> Scenario {index}: {scenario.id}"
                 f"{description}"

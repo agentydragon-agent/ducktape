@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import shutil
@@ -49,18 +50,23 @@ def render_matrix_transcript(transcript: MatrixTranscript) -> str:
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class MatrixConnection:
+    base_url: str
+    access_token: str
+
+
 class MatrixHarness:
     def __init__(
         self,
-        base_url: str,
-        access_token: str,
+        connection: MatrixConnection,
         ember_user_id: str,
         run_id: str,
         artifact_dir: Path,
         room_id: str | None = None,
     ) -> None:
-        self._base_url = base_url
-        self._access_token = access_token
+        self._base_url = connection.base_url
+        self._access_token = connection.access_token
         self._ember_user_id = ember_user_id
         self._room_id = room_id
         self._run_id = run_id
@@ -105,9 +111,10 @@ class MatrixHarness:
 
         if self._room_id:
             join_resp = await self._client.join(self._room_id)
-            if isinstance(join_resp, JoinError):
-                if "already in the room" not in (join_resp.message or ""):
-                    raise CommandError(f"Matrix join failed: {join_resp.message}")
+            if isinstance(join_resp, JoinError) and "already in the room" not in (
+                join_resp.message or ""
+            ):
+                raise CommandError(f"Matrix join failed: {join_resp.message}")
         else:
             create_resp = await self._client.room_create(
                 is_direct=True,
