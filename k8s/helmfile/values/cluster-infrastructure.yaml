@@ -1,0 +1,43 @@
+# Cluster Infrastructure overrides for this specific cluster
+
+# Enable ZFS LocalPV since we have ZFS on atlas
+zfsLocalpv:
+  enabled: true
+  zfsNode:
+    nodeSelector:
+      kubernetes.io/hostname: k3s-master
+
+# Additional storage classes specific to this cluster
+defaultStorageClasses:
+  - name: zfs-tank
+    provisioner: zfs.csi.openebs.io
+    default: false
+    parameters:
+      poolname: "tank"
+      fstype: "zfs"
+      compression: "lz4"
+      recordsize: "128k"
+      dedup: "off"
+      
+  - name: zfs-tank-git
+    provisioner: zfs.csi.openebs.io
+    default: false
+    parameters:
+      poolname: "tank"
+      fstype: "zfs"
+      compression: "lz4"
+      recordsize: "128k"
+      dedup: "off"
+      atime: "off"
+      
+  - name: zfs-tank-databases
+    provisioner: zfs.csi.openebs.io
+    default: false
+    parameters:
+      poolname: "tank"
+      fstype: "zfs"
+      compression: "lz4"
+      recordsize: "16k"  # Better for databases
+      dedup: "off"
+      atime: "off"
+      logbias: "throughput"

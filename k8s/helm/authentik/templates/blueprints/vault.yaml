@@ -1,0 +1,1 @@
+{{ include "common.blueprintConfigMapFromFile" (dict "context" . "name" "authentik-blueprints-vault" "filename" "vault.yaml" "file" "blueprints/vault.yaml") }}

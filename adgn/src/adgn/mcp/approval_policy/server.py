@@ -25,9 +25,6 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.uris import (
-    approval_policy_proposal_item_uri,
-)
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -62,17 +59,21 @@ class RejectProposalArgs(BaseModel):
 # IO types unified; see PolicyRequest/PolicyResponse in adgn.agent.approvals
 
 
+def _proposal_uri(proposal_id: str) -> str:
+    return f"{APPROVAL_POLICY_PROPOSALS_INDEX_URI}/{proposal_id}"
+
+
 def _load_instructions() -> str:
     """Load and render instructions with embedded shared constants via Jinja2."""
     raw = resources.files(__package__).joinpath("instructions.j2.md").read_text(encoding="utf-8")
     tmpl = Template(raw)
-    rendered = tmpl.render(
+    rendered: str = tmpl.render(
         RUNTIME_SERVER_NAME=RUNTIME_SERVER_NAME,
         RUNTIME_EXEC_TOOL_NAME=RUNTIME_EXEC_TOOL_NAME,
         TRUSTED_POLICY_PATH=None,
         TRUSTED_POLICY_URL=APPROVAL_POLICY_RESOURCE_URI,
     )
-    return str(rendered)
+    return rendered
 
 
 class ApprovalPolicyServer(NotifyingFastMCP):
@@ -157,7 +158,8 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         def active_policy() -> str:
             # Single source of truth: engine
             content, _version = self._engine.get_policy()
-            return content
+            policy_text: str = content
+            return policy_text
 
         @self.resource(
             APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}",
@@ -167,7 +169,8 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         async def proposal_item(id: str) -> str:
             if (got := await self._persistence.get_policy_proposal(self._agent_id, id)) is None:
                 raise KeyError(id)
-            return got.content
+            proposal_content: str = got.content
+            return proposal_content
 
         @self.flat_model()
         async def decide(input: PolicyRequest) -> PolicyResponse:  # type: ignore[unused-ignore]
@@ -254,7 +257,7 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
             await self._persistence.create_policy_proposal(
                 self._agent_id, proposal_id=new_id, content=input.content
             )
-            self._engine.notify_resource(approval_policy_proposal_item_uri(new_id))
+            self._engine.notify_resource(_proposal_uri(new_id))
             self._engine.notify_proposals_changed()
             return ProposalDescriptor(
                 id=new_id,
@@ -268,7 +271,7 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
             """Withdraw a pending policy proposal by id."""
             pid = input.id
             await self._persistence.delete_policy_proposal(self._agent_id, pid)
-            self._engine.notify_resource(approval_policy_proposal_item_uri(pid))
+            self._engine.notify_resource(_proposal_uri(pid))
             self._engine.notify_proposals_changed()
             return True
 
@@ -325,7 +328,7 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
             # Activate policy in engine (notifies via engine)
             self._engine.set_policy(got.content)
             await self._persistence.approve_policy_proposal(self._agent_id, input.id)
-            self._engine.notify_resource(approval_policy_proposal_item_uri(input.id))
+            self._engine.notify_resource(_proposal_uri(input.id))
             self._engine.notify_proposals_changed()
             return True
 
@@ -333,7 +336,7 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
         async def reject_proposal(input: RejectProposalArgs) -> bool:  # type: ignore[unused-ignore]
             """Reject a pending policy proposal by id."""
             await self._persistence.reject_policy_proposal(self._agent_id, input.id)
-            self._engine.notify_resource(approval_policy_proposal_item_uri(input.id))
+            self._engine.notify_resource(_proposal_uri(input.id))
             self._engine.notify_proposals_changed()
             return True
 

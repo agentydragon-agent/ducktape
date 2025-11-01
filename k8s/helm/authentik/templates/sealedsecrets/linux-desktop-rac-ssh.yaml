@@ -1,0 +1,3 @@
+{{- if and .Values.linuxDesktopRac.enabled .Values.linuxDesktopRac.sealedSecretPath }}
+{{ tpl (.Files.Get .Values.linuxDesktopRac.sealedSecretPath) . }}
+{{- end }}

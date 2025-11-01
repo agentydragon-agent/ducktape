@@ -1,0 +1,26 @@
+---
+- name: Install desktop packages
+  ansible.builtin.apt:
+    name:
+      - xfce4
+      - xfce4-goodies
+      - xrdp
+      - xorgxrdp
+    state: present
+    update_cache: true
+
+- name: Ensure xrdp service is enabled and running
+  ansible.builtin.systemd:
+    name: xrdp
+    state: started
+    enabled: true
+
+- name: Allow RDP service through UFW if present
+  ansible.builtin.command:
+    cmd: ufw allow 3389/tcp
+  register: ufw_result
+  changed_when: "'Skipping adding existing rule' not in ufw_result.stdout"
+  failed_when:
+    - ufw_result.rc != 0
+    - "'not found' not in ufw_result.stderr"
+  ignore_errors: true

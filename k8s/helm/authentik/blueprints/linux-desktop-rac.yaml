@@ -1,0 +1,146 @@
+{{- if .Values.linuxDesktopRac.enabled }}
+version: 1
+metadata:
+  name: {{ .Values.linuxDesktopRac.application.name | quote }}
+  labels:
+    blueprints.goauthentik.io/type: linux-desktop-rac
+    blueprints.goauthentik.io/instantiate: "true"
+entries:
+  # Retire legacy RDP wiring if it still exists.
+  - model: authentik_core.application
+    state: absent
+    identifiers:
+      slug: "linux-desktop-rdp"
+
+  - model: authentik_providers_rac.endpoint
+    state: absent
+    identifiers:
+      name: "linux-desktop-01-rdp"
+
+  - model: authentik_providers_rac.racprovider
+    state: absent
+    identifiers:
+      name: "linux-desktop-rac"
+
+  - model: authentik_core.group
+    id: linux-desktop-ssh-access-group
+    state: present
+    identifiers:
+      name: {{ .Values.linuxDesktopRac.groupName | quote }}
+    attrs:
+      name: {{ .Values.linuxDesktopRac.groupName | quote }}
+      is_superuser: false
+
+  - model: authentik_stages_prompt.prompt
+    id: linux-desktop-ssh-username-prompt
+    state: present
+    identifiers:
+      name: {{ printf "%s-username" .Values.linuxDesktopRac.slug | quote }}
+    attrs:
+      field_key: username
+      label: Desktop username
+      type: text
+      required: true
+      placeholder: agentydragon
+      placeholder_expression: false
+      order: 0
+
+  - model: authentik_stages_prompt.promptstage
+    id: linux-desktop-ssh-prompt-stage
+    state: present
+    identifiers:
+      name: {{ printf "%s-prompt-stage" .Values.linuxDesktopRac.slug | quote }}
+    attrs:
+      name: {{ printf "%s Prompt Stage" .Values.linuxDesktopRac.application.name | quote }}
+      fields:
+        - !KeyOf linux-desktop-ssh-username-prompt
+
+  - model: authentik_flows.flow
+    id: linux-desktop-ssh-flow
+    state: present
+    identifiers:
+      slug: {{ .Values.linuxDesktopRac.flowSlug | quote }}
+    attrs:
+      name: {{ printf "%s Launch" .Values.linuxDesktopRac.application.name | quote }}
+      title: {{ printf "%s login" .Values.linuxDesktopRac.application.name | quote }}
+      designation: authorization
+      authentication: require_authenticated
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !KeyOf linux-desktop-ssh-flow
+      stage: !KeyOf linux-desktop-ssh-prompt-stage
+      order: 10
+
+  - model: authentik_providers_rac.racprovider
+    id: linux-desktop-ssh-provider
+    state: present
+    identifiers:
+      name: {{ .Values.linuxDesktopRac.providerName | quote }}
+    attrs:
+      name: {{ .Values.linuxDesktopRac.providerName | quote }}
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      launch_flow: !KeyOf linux-desktop-ssh-flow
+      auth_mode: static
+      connection_expiry: {{ .Values.linuxDesktopRac.connectionExpiry | quote }}
+      delete_token_on_disconnect: false
+      settings:
+        private-key: !Env LINUX_DESKTOP_RAC_SSH_PRIVATE_KEY
+
+  - model: authentik_providers_rac.endpoint
+    id: linux-desktop-ssh-endpoint
+    state: present
+    identifiers:
+      name: {{ .Values.linuxDesktopRac.endpoint.name | quote }}
+    attrs:
+      name: {{ .Values.linuxDesktopRac.endpoint.name | quote }}
+      host: {{ .Values.linuxDesktopRac.host | quote }}
+      protocol: ssh
+      auth_mode: prompt
+      provider: !KeyOf linux-desktop-ssh-provider
+      maximum_connections: {{ .Values.linuxDesktopRac.endpoint.maximumConnections }}
+      settings:
+        enable-terminal-colors: "true"
+      property_mappings:
+        - !Find [authentik_providers_rac.racpropertymapping, [managed, goauthentik.io/providers/rac/ssh-default]]
+
+  - model: authentik_core.application
+    id: linux-desktop-ssh-application
+    state: present
+    identifiers:
+      slug: {{ .Values.linuxDesktopRac.application.slug | quote }}
+    attrs:
+      name: {{ .Values.linuxDesktopRac.application.name | quote }}
+      slug: {{ .Values.linuxDesktopRac.application.slug | quote }}
+      provider: !KeyOf linux-desktop-ssh-provider
+      policy_engine_mode: any
+      group: {{ .Values.linuxDesktopRac.application.uiGroup | quote }}
+      meta_icon: {{ .Values.linuxDesktopRac.application.icon | quote }}
+      {{- with .Values.linuxDesktopRac.application.metaLaunchUrl }}
+      meta_launch_url: {{ . | quote }}
+      {{- end }}
+
+  - model: authentik_outposts.outpost
+    id: linux-desktop-ssh-outpost
+    state: present
+    identifiers:
+      name: {{ .Values.linuxDesktopRac.outpost.name | quote }}
+    attrs:
+      name: {{ .Values.linuxDesktopRac.outpost.name | quote }}
+      type: rac
+      config:
+        authentik_host: {{ .Values.linuxDesktopRac.outpost.authentikHost | quote }}
+        authentik_host_browser: {{ .Values.linuxDesktopRac.outpost.authentikHostBrowser | quote }}
+        authentik_host_insecure: {{ ternary "True" "False" .Values.linuxDesktopRac.outpost.authentikHostInsecure }}
+        guacd_host: {{ .Values.linuxDesktopRac.outpost.guacdHost | quote }}
+        guacd_port: {{ .Values.linuxDesktopRac.outpost.guacdPort | quote }}
+        guacd_enable_tls: {{ ternary "True" "False" .Values.linuxDesktopRac.outpost.guacdEnableTls }}
+        log_level: {{ .Values.linuxDesktopRac.outpost.logLevel | quote }}
+      providers:
+        - !KeyOf linux-desktop-ssh-provider
+      {{- with .Values.linuxDesktopRac.outpost.serviceConnection }}
+      service_connection: !Find [authentik_outposts.outpostserviceconnection, [name, {{ . | quote }}]]
+      {{- end }}
+{{- end }}

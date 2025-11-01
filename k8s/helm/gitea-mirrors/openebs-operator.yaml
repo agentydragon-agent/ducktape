@@ -1,0 +1,37 @@
+# OpenEBS ZFS LocalPV Operator
+# This should be deployed once per cluster, not per app
+# Source: https://openebs.github.io/charts/zfs-operator.yaml
+# Version: 2.6.0
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openebs-zfs
+
+---
+# This is a subset of the full operator manifest
+# For production, download the full manifest from:
+# kubectl apply -f https://openebs.github.io/charts/zfs-operator.yaml
+
+# Alternatively, use Helm for more control:
+# helm repo add openebs https://openebs.github.io/charts
+# helm install openebs-zfspv openebs/zfs-localpv \
+#   --namespace openebs-zfs \
+#   --create-namespace \
+#   --set zfsNode.kubeletDir=/var/lib/kubelet
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openebs-zfspv-bin
+  namespace: openebs-zfs
+data:
+  install.sh: |
+    #!/bin/sh
+    echo "Checking for ZFS module..."
+    if ! lsmod | grep -q zfs; then
+      echo "Loading ZFS kernel module..."
+      modprobe zfs
+    fi
+    echo "ZFS module loaded"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from pathlib import Path
 
@@ -22,26 +23,31 @@ from .tools.sleep_until_user_message import ConversationStatusProvider
 logger = logging.getLogger(__name__)
 
 
+@dataclass(slots=True)
+class AgentResources:
+    history: ConversationHistory
+    client: AsyncOpenAI
+    status_provider: ConversationStatusProvider
+    workspace_path: Path
+    object_store: ObjectStoreClient | None = None
+
+
 class OpenAIAgent:
     def __init__(
         self,
         settings: OpenAISettings,
-        history: ConversationHistory,
-        client: AsyncOpenAI,
-        status_provider: ConversationStatusProvider,
-        workspace_path: Path,
-        object_store: ObjectStoreClient | None,
+        resources: AgentResources,
     ) -> None:
         self._settings = settings
-        self._history = history
-        self._client = client
+        self._history = resources.history
+        self._client = resources.client
         self._wait_for_matrix = False
         self._tool_specs = build_tool_specs(
             self._request_sleep_until_user_message,
-            status_provider,
+            resources.status_provider,
             settings.sleep_tool_policy,
-            workspace_path,
-            object_store,
+            resources.workspace_path,
+            resources.object_store,
         )
         self._tool_params = tool_params(self._tool_specs.values())
 

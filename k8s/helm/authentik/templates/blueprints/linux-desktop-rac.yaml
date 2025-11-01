@@ -1,0 +1,3 @@
+{{- if .Values.linuxDesktopRac.enabled }}
+{{ include "common.blueprintConfigMapFromFile" (dict "context" . "name" "authentik-blueprints-linux-desktop-rac" "filename" "linux-desktop-rac.yaml" "file" "blueprints/linux-desktop-rac.yaml") }}
+{{- end }}

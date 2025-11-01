@@ -1,0 +1,132 @@
+# Authentik core application configuration.
+authentik:
+  # Blueprints - mount ConfigMaps with blueprints
+  blueprints:
+    configMaps:
+      - authentik-blueprint-grafana
+      - authentik-blueprints-gitea
+      - authentik-blueprints-rspcache
+      - authentik-blueprints-registry
+      - authentik-blueprints-forward-auth
+      - authentik-blueprints-users
+      - authentik-blueprints-matrix
+      - authentik-blueprints-vault
+
+  # Secret key for signing cookies and JWT tokens
+  # secret_key is provided via existingSecret
+  error_reporting:
+    enabled: false
+  postgresql:
+    host: "authentik-postgresql"
+    name: "authentik"
+    user: "authentik"
+  redis:
+    host: "authentik-redis-master"
+  email:
+    from: "authentik@k3s.agentydragon.com"
+    host: ""
+    port: 587
+    use_tls: false
+    use_ssl: false
+    timeout: 10
+
+  server:
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - auth.k3s.agentydragon.com
+      paths:
+        - /
+      pathType: Prefix
+      annotations:
+        traefik.ingress.kubernetes.io/router.entrypoints: web
+        ingress.kubernetes.io/force-ssl-redirect: "false"
+
+  worker:
+    replicas: 1
+
+  global:
+    envFrom:
+      - secretRef:
+          name: authentik-secrets
+    env:
+      - name: AUTHENTIK_SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: authentik-secrets
+            key: secret-key
+      - name: AUTHENTIK_POSTGRESQL__PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: authentik-secrets
+            key: postgresql-password
+      - name: AUTHENTIK_REDIS__PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: authentik-secrets
+            key: redis-password
+      - name: AUTHENTIK_EMAIL__PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: authentik-secrets
+            key: email-password
+            optional: true
+      - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: authentik-secrets
+            key: bootstrap-password
+      - name: AUTHENTIK_BOOTSTRAP_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: authentik-secrets
+            key: bootstrap-token
+      - name: AUTHENTIK_LOG_LEVEL
+        value: "info"
+      - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
+        value: "10.42.0.0/16,10.43.0.0/16"
+      - name: GRAFANA_OAUTH_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: authentik-secrets
+            key: grafana-oauth-secret
+      - name: GITEA_CLIENT_ID
+        valueFrom:
+          secretKeyRef:
+            name: gitea-oauth-shared
+            key: client_id
+      - name: GITEA_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: gitea-oauth-shared
+            key: client_secret
+      - name: VAULT_CLIENT_ID
+        valueFrom:
+          secretKeyRef:
+            name: vault-oidc-credentials
+            key: client-id
+      - name: VAULT_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: vault-oidc-credentials
+            key: client-secret
+      - name: MATRIX_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: matrix-stack-bootstrap
+            key: oidc-client-secret
+      - name: MATRIX_SIGNING_KEY
+        valueFrom:
+          secretKeyRef:
+            name: authentik-matrix-signing
+            key: matrix-signing-key
+      - name: MATRIX_SIGNING_CERT
+        valueFrom:
+          secretKeyRef:
+            name: authentik-matrix-signing
+            key: matrix-signing-cert
+  # Prometheus metrics
+  monitoring:
+    serviceMonitor:
+      create: false  # Enable if you have prometheus-operator

@@ -1,0 +1,14 @@
+namespace:
+  create: false
+
+kubeAccess:
+  enabled: true
+
+podLabels:
+  ember.run/managed: "true"
+
+persistence:
+  size: 1Gi
+
+rotator:
+  enabled: false

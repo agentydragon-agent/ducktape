@@ -1,0 +1,23 @@
+# Default chart values overlay for the external-secrets operator.
+external-secrets:
+  installCRDs: true
+  fullnameOverride: external-secrets
+  replicaCount: 1
+  leaderElection:
+    namespace: external-secrets
+  serviceAccount:
+    create: true
+    name: external-secrets
+  serviceMonitor:
+    enabled: false
+  webhook:
+    port: 9443
+    certManager:
+      enabled: true
+  securityContext:
+    fsGroup: 65534
+    runAsNonRoot: true
+    runAsUser: 65534
+  metrics:
+    serviceMonitor:
+      enabled: false

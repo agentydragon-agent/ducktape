@@ -1,0 +1,1 @@
+# This chart wraps external-secrets; dependencies are managed via helm dependency update.

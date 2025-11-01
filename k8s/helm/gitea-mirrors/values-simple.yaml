@@ -1,0 +1,32 @@
+# Simplified Gitea Mirrors configuration
+# Using Gitea chart defaults with minimal overrides
+
+gitea:
+  persistence:
+    enabled: true
+    existingClaim: gitea-mirrors-data
+    
+  gitea:
+    config:
+      repository:
+        DEFAULT_PRIVATE: "false"
+        FORCE_PRIVATE: "false"
+      service:
+        DISABLE_REGISTRATION: "true"
+        REQUIRE_SIGNIN_VIEW: "false"
+      mirror:
+        ENABLED: "true"
+        DEFAULT_INTERVAL: "1h"
+        
+  postgresql-ha:
+    enabled: false
+    
+  redis-cluster:
+    enabled: false
+    
+postgresql:
+  enabled: true
+  auth:
+    username: gitea
+    password: gitea
+    database: gitea

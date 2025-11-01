@@ -172,3 +172,16 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/* Generate reflector annotations for EmberStack reflector */}}
+{{- define "common.reflectorAnnotations" -}}
+{{- $auto := (default "true" .auto) -}}
+reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+reflector.v1.k8s.emberstack.com/reflection-auto-enabled: {{ $auto | quote }}
+{{- if .namespaces }}
+reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: {{ .namespaces | quote }}
+{{- end }}
+{{- if .template }}
+reflector.v1.k8s.emberstack.com/secret-template: {{ .template | quote }}
+{{- end }}
+{{- end -}}

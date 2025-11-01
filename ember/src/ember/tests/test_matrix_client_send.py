@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from ember.matrix_client import MatrixClient
+from ember.matrix_client import MatrixClient, MatrixSecretOptions
 
 
 class FakeAsyncClient:
@@ -56,12 +56,13 @@ async def test_matrix_client_send_text_message(
     monkeypatch.setenv("MATRIX_BASE_URL", "https://matrix.test")
     monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "token")
 
-    client = MatrixClient.from_projected_secrets(
+    options = MatrixSecretOptions(
         state_store=tmp_path / "state.json",
         store_dir=tmp_path / "store",
         device_id="test-device",
         pickle_key="test-pickle",
     )
+    client = MatrixClient.from_projected_secrets(options)
 
     async with client.session() as session:
         await session.send_text_message("!room:test", "integration hello")

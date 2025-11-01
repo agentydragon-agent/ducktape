@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.bootstrap.scriptsConfigMap }}
+  namespace: {{ include "vault-ducktape.namespace" . }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+data:
+  bootstrap.sh: |
+{{- if .Values.seal.enabled }}
+{{ printf "seal \"%s\" {" .Values.seal.type | indent 4 }}
+{{- if eq .Values.seal.type "aws" }}
+    region     = "{{ .Values.seal.config.aws.region }}"
+    kms_key_id = "{{ .Values.seal.config.aws.kmsKeyId }}"
+    access_key = "{{ printf "{{ env \\\"%s\\\" }}" .Values.seal.config.aws.accessKeyEnv }}"
+    secret_key = "{{ printf "{{ env \\\"%s\\\" }}" .Values.seal.config.aws.secretKeyEnv }}"
+{{- if .Values.seal.config.aws.stsEndpoint }}
+    sts_endpoint = "{{ .Values.seal.config.aws.stsEndpoint }}"
+{{- end }}
+{{- end }}
+{{- if eq .Values.seal.type "gcp" }}
+    project     = "{{ .Values.seal.config.gcp.project }}"
+    location    = "{{ .Values.seal.config.gcp.location }}"
+    key_ring    = "{{ .Values.seal.config.gcp.keyRing }}"
+    crypto_key  = "{{ .Values.seal.config.gcp.cryptoKey }}"
+    credentials = "{{ printf "{{ env \\\"%s\\\" }}" .Values.seal.config.gcp.credentialsEnv }}"
+{{- end }}
+{{- if eq .Values.seal.type "azure" }}
+    tenant_id  = "{{ .Values.seal.config.azure.tenantId }}"
+    client_id  = "{{ .Values.seal.config.azure.clientId }}"
+    client_secret = "{{ printf "{{ env \\\"%s\\\" }}" .Values.seal.config.azure.clientSecretEnv }}"
+    vault_name = "{{ .Values.seal.config.azure.vaultName }}"
+    key_name   = "{{ .Values.seal.config.azure.kvName }}"
+{{- end }}
+{{ printf "}" | indent 4 }}
+{{- end }}
+{{ .Values.bootstrap.script | indent 4 }}

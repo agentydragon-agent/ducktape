@@ -1,0 +1,22 @@
+{{- if .Values.storage.zfs.enabled }}
+---
+# PVC using cluster-wide ZFS StorageClass
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-mirrors-data
+  labels:
+    app.kubernetes.io/name: {{ include "gitea-mirrors.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  {{- if .Values.storage.zfs.datasetName }}
+  annotations:
+    openebs.io/volume-name: {{ .Values.storage.zfs.datasetName }}
+  {{- end }}
+spec:
+  storageClassName: {{ .Values.storage.zfs.storageClassName | default "zfs-tank-git" }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}
+{{- end }}

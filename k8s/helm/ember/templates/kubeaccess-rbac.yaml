@@ -1,0 +1,55 @@
+{{- if .Values.kubeAccess.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "ember.fullname" . }}-self-access
+  labels:
+    {{- include "common.labelsWith" (dict "context" . "extra" (dict "app.kubernetes.io/component" "agent")) | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/exec
+      - pods/log
+      - services
+      - configmaps
+      - secrets
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - delete
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "ember.fullname" . }}-self-access
+  labels:
+    {{- include "common.labelsWith" (dict "context" . "extra" (dict "app.kubernetes.io/component" "agent")) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "ember.fullname" . }}-self-access
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ember.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
