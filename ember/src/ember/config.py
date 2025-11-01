@@ -78,8 +78,6 @@ class ObjectStoreSettings(BaseModel):
     secret_key_secret: ProjectedSecret
     secure: bool = True
     url_expiry_seconds: int = Field(default=120, ge=1)
-    staging_dir: Path = Field(default=Path("/tmp/ember-objectstore"))
-    staging_max_bytes: int = Field(default=500 * 1024 * 1024, ge=1)
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
 
@@ -208,8 +206,6 @@ def load_settings() -> EmberSettings:
             ),
             secure=bool(object_store_cfg.get("secure", True)),
             url_expiry_seconds=int(object_store_cfg.get("url_expiry_seconds", 120)),
-            staging_dir=Path(object_store_cfg.get("staging_dir", "/tmp/ember-objectstore")),
-            staging_max_bytes=int(object_store_cfg.get("staging_max_bytes", 500 * 1024 * 1024)),
         )
 
     try:

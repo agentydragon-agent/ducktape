@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
-from typing import cast
+from typing import List, cast
 
 from openai import AsyncOpenAI
 from openai.types.responses import (

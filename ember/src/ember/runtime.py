@@ -98,11 +98,4 @@ class PilotRuntime:
         settings = self._settings.object_store
         if settings is None:
             return None
-        if not settings.configured:
-            logger.warning("Object store settings present but incomplete; skipping client setup")
-            return None
-        try:
-            return ObjectStoreClient(settings)
-        except Exception as exc:  # pragma: no cover - network/config errors should bubble
-            logger.warning("Failed to initialise object store client: %s", exc)
-            return None
+        return ObjectStoreClient(settings)

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import contextlib
 from datetime import datetime, timedelta, timezone
 import logging
-import shutil
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -46,19 +44,14 @@ class ObjectStoreClient:
     def __init__(self, settings: ObjectStoreSettings) -> None:
         self._settings = settings
         self._expiry = max(1, min(settings.url_expiry_seconds, 7 * 24 * 60 * 60))
-        self._staging_dir = settings.staging_dir.expanduser()
-        self._staging_dir.mkdir(parents=True, exist_ok=True)
-        self._max_staging_bytes = settings.staging_max_bytes
-
     def upload_image(self, file_path: Path, mime_type: str) -> ImageHandle:
         access_key = self._settings.access_key_secret.value(required=True)
         secret_key = self._settings.secret_key_secret.value(required=True)
         client = self._build_client(access_key, secret_key)
-        staged_path = self._stage_file(file_path)
         object_name = self._object_name(file_path)
         try:
-            stat = staged_path.stat()
-            with staged_path.open("rb") as handle:
+            stat = file_path.stat()
+            with file_path.open("rb") as handle:
                 client.put_object(
                     self._settings.bucket,
                     object_name,
@@ -70,9 +63,6 @@ class ObjectStoreClient:
             raise RuntimeError(
                 f"Failed to upload {file_path.name} to object store: {exc}"
             ) from exc
-        finally:
-            with contextlib.suppress(OSError):
-                staged_path.unlink()
 
         expiry = timedelta(seconds=self._expiry)
         expires_at = datetime.now(timezone.utc) + expiry
@@ -110,34 +100,3 @@ class ObjectStoreClient:
     def _object_name(self, file_path: Path) -> str:
         suffix = file_path.suffix.lower()
         return f"ember/{uuid4().hex}{suffix}"
-
-    def _stage_file(self, file_path: Path) -> Path:
-        staged = self._staging_dir / f"{uuid4().hex}{file_path.suffix.lower()}"
-        shutil.copyfile(file_path, staged)
-        logger.debug("Staged image %s at %s", file_path, staged)
-        self._enforce_staging_quota()
-        return staged
-
-    def _enforce_staging_quota(self) -> None:
-        total = 0
-        entries: list[tuple[float, Path, int]] = []
-        for path in self._staging_dir.iterdir():
-            if not path.is_file():
-                continue
-            try:
-                stat = path.stat()
-            except OSError:
-                continue
-            size = stat.st_size
-            total += size
-            entries.append((stat.st_mtime, path, size))
-
-        if total <= self._max_staging_bytes:
-            return
-
-        for _, path, size in sorted(entries):
-            if total <= self._max_staging_bytes:
-                break
-            with contextlib.suppress(OSError):
-                path.unlink()
-            total -= size
