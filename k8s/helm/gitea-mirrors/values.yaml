@@ -32,6 +32,7 @@ mirrors:
   - url: https://github.com/go-gitea/gitea
   - url: https://github.com/traefik/traefik
   - url: https://github.com/cert-manager/cert-manager
+# Passes configuration to the gitea subchart
 
 # Storage configuration for our custom PVC
 storage:
@@ -40,6 +41,11 @@ storage:
     enabled: true
     path: "/mnt/gitea-mirrors"
     nodeName: k3s-master
+    nodeName: k3s-master  # Pin to master node where we'll mount the virtiofs
+  zfs:
+    enabled: false  # ZFS not available on k3s VMs
+    storageClassName: "zfs-tank-git"
+    datasetName: "gitea-public-mirrors"
 
 # PostgreSQL subchart - disabled
 postgresql:
@@ -51,6 +57,8 @@ gitea:
     enabled: true
     create: false
     claimName: gitea-mirrors-data
+    create: false  # Don't create a new PVC
+    claimName: gitea-mirrors-data  # Use our ZFS PVC
     
   postgresql:
     enabled: false

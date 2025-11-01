@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-import re
+<<<<<<< HEAD
 from collections.abc import Iterable
+import re
+=======
+import re
+from typing import Iterable
+>>>>>>> 4a66ade6 (dirty state)
 
 from ember.evals.definitions import Scenario
 

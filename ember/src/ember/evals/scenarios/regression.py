@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
 import shlex
+from pathlib import Path
 
 from ember.evals import gitea
 from ember.evals.definitions import Scenario, ScenarioSuite
@@ -53,9 +53,7 @@ class IsoDateResponseScenario(Scenario):
     description = "Answer with current date in ISO 8601."
 
     async def run(self) -> None:
-        await self.send_matrix_message(
-            "What is today's date in ISO 8601 (YYYY-MM-DD) format?"
-        )
+        await self.send_matrix_message("What is today's date in ISO 8601 (YYYY-MM-DD) format?")
         await self.wait_for_matrix_response(timeout_seconds=30)
         self.validate_last_matrix_regex(
             r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
@@ -69,9 +67,7 @@ class FileWriteSanityScenario(Scenario):
 
     async def run(self) -> None:
         notes_path = WORKSPACE_ROOT / "notes.txt"
-        message_template = (
-            f"Create {notes_path} containing exactly 'run ${{RUN_ID}} complete'."
-        )
+        message_template = f"Create {notes_path} containing exactly 'run ${{RUN_ID}} complete'."
         await self.send_matrix_message(self.render(message_template))
         await self.wait_seconds(60)
         expected = self.render("run ${RUN_ID} complete\n")
@@ -206,11 +202,7 @@ class StructuredLogParsingScenario(Scenario):
             if not isinstance(value, int) or value < 0:
                 self.fail(f"Invalid count for {key!r}: {value!r}")
         self.write_json_artifact("artifacts/error_report.json", report)
-        self.record(
-            self.ok(
-                description="Validated structured error report", entries=len(report)
-            )
-        )
+        self.record(self.ok(description="Validated structured error report", entries=len(report)))
 
 
 SCENARIO_SUITE = ScenarioSuite(

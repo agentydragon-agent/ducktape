@@ -13,14 +13,24 @@ Environment:
     HEADSCALE_CMD (optional) - override the path to the `headscale` binary
                                (default: /usr/local/bin/headscale)
 """
+<<<<<<< HEAD
+
+=======
+>>>>>>> 4a66ade6 (dirty state)
 from __future__ import annotations
 
 import argparse
 import json
 import os
+<<<<<<< HEAD
+from pathlib import Path
+import subprocess
+import sys
+=======
 import subprocess
 import sys
 from pathlib import Path
+>>>>>>> 4a66ade6 (dirty state)
 
 
 def fail(message: str) -> None:

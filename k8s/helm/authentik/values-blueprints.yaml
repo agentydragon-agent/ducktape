@@ -15,10 +15,16 @@ matrix:
 #   externalHost: "https://registry.k3s.agentydragon.com"
 #   adminGroup: "harbor-admins"
 #   useExternalSecret: true
+# Registry forward-auth blueprint defaults.
+registry:
+  externalHost: "https://registry.k3s.agentydragon.com"
+  internalHost: "http://registry.registry.svc.cluster.local:5000"
+  adminGroup: "registry-pushers"
 
 # Embedded outpost configuration for forward-auth providers.
 forwardAuth:
   outpost:
     name: "authentik Embedded Outpost"
     providers:
+      - registry-forward-auth
       - rspcache-admin

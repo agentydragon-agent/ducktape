@@ -7,6 +7,13 @@ from io import BytesIO
 from kubernetes import client
 from kubernetes.stream import stream
 from PIL import Image
+from io import BytesIO
+from importlib import resources
+
+from PIL import Image
+
+from kubernetes import client
+from kubernetes.stream import stream
 
 from ember.object_store import ImageHandle
 
@@ -68,6 +75,8 @@ def _resource_text(filename: str) -> str:
         resources.files("helm_integration_tests.tests.scripts")
         .joinpath(filename)
         .read_text(encoding="utf-8")
+    return resources.files("helm_integration_tests.tests.scripts").joinpath(filename).read_text(
+        encoding="utf-8"
     )
 
 

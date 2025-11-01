@@ -1,0 +1,111 @@
+---
+# GPU Passthrough configuration for Proxmox host (atlas)
+# This role configures IOMMU, VFIO, and blacklists for GPU passthrough
+
+- name: Enable IOMMU in GRUB
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on iommu=pt"'
+    backup: yes
+  register: grub_config
+  when: ansible_hostname == 'atlas'
+  tags: [gpu-passthrough, iommu]
+
+- name: Update GRUB
+  become: true
+  ansible.builtin.command: update-grub
+  when:
+    - ansible_hostname == 'atlas'
+    - grub_config.changed
+  tags: [gpu-passthrough, iommu]
+
+- name: Load VFIO modules on boot
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/modules
+    line: "{{ item }}"
+    create: yes
+  loop:
+    - vfio
+    - vfio_iommu_type1
+    - vfio_pci
+    - vfio_virqfd
+  when: ansible_hostname == 'atlas'
+  tags: [gpu-passthrough, vfio]
+
+- name: Get GPU PCI IDs
+  become: true
+  ansible.builtin.shell: |
+    lspci -nn | grep -i nvidia | grep -oP '\[\K[0-9a-f]{4}:[0-9a-f]{4}(?=\])'
+  register: gpu_pci_ids
+  changed_when: false
+  when: ansible_hostname == 'atlas'
+  tags: [gpu-passthrough, detect]
+
+- name: Configure VFIO PCI IDs
+  become: true
+  ansible.builtin.copy:
+    content: |
+      # GPU passthrough configuration
+      options vfio-pci ids={{ gpu_pci_ids.stdout_lines | join(',') }} disable_vga=1
+    dest: /etc/modprobe.d/vfio.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when:
+    - ansible_hostname == 'atlas'
+    - gpu_pci_ids.stdout_lines | length > 0
+  tags: [gpu-passthrough, vfio]
+
+- name: Blacklist NVIDIA drivers on host
+  become: true
+  ansible.builtin.copy:
+    content: |
+      # Blacklist NVIDIA drivers to prevent host from using GPU
+      blacklist nouveau
+      blacklist nvidia
+      blacklist nvidia_drm
+      blacklist nvidia_modeset
+      blacklist nvidiafb
+    dest: /etc/modprobe.d/blacklist-nvidia.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: ansible_hostname == 'atlas'
+  tags: [gpu-passthrough, blacklist]
+
+- name: Configure IOMMU interrupt remapping
+  become: true
+  ansible.builtin.copy:
+    content: |
+      options vfio_iommu_type1 allow_unsafe_interrupts=1
+      options kvm ignore_msrs=1
+    dest: /etc/modprobe.d/iommu_unsafe_interrupts.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: ansible_hostname == 'atlas'
+  tags: [gpu-passthrough, iommu]
+
+- name: Update initramfs
+  become: true
+  ansible.builtin.command: update-initramfs -u -k all
+  when: ansible_hostname == 'atlas'
+  tags: [gpu-passthrough, initramfs]
+
+- name: Display GPU passthrough status
+  ansible.builtin.debug:
+    msg: |
+      GPU Passthrough Configuration Complete!
+
+      GPU PCI IDs found: {{ gpu_pci_ids.stdout_lines | join(', ') if gpu_pci_ids.stdout_lines else 'None detected' }}
+
+      Next steps:
+      1. Reboot the Proxmox host (atlas)
+      2. Verify IOMMU groups: dmesg | grep -e DMAR -e IOMMU
+      3. Check VFIO binding: lspci -nnk | grep -A 3 -i nvidia
+      4. Add PCI device to VM in Proxmox web UI or via qm command
+  when: ansible_hostname == 'atlas'
+  tags: [gpu-passthrough, status]

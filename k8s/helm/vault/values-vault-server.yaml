@@ -11,6 +11,9 @@ vault:
     replicas: 1
     ha:
       enabled: false
+    replicas: 3
+    ha:
+      enabled: true
       config: ""
       raft:
         enabled: true
@@ -59,6 +62,14 @@ vault:
         memory: 512Mi
     tolerations: []
     extraEnvironmentVars: {}
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    tolerations: []
+    extraEnvironmentVars:
+      VAULT_API_ADDR: "https://vault.${NAMESPACE}.svc:8200"
     service:
       type: ClusterIP
     ingress:
@@ -93,6 +104,11 @@ vault:
         storage "file" {
           path = "/vault/data"
         }
+        - secretName: vault-tls
+          hosts:
+            - vault.k3s.agentydragon.com
+    standalone:
+      enabled: false
     postStart:
       - /vault/userconfig/vault-bootstrap-scripts/bootstrap.sh
     extraVolumes:

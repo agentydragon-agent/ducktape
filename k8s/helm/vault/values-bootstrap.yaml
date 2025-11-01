@@ -5,3 +5,12 @@ secretGenerator:
   harbor:
     enabled: true
     secretLength: 32  # Generate 32-byte hex string
+  scriptsConfigMap: vault-bootstrap-scripts
+  script: |
+    #!/bin/sh
+    if [ -f /vault/data/.bootstrapped ]; then
+      exit 0
+    fi
+    vault secrets enable -path=kv kv-v2 >/tmp/bootstrap.log 2>&1 || true
+    vault auth enable kubernetes >/tmp/bootstrap.log 2>&1 || true
+    touch /vault/data/.bootstrapped

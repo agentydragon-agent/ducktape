@@ -3,6 +3,10 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ .Values.bootstrap.scriptsConfigMap | default "vault-bootstrap-scripts" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.bootstrap.scriptsConfigMap }}
   namespace: {{ include "vault-ducktape.namespace" . }}
   labels:
 {{ include "vault-ducktape.labels" . | indent 4 }}
@@ -39,3 +43,4 @@ data:
 {{ .Files.Get "scripts/bootstrap.sh" | indent 4 }}
 {{- end }}
 {{- end }}
+{{ .Values.bootstrap.script | indent 4 }}

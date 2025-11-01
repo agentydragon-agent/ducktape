@@ -6,4 +6,5 @@ description: Wrapper for External Secrets Operator
 dependencies:
   - name: external-secrets
     version: 0.20.4
+    version: 0.9.13
     repository: https://charts.external-secrets.io

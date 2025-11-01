@@ -22,5 +22,9 @@ app.kubernetes.io/component: vault
 {{- .Values.namespace.name -}}
 {{- else -}}
 {{- ((.Values.namespace).name | default .Release.Namespace) -}}
+{{- if .Values.namespace.create -}}
+{{- .Values.namespace.name -}}
+{{- else -}}
+{{- (.Values.namespace.name | default .Release.Namespace) -}}
 {{- end -}}
 {{- end -}}

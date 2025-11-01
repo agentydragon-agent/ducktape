@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+<<<<<<< HEAD
 from collections.abc import Iterable
 from pathlib import Path
+=======
+from pathlib import Path
+from typing import Dict, Iterable
+>>>>>>> 4a66ade6 (dirty state)
 
 import yaml
 
@@ -14,6 +19,7 @@ class CommandError(RuntimeError):
 class CompletedProcess:
     """Async-friendly analogue of subprocess.CompletedProcess."""
 
+<<<<<<< HEAD
     def __init__(
         self,
         args: Iterable[str],
@@ -21,6 +27,9 @@ class CompletedProcess:
         stdout: str | bytes,
         stderr: str | bytes,
     ) -> None:
+=======
+    def __init__(self, args: Iterable[str], returncode: int, stdout: str | bytes, stderr: str | bytes) -> None:
+>>>>>>> 4a66ade6 (dirty state)
         self.args = list(args)
         self.returncode = returncode
         self.stdout = stdout
@@ -45,12 +54,17 @@ async def run_command(
     )
     stdout, stderr = await process.communicate(input_data)
     if text:
+<<<<<<< HEAD
         stdout_decoded: str | bytes = (
             stdout.decode("utf-8", errors="replace") if stdout else ""
         )
         stderr_decoded: str | bytes = (
             stderr.decode("utf-8", errors="replace") if stderr else ""
         )
+=======
+        stdout_decoded: str | bytes = stdout.decode("utf-8", errors="replace") if stdout else ""
+        stderr_decoded: str | bytes = stderr.decode("utf-8", errors="replace") if stderr else ""
+>>>>>>> 4a66ade6 (dirty state)
     else:
         stdout_decoded = stdout
         stderr_decoded = stderr
@@ -62,6 +76,19 @@ async def run_command(
     return CompletedProcess(cmd, process.returncode, stdout_decoded, stderr_decoded)
 
 
+<<<<<<< HEAD
+def dump_yaml(obj: dict[str, object]) -> bytes:
+=======
+def merge_dict(dst: Dict[str, object], src: Dict[str, object]) -> None:
+    """Recursively merge src into dst."""
+    for key, value in src.items():
+        if isinstance(value, dict) and isinstance(dst.get(key), dict):
+            merge_dict(dst[key], value)  # type: ignore[arg-type]
+        else:
+            dst[key] = value
+
+
 def dump_yaml(obj: Dict[str, object]) -> bytes:
+>>>>>>> 4a66ade6 (dirty state)
     """Serialize an object to YAML bytes."""
     return yaml.safe_dump(obj, sort_keys=False).encode("utf-8")

@@ -1,0 +1,15 @@
+dependencies:
+- name: common-lib
+  repository: file://../common-lib
+  version: 0.1.1
+- name: authentik
+  repository: https://charts.goauthentik.io
+  version: 2025.8.3
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 16.2.1
+- name: redis
+  repository: https://charts.bitnami.com/bitnami
+  version: 20.3.0
+digest: sha256:f71e7831e1f1c39d003fff1c73d32327a296b9d292c81dd6b9c53acff721d25c
+generated: "2025-10-31T19:02:03.428658041-07:00"

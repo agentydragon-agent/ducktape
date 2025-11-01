@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path
 import shutil
 import tempfile
 import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 from nio import AsyncClient, AsyncClientConfig, RoomMessageText
 from nio.responses import (
@@ -40,9 +40,7 @@ def render_matrix_transcript(transcript: MatrixTranscript) -> str:
     lines = []
     for event in sorted(transcript.events, key=lambda e: e.timestamp or 0):
         if event.timestamp:
-            ts = datetime.fromtimestamp(
-                event.timestamp / 1000, tz=timezone.utc
-            ).isoformat()
+            ts = datetime.fromtimestamp(event.timestamp / 1000, tz=timezone.utc).isoformat()
         else:
             ts = ""
         direction = "user" if event.direction == "in" else "ember"
@@ -185,9 +183,7 @@ class MatrixHarness:
             await asyncio.sleep(1)
         raise TimeoutError(f"No Matrix message from {sender} within {timeout_seconds}s")
 
-    async def expect_reply(
-        self, expected: str, timeout_seconds: int = 60
-    ) -> MatrixMessage:
+    async def expect_reply(self, expected: str, timeout_seconds: int = 60) -> MatrixMessage:
         message = await self.wait_for_message(timeout_seconds=timeout_seconds)
         if message.body.strip() != expected.strip():
             raise AssertionError(

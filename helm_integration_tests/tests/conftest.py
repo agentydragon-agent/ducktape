@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import suppress
 import subprocess
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import suppress
 
-from kubernetes import client, config
 import pytest
+from kubernetes import client, config
 
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -36,18 +36,14 @@ def _helm_upgrade_install(
 
 
 def _pods_ready(core: client.CoreV1Api, namespace: str, label_selector: str) -> bool:
-    pods = core.list_namespaced_pod(
-        namespace=namespace, label_selector=label_selector
-    ).items
+    pods = core.list_namespaced_pod(namespace=namespace, label_selector=label_selector).items
     if not pods:
         return False
     for pod in pods:
         if pod.status.phase not in {"Running"}:
             return False
         conditions = pod.status.conditions or []
-        ready = any(
-            cond.type == "Ready" and cond.status == "True" for cond in conditions
-        )
+        ready = any(cond.type == "Ready" and cond.status == "True" for cond in conditions)
         if not ready:
             return False
     return True
@@ -86,9 +82,7 @@ def test_namespace(kube_client: client.CoreV1Api) -> Iterator[str]:
 
 
 @pytest.fixture(scope="session")
-def helm_releases(
-    kube_client: client.CoreV1Api, test_namespace: str
-) -> Iterator[dict[str, str]]:
+def helm_releases(kube_client: client.CoreV1Api, test_namespace: str) -> Iterator[dict[str, str]]:
     namespace = test_namespace
     bucket = f"{namespace}-media"
     secret = f"{namespace}-objectstore"

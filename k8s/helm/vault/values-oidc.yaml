@@ -1,0 +1,20 @@
+oidc:
+  enabled: true
+  issuerURL: https://auth.k3s.agentydragon.com/application/o/vault/
+  roleName: authentik-users
+  clientSecretRef:
+    name: vault-oidc-credentials
+    clientIDKey: client-id
+    clientSecretKey: client-secret
+  rootTokenRef:
+    name: vault-root-token
+    key: token
+  allowedRedirectURIs:
+    - https://vault.k3s.agentydragon.com/ui/vault/auth/oidc/oidc/callback
+    - https://vault.k3s.agentydragon.com/oidc/callback
+  tokenPolicies:
+    - default
+  claims:
+    user: preferred_username
+    groups: ""
+  tlsSecretName: vault-tls
