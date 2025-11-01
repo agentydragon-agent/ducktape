@@ -10,6 +10,12 @@ dependencies = [
     "matrix-nio>=0.23",
     "openai>=1.62",
     "pydantic>=2.0",
+    "minio>=7.2",
+    "ipykernel>=6.29",
+    "jupyter-client>=8.6",
+    "ipython>=8.26",
+    "requests>=2.32",
+    "jinja2>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +26,8 @@ dev = [
 
 [project.scripts]
 emberd = "ember.__main__:main"
+ember-eval = "ember.eval_runner:cli_main"
+ember-python = "ember.runtime.python_session:cli_main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -33,4 +41,10 @@ where = ["src"]
 include = ["ember*" ]
 
 [tool.setuptools.package-data]
-"ember" = ["system_prompt.md"]
+"ember" = [
+    "system_prompt.md.j2",
+    "resources/*",
+    "resources/examples/*",
+    "resources/examples/python-session/*",
+    "resources/examples/matrix-client/*",
+]
