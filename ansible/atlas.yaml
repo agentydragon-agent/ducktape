@@ -86,7 +86,7 @@
         shell: /usr/bin/zsh
         home: "/home/{{ my_user }}"
         create_home: yes
-        groups: 
+        groups:
           - sudo
           - libvirt  # for virt-manager access
         append: yes
@@ -111,7 +111,7 @@
     - import_role:
         name: cli
       tags: [cli]
-    
+
     # cli_nix_migrated excluded - atlas now uses Nix/home-manager for migrated packages
 
     - import_role:
