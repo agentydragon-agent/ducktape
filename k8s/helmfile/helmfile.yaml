@@ -16,8 +16,21 @@ repositories:
     url: https://dl.gitea.io/charts/
   - name: grafana
     url: https://grafana.github.io/helm-charts
+  - name: openebs
+    url: https://openebs.github.io/charts
+  - name: openebs-zfs
+    url: https://openebs.github.io/zfs-localpv
+  - name: external-secrets
+    url: https://charts.external-secrets.io
 
 releases:
+  # Cluster-wide infrastructure (CSI drivers, operators)
+  - name: cluster-infrastructure
+    namespace: kube-system
+    chart: ../helm/cluster-infrastructure
+    values:
+      - values/cluster-infrastructure.yaml
+
   - name: sealed-secrets
     namespace: kube-system
     chart: bitnami/sealed-secrets
@@ -40,9 +53,22 @@ releases:
     namespace: cert-manager
     chart: ../helm/cert-manager-bootstrap
 
+  - name: external-secrets
+    namespace: external-secrets
+    chart: ../helm/external-secrets
+    values:
+      - ../helm/external-secrets/values-install.yaml
+      - ../helm/external-secrets/values-operator.yaml
+
   - name: authentik
     namespace: authentik
     chart: ../helm/authentik
+    values:
+      - ../helm/authentik/values-authentik.yaml
+      - ../helm/authentik/values-postgresql.yaml
+      - ../helm/authentik/values-redis.yaml
+      - ../helm/authentik/values-blueprints.yaml
+      - ../helm/authentik/values-secrets.yaml
     set:
       - name: global.postgresql.auth.password
         value: >
@@ -54,6 +80,19 @@ releases:
           {{ exec "kubectl" (list "-n" "authentik" "get" "secret"
           "authentik-secrets" "-o" "jsonpath={.data.redis-password}") |
           b64dec }}
+
+  - name: vault
+    namespace: vault
+    chart: ../helm/vault
+    values:
+      - ../helm/vault/values-namespace.yaml
+      - ../helm/vault/values-tls.yaml
+      - ../helm/vault/values-vault-server.yaml
+      - ../helm/vault/values-bootstrap.yaml
+      - ../helm/vault/values-external-secrets.yaml
+      - ../helm/vault/values-seal.yaml
+      - ../helm/vault/values-oidc.yaml
+      - ../helm/vault/values-secrets.yaml
 
   - name: gitea
     namespace: gitea
@@ -85,3 +124,18 @@ releases:
     chart: ../helm/guacamole
     values:
       - values/guacamole.yaml
+
+  - name: webhook-inbox
+    namespace: webhook-inbox
+    chart: ../helm/webhook-inbox
+    values:
+      - values/webhook-inbox.yaml
+
+  - name: gitea-mirrors
+    namespace: gitea-mirrors
+    chart: ../helm/gitea-mirrors
+    timeout: 120  # 2 minutes instead of default 10 minutes
+    values:
+      - values/gitea-mirrors.yaml
+    needs:
+      - kube-system/cluster-infrastructure  # Depends on ZFS CSI driver

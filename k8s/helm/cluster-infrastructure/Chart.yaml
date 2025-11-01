@@ -1,0 +1,13 @@
+apiVersion: v2
+name: cluster-infrastructure
+description: Cluster-wide infrastructure components (operators, CSI drivers, etc)
+type: application
+version: 0.1.0
+appVersion: "1.0"
+
+dependencies:
+  # OpenEBS ZFS LocalPV CSI driver
+  - name: zfs-localpv
+    version: 2.6.0
+    repository: https://openebs.github.io/zfs-localpv
+    condition: zfsLocalpv.enabled

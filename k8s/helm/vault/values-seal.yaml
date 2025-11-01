@@ -1,0 +1,24 @@
+seal:
+  enabled: false
+  type: aws # aws | gcp | azure
+  config:
+    aws:
+      region: us-east-1
+      kmsKeyId: ""
+      accessKeyEnv: AWS_ACCESS_KEY_ID
+      secretKeyEnv: AWS_SECRET_ACCESS_KEY
+      stsEndpoint: ""
+    gcp:
+      project: ""
+      location: global
+      keyRing: ""
+      cryptoKey: ""
+      credentialsEnv: GOOGLE_APPLICATION_CREDENTIALS_JSON
+    azure:
+      tenantId: ""
+      clientId: ""
+      clientSecretEnv: AZURE_CLIENT_SECRET
+      vaultName: ""
+      kvName: ""
+  credentialsSecret: vault-seal-creds
+  credentialsSecretItems: []

@@ -1,0 +1,32 @@
+apiVersion: v2
+name: gitea-mirrors
+description: Gitea instance for public repository mirrors
+type: application
+version: 1.0.0
+appVersion: "1.22.3"
+
+dependencies:
+  - name: gitea
+    version: "~10.4.1"
+    repository: https://dl.gitea.io/charts/
+  - name: postgresql
+    version: "~15.5.38"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+
+maintainers:
+  - name: agentydragon
+    email: agentydragon@local
+
+keywords:
+  - git
+  - mirrors
+  - gitea
+  - vcs
+
+sources:
+  - https://github.com/go-gitea/gitea
+  - https://gitea.io
+
+annotations:
+  "helm.sh/resource-policy": keep

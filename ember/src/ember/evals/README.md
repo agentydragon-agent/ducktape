@@ -1,0 +1,97 @@
+# Ember Evaluation Runner (Hybrid Mode)
+
+This tool spins up one or more disposable Ember instances that talk to the
+existing Matrix, Gitea, and RSPCache services, runs a scenario suite,
+captures artifacts, and tears everything down. By default it builds a fresh
+Ember image from the current working tree, pushes it to
+`registry.k3s.agentydragon.com/emberd`, deploys the chart, drives the
+scenario suite, records run metadata (including transcripts/results), and
+cleans everything up.
+
+## Prerequisites
+
+- Working `helm` targeting the cluster where Ember should run (the evaluator talks to the Kubernetes API directly using your kubeconfig).
+- Access to the shared services:
+  - Matrix: evaluator account access token (separate from the Ember bot account).
+  - Gitea: base URL, repo slug (`owner/name`), and a PAT with repo/issue scope.
+  - RSPCache/OpenAI: API base URL and API key (per-run key is recommended).
+- Local Python environment set up via `direnv`/`uv` so the `ember` project's
+  dependencies are available.
+
+## Quick Start
+
+```bash
+python -m ember.eval_runner \
+  --matrix-base-url https://matrix.k3s.agentydragon.com \
+  --matrix-access-token "$MATRIX_EVAL_TOKEN" \
+  --ember-user-id "@ember-bot:matrix.k3s.agentydragon.com" \
+  --gitea-base-url https://gitea.k3s.agentydragon.com \
+  --gitea-repo eval/ember \
+  --gitea-token "$GITEA_EVAL_TOKEN" \
+  --rspcache-api-base http://rspcache.rspcache.svc.cluster.local:8000 \
+  --rspcache-api-key "$RSPCACHE_API_KEY" \
+  --runs 3 \
+  --parallel 2 \
+  --suite regression
+```
+
+If you install `ember` in editable mode (`uv pip install -e .`), the
+`ember-eval` console script is also available:
+
+```bash
+ember-eval --matrix-base-url ... --matrix-access-token ... --ember-user-id ...
+```
+
+The runner will:
+
+1. Build and push `registry.k3s.agentydragon.com/emberd:<timestamp-sha>`
+   from the local working copy (skip with `--image-tag`).
+2. Generate run IDs and create per-run namespaces.
+3. Provision secrets for Matrix, Gitea, and RSPCache.
+4. Deploy the Ember Helm chart with Kubernetes API access enabled.
+5. Wait for each Ember pod to become Ready.
+6. Execute the suite of Python scenarios (Matrix prompts, HTTP probes, filesystem checks).
+7. Record artifacts under `artifacts/ember-eval/<run_id>/`:
+   - `metadata.json` (deployment + run metadata)
+   - `scenarios.json` (per-scenario step results)
+   - `matrix_transcript.json` (conversation log)
+8. Clean up the Helm release and namespace unless `--preserve` is set.
+
+## Options
+
+- `--run-id`: supply your own base identifier (default is UTC timestamp based).
+- `--namespace` / `--release`: override derived names (single-run only).
+- `--image-repository` / `--image-tag`: reuse a prebuilt image instead of building.
+- `--suite`: choose which hard-wired scenario suite to execute (default `regression`).
+- `--matrix-room-id`: reuse an existing Matrix room instead of creating one.
+- `--gitea-base-url` / `--gitea-repo`: identify the target repository for eval checks.
+- `--gitea-username`: expected Gitea username for Ember's comments (defaults to `--ember-user-id`).
+- `--runs`: number of evaluation runs to execute (default `1`).
+- `--parallel`: max runs to execute concurrently (default `1`).
+- `--preserve`: skip cleanup to inspect the namespace afterwards.
+
+## Scenario Suites
+
+Scenarios are implemented as Python classes under `ember/src/ember/evals/scenarios/`.
+Each class subclasses `ember.evals.definitions.Scenario`, which provides helpers for
+Matrix prompts, HTTP probes, filesystem checks, and artifact capture. Suites are
+`ScenarioSuite` objects that enumerate the scenario classes to execute. Adding a new
+scenario only requires defining a class and registering it in the suite registry—no
+YAML or string-based registries are involved.
+
+## Artifacts
+
+- `metadata.json` – deployment details, suite reference, and timestamps.
+- `scenarios.json` – per-scenario status and step-level notes (including eval payloads).
+- `matrix_transcript.json` – structured event log from Matrix.
+- `matrix_transcript.txt` – chat-style transcript for quick review.
+
+## Cleanup Guarantees
+
+By default each run tears down:
+
+- Helm release `ember-eval-<run_id>`
+- Namespace `ember-eval-<run_id>` (secrets, PVCs, pods)
+
+Use `--preserve` if you need to inspect the pod or copy files manually; remember to
+remove the namespace afterwards.

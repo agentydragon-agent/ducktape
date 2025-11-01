@@ -3,3 +3,9 @@
 
 # Your headscale server URL (will be set from inventory)
 tailscale_client_headscale_server_url: "https://{{ hostvars['vps']['ansible_host'] }}:8080"
+headscale_auto_register: true
+headscale_delegate_host: "{{ inventory_hostname }}"
+tailscale_wg_stop_timeout: 30
+tailscale_dry_run_timeout: 30
+tailscale_status_timeout: 10
+tailscale_up_timeout: 60

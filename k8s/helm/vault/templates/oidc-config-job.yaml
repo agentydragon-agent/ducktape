@@ -1,0 +1,111 @@
+{{- if .Values.oidc.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "common.fullname" . }}-oidc-config
+  namespace: {{ include "vault-ducktape.namespace" . }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+{{ include "vault-ducktape.selectorLabels" . | indent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "vault-ducktape.serviceAccountName" . }}
+      containers:
+        - name: configure-oidc
+          image: hashicorp/vault:{{ .Values.vault.server.image.tag }}
+          env:
+            - name: VAULT_ADDR
+              value: https://{{ include "common.fullname" . }}.{{ include "vault-ducktape.namespace" . }}.svc.cluster.local:8200
+            - name: VAULT_CACERT
+              value: /vault/userconfig/tls/ca.crt
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.rootTokenRef.name }}
+                  key: {{ .Values.oidc.rootTokenRef.key }}
+            - name: OIDC_ISSUER
+              value: {{ .Values.oidc.issuerURL | quote }}
+            - name: OIDC_ROLE
+              value: {{ .Values.oidc.roleName | quote }}
+            - name: OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.clientSecretRef.name }}
+                  key: {{ .Values.oidc.clientSecretRef.clientIDKey }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.clientSecretRef.name }}
+                  key: {{ .Values.oidc.clientSecretRef.clientSecretKey }}
+            - name: OIDC_USER_CLAIM
+              value: {{ .Values.oidc.claims.user | quote }}
+            - name: OIDC_GROUPS_CLAIM
+              value: {{ .Values.oidc.claims.groups | quote }}
+            - name: OIDC_REDIRECT_URIS
+              value: "{{ join " " .Values.oidc.allowedRedirectURIs }}"
+            - name: OIDC_TOKEN_POLICIES
+              value: "{{ join " " .Values.oidc.tokenPolicies }}"
+          volumeMounts:
+            - name: tls
+              mountPath: /vault/userconfig/tls
+              readOnly: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -euo pipefail
+              echo "Waiting for Vault to become ready..."
+              until vault status >/tmp/vault-status.log 2>&1; do
+                sleep 5
+              done
+
+              echo "Logging into Vault"
+              vault login "$VAULT_TOKEN" >/tmp/login.log 2>&1
+
+              echo "Enabling OIDC auth method"
+              vault auth enable oidc >/tmp/auth-enable.log 2>&1 || echo "OIDC already enabled"
+
+              echo "Configuring OIDC auth method"
+              vault write auth/oidc/config \
+                oidc_discovery_url="$OIDC_ISSUER" \
+                oidc_client_id="$OIDC_CLIENT_ID" \
+                oidc_client_secret="$OIDC_CLIENT_SECRET" \
+                default_role="$OIDC_ROLE" >/tmp/configure.log 2>&1
+
+              REDIRECT_ARGS=""
+              for uri in $OIDC_REDIRECT_URIS; do
+                REDIRECT_ARGS="$REDIRECT_ARGS allowed_redirect_uris=$uri"
+              done
+
+              POLICY_ARGS=""
+              for policy in $OIDC_TOKEN_POLICIES; do
+                POLICY_ARGS="$POLICY_ARGS token_policies=$policy"
+              done
+
+              GROUP_ARG=""
+              if [ -n "$OIDC_GROUPS_CLAIM" ]; then
+                GROUP_ARG="groups_claim=$OIDC_GROUPS_CLAIM"
+              fi
+
+              echo "Writing OIDC role"
+              vault write auth/oidc/role/$OIDC_ROLE \
+                user_claim="$OIDC_USER_CLAIM" \
+                bound_audiences="$OIDC_CLIENT_ID" \
+                $GROUP_ARG \
+                $REDIRECT_ARGS \
+                $POLICY_ARGS \
+                ttl="1h" >/tmp/role.log 2>&1
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.oidc.tlsSecretName | default .Values.tlsSecretName }}
+{{- end }}

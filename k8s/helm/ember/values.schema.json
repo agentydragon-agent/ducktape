@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ember values",
+  "type": "object",
+  "properties": {
+    "common-lib": { "type": "object" },
+    "namespace": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" }
+      },
+      "required": ["create", "name"]
+    },
+    "replicaCount": { "type": "integer", "minimum": 1 },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string" }
+      },
+      "required": ["repository", "tag", "pullPolicy"]
+    },
+    "imagePullSecrets": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "registry": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" }
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "port": { "type": "integer" }
+      },
+      "required": ["type", "port"]
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "matrix": {
+          "type": "object",
+          "properties": {
+            "base_url": { "type": "string" },
+            "admin_user_id": { "type": "string" }
+          }
+        },
+        "state": {
+          "type": "object",
+          "properties": {
+            "dir": { "type": "string" },
+            "workspace_dir": { "type": "string" }
+          }
+        },
+        "openai": {
+          "type": "object",
+          "properties": {
+            "model": { "type": "string" },
+            "reasoning_effort": { "type": "string" },
+            "include_encrypted_reasoning": { "type": "boolean" },
+            "api_base": { "type": "string" }
+          }
+        }
+      }
+    },
+    "objectStore": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "endpoint": { "type": "string" },
+        "bucket": { "type": "string" },
+        "secretName": { "type": "string" },
+        "secure": { "type": "boolean" },
+        "urlExpirySeconds": { "type": "integer", "minimum": 1 },
+        "accessKeyKey": { "type": "string" },
+        "secretKeyKey": { "type": "string" }
+      },
+      "required": [
+        "enabled",
+        "endpoint",
+        "secure",
+        "urlExpirySeconds",
+        "accessKeyKey",
+        "secretKeyKey"
+      ]
+    },
+    "kubeAccess": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" }
+      },
+      "required": ["enabled"]
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "existingClaim": { "type": "string" },
+        "storageClass": { "type": "string" },
+        "accessModes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "size": { "type": "string" }
+      },
+      "required": ["enabled", "accessModes", "size"]
+    },
+    "runtimeSecrets": {
+      "type": "object",
+      "properties": {
+        "matrixTokenSecret": { "type": "string" },
+        "matrixAccessTokenKey": { "type": "string" },
+        "giteaSecret": { "type": "string" },
+        "giteaTokenKey": { "type": "string" },
+        "rspcacheClientSecret": { "type": "string" },
+        "rspcacheApiKeyKey": { "type": "string" }
+      },
+      "required": [
+        "matrixTokenSecret",
+        "matrixAccessTokenKey",
+        "giteaSecret",
+        "giteaTokenKey",
+        "rspcacheClientSecret",
+        "rspcacheApiKeyKey"
+      ]
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "requests": {
+          "type": "object",
+          "properties": {
+            "cpu": { "type": "string" },
+            "memory": { "type": "string" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "cpu": { "type": "string" },
+            "memory": { "type": "string" }
+          }
+        }
+      }
+    },
+    "nodeSelector": { "type": "object", "additionalProperties": { "type": "string" } },
+    "affinity": { "type": "object" },
+    "tolerations": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
+    "podLabels": { "type": "object", "additionalProperties": { "type": "string" } },
+    "rotator": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "schedule": { "type": "string" },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": { "type": "string" },
+            "tag": { "type": "string" },
+            "pullPolicy": { "type": "string" }
+          }
+        },
+        "adminUrl": { "type": "string" },
+        "secretName": { "type": "string" },
+        "upstreamAlias": { "type": "string" },
+        "deploymentName": { "type": "string" },
+        "restartPolicy": { "type": "string" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" }
+      }
+    },
+    "serviceAccountRotator": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" }
+      }
+    },
+    "livenessProbe": { "type": "object" },
+    "readinessProbe": { "type": "object" }
+  },
+  "additionalProperties": false
+}

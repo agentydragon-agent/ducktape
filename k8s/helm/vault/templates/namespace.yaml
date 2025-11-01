@@ -1,0 +1,26 @@
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace.name }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-cert
+  namespace: {{ .Values.namespace.name }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+spec:
+  secretName: {{ .Values.tlsSecretName }}
+  issuerRef:
+    name: {{ .Values.tls.issuerName }}
+    kind: {{ .Values.tls.issuerKind }}
+  dnsNames:
+    - vault.{{ .Values.namespace.name }}.svc
+    - vault.{{ .Values.namespace.name }}.svc.cluster.local
+    - vault.k3s.agentydragon.com
+{{- end }}

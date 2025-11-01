@@ -10,7 +10,7 @@ from .config import EmberSettings
 from .history import ConversationHistory
 from .matrix_client import MatrixClient
 from .object_store import ObjectStoreClient
-from .openai_agent import OpenAIAgent
+from .openai_agent import AgentResources, OpenAIAgent
 from .runtime.python_session import ensure_kernel as ensure_python_kernel
 
 logger = logging.getLogger(__name__)
@@ -52,14 +52,14 @@ class EmberRuntime:
         self._settings.workspace_path.mkdir(parents=True, exist_ok=True)
         self._openai_client = self._create_openai_client()
         self._object_store = self._create_object_store_client()
-        self._agent = OpenAIAgent(
-            self._settings.openai,
-            self._history,
-            self._openai_client,
-            self._matrix_client,
-            self._settings.workspace_path,
-            self._object_store,
+        resources = AgentResources(
+            history=self._history,
+            client=self._openai_client,
+            status_provider=self._matrix_client,
+            workspace_path=self._settings.workspace_path,
+            object_store=self._object_store,
         )
+        self._agent = OpenAIAgent(self._settings.openai, resources)
         ensure_python_kernel()
 
     async def _loop(self) -> None:

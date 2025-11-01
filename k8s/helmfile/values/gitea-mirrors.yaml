@@ -1,0 +1,49 @@
+# Gitea Mirrors instance configuration overrides
+
+# Storage: use ZFS via OpenEBS
+storage:
+  size: 200Gi
+  zfs:
+    enabled: true
+    storageClassName: "zfs-tank-git"
+    datasetName: "gitea-public-mirrors"
+
+# Use the existing Gitea chart configuration
+gitea:
+  persistence:
+    enabled: true
+    existingClaim: gitea-mirrors-data
+    
+  gitea:
+    config:
+      APP_NAME: "Public Repository Mirrors"
+      server:
+        DOMAIN: mirrors.git.k3s.agentydragon.com
+        ROOT_URL: https://mirrors.git.k3s.agentydragon.com/
+        LANDING_PAGE: explore
+        DISABLE_SSH: true
+      service:
+        DISABLE_REGISTRATION: true
+        REQUIRE_SIGNIN_VIEW: false  # Public read access
+      repository:
+        DEFAULT_PRIVATE: false
+        FORCE_PRIVATE: false
+        ENABLE_PUSH_CREATE_USER: false
+        ENABLE_PUSH_CREATE_ORG: false
+      mirror:
+        ENABLED: true
+        DEFAULT_INTERVAL: 1h
+        MIN_INTERVAL: 10m
+      database:
+        DB_TYPE: sqlite3
+        
+  postgresql:
+    enabled: false
+  postgresql-ha:
+    enabled: false
+  redis-cluster:
+    enabled: false
+
+# No PostgreSQL subchart
+postgresql:
+  enabled: false

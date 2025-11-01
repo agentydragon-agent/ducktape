@@ -1,0 +1,9 @@
+apiVersion: v2
+name: external-secrets
+version: 0.1.0
+description: Wrapper for External Secrets Operator
+
+dependencies:
+  - name: external-secrets
+    version: 0.9.13
+    repository: https://charts.external-secrets.io

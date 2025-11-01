@@ -1,0 +1,108 @@
+{{- if .Values.storage.zfs.enabled }}
+# ZFS storage is handled by openebs-storageclass.yaml
+{{- else if .Values.storage.hostPath.enabled }}
+---
+# Simple hostPath volume - requires the directory to exist on the node
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: gitea-mirrors-pv
+  labels:
+    app.kubernetes.io/name: gitea-mirrors
+    app.kubernetes.io/component: storage
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  capacity:
+    storage: {{ .Values.storage.size }}
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: {{ .Values.storage.hostPath.path }}
+    type: DirectoryOrCreate
+  {{- if .Values.storage.hostPath.nodeName }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - {{ .Values.storage.hostPath.nodeName }}
+  {{- end }}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-mirrors-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}
+  storageClassName: ""
+  volumeName: gitea-mirrors-pv
+
+{{- else if .Values.storage.localPath.enabled }}
+---
+# Use k3s local-path provisioner - dynamically provisions on node
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-mirrors-data
+  annotations:
+    {{- if .Values.storage.localPath.nodeName }}
+    volume.kubernetes.io/selected-node: {{ .Values.storage.localPath.nodeName }}
+    {{- end }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}
+  storageClassName: local-path
+
+{{- else if .Values.storage.existingClaim }}
+# Use existing PVC specified in values
+# Expecting: {{ .Values.storage.existingClaim }}
+
+{{- else }}
+---
+# Default: Manual PV expecting directory to exist
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: gitea-mirrors-pv
+  labels:
+    app.kubernetes.io/name: gitea-mirrors
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  capacity:
+    storage: {{ .Values.storage.size }}
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /tank/gitea-public-mirrors
+    type: Directory  # Directory must exist
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-mirrors-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}
+  storageClassName: ""
+  volumeName: gitea-mirrors-pv
+{{- end }}

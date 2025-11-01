@@ -1,0 +1,3 @@
+{{- if and .Values.linuxDesktopRac.enabled .Values.linuxDesktopRac.publicKeyPath }}
+{{ tpl (.Files.Get .Values.linuxDesktopRac.publicKeyPath) . }}
+{{- end }}

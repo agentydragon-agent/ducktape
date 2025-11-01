@@ -1,0 +1,12 @@
+# Redis configuration for authentik cache/backing store.
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    existingSecret: authentik-secrets
+    existingSecretPasswordKey: redis-password
+  master:
+    persistence:
+      enabled: true
+      size: 2Gi
+      storageClass: local-path

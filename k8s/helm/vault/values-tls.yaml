@@ -1,0 +1,4 @@
+tlsSecretName: vault-tls
+tls:
+  issuerName: homelab-ca-issuer
+  issuerKind: ClusterIssuer

@@ -1,0 +1,36 @@
+# Cluster Infrastructure Components
+# These are cluster-wide operators and drivers that provide storage and other services
+
+# OpenEBS ZFS LocalPV - Dynamic ZFS dataset provisioning
+zfsLocalpv:
+  enabled: true
+  zfsNode:
+    kubeletDir: /var/lib/kubelet  # k3s default
+    # Restrict to nodes with ZFS available
+    nodeSelector:
+      kubernetes.io/hostname: atlas
+  zfsController:
+    replicas: 1
+  
+# Default storage classes to create
+defaultStorageClasses:
+  - name: zfs-tank
+    provisioner: zfs.csi.openebs.io
+    default: false
+    parameters:
+      poolname: "tank"
+      fstype: "zfs"
+      compression: "lz4"
+      recordsize: "128k"
+      dedup: "off"
+      
+  - name: zfs-tank-git  # Optimized for git repositories
+    provisioner: zfs.csi.openebs.io
+    default: false
+    parameters:
+      poolname: "tank"
+      fstype: "zfs"
+      compression: "lz4"
+      recordsize: "128k"  # Optimal for git objects
+      dedup: "off"
+      atime: "off"

@@ -1,0 +1,113 @@
+# Gitea Mirrors configuration borrowing from main Gitea setup
+
+gitea:
+  replicaCount: 1
+  image:
+    repository: gitea/gitea
+    registry: docker.io
+    tag: 1.22.3
+    pullPolicy: IfNotPresent
+    rootless: false
+
+  service:
+    http:
+      type: ClusterIP
+      port: 3000
+      clusterIP: null
+    ssh:
+      type: ClusterIP  # No SSH needed for read-only mirrors
+      port: 22
+
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: web
+      ingress.kubernetes.io/force-ssl-redirect: "false"
+    hosts:
+      - host: mirrors.git.k3s.agentydragon.com
+        paths:
+          - path: /
+            pathType: Prefix
+
+  persistence:
+    enabled: true
+    existingClaim: gitea-mirrors-data
+    size: 200Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+
+  gitea:
+    admin:
+      username: agentydragon
+      email: agentydragon@gmail.com
+
+    config:
+      APP_NAME: "Public Repository Mirrors"
+      server:
+        PROTOCOL: http
+        DOMAIN: mirrors.git.k3s.agentydragon.com
+        ROOT_URL: https://mirrors.git.k3s.agentydragon.com/
+        SSH_DOMAIN: mirrors.git.k3s.agentydragon.com
+        SSH_PORT: 22
+        DISABLE_SSH: true  # Read-only mirrors don't need SSH
+        LANDING_PAGE: explore  # Go straight to explore for public access
+      service:
+        DISABLE_REGISTRATION: true  # No user registration needed
+        ALLOW_ONLY_EXTERNAL_REGISTRATION: false
+        REQUIRE_SIGNIN_VIEW: false  # Public read access
+        REGISTER_EMAIL_CONFIRM: false
+        DEFAULT_ALLOW_CREATE_ORGANIZATION: false
+      database:
+        DB_TYPE: sqlite3  # Simple for read-only mirrors
+      security:
+        INSTALL_LOCK: true
+        SECRET_KEY: ""
+      oauth2:
+        ENABLED: true
+      openid:
+        ENABLE_OPENID_SIGNIN: true
+        ENABLE_OPENID_SIGNUP: false  # No signup for mirrors
+        WHITELISTED_URIS: auth.k3s.agentydragon.com
+      oauth2_client:
+        ENABLE_AUTO_REGISTRATION: false  # No auto registration for mirrors
+        USERNAME: preferred_username
+        ACCOUNT_LINKING: auto
+        UPDATE_AVATAR: false
+      repository:
+        DEFAULT_PRIVATE: false  # All mirrors are public
+        FORCE_PRIVATE: false
+        ENABLE_PUSH_CREATE_USER: false  # No push allowed
+        ENABLE_PUSH_CREATE_ORG: false
+        DISABLE_HTTP_GIT: false  # Allow HTTP clone
+        DEFAULT_BRANCH: main
+      mirror:
+        ENABLED: true
+        DEFAULT_INTERVAL: 1h
+        MIN_INTERVAL: 10m
+      cron:
+        ENABLED: true
+        RUN_AT_START: false
+      indexer:
+        REPO_INDEXER_ENABLED: true
+        ISSUE_INDEXER_ENABLED: false  # No issues on mirrors
+
+  postgresql:
+    enabled: false  # Using sqlite3
+  postgresql-ha:
+    enabled: false
+  redis-cluster:
+    enabled: false
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# No PostgreSQL needed if using sqlite3
+postgresql:
+  enabled: false

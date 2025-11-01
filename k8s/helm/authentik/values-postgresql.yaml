@@ -1,0 +1,15 @@
+# PostgreSQL configuration managed via the Bitnami subchart.
+postgresql:
+  enabled: true
+  auth:
+    existingSecret: authentik-secrets
+    secretKeys:
+      adminPasswordKey: postgresql-password
+      userPasswordKey: postgresql-password
+    username: "authentik"
+    database: "authentik"
+  primary:
+    persistence:
+      enabled: true
+      size: 5Gi
+      storageClass: local-path

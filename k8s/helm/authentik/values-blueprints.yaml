@@ -1,0 +1,24 @@
+# Blueprint helper inputs and forward-auth defaults.
+gitea:
+  # Set to the sealed-secret ciphertext used for the Gitea OAuth client secret so
+  # blueprint revisions change whenever the secret rotates.
+  clientSecretCiphertext: AgCt4+LU2r9shrDA6ANngvdVia4gBC0jCMgvd3qSu9LH6U5MKbNfhNksPbCxx5HSAyqYMJF5I9ZXrDk+vuhumkVPh/HAuYbF0bbBVZXu/vmsYEiOZ5vFP+jvL57SU3RVaFFZaRlqjEMClbuQexVQFIYoR0dNaVQFfzeVaCY7LO4QTX5PQkyaCAQHfBD8N4ZSLTI5YWHqfSeHidty/wvSkIfXsUPnSCcBA8tkhFD1W/muNgQnTF5dxE8RYJIaMcoaTIDH9ycf2Du30gUojNIubAfEj84k4/v40ghqKHsWZy8L6GR0+BC5TRvvw4Ao9IZ9TBMknVFzbg8wP7GfJTy/mzk+lo+new0tcop89xQHJN3mYZsI431UlpGuRrAlpLFYyFKeQEXPVFxYOkiMolfeVzbdf81VAEsJAgB5bDckAWl0fOoHB7aSBI5qTinQdfY3kkL7mFIRxoP3D2OXDyD4Soy+39he03Bmo6H+4Xex7bS49QHy+UZmid8CrmK/iaykyZwPWQj4fU/anpkMzJJo5KVmA5ygvLcbYu6rOa/1dCT327WMjmwGqMhYz/nYFqwuiexBUBeWLCpTaEMCLAoQWd3EhoxV2QkweQPG+DzNq8AR5swtEIHxroQ3VP1GHwq0RCqzG4K/ea8wuAqXkfyRRV0cG3+y8qFcxBbY4761287aLRlFu+oncydEgOkZo4Tmv9pmcTCRAO+BeJXpBHhFkRskUKVVE4FQeUH8pOhsQLdOQmE7bdGIiYkY9lfM
+
+matrix:
+  # Sealed-secret ciphertext for the Matrix Synapse OAuth client secret. Changing
+  # this value (during a secret rotation) bumps the blueprint revision.
+  clientSecretCiphertext: AgCM+dDa03q94A++BHvQy+lWS7nWfH7cal4TJJW98puyR805e48URqb0/Fs75MO9JBplpmYqDInvuAQY6y8XAJGKD0GqpMj6WAvJ3Q8Mks9HhqZgS7U1lvV33Mnvx+H2UYL/FNbGlw9QzqDyCxZN/AhUFk4zVlb3HTmG38zVHllURsKDid8PfSW1s6mb6On/IqbwDLIrb8E82oMOBb3/wnMJINKEz6TiKY4GVp/wzGYl/xR7rPM+PUe5BVAShBXRAAHkmA9VNniqi9zUhzAM4I6Vxx5ZAsMVJQp8Wxu+0QnRSEa9D4/yPVsNLDyiDHkC9KPC5zUYZ84sQAs/sM/Kd41rtJD5CcjlR7vvJwYGRMplr7iIbsqcxrxairDjqcsSdLSsYucj4rOUX/hFXOVtAKjwb82TDG9DvrZ2ZL1n/Y+SAidGqNHw63hFGkLJbOgWvE8sarYB23YyUiCUaL/cbMpVLcjEo2KXITPoyu/54jls0bH1ZMjrwZHGrtmqmAgoakktvb1fDheHy2wytA2OwIiOwFQbS2d1Nq3sMbHH/360QeFea9ckmA8XSzDc2x5DlkYAr7kk/w6c4RuxJW+UkVd9EW3oEs7NEuupRwFswMgZ9rSs3tt8YHVhJ8b+lO/EqBXOEKbX/3LVGROlyiOk/IrtY28mQPSGD3c+8aiZFqRf3ejih334RcPOxqZJdW8pabxoRxHkVD6T3LLHOdfr3UBCEoR9/ClDQzL29qi0HVEf5OHfW6/yhBRjIYxO
+
+# Registry forward-auth blueprint defaults.
+registry:
+  externalHost: "https://registry.k3s.agentydragon.com"
+  internalHost: "http://registry.registry.svc.cluster.local:5000"
+  adminGroup: "registry-pushers"
+
+# Embedded outpost configuration for forward-auth providers.
+forwardAuth:
+  outpost:
+    name: "authentik Embedded Outpost"
+    providers:
+      - registry-forward-auth
+      - rspcache-admin
