@@ -31,10 +31,10 @@
     profile_changed: "{{ apply_json.changed }}"
 
 - block:
-  - name: Debug stdout
-    debug:
-      var: apply_result.stdout_lines
-  - name: Debug stderr
-    debug:
-      var: apply_result.stderr_lines
+    - name: Debug stdout
+      debug:
+        var: apply_result.stdout_lines
+    - name: Debug stderr
+      debug:
+        var: apply_result.stderr_lines
   when: ansible_verbosity >= 1 | default(False)

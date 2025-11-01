@@ -12,7 +12,7 @@
       Please remove it first with:
       sudo apt remove --purge golang golang-go golang-1.* golang-doc golang-src
       sudo apt autoremove
-  when: 
+  when:
     - system_go_check.rc == 0
     - system_go_check.stdout.startswith('/usr')
 
@@ -33,7 +33,7 @@
       Wrong Go version installed!
       Expected: go{{ go_version }}
       Found: {{ installed_go_version.stdout }}
-      
+
       Manual resolution required:
       rm -rf {{ go_install_dir }}/go
       Then re-run this playbook

@@ -25,4 +25,3 @@
     - k3s-agent
   ignore_errors: yes
   tags: [k3s, registries]
-

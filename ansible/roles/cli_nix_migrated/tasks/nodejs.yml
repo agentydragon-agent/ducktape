@@ -1,4 +1,3 @@
-
 - name: Enable NodeSource 22.x repo
   deb822_repository:
     name: nodesource

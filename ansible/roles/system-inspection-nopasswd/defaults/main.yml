@@ -39,7 +39,7 @@ system_inspection_commands:
   - /usr/bin/nvidia-settings
   - /usr/bin/radeontop
   - /usr/bin/intel_gpu_top
-  
+
   # System information
   - /usr/bin/uname
   - /usr/bin/hostnamectl
@@ -47,7 +47,7 @@ system_inspection_commands:
   - /usr/bin/localectl
   - /usr/bin/loginctl
   - /usr/bin/bootctl
-  
+
   # Process information
   - /usr/bin/ps
   - /usr/bin/pstree
@@ -56,13 +56,13 @@ system_inspection_commands:
   - /usr/bin/iotop
   - /usr/bin/pidstat
   - /usr/bin/pgrep
-  
+
   # Memory information
   - /usr/bin/free
   - /usr/bin/vmstat
   - /usr/bin/slabtop
   - /proc/meminfo
-  
+
   # Disk information
   - /usr/bin/df
   - /usr/bin/du
@@ -73,7 +73,7 @@ system_inspection_commands:
   - /usr/bin/lsblk
   - /usr/sbin/smartctl
   - /usr/sbin/nvme
-  
+
   # Network information
   - /usr/bin/ip
   - /usr/sbin/ifconfig
@@ -90,7 +90,7 @@ system_inspection_commands:
   - /usr/bin/host
   - /usr/bin/traceroute
   - /usr/bin/mtr
-  
+
   # Service information
   - /usr/bin/systemctl status *
   - /usr/bin/systemctl list-units
@@ -100,7 +100,7 @@ system_inspection_commands:
   - /usr/bin/systemctl show *
   - /usr/bin/journalctl
   - /usr/bin/service * status
-  
+
   # File system information
   - /usr/bin/mount
   - /usr/bin/findmnt
@@ -112,19 +112,19 @@ system_inspection_commands:
   - /usr/sbin/lvdisplay
   - /usr/sbin/vgdisplay
   - /usr/sbin/pvdisplay
-  
+
   # Package information
   - /usr/bin/apt list
   - /usr/bin/dpkg -l
   - /usr/bin/snap list
   - /usr/bin/flatpak list
-  
+
   # Kernel and module information
   - /usr/sbin/lsmod
   - /usr/sbin/modinfo *
   - /usr/bin/dmesg
   - /usr/sbin/sysctl -a
-  
+
   # Security information
   - /usr/bin/last
   - /usr/bin/lastlog
@@ -141,7 +141,7 @@ system_inspection_commands:
   - /usr/sbin/ip6tables -L
   - /usr/sbin/ip6tables -S
   - /usr/sbin/nft list ruleset
-  
+
   # Container/VM information
   - /usr/bin/docker ps
   - /usr/bin/docker images
@@ -152,14 +152,14 @@ system_inspection_commands:
   - /usr/bin/virsh list
   - /usr/bin/qm list
   - /usr/bin/pvesh get /nodes
-  
+
   # Performance monitoring
   - /usr/bin/iostat
   - /usr/bin/mpstat
   - /usr/bin/sar
   - /usr/bin/perf stat
   - /usr/bin/perf top
-  
+
   # Log viewing
   - /usr/bin/tail -f /var/log/*
   - /usr/bin/head /var/log/*

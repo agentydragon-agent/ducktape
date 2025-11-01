@@ -10,13 +10,13 @@
   ansible.builtin.fail:
     msg: |
       WARNING: zprint is deprecated and should be uninstalled.
-      
+
       This playbook no longer installs or maintains zprint as Clojure
       development has been discontinued in this environment.
-      
+
       Please remove it manually:
         rm {{ local_scripts_path }}/zprint
-      
+
       Then re-run this playbook.
   when: zprint_binary.stat.exists
   tags: [zprint, deprecated]

@@ -48,7 +48,7 @@
 - name: Convert VM to template
   ansible.builtin.shell: |
     qm template 9000
-  when: 
+  when:
     - vm_9000_check.stdout != "NOTFOUND"
     - template_check.stdout == "NOT_TEMPLATE"
   tags: [k3s, template]

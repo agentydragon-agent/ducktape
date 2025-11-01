@@ -58,7 +58,7 @@
   when: mcp_check_result.rc not in [0, 1]
 
 - name: Apply MCP configuration if enabled
-  when: 
+  when:
     - claude_mcp_auto_apply | bool
     - mcp_changes_needed | default(false) | bool
   block:
@@ -66,7 +66,7 @@
       command: "{{ role_path }}/files/apply-mcp-config.py --json-output"
       register: apply_result
       changed_when: (apply_result.stdout | from_json).changed | default(false)
-    
+
     - name: Display configuration changes
       debug:
         msg: |
@@ -80,22 +80,22 @@
   fail:
     msg: |
       ⚠️  ERROR: Required Claude MCP servers are not configured!
-      
+
       Servers that need to be added: {{ (mcp_check_data | default({})).servers_added | default([]) | join(', ') }}
       {%- if (mcp_check_data | default({})).servers_updated | default([]) | length > 0 %}
       Servers that need to be updated: {{ (mcp_check_data | default({})).servers_updated | join(', ') }}
       {%- endif %}
-      
+
       To skip all Claude tasks: ansible-playbook playbook.yaml --skip-tags claude
       To skip only MCP check: ansible-playbook playbook.yaml --skip-tags mcp
-      
+
       To configure manually, run:
         {{ role_path }}/files/apply-mcp-config.py
-      
+
       Or enable auto-apply by setting:
         claude_mcp_auto_apply: true
-      
+
       Note: This will modify your ~/.claude.json configuration.
-  when: 
+  when:
     - not claude_mcp_auto_apply | bool
     - mcp_changes_needed | default(false) | bool

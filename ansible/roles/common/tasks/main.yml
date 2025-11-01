@@ -24,10 +24,10 @@
         msg: |
           ⚠️  ERROR: pytest-socket is installed in your global Python environment!
           This package can interfere with network-dependent tests and tools.
-          
+
           To fix:
             pip uninstall pytest-socket
-          
+
           To check what depends on it:
             pipdeptree --reverse --packages pytest-socket
       when: pytest_socket_check.rc == 0

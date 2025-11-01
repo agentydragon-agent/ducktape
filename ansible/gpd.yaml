@@ -33,7 +33,7 @@
     - name: Add udev rule GPD right tracking stick
       become: true
       tags:
-      - gpd-quirks
+        - gpd-quirks
       ansible.builtin.copy:
         content: |
           # This is a pointing stick pretending to be a mouse. Make libinput

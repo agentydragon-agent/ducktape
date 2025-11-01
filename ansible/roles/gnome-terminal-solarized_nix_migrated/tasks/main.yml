@@ -36,8 +36,8 @@
   changed_when: (set_default.stdout | from_json).changed
 
 - block:
-  - debug:
-      msg: "stdout: {{ set_default.stdout }}"
-  - debug:
-      msg: "stderr: {{ set_default.stderr_lines }}"
+    - debug:
+        msg: "stdout: {{ set_default.stdout }}"
+    - debug:
+        msg: "stderr: {{ set_default.stderr_lines }}"
   when: ansible_verbosity >= 1

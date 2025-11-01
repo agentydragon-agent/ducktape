@@ -3,18 +3,18 @@
   tags:
     - wezterm
   block:
-  - name: Add WezTerm APT repository
-    ansible.builtin.deb822_repository:
-      name: wezterm
-      uris: https://apt.fury.io/wez/
-      signed_by: https://apt.fury.io/wez/gpg.key
-      # weird but that's what the commandline at https://wezterm.org/install/linux.html says
-      suites: ["*"]
-      components: ["*"]
+    - name: Add WezTerm APT repository
+      ansible.builtin.deb822_repository:
+        name: wezterm
+        uris: https://apt.fury.io/wez/
+        signed_by: https://apt.fury.io/wez/gpg.key
+        # weird but that's what the commandline at https://wezterm.org/install/linux.html says
+        suites: ["*"]
+        components: ["*"]
 
-  - name: Update apt cache & install wezterm
-    ansible.builtin.apt:
-      name: wezterm
-      state: present
-      # TODO: would be nice to not have to re-update *all* repos here...
-      update_cache: true
+    - name: Update apt cache & install wezterm
+      ansible.builtin.apt:
+        name: wezterm
+        state: present
+        # TODO: would be nice to not have to re-update *all* repos here...
+        update_cache: true

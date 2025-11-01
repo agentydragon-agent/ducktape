@@ -119,19 +119,19 @@
     - name: Install latest Anki
       when: (not anki_version_data.installed) or (anki_version_data.installed and anki_version_data.version != latest_release_version.stdout)
       block:
-      - name: Download Anki
-        ansible.builtin.unarchive:
-          remote_src: true
-          src: "{{ latest_release_url }}"
-          dest: "{{ tmp_path }}"
-        changed_when: false
+        - name: Download Anki
+          ansible.builtin.unarchive:
+            remote_src: true
+            src: "{{ latest_release_url }}"
+            dest: "{{ tmp_path }}"
+          changed_when: false
 
-      - name: Run ./install.sh
-        changed_when: true
-        become: true
-        ansible.builtin.command:
-          cmd: ./install.sh
-          chdir: "{{ tmp_path }}/anki-launcher"
+        - name: Run ./install.sh
+          changed_when: true
+          become: true
+          ansible.builtin.command:
+            cmd: ./install.sh
+            chdir: "{{ tmp_path }}/anki-launcher"
 
     - name: Stat {{ anki_binary_path }}
       ansible.builtin.stat:

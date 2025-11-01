@@ -7,7 +7,7 @@
       ansible.builtin.stat:
         path: "{{ ducktape_path }}"
       register: ducktape_stat
-    
+
     - name: Assert ducktape repository exists
       ansible.builtin.assert:
         that:
@@ -38,17 +38,16 @@
       register: rcup_result
       failed_when: rcup_result.rc != 0
       ignore_errors: true
-      
+
     - name: Check if rcup needs manual intervention
       ansible.builtin.fail:
         msg: |
           Dotfiles installation requires manual intervention.
-          
+
           SSH to the machine and run:
           RCRC={{ ducktape_path }}/dotfiles/rcrc rcup -B {{ rcup_computer }}
-          
+
           You'll likely need to confirm overwriting pre-existing default files (like .bashrc).
-      when: 
+      when:
         - rcup_result.failed
         - "'overwrite' in rcup_result.stdout"
-

@@ -6,7 +6,7 @@
     qm clone {{ k3s_vm_template | default(9000) }} {{ item.vmid }} --name {{ item.name }} --full
   loop: "{{ k3s_vms }}"
   register: clone_result
-  failed_when: 
+  failed_when:
     - clone_result.rc != 0
     - "'already exists' not in clone_result.stderr"
   changed_when: clone_result.rc == 0

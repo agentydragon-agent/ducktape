@@ -98,8 +98,8 @@
   become: true
   snap:
     name:
-    - whatsdesk
-    - yt-dlp
+      - whatsdesk
+      - yt-dlp
 
 - name: Ensure no youtube-dl (deprecated)
   become: true
