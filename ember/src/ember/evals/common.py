@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable
 
 import yaml
 
@@ -14,7 +14,13 @@ class CommandError(RuntimeError):
 class CompletedProcess:
     """Async-friendly analogue of subprocess.CompletedProcess."""
 
-    def __init__(self, args: Iterable[str], returncode: int, stdout: str | bytes, stderr: str | bytes) -> None:
+    def __init__(
+        self,
+        args: Iterable[str],
+        returncode: int,
+        stdout: str | bytes,
+        stderr: str | bytes,
+    ) -> None:
         self.args = list(args)
         self.returncode = returncode
         self.stdout = stdout
@@ -39,8 +45,12 @@ async def run_command(
     )
     stdout, stderr = await process.communicate(input_data)
     if text:
-        stdout_decoded: str | bytes = stdout.decode("utf-8", errors="replace") if stdout else ""
-        stderr_decoded: str | bytes = stderr.decode("utf-8", errors="replace") if stderr else ""
+        stdout_decoded: str | bytes = (
+            stdout.decode("utf-8", errors="replace") if stdout else ""
+        )
+        stderr_decoded: str | bytes = (
+            stderr.decode("utf-8", errors="replace") if stderr else ""
+        )
     else:
         stdout_decoded = stdout
         stderr_decoded = stderr
@@ -52,15 +62,16 @@ async def run_command(
     return CompletedProcess(cmd, process.returncode, stdout_decoded, stderr_decoded)
 
 
-def merge_dict(dst: Dict[str, object], src: Dict[str, object]) -> None:
+def merge_dict(dst: dict[str, object], src: dict[str, object]) -> None:
     """Recursively merge src into dst."""
     for key, value in src.items():
-        if isinstance(value, dict) and isinstance(dst.get(key), dict):
-            merge_dict(dst[key], value)  # type: ignore[arg-type]
+        current = dst.get(key)
+        if isinstance(value, dict) and isinstance(current, dict):
+            merge_dict(current, value)
         else:
             dst[key] = value
 
 
-def dump_yaml(obj: Dict[str, object]) -> bytes:
+def dump_yaml(obj: dict[str, object]) -> bytes:
     """Serialize an object to YAML bytes."""
     return yaml.safe_dump(obj, sort_keys=False).encode("utf-8")

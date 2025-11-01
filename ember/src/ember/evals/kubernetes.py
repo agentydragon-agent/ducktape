@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 import re
 import shlex
-from dataclasses import dataclass
-from typing import Mapping, Sequence
 
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
@@ -40,7 +40,7 @@ class KubernetesManager:
         self._apps = client.AppsV1Api(api_client)
 
     @classmethod
-    async def create(cls) -> "KubernetesManager":
+    async def create(cls) -> KubernetesManager:
         try:
             await config.load_kube_config()
         except config.ConfigException:
@@ -58,7 +58,9 @@ class KubernetesManager:
             await self._core.create_namespace(body)
         except ApiException as exc:
             if exc.status != 409:
-                raise KubernetesError(f"Failed to create namespace {name}: {exc}") from exc
+                raise KubernetesError(
+                    f"Failed to create namespace {name}: {exc}"
+                ) from exc
             patch_body = {"metadata": {"labels": dict(labels)}}
             await self._core.patch_namespace(name, patch_body)
 
@@ -67,14 +69,18 @@ class KubernetesManager:
             await self._core.delete_namespace(name, grace_period_seconds=0)
         except ApiException as exc:
             if exc.status not in (404,):
-                raise KubernetesError(f"Failed to delete namespace {name}: {exc}") from exc
+                raise KubernetesError(
+                    f"Failed to delete namespace {name}: {exc}"
+                ) from exc
 
-    def scope(self, namespace: str) -> "NamespacedKubernetes":
+    def scope(self, namespace: str) -> NamespacedKubernetes:
         return NamespacedKubernetes(namespace, self._core, self._apps)
 
 
 class NamespacedKubernetes:
-    def __init__(self, namespace: str, core: client.CoreV1Api, apps: client.AppsV1Api) -> None:
+    def __init__(
+        self, namespace: str, core: client.CoreV1Api, apps: client.AppsV1Api
+    ) -> None:
         self.namespace = namespace
         self._core = core
         self._apps = apps
@@ -84,8 +90,12 @@ class NamespacedKubernetes:
         quoted = " ".join(shlex.quote(part) for part in command)
         return ["/bin/sh", "-c", f"{quoted}{footer}"]
 
-    async def upsert_secret(self, name: str, data: Mapping[str, str], labels: Mapping[str, str]) -> None:
-        metadata = client.V1ObjectMeta(name=name, namespace=self.namespace, labels=dict(labels))
+    async def upsert_secret(
+        self, name: str, data: Mapping[str, str], labels: Mapping[str, str]
+    ) -> None:
+        metadata = client.V1ObjectMeta(
+            name=name, namespace=self.namespace, labels=dict(labels)
+        )
         body = client.V1Secret(metadata=metadata, string_data=dict(data), type="Opaque")
         try:
             await self._core.create_namespaced_secret(self.namespace, body)
@@ -108,20 +118,28 @@ class NamespacedKubernetes:
     ) -> None:
         deadline = asyncio.get_running_loop().time() + timeout_seconds
         while True:
-            deployment = await self._apps.read_namespaced_deployment(name, self.namespace)
+            deployment = await self._apps.read_namespaced_deployment(
+                name, self.namespace
+            )
             desired = deployment.spec.replicas or 0
             ready = deployment.status.ready_replicas or 0
             if desired == ready:
                 return
             if asyncio.get_running_loop().time() >= deadline:
-                raise CommandError(f"Deployment {name} not ready within {timeout_seconds}s")
+                raise CommandError(
+                    f"Deployment {name} not ready within {timeout_seconds}s"
+                )
             await asyncio.sleep(poll_interval)
 
     async def first_pod_name(self, selector: LabelSelector) -> str:
-        pods = await self._core.list_namespaced_pod(self.namespace, label_selector=selector.as_query())
+        pods = await self._core.list_namespaced_pod(
+            self.namespace, label_selector=selector.as_query()
+        )
         items = pods.items or []
         if not items:
-            raise CommandError(f"No pods found in {self.namespace} selecting {selector.as_query()}")
+            raise CommandError(
+                f"No pods found in {self.namespace} selecting {selector.as_query()}"
+            )
         return items[0].metadata.name  # type: ignore[return-value]
 
     async def _exec(
@@ -185,7 +203,9 @@ class NamespacedKubernetes:
         container: str | None = None,
     ) -> bytes:
         # Pipe through base64 to safely transmit binary content over the text channel.
-        wrapped = self._wrap_shell(command, " | base64 -w0; printf '\\nEXIT_CODE=%d\\n' $?")
+        wrapped = self._wrap_shell(
+            command, " | base64 -w0; printf '\\nEXIT_CODE=%d\\n' $?"
+        )
         resp = await self._exec(pod_name, wrapped, container=container)
         if resp.returncode != 0:
             raise CommandError(

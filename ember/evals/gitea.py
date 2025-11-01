@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import re
-from typing import Iterable
 
 from ember.evals.definitions import Scenario
 

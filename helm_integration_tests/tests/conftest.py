@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import suppress
 import subprocess
 import time
 import uuid
-from collections.abc import Iterator
 
-import pytest
 from kubernetes import client, config
+import pytest
 
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -34,9 +35,7 @@ def _helm_upgrade_install(
     _run(cmd)
 
 
-def _pods_ready(
-    core: client.CoreV1Api, namespace: str, label_selector: str
-) -> bool:
+def _pods_ready(core: client.CoreV1Api, namespace: str, label_selector: str) -> bool:
     pods = core.list_namespaced_pod(
         namespace=namespace, label_selector=label_selector
     ).items
@@ -82,10 +81,8 @@ def test_namespace(kube_client: client.CoreV1Api) -> Iterator[str]:
     try:
         yield namespace
     finally:
-        try:
+        with suppress(client.ApiException):
             kube_client.delete_namespace(name=namespace)
-        except client.ApiException:
-            pass
 
 
 @pytest.fixture(scope="session")

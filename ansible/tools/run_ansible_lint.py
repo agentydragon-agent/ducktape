@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         def release(self, *_args: Any, **_kwargs: Any) -> None:
             return None
 
-        def __enter__(self) -> "_DummySemaphore":
+        def __enter__(self) -> _DummySemaphore:
             return self
 
         def __exit__(self, *_exc: Any) -> None:

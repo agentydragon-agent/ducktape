@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import re
 import shlex
-from pathlib import Path
 
-from ember.evals.definitions import Scenario, ScenarioSuite
 from ember.evals import gitea as gitea_helpers
+from ember.evals.definitions import Scenario, ScenarioSuite
 
 WORKSPACE_ROOT = Path("/var/lib/ember/workspace")
 
@@ -53,7 +53,9 @@ class IsoDateResponseScenario(Scenario):
     description = "Answer with current date in ISO 8601."
 
     async def run(self) -> None:
-        await self.send_matrix_message("What is today's date in ISO 8601 (YYYY-MM-DD) format?")
+        await self.send_matrix_message(
+            "What is today's date in ISO 8601 (YYYY-MM-DD) format?"
+        )
         await self.wait_for_matrix_response(timeout_seconds=30)
         self.validate_last_matrix_regex(
             r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
@@ -67,11 +69,10 @@ class FileWriteSanityScenario(Scenario):
 
     async def run(self) -> None:
         notes_path = WORKSPACE_ROOT / "notes.txt"
-        await self.send_matrix_message(
-            self.render(
-                f"Create {notes_path} containing exactly 'run ${RUN_ID} complete'."
-            )
-        )
+        message_template = (
+            "Create {path} containing exactly 'run ${RUN_ID} complete'."
+        ).format(path=notes_path)
+        await self.send_matrix_message(self.render(message_template))
         await self.wait_seconds(60)
         expected = self.render("run ${RUN_ID} complete\n")
         await self.verify_file_contents(notes_path, expected)
@@ -205,7 +206,11 @@ class StructuredLogParsingScenario(Scenario):
             if not isinstance(value, int) or value < 0:
                 self.fail(f"Invalid count for {key!r}: {value!r}")
         self.write_json_artifact("artifacts/error_report.json", report)
-        self.record(self.ok(description="Validated structured error report", entries=len(report)))
+        self.record(
+            self.ok(
+                description="Validated structured error report", entries=len(report)
+            )
+        )
 
 
 SCENARIO_SUITE = ScenarioSuite(

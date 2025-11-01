@@ -13,14 +13,15 @@ Environment:
     HEADSCALE_CMD (optional) - override the path to the `headscale` binary
                                (default: /usr/local/bin/headscale)
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
 
 
 def fail(message: str) -> None:

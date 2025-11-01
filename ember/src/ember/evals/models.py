@@ -1,11 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
-from dataclasses import dataclass
-from typing import Optional
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ember.integrations.gitea import GiteaRepository
 
@@ -55,7 +53,7 @@ class EvalRunRequest:
     gitea_token: str
     gitea_base_url: str
     gitea_repo: GiteaRepository
-    gitea_username: Optional[str]
+    gitea_username: str | None
     rspcache_api_base: str
     rspcache_api_key: str
     suite_key: str
@@ -64,7 +62,7 @@ class EvalRunRequest:
     artifact_dir: Path
     secrets: RuntimeSecretNames
     image: str
-    matrix_room_id: Optional[str]
+    matrix_room_id: str | None
     ember_user_id: str
 
 
