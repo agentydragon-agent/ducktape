@@ -62,16 +62,6 @@ async def run_command(
     return CompletedProcess(cmd, process.returncode, stdout_decoded, stderr_decoded)
 
 
-def merge_dict(dst: dict[str, object], src: dict[str, object]) -> None:
-    """Recursively merge src into dst."""
-    for key, value in src.items():
-        current = dst.get(key)
-        if isinstance(value, dict) and isinstance(current, dict):
-            merge_dict(current, value)
-        else:
-            dst[key] = value
-
-
 def dump_yaml(obj: dict[str, object]) -> bytes:
     """Serialize an object to YAML bytes."""
     return yaml.safe_dump(obj, sort_keys=False).encode("utf-8")

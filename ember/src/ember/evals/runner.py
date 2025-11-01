@@ -14,7 +14,7 @@ import tempfile
 
 from ember.integrations.gitea import GiteaRepository
 
-from .common import CommandError, dump_yaml, merge_dict, run_command
+from .common import CommandError, dump_yaml, run_command
 from .definitions import ScenarioSuite
 from .executor import ScenarioExecutor
 from .kubernetes import KubernetesManager, LabelSelector
@@ -162,13 +162,6 @@ async def build_image(image_ref: str) -> None:
     await run_command(("docker", "push", image_ref))
 
 
-def load_base_values() -> dict[str, object]:
-    with BASE_VALUES_FILE.open("r", encoding="utf-8") as fh:
-        import yaml
-
-        return yaml.safe_load(fh) or {}
-
-
 def split_image_ref(image: str) -> tuple[str, str]:
     if ":" not in image:
         raise CommandError(f"Image reference '{image}' must include a tag")
@@ -179,9 +172,8 @@ def split_image_ref(image: str) -> tuple[str, str]:
 
 
 def prepare_values(request: EvalRunRequest) -> dict[str, object]:
-    values = load_base_values()
     repository, tag = split_image_ref(request.image)
-    overrides = {
+    return {
         "namespace": {"create": False, "name": request.namespace},
         "config": {
             "matrix": {"base_url": request.matrix_base_url},
@@ -201,8 +193,6 @@ def prepare_values(request: EvalRunRequest) -> dict[str, object]:
             "tag": tag,
         },
     }
-    merge_dict(values, overrides)
-    return values
 
 
 async def resolve_image(args: argparse.Namespace) -> str:
