@@ -24,7 +24,7 @@ This directory houses all Helm packaging for Ducktape workloads. The goal is to 
 ```yaml
 dependencies:
   - name: common-lib
-    version: ^0.1.0
+    version: ^0.1.1
     repository: \"file://../common-lib\"
 ```
 
