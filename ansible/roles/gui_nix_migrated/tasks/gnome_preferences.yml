@@ -1,4 +1,3 @@
-
 - name: Set sloppy focus (focus follows mouse)
   ansible.builtin.dconf:
     key: /org/gnome/desktop/wm/preferences/focus-mode
@@ -18,5 +17,5 @@
     key: "/org/gnome/settings-daemon/plugins/color/{{ item.suffix }}"
     value: "{{ item.value }}"
   loop:
-    - { suffix: "night-light-enabled",     value: "true" }
+    - { suffix: "night-light-enabled", value: "true" }
     - { suffix: "night-light-temperature", value: "uint32 2414" }

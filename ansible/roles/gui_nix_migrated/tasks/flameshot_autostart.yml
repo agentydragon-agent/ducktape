@@ -25,7 +25,7 @@
     key: "{{ flameshot_path }}{{ item.key }}"
     value: "'{{ item.value }}'" # (TODO: kinda sucky escaping)
   loop:
-    - { key: "name",    value: "Flameshot GUI" }
+    - { key: "name", value: "Flameshot GUI" }
     - { key: "command", value: "flameshot gui" }
     - { key: "binding", value: "Print" }
 

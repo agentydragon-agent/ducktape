@@ -34,17 +34,17 @@
     #   anything you add directly to FORWARD can disappear.
     #   DOCKER-USER is for administrator rules and Docker leaves it intact.
     iptables:
-      chain:         DOCKER-USER
-      in_interface:  wg0
+      chain: DOCKER-USER
+      in_interface: wg0
       out_interface: wg0
-      jump:          ACCEPT
-      comment:       WG hair-pin
-      state:         present
+      jump: ACCEPT
+      comment: WG hair-pin
+      state: present
 
   - name: Allow wg0 → any (return path)
     iptables:
-      chain:        DOCKER-USER
+      chain: DOCKER-USER
       in_interface: wg0
-      jump:         ACCEPT
-      comment:      WG egress
-      state:        present
+      jump: ACCEPT
+      comment: WG egress
+      state: present

@@ -8,8 +8,8 @@ roles:
   # My fork - makes GNOME Shell not always restart (since unneeded). TODO: merge upstream
   # - src: petermosmans.customize-gnome
   - name: petermosmans.customize-gnome
-    src:  https://github.com/agentydragon/ansible-role-customize-gnome.git
-    scm:  git
+    src: https://github.com/agentydragon/ansible-role-customize-gnome.git
+    scm: git
     version: agentydragon/updates
 
 collections:

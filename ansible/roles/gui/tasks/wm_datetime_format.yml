@@ -15,6 +15,6 @@
     key: "/com/canonical/indicator/datetime/{{ item.suffix }}"
     value: "{{ item.value }}"
   loop:
-    - { suffix: "time-format",        value: "'custom'" }
+    - { suffix: "time-format", value: "'custom'" }
     - { suffix: "custom-time-format", value: "'%Y-%m-%d %H:%M:%S'" }
-    - { suffix: "show-week-numbers",  value: "true" }
+    - { suffix: "show-week-numbers", value: "true" }
