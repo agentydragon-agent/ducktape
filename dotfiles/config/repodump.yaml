@@ -76,14 +76,14 @@ repos:
       - documentation/src/*.rst
   '/home/agentydragon/.google-drive/My Drive/inventree-utils':
     exclude:
-     - NOTES.txt
-     - TODO
-     - rescap
-     - server-post-receive
+      - NOTES.txt
+      - TODO
+      - rescap
+      - server-post-receive
     include:
-     - '*.py'
-     - labels/smd_1x1_stockitem.html
-     - sticker_notes.txt
+      - '*.py'
+      - labels/smd_1x1_stockitem.html
+      - sticker_notes.txt
 
 strip_snippets:
   - type: "literal"

@@ -26,7 +26,7 @@
     dir: "{{ temp_dir.path }}/colors/{{ item.variant }}"
   loop:
     - { profile_name: 'Solarized Light', variant: 'light' }
-    - { profile_name: 'Solarized Dark',  variant: 'dark' }
+    - { profile_name: 'Solarized Dark', variant: 'dark' }
 
 - name: Set Solarized Light as the default profile
   ansible.builtin.script: >

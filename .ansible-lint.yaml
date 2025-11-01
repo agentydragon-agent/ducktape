@@ -1,0 +1,8 @@
+---
+# Repository-wide ansible-lint configuration.
+# Exclude virtual environments and generated artefacts to keep lint runs focused.
+exclude_paths:
+  - "**/.venv"
+  - "**/.venv/**"
+  - .ansible
+  - .ansible/**

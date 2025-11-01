@@ -170,7 +170,10 @@
 #
 #   - name: Parse clean Neovim version string (strip prefix and suffix)
 #     set_fact:
-#       nvim_version_string: "{{ raw_nvim_version.stdout_lines[0] | regex_replace('^NVIM v(\\d+\\.\\d+(?:\\.\\d+)?).*', '\\1') }}"
+#       nvim_version_string: "{{ raw_nvim_version.stdout_lines[0] | regex_replace(
+#         '^NVIM v(\\d+\\.\\d+(?:\\.\\d+)?).*',
+#         '\\1'
+#       ) }}"
 #
 #   - name: Fail if version parsing failed
 #     fail:

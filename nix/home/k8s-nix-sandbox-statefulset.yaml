@@ -133,5 +133,5 @@ spec:
   selector:
     app: nix-sandbox
   ports:
-  - port: 22
-    targetPort: 22
+    - port: 22
+      targetPort: 22
