@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
-import requests
 from pydantic import BaseModel, Field
+import requests
 
 from ..secrets import ProjectedSecret
 
 __all__ = [
+    "GiteaBranchInfo",
+    "GiteaClient",
+    "GiteaComment",
     "GiteaError",
     "GiteaRepository",
     "GiteaUser",
-    "GiteaComment",
-    "GiteaBranchInfo",
-    "GiteaClient",
 ]
 
 
@@ -28,7 +28,7 @@ class GiteaRepository(BaseModel):
     name: str
 
     @classmethod
-    def parse(cls, value: str | "GiteaRepository") -> "GiteaRepository":
+    def parse(cls, value: str | GiteaRepository) -> GiteaRepository:
         if isinstance(value, cls):
             return value
         if "/" not in value:
@@ -97,22 +97,30 @@ class GiteaClient:
         base_url: str,
         repo: str | GiteaRepository | None,
         secret: ProjectedSecret,
-    ) -> "GiteaClient":
+    ) -> GiteaClient:
         token = secret.value(required=True)
         repository = GiteaRepository.parse(repo) if repo else None
         return cls(base_url=base_url, token=token or "", default_repo=repository)
 
-    def with_repo(self, repo: str | GiteaRepository | None) -> "GiteaClient":
+    def with_repo(self, repo: str | GiteaRepository | None) -> GiteaClient:
         repository = GiteaRepository.parse(repo) if repo else self._default_repo
-        return GiteaClient(base_url=self._base_url, token=self._token, default_repo=repository)
+        return GiteaClient(
+            base_url=self._base_url, token=self._token, default_repo=repository
+        )
 
-    def issue_comments(self, issue: int, repo: str | GiteaRepository | None = None) -> list[GiteaComment]:
+    def issue_comments(
+        self, issue: int, repo: str | GiteaRepository | None = None
+    ) -> list[GiteaComment]:
         repository = self._resolve_repo(repo)
-        url = self._build_url(f"/api/v1/repos/{repository.api_path}/issues/{issue}/comments")
+        url = self._build_url(
+            f"/api/v1/repos/{repository.api_path}/issues/{issue}/comments"
+        )
         data = self._request_json("GET", url)
         return [GiteaComment.model_validate(item) for item in data]
 
-    def branch_info(self, branch: str, repo: str | GiteaRepository | None = None) -> GiteaBranchInfo:
+    def branch_info(
+        self, branch: str, repo: str | GiteaRepository | None = None
+    ) -> GiteaBranchInfo:
         repository = self._resolve_repo(repo)
         encoded_branch = requests.utils.quote(branch, safe="")
         url = self._build_url(

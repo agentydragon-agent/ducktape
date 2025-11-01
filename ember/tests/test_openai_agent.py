@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
-from typing import List, cast
+from typing import cast
 
 from openai import AsyncOpenAI
 from openai.types.responses import (
@@ -248,6 +248,7 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
         tool_choice="required",
         tools=tools,
     )
+
 
 @pytest.mark.asyncio
 async def test_sleep_until_user_message_rejected_when_enforced_policy_blocks() -> None:

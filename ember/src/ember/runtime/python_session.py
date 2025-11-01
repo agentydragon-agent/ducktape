@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+from pathlib import Path
 import signal
 import subprocess
 import sys
 import time
-from pathlib import Path
 from typing import Optional
 
 from jupyter_client import BlockingKernelClient
@@ -24,7 +24,9 @@ def ensure_kernel() -> Optional[Path]:
     try:
         SESSION_DIR.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        logger.warning("Failed to create python session directory %s: %s", SESSION_DIR, exc)
+        logger.warning(
+            "Failed to create python session directory %s: %s", SESSION_DIR, exc
+        )
         return None
 
     if CONNECTION_FILE.exists() and _kernel_alive():
@@ -89,20 +91,29 @@ def run_code(code: str) -> str:
             if msg["parent_header"].get("msg_id") != msg_id:
                 continue
             msg_type = msg.get("msg_type")
-            if msg_type == "status" and msg.get("content", {}).get("execution_state") == "idle":
+            if (
+                msg_type == "status"
+                and msg.get("content", {}).get("execution_state") == "idle"
+            ):
                 break
             if msg_type == "stream":
                 output_parts.append(msg["content"].get("text", ""))
             elif msg_type == "error":
-                output_parts.append("\n".join(msg.get("content", {}).get("traceback", [])))
+                output_parts.append(
+                    "\n".join(msg.get("content", {}).get("traceback", []))
+                )
         return "".join(output_parts)
     finally:
         client.stop_channels()
 
 
 def cli_main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Interact with Ember's persistent Python session")
-    parser.add_argument("-c", dest="command", help="Python code to execute (default: read stdin)")
+    parser = argparse.ArgumentParser(
+        description="Interact with Ember's persistent Python session"
+    )
+    parser.add_argument(
+        "-c", dest="command", help="Python code to execute (default: read stdin)"
+    )
     parser.add_argument(
         "-q",
         "--quiet",
@@ -110,8 +121,12 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
         help="suppress output from the executed code",
     )
     parser.add_argument("--stop", action="store_true", help="Stop the kernel and exit")
-    parser.add_argument("--restart", action="store_true", help="Restart the kernel before running code")
-    parser.add_argument("--status", action="store_true", help="Print kernel status and exit")
+    parser.add_argument(
+        "--restart", action="store_true", help="Restart the kernel before running code"
+    )
+    parser.add_argument(
+        "--status", action="store_true", help="Print kernel status and exit"
+    )
     args = parser.parse_args(argv)
 
     if args.status:
@@ -167,7 +182,9 @@ def _kernel_pid() -> Optional[int]:
 
 def _print_status() -> None:
     if _kernel_alive():
-        conn = CONNECTION_FILE if CONNECTION_FILE.exists() else "(missing connection file)"
+        conn = (
+            CONNECTION_FILE if CONNECTION_FILE.exists() else "(missing connection file)"
+        )
         pid = _kernel_pid()
         print(f"Kernel running (pid={pid}) connection={conn}")
     else:
@@ -210,7 +227,9 @@ def _launch_kernel() -> Optional[Path]:
             env=env,
         )
     except FileNotFoundError:
-        logger.warning("ipykernel is not installed; persistent Python session unavailable.")
+        logger.warning(
+            "ipykernel is not installed; persistent Python session unavailable."
+        )
         return None
     except Exception as exc:  # pragma: no cover - subprocess env errors
         logger.warning("Failed to start IPython kernel: %s", exc)
@@ -220,7 +239,11 @@ def _launch_kernel() -> Optional[Path]:
 
     for _ in range(50):
         if CONNECTION_FILE.exists():
-            logger.info("Started persistent IPython kernel pid=%s connection=%s", proc.pid, CONNECTION_FILE)
+            logger.info(
+                "Started persistent IPython kernel pid=%s connection=%s",
+                proc.pid,
+                CONNECTION_FILE,
+            )
             return CONNECTION_FILE
         time.sleep(0.1)
 

@@ -44,6 +44,7 @@ class ObjectStoreClient:
     def __init__(self, settings: ObjectStoreSettings) -> None:
         self._settings = settings
         self._expiry = max(1, min(settings.url_expiry_seconds, 7 * 24 * 60 * 60))
+
     def upload_image(self, file_path: Path, mime_type: str) -> ImageHandle:
         access_key = self._settings.access_key_secret.value(required=True)
         secret_key = self._settings.secret_key_secret.value(required=True)

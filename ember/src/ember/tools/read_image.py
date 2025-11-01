@@ -15,7 +15,9 @@ _MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 class ReadImageArgs(BaseModel):
-    path: Path = Field(..., description="Workspace-relative path to the image to upload.")
+    path: Path = Field(
+        ..., description="Workspace-relative path to the image to upload."
+    )
     model_config = ConfigDict(extra="forbid")
 
 

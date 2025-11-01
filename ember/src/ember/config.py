@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 from datetime import timedelta
+import os
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
@@ -191,18 +191,26 @@ def load_settings() -> EmberSettings:
         if not endpoint or not bucket:
             raise RuntimeError("Object store configuration missing endpoint or bucket")
 
-        access_secret_name = object_store_cfg.get("access_key_secret", "object_store_access_key")
-        secret_secret_name = object_store_cfg.get("secret_key_secret", "object_store_secret_key")
+        access_secret_name = object_store_cfg.get(
+            "access_key_secret", "object_store_access_key"
+        )
+        secret_secret_name = object_store_cfg.get(
+            "secret_key_secret", "object_store_secret_key"
+        )
         object_store_settings = ObjectStoreSettings(
             endpoint=endpoint,
             bucket=bucket,
             access_key_secret=ProjectedSecret(
                 name=access_secret_name,
-                env_var=object_store_cfg.get("access_key_env", "OBJECT_STORE_ACCESS_KEY"),
+                env_var=object_store_cfg.get(
+                    "access_key_env", "OBJECT_STORE_ACCESS_KEY"
+                ),
             ),
             secret_key_secret=ProjectedSecret(
                 name=secret_secret_name,
-                env_var=object_store_cfg.get("secret_key_env", "OBJECT_STORE_SECRET_KEY"),
+                env_var=object_store_cfg.get(
+                    "secret_key_env", "OBJECT_STORE_SECRET_KEY"
+                ),
             ),
             secure=bool(object_store_cfg.get("secure", True)),
             url_expiry_seconds=int(object_store_cfg.get("url_expiry_seconds", 120)),

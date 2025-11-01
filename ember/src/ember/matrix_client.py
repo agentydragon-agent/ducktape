@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import os
-from collections.abc import Iterable
-from contextlib import suppress, asynccontextmanager
+from collections.abc import AsyncIterator, Iterable
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 import logging
+import os
 from pathlib import Path
-from typing import AsyncIterator
 
 from nio import AsyncClient, AsyncClientConfig, RoomMessageText
-from pydantic import BaseModel, ConfigDict
 from nio.events.invite_events import InviteMemberEvent
 from nio.events.room_events import MegolmEvent
 from nio.exceptions import LocalProtocolError
@@ -27,6 +25,7 @@ from nio.responses import (
     WhoamiError,
     WhoamiResponse,
 )
+from pydantic import BaseModel, ConfigDict
 
 from .config import MatrixSettings
 from .secrets import ProjectedSecret
@@ -73,17 +72,21 @@ class MatrixClient:
         store_dir: Path | None = None,
         device_id: str = "ember-device",
         pickle_key: str = "ember-matrix-store",
-    ) -> "MatrixClient":
+    ) -> MatrixClient:
         resolved_base_url = base_url or os.environ.get("MATRIX_BASE_URL")
         if not resolved_base_url:
-            raise RuntimeError("MATRIX_BASE_URL must be set (e.g. https://matrix.example.org)")
+            raise RuntimeError(
+                "MATRIX_BASE_URL must be set (e.g. https://matrix.example.org)"
+            )
 
         secret = access_token_secret or ProjectedSecret(
             name="matrix_access_token",
             env_var="MATRIX_ACCESS_TOKEN",
         )
 
-        state_path = Path(state_store or "/var/lib/ember/matrix_state.json").expanduser()
+        state_path = Path(
+            state_store or "/var/lib/ember/matrix_state.json"
+        ).expanduser()
         store_path = Path(store_dir or "/var/lib/ember/matrix_store").expanduser()
         settings = MatrixSettings(
             base_url=resolved_base_url,
@@ -149,7 +152,7 @@ class MatrixClient:
         await self.close()
 
     @asynccontextmanager
-    async def session(self) -> AsyncIterator["MatrixSession"]:
+    async def session(self) -> AsyncIterator[MatrixSession]:
         await self.start()
         try:
             yield MatrixSession(self)
@@ -292,7 +295,8 @@ class MatrixClient:
                     status.last_user_message_at for status in self._room_status.values()
                 ),
                 last_agent_message_at=_latest_timestamp(
-                    status.last_agent_message_at for status in self._room_status.values()
+                    status.last_agent_message_at
+                    for status in self._room_status.values()
                 ),
             )
 
@@ -517,8 +521,6 @@ class MatrixClient:
                         logger.warning("Matrix key claim failed: %s", claim.message)
         except LocalProtocolError as exc:
             logger.debug("Matrix crypto maintenance skipped: %s", exc)
-
-
 
 
 class MatrixSession:

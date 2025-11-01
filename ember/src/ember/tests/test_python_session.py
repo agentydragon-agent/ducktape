@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import time
-
 import pytest
 
-from ember.runtime.python_session import ensure_kernel, run_code, restart_kernel
+from ember.runtime.python_session import ensure_kernel, restart_kernel, run_code
 
 
 def test_persistent_python_session_preserves_state():

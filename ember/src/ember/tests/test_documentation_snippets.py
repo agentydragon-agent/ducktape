@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from importlib import resources
 import os
+from pathlib import Path
 import runpy
 import shutil
 import subprocess
 import sys
-from importlib import resources
-from pathlib import Path
 from types import SimpleNamespace
 from typing import List
 
@@ -50,7 +50,7 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     fake_session_state: dict[str, List[str]] = {"sent": [], "closed": []}
 
     class FakeSession:
-        async def __aenter__(self) -> "FakeSession":
+        async def __aenter__(self) -> FakeSession:
             return self
 
         async def __aexit__(self, exc_type, exc, tb) -> None:
