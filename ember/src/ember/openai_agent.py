@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall, ResponseInputItemParam
@@ -13,6 +14,7 @@ from pydantic import BaseModel, TypeAdapter
 
 from .config import OpenAISettings
 from .history import ConversationHistory
+from .object_store import ObjectStoreClient
 from .tool_execution import execute_tool, tool_params
 from .tools import build_tool_specs
 from .tools.sleep_until_user_message import ConversationStatusProvider
@@ -27,6 +29,8 @@ class OpenAIAgent:
         history: ConversationHistory,
         client: AsyncOpenAI,
         status_provider: ConversationStatusProvider,
+        workspace_path: Path,
+        object_store: ObjectStoreClient | None,
     ) -> None:
         self._settings = settings
         self._history = history
@@ -36,6 +40,8 @@ class OpenAIAgent:
             self._request_sleep_until_user_message,
             status_provider,
             settings.sleep_tool_policy,
+            workspace_path,
+            object_store,
         )
         self._tool_params = tool_params(self._tool_specs.values())
 

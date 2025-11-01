@@ -9,7 +9,9 @@ from openai import AsyncOpenAI
 from .config import EmberSettings
 from .history import ConversationHistory
 from .matrix_client import MatrixClient
+from .object_store import ObjectStoreClient
 from .openai_agent import OpenAIAgent
+from .runtime.python_session import ensure_kernel as ensure_python_kernel
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,7 @@ class PilotRuntime:
         self._settings = settings
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
+        self._object_store: ObjectStoreClient | None = None
         self._initialise_components()
 
     async def start(self) -> None:
@@ -48,12 +51,16 @@ class PilotRuntime:
         self._matrix_client = MatrixClient(self._settings.matrix)
         self._settings.workspace_path.mkdir(parents=True, exist_ok=True)
         self._openai_client = self._create_openai_client()
+        self._object_store = self._create_object_store_client()
         self._agent = OpenAIAgent(
             self._settings.openai,
             self._history,
             self._openai_client,
             self._matrix_client,
+            self._settings.workspace_path,
+            self._object_store,
         )
+        ensure_python_kernel()
 
     async def _loop(self) -> None:
         try:
@@ -86,3 +93,16 @@ class PilotRuntime:
     def _create_openai_client(self) -> AsyncOpenAI:
         api_key = self._settings.openai.api_key_secret.value(required=True)
         return AsyncOpenAI(api_key=api_key, base_url=self._settings.openai.api_base)
+
+    def _create_object_store_client(self) -> ObjectStoreClient | None:
+        settings = self._settings.object_store
+        if settings is None:
+            return None
+        if not settings.configured:
+            logger.warning("Object store settings present but incomplete; skipping client setup")
+            return None
+        try:
+            return ObjectStoreClient(settings)
+        except Exception as exc:  # pragma: no cover - network/config errors should bubble
+            logger.warning("Failed to initialise object store client: %s", exc)
+            return None

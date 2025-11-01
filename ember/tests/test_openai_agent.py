@@ -77,12 +77,33 @@ def _make_openai_client(api_key: str, responses: list[Response]) -> AsyncOpenAI:
     return client
 
 
+@pytest.fixture
+def agent_factory(
+    settings: OpenAISettings,
+    history: ConversationHistory,
+    matrix_client: FakeMatrixClient,
+):
+    workspace_path = history.path.parent  # type: ignore[attr-defined]
+
+    def factory(client: AsyncOpenAI) -> OpenAIAgent:
+        return OpenAIAgent(
+            settings,
+            history,
+            client,
+            matrix_client,
+            workspace_path,
+            None,
+        )
+
+    return factory
+
+
 @pytest.mark.asyncio
 async def test_agent_runs_shell_command(
     monkeypatch: pytest.MonkeyPatch,
     settings: OpenAISettings,
     history: ConversationHistory,
-    matrix_client: FakeMatrixClient,
+    agent_factory,
 ) -> None:
     client = _make_openai_client(
         settings.api_key_secret.value(required=True),
@@ -105,7 +126,7 @@ async def test_agent_runs_shell_command(
 
     monkeypatch.setattr(run_shell_tool, "_run_command", fake_run_command)
 
-    agent = OpenAIAgent(settings, history, client, matrix_client)
+    agent = agent_factory(client)
     await agent.handle_user_message("incoming message")
 
     assert agent.waiting_for_matrix
@@ -140,7 +161,7 @@ async def test_agent_runs_shell_command(
 async def test_agent_sleep_until_user_message(
     settings: OpenAISettings,
     history: ConversationHistory,
-    matrix_client: FakeMatrixClient,
+    agent_factory,
 ) -> None:
     client = _make_openai_client(
         settings.api_key_secret.value(required=True),
@@ -153,7 +174,7 @@ async def test_agent_sleep_until_user_message(
         ],
     )
 
-    agent = OpenAIAgent(settings, history, client, matrix_client)
+    agent = agent_factory(client)
     await agent.handle_user_message("ready to idle")
 
     assert agent.waiting_for_matrix
@@ -253,4 +274,3 @@ async def test_sleep_until_user_message_rejected_when_enforced_policy_blocks() -
     assert result.status == "rejected"
     assert result.reason
     assert not sleep_called
-

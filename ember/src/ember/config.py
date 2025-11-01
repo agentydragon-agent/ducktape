@@ -71,6 +71,18 @@ class MatrixSettings(BaseModel):
         return bool(self.base_url and self.access_token_secret.value())
 
 
+class ObjectStoreSettings(BaseModel):
+    endpoint: str
+    bucket: str
+    access_key_secret: ProjectedSecret
+    secret_key_secret: ProjectedSecret
+    secure: bool = True
+    url_expiry_seconds: int = Field(default=120, ge=1)
+    staging_dir: Path = Field(default=Path("/tmp/ember-objectstore"))
+    staging_max_bytes: int = Field(default=500 * 1024 * 1024, ge=1)
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+
 class OpenAISettings(BaseModel):
     api_key_secret: ProjectedSecret
     model: str
@@ -95,6 +107,7 @@ class EmberSettings(BaseModel):
     history_path: Path
     state_dir: Path
     workspace_path: Path
+    object_store: ObjectStoreSettings | None = None
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
@@ -124,6 +137,12 @@ def load_settings() -> EmberSettings:
     openai_cfg = (
         config_data.get("openai", {})
         if isinstance(config_data.get("openai"), dict)
+        else {}
+    )
+
+    object_store_cfg = (
+        config_data.get("object_store", {})
+        if isinstance(config_data.get("object_store"), dict)
         else {}
     )
 
@@ -165,6 +184,34 @@ def load_settings() -> EmberSettings:
     if api_base and "OPENAI_API_BASE" not in os.environ:
         os.environ["OPENAI_API_BASE"] = str(api_base)
 
+    object_store_settings: ObjectStoreSettings | None = None
+    object_store_env_endpoint = os.getenv("OBJECT_STORE_ENDPOINT")
+    object_store_env_bucket = os.getenv("OBJECT_STORE_BUCKET")
+    if object_store_cfg or object_store_env_endpoint or object_store_env_bucket:
+        endpoint = object_store_env_endpoint or object_store_cfg.get("endpoint")
+        bucket = object_store_env_bucket or object_store_cfg.get("bucket")
+        if not endpoint or not bucket:
+            raise RuntimeError("Object store configuration missing endpoint or bucket")
+
+        access_secret_name = object_store_cfg.get("access_key_secret", "object_store_access_key")
+        secret_secret_name = object_store_cfg.get("secret_key_secret", "object_store_secret_key")
+        object_store_settings = ObjectStoreSettings(
+            endpoint=endpoint,
+            bucket=bucket,
+            access_key_secret=ProjectedSecret(
+                name=access_secret_name,
+                env_var=object_store_cfg.get("access_key_env", "OBJECT_STORE_ACCESS_KEY"),
+            ),
+            secret_key_secret=ProjectedSecret(
+                name=secret_secret_name,
+                env_var=object_store_cfg.get("secret_key_env", "OBJECT_STORE_SECRET_KEY"),
+            ),
+            secure=bool(object_store_cfg.get("secure", True)),
+            url_expiry_seconds=int(object_store_cfg.get("url_expiry_seconds", 120)),
+            staging_dir=Path(object_store_cfg.get("staging_dir", "/tmp/ember-objectstore")),
+            staging_max_bytes=int(object_store_cfg.get("staging_max_bytes", 500 * 1024 * 1024)),
+        )
+
     try:
         return EmberSettings(
             matrix=MatrixSettings(
@@ -197,6 +244,7 @@ def load_settings() -> EmberSettings:
             history_path=history_path,
             state_dir=state_dir,
             workspace_path=workspace_path,
+            object_store=object_store_settings,
         )
     except (
         ValidationError
