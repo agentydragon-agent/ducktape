@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -102,7 +102,7 @@ class EvalResult(BaseModel):
     type: Literal["eval"] = "eval"
     status: StepStatus = StepStatus.OK
     description: str | None = None
-    details: Dict[str, object] = Field(default_factory=dict)
+    details: dict[str, object] = Field(default_factory=dict)
 
 
 class StepSkippedResult(BaseModel):

@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
+from pathlib import Path
 import shutil
 import tempfile
 import time
-from datetime import datetime, timezone
-from pathlib import Path
 
 from nio import AsyncClient, AsyncClientConfig, RoomMessageText
 from nio.responses import (
     JoinError,
-    JoinResponse,
     RoomCreateError,
     RoomCreateResponse,
     RoomSendError,
-    RoomSendResponse,
     SyncError,
     WhoamiError,
     WhoamiResponse,
@@ -41,7 +39,9 @@ def render_matrix_transcript(transcript: MatrixTranscript) -> str:
     lines = []
     for event in sorted(transcript.events, key=lambda e: e.timestamp or 0):
         if event.timestamp:
-            ts = datetime.fromtimestamp(event.timestamp / 1000, tz=timezone.utc).isoformat()
+            ts = datetime.fromtimestamp(
+                event.timestamp / 1000, tz=timezone.utc
+            ).isoformat()
         else:
             ts = ""
         direction = "user" if event.direction == "in" else "ember"
@@ -84,7 +84,7 @@ class MatrixHarness:
     def transcript(self) -> list[MatrixMessage]:
         return list(self._transcript)
 
-    async def __aenter__(self) -> "MatrixHarness":
+    async def __aenter__(self) -> MatrixHarness:
         config = AsyncClientConfig(encryption_enabled=False, store_sync_tokens=False)
         self._store_dir = Path(tempfile.mkdtemp(prefix=f"matrix-store-{self._run_id}-"))
         self._client = AsyncClient(
@@ -178,7 +178,9 @@ class MatrixHarness:
             await asyncio.sleep(1)
         raise TimeoutError(f"No Matrix message from {sender} within {timeout_seconds}s")
 
-    async def expect_reply(self, expected: str, timeout_seconds: int = 60) -> MatrixMessage:
+    async def expect_reply(
+        self, expected: str, timeout_seconds: int = 60
+    ) -> MatrixMessage:
         message = await self.wait_for_message(timeout_seconds=timeout_seconds)
         if message.body.strip() != expected.strip():
             raise AssertionError(

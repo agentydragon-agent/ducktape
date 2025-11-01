@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import base64
-from io import BytesIO
 from importlib import resources
-
-from PIL import Image
+from io import BytesIO
 
 from kubernetes import client
 from kubernetes.stream import stream
+from PIL import Image
 
 from ember.object_store import ImageHandle
 
@@ -65,8 +64,10 @@ def _get_agent_pod(core: client.CoreV1Api, namespace: str) -> str:
 
 
 def _resource_text(filename: str) -> str:
-    return resources.files("helm_integration_tests.tests.scripts").joinpath(filename).read_text(
-        encoding="utf-8"
+    return (
+        resources.files("helm_integration_tests.tests.scripts")
+        .joinpath(filename)
+        .read_text(encoding="utf-8")
     )
 
 

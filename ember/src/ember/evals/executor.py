@@ -1,23 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import re
-import time
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
-import shlex
+import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Mapping, Sequence
+import re
+import shlex
+import time
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
 from ember.integrations.gitea import GiteaClient
 
-from .definitions import Scenario, ScenarioSuite
-from .matrix import MatrixHarness, MatrixMessage
+from .definitions import ScenarioSuite
 from .kubernetes import ExecResult, NamespacedKubernetes
+from .matrix import MatrixHarness, MatrixMessage
 from .steps import (
-    EvalResult,
     ExpectMatrixReplyResult,
     KillProcessResult,
     ProbeHttpResult,
@@ -27,9 +27,7 @@ from .steps import (
     SendMatrixMessageResult,
     SnapshotWorkspaceResult,
     StepErrorResult,
-    StepResult,
     StepSkippedResult,
-    StepStatus,
     ValidateRegexResult,
     VerifyFileContainsResult,
     VerifyFileContentsResult,
@@ -48,7 +46,7 @@ class ScenarioExecutionError(RuntimeError):
     """Raised when a scenario step fails."""
 
 
-class ScenarioSkipped(RuntimeError):
+class ScenarioSkippedError(RuntimeError):
     """Raised when a scenario requests to skip itself."""
 
 
@@ -58,7 +56,7 @@ class ScenarioExecutor:
     def __init__(
         self,
         *,
-        request: "EvalRunRequest",
+        request: EvalRunRequest,
         matrix: MatrixHarness,
         pod_name: str,
         artifact_dir: Path,
@@ -80,7 +78,7 @@ class ScenarioExecutor:
     # Public properties consumed by Scenario                             #
     # ------------------------------------------------------------------ #
     @property
-    def request(self) -> "EvalRunRequest":
+    def request(self) -> EvalRunRequest:
         return self._request
 
     @property
@@ -96,12 +94,11 @@ class ScenarioExecutor:
             return self._gitea_client
         return self._gitea_client.with_repo(repo_slug)
 
-    def write_json_artifact(self, path: Path, payload: Mapping[str, object] | BaseModel) -> None:
+    def write_json_artifact(
+        self, path: Path, payload: Mapping[str, object] | BaseModel
+    ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        if isinstance(payload, BaseModel):
-            data = payload.model_dump()
-        else:
-            data = dict(payload)
+        data = payload.model_dump() if isinstance(payload, BaseModel) else dict(payload)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def render(self, template: str) -> str:
@@ -141,7 +138,9 @@ class ScenarioExecutor:
         self._last_matrix_message = await self._matrix.expect_reply(
             expected, timeout_seconds=timeout_seconds
         )
-        return ExpectMatrixReplyResult(expected=expected, actual=self._last_matrix_message.body)
+        return ExpectMatrixReplyResult(
+            expected=expected, actual=self._last_matrix_message.body
+        )
 
     def validate_last_matrix_regex(
         self,
@@ -182,7 +181,9 @@ class ScenarioExecutor:
         command: Sequence[str],
     ) -> bytes:
         target = container or DEFAULT_AGENT_CONTAINER
-        return await self._kube.pod_exec_binary(self._pod_name, command, container=target)
+        return await self._kube.pod_exec_binary(
+            self._pod_name, command, container=target
+        )
 
     async def probe_http(
         self,
@@ -216,7 +217,9 @@ class ScenarioExecutor:
         try:
             status = int(status_line.strip())
         except ValueError as exc:
-            raise ScenarioExecutionError(f"Unexpected status line from curl: {status_line!r}") from exc
+            raise ScenarioExecutionError(
+                f"Unexpected status line from curl: {status_line!r}"
+            ) from exc
         if status != expect_status:
             raise ScenarioExecutionError(f"Status {status} != expected {expect_status}")
         if expect_body_includes and expect_body_includes not in body:
@@ -230,7 +233,9 @@ class ScenarioExecutor:
             body_excerpt=body[:500] if body else None,
         )
 
-    async def snapshot_workspace(self, path: str, scenario_dir: Path) -> SnapshotWorkspaceResult:
+    async def snapshot_workspace(
+        self, path: str, scenario_dir: Path
+    ) -> SnapshotWorkspaceResult:
         normalized = Path(path)
         parent = str(normalized.parent) or "/"
         name = normalized.name
@@ -247,9 +252,13 @@ class ScenarioExecutor:
             ],
         )
         artifact_path.write_bytes(tar_bytes)
-        return SnapshotWorkspaceResult(artifact=str(artifact_path.relative_to(self._artifact_dir)))
+        return SnapshotWorkspaceResult(
+            artifact=str(artifact_path.relative_to(self._artifact_dir))
+        )
 
-    async def verify_file_contents(self, path: str, expected: str) -> VerifyFileContentsResult:
+    async def verify_file_contents(
+        self, path: str, expected: str
+    ) -> VerifyFileContentsResult:
         contents = await self._read_file(path)
         if contents != expected:
             raise ScenarioExecutionError(f"{path} contents did not match expected text")
@@ -266,7 +275,10 @@ class ScenarioExecutor:
         missing = [value for value in includes if value not in contents]
         if missing:
             raise ScenarioExecutionError(f"{path} missing expected contents: {missing}")
-        if min_size_bytes is not None and len(contents.encode("utf-8")) < min_size_bytes:
+        if (
+            min_size_bytes is not None
+            and len(contents.encode("utf-8")) < min_size_bytes
+        ):
             raise ScenarioExecutionError(f"{path} smaller than {min_size_bytes} bytes")
         return VerifyFileContainsResult(
             path=path,
@@ -303,9 +315,10 @@ class ScenarioExecutor:
             scenario_dir.mkdir(parents=True, exist_ok=True)
             scenario = scenario_cls(self, scenario_dir)
 
+            description = f" – {scenario.description}" if scenario.description else ""
             print(
-                f"[ember-eval][{self._request.run_id}] ⇢ Scenario {index}: {scenario.id}"
-                + (f" – {scenario.description}" if scenario.description else "")
+                f"[ember-eval][{self._request.run_id}] -> Scenario {index}: {scenario.id}"
+                f"{description}"
             )
 
             status = ScenarioStatus.PASSED
@@ -314,24 +327,22 @@ class ScenarioExecutor:
             try:
                 await scenario.setup()
                 await scenario.run()
-            except ScenarioSkipped as exc:
+            except ScenarioSkippedError as exc:
                 status = ScenarioStatus.SKIPPED
                 error = str(exc)
                 scenario.record(
-                    StepSkippedResult(step_type="scenario", reason=error or "scenario skipped")
+                    StepSkippedResult(
+                        step_type="scenario", reason=error or "scenario skipped"
+                    )
                 )
             except ScenarioExecutionError as exc:
                 status = ScenarioStatus.FAILED
                 error = str(exc)
-                scenario.record(
-                    StepErrorResult(step_type="scenario", error=error)
-                )
+                scenario.record(StepErrorResult(step_type="scenario", error=error))
             except Exception as exc:  # pragma: no cover - defensive
                 status = ScenarioStatus.FAILED
                 error = f"Unexpected error: {exc}"
-                scenario.record(
-                    StepErrorResult(step_type="scenario", error=error)
-                )
+                scenario.record(StepErrorResult(step_type="scenario", error=error))
                 raise
             finally:
                 result = ScenarioResult(
@@ -372,7 +383,9 @@ class ScenarioExecutor:
             )
         return result.stdout
 
-    def _verify_timestamps(self, contents: str, minimum_entries: int, order: str) -> int:
+    def _verify_timestamps(
+        self, contents: str, minimum_entries: int, order: str
+    ) -> int:
         lines = [line.strip() for line in contents.splitlines() if line.strip()]
         if len(lines) < minimum_entries:
             raise ScenarioExecutionError(
@@ -388,9 +401,8 @@ class ScenarioExecutor:
         if order == "ascending":
             if any(a >= b for a, b in pairs):
                 raise ScenarioExecutionError("Timestamps not strictly ascending")
-        else:
-            if any(a <= b for a, b in pairs):
-                raise ScenarioExecutionError("Timestamps not strictly descending")
+        elif any(a <= b for a, b in pairs):
+            raise ScenarioExecutionError("Timestamps not strictly descending")
         return len(lines)
 
     def _validate_iso_date(self, value: str, tolerance_days: int) -> None:
@@ -407,7 +419,7 @@ class ScenarioExecutor:
 
 
 __all__ = [
-    "ScenarioExecutor",
     "ScenarioExecutionError",
-    "ScenarioSkipped",
+    "ScenarioExecutor",
+    "ScenarioSkippedError",
 ]

@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Mapping, Sequence, Type
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from .kubernetes import ExecResult
 from .steps import (
     EvalResult,
     ExpectMatrixReplyResult,
     KillProcessResult,
     ProbeHttpResult,
     ScenarioResult,
-    ScenarioStatus,
     SendMatrixMessageResult,
     SnapshotWorkspaceResult,
     StepErrorResult,
@@ -27,14 +28,15 @@ from .steps import (
     WaitForMatrixResponseResult,
     WaitSecondsResult,
 )
-from .kubernetes import ExecResult
 
 if TYPE_CHECKING:
+    from ember.integrations.gitea import GiteaRepository
+
     from .executor import ScenarioExecutor
 
 
 class ContainerHandle:
-    def __init__(self, executor: "ScenarioExecutor", name: str | None) -> None:
+    def __init__(self, executor: ScenarioExecutor, name: str | None) -> None:
         self._executor = executor
         self._name = name
 
@@ -54,7 +56,7 @@ class Scenario(ABC):
     id: str
     description: str | None = None
 
-    def __init__(self, executor: "ScenarioExecutor", scenario_dir: Path) -> None:
+    def __init__(self, executor: ScenarioExecutor, scenario_dir: Path) -> None:
         self._executor = executor
         self._scenario_dir = scenario_dir
         self._results: list[StepResult] = []
@@ -62,16 +64,20 @@ class Scenario(ABC):
     # -- lifecycle hooks -------------------------------------------------
     async def setup(self) -> None:  # pragma: no cover - default hook
         """Optional hook executed before :meth:`run`."""
+        return
 
     @abstractmethod
     async def run(self) -> None:
         """Execute the scenario's logic."""
 
-    async def teardown(self, result: ScenarioResult) -> None:  # pragma: no cover - default hook
+    async def teardown(
+        self, result: ScenarioResult
+    ) -> None:  # pragma: no cover - default hook
         """Optional hook executed after :meth:`run` completes."""
+        return
 
     # -- executor wiring -------------------------------------------------
-    def _require_executor(self) -> "ScenarioExecutor":
+    def _require_executor(self) -> ScenarioExecutor:
         return self._executor
 
     def _require_dir(self) -> Path:
@@ -99,7 +105,7 @@ class Scenario(ABC):
         request = self._require_executor().request
         return request.gitea_username or request.ember_user_id
 
-    def gitea(self, repo: str | "GiteaRepository" | None = None):
+    def gitea(self, repo: str | GiteaRepository | None = None):
         from ember.integrations.gitea import GiteaRepository
 
         if repo is None:
@@ -201,12 +207,18 @@ class Scenario(ABC):
         return result
 
     async def snapshot_workspace(self, path: str | Path) -> SnapshotWorkspaceResult:
-        result = await self._require_executor().snapshot_workspace(self._normalize_path(path), self.scenario_dir)
+        result = await self._require_executor().snapshot_workspace(
+            self._normalize_path(path), self.scenario_dir
+        )
         self.record(result)
         return result
 
-    async def verify_file_contents(self, path: str | Path, expected: str) -> VerifyFileContentsResult:
-        result = await self._require_executor().verify_file_contents(self._normalize_path(path), expected)
+    async def verify_file_contents(
+        self, path: str | Path, expected: str
+    ) -> VerifyFileContentsResult:
+        result = await self._require_executor().verify_file_contents(
+            self._normalize_path(path), expected
+        )
         self.record(result)
         return result
 
@@ -240,8 +252,12 @@ class Scenario(ABC):
         self.record(result)
         return result
 
-    async def kill_process(self, *, container: str | None = None, pattern: str) -> KillProcessResult:
-        result = await self._require_executor().kill_process(container=container, pattern=pattern)
+    async def kill_process(
+        self, *, container: str | None = None, pattern: str
+    ) -> KillProcessResult:
+        result = await self._require_executor().kill_process(
+            container=container, pattern=pattern
+        )
         self.record(result)
         return result
 
@@ -252,8 +268,12 @@ class Scenario(ABC):
     def emberd_container(self) -> ContainerHandle:
         return self.container()
 
-    async def agent_exec(self, *command: str, container: str | None = None) -> ExecResult:
-        return await self._require_executor().exec(container=container, command=list(command))
+    async def agent_exec(
+        self, *command: str, container: str | None = None
+    ) -> ExecResult:
+        return await self._require_executor().exec(
+            container=container, command=list(command)
+        )
 
     def ok(
         self,
@@ -278,16 +298,16 @@ class Scenario(ABC):
 
     def skip(self, reason: str) -> None:
         self.record(StepSkippedResult(step_type="scenario", reason=reason))
-        from .executor import ScenarioSkipped
+        from .executor import ScenarioSkippedError
 
-        raise ScenarioSkipped(reason)
+        raise ScenarioSkippedError(reason)
 
 
 @dataclass(slots=True)
 class ScenarioSuite:
     """Collection of scenario classes with optional metadata."""
 
-    scenarios: Sequence[Type[Scenario]]
+    scenarios: Sequence[type[Scenario]]
     name: str | None = None
     version: str | None = None
     description: str | None = None
