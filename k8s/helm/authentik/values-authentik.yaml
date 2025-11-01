@@ -48,8 +48,6 @@ authentik:
         traefik.ingress.kubernetes.io/router.entrypoints: websecure
         traefik.ingress.kubernetes.io/router.tls: "true"
         cert-manager.io/cluster-issuer: homelab-ca-issuer
-      annotations:
-        traefik.ingress.kubernetes.io/router.entrypoints: web
         ingress.kubernetes.io/force-ssl-redirect: "false"
 
   worker:
