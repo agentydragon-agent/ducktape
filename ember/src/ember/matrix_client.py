@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Iterable
+from contextlib import suppress, asynccontextmanager
 from datetime import datetime, timezone
-from contextlib import suppress
 import logging
+from pathlib import Path
+from typing import AsyncIterator
 
 from nio import AsyncClient, AsyncClientConfig, RoomMessageText
 from pydantic import BaseModel, ConfigDict
@@ -26,6 +29,7 @@ from nio.responses import (
 )
 
 from .config import MatrixSettings
+from .secrets import ProjectedSecret
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +61,40 @@ class MatrixClient:
         self._status_lock = asyncio.Lock()
         self._room_status: dict[str, ConversationStatus] = {}
         self._aggregate_status = ConversationStatus()
+
+    @classmethod
+    def from_projected_secrets(
+        cls,
+        *,
+        base_url: str | None = None,
+        access_token_secret: ProjectedSecret | None = None,
+        admin_user_id: str | None = None,
+        state_store: Path | None = None,
+        store_dir: Path | None = None,
+        device_id: str = "ember-device",
+        pickle_key: str = "ember-matrix-store",
+    ) -> "MatrixClient":
+        resolved_base_url = base_url or os.environ.get("MATRIX_BASE_URL")
+        if not resolved_base_url:
+            raise RuntimeError("MATRIX_BASE_URL must be set (e.g. https://matrix.example.org)")
+
+        secret = access_token_secret or ProjectedSecret(
+            name="matrix_access_token",
+            env_var="MATRIX_ACCESS_TOKEN",
+        )
+
+        state_path = Path(state_store or "/var/lib/ember/matrix_state.json").expanduser()
+        store_path = Path(store_dir or "/var/lib/ember/matrix_store").expanduser()
+        settings = MatrixSettings(
+            base_url=resolved_base_url,
+            access_token_secret=secret,
+            admin_user_id=admin_user_id,
+            state_store=state_path,
+            store_dir=store_path,
+            device_id=device_id,
+            pickle_key=pickle_key,
+        )
+        return cls(settings)
 
     @property
     def configured(self) -> bool:
@@ -102,6 +140,21 @@ class MatrixClient:
 
     async def close(self) -> None:
         await self.stop()
+
+    async def __aenter__(self) -> MatrixClient:
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
+
+    @asynccontextmanager
+    async def session(self) -> AsyncIterator["MatrixSession"]:
+        await self.start()
+        try:
+            yield MatrixSession(self)
+        finally:
+            await self.close()
 
     async def get_events(self, timeout: float = 60.0) -> list[RoomMessageText]:
         """Wait for a batch of new events (debounced)."""
@@ -465,6 +518,35 @@ class MatrixClient:
         except LocalProtocolError as exc:
             logger.debug("Matrix crypto maintenance skipped: %s", exc)
 
+
+
+
+class MatrixSession:
+    def __init__(self, manager: MatrixClient) -> None:
+        self._manager = manager
+
+    @property
+    def client(self) -> AsyncClient:
+        if self._manager._client is None:  # pragma: no cover - defensive
+            raise RuntimeError("Matrix client not initialised")
+        return self._manager._client
+
+    async def send_text_message(
+        self, room_id: str, body: str, *, msgtype: str = "m.notice"
+    ) -> None:
+        client = self._manager._client
+        if client is None:  # pragma: no cover - defensive
+            raise RuntimeError("Matrix client is not running; call session() first")
+
+        await client.room_send(
+            room_id=room_id,
+            message_type="m.room.message",
+            content={"msgtype": msgtype, "body": body},
+        )
+        logger.info("Sent Matrix message to %s", room_id)
+
+    async def get_events(self, timeout: float = 60.0) -> list[RoomMessageText]:
+        return await self._manager.get_events(timeout=timeout)
 
 
 def _event_timestamp(event: RoomMessageText) -> datetime:
