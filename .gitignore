@@ -32,6 +32,10 @@ devenv.local.nix
 .direnv
 .direnv/
 
+.cache/
+.uv-cache/
+**/.uv-cache/
+
 logs
 k8s/helm/**/charts/
 
