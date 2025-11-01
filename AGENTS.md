@@ -118,6 +118,7 @@ python -m pytest
 pre-commit install  # For development
 ```
 - Target runtime version: Python 3.12 (stdlib features like `tomllib` are assumed available).
+- Each active project directory has a `.envrc`; run `direnv allow` so the expected Python/UV environments and PATH customisations load automatically before running tooling.
 
 ### Rust (Finance tools)
 ```bash
