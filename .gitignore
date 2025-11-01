@@ -42,3 +42,5 @@ adgn/openai_openapi.yaml
 # Ignore Helm dependency locks & vendor directories
 k8s/helm/**/Chart.lock
 k8s/helm/**/charts/
+
+**/Chart.lock
