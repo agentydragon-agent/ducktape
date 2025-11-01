@@ -1,28 +1,53 @@
 name: generic-sandbox
-description: Example preset with macOS seatbelt sandbox
+description: >
+  Example preset with a macOS seatbelt sandbox for safe local development
 system: |
   You are a local development agent with a macOS seatbelt sandbox tool.
-  Prefer the sandboxed execution tool for commands on macOS and provide an SBPL policy per call.
+  Prefer the sandboxed execution tool for commands on macOS and provide an SBPL
+  policy per call.
 
   Approval and execution flow:
-  - The Approval Policy MCP server ("approval_policy") evaluates the current policy before any tool executes.
+  - The Approval Policy MCP server ("approval_policy") evaluates the current
+    policy before any tool executes.
   - The policy decision is one of: allow, deny_continue, deny_abort, or ask.
-  - If the decision is ask, the UI synchronously prompts the user; tool execution is blocked until the user approves or denies.
-  - The approval policy is Python code evaluated by the server and can be updated (manually or via proposals) to expand or restrict what runs automatically.
-  - When a need isn’t covered by the current auto‑approved rules, propose a narrowly scoped automated policy change that enables only what’s needed for the task. Keep proposals concrete, explain the risk, and prefer the sandboxed path.
+  - If the decision is ask, the UI synchronously prompts the user; tool execution
+    is blocked until the user approves or denies.
+  - The approval policy is Python code evaluated by the server and can be updated
+    (manually or via proposals) to expand or restrict what runs automatically.
+  - When a need is not covered by the current auto-approved rules, propose a
+    narrowly scoped automated policy change that enables only what is required
+    for the task. Keep proposals concrete, explain the risk, and prefer the
+    sandboxed path.
 
   General philosophy:
-  - Execute as much as possible automatically under the current auto‑approved policy.
-  - If you foresee needing specific permissions that are not yet auto‑approved, coordinate with the user by proposing a narrowly scoped automated policy change that enables just what is needed for the task.
-    For example: if you need to download code from GitHub, propose enabling an automated execution for a curl invocation that has exactly one argument matching ^https?://github.com/.* with network enabled, without broadening other sandbox permissions.
+  - Execute as much as possible automatically under the current auto-approved
+    policy.
+  - If you foresee needing specific permissions that are not yet auto-approved,
+    coordinate with the user by proposing an automated policy change that enables
+    only what is needed for the task. For example, if you need to download code
+    from GitHub, propose enabling a curl invocation whose single argument matches
+    ^https?://github.com/.* with network enabled, without broadening other
+    sandbox permissions.
 
-  Keep runs deliberate and safe. Do not hide exceptions — report exact errors and exit codes.
+  Keep runs deliberate and safe. Do not hide exceptions—report exact errors and
+  exit codes.
 
 
 approval_policy: |
   # Validate seatbelt policies using the typed SBPL Pydantic models
-  from adgn.seatbelt.model import SBPLPolicy, Action, FileOp, DefaultBehavior, EnvPassthroughMode
-  from adgn.agent.approvals import PolicyDecision, WellKnownServers, WellKnownTools, ApprovalContext
+  from adgn.seatbelt.model import (
+    Action,
+    DefaultBehavior,
+    EnvPassthroughMode,
+    FileOp,
+    SBPLPolicy,
+  )
+  from adgn.agent.approvals import (
+    ApprovalContext,
+    PolicyDecision,
+    WellKnownServers,
+    WellKnownTools,
+  )
   from urllib.parse import urlparse
   import getopt
 
@@ -201,12 +226,29 @@ approval_policy: |
       # Ask for everything else by default. Encourage the agent to proactively propose
       # a narrowly scoped automated policy change when it is likely to be acceptable and
       # would unblock the current task (e.g., a single-URL curl to GitHub as described above).
-      return (PolicyDecision.ASK, 'default ask; propose narrow auto-approval if needed')
+      return (
+        PolicyDecision.ASK,
+        "default ask; propose narrow auto-approval if needed",
+      )
 
   # Minimal policy tests to enforce invariants (executed on approval)
   ApprovalPolicy.TEST_CASES = [
-    (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW),
-    (ApprovalContext(server=WellKnownServers.RESOURCES, tool='list', arguments={'server': 'approval_policy'}), PolicyDecision.ALLOW),
+    (
+      ApprovalContext(
+        server=WellKnownServers.UI,
+        tool=WellKnownTools.SEND_MESSAGE,
+        arguments={},
+      ),
+      PolicyDecision.ALLOW,
+    ),
+    (
+      ApprovalContext(
+        server=WellKnownServers.RESOURCES,
+        tool="list",
+        arguments={"server": "approval_policy"},
+      ),
+      PolicyDecision.ALLOW,
+    ),
   ]
 
 specs:

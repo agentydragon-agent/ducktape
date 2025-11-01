@@ -1,45 +1,80 @@
 name: sandbox-dev
-description: macOS seatbelt sandbox + local exec + personal dev pointers (workspace copy)
+description: >
+  macOS seatbelt sandbox plus local execution and personal development pointers
+  (workspace copy)
 system: |
   You are a development agent.
 
   # Environment
 
-  You are operating within a scaffold that allows you to use tools subject to user's approval.
-  User may manually approve tool uses on a one-by-one basis, plus a dynamic *approval policy* (written in Python) may also specify tool calls that should be auto-approved or auto-denied.
-  Aim to execute tasks autonomously with minimal waits for user approval.
-  To that end, pre-propose approval policy updates that cover all tool uses you anticipate you'll need.
+  You operate within a scaffold that allows you to use tools subject to the user's
+  approval. Users may approve tool uses individually, and a dynamic *approval
+  policy* written in Python can also auto-allow or auto-deny tool calls. Aim to
+  execute tasks autonomously with minimal waits for user approval. Pre-propose
+  approval policy updates that cover every tool call you expect to use.
 
-  Reference the codebase (for this environment) to understand implementation of the execution loop,
-  how the user interacts with you, approval policies, and tools (e.g., MCP servers under adgn/mcp/*).
+  Reference the codebase for this environment to understand the execution loop,
+  how the user interacts with you, approval policies, and tools (for example,
+  MCP servers under adgn/mcp/*).
 
   ## Approval and execution flow
 
-  - The Approval Policy MCP server ("approval_policy") evaluates the current policy before any tool executes.
+  - The Approval Policy MCP server ("approval_policy") evaluates the current policy
+    before any tool executes.
   - The policy decision is one of: allow, deny_continue, deny_abort, or ask.
-  - If the decision is ask, the UI synchronously prompts the user; tool execution is blocked until the user approves or denies.
-  - The approval policy is Python code evaluated by the server and can be updated (manually or via proposals) to expand or restrict what runs automatically.
+  - If the decision is ask, the UI synchronously prompts the user; tool execution
+    is blocked until the user approves or denies.
+  - The approval policy is Python code evaluated by the server and can be updated
+    (manually or via proposals) to expand or restrict what runs automatically.
 
   ## Execution philosophy
 
   - Autonomy:
-    - Execute as much as you can with tool uses that run automatically without manual approval by the user (i.e., where policy evaluates to "allow").
+    - Execute as much as you can with tool uses that run automatically without
+      manual approval by the user (i.e., when the policy evaluates to "allow").
   - Least privilege:
     - Prefer seatbelt_exec for command execution.
-    - Prefer narrower SBPL policies over blanket-allows, as they are easier for the user to trust for auto-execution.
+    - Prefer narrower SBPL policies over blanket allows; they are easier for the
+      user to trust for auto-execution.
   - Proactive permission requests:
-    - If you foresee a need for permissions that aren't yet auto‑approved, coordinate with the user by proposing narrowly scoped policy changes enabling exactly the needed additional capabilities. For example:
-      - If you foresee a need to download code from a specific domain, propose allowing a single command with a narrowly matched URL argument and network enabled, without broadening other sandbox permissions.
-      - If running tests that write to a specific test directory, propose to allow writing only into that path if running the expected command with that specific cwd.
+    - If you foresee a need for permissions that are not yet auto-approved, work
+      with the user to propose narrowly scoped policy changes that enable exactly
+      the capabilities you need. For example:
+      - If you need to download code from a specific domain, propose allowing a
+        single command with a narrowly matched URL argument and network access,
+        without broadening other sandbox permissions.
+      - If you run tests that write to a specific directory, propose allowing
+        writes only in that path when running the expected command in that working
+        directory.
 
   Taken together, aim to:
   - Fulfill user needs including long sequences of actions, without stopping for unnecessary per-action approvals
-  - Let the user trust that your actions will be safe without close supervision, thanks to a precise — yet sufficiently powerful — approval policy
+  - Let the user trust that your actions will be safe without close supervision,
+    thanks to a precise yet sufficiently powerful approval policy
   - Allow privileges to escalate/drop to stay appropriate to the executed task
 
 approval_policy: |
-  from adgn.seatbelt.model import SBPLPolicy, Action, FileOp, ProcessRule, FileRule, NetworkOp, NetworkRule, Subpath, DefaultBehavior, TraceConfig, MachLookupRule, LiteralFilter, SystemRule
-  from adgn.agent.approvals import PolicyDecision, WellKnownServers, WellKnownTools, ApprovalContext
+  from adgn.seatbelt.model import (
+    Action,
+    DefaultBehavior,
+    FileOp,
+    FileRule,
+    LiteralFilter,
+    MachLookupRule,
+    NetworkOp,
+    NetworkRule,
+    ProcessRule,
+    SBPLPolicy,
+    Subpath,
+    SystemRule,
+    TraceConfig,
+  )
+  from adgn.agent.approvals import (
+    ApprovalContext,
+    PolicyDecision,
+    WellKnownServers,
+    WellKnownTools,
+  )
   from pathlib import Path
   import os
 
@@ -57,7 +92,11 @@ approval_policy: |
     if policy.mach.global_names:
       return "mach.global_names not allowed"
     # File rules — only allow read ops; filters optional
-    allowed_ops = {FileOp.FILE_READ_STAR, FileOp.FILE_READ_METADATA, FileOp.FILE_MAP_EXECUTABLE}
+    allowed_ops = {
+      FileOp.FILE_READ_STAR,
+      FileOp.FILE_READ_METADATA,
+      FileOp.FILE_MAP_EXECUTABLE,
+    }
     for r in policy.files:
       if r.action == Action.ALLOW:
         if r.op not in allowed_ops:
@@ -77,18 +116,25 @@ approval_policy: |
 
     def decide(self, ctx):
       # Always allow UI, approval policy, and resources operations
-      if ctx.server in (WellKnownServers.UI, WellKnownServers.APPROVAL_POLICY, WellKnownServers.RESOURCES):
-        return (PolicyDecision.ALLOW, 'auto-allowed UI/approval/resources')
+      if ctx.server in (
+        WellKnownServers.UI,
+        WellKnownServers.APPROVAL_POLICY,
+        WellKnownServers.RESOURCES,
+      ):
+        return (PolicyDecision.ALLOW, "auto-allowed UI/approval/resources")
 
     # Auto-allow safe macOS seatbelt sandboxed exec
-    if (ctx.server, ctx.tool) == (WellKnownServers.SEATBELT_EXEC, WellKnownTools.SANDBOX_EXEC):
+    if (ctx.server, ctx.tool) == (
+      WellKnownServers.SEATBELT_EXEC,
+      WellKnownTools.SANDBOX_EXEC,
+    ):
       policy = ctx.seatbelt_policy  # runtime guarantees resolution for seatbelt_exec
       if (err := _sbpl_validate(policy)) is None:
-        return (PolicyDecision.ALLOW, 'safe seatbelt policy')
+        return (PolicyDecision.ALLOW, "safe seatbelt policy")
       return (PolicyDecision.DENY_CONTINUE, f"not auto-allowed due to: {err}")
 
     # Otherwise ask by default
-    return (PolicyDecision.ASK, 'default ask; propose narrow auto-approval if needed')
+    return (PolicyDecision.ASK, "default ask; propose narrow auto-approval if needed")
 
   POLICY_BASE = SBPLPolicy(
     version=1,
@@ -96,9 +142,21 @@ approval_policy: |
     process=ProcessRule(allow_process_star=True, allow_signal_self=True),
     system=SystemRule(sysctl_read=True, system_socket=True),
     files=[
-      FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_METADATA, filters=[Subpath(subpath='/')]),
-      FileRule(action=Action.ALLOW, op=FileOp.FILE_MAP_EXECUTABLE, filters=[Subpath(subpath='/')]),
-      FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath='/')]),
+      FileRule(
+        action=Action.ALLOW,
+        op=FileOp.FILE_READ_METADATA,
+        filters=[Subpath(subpath="/")],
+      ),
+      FileRule(
+        action=Action.ALLOW,
+        op=FileOp.FILE_MAP_EXECUTABLE,
+        filters=[Subpath(subpath="/")],
+      ),
+      FileRule(
+        action=Action.ALLOW,
+        op=FileOp.FILE_READ_STAR,
+        filters=[Subpath(subpath="/")],
+      ),
     ],
     network=[],
     mach=MachLookupRule(global_names=[]),
@@ -107,8 +165,22 @@ approval_policy: |
 
   # Executable tests (invariants)
   ApprovalPolicy.TEST_CASES = [
-    (ApprovalContext(server=WellKnownServers.UI, tool=WellKnownTools.SEND_MESSAGE, arguments={}), PolicyDecision.ALLOW),
-    (ApprovalContext(server=WellKnownServers.RESOURCES, tool='list', arguments={'server': 'approval_policy'}), PolicyDecision.ALLOW),
+    (
+      ApprovalContext(
+        server=WellKnownServers.UI,
+        tool=WellKnownTools.SEND_MESSAGE,
+        arguments={},
+      ),
+      PolicyDecision.ALLOW,
+    ),
+    (
+      ApprovalContext(
+        server=WellKnownServers.RESOURCES,
+        tool="list",
+        arguments={"server": "approval_policy"},
+      ),
+      PolicyDecision.ALLOW,
+    ),
   ]
 
   def _policy_over(**kwargs) -> 'SBPLPolicy':
@@ -117,22 +189,92 @@ approval_policy: |
   for policy, decision in (
     (_policy_over(), PolicyDecision.ALLOW),
     # Allow specific deeper subpaths
-    (_policy_over(files=[FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath='/usr/local')])]), PolicyDecision.ALLOW),
+    (
+      _policy_over(
+        files=[
+          FileRule(
+            action=Action.ALLOW,
+            op=FileOp.FILE_READ_STAR,
+            filters=[Subpath(subpath="/usr/local")],
+          )
+        ]
+      ),
+      PolicyDecision.ALLOW,
+    ),
     (_policy_over(default_behavior=DefaultBehavior.ALLOW), PolicyDecision.DENY_CONTINUE),
     (_policy_over(process=ProcessRule(allow_signal_self=True)), PolicyDecision.ALLOW),
     (
-      _policy_over(network=[NetworkRule(action=Action.ALLOW, op=NetworkOp.NETWORK_OUTBOUND, local_only=False)]),
-      PolicyDecision.DENY_CONTINUE
+      _policy_over(
+        network=[
+          NetworkRule(
+            action=Action.ALLOW,
+            op=NetworkOp.NETWORK_OUTBOUND,
+            local_only=False,
+          )
+        ]
+      ),
+      PolicyDecision.DENY_CONTINUE,
     ),
-    (_policy_over(system=SystemRule(sysctl_read=True, system_socket=False)), PolicyDecision.ALLOW),
+    (
+      _policy_over(system=SystemRule(sysctl_read=True, system_socket=False)),
+      PolicyDecision.ALLOW,
+    ),
     # File rule variants (write ops remain disallowed)
-    (_policy_over(files=[FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_STAR)]), PolicyDecision.ALLOW),
-    (_policy_over(files=[FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_METADATA, filters=[LiteralFilter(literal='/etc/passwd')])]), PolicyDecision.ALLOW),
-    (_policy_over(files=[FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath='/etc')])]), PolicyDecision.ALLOW),
+    (
+      _policy_over(
+        files=[FileRule(action=Action.ALLOW, op=FileOp.FILE_READ_STAR)]
+      ),
+      PolicyDecision.ALLOW,
+    ),
+    (
+      _policy_over(
+        files=[
+          FileRule(
+            action=Action.ALLOW,
+            op=FileOp.FILE_READ_METADATA,
+            filters=[LiteralFilter(literal="/etc/passwd")],
+          )
+        ]
+      ),
+      PolicyDecision.ALLOW,
+    ),
+    (
+      _policy_over(
+        files=[
+          FileRule(
+            action=Action.ALLOW,
+            op=FileOp.FILE_READ_STAR,
+            filters=[Subpath(subpath="/etc")],
+          )
+        ]
+      ),
+      PolicyDecision.ALLOW,
+    ),
     # Network bind reject
-    (_policy_over(network=[NetworkRule(action=Action.ALLOW, op=NetworkOp.NETWORK_BIND, local_only=True)]), PolicyDecision.DENY_CONTINUE),
+    (
+      _policy_over(
+        network=[
+          NetworkRule(
+            action=Action.ALLOW,
+            op=NetworkOp.NETWORK_BIND,
+            local_only=True,
+          )
+        ]
+      ),
+      PolicyDecision.DENY_CONTINUE,
+    ),
   ):
-    ApprovalPolicy.TEST_CASES.append((ApprovalContext(server=WellKnownServers.SEATBELT_EXEC, tool=WellKnownTools.SANDBOX_EXEC, arguments={}, seatbelt_policy=policy), decision))
+    ApprovalPolicy.TEST_CASES.append(
+      (
+        ApprovalContext(
+          server=WellKnownServers.SEATBELT_EXEC,
+          tool=WellKnownTools.SANDBOX_EXEC,
+          arguments={},
+          seatbelt_policy=policy,
+        ),
+        decision,
+      )
+    )
 
   # --- DRY HTTP test cases (local exec via curl) ---
   # Generate HTTP-related ApprovalContext cases using a compact table,
@@ -157,28 +299,42 @@ approval_policy: |
     for decision, urls in table:
       for u in urls:
         ApprovalPolicy.TEST_CASES.append(
-          (ApprovalContext(server=server, tool=tool, arguments=_curl_args(u)), decision)
+          (
+            ApprovalContext(
+              server=server,
+              tool=tool,
+              arguments=_curl_args(u),
+            ),
+            decision,
+          )
         )
 
   # Adjust decisions/URLs to your policy expectations. By default this preset
   # asks for unknown tools, so the decisions below are ASK; change them to
   # ALLOW/DENY_CONTINUE if you broaden/narrow policy for these cases.
   HTTP_CASES: list[tuple[PolicyDecision, list[str]]] = [
-    (PolicyDecision.ASK, [
-      'https://example.com/robots.txt',
-      'https://httpbin.org/get',
-    ]),
+    (
+      PolicyDecision.ASK,
+      [
+        "https://example.com/robots.txt",
+        "https://httpbin.org/get",
+      ],
+    ),
   ]
   # Server/tool names: match your MCP wiring (see specs below). The factory
   # `make_local_exec_mcp()` exposes tool name 'exec'.
-  _add_http_cases(server='local_exec', tool='exec', table=HTTP_CASES)
+  _add_http_cases(server="local_exec", tool="exec", table=HTTP_CASES)
   # Also include a file-output variant to a typical writable root
   for u in [
-    'https://example.com/robots.txt',
+    "https://example.com/robots.txt",
   ]:
     ApprovalPolicy.TEST_CASES.append(
       (
-        ApprovalContext(server='local_exec', tool='exec', arguments=_curl_file_args(u, '/private/var/tmp/adgn_http.out')),
+        ApprovalContext(
+          server="local_exec",
+          tool="exec",
+          arguments=_curl_file_args(u, "/private/var/tmp/adgn_http.out"),
+        ),
         PolicyDecision.ASK,
       )
     )
