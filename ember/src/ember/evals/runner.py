@@ -18,7 +18,12 @@ from .common import CommandError, dump_yaml, merge_dict, run_command
 from .definitions import ScenarioSuite
 from .executor import ScenarioExecutor
 from .kubernetes import KubernetesManager, LabelSelector
-from .matrix import MatrixHarness, MatrixTranscript, render_matrix_transcript
+from .matrix import (
+    MatrixConnection,
+    MatrixHarness,
+    MatrixTranscript,
+    render_matrix_transcript,
+)
 from .models import (
     EvalRunErrorReport,
     EvalRunMetadata,
@@ -188,7 +193,7 @@ def prepare_values(request: EvalRunRequest) -> dict[str, object]:
             "matrixAccessTokenKey": "access_token",
             "giteaSecret": request.secrets.gitea,
             "giteaTokenKey": "token",
-            "rspcacheClientSecret": secrets.rspcache,
+            "rspcacheClientSecret": request.secrets.rspcache,
             "rspcacheApiKeyKey": "openai_api_key",
         },
         "image": {
@@ -279,9 +284,12 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
             suite = request.suite
 
             if suite.scenarios:
-                async with MatrixHarness(
+                connection = MatrixConnection(
                     base_url=request.matrix_base_url,
                     access_token=request.matrix_access_token,
+                )
+                async with MatrixHarness(
+                    connection=connection,
                     ember_user_id=request.ember_user_id,
                     run_id=request.run_id,
                     artifact_dir=artifact_dir,
