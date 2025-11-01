@@ -1,0 +1,69 @@
+{{- if .Values.bucketJob.enabled }}
+{{- $secretName := include "minio-ember.accessSecretName" . -}}
+{{- $bucketName := include "minio-ember.bucketName" . -}}
+{{- $policyName := include "minio-ember.policyName" . -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "minio-ember.bucketJobName" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "minio-ember.labels" . | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.bucketJob.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "minio-ember.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "minio-ember.serviceAccountName" . }}
+      containers:
+        - name: bucket-bootstrap
+          image: "{{ .Values.bucketJob.image.repository }}:{{ .Values.bucketJob.image.tag }}"
+          imagePullPolicy: {{ .Values.bucketJob.image.pullPolicy }}
+          env:
+            - name: MINIO_ENDPOINT
+              value: 'http://{{ include "minio-ember.fullname" . }}.{{ .Values.namespace.name }}.svc.cluster.local:{{ .Values.service.port }}'
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.rootSecretName }}
+                  key: {{ .Values.credentials.rootUserKey }}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.rootSecretName }}
+                  key: {{ .Values.credentials.rootPasswordKey }}
+            - name: EMBER_BUCKET
+              value: {{ $bucketName }}
+            - name: EMBER_POLICY
+              value: {{ $policyName }}
+            - name: EMBER_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ .Values.tenant.accessKeyKey }}
+            - name: EMBER_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ .Values.tenant.secretKeyKey }}
+          volumeMounts:
+            - name: policy
+              mountPath: /policy
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -euo pipefail
+              mc alias set ember "${MINIO_ENDPOINT}" "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" --api s3v4
+              mc mb --ignore-existing "ember/${EMBER_BUCKET}"
+              mc admin user add ember "${EMBER_ACCESS_KEY}" "${EMBER_SECRET_KEY}" || true
+              mc admin policy create ember "${EMBER_POLICY}" /policy/policy.json || true
+              mc admin policy attach ember "${EMBER_POLICY}" --user "${EMBER_ACCESS_KEY}"
+      volumes:
+        - name: policy
+          configMap:
+            name: {{ include "minio-ember.fullname" . }}-policy
+{{- end }}

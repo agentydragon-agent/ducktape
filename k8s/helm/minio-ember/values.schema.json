@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "minio-ember values",
+  "type": "object",
+  "properties": {
+    "common-lib": { "type": "object" },
+    "namespace": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" }
+      },
+      "required": ["create", "name"]
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string" }
+      },
+      "required": ["repository", "tag", "pullPolicy"]
+    },
+    "console": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "servicePort": { "type": "integer" }
+      },
+      "required": ["enabled", "servicePort"]
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "port": { "type": "integer" },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+      },
+      "required": ["type", "port"]
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "host": { "type": "string" },
+        "tlsSecret": { "type": "string" }
+      },
+      "required": ["enabled"]
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "existingClaim": { "type": "string" },
+        "storageClass": { "type": "string" },
+        "accessModes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "size": { "type": "string" }
+      },
+      "required": ["enabled", "accessModes", "size"]
+    },
+    "credentials": {
+      "type": "object",
+      "properties": {
+        "rootSecretName": { "type": "string" },
+        "rootUserKey": { "type": "string" },
+        "rootPasswordKey": { "type": "string" }
+      },
+      "required": ["rootSecretName", "rootUserKey", "rootPasswordKey"]
+    },
+    "tenant": {
+      "type": "object",
+      "properties": {
+        "bucketName": { "type": "string" },
+        "policyName": { "type": "string" },
+        "accessSecretName": { "type": "string" },
+        "accessKeyKey": { "type": "string" },
+        "secretKeyKey": { "type": "string" },
+        "secretNamespace": { "type": "string" }
+      },
+      "required": ["accessKeyKey", "secretKeyKey", "secretNamespace"]
+    },
+    "bucketJob": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": { "type": "string" },
+            "tag": { "type": "string" },
+            "pullPolicy": { "type": "string" }
+          },
+          "required": ["repository", "tag", "pullPolicy"]
+        },
+        "backoffLimit": { "type": "integer" }
+      },
+      "required": ["enabled", "image", "backoffLimit"]
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "requests": {
+          "type": "object",
+          "properties": {
+            "cpu": { "type": "string" },
+            "memory": { "type": "string" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "cpu": { "type": "string" },
+            "memory": { "type": "string" }
+          }
+        }
+      }
+    },
+    "nodeSelector": { "type": "object", "additionalProperties": { "type": "string" } },
+    "affinity": { "type": "object" },
+    "tolerations": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "sealedSecrets": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "name": { "type": "string" },
+            "encryptedData": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        },
+        "accessPrimary": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "name": { "type": "string" },
+            "namespace": { "type": "string" },
+            "encryptedData": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

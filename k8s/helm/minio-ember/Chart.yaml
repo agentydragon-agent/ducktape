@@ -1,0 +1,10 @@
+apiVersion: v2
+name: minio-ember
+description: MinIO deployment dedicated to Ember agent scratch object storage.
+type: application
+version: 0.1.0
+appVersion: "2025.10.31"
+dependencies:
+  - name: common-lib
+    version: ^0.1.1
+    repository: "file://../common-lib"
