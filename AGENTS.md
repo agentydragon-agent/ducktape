@@ -1,5 +1,16 @@
 This file provides guidance to LLM agents for working with this repository.
 
+## Before Hand-off
+
+If you touch anything in `ansible/`, follow the dedicated checklist in `ansible/AGENTS.md` (manual yamllint + `ansible-playbook --syntax-check`, optional focused linting) first.  
+After those targeted checks pass, finish with the full repo workflow:
+
+```bash
+pre-commit run --all-files
+```
+
+This final pass reruns yamllint + ansible-lint (and every other hook) so the hand-off state is fully verified.
+
 ## Repository Overview
 
 "Ducktape" is a personal infrastructure repository containing various projects and utilities.
