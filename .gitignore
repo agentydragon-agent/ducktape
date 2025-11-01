@@ -44,3 +44,6 @@ k8s/helm/**/Chart.lock
 k8s/helm/**/charts/
 
 **/Chart.lock
+.pre-commit-cache/
+.helm-cache/
+.helm-config/
