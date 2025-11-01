@@ -47,77 +47,81 @@ spec:
       securityContext:
         fsGroup: 1000
       containers:
-      - name: nix-sandbox
-        image: ubuntu:24.04
-        command: ["/bin/bash", "-c", "--"]
-        args: ["exec su - ubuntu -c 'while true; do sleep 30; done;'"]
-        env:
-        - name: USER
-          value: "ubuntu"
-        - name: ANTHROPIC_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: ANTHROPIC_API_KEY
-              optional: true  # Pod will still start without the secret
-        - name: OPENAI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: OPENAI_API_KEY
-              optional: true  # Pod will still start without the secret
-        volumeMounts:
-        - name: nix-store
-          mountPath: /nix
-        - name: nix-home
-          mountPath: /home/ubuntu
-        securityContext:
-          runAsUser: 0  # Run as root to install packages, then switch to ubuntu
-        resources:
-          requests:
-            memory: "2Gi"
-            cpu: "1"
-          limits:
-            memory: "4Gi"
-            cpu: "2"
+        - name: nix-sandbox
+          image: ubuntu:24.04
+          command:
+            - "/bin/bash"
+            - "-c"
+            - "--"
+          args:
+            - "exec su - ubuntu -c 'while true; do sleep 30; done;'"
+          env:
+            - name: USER
+              value: "ubuntu"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-keys
+                  key: ANTHROPIC_API_KEY
+                  optional: true  # Pod will still start without the secret
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-keys
+                  key: OPENAI_API_KEY
+                  optional: true  # Pod will still start without the secret
+          volumeMounts:
+            - name: nix-store
+              mountPath: /nix
+            - name: nix-home
+              mountPath: /home/ubuntu
+          securityContext:
+            runAsUser: 0  # Run as root to install packages, then switch to ubuntu
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
       initContainers:
-      - name: setup-user
-        image: ubuntu:24.04
-        command:
-        - /bin/bash
-        - -c
-        - |
-          # Install all required packages
-          apt-get update
-          apt-get install -y \
-            curl \
-            sudo \
-            xz-utils \
-            git \
-            dbus-x11 \
-            gnome-terminal \
-            dconf-cli
-          
-          # Add ubuntu user to sudoers
-          echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu
-          
-          # Ensure home directory has correct permissions for ubuntu user (uid 1000)
-          chown -R 1000:1000 /home/ubuntu || true
-          
-          # Try to start dbus (may fail in container, that's ok)
-          service dbus start || true
-        volumeMounts:
-        - name: nix-home
-          mountPath: /home/ubuntu
-        securityContext:
-          runAsUser: 0
+        - name: setup-user
+          image: ubuntu:24.04
+          command:
+            - /bin/bash
+            - -c
+            - |
+              # Install all required packages
+              apt-get update
+              apt-get install -y \
+                curl \
+                sudo \
+                xz-utils \
+                git \
+                dbus-x11 \
+                gnome-terminal \
+                dconf-cli
+
+              # Add ubuntu user to sudoers
+              echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu
+
+              # Ensure home directory has correct permissions for ubuntu user (uid 1000)
+              chown -R 1000:1000 /home/ubuntu || true
+
+              # Try to start dbus (may fail in container, that's ok)
+              service dbus start || true
+          volumeMounts:
+            - name: nix-home
+              mountPath: /home/ubuntu
+          securityContext:
+            runAsUser: 0
       volumes:
-      - name: nix-store
-        persistentVolumeClaim:
-          claimName: nix-store
-      - name: nix-home
-        persistentVolumeClaim:
-          claimName: nix-home
+        - name: nix-store
+          persistentVolumeClaim:
+            claimName: nix-store
+        - name: nix-home
+          persistentVolumeClaim:
+            claimName: nix-home
 ---
 apiVersion: v1
 kind: Service

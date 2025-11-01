@@ -13,7 +13,10 @@
         that:
           - ducktape_stat.stat.exists
           - ducktape_stat.stat.isdir
-        fail_msg: "Ducktape repository must be cloned to {{ ducktape_path }} before running this playbook. Run: git clone git@gitlab.com:agentydragon/ducktape {{ ducktape_path }}"
+        fail_msg: >-
+          Ducktape repository must be cloned to {{ ducktape_path }} before
+          running this playbook. Run:
+          git clone git@gitlab.com:agentydragon/ducktape {{ ducktape_path }}
         success_msg: "Ducktape repository found at {{ ducktape_path }}"
 
     # This is interactive if the files already exist.

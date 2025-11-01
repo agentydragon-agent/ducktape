@@ -10,11 +10,25 @@
       - letsencrypt_dns_provider is defined
     fail_msg: "Required variables for DNS validation are missing"
 
+- name: Determine DNS plugin identifier
+  ansible.builtin.set_fact:
+    _letsencrypt_dns_plugin: >-
+      {{ 'rfc2136' if letsencrypt_dns_provider == 'powerdns' else letsencrypt_dns_provider }}
+
+- name: Determine DNS email argument
+  ansible.builtin.set_fact:
+    _letsencrypt_dns_email_arg: >-
+      {{
+        '--email ' + letsencrypt_dns_email
+        if letsencrypt_dns_email
+        else '--register-unsafely-without-email'
+      }}
+
 - name: Install certbot and DNS plugins
   ansible.builtin.apt:
     name:
       - certbot
-      - "python3-certbot-dns-{{ 'rfc2136' if letsencrypt_dns_provider == 'powerdns' else letsencrypt_dns_provider }}"
+      - "python3-certbot-dns-{{ _letsencrypt_dns_plugin }}"
     state: present
     update_cache: yes
   become: true
@@ -35,10 +49,10 @@
   ansible.builtin.command:
     cmd: >
       certbot certonly --non-interactive --agree-tos --keep-until-expiring
-      --dns-{{ 'rfc2136' if letsencrypt_dns_provider == 'powerdns' else letsencrypt_dns_provider }}
-      --dns-{{ 'rfc2136' if letsencrypt_dns_provider == 'powerdns' else letsencrypt_dns_provider }}-credentials /etc/letsencrypt/{{ 'rfc2136' if letsencrypt_dns_provider == 'powerdns' else letsencrypt_dns_provider }}.ini
+      --dns-{{ _letsencrypt_dns_plugin }}
+      --dns-{{ _letsencrypt_dns_plugin }}-credentials /etc/letsencrypt/{{ _letsencrypt_dns_plugin }}.ini
       --cert-name {{ letsencrypt_dns_cert_name }}
-      {% if letsencrypt_dns_email %}--email {{ letsencrypt_dns_email }}{% else %}--register-unsafely-without-email{% endif %}
+      {{ _letsencrypt_dns_email_arg }}
       {{ letsencrypt_dns_domains | map('regex_replace', '^(.*)$', '-d \1') | join(' ') }}
   become: true
   register: certbot_result

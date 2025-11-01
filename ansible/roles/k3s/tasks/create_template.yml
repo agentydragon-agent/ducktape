@@ -17,7 +17,11 @@
 
 - name: Create VM for template
   ansible.builtin.shell: |
-    qm create 9000 --name ubuntu-22.04-cloudinit-template --memory 2048 --cores 2 --net0 virtio,bridge={{ k3s_network_bridge }}
+    qm create 9000 \
+      --name ubuntu-22.04-cloudinit-template \
+      --memory 2048 \
+      --cores 2 \
+      --net0 virtio,bridge={{ k3s_network_bridge }}
   when: vm_9000_check.stdout == "NOTFOUND"
   tags: [k3s, template]
 

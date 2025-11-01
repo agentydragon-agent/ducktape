@@ -3,7 +3,8 @@ seeds_file: "data/seeds.yaml"
 graders_file: "data/graders_consolidated.yaml"
 
 wrapper_env:
-  ANTHROPIC_API_KEY: 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
+  ANTHROPIC_API_KEY: "sk-ant-api03-5Dh0_5dMw25EeVMg1k_ZPDiyUJnb_T97XEFZlmojwccSlGzeOntg6xFoePPd0Bz7jkm4RPyJM\
+    5FV8C9K39WDFA--Kb1aQAA"
 
 rollouts:
   max_parallel: 16
@@ -16,7 +17,7 @@ prompt_engineer:
   feedback_mode: "stats_only"  # Options: full_rollouts, summary, stats_only
 
 grader:
-  model: "o3" 
+  model: "o3"
   reasoning_effort: "high"
 
 summarizer:
@@ -43,25 +44,25 @@ exclude_patterns:
   # - "!debug.log"     # Negation (re-include this specific file)
   # - ".aws/"          # AWS credentials directory
   # - "**/.cache/**"   # Any .cache directory at any depth
-  
+
   # System files that should never reach grader
   - "CLAUDE.md"          # Claude system prompt
-  - ".gitignore" 
+  - ".gitignore"
   - ".dockerignore"
   - ".DS_Store"          # Mac filesystem metadata
-  
+
   # Authentication & secrets (CRITICAL FOR SECURITY)
   - ".aws/"              # AWS credentials
-  - ".azure/"            # Azure credentials  
+  - ".azure/"            # Azure credentials
   - "*.key"              # Private keys
   - "*.pem"              # SSL certificates
   - "*.p12"              # PKCS#12 certificates
   - ".env*"              # Environment files with secrets
   - "secrets.*"          # Any secrets files
-  
+
   # Build artifacts & caches
   - "*.pyc"
-  - "*.pyo" 
+  - "*.pyo"
   - "**/__pycache__/"
   - "**/.pytest_cache/"
   - "**/.mypy_cache/"
@@ -81,17 +82,17 @@ exclude_patterns:
   - "**/Gemfile.lock"  # Ruby lock file (can be large)
   - "**/poetry.lock"  # Python poetry lock file
   - "**/composer.lock"  # PHP composer lock file
-  
+
   # Temporary & log files
   - "*.tmp"
   - "*.log"
   - "*.swp"
   - "*.bak"
-  
+
   # Version control
   - "**/.git/"
   - "**/.svn/"
-  
+
   # IDE files
   - "**/.vscode/"
   - "**/.idea/"

@@ -11,7 +11,9 @@
     - element
   become: true
   ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg] https://packages.element.io/debian/ default main"
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg]
+      https://packages.element.io/debian/ default main
     filename: element-io
 - name: Install Element
   tags:

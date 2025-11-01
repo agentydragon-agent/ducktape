@@ -44,12 +44,22 @@
 
 - name: "Derive effective e-mail address (may be empty)"
   ansible.builtin.set_fact:
-    _letsencrypt_email_effective: "{{ letsencrypt_email | default(letsencrypt_admin_email | default('', true), true) }}"
+    _letsencrypt_email_effective: >-
+      {{
+        letsencrypt_email | default(
+          letsencrypt_admin_email | default('', true),
+          true
+        )
+      }}
 
 - name: "Set certbot email argument"
   ansible.builtin.set_fact:
     _certbot_email_arg: >-
-      {{ '--email ' + _letsencrypt_email_effective if _letsencrypt_email_effective | length > 0 else '--register-unsafely-without-email' }}
+      {{
+        '--email ' + _letsencrypt_email_effective
+        if _letsencrypt_email_effective | length > 0
+        else '--register-unsafely-without-email'
+      }}
 
 - name: "Assemble certbot domain arguments"
   ansible.builtin.set_fact:

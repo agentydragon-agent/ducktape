@@ -4,7 +4,7 @@
 - name: Create headscale group
   ansible.builtin.group:
     name: headscale
-    system: yes
+    system: true
   tags: [headscale, install]
 
 - name: Create headscale user
@@ -13,8 +13,8 @@
     group: headscale
     home: /var/lib/headscale
     shell: /bin/false
-    system: yes
-    create_home: yes
+    system: true
+    create_home: true
   tags: [headscale, install]
 
 - name: Create headscale config directory
@@ -28,7 +28,9 @@
 
 - name: Download headscale binary
   ansible.builtin.get_url:
-    url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_amd64"
+    url: >-
+      https://github.com/juanfont/headscale/releases/download/v{{ headscale_version
+      }}/headscale_{{ headscale_version }}_linux_amd64
     dest: /usr/local/bin/headscale
     owner: root
     group: root
@@ -37,11 +39,11 @@
 
 - name: Generate noise private key
   ansible.builtin.shell: |
-    if [ ! -f /var/lib/headscale/noise_private.key ]; then
-      /usr/local/bin/headscale generate private-key > /var/lib/headscale/noise_private.key
-      chown headscale:headscale /var/lib/headscale/noise_private.key
-      chmod 600 /var/lib/headscale/noise_private.key
-    fi
+    /usr/local/bin/headscale generate private-key > /var/lib/headscale/noise_private.key
+    chown headscale:headscale /var/lib/headscale/noise_private.key
+    chmod 600 /var/lib/headscale/noise_private.key
+  args:
+    creates: /var/lib/headscale/noise_private.key
   tags: [headscale, config]
 
 - name: Generate headscale configuration
@@ -69,9 +71,9 @@
 - name: Enable and start headscale service
   ansible.builtin.systemd:
     name: headscale
-    enabled: yes
+    enabled: true
     state: started
-    daemon_reload: yes
+    daemon_reload: true
   tags: [headscale, service]
 
 - name: Check headscale service status
@@ -87,11 +89,24 @@
 
 - name: Wait for headscale to be ready
   ansible.builtin.uri:
-    url: "http://127.0.0.1:8080/health"
+    url: "https://127.0.0.1:8080/health"
     method: GET
+    status_code: 200
+    timeout: 5
+    validate_certs: false
   register: headscale_health
-  until: headscale_health.status == 200
+  until: headscale_health.status is defined and headscale_health.status == 200
   retries: 10
   delay: 3
   failed_when: false
+  tags: [headscale, service]
+
+- name: Verify headscale readiness
+  ansible.builtin.assert:
+    that:
+      - headscale_health.status is defined
+      - headscale_health.status == 200
+    fail_msg: >-
+      Headscale did not return HTTP 200 after the configured retries.
+      Last response: {{ headscale_health }}
   tags: [headscale, service]

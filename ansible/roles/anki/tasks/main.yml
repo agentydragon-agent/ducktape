@@ -84,7 +84,11 @@
 
     - name: Get latest Anki release URL
       ansible.builtin.shell: |
-        jq --raw-output '.assets[] | select(.name | test("anki-launcher.tar.zst")) | .browser_download_url' {{ tmp_path }}/latest-release.json
+        jq --raw-output '
+          .assets[]
+          | select(.name | test("anki-launcher.tar.zst"))
+          | .browser_download_url
+        ' {{ tmp_path }}/latest-release.json
       register: latest_release_url
       changed_when: false
 
@@ -117,7 +121,10 @@
         var: latest_release_url
 
     - name: Install latest Anki
-      when: (not anki_version_data.installed) or (anki_version_data.installed and anki_version_data.version != latest_release_version.stdout)
+      when: >-
+        (not anki_version_data.installed) or
+        (anki_version_data.installed and
+         anki_version_data.version != latest_release_version.stdout)
       block:
         - name: Download Anki
           ansible.builtin.unarchive:

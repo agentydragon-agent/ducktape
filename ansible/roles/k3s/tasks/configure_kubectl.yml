@@ -12,7 +12,9 @@
 
 - name: Copy kubeconfig from master to atlas
   ansible.builtin.shell: |
-    ssh -o StrictHostKeyChecking=no {{ k3s_ssh_user }}@{{ k3s_master_ip }} 'sudo cat /etc/rancher/k3s/k3s.yaml' > /tmp/k3s.yaml
+    ssh -o StrictHostKeyChecking=no \
+      {{ k3s_ssh_user }}@{{ k3s_master_ip }} \
+      'sudo cat /etc/rancher/k3s/k3s.yaml' > /tmp/k3s.yaml
   tags: [k3s, kubectl]
 
 - name: Update kubeconfig with correct server address

@@ -1,6 +1,6 @@
 pre_task_setup_script: ""
 seeds_file: "data/seeds.yaml"
-seeds_file: "data/graders_consolidated.yaml"
+graders_file: "data/graders_consolidated.yaml"
 
 rollouts:
   max_parallel: 16
@@ -12,7 +12,7 @@ prompt_engineer:
   reasoning_effort: "high"
 
 grader:
-  model: "o3" 
+  model: "o3"
   reasoning_effort: "high"
 
 summarizer:
@@ -39,25 +39,25 @@ exclude_patterns:
   # - "!debug.log"     # Negation (re-include this specific file)
   # - ".aws/"          # AWS credentials directory
   # - "**/.cache/**"   # Any .cache directory at any depth
-  
+
   # System files that should never reach grader
   - "CLAUDE.md"          # Claude system prompt
-  - ".gitignore" 
+  - ".gitignore"
   - ".dockerignore"
   - ".DS_Store"          # Mac filesystem metadata
-  
+
   # Authentication & secrets (CRITICAL FOR SECURITY)
   - ".aws/"              # AWS credentials
-  - ".azure/"            # Azure credentials  
+  - ".azure/"            # Azure credentials
   - "*.key"              # Private keys
   - "*.pem"              # SSL certificates
   - "*.p12"              # PKCS#12 certificates
   - ".env*"              # Environment files with secrets
   - "secrets.*"          # Any secrets files
-  
+
   # Build artifacts & caches
   - "*.pyc"
-  - "*.pyo" 
+  - "*.pyo"
   - "**/__pycache__/"
   - "**/.pytest_cache/"
   - "**/.mypy_cache/"
@@ -66,17 +66,17 @@ exclude_patterns:
   - "**/dist/"
   - "**/.venv/"
   - "**/venv/"
-  
+
   # Temporary & log files
   - "*.tmp"
   - "*.log"
   - "*.swp"
   - "*.bak"
-  
+
   # Version control
   - "**/.git/"
   - "**/.svn/"
-  
+
   # IDE files
   - "**/.vscode/"
   - "**/.idea/"

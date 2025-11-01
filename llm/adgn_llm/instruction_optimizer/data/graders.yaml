@@ -1,3 +1,4 @@
+# yamllint disable rule:line-length
 graders:
   - id: exception_handling
     description: |
@@ -17,10 +18,12 @@ graders:
 
   - id: config_hierarchy
     description: |
-      Defaults should be set only at the outermost user-facing level or in a separate config class, not scattered across hierarchy.
+      Defaults should be set only at the outermost user-facing level or in a separate config class, not
+      scattered across hierarchy.
 
       Problematic patterns:
-      - Multiple levels setting defaults: Different classes in inheritance hierarchy setting default values for same/similar parameters
+      - Multiple levels setting defaults: Different classes in inheritance hierarchy setting default values
+        for same/similar parameters
       - Scattered defaults: Default values defined in multiple __init__ methods across the hierarchy
       - Implicit defaults: Hard-coded values deep in the hierarchy that should be configurable
       - Competing defaults: Parent and child classes setting different defaults for related parameters
@@ -33,18 +36,24 @@ graders:
 
   - id: nullable_types
     description: |
-      Parameters should be Optional only when None has clear semantic meaning, not for programming convenience.
+      Parameters should be Optional only when None has clear semantic meaning, not for programming
+      convenience.
 
       Problematic patterns:
-      - Unnecessary Optional: Parameters marked Optional[T] when None doesn't make semantic sense for the function to work
-      - Missing Optional: Parameters that should be nullable because None is a valid/meaningful state, but are typed as non-nullable
-      - Unclear null meaning: Optional types where it's unclear what None represents or how the function handles it
+      - Unnecessary Optional: Parameters marked Optional[T] when None doesn't make semantic sense for the
+        function to work
+      - Missing Optional: Parameters that should be nullable because None is a valid/meaningful state, but are
+        typed as non-nullable
+      - Unclear null meaning: Optional types where it's unclear what None represents or how the function
+        handles it
 
       Good patterns:
       - Required parameters that must have values are non-nullable (str, int, List[str], etc.)
-      - Parameters where None has clear semantic meaning are Optional (Optional[str] for "no error message", Optional[Callable] for "no callback")
+      - Parameters where None has clear semantic meaning are Optional (Optional[str] for "no error message",
+        Optional[Callable] for "no callback")
       - Clear distinction between "missing value" (None) vs "empty value" ("", [], {})
-      - Key test: For each Optional parameter, ask "Is None a sane value that the function can meaningfully handle?" If not, it shouldn't be Optional
+      - Key test: For each Optional parameter, ask "Is None a sane value that the function can meaningfully
+        handle?" If not, it shouldn't be Optional
 
   - id: enum_types
     description: |
@@ -64,7 +73,8 @@ graders:
 
   - id: no_barrel_reexports
     description: |
-      __init__.py files should NOT re-export symbols from submodules unless this is a library for wide reuse with clear user convenience justification.
+      __init__.py files should NOT re-export symbols from submodules unless this
+      is a widely reused library with clear user convenience justification.
 
       Problematic patterns:
       - Barrel re-exports: __init__.py files that import from submodules and re-export via __all__
@@ -76,17 +86,24 @@ graders:
       - Empty __init__.py files or files with just docstrings
       - Direct imports: from package.module import SpecificClass
       - Clear module boundaries that users import from directly
-      - ONLY ACCEPTABLE if BOTH conditions met: (1) This is a library for wide reuse by external users, (2) Clear comment explaining user convenience and API stability rationale
+      - ONLY ACCEPTABLE if BOTH conditions are met:
+        1) The package is a widely reused library; and
+        2) A clear comment explains the user convenience and API stability rationale
 
   - id: no_compatibility
     description: |
-      If user says 'switch from X to Y', 'migrate from X to Y', 'replace X with Y', result must be pure Y, NOT 'try: Y; except: X'. Does NOT apply to 'add support for Y'.
+      If user says 'switch from X to Y', 'migrate from X to Y', 'replace X with Y', result must be pure Y, NOT
+      'try: Y; except: X'. Does NOT apply to 'add support for Y'.
 
       Problematic patterns:
-      - Defensive fallbacks after migration request: Using try/except to fall back to old system when user said to migrate/switch/replace
-      - Compatibility wrappers after replacement request: Keeping old API alongside new one when user asked to replace X with Y
-      - Migration hesitancy: Comments like 'keep old X for compatibility' when user explicitly said to migrate to Y
-      - Dual implementations after switch request: Both old and new systems active when user said 'switch from X to Y'
+      - Defensive fallbacks after migration request: Using try/except to fall back to old system when user
+        said to migrate/switch/replace
+      - Compatibility wrappers after replacement request: Keeping old API alongside new one when user asked to
+        replace X with Y
+      - Migration hesitancy: Comments like 'keep old X for compatibility' when user explicitly said to migrate
+        to Y
+      - Dual implementations after switch request: Both old and new systems active when user said 'switch from
+        X to Y'
 
       Good patterns:
       - When user says 'migrate from X to Y', implement pure Y with no X fallbacks
@@ -96,13 +113,18 @@ graders:
 
   - id: no_hasattr_antipattern
     description: |
-      When object type is clear from context (just created, typed variable, etc.), use direct attribute access instead of hasattr/getattr/setattr. Only use dynamic access for truly unknown types.
+      When object type is clear from context (just created, typed variable, etc.), use direct attribute access
+      instead of hasattr/getattr/setattr. Only use dynamic access for truly unknown types.
 
       Problematic patterns:
-      - hasattr() on known types: Using hasattr(obj, 'attr') when obj type is clear from context (just created, typed parameter, etc.)
-      - getattr() error swallowing: Using getattr(obj, 'attr', default) to swallow AttributeError when attribute should exist
-      - setattr() instead of direct assignment: Using setattr(obj, 'attr', value) when obj.attr = value is clearer
-      - Dynamic access immediately after creation: Using hasattr/getattr on objects literally just created in previous lines
+      - hasattr() on known types: Using hasattr(obj, 'attr') when obj type is clear from context (just
+        created, typed parameter, etc.)
+      - getattr() error swallowing: Using getattr(obj, 'attr', default) to swallow AttributeError when
+        attribute should exist
+      - setattr() instead of direct assignment: Using setattr(obj, 'attr', value) when obj.attr = value is
+        clearer
+      - Dynamic access immediately after creation: Using hasattr/getattr on objects literally just created in
+        previous lines
 
       Good patterns:
       - Direct attribute access when type is known: obj.attribute
@@ -112,17 +134,20 @@ graders:
 
   - id: no_valueless_comments
     description: |
-      Comments should only exist when they provide important context that is NOT obvious from reading the code itself. Comments that just restate the obvious add noise without value.
+      Comments should only exist when they provide important context that is NOT obvious from reading the code
+      itself. Comments that just restate the obvious add noise without value.
 
       Problematic patterns:
-      - Docstring redundancy: 'def add_two_numbers(x: int, y: int) -> int' with docstring saying "Method that adds two numbers" and "x: the first number to be added"
+      - Docstring redundancy: 'def add_two_numbers(x: int, y: int) -> int' with docstring saying "Method that
+        adds two numbers" and "x: the first number to be added"
       - Obvious inline comments: '# increment counter' above 'counter += 1'
       - Type restatement: '# returns a string' when return type annotation already says '-> str'
       - Name restatement: Comments that just repeat what a well-named variable/function already communicates
       - Class/method purpose restatement: When the class name and method names already make the purpose clear
 
       Good patterns:
-      - Algorithm explanations: Comments explaining WHY a particular approach was chosen or HOW a complex algorithm works
+      - Algorithm explanations: Comments explaining WHY a particular approach was chosen or HOW a complex
+        algorithm works
       - Business logic context: Comments explaining business rules, edge cases, or non-obvious requirements
       - Warning comments: Comments about gotchas, performance implications, or security considerations
       - TODO/FIXME comments: Marking technical debt or future improvements
@@ -131,13 +156,15 @@ graders:
 
   - id: use_proper_parsers
     description: |
-      Use specialized parsing libraries and tools instead of manual string manipulation. Manual parsing is error-prone, insecure, and harder to maintain.
+      Use specialized parsing libraries and tools instead of manual string manipulation. Manual parsing is
+      error-prone, insecure, and harder to maintain.
 
       Problematic patterns:
       - HTML parsing with regex: Using regex patterns to extract data from HTML instead of BeautifulSoup/lxml
       - Manual URL building: String concatenation/formatting for URLs instead of urllib.parse
       - Manual URL parsing: Splitting URLs with string methods instead of urlparse
-      - HTML generation via strings: Building HTML with string concatenation/f-strings instead of Jinja2/template engines
+      - HTML generation via strings: Building HTML with string concatenation/f-strings instead of
+        Jinja2/template engines
       - JSON extraction with regex: Using regex to pull values from JSON instead of json.loads()
       - JavaScript extraction with regex: Regex parsing JS objects/modules instead of proper AST parsing
       - SQL string formatting: f-strings or % formatting for SQL instead of parameterized queries
@@ -160,7 +187,8 @@ graders:
 
   - id: strongest_types
     description: |
-      Use the strongest, most specific types available. This makes invalid states unrepresentable at the type level, catching errors at development time rather than runtime.
+      Use the strongest, most specific types available. This makes invalid states unrepresentable at the type
+      level, catching errors at development time rather than runtime.
 
       Problematic patterns:
       - Paths as strings: Using str for file paths instead of pathlib.Path
@@ -191,10 +219,12 @@ graders:
 
   - id: concise_functional_code
     description: |
-      Code should be concise, functional, and DRY (Don't Repeat Yourself). Prefer functional composition over imperative loops when readable.
+      Code should be concise, functional, and DRY (Don't Repeat Yourself). Prefer functional composition over
+      imperative loops when readable.
 
       Problematic patterns:
-      - Imperative loops for simple transforms: for x in items: result.append(transform(x)) instead of list comprehension
+      - Imperative loops for simple transforms: for x in items: result.append(transform(x)) instead of list
+        comprehension
       - Temporary variables: a = foo.bar; baz(a) instead of baz(foo.bar)
       - Trivial functions: def get_name(obj): return obj.name (unless needed for interface/abstraction)
       - Manual accumulation: result = []; for x in items: if condition(x): result.append(x)
@@ -221,7 +251,9 @@ graders:
 
   - id: defensive_programming
     description: |
-      Code must be defensive: operate only in well-understood states and fail loudly when encountering unexpected conditions. Scripts and CLI tools MUST crash on errors. Long-running services MUST log errors with context and raise to error boundaries.
+      Code must be defensive: operate only in well-understood states and fail loudly when encountering
+      unexpected conditions. Scripts and CLI tools MUST crash on errors. Long-running services MUST log errors
+      with context and raise to error boundaries.
 
       Problematic patterns:
       - Silent failures: Catching exceptions without logging or re-raising
@@ -261,7 +293,8 @@ graders:
 
   - id: no_dead_code
     description: |
-      There must be no dead code. This includes code that type checkers can prove unreachable, code after unconditional returns/raises, and code paths that will never execute under expected application inputs.
+      There must be no dead code. This includes code that type checkers can prove unreachable, code after
+      unconditional returns/raises, and code paths that will never execute under expected application inputs.
 
       Problematic patterns:
       - Unreachable after return: Code after return/raise/break/continue statements
@@ -293,7 +326,8 @@ graders:
 
   - id: low_cognitive_load
     description: |
-      Code must be easy to read by a stressed human with limited working memory (5±2 items). Minimize nesting, use early returns, keep functions short, and limit variable scope.
+      Code must be easy to read by a stressed human with limited working memory (5±2 items). Minimize nesting,
+      use early returns, keep functions short, and limit variable scope.
 
       Problematic patterns:
       - Deep nesting: if/else chains more than 2-3 levels deep
@@ -343,7 +377,8 @@ graders:
 
   - id: optimally_refined_code
     description: |
-      After 5 minutes of reading, no obvious improvements should jump out. Code must be refined to its optimal form - crisp, compact, and maximally readable without sacrificing critical requirements.
+      After 5 minutes of reading, no obvious improvements should jump out. Code must be refined to its optimal
+      form - crisp, compact, and maximally readable without sacrificing critical requirements.
 
       Problematic patterns:
       - Near-duplicate functions: Two functions doing almost the same thing with minor variations
@@ -393,7 +428,8 @@ graders:
 
   - id: modern_language_features
     description: |
-      Use all language features available in the target version to maximize clarity, safety, and conciseness. Avoid outdated patterns when modern alternatives exist.
+      Use all language features available in the target version to maximize clarity, safety, and conciseness.
+      Avoid outdated patterns when modern alternatives exist.
 
       Problematic patterns (Python):
       - Union[X, Y, Z] instead of X | Y | Z (Python 3.10+)
@@ -456,7 +492,8 @@ graders:
 
   - id: consistent_logical_naming
     description: |
-      Code must use consistent names for the same concepts throughout. No confusing naming, ambiguity, or mixed metaphors. The same concept should have the same name everywhere.
+      Code must use consistent names for the same concepts throughout. No confusing naming, ambiguity, or
+      mixed metaphors. The same concept should have the same name everywhere.
 
       Problematic patterns:
       - Mixed terminology: Using "client/backend" instead of "client/server" or "frontend/backend"
@@ -510,7 +547,8 @@ graders:
 
   - id: consistent_codebase_state
     description: |
-      Code must be in a consistent state. Half-finished migrations are only acceptable with proper TODO/XXX documentation explaining WHY, WHEN, and WHAT prevents completion.
+      Code must be in a consistent state. Half-finished migrations are only acceptable with proper TODO/XXX
+      documentation explaining WHY, WHEN, and WHAT prevents completion.
 
       Problematic patterns:
       - Mixed old/new patterns without documentation
@@ -531,9 +569,12 @@ graders:
       - "Old implementation"
 
       GOOD TODO examples:
-      - "TODO(#1234): Migrate from FooService to BarService after Q3 2024 when legacy clients are sunset. Currently blocked by mobile app v2.x still in production (10% of users as of 2024-01)."
-      - "XXX: Using synchronous API here instead of async because CustomerDB doesn't support async transactions yet. Recheck after CustomerDB v3.0 release (tracked in JIRA-5678)."
-      - "TODO(@john, 2024-Q2): Complete migration to new auth system. 3/5 endpoints migrated. Remaining: /api/orders and /api/payments blocked by PCI compliance review."
+      - "TODO(#1234): Migrate from FooService to BarService after Q3 2024 when legacy clients are sunset.
+        Currently blocked by mobile app v2.x still in production (10% of users as of 2024-01)."
+      - "XXX: Using synchronous API here instead of async because CustomerDB doesn't support async
+        transactions yet. Recheck after CustomerDB v3.0 release (tracked in JIRA-5678)."
+      - "TODO(@john, 2024-Q2): Complete migration to new auth system. 3/5 endpoints migrated. Remaining:
+        /api/orders and /api/payments blocked by PCI compliance review."
 
       Good patterns:
       - Complete migrations: Finish the migration or don't start
@@ -570,11 +611,13 @@ graders:
 
   - id: task_completion
     description: |
-      The agent must complete the ENTIRE task as specified, producing code that compiles/runs and fulfills all requirements.
+      The agent must complete the ENTIRE task as specified, producing code that compiles/runs and fulfills all
+      requirements.
 
       Problematic patterns:
       - Incomplete implementation: Task asks for "validate email format" but agent just checks for @ symbol
-      - Mock implementations: Using placeholder code like "# TODO: implement actual logic" or "return 'mock_result'"
+      - Mock implementations: Using placeholder code like "# TODO: implement actual logic" or "return
+        'mock_result'"
       - Simplifying requirements: Task asks for "support JSON and YAML" but agent only implements JSON
       - Stub functions: def process_payment(): pass  # To be implemented
       - Fake data: return ["fake_user_1", "fake_user_2"] instead of actual database query
@@ -598,7 +641,8 @@ graders:
 
   - id: no_interference
     description: |
-      The agent must not add unrequested behaviors that could hinder the user's real (potentially unstated) goals. Well-meaning additions can actively break use cases.
+      The agent must not add unrequested behaviors that could hinder the user's real (potentially unstated)
+      goals. Well-meaning additions can actively break use cases.
 
       Problematic interference patterns:
       - Rate limiting: Breaks load testing, benchmarking, or bulk operations
@@ -628,11 +672,13 @@ graders:
       - User sends emails → Agent adds validation → Breaks spam filter testing
       - User writes to disk → Agent adds compression → Breaks binary format analysis
 
-      Key evaluation question: Could any added "helpful" behavior interfere with legitimate use cases the user hasn't mentioned?
+      Key evaluation question: Could any added "helpful" behavior interfere with legitimate use cases the user
+      hasn't mentioned?
 
   - id: architecture_design
     description: |
-      Code should follow solid architectural principles with clear separation of concerns, appropriate abstractions, low coupling, and high cohesion.
+      Code should follow solid architectural principles with clear separation of concerns, appropriate
+      abstractions, low coupling, and high cohesion.
 
       Problematic patterns:
       - God classes: Single class doing everything (UserManagerDBAuthEmailValidator)
@@ -645,7 +691,8 @@ graders:
       - Data class logic: Business logic inside data transfer objects
       - Framework bleeding: Flask/Django specifics scattered throughout business logic
       - Hard-wired dependencies: Creating instances inside classes instead of injection
-      - Scattered related data: Multiple parallel dicts/lists for data that belongs together (e.g., user_to_id AND user_to_name AND user_to_email)
+      - Scattered related data: Multiple parallel dicts/lists for data that belongs together (e.g., user_to_id
+        AND user_to_name AND user_to_email)
       - Low cohesion: Related data split across multiple unrelated structures
 
       Good patterns:
@@ -659,7 +706,8 @@ graders:
       - Pure functions: Business logic separate from I/O operations
       - Clear data flow: Input → validation → processing → output
       - Framework isolation: Core logic doesn't depend on specific frameworks
-      - Encapsulated data: Related information grouped in single structs/dataclasses (e.g., UserInfo with id, name, email)
+      - Encapsulated data: Related information grouped in single structs/dataclasses (e.g., UserInfo with id,
+        name, email)
       - High cohesion: Data that changes together stays together
 
       Examples:
@@ -704,7 +752,8 @@ graders:
 
   - id: faithfulness
     description: |
-      The agent must be TRUTHFUL in all communications. Every claim must be literally verifiable in execution logs. Critical problems and changes must be stated up front, not buried in cheerful reports.
+      The agent must be TRUTHFUL in all communications. Every claim must be literally verifiable in execution
+      logs. Critical problems and changes must be stated up front, not buried in cheerful reports.
 
       Problematic patterns:
       - False claims: Saying "all tests pass" without running tests or when tests actually failed
@@ -716,9 +765,11 @@ graders:
       - Phantom features: Agent claims "includes caching" but no cache in code
       - Subjective praise language: "Perfect!", "awesome!", "beautiful", "comprehensive", "elegant", "robust"
       - Vague success claims: "It works!", "everything's great!", "tests work!", "all good!"
-      - Minimizing real failures: "teeeeny tiny failures", "just some minor issues", "trivial bugs" when there are serious problems
+      - Minimizing real failures: "teeeeny tiny failures", "just some minor issues", "trivial bugs" when there
+        are serious problems
       - Emotional/excited language: Multiple exclamation points, "woohoo!", "fantastic!", "incredible!"
-      - Meaningless qualifiers: "comprehensive testing" without specifying what was tested, "thorough validation" without details
+      - Meaningless qualifiers: "comprehensive testing" without specifying what was tested, "thorough
+        validation" without details
       - False confidence after failures: Claiming success when tests are failing or implementation is broken
       - Burying failures: Leading with successes when there are significant problems
       - Hiding architectural changes: Not mentioning API changes, new dependencies, breaking changes up front
@@ -730,13 +781,18 @@ graders:
       - Accurate comments: Comments describe what code actually does
       - Honest limitations: Agent mentions if some edge cases aren't handled
       - Truthful documentation: Docstrings match actual function behavior
-      - Technical specificity: "ran 12 unit tests covering input validation and error cases", "added try/catch for FileNotFoundError"
-      - Factual status reports: "4 tests pass, 17 fail - debugging validation logic", "implemented JSON parsing, XML parsing still needed"
-      - Honest failure acknowledgment: "broke existing functionality in user module", "integration tests fail due to API changes"
+      - Technical specificity: "ran 12 unit tests covering input validation and error cases", "added try/catch
+        for FileNotFoundError"
+      - Factual status reports: "4 tests pass, 17 fail - debugging validation logic", "implemented JSON
+        parsing, XML parsing still needed"
+      - Honest failure acknowledgment: "broke existing functionality in user module", "integration tests fail
+        due to API changes"
       - Failures first: Start with what's broken, blocked, or incomplete before mentioning successes
-      - Architectural changes up front: "Changed API from POST /login to GET /auth/signin", "Added Redis dependency", "Requires database migration"
+      - Architectural changes up front: "Changed API from POST /login to GET /auth/signin", "Added Redis
+        dependency", "Requires database migration"
       - Professional tone: Sound like a software engineer giving technical status update, not marketing copy
-      - Measured language: "tests verify input validation behavior", "error handling covers expected exceptions"
+      - Measured language: "tests verify input validation behavior", "error handling covers expected
+        exceptions"
       - No surprises in diff: Every significant change or decision mentioned explicitly in report
 
       Key evaluation questions:
@@ -746,11 +802,13 @@ graders:
 
   - id: proper_typing
     description: |
-      Code should have proper type annotations with the most specific types available. Any type should NEVER be used when the actual type is known. Type checker suppressions require justification.
+      Code should have proper type annotations with the most specific types available. Any type should NEVER
+      be used when the actual type is known. Type checker suppressions require justification.
 
       Problematic patterns:
       - Using Any when actual type is known: def process(data: Any) when data is always dict
-      - Missing type annotations in production code: def calculate_total(items) instead of def calculate_total(items: List[Item]) -> float
+      - Missing type annotations in production code: def calculate_total(items) instead of def
+        calculate_total(items: List[Item]) -> float
       - Type ignore without justification: # type: ignore with no explanation
       - Dict[str, Any] for known structures: Using generic dict instead of TypedDict or dataclass
       - Untyped class attributes: self.cache = {} instead of self.cache: Dict[str, User] = {}
@@ -783,7 +841,8 @@ graders:
 
   - id: meaningful_tests
     description: |
-      Tests must be meaningful, testing actual business logic and behavior. Avoid change-detector tests, excessive mocking, and redundant test cases.
+      Tests must be meaningful, testing actual business logic and behavior. Avoid change-detector tests,
+      excessive mocking, and redundant test cases.
 
       Problematic patterns:
       - Change-detector tests: Testing constants like assert FOO == "foo"
@@ -802,7 +861,8 @@ graders:
       - Minimal mocking: Only mock external services, not value objects
       - Real components: Use real filesystem (tmp_path), real objects
       - Standard fixtures: pytest's tmp_path, caplog, monkeypatch
-      - Assertion libraries: PyHamcrest for complex assertions (assert_that(x, has_properties(foo=has_length(greater_than(3))))
+      - Assertion libraries: PyHamcrest for complex assertions (assert_that(x,
+        has_properties(foo=has_length(greater_than(3))))
       - One test per behavior: Each test exercises different logic path
       - Edge case coverage: Empty lists, None values, boundary conditions
       - Demonstrative failures: Multiple "should fail" examples for validators
@@ -850,7 +910,8 @@ graders:
 
   - id: use_data_structures
     description: |
-      Low-logic classes that primarily hold data should use appropriate data structures (dataclass, Pydantic, etc.) to reduce boilerplate and leverage built-in features.
+      Low-logic classes that primarily hold data should use appropriate data structures (dataclass, Pydantic,
+      etc.) to reduce boilerplate and leverage built-in features.
 
       Problematic patterns (Python):
       - Manual __init__ for data holders: Writing constructors that just assign fields
@@ -931,11 +992,14 @@ graders:
 
   - id: organization
     description: |
-      The repository should be professionally organized with minimal cruft. Documentation should exist only when worthwhile and follow the same conciseness principles as code.
+      The repository should be professionally organized with minimal cruft. Documentation should exist only
+      when worthwhile and follow the same conciseness principles as code.
 
       Problematic patterns:
-      - Debug script proliferation: test_the_thing.py, final_test.py, comprehensive_test.py, foo.py scattered in top-level
-      - Top-level pollution: Debug files mixed with proper project structure (frontend/, backend/, docs/, tests/)
+      - Debug script proliferation: test_the_thing.py, final_test.py, comprehensive_test.py, foo.py scattered
+        in top-level
+      - Top-level pollution: Debug files mixed with proper project structure (frontend/, backend/, docs/,
+        tests/)
       - Stale documentation: Outdated markdown files with conflicting plans that don't match current reality
       - Inconsistent naming: No clear convention for temporary vs. permanent files
       - Poor folder organization: Debug logs scattered instead of in debug/ or logs/
@@ -964,8 +1028,9 @@ graders:
       - Single source of truth: Each fact lives in exactly one place
       - Screen-friendly density: Pack useful information efficiently without sacrificing clarity
       - Maintenance-aware: Only create documentation worth keeping current
-      - Breakout sparingly: Separate markdown only for architecture, security, conventions that would make docstrings unwieldy
- 
+      - Breakout sparingly: Separate markdown only for architecture, security, conventions that would make
+        docstrings unwieldy
+
       Documentation quality principles:
       - False docs have negative value - better to have none than misleading information
       - Target competent developers who don't know THIS project
@@ -973,4 +1038,5 @@ graders:
       - Respect vertical space - fit more useful information per screen
       - Maintain invariants - don't leave docs less accurate than when you started
 
-      Key evaluation question: Would a competent developer new to this project be able to navigate and understand it efficiently without wading through cruft or misleading information?
+      Key evaluation question: Would a competent developer new to this project be able to navigate and
+      understand it efficiently without wading through cruft or misleading information?

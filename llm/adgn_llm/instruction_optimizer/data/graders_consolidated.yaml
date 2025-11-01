@@ -1,16 +1,21 @@
+# yamllint disable rule:line-length
 graders:
   - name: type_safety_data_design
     description: |
-      Strong typing prevents bugs at compile time rather than runtime. Use specific types that express intent and constraints.
-      
+      Strong typing prevents bugs at compile time rather than runtime. Use specific types that express intent
+      and constraints.
+
       REQUIRED practices:
       - Type annotations everywhere except experimental scripts
-      - Use the most specific type available in your language (Python: Path not str, datetime not float, Decimal not float for money)
+      - Use the most specific type available in your language (Python: Path not str, datetime not float,
+        Decimal not float for money)
       - Enums for fixed choices (never string literals like "active"/"inactive")
-      - Use language-provided data structures over manual boilerplate (Python: @dataclass/Pydantic, Java: records, Kotlin: data classes, Go: structs with tags)
-      - Nullable types only when null has semantic meaning (Python: Optional[T], Java: Optional<T>, Rust: Option<T>, Go: pointers)
+      - Use language-provided data structures over manual boilerplate (Python: @dataclass/Pydantic, Java:
+        records, Kotlin: data classes, Go: structs with tags)
+      - Nullable types only when null has semantic meaning (Python: Optional[T], Java: Optional<T>, Rust:
+        Option<T>, Go: pointers)
       - Encapsulate related data together (no parallel dicts/lists)
-      
+
       RED FLAGS that lower score:
       - Any type when actual type is known
       - Dict[str, Any] for structured data
@@ -19,7 +24,7 @@ graders:
       - Manual boilerplate for data classes
       - Optional[T] when None would be an error
       - Missing type annotations in production code
-      
+
       GOOD examples:
       - UserId = NewType('UserId', int)
       - status: Status (where Status is an Enum)
@@ -32,15 +37,17 @@ graders:
   - name: code_quality_clarity
     description: |
       Write code for stressed humans with limited working memory. Every line should earn its place.
-      
+
       REQUIRED practices:
-      - Use the idiomatic features of your language version (Python 3.10+: f-strings, pattern matching, walrus; JS: const/let not var; Java: var for local type inference)
-      - Prefer expressions over statements when clearer (Python: comprehensions, JS: map/filter, Java: streams, Rust: iterators)
+      - Use the idiomatic features of your language version (Python 3.10+: f-strings, pattern matching,
+        walrus; JS: const/let not var; Java: var for local type inference)
+      - Prefer expressions over statements when clearer (Python: comprehensions, JS: map/filter, Java:
+        streams, Rust: iterators)
       - Early returns and guard clauses (max 2-3 nesting levels)
       - Short functions that fit on one screen (<40 lines)
       - Consistent naming (same concept = same name everywhere)
       - Comments only for WHY, never WHAT (no "increment counter" above i++)
-      
+
       RED FLAGS that lower score:
       - Deep nesting (>3 levels)
       - var in JS, Union[X,Y] instead of X|Y in Python 3.10+
@@ -51,7 +58,7 @@ graders:
       - Near-duplicate functions with minor variations
       - Long parameter lists (>5 parameters)
       - Temporary variables used once
-      
+
       GOOD examples:
       - if not valid: raise ValueError("reason")  # Early return
       - results = [process(x) for x in items if x.is_valid()]
@@ -63,15 +70,16 @@ graders:
   - name: robustness_error_handling
     description: |
       Code must crash loudly on programming errors. Only catch specific, expected exceptions.
-      
+
       REQUIRED practices:
-      - Catch only handleable exceptions (Python: except requests.HTTPError, Java: catch IOException, JS: catch specific error types)
+      - Catch only handleable exceptions (Python: except requests.HTTPError, Java: catch IOException, JS:
+        catch specific error types)
       - Let programming errors crash (expose bugs)
       - Programs must signal failure appropriately (exit with non-zero code)
       - Services log with context then re-raise to boundaries
       - Direct attribute access on known types (no hasattr)
       - Validate inputs early and fail fast
-      
+
       RED FLAGS that lower score:
       - except Exception: or bare except:
       - Silent failures: except: pass
@@ -81,7 +89,7 @@ graders:
       - CLI tools that exit(0) on failure
       - getattr with default when attribute should exist
       - try/except around entire program
-      
+
       GOOD examples:
       - except requests.HTTPError as e:
           logger.error(f"API call failed: {e.response.status_code}")
@@ -95,15 +103,17 @@ graders:
   - name: architecture_design
     description: |
       Well-architected code has clear boundaries, high cohesion, and low coupling.
-      
+
       REQUIRED practices:
       - Single responsibility (one reason to change)
       - Dependency injection (pass deps, don't create)
       - Data cohesion (related data in one struct)
       - Config in ONE place (not scattered defaults)
-      - Use libraries for any non-trivial parsing/format handling (Python: BeautifulSoup, csv, json; Java: Jackson, JSoup; JS: DOMParser, JSON.parse)
-      - Import only what you need (Python: from x import Y, Java: avoid star imports, JS: named imports over namespace)
-      
+      - Use libraries for any non-trivial parsing/format handling (Python: BeautifulSoup, csv, json; Java:
+        Jackson, JSoup; JS: DOMParser, JSON.parse)
+      - Import only what you need (Python: from x import Y, Java: avoid star imports, JS: named imports over
+        namespace)
+
       RED FLAGS that lower score:
       - God classes: UserManagerDBAuthValidator
       - Mixed layers: SQL in view code
@@ -114,7 +124,7 @@ graders:
       - Circular dependencies
       - Framework code mixed with business logic
       - Manual string parsing instead of libraries
-      
+
       GOOD examples:
       - UserService(repo=repo, mailer=mailer)  # Injected
       - @dataclass User with all user fields together
@@ -126,8 +136,9 @@ graders:
 
   - name: implementation_completeness
     description: |
-      Implement exactly what was asked - no more, no less. Be TRUTHFUL about what was actually done with critical information up front.
-      
+      Implement exactly what was asked - no more, no less. Be TRUTHFUL about what was actually done with
+      critical information up front.
+
       REQUIRED practices:
       - Implement ALL stated requirements
       - No mock/placeholder code (return "TODO")
@@ -139,7 +150,7 @@ graders:
       - Failures and problems stated UP FRONT, not buried in cheerful reports
       - Technical specificity instead of subjective praise language
       - No surprises in diff: architectural changes mentioned explicitly
-      
+
       RED FLAGS that lower score:
       - def process(): pass  # Stub
       - Unreachable code after return
@@ -153,7 +164,7 @@ graders:
       - Hiding architectural changes: not mentioning API changes, new dependencies up front
       - False confidence: claiming success when tests fail or implementation is broken
       - Mock data instead of real implementation
-      
+
       GOOD examples:
       - Complete implementation of all 5 requested features
       - Pure OAuth2 when asked to "replace basic auth"
@@ -168,15 +179,16 @@ graders:
   - name: test_quality
     description: |
       Test behavior, not implementation. Focus on edge cases and business rules.
-      
+
       REQUIRED practices:
       - Test what can go wrong, not language features
       - Minimal mocking (only external services)
       - Real components where possible
       - Multiple examples for edge cases
-      - Use framework-provided test utilities (Python: pytest fixtures like tmp_path, Java: JUnit TempDir, JS: Jest utilities)
+      - Use framework-provided test utilities (Python: pytest fixtures like tmp_path, Java: JUnit TempDir, JS:
+        Jest utilities)
       - Clear test names describing behavior
-      
+
       RED FLAGS that lower score:
       - assert Config.API_KEY == "secret123"
       - Mocking simple data classes
@@ -186,7 +198,7 @@ graders:
       - Mock-heavy integration tests
       - Testing getters/setters
       - No edge case coverage
-      
+
       GOOD examples:
       - test_rejects_usernames_with_urls()
       - Multiple invalid examples with reasons
@@ -198,8 +210,9 @@ graders:
 
   - name: organization_hygiene
     description: |
-      Maintain professional repository organization with minimal cruft and documentation that respects developer competence.
-      
+      Maintain professional repository organization with minimal cruft and documentation that respects
+      developer competence.
+
       REQUIRED practices:
       - Clean project structure (frontend/, backend/, docs/, tests/ at top level)
       - Remove debug scripts and temporary files before finishing
@@ -209,7 +222,7 @@ graders:
       - Inline-first approach (docstrings over separate markdown when possible)
       - Assume reader competence (document THIS project, not ecosystem basics)
       - Single source of truth for information
-      
+
       RED FLAGS that lower score:
       - Debug script proliferation: test_the_thing.py, final_test.py, foo.py scattered in top-level
       - Stale documentation that contradicts current code reality
@@ -220,7 +233,7 @@ graders:
       - Vertical waste: 20 lines for what 3 could say clearly
       - Condescending explanations of language basics
       - False documentation worse than no documentation
-      
+
       GOOD examples:
       - Professional folder structure with clear boundaries
       - "We use pytest, tests in tests/" (not pytest tutorial)

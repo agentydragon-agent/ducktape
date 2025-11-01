@@ -11,7 +11,9 @@
 
 - name: Check if Ubuntu cloud image template exists
   ansible.builtin.shell: |
-    pvesh get /nodes/{{ proxmox_node }}/qemu/{{ k3s_vm_template }} --output-format json 2>/dev/null || echo '{}'
+    pvesh get \
+      /nodes/{{ proxmox_node }}/qemu/{{ k3s_vm_template }} \
+      --output-format json 2>/dev/null || echo '{}'
   register: template_check
   changed_when: false
   tags: [k3s, vm-creation]
@@ -43,7 +45,9 @@
 
 - name: Add local SSH key to k3s VMs
   ansible.builtin.shell: |
-    ssh -o StrictHostKeyChecking=no {{ k3s_ssh_user }}@{{ item.ip }} 'echo "{{ local_ssh_key.stdout }}" >> ~/.ssh/authorized_keys'
+    ssh -o StrictHostKeyChecking=no \
+      {{ k3s_ssh_user }}@{{ item.ip }} \
+      'echo "{{ local_ssh_key.stdout }}" >> ~/.ssh/authorized_keys'
   loop: "{{ k3s_vms }}"
   tags: [k3s, ssh-setup]
 
@@ -53,7 +57,8 @@
     groups: k3s_nodes
     ansible_host: "{{ item.ip }}"
     ansible_user: "{{ k3s_ssh_user }}"
-    ansible_ssh_common_args: "-o ProxyCommand='ssh -W %h:%p root@{{ ansible_host }}'"
+    ansible_ssh_common_args: >-
+      -o ProxyCommand='ssh -W %h:%p root@{{ ansible_host }}'
     k3s_role: "{{ item.role }}"
   loop: "{{ k3s_vms }}"
   tags: [k3s, inventory]

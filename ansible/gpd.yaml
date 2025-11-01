@@ -40,7 +40,9 @@
           # interpret it as a "pointing stick" (/ "trackpoint"). Keep
           # ID_INPUT_MOUSE=1, because that makes Xorg's MatchIsPointer match
           # it and direct it to libinput for handling.
-          ACTION=="add|change", SUBSYSTEMS=="input", ATTRS{id/vendor}=="2f24", ATTRS{id/product}=="0135", ENV{ID_INPUT_POINTINGSTICK}="1"
+          ACTION=="add|change", SUBSYSTEMS=="input", \
+            ATTRS{id/vendor}=="2f24", ATTRS{id/product}=="0135", \
+            ENV{ID_INPUT_POINTINGSTICK}="1"
         dest: /etc/udev/rules.d/99-gpd-trackpoint.rules
         owner: root
         group: root

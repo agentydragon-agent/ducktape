@@ -37,12 +37,21 @@
 
 - name: Build merged docker daemon configuration
   ansible.builtin.set_fact:
-    docker_daemon_config: "{{ (docker_daemon_raw['content'] | b64decode | from_json if docker_daemon_json.stat.exists else {})
-      | combine({
-          'tlscacert': '/etc/docker/certs.d/registry.k3s.agentydragon.com/ca.crt',
-          'registry-mirrors': [],
-          'insecure-registries': []
-        }, recursive=True) }}"
+    docker_daemon_config: >-
+      {{
+        (
+          docker_daemon_raw['content'] | b64decode | from_json
+          if docker_daemon_json.stat.exists else {}
+        )
+        | combine(
+            {
+              'tlscacert': '/etc/docker/certs.d/registry.k3s.agentydragon.com/ca.crt',
+              'registry-mirrors': [],
+              'insecure-registries': []
+            },
+            recursive=True
+          )
+      }}
 
 - name: Write docker daemon configuration
   ansible.builtin.copy:

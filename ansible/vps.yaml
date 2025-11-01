@@ -1,7 +1,8 @@
 # Certbot renewal is done via the nginx *authenticator*.
 # See https://eff-certbot.readthedocs.io/en/latest/using.html#getting-certificates-and-choosing-plugins.
 # Looks like the authenticator does this via /.well-known/acme-challenge:
-#   https://github.com/certbot/certbot/blob/619654f3175687fc02dbbf34754e43c067303c3b/certbot-nginx/certbot_nginx/_internal/http_01.py#L237C9-L237C9
+#   https://github.com/certbot/certbot/blob/619654f3175687fc02dbbf34754e43c067303c3b/
+#   certbot-nginx/certbot_nginx/_internal/http_01.py#L237C9-L237C9
 #
 # TODO: check if the configurator does a good job too.
 #
@@ -12,23 +13,21 @@
 ---
 - hosts: vps
   remote_user: root
-
+  vars_files:
+    - group_vars/all.yml
 
   vars:
     # Misc host-specific variables
     rcup_computer: vps
     # Disable heavy dev packages on VPS
     include_heavy_dev_packages: false
+    headscale_health_host: agentydragon.com
 
   roles:
     - role: common
     #- cli    # <- TODO:  needs ducktape, etc
     - role: wireguard
       tags: [wireguard]
-    - role: headscale-server
-      tags: [headscale]
-    - role: tailscale-client
-      tags: [tailscale]
     - role: powerdns
       tags: [powerdns]
 
@@ -144,6 +143,14 @@
         createhome: true
         # NOTE: still need to ssh-copy-id over to the user manually.
 
+    - name: Wait for PowerDNS DNS port
+      ansible.builtin.wait_for:
+        host: "{{ powerdns_dns_bind_address }}"
+        port: 53
+        state: started
+        timeout: 60
+      tags: [powerdns, letsencrypt]
+
     - name: "Let’s Encrypt | agentydragon.com"
       ansible.builtin.import_role:
         name: letsencrypt
@@ -180,6 +187,47 @@
         letsencrypt_dns_provider: "powerdns"
       tags: [letsencrypt, k3s-wildcard]
 
+    - name: Apply headscale role
+      ansible.builtin.import_role:
+        name: headscale-server
+      tags: [headscale]
+
+    - name: Restart headscale service
+      ansible.builtin.systemd:
+        name: headscale
+        state: restarted
+        enabled: yes
+      tags: [headscale]
+
+    - name: Wait for headscale health endpoint
+      ansible.builtin.uri:
+        url: "https://{{ headscale_health_host | default(inventory_hostname) }}:8080/health"
+        method: GET
+        status_code: 200
+        validate_certs: true
+        timeout: 5
+      register: headscale_health
+      until: headscale_health.status is defined and headscale_health.status == 200
+      retries: 10
+      delay: 3
+      failed_when: false
+      tags: [headscale]
+
+    - name: Verify headscale health endpoint
+      ansible.builtin.assert:
+        that:
+          - headscale_health.status is defined
+          - headscale_health.status == 200
+        fail_msg: >-
+          Headscale health endpoint did not return HTTP 200 after the configured retries.
+          Last response: {{ headscale_health }}
+      tags: [headscale]
+
+    - name: Apply tailscale role
+      ansible.builtin.import_role:
+        name: tailscale-client
+      tags: [tailscale]
+
     - name: nginx.conf
       ansible.builtin.copy:
         src: nginx.conf
@@ -188,39 +236,39 @@
     - name: nginx website configs
       tags: [nginx]
       block:
-      - name: "Create static nginx configuration"
-        ansible.builtin.copy:
-          src: nginx-sites/{{ item }}
-          dest: /etc/nginx/sites-available/{{ item }}
-        loop:
-          - agentydragon.com
-          - adgn.link
-          - atlas.agentydragon.com
-          - k3s.agentydragon.com
-        notify:
-          - Reload nginx
+        - name: "Create static nginx configuration"
+          ansible.builtin.copy:
+            src: nginx-sites/{{ item }}
+            dest: /etc/nginx/sites-available/{{ item }}
+          loop:
+            - agentydragon.com
+            - adgn.link
+            - atlas.agentydragon.com
+            - k3s.agentydragon.com
+          notify:
+            - Reload nginx
 
-      # nginx default website takes priority over http://agentydragon.com
-      # redirect, so disable it.
-      - name: Disable nginx default website
-        ansible.builtin.file:
-          state: absent
-          dest: /etc/nginx/sites-enabled/default
-        notify:
-          - Reload nginx
+        # nginx default website takes priority over http://agentydragon.com
+        # redirect, so disable it.
+        - name: Disable nginx default website
+          ansible.builtin.file:
+            state: absent
+            dest: /etc/nginx/sites-enabled/default
+          notify:
+            - Reload nginx
 
-      - name: Enable nginx websites
-        ansible.builtin.file:
-          state: link
-          src: /etc/nginx/sites-available/{{ item }}
-          dest: /etc/nginx/sites-enabled/{{ item }}
-        loop:
-          - agentydragon.com
-          - adgn.link
-          - atlas.agentydragon.com
-          - k3s.agentydragon.com
-        notify:
-          - Reload nginx
+        - name: Enable nginx websites
+          ansible.builtin.file:
+            state: link
+            src: /etc/nginx/sites-available/{{ item }}
+            dest: /etc/nginx/sites-enabled/{{ item }}
+          loop:
+            - agentydragon.com
+            - adgn.link
+            - atlas.agentydragon.com
+            - k3s.agentydragon.com
+          notify:
+            - Reload nginx
 
     - name: Grocy
       ansible.builtin.include_role:
@@ -271,16 +319,6 @@
         apply:
           tags: syncthing
       tags: syncthing
-
-    - name: Webhook inbox service
-      ansible.builtin.include_role:
-        name: webhook_inbox
-        apply:
-          tags: webhook-inbox
-      vars:
-        webhook_inbox_domain: webhook.agentydragon.com
-        webhook_inbox_host_port: 4473
-      tags: webhook-inbox
 
     - name: ActivityWatch server
       ansible.builtin.include_role:

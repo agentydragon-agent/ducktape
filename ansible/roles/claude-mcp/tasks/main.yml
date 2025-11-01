@@ -22,11 +22,16 @@
 
 - name: Parse configured MCP servers
   set_fact:
-    configured_mcp_servers: "{{ mcp_list_output.stdout_lines | default([]) | map('regex_replace', '^([^:]+):.*', '\\1') | list }}"
+    configured_mcp_servers: >-
+      {{ mcp_list_output.stdout_lines
+         | default([])
+         | map('regex_replace', '^([^:]+):.*', '\1')
+         | list }}
 
 - name: Check for missing MCP servers
   set_fact:
-    missing_mcp_servers: "{{ claude_mcp_servers.keys() | list | difference(configured_mcp_servers) }}"
+    missing_mcp_servers: >-
+      {{ claude_mcp_servers.keys() | list | difference(configured_mcp_servers) }}
 
 - name: Report MCP server status
   debug:
@@ -44,8 +49,16 @@
 
 - name: Parse MCP check results
   set_fact:
-    mcp_changes_needed: "{{ (mcp_check_result.stdout | from_json).changed | default(false) if mcp_check_result.stdout else false }}"
+    mcp_changes_needed: >-
+      {{ (mcp_check_result.stdout | from_json).changed | default(false)
+         if mcp_check_result.stdout else false }}
     mcp_check_data: "{{ mcp_check_result.stdout | from_json if mcp_check_result.stdout else {} }}"
+  when: mcp_check_result.rc == 0 or mcp_check_result.rc == 1
+
+- name: Extract MCP server lists
+  set_fact:
+    mcp_servers_to_add: "{{ (mcp_check_data | default({})).servers_added | default([]) }}"
+    mcp_servers_to_update: "{{ (mcp_check_data | default({})).servers_updated | default([]) }}"
   when: mcp_check_result.rc == 0 or mcp_check_result.rc == 1
 
 - name: Handle MCP check failure
@@ -62,18 +75,27 @@
     - claude_mcp_auto_apply | bool
     - mcp_changes_needed | default(false) | bool
   block:
+    - name: Reset MCP apply data
+      set_fact:
+        mcp_apply_data: {}
+
     - name: Apply MCP configuration using Python script
       command: "{{ role_path }}/files/apply-mcp-config.py --json-output"
       register: apply_result
       changed_when: (apply_result.stdout | from_json).changed | default(false)
 
+    - name: Parse MCP apply result
+      set_fact:
+        mcp_apply_data: "{{ apply_result.stdout | from_json if apply_result.stdout else {} }}"
+      when: apply_result.stdout | default('') | length > 0
+
     - name: Display configuration changes
       debug:
         msg: |
           MCP Configuration Applied:
-          - Servers added: {{ (apply_result.stdout | from_json).servers_added | join(', ') }}
-          - Servers updated: {{ (apply_result.stdout | from_json).servers_updated | join(', ') }}
-          - Message: {{ (apply_result.stdout | from_json).msg }}
+          - Servers added: {{ (mcp_apply_data | default({})).servers_added | default([]) | join(', ') }}
+          - Servers updated: {{ (mcp_apply_data | default({})).servers_updated | default([]) | join(', ') }}
+          - Message: {{ (mcp_apply_data | default({})).msg | default('') }}
       when: apply_result.changed
 
 - name: Fail if MCP servers are not configured and auto-apply is disabled
@@ -81,9 +103,9 @@
     msg: |
       ⚠️  ERROR: Required Claude MCP servers are not configured!
 
-      Servers that need to be added: {{ (mcp_check_data | default({})).servers_added | default([]) | join(', ') }}
-      {%- if (mcp_check_data | default({})).servers_updated | default([]) | length > 0 %}
-      Servers that need to be updated: {{ (mcp_check_data | default({})).servers_updated | join(', ') }}
+      Servers that need to be added: {{ mcp_servers_to_add | join(', ') }}
+      {%- if mcp_servers_to_update | length > 0 %}
+      Servers that need to be updated: {{ mcp_servers_to_update | join(', ') }}
       {%- endif %}
 
       To skip all Claude tasks: ansible-playbook playbook.yaml --skip-tags claude

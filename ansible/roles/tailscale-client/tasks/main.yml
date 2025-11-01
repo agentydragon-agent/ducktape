@@ -11,7 +11,9 @@
 
 - name: Add tailscale repository
   ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu jammy main"
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
+      https://pkgs.tailscale.com/stable/ubuntu jammy main
     state: present
     filename: tailscale
   become: yes
@@ -25,12 +27,55 @@
   become: yes
   tags: [tailscale, install]
 
+- name: Check current tailscale status
+  ansible.builtin.command: tailscale status
+  register: tailscale_status_pre
+  failed_when: false
+  changed_when: false
+  tags: [tailscale, status]
+
+- name: Determine if tailscale registration is required
+  ansible.builtin.set_fact:
+    tailscale_registration_required: "{{ tailscale_status_pre.rc != 0 }}"
+  tags: [tailscale, status]
+
+- name: Auto-generate headscale auth key (optional)
+  ansible.builtin.script: >-
+    {{ playbook_dir }}/tools/headscale_generate_authkey.py
+    --user-name {{ headscale_register_user }}
+    --ephemeral
+  delegate_to: "{{ headscale_delegate_host }}"
+  become: yes
+  register: headscale_authkey_result
+  changed_when: headscale_authkey_result.rc == 0
+  when:
+    - tailscale_registration_required | default(true)
+    - headscale_auto_register | default(false)
+    - (tailscale_authkey | default('') | trim) | length == 0
+  tags: [tailscale, connect]
+
+- name: Record generated headscale auth key
+  ansible.builtin.set_fact:
+    tailscale_authkey: "{{ headscale_authkey_result.stdout | trim }}"
+  when:
+    - headscale_authkey_result is defined
+    - headscale_authkey_result.rc == 0
+    - (headscale_authkey_result.stdout | default('') | trim) | length > 0
+  tags: [tailscale, connect]
+
 - name: Get machine registration info
   ansible.builtin.shell: |
-    tailscale up --login-server={{ headscale_server_url }} --hostname={{ inventory_hostname }} --accept-routes --dry-run 2>&1 || tailscale status 2>&1
+    timeout {{ tailscale_dry_run_timeout | default(30) }} \
+      bash -c '
+        tailscale up --login-server={{ headscale_server_url }} \
+          --hostname={{ inventory_hostname }} \
+          --accept-routes --dry-run 2>&1 \
+        || tailscale status 2>&1
+      '
   become: yes
   register: tailscale_info
   failed_when: false
+  when: tailscale_registration_required | default(true)
   tags: [tailscale, info]
 
 - name: Extract machine key from info
@@ -45,38 +90,84 @@
       ====================================================================
       TAILSCALE REGISTRATION INFO
       ====================================================================
-      
+
       Machine key: {{ machine_key | default('Not found') }}
-      
+
       If registration is needed, run on headscale server:
-      ssh root@{{ headscale_server_host | default('agentydragon.com') }} "headscale nodes register --user agentydragon --key {{ machine_key | default('MACHINE_KEY') }}"
-      
+      ssh root@{{ headscale_server_host | default('agentydragon.com') }} \
+        "headscale nodes register --user agentydragon --key {{ machine_key | default('MACHINE_KEY') }}"
+
       Registration URL (if shown): Look for https://agentydragon.com:8080/register/mkey:...
       ====================================================================
   when: machine_key is defined
   tags: [tailscale, info]
 
 - name: Stop existing wireguard if running
+  ansible.builtin.command: >-
+    timeout {{ tailscale_wg_stop_timeout | default(30) }} systemctl stop wg-quick@wg0
+  become: yes
+  register: wg_stop_cmd
+  changed_when: wg_stop_cmd.rc == 0
+  failed_when: wg_stop_cmd.rc not in [0]
+  when: tailscale_registration_required | default(true)
+  tags: [tailscale, migrate]
+
+- name: Disable wireguard service
   ansible.builtin.systemd:
     name: "wg-quick@wg0"
     state: stopped
     enabled: no
   become: yes
   failed_when: false
+  when: tailscale_registration_required | default(true)
   tags: [tailscale, migrate]
 
 - name: Connect to headscale
   ansible.builtin.shell: |
-    tailscale up --login-server={{ headscale_server_url }} --hostname={{ inventory_hostname }} --accept-routes
+    timeout {{ tailscale_up_timeout | default(60) }} \
+      tailscale up \
+        --login-server={{ headscale_server_url }} \
+        --hostname={{ inventory_hostname }} \
+        --accept-routes{% if tailscale_authkey | default('') | trim %}
+        --authkey {{ tailscale_authkey | trim }}{% endif %}
   become: yes
   register: tailscale_up
+  changed_when: tailscale_up.rc == 0
   failed_when: false
+  when: tailscale_registration_required | default(true)
+  tags: [tailscale, connect]
+
+- name: Handle tailscale up failure
+  ansible.builtin.fail:
+    msg: |-
+      tailscale up failed (rc={{ tailscale_up.rc }}) when registering {{ inventory_hostname }}.
+      Command: timeout {{ tailscale_up_timeout | default(60) }} tailscale up \
+        --login-server={{ headscale_server_url }} \
+        --hostname={{ inventory_hostname }} \
+        --accept-routes
+      stdout: {{ tailscale_up.stdout | default('') | trim }}
+      stderr: {{ tailscale_up.stderr | default('') | trim }}
+
+      Suggested manual steps:
+        1. SSH to {{ inventory_hostname }} and rerun the tailscale up command without timeout to see prompts.
+        2. Check `journalctl -u tailscaled -n 50` for context.
+        3. Verify the auth key is valid and that {{ headscale_server_url }} presents a valid TLS certificate.
+
+      After completing the manual steps, rerun this playbook.
+  when:
+    - tailscale_up is defined
+    - tailscale_up.rc is not none
+    - tailscale_up.rc != 0
+    - tailscale_registration_required | default(true)
   tags: [tailscale, connect]
 
 - name: Extract machine key from registration output
   ansible.builtin.set_fact:
     machine_key: "{{ tailscale_up.stderr | regex_search('mkey:[a-f0-9]+') }}"
-  when: tailscale_up.stderr is defined and 'mkey:' in tailscale_up.stderr
+  when:
+    - tailscale_registration_required | default(true)
+    - tailscale_up.stderr is defined
+    - "'mkey:' in tailscale_up.stderr"
   tags: [tailscale, connect]
 
 - name: Display registration instructions
@@ -85,22 +176,26 @@
       ====================================================================
       HEADSCALE REGISTRATION REQUIRED
       ====================================================================
-      
+
       Machine key: {{ machine_key | default('Not found in output') }}
-      
+
       To register this machine, run on the headscale server:
-      
-      ssh root@{{ headscale_server_host | default('agentydragon.com') }} "headscale nodes register --user agentydragon --key {{ machine_key | default('MACHINE_KEY') }}"
-      
+
+      ssh root@{{ headscale_server_host | default('agentydragon.com') }} \
+        "headscale nodes register --user agentydragon --key {{ machine_key | default('MACHINE_KEY') }}"
+
       Full registration output:
       {{ tailscale_up.stdout | default('') }}
       {{ tailscale_up.stderr | default('') }}
       ====================================================================
-  when: tailscale_up.rc != 0
+  when:
+    - tailscale_registration_required | default(true)
+    - tailscale_up.rc != 0
   tags: [tailscale, connect]
 
 - name: Check tailscale status
-  ansible.builtin.shell: tailscale status
+  ansible.builtin.shell: |
+    timeout {{ tailscale_status_timeout | default(10) }} tailscale status
   register: tailscale_status
   failed_when: false
   tags: [tailscale, status]
