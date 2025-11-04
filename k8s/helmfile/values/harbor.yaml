@@ -1,0 +1,84 @@
+expose:
+  type: ingress
+  tls:
+    enabled: true
+    certSource: secret
+    secret:
+      secretName: harbor-tls
+      notarySecretName: harbor-notary-tls
+  ingress:
+    hosts:
+      core: registry.k3s.agentydragon.com
+      notary: notary.k3s.agentydragon.com
+    controller: traefik
+    className: traefik
+    kubeVersionOverride: ""
+    annotations:
+      cert-manager.io/cluster-issuer: homelab-ca-issuer
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+
+externalURL: https://registry.k3s.agentydragon.com
+
+# Use internal PostgreSQL and Redis
+postgresql:
+  internal:
+    enabled: true
+  
+redis:
+  internal:
+    enabled: true
+
+# Persistent storage configuration
+persistence:
+  enabled: true
+  resourcePolicy: "keep"
+  persistentVolumeClaim:
+    registry:
+      storageClass: "local-path"
+      size: 50Gi
+    jobservice:
+      storageClass: "local-path"
+      size: 1Gi
+    database:
+      storageClass: "local-path"
+      size: 1Gi
+    redis:
+      storageClass: "local-path"
+      size: 1Gi
+    trivy:
+      storageClass: "local-path"
+      size: 5Gi
+
+# Harbor core configuration
+harborAdminPassword: "HarborAdmin123!" # Change this!
+
+# Authentik OIDC Integration
+authMode: "oidc_auth"
+
+oidc:
+  name: "Authentik"
+  endpoint: "https://auth.k3s.agentydragon.com/application/o/harbor/"
+  clientId: "harbor"
+  clientSecret: "" # Will be set via sealed secret or external secret
+  groupsClaim: "groups"
+  adminGroup: "harbor-admins"
+  scope: "openid,profile,email,groups"
+  userClaim: "preferred_username"
+  verifySignature: true
+
+# Disable internal Harbor authentication since we're using OIDC
+core:
+  secret: "not-a-secure-secret-change-me"
+  
+# Enable vulnerability scanning
+trivy:
+  enabled: true
+
+# Disable Notary for now (can enable later if needed for content signing)
+notary:
+  enabled: false
+
+# Enable metrics
+metrics:
+  enabled: true

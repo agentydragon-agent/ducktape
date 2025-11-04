@@ -46,7 +46,6 @@ ingress:
   className: traefik
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-    traefik.ingress.kubernetes.io/router.middlewares: authentik-authentik-forwardauth@kubernetescrd
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     ingress.kubernetes.io/proxy-body-size: "0"
     cert-manager.io/cluster-issuer: homelab-ca-issuer
@@ -67,6 +66,18 @@ persistence:
   accessModes:
     - ReadWriteOnce
   size: 20Gi
+
+auth:
+  htpasswd:
+    enabled: false
+    existingSecret: ""
+    secretKey: "htpasswd"
+    users: []
+  token:
+    enabled: true
+    realm: "https://registry.k3s.agentydragon.com/auth"
+    service: "Docker Registry"
+    issuer: "https://auth.k3s.agentydragon.com/application/o/docker-registry/"
 
 extraEnv: []
 
