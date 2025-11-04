@@ -1,5 +1,9 @@
-{ config, pkgs, lib, ... }:
-
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
 # =====================================================
 # Nix home-manager manages:
@@ -19,7 +23,6 @@
 #   - neovim (Nix: unstable version)
 #   - Node.js (Nix: nodejs_22)
 #   - Rust (Nix: rustc/cargo packages)
-
 let
   oldPkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-23.11.tar.gz") {};
   unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") {};
@@ -33,7 +36,6 @@ let
   solarizedDark = nix-colors.colorSchemes.solarized-dark;
 
   # Custom packages
-  openai-codex = pkgs.callPackage ./packages/openai-codex.nix {};
 
   gnomeNvim = pkgs.vimUtils.buildVimPlugin {
     pname = "gnome.nvim";
@@ -75,14 +77,12 @@ let
 
   # Import claude-code-router HM module pinned to a specific commit
   ccr = builtins.getFlake "github:agentydragon/claude-code-router/2b7c2ca";
-
-in
-{
+in {
   imports = [
     ccr.homeManagerModules.claude-code-router
     ./packages/google-drive-service.nix
     "${homeManagerMaster}/modules/programs/codex.nix"
-  ]; # codex module only exists on this pinned HM commit
+  ];
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
@@ -97,6 +97,14 @@ in
     path = homeManagerMaster;
   };
 
+  # Enable Google Drive on specific machines only
+  # NOTE: Requires git credentials for private repo git.k3s.agentydragon.com
+  # to be configured on the host (e.g., via git credential helper)
+  services.google-drive.enable = let
+    hostname = builtins.getEnv "HOSTNAME";
+  in
+    builtins.elem hostname ["gpd" "agentydragon" "wyrm"];
+
   nix.package = pkgs.nix;
 
   nix.settings.experimental-features = [
@@ -109,7 +117,7 @@ in
     enable = true;
 
     # Match reasoning models used by the router's transformer
-    reasoningModelPatterns = [ "^o.(-mini)?$" "^gpt-5$" ];
+    reasoningModelPatterns = ["^o.(-mini)?$" "^gpt-5$"];
 
     # Optional: set OpenAI reasoning effort (o3/gpt-5)
     reasoningEffort = "medium";
@@ -122,8 +130,8 @@ in
 
     providers.openai = {
       apiBaseUrl = "https://api.openai.com/v1/chat/completions";
-      models = [ "o3" "o4-mini" "gpt-5" ];
-      useTransformers = [ "system-replace" "openai-reasoning" ];
+      models = ["o3" "o4-mini" "gpt-5"];
+      useTransformers = ["system-replace" "openai-reasoning"];
     };
 
     router = {
@@ -148,7 +156,7 @@ in
 
   programs.git = {
     enable = true;
-    package = pkgs.git.override { withLibsecret = true; };
+    package = pkgs.git.override {withLibsecret = true;};
 
     # Global gitignore file (migrated from dotfiles/config/git/ignore)
     ignores = [
@@ -157,7 +165,7 @@ in
       "*.sw[op]"
       "**/.claude/settings.local.json"
       "**/CLAUDE.local.md"
-      "oneoff__*"  # Temporary one-off scripts
+      "oneoff__*" # Temporary one-off scripts
     ];
 
     settings = {
@@ -213,13 +221,13 @@ in
   # Delta - better git diffs
   programs.delta = {
     enable = true;
-    enableGitIntegration = true;
+    enableGitIntegration = true; # Explicitly enable as suggested by warning
     options = {
       navigate = true;
-      light = false;  # Default to dark theme
+      light = false; # Default to dark theme
       side-by-side = true;
       line-numbers = true;
-      syntax-theme = "Solarized (dark)";  # Use same theme as bat
+      syntax-theme = "Solarized (dark)"; # Use same theme as bat
       features = "decorations";
       decorations = {
         commit-decoration-style = "bold yellow box ul";
@@ -232,6 +240,31 @@ in
       line-numbers-minus-style = "124";
       line-numbers-plus-style = "28";
     };
+  };
+
+  # GPG configuration
+  programs.gpg = {
+    enable = true;
+    settings = {
+      # Use agent for key management
+      use-agent = true;
+      # Default key preferences (modern crypto)
+      default-preference-list = "SHA512 SHA384 SHA256 AES256 AES192 AES ZLIB BZIP2 ZIP Uncompressed";
+      personal-cipher-preferences = "AES256 AES192 AES";
+      personal-digest-preferences = "SHA512 SHA384 SHA256";
+      # UI preferences
+      fixed-list-mode = true;
+      keyid-format = "0xlong";
+      with-fingerprint = true;
+    };
+  };
+
+  # GPG Agent configuration
+  services.gpg-agent = {
+    enable = true;
+    defaultCacheTtl = 28800; # 8 hours
+    maxCacheTtl = 86400; # 24 hours
+    pinentry.package = pkgs.pinentry-gtk2; # GUI pinentry for GNOME
   };
 
   # Readline configuration (migrated from dotfiles/inputrc)
@@ -272,113 +305,144 @@ in
   };
 
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
-  home.packages = with pkgs; [
-    python312Packages.autopep8
-    python312Packages.pydeps
-    unstablePkgs.pyright
+  home.packages = with pkgs;
+    [
+      python312Packages.autopep8
+      python312Packages.pydeps
+      unstablePkgs.pyright
 
-    ansible
-    ast-grep
-    awscli2
-    bazelisk
-    jq
-    pre-commit
-    ruff
-    speedtest-cli
-    uv
-    yq
+      ansible
+      ast-grep
+      awscli2
+      bazelisk
+      jq
+      pre-commit
+      ruff
+      speedtest-cli
+      terraform
+      uv
+      yq
 
-    # Tools Ansible installs via cargo
-    atuin
+      # Tools Ansible installs via cargo
+      atuin
 
-    # Tools from GitHub releases / binary downloads
-    gh glab gitstatus
+      # Tools from GitHub releases / binary downloads
+      gh
+      glab
+      gitstatus
 
-    # Node/JS dev
-    nodejs_22  # LTS version (v22 is the current LTS as of Nov 2024)
-    nodePackages.pnpm
-    bun
+      # Node/JS dev
+      nodejs_22 # LTS version (v22 is the current LTS as of Nov 2024)
+      nodePackages.pnpm
+      bun
 
-    # Rust dev
-    rustc cargo sccache
-    # jscpd and madge are not in nixpkgs - install manually with: pnpm add -g jscpd madge
+      # Rust dev
+      rustc
+      cargo
+      sccache
+      # jscpd and madge are not in nixpkgs - install manually with: pnpm add -g jscpd madge
 
-    # OpenAI Codex CLI
-    openai-codex
+      # Development languages/compilers
+      go
+      python312 # Python 3.12 for ML compatibility
 
-    # Development languages/compilers
-    go
-    python312  # Python 3.12 for ML compatibility
+      # Development tools
+      direnv
+      devenv
+      alejandra # Nix formatter
 
-    # Development tools
-    direnv devenv
+      # Tree-sitter CLI for manual parser management
+      tree-sitter # Used by nvim-treesitter auto_install
 
-    # Tree-sitter CLI for manual parser management
-    tree-sitter  # Used by nvim-treesitter auto_install
+      # Formatters for conform.nvim
+      stylua # Lua formatter
+      python312Packages.black # Python formatter
+      python312Packages.isort # Python import sorter
 
-    # Formatters for conform.nvim
-    stylua  # Lua formatter
-    python312Packages.black  # Python formatter
-    python312Packages.isort  # Python import sorter
+      # Machine Learning packages (from wyrm.yaml dev-ml role)
+      python312Packages.pandas
+      python312Packages.pytorch # PyTorch
+      python312Packages.numpy
 
-    # Machine Learning packages (from wyrm.yaml dev-ml role)
-    python312Packages.pandas
-    python312Packages.pytorch  # PyTorch
-    python312Packages.numpy
+      # Kubernetes tools (with helm-diff plugin bundled)
+      kubectl
+      myKubernetesHelm
+      kubeseal
+      myHelmfile
+      # Dotfile management (keeping rcm approach)
+      rcm
 
-    # Kubernetes tools (with helm-diff plugin bundled)
-    kubectl
-    myKubernetesHelm
-    kubeseal
-    myHelmfile
-    # Dotfile management (keeping rcm approach)
-    rcm
+      # Zsh - oh-my-zsh managed via git clone in ~/.oh-my-zsh
+      zsh
+      # oh-my-zsh is intentionally NOT managed by Nix because:
+      # 1. .zshrc expects it at ~/.oh-my-zsh (not a Nix store path)
+      # 2. It needs to be a writable git repository for updates
+      # 3. Custom themes/plugins go in ~/.oh-my-zsh/custom/
+      # 4. Ansible's cli role handles the git clone for all systems
 
-    # Zsh - oh-my-zsh managed via git clone in ~/.oh-my-zsh
-    zsh
-    # oh-my-zsh is intentionally NOT managed by Nix because:
-    # 1. .zshrc expects it at ~/.oh-my-zsh (not a Nix store path)
-    # 2. It needs to be a writable git repository for updates
-    # 3. Custom themes/plugins go in ~/.oh-my-zsh/custom/
-    # 4. Ansible's cli role handles the git clone for all systems
+      # Modern ls replacement with colors and icons
+      eza
 
-    # Modern ls replacement with colors and icons
-    eza
+      # Smarter cd command that learns your habits
+      zoxide
 
-    # Smarter cd command that learns your habits
-    zoxide
+      # Command-line fuzzy finder
+      fzf
+      # Find alternative with sensible defaults
+      fd
+      # Fast recursive search to pair with fd and fzf
+      ripgrep
+      # Rich TUI resource monitors for system overview
+      btop
+      bottom
+      # Modern process viewer with structured output
+      procs
+      # Disk usage visualizer with intuitive tree view
+      dust
+      # Source lines of code analyzer grouped by language
+      tokei
+      # Network diagnostics (per-process usage and path tracing)
+      bandwhich
+      mtr
 
-    # Command-line fuzzy finder
-    fzf
-    # Find alternative with sensible defaults
-    fd
-    # Fast recursive search to pair with fd and fzf
-    ripgrep
-    # Rich TUI resource monitors for system overview
-    btop
-    bottom
-    # Modern process viewer with structured output
-    procs
-    # Disk usage visualizer with intuitive tree view
-    dust
-    # Source lines of code analyzer grouped by language
-    tokei
-    # Network diagnostics (per-process usage and path tracing)
-    bandwhich
-    mtr
+      # Additional tools migrated from Ansible
+      curl # HTTP client
+      wget # File downloader
+      pwgen # Password generator
+      nmap # Network scanner
+      htop # Interactive process viewer
+      iftop # Network traffic monitor
+      iotop # I/O usage monitor
 
-    # GNOME Shell Extensions (migrated from Ansible gui role)
-    # These extensions were installed via petermosmans.customize-gnome role:
-    # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
-    gnomeExtensions.panel-date-format     # ID 1462: Panel Date Format ✓
-    gnomeExtensions.night-theme-switcher  # ID 2236: Night Theme Switcher ✓
-    gnomeExtensions.vertical-workspaces   # ID 5177: V-Shell (Vertical Workspaces) ✓
-    gnomeExtensions.cronomix              # ID 6003: Cronomix ✓
-    # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
-  ] ++ [
-    # Get comby from older nixpkgs where it's not broken
-    oldPkgs.comby
-  ];
+      # Zsh theme
+      zsh-powerlevel10k # Powerlevel10k theme for zsh
+
+      # Fonts - using modern individual nerd-fonts packages
+      nerd-fonts.fira-code
+      nerd-fonts.droid-sans-mono
+      nerd-fonts.jetbrains-mono
+      nerd-fonts.inconsolata
+      nerd-fonts.liberation
+      nerd-fonts.meslo-lg
+      nerd-fonts.profont
+      nerd-fonts.ubuntu-mono
+
+      # GNOME Shell Extensions (migrated from Ansible gui role)
+      # These extensions were installed via petermosmans.customize-gnome role:
+      # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
+      gnomeExtensions.panel-date-format # ID 1462: Panel Date Format ✓
+      gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher ✓
+      gnomeExtensions.vertical-workspaces # ID 5177: V-Shell (Vertical Workspaces) ✓
+      gnomeExtensions.cronomix # ID 6003: Cronomix ✓
+      # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
+    ]
+    ++ [
+      # Get comby from older nixpkgs where it's not broken
+      oldPkgs.comby
+    ];
+
+  # Enable fontconfig for proper font management
+  fonts.fontconfig.enable = true;
 
   # Session variables (migrated from dotfiles/profile)
   home.sessionVariables = {
@@ -393,6 +457,7 @@ in
 
     # Editor
     EDITOR = "nvim";
+    VISUAL = "nvim";
 
     # Basic Memory location
     BASIC_MEMORY_HOME = "$HOME/.syncthing/pkm/basic-memory";
@@ -407,7 +472,7 @@ in
     GCC_COLORS = "error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01";
 
     # Interactive shell settings
-    LESS = "-F -X -R";  # -F: exit if one screen, -X: no clear screen, -R: raw ANSI colors
+    LESS = "-F -X -R"; # -F: exit if one screen, -X: no clear screen, -R: raw ANSI colors
     PYTHONSTARTUP = "$HOME/.config/pythonstartup.py";
 
     # Go workspace
@@ -415,7 +480,6 @@ in
 
     # pnpm global packages
     PNPM_HOME = "$HOME/.local/share/pnpm";
-
   };
 
   # Wyrm-specific pip configuration for tankshare storage
@@ -432,8 +496,8 @@ in
   };
 
   # XDG MIME type associations - SKIPPED
-  # We need to ensure these 2 specific associations because they tend to get 
-  # incorrectly assigned, BUT the existing mimeapps.list has 105 lines of 
+  # We need to ensure these 2 specific associations because they tend to get
+  # incorrectly assigned, BUT the existing mimeapps.list has 105 lines of
   # associations we want to preserve. Home-manager can't merge, only replace.
   # TODO: Either:
   #   - Keep in Ansible (which can do in-place edits)
@@ -486,12 +550,12 @@ in
     settings = {
       # GNOME preferences
       "org/gnome/desktop/wm/preferences" = {
-        focus-mode = "sloppy";  # Focus follows mouse
-        button-layout = ":minimize,maximize,close";  # Window buttons
+        focus-mode = "sloppy"; # Focus follows mouse
+        button-layout = ":minimize,maximize,close"; # Window buttons
       };
 
       # Terminal shortcut (Ctrl+Alt+T)
-      "org/gnome/settings-daemon/plugins/media-keys" = { terminal = ["<Primary><Alt>t"]; };
+      "org/gnome/settings-daemon/plugins/media-keys" = {terminal = ["<Primary><Alt>t"];};
 
       # GNOME Night Light
       "org/gnome/settings-daemon/plugins/color" = {
@@ -500,7 +564,7 @@ in
       };
 
       # ISO 8601 datetime format in panel, e.g.: "Wed 2023-11-15 22:49"
-      "org/gnome/shell/extensions/panel-date-format" = { format = "%a %Y-%m-%d %H:%M"; };
+      "org/gnome/shell/extensions/panel-date-format" = {format = "%a %Y-%m-%d %H:%M";};
 
       # Legacy datetime indicator (for older WMs/Unity?)
       "com/canonical/indicator/datetime" = {
@@ -509,12 +573,12 @@ in
         show-week-numbers = true;
       };
 
-      "org/gnome/terminal/legacy" = { default-show-menubar = false; };
+      "org/gnome/terminal/legacy" = {default-show-menubar = false;};
 
       # Set default terminal
       "org/gnome/desktop/applications/terminal" = {
         exec = "gnome-terminal.wrapper";
-        exec-arg = lib.hm.gvariant.mkNothing lib.hm.gvariant.type.string;  # Unset the argument
+        exec-arg = lib.hm.gvariant.mkNothing lib.hm.gvariant.type.string; # Unset the argument
       };
 
       # Pop!_OS workspace shortcuts workaround
@@ -543,9 +607,9 @@ in
 
       # Unbind default GNOME screenshot keys for Flameshot
       "org/gnome/shell/keybindings" = {
-        show-screenshot-ui = [];  # Was PrnSc
-        screenshot = [];          # Was Shift+PrnSc
-        screenshot-window = [];   # Was Alt+PrnSc
+        show-screenshot-ui = []; # Was PrnSc
+        screenshot = []; # Was Shift+PrnSc
+        screenshot-window = []; # Was Alt+PrnSc
       };
 
       # Flameshot custom keybinding
@@ -562,8 +626,8 @@ in
       };
 
       # Disable screensaver and screen blanking (for VM)
-      "org/gnome/desktop/session" = { idle-delay = lib.hm.gvariant.mkUint32 0; };  # 0 = never
-      "org/gnome/desktop/screensaver" = { lock-enabled = false; };
+      "org/gnome/desktop/session" = {idle-delay = lib.hm.gvariant.mkUint32 0;}; # 0 = never
+      "org/gnome/desktop/screensaver" = {lock-enabled = false;};
 
       "org/gnome/shell" = {
         # Enable user extensions
@@ -576,19 +640,19 @@ in
         # 3. Minus the problematic ones we disable below
         enabled-extensions = [
           # Pop!_OS system extensions (keep these!)
-          "ding@rastersoft.com"  # Desktop Icons NG (DING)
-          "pop-cosmic@system76.com"  # Pop COSMIC
-          "pop-shell@system76.com"  # Pop Shell (tiling)
-          "system76-power@system76.com"  # System76 Power
-          "ubuntu-appindicators@ubuntu.com"  # Ubuntu AppIndicators (system tray)
-          "cosmic-dock@system76.com"  # COSMIC Dock
+          "ding@rastersoft.com" # Desktop Icons NG (DING)
+          "pop-cosmic@system76.com" # Pop COSMIC
+          "pop-shell@system76.com" # Pop Shell (tiling)
+          "system76-power@system76.com" # System76 Power
+          "ubuntu-appindicators@ubuntu.com" # Ubuntu AppIndicators (system tray)
+          "cosmic-dock@system76.com" # COSMIC Dock
           # Note: cosmic-workspaces and popx11gestures excluded (problematic)
 
           # Extensions from Ansible (petermosmans.customize-gnome)
-          "panel-date-format@keiii.github.com"  # Panel Date Format
-          "nightthemeswitcher@romainvigier.fr"  # Night Theme Switcher
-          "vertical-workspaces@G-dH.github.com"  # V-Shell (replaces cosmic-workspaces)
-          "cronomix@zagortenay333"  # Cronomix (note: different UUID than expected)
+          "panel-date-format@keiii.github.com" # Panel Date Format
+          "nightthemeswitcher@romainvigier.fr" # Night Theme Switcher
+          "vertical-workspaces@G-dH.github.com" # V-Shell (replaces cosmic-workspaces)
+          "cronomix@zagortenay333" # Cronomix (note: different UUID than expected)
           # Note: Desaturate All extension not currently installed
         ];
 
@@ -637,55 +701,60 @@ in
     profile = let
       # Helper function to build a terminal palette from a color scheme
       mkTerminalPalette = scheme: [
-        "#${scheme.palette.base01}"  # black
-        "#${scheme.palette.base08}"  # red
-        "#${scheme.palette.base0B}"  # green
-        "#${scheme.palette.base09}"  # yellow/orange
-        "#${scheme.palette.base0D}"  # blue
-        "#${scheme.palette.base0E}"  # magenta
-        "#${scheme.palette.base0C}"  # cyan
-        "#${scheme.palette.base06}"  # white
-        "#${scheme.palette.base00}"  # bright black
-        "#${scheme.palette.base08}"  # bright red
-        "#${scheme.palette.base0B}"  # bright green
-        "#${scheme.palette.base0A}"  # bright yellow
-        "#${scheme.palette.base0D}"  # bright blue
-        "#${scheme.palette.base0F}"  # bright magenta (violet)
-        "#${scheme.palette.base0C}"  # bright cyan
-        "#${scheme.palette.base07}"  # bright white
+        "#${scheme.palette.base01}" # black
+        "#${scheme.palette.base08}" # red
+        "#${scheme.palette.base0B}" # green
+        "#${scheme.palette.base09}" # yellow/orange
+        "#${scheme.palette.base0D}" # blue
+        "#${scheme.palette.base0E}" # magenta
+        "#${scheme.palette.base0C}" # cyan
+        "#${scheme.palette.base06}" # white
+        "#${scheme.palette.base00}" # bright black
+        "#${scheme.palette.base08}" # bright red
+        "#${scheme.palette.base0B}" # bright green
+        "#${scheme.palette.base0A}" # bright yellow
+        "#${scheme.palette.base0D}" # bright blue
+        "#${scheme.palette.base0F}" # bright magenta (violet)
+        "#${scheme.palette.base0C}" # bright cyan
+        "#${scheme.palette.base07}" # bright white
       ];
-    in {
-      # Solarized Light profile
-      "b1dcc9dd-5262-4d8d-a863-c897e6d979b9" = {
-        visibleName = "Solarized Light";
-        default = true;
-        colors = {
-          foregroundColor = "#${solarizedLight.palette.base05}";
-          backgroundColor = "#${solarizedLight.palette.base07}";
-          boldColor = "#${solarizedLight.palette.base04}";
-          palette = mkTerminalPalette solarizedLight;
-          cursor = {
-            foreground = "#${solarizedLight.palette.base07}";
-            background = "#${solarizedLight.palette.base05}";
-          };
-        };
-      };
 
-      # Solarized Dark profile
-      "5083e06b-024e-46be-9cd2-892b814f1fc8" = {
-        visibleName = "Solarized Dark";
-        colors = {
-          foregroundColor = "#${solarizedDark.palette.base05}";
-          backgroundColor = "#${solarizedDark.palette.base00}";
-          boldColor = "#${solarizedDark.palette.base06}";
-          palette = mkTerminalPalette solarizedDark;
-          cursor = {
-            foreground = "#${solarizedDark.palette.base00}";
-            background = "#${solarizedDark.palette.base05}";
+      # Base profile definitions
+      baseProfiles = {
+        # Solarized Light profile
+        "b1dcc9dd-5262-4d8d-a863-c897e6d979b9" = {
+          visibleName = "Solarized Light";
+          default = true;
+          colors = {
+            foregroundColor = "#${solarizedLight.palette.base05}";
+            backgroundColor = "#${solarizedLight.palette.base07}";
+            boldColor = "#${solarizedLight.palette.base04}";
+            palette = mkTerminalPalette solarizedLight;
+            cursor = {
+              foreground = "#${solarizedLight.palette.base07}";
+              background = "#${solarizedLight.palette.base05}";
+            };
+          };
+        };
+
+        # Solarized Dark profile
+        "5083e06b-024e-46be-9cd2-892b814f1fc8" = {
+          visibleName = "Solarized Dark";
+          colors = {
+            foregroundColor = "#${solarizedDark.palette.base05}";
+            backgroundColor = "#${solarizedDark.palette.base00}";
+            boldColor = "#${solarizedDark.palette.base06}";
+            palette = mkTerminalPalette solarizedDark;
+            cursor = {
+              foreground = "#${solarizedDark.palette.base00}";
+              background = "#${solarizedDark.palette.base05}";
+            };
           };
         };
       };
-    };
+      # Apply scroll-on-output=false to every profile
+    in
+      builtins.mapAttrs (_: profile: profile // {scrollOnOutput = false;}) baseProfiles;
   };
 
   # Zsh configuration - full Nix management
@@ -703,41 +772,42 @@ in
     history = {
       size = 10000000;
       save = 10000000;
-      extended = true;  # Timestamps
-      share = true;     # Share between sessions
+      extended = true; # Timestamps
+      share = true; # Share between sessions
       ignoreDups = true;
       ignoreSpace = true;
     };
 
-    # Zsh plugins (managed by home-manager)
-    plugins = [
-      {
-        name = "powerlevel10k";
-        src = pkgs.zsh-powerlevel10k;
-        file = "share/zsh-powerlevel10k/powerlevel10k.zsh-theme";
-      }
-    ];
-
     # Autosuggestions configuration
     autosuggestion = {
       enable = true;
-      strategy = [ "history" "completion" ];
+      strategy = ["history" "completion"];
       highlight = "fg=244";
     };
 
     # Syntax highlighting
     syntaxHighlighting.enable = true;
 
-    # Oh-my-zsh configuration
+    # Oh My Zsh configuration
     oh-my-zsh = {
       enable = true;
+      custom = "${pkgs.zsh-powerlevel10k}/share/zsh-powerlevel10k";
+      theme = "powerlevel10k";
       plugins = [
-        "alias-finder" "bazel" "aliases" "colored-man-pages"
-        "command-not-found" "docker" "git" "gpg-agent" "isodate"
-        "lein" "python" "rust" "screen"
+        "alias-finder"
+        "bazel"
+        "aliases"
+        "colored-man-pages"
+        "command-not-found"
+        "docker"
+        "git"
+        "gpg-agent"
+        "isodate"
+        "lein"
+        "python"
+        "rust"
+        "screen"
       ];
-      # Note: powerlevel10k is now loaded as a Nix-managed plugin (see plugins section above)
-      # custom = "$HOME/.oh-my-zsh/custom";  # Removed - no longer needed with Nix-managed p10k
     };
 
     # Environment variables
@@ -761,7 +831,7 @@ in
     enableCompletion = true;
 
     # History configuration
-    historyControl = [ "ignoreboth" ];
+    historyControl = ["ignoreboth"];
     historySize = 10000000;
     historyFileSize = 10000000;
 
@@ -780,7 +850,7 @@ in
     enable = true;
     enableBashIntegration = true;
     enableZshIntegration = true;
-    flags = [ "--disable-up-arrow" ];
+    flags = ["--disable-up-arrow"];
   };
 
   # Direnv - per-directory environment management
@@ -794,9 +864,9 @@ in
   # Zoxide - smarter cd
   programs.zoxide = {
     enable = true;
-    enableBashIntegration = true;
+    enableBashIntegration = false; # Disabled for bash - disorients Claude/Codex assistants
     enableZshIntegration = true;
-    options = [ "--cmd cd" ];
+    options = ["--cmd cd"];
   };
 
   # Eza - modern ls replacement
@@ -820,18 +890,18 @@ in
     # Basic settings
     mouse = true;
     historyLimit = 100000;
-    baseIndex = 1;  # Start windows at 1
-    keyMode = "vi";  # Vi mode keys
+    baseIndex = 1; # Start windows at 1
+    keyMode = "vi"; # Vi mode keys
     clock24 = true;
     prefix = "C-b";
     # terminal = "tmux-256color";  # Better terminal type for modern tmux
 
     # Plugins from TPM configuration
     plugins = with pkgs.tmuxPlugins; [
-      resurrect       # Save/restore sessions
-      continuum       # Auto-save sessions periodically
-      yank           # System clipboard integration
-      prefix-highlight  # Show prefix/copy/sync modes in status
+      resurrect # Save/restore sessions
+      continuum # Auto-save sessions periodically
+      yank # System clipboard integration
+      prefix-highlight # Show prefix/copy/sync modes in status
     ];
 
     # Main tmux configuration (migrated from tmux.conf)
@@ -916,7 +986,6 @@ in
 
   programs.codex = {
     enable = true;
-    package = openai-codex;
     custom-instructions = builtins.readFile ../../dotfiles/codex/instructions.md;
     settings = import ./codex-settings.nix;
   };

@@ -1,6 +1,8 @@
 { config, lib, pkgs, ... }:
 
 let
+  cfg = config.services.google-drive;
+  
   google-drive = pkgs.stdenv.mkDerivation rec {
     pname = "google-drive-file-stream";
     version = "112.0.3";
@@ -47,9 +49,14 @@ let
   };
 in
 {
-  home.packages = [ google-drive ];
+  options.services.google-drive = {
+    enable = lib.mkEnableOption "Google Drive File Stream service";
+  };
 
-  systemd.user.services.google-drive = {
+  config = lib.mkIf cfg.enable {
+    home.packages = [ google-drive ];
+
+    systemd.user.services.google-drive = {
     Unit = {
       Description = "Google Drive service";
       After = [ "network.target" ];
@@ -79,4 +86,5 @@ in
       source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/drive/finance/worthy-config.yaml";
     };
   };
+  }; # Close config = lib.mkIf
 }
