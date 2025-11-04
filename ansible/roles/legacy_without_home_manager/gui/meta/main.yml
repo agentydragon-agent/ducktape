@@ -25,7 +25,7 @@ dependencies:
   # Needs to be before gnome-terminal-solarized because it uses the fonts.
   - role: nerd_fonts
     become: yes  # needed to write fonts system-wide
-  - role: gnome-terminal-solarized_nix_migrated
+  - role: legacy_without_home_manager/gnome_terminal_solarized
     tags: [solarized]
   - role: timekpr
   # - role: google-drive-client  # Temporarily disabled for wyrm

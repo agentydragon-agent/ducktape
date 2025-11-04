@@ -71,4 +71,4 @@
     version: master
   changed_when: false
 
-# Profile application moved to gnome-terminal-solarized_nix_migrated role
+# Profile application moved to legacy_without_home_manager/gnome_terminal_solarized role
