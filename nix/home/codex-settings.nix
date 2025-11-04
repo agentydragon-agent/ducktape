@@ -4,14 +4,12 @@
   tui = {
     auto_mount_repo = true;
   };
-  tools = {
-    view_image = true;
-    web_search = true;
-  };
   features = {
     streamable_shell = true;
     rmcp_client = true;
     unified_exec = true;
+    view_image_tool = true;
+    web_search_request = true;
   };
   shell_environment_policy = {
     "inherit" = "all";

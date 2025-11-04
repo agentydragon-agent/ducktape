@@ -992,6 +992,7 @@ in {
 
   programs.codex = {
     enable = true;
+    package = unstablePkgs.codex;
     custom-instructions = builtins.readFile ../../dotfiles/codex/instructions.md;
     settings = import ./codex-settings.nix;
   };
