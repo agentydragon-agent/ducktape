@@ -8,7 +8,7 @@
     DISPLAY: ":99"
 
   roles:
-    - role: gnome-terminal-solarized
+    - role: legacy_without_home_manager/gnome-terminal-solarized
       vars:
         font_family: "Ubuntu Mono"
         font_size: 14
