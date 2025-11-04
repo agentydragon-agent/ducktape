@@ -91,7 +91,7 @@ class ConnectionManager(BaseHandler):
             q.put_nowait(None)
             try:
                 await asyncio.wait_for(task, timeout=2.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task

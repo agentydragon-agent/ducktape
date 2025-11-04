@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 import gzip
 import json
 from pathlib import Path
-from typing import Any, Callable, TextIO
+from typing import Any, TextIO
 
 from .constants import TOOLS_HEADER
 from .openai_typing import (

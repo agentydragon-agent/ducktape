@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from tana.domain.nodes import BaseNode
 from tana.domain.types import NodeId
@@ -19,7 +19,7 @@ class Workspace:
         self._search = SearchService(graph)
 
     @classmethod
-    def load(cls, path: Path | str) -> "Workspace":
+    def load(cls, path: Path | str) -> Workspace:
         graph = load_workspace(Path(path))
         return cls(graph)
 

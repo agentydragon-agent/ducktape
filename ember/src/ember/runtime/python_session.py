@@ -8,7 +8,6 @@ import signal
 import subprocess
 import sys
 import time
-from typing import Optional
 
 from jupyter_client import BlockingKernelClient
 
@@ -19,7 +18,7 @@ CONNECTION_FILE = SESSION_DIR / "kernel.json"
 PID_FILE = SESSION_DIR / "kernel.pid"
 
 
-def ensure_kernel() -> Optional[Path]:
+def ensure_kernel() -> Path | None:
     """Ensure a persistent IPython kernel is running and return its connection file."""
     try:
         SESSION_DIR.mkdir(parents=True, exist_ok=True)
@@ -36,7 +35,7 @@ def ensure_kernel() -> Optional[Path]:
     return _launch_kernel()
 
 
-def connection_file() -> Optional[Path]:
+def connection_file() -> Path | None:
     if CONNECTION_FILE.exists() and _kernel_alive():
         return CONNECTION_FILE
     return None
@@ -69,7 +68,7 @@ def stop_kernel(timeout: float = 5.0) -> bool:
     return False
 
 
-def restart_kernel() -> Optional[Path]:
+def restart_kernel() -> Path | None:
     stop_kernel()
     return ensure_kernel()
 
@@ -107,7 +106,7 @@ def run_code(code: str) -> str:
         client.stop_channels()
 
 
-def cli_main(argv: Optional[list[str]] = None) -> int:
+def cli_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Interact with Ember's persistent Python session"
     )
@@ -141,10 +140,7 @@ def cli_main(argv: Optional[list[str]] = None) -> int:
     if args.restart:
         restart_kernel()
 
-    if args.command is not None:
-        code = args.command
-    else:
-        code = sys.stdin.read()
+    code = args.command if args.command is not None else sys.stdin.read()
 
     if not code.strip():
         return 0
@@ -173,7 +169,7 @@ def _kernel_alive() -> bool:
     return True
 
 
-def _kernel_pid() -> Optional[int]:
+def _kernel_pid() -> int | None:
     try:
         return int(PID_FILE.read_text())
     except (FileNotFoundError, ValueError):
@@ -201,7 +197,7 @@ def _cleanup_stale_files() -> None:
             logger.debug("Failed to remove stale file %s: %s", path, exc)
 
 
-def _launch_kernel() -> Optional[Path]:
+def _launch_kernel() -> Path | None:
     cmd = [
         sys.executable,
         "-m",

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import json
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Any
 import uuid
 
 from fastmcp.server.middleware.middleware import (

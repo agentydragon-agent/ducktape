@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import socket
 import threading
 import time
-from typing import Any, Sequence
+from typing import Any
 
 from hamcrest import all_of, assert_that, contains_string, has_item, has_properties
 from uvicorn import Config, Server

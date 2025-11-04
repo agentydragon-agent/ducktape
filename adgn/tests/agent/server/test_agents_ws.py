@@ -37,7 +37,7 @@ def test_agents_ws_initial_and_create_broadcast(ws_hub):
         for raw in acc:
             m = TypeAdapter(AgentsHubMsg).validate_python(raw)
             kinds.append(type(m).__name__)
-            if isinstance(m, (AgentCreatedMsg, AgentStatusMsg)):
+            if isinstance(m, AgentCreatedMsg | AgentStatusMsg):
                 if (getattr(m, "data").id) != agent_id:
                     ids_ok = False
         return ("AgentCreatedMsg" in kinds and "AgentStatusMsg" in kinds) and ids_ok

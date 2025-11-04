@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import types
-from typing import Any, Awaitable, Callable, Generic, TypeVar, cast, get_origin
+from typing import Any, Generic, TypeVar, cast, get_origin
 
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult as FMCallToolResult
@@ -226,7 +227,7 @@ class TypedClient:
         session: Client,
         *,
         exclude_none: bool = True,
-    ) -> "TypedClient":
+    ) -> TypedClient:
         """Create a TypedClient introspecting FastMCP's tool registry.
 
         Requires a server created via FastMCP. Uses server._tool_manager.list_tools()

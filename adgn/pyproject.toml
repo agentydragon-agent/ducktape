@@ -178,7 +178,6 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["PLR0913"]
 "src/adgn/third_party/**" = ["ALL"]
 
 [tool.adgn.trivial-patterns]

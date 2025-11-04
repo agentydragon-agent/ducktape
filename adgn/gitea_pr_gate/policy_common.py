@@ -2,7 +2,6 @@ import json
 import os
 import re
 import time
-from typing import Dict, Optional, Tuple
 
 # Configuration via environment (shared)
 GITEA_BASE = os.environ.get("GITEA_BASE_URL", "http://127.0.0.1:3000/").rstrip("/") + "/"
@@ -30,10 +29,10 @@ RE_PULL_INDEX_OPTIONAL_STATUS = re.compile(
 )
 
 
-def user_headers(cookie: str = "", authz: str = "", admin: bool = False) -> Dict[str, str]:
+def user_headers(cookie: str = "", authz: str = "", admin: bool = False) -> dict[str, str]:
     if admin and ADMIN_TOKEN:
         return {"Authorization": f"token {ADMIN_TOKEN}"}
-    hdrs: Dict[str, str] = {}
+    hdrs: dict[str, str] = {}
     if cookie:
         hdrs["Cookie"] = cookie
     if authz:
@@ -41,14 +40,14 @@ def user_headers(cookie: str = "", authz: str = "", admin: bool = False) -> Dict
     return hdrs
 
 
-def parse_owner_repo_from_uri(uri: str) -> Tuple[Optional[str], Optional[str]]:
+def parse_owner_repo_from_uri(uri: str) -> tuple[str | None, str | None]:
     if m := RE_OWNER_REPO_PULLS_OR_COMPARE.match(uri):
         g = m.groupdict()
         return g.get("owner"), g.get("repo")
     return None, None
 
 
-def parse_reopen_targets(uri: str) -> Optional[Tuple[str, str, int]]:
+def parse_reopen_targets(uri: str) -> tuple[str, str, int] | None:
     if m := RE_PULL_INDEX_OPTIONAL_STATUS.match(uri):
         g = m.groupdict()
         return g.get("owner"), g.get("repo"), int(g.get("index"))
@@ -66,9 +65,9 @@ def normalize_login(login: str) -> str:
 class PRCountCache:
     def __init__(self, ttl: float):
         self.ttl = ttl
-        self.store: Dict[Tuple[str, str, str], Tuple[float, int]] = {}
+        self.store: dict[tuple[str, str, str], tuple[float, int]] = {}
 
-    def get(self, owner: str, repo: str, author: str) -> Optional[int]:
+    def get(self, owner: str, repo: str, author: str) -> int | None:
         key = (owner, repo, normalize_login(author))
         now = time.monotonic()
         if (entry := self.store.get(key)) and entry[0] > now:

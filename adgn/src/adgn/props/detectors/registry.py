@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import Callable, Iterable
 
 from .models import Detection
 

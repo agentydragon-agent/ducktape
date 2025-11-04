@@ -238,8 +238,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
         out: dict[str, datetime | None] = {}
         async with self._open_row() as db:
             async with db.execute(
-                (
-                    """
+                """
 SELECT a.id as agent_id,
        MAX(
          COALESCE(e.ts, r.finished_at, r.started_at, a.created_at)
@@ -249,7 +248,6 @@ LEFT JOIN runs r ON r.agent_id = a.id
 LEFT JOIN events e ON e.run_id = r.id
 GROUP BY a.id
                     """
-                )
             ) as cur:
                 async for r in cur:
                     ts = r["last_ts"]

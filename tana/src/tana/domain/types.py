@@ -2,7 +2,8 @@
 Type definitions for the Tana library.
 """
 
-from typing import Mapping, NewType, Protocol, Sequence, TypeVar, runtime_checkable
+from typing import NewType, Protocol, TypeVar, runtime_checkable
+from collections.abc import Mapping, Sequence
 
 # Type for node IDs to prevent mixing with regular strings
 NodeId = NewType("NodeId", str)

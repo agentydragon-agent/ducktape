@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Annotated, Any, Callable, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 

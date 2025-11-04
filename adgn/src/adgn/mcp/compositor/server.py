@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 import logging
-from typing import Awaitable, Callable
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
@@ -102,7 +102,7 @@ class Compositor(FastMCP):
 
     # ---- Public child client accessor -------------------------------------
 
-    def add_mount_listener(self, cb: "Callable[[str, MountEvent], Awaitable[None] | None]") -> None:
+    def add_mount_listener(self, cb: Callable[[str, MountEvent], Awaitable[None] | None]) -> None:
         """Register a callback invoked on mount lifecycle changes.
 
         Callback signature: (name: str, action: MountEvent) where action is one of
@@ -116,7 +116,7 @@ class Compositor(FastMCP):
             if asyncio.iscoroutine(res):
                 await res
 
-    def add_list_changed_listener(self, cb: "Callable[[str], Awaitable[None] | None]") -> None:
+    def add_list_changed_listener(self, cb: Callable[[str], Awaitable[None] | None]) -> None:
         """Register a callback invoked when a child reports resources/list_changed.
 
         Callback signature: (name: str) where name is the origin server.
@@ -130,7 +130,7 @@ class Compositor(FastMCP):
                 await res
 
     def add_resource_updated_listener(
-        self, cb: "Callable[[str, str], Awaitable[None] | None]"
+        self, cb: Callable[[str, str], Awaitable[None] | None]
     ) -> None:
         """Register a callback invoked when a child reports resources/updated.
 
@@ -374,12 +374,12 @@ class Compositor(FastMCP):
 
     def _fm_transport_from_spec(self, spec: MCPServerTypes) -> ClientTransport:
         # Use FastMCP's typed server config classes
-        if isinstance(spec, (RemoteMCPServer, TransformingRemoteMCPServer)):
+        if isinstance(spec, RemoteMCPServer | TransformingRemoteMCPServer):
             headers = dict(spec.headers or {})
             if spec.auth:
                 headers.setdefault("Authorization", f"Bearer {spec.auth}")
             return StreamableHttpTransport(spec.url, headers=headers or None)
-        if isinstance(spec, (StdioMCPServer, TransformingStdioMCPServer)):
+        if isinstance(spec, StdioMCPServer | TransformingStdioMCPServer):
             return StdioTransport(
                 spec.command, args=list(spec.args or []), env=spec.env, cwd=spec.cwd
             )

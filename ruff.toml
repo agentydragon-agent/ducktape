@@ -54,8 +54,6 @@ force-sort-within-sections = true
 combine-as-imports = true
 
 [lint.per-file-ignores]
-"experimental/cotrl/**" = ["PLR0913"]  # Too many arguments
-"tana/src/tana/query/filters.py" = ["PLR0913"]  # Too many arguments
 "experimental/webhook_inbox/webhook_inbox.py" = ["RUF003"]  # Ambiguous unicode characters in comments
 "trilium/search_hack.py" = ["N806", "PD901", "PTH110", "PTH123"]  # Various style issues
 "trilium/papers/*.py" = ["N806", "PTH123"]  # Naming and pathlib issues

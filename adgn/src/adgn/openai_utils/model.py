@@ -220,7 +220,7 @@ class AssistantMessageOut(BaseModel):
         return AssistantMessage(role="assistant", content=content_parts)
 
     @classmethod
-    def from_input_item(cls, item: AssistantMessage) -> "AssistantMessageOut":
+    def from_input_item(cls, item: AssistantMessage) -> AssistantMessageOut:
         parts: list[OutputText] = []
         for block in item.content or []:
             if isinstance(block, InputTextPart):

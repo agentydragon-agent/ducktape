@@ -13,20 +13,20 @@ PROP = "minimize-nesting"
 
 def _simple_test(n: ast.AST) -> bool:
     # Heuristic: allow Name, Attribute, UnaryOp(not Name), simple Compare(Name op Const)
-    if isinstance(n, (ast.Name, ast.Attribute)):
+    if isinstance(n, ast.Name | ast.Attribute):
         return True
     if (
         isinstance(n, ast.UnaryOp)
         and isinstance(n.op, ast.Not)
-        and isinstance(n.operand, (ast.Name, ast.Attribute))
+        and isinstance(n.operand, ast.Name | ast.Attribute)
     ):
         return True
     if (
         isinstance(n, ast.Compare)
-        and isinstance(n.left, (ast.Name, ast.Attribute))
+        and isinstance(n.left, ast.Name | ast.Attribute)
         and len(n.ops) == 1
         and len(n.comparators) == 1
-        and isinstance(n.comparators[0], (ast.Constant, ast.Name, ast.Attribute))
+        and isinstance(n.comparators[0], ast.Constant | ast.Name | ast.Attribute)
     ):
         return True
     return False
@@ -40,7 +40,7 @@ def _find_in_file(path: Path) -> list[Detection]:
     except Exception:
         return out
     for fn in ast.walk(node):
-        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
             for st in fn.body:
                 if (
                     isinstance(st, ast.If)

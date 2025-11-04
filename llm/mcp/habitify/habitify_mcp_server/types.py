@@ -7,7 +7,7 @@ as documented in the reference YAML files.
 
 import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -60,7 +60,7 @@ class Area(BaseModel):
 
     id: str
     name: str
-    priority: Optional[str] = None
+    priority: str | None = None
 
 
 class Progress(BaseModel):
@@ -79,9 +79,9 @@ class HabitStatus(BaseModel):
     status: str
 
     # These fields aren't in the API response but are useful for our client
-    date: Optional[str] = None  # Raw API response uses string dates
-    value: Optional[float] = None
-    note: Optional[str] = None
+    date: str | None = None  # Raw API response uses string dates
+    value: float | None = None
+    note: str | None = None
 
     # Model config to handle extra fields
     model_config = {"extra": "ignore"}
@@ -91,13 +91,13 @@ class HabitStatusResponse(BaseModel):
     """Client response model that uses Python date objects."""
 
     status: str
-    date: Optional[datetime.date] = None  # Client response uses Python date objects
-    value: Optional[float] = None
-    note: Optional[str] = None
+    date: datetime.date | None = None  # Client response uses Python date objects
+    value: float | None = None
+    note: str | None = None
 
     @classmethod
     def from_api_model(
-        cls, api_model: HabitStatus, date: Optional[str | datetime.date] = None
+        cls, api_model: HabitStatus, date: str | datetime.date | None = None
     ) -> "HabitStatusResponse":
         """Convert API model to client response model with Python date object."""
         # If we already have a date object, use it directly
@@ -129,19 +129,19 @@ class Habit(BaseModel):
     is_archived: bool
     start_date: str
     time_of_day: list[str]
-    goal: Optional[Goal] = None
+    goal: Goal | None = None
     goal_history_items: list[Goal] = []
     log_method: str = ""
     recurrence: str
     remind: list[str] = []
-    area: Optional[Area] = None
+    area: Area | None = None
     created_date: str
     priority: float
 
     # Additional fields that appear in journal endpoint
-    status: Optional[str] = None
-    habit_type: Optional[int] = None
-    progress: Optional[Progress] = None
+    status: str | None = None
+    habit_type: int | None = None
+    progress: Progress | None = None
 
     # Model config to handle extra fields
     model_config = {"extra": "ignore"}
@@ -152,21 +152,21 @@ class Habit(BaseModel):
         return self.is_archived
 
     @property
-    def category(self) -> Optional[str]:
+    def category(self) -> str | None:
         """Return the category/area name for compatibility."""
         if self.area:
             return self.area.name
         return None
 
     @property
-    def goal_type(self) -> Optional[str]:
+    def goal_type(self) -> str | None:
         """Extract goal type from goal for compatibility."""
         if self.goal:
             return self.goal.unit_type
         return None
 
     @property
-    def target_value(self) -> Optional[float]:
+    def target_value(self) -> float | None:
         """Extract target value from goal for compatibility."""
         if self.goal:
             return self.goal.value
@@ -178,19 +178,19 @@ class ResolvedHabit(BaseModel):
     """Data model for resolved habit information."""
 
     habit_id: str
-    habit_name: Optional[str] = None
-    match_type: Optional[str] = None
+    habit_name: str | None = None
+    match_type: str | None = None
 
 
 class ErrorResponse(BaseModel):
     """Model for structured error responses."""
 
     error: str
-    category: Optional[str] = (
+    category: str | None = (
         None  # Error category (auth, not_found, validation, api, network, unknown)
     )
-    matches: Optional[list[dict[str, str]]] = None
-    total_matches: Optional[int] = None
+    matches: list[dict[str, str]] | None = None
+    total_matches: int | None = None
 
 
 class HabitsResult(BaseModel):
@@ -239,8 +239,8 @@ class LogResult(BaseModel):
     status: str
     date: str
     formatted_date: str
-    note: Optional[str] = None
-    value: Optional[float] = None
+    note: str | None = None
+    value: float | None = None
 
 
 class UpdateResult(BaseModel):

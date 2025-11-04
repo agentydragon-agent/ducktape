@@ -67,7 +67,7 @@ class BaseNode(BaseModel):
         return self.props.is_trash
 
     @property
-    def child_nodes(self) -> list["BaseNode"]:
+    def child_nodes(self) -> list[BaseNode]:
         """Return children as node instances."""
         if not self._graph:
             raise RuntimeError("Node not attached to a graph")

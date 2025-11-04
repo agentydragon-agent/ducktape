@@ -206,7 +206,7 @@ class ClaudeRunner(AgentRunner):
                             error_message = "Claude reported an error"
 
                         # total_cost_usd may be Optional; coerce to float
-                        total_cost = float((message.total_cost_usd or 0.0))
+                        total_cost = float(message.total_cost_usd or 0.0)
 
                         # ResultMessage indicates completion
                         break

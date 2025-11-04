@@ -1,7 +1,7 @@
 """Webhook authentication handlers for Gatelet."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
@@ -12,7 +12,7 @@ from ..config import BearerAuth, NoAuth, WebhookAuthConfig
 class AuthError(Exception):
     """Base exception for authentication errors."""
 
-    def __init__(self, detail: str, headers: Optional[Dict[str, str]] = None):
+    def __init__(self, detail: str, headers: dict[str, str] | None = None):
         self.detail = detail
         self.headers = headers or {}
         super().__init__(detail)
@@ -69,7 +69,7 @@ class BearerAuthHandler(WebhookAuthHandler):
 
 
 def create_auth_handler(
-    config: Union[WebhookAuthConfig, Dict[str, Any]],
+    config: WebhookAuthConfig | dict[str, Any],
 ) -> WebhookAuthHandler:
     """Factory function to create appropriate authentication handler."""
     if isinstance(config, dict):

@@ -109,7 +109,7 @@ def detect_policy_gateway_error(err: Any) -> PolicyGatewayError | None:
         error_data = _coerce_error_data(getattr(err, "error", None))
     if error_data is None and hasattr(err, "error"):
         error_data = _coerce_error_data(getattr(err, "error"))
-    if error_data is None and isinstance(err, (dict, mtypes.ErrorData)):
+    if error_data is None and isinstance(err, dict | mtypes.ErrorData):
         error_data = _coerce_error_data(err)
 
     # Map structured error first

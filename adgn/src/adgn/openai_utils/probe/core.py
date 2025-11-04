@@ -96,7 +96,7 @@ class ProbeRun:
     @property
     def avg_latency_s(self) -> float | None:
         vals = [c.latency_s for c in self.calls if c.ok and c.latency_s is not None]
-        nums = [float(v) for v in vals if isinstance(v, (int, float))]
+        nums = [float(v) for v in vals if isinstance(v, int | float)]
         return (sum(nums) / len(nums)) if nums else None
 
 

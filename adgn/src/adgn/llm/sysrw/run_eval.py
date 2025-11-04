@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from collections.abc import Iterable
 from contextlib import suppress
 from datetime import datetime
 from importlib import resources
@@ -10,7 +11,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Any, Iterable, cast
+from typing import Any, cast
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI

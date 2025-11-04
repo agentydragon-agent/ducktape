@@ -22,7 +22,7 @@ def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
 
     async def behavior(req: Any) -> Any:
         # Accept either raw dicts (legacy) or our typed ResponsesRequest
-        assert isinstance(req, (dict, ResponsesRequest)), f"unexpected request type: {type(req)!r}"
+        assert isinstance(req, dict | ResponsesRequest), f"unexpected request type: {type(req)!r}"
         i = step["i"]
         step["i"] = i + 1
         if i == 0:

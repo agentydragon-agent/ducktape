@@ -26,13 +26,13 @@ def _is_simple_guard(test: ast.AST, name: str) -> str | None:
         left, op, right = test.left, test.ops[0], test.comparators[0]
         if isinstance(left, ast.Name) and left.id == name:
             if (
-                isinstance(op, (ast.Is, ast.IsNot))
+                isinstance(op, ast.Is | ast.IsNot)
                 and isinstance(right, ast.Constant)
                 and right.value is None
             ):
                 return "is None" if isinstance(op, ast.Is) else "is not None"
-            if isinstance(op, (ast.Eq, ast.NotEq)) and isinstance(
-                right, (ast.Constant, ast.Str, ast.Num)
+            if isinstance(op, ast.Eq | ast.NotEq) and isinstance(
+                right, ast.Constant | ast.Str | ast.Num
             ):
                 return "== literal" if isinstance(op, ast.Eq) else "!= literal"
     return None
@@ -48,7 +48,7 @@ def _find_in_file(path: Path) -> list[Detection]:
 
     for parent in ast.walk(node):
         # Look inside functions only (skip module/class levels)
-        if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(parent, ast.FunctionDef | ast.AsyncFunctionDef):
             body = parent.body
             for i, stmt in enumerate(body[:-1]):
                 if (
@@ -66,7 +66,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                             next_stmt = body[j + 1]
                         else:
                             continue
-                    if isinstance(next_stmt, (ast.If, ast.While)):
+                    if isinstance(next_stmt, ast.If | ast.While):
                         desc = _is_simple_guard(next_stmt.test, name)
                         if desc:
                             sl = getattr(stmt, "lineno", 1)

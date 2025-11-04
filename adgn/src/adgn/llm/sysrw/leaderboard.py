@@ -399,7 +399,7 @@ def _derive_ci_from_summary(summary: EvalSummary) -> tuple[float, float | None, 
         ucb = summary.ci95.ucb
         if lcb is not None and ucb is not None:
             ci95_half = max(abs(mean - lcb), abs(ucb - mean))
-    elif isinstance(summary.ci95, (int, float)):
+    elif isinstance(summary.ci95, int | float):
         ci95_half = float(summary.ci95)
     # Fallback: top-level bounds if provided
     if lcb is None and summary.lcb is not None:

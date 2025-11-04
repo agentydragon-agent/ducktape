@@ -8,7 +8,7 @@ import asyncio
 import datetime
 import logging
 import os
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import httpx
 from dotenv import load_dotenv
@@ -29,9 +29,9 @@ load_dotenv()
 class HabitifyError(Exception):
     """Custom exception for Habitify API errors."""
 
-    status_code: Optional[int] = None
+    status_code: int | None = None
 
-    def __init__(self, message: str, status_code: Optional[int] = None):
+    def __init__(self, message: str, status_code: int | None = None):
         super().__init__(message)
         self.status_code = status_code
 
@@ -43,7 +43,7 @@ class HabitifyClient:
     Supports only the endpoints documented in the reference YAML files.
     """
 
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 10.0):
+    def __init__(self, api_key: str | None = None, timeout: float = 10.0):
         """
         Initialize the Habitify API client.
 
@@ -184,11 +184,11 @@ class HabitifyClient:
 
     async def get_journal(
         self,
-        date: Optional[datetime.date] = None,
-        order_by: Optional[str] = "priority",
-        status: Optional[str] = None,
-        time_of_day: Optional[str] = None,
-        area_id: Optional[str] = None,
+        date: datetime.date | None = None,
+        order_by: str | None = "priority",
+        status: str | None = None,
+        time_of_day: str | None = None,
+        area_id: str | None = None,
     ) -> list[Habit]:
         """
         Get filtered habits for a specific date.
@@ -232,7 +232,7 @@ class HabitifyClient:
     # All methods are async-only now
 
     async def check_habit_status(
-        self, habit_id: str, date: Optional[str | datetime.date] = None
+        self, habit_id: str, date: str | datetime.date | None = None
     ) -> HabitStatusResponse:
         """
         Check a habit's status for a date.
@@ -273,9 +273,9 @@ class HabitifyClient:
     async def check_habit_status_range(
         self,
         habit_id: str,
-        start_date: Optional[str | datetime.date] = None,
-        end_date: Optional[str | datetime.date] = None,
-        days: Optional[int] = None,
+        start_date: str | datetime.date | None = None,
+        end_date: str | datetime.date | None = None,
+        days: int | None = None,
     ) -> list[HabitStatusResponse]:
         """
         Check a habit's status for a range of dates.
@@ -334,9 +334,9 @@ class HabitifyClient:
         self,
         habit_id: str,
         status: Literal["completed", "skipped", "failed", "none"],
-        date: Optional[str | datetime.date] = None,
-        note: Optional[str] = None,
-        value: Optional[float] = None,
+        date: str | datetime.date | None = None,
+        note: str | None = None,
+        value: float | None = None,
     ) -> HabitStatusResponse:
         """
         Set a habit's status for a specific date.

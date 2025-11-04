@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 import os
-from typing import Any, Callable
+from typing import Any
 
 from hamcrest import (
     any_of,

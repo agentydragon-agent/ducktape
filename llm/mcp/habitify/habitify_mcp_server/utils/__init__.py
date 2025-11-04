@@ -4,7 +4,8 @@ Utility functions for the Habitify MCP server.
 
 import functools
 import os
-from typing import Any, Callable, Optional, TypeVar, cast
+from typing import Any, TypeVar, cast
+from collections.abc import Callable
 
 # Import API key getter from our config module
 from ..config import load_api_key
@@ -65,7 +66,7 @@ def format_rich_status(status: str) -> str:
     return f"[{color}]{status.capitalize()}[/]"
 
 
-def get_api_key_from_param_or_env(api_key_param: Optional[str] = None) -> Optional[str]:
+def get_api_key_from_param_or_env(api_key_param: str | None = None) -> str | None:
     """
     Get API key from parameter or environment.
 
@@ -79,7 +80,7 @@ def get_api_key_from_param_or_env(api_key_param: Optional[str] = None) -> Option
     return load_api_key(api_key_override=api_key_param, exit_on_missing=False)
 
 
-def get_server_api_key() -> Optional[str]:
+def get_server_api_key() -> str | None:
     """
     Get API key from environment.
 
@@ -89,7 +90,7 @@ def get_server_api_key() -> Optional[str]:
     return os.environ.get("HABITIFY_API_KEY")
 
 
-def validate_required_params(*param_names: str, **params: Any) -> Optional[dict[str, Any]]:
+def validate_required_params(*param_names: str, **params: Any) -> dict[str, Any] | None:
     """
     Validate that at least one of the specified parameters is not None.
 

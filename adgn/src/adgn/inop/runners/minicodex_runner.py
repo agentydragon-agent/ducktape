@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AsyncExitStack
 import os
 from pathlib import Path
@@ -7,7 +8,7 @@ import shutil
 import sys
 import tempfile
 import time
-from typing import Any, Callable
+from typing import Any
 import uuid
 
 from fastmcp.client import Client
@@ -114,7 +115,7 @@ class MiniCodexRunner(AgentRunner):
         )
         self._agent = await self._exit_stack.enter_async_context(agent)
 
-    def _build_mcp_server_factories(self, setup) -> dict[str, "Callable[..., FastMCP]"]:
+    def _build_mcp_server_factories(self, setup) -> dict[str, Callable[..., FastMCP]]:
         if not self.workspace_path:
             raise RuntimeError("Workspace not initialised")
 

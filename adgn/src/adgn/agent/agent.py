@@ -5,12 +5,12 @@ For stateless reasoning/tool replay demo, see :/adgn/examples/openai_api/statele
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 import copy
 from dataclasses import dataclass
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Sequence, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import anyio
 from fastmcp.client import Client
@@ -393,7 +393,7 @@ class MiniCodex:
         """Convert transcript to typed OpenAI Responses input items."""
         items: list[InputItem] = []
         for item in self._transcript:
-            if isinstance(item, (UserMessage, AssistantMessage, SystemMessage)):
+            if isinstance(item, UserMessage | AssistantMessage | SystemMessage):
                 items.append(item.model_copy(deep=True))
                 continue
             if isinstance(item, ReasoningItem):
@@ -435,7 +435,7 @@ class MiniCodex:
             # output path (adds assistant text, enqueues tool calls, etc.).
             out_items: list[FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] = []
             for it in list(decision.inserts_input):
-                if isinstance(it, (FunctionCallItem, FunctionCallOutputItem, AssistantMessageOut)):
+                if isinstance(it, FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut):
                     out_items.append(it)
                 else:
                     raise TypeError(
@@ -445,7 +445,9 @@ class MiniCodex:
         elif isinstance(decision, Continue):
             # Inject any handler-provided pre-sample inserts into transcript
             for it in decision.inserts_input:
-                if isinstance(it, (UserMessage, AssistantMessage, SystemMessage, FunctionCallItem)):
+                if isinstance(
+                    it, UserMessage | AssistantMessage | SystemMessage | FunctionCallItem
+                ):
                     self._transcript.append(it)
             raw_tc = _tool_choice_from_policy(decision.tool_policy)
             if (
@@ -515,14 +517,14 @@ class MiniCodex:
         existing_ids: set[str] = set()
         for evt in self._transcript:
             # Only these item types carry optional id fields
-            if isinstance(evt, (ReasoningItem, FunctionCallItem)):
+            if isinstance(evt, ReasoningItem | FunctionCallItem):
                 eid = evt.id
                 if isinstance(eid, str) and eid:
                     existing_ids.add(eid)
         handled_cids = {evt.call_id for evt in self._transcript if isinstance(evt, ToolCallOutput)}
         for item in resp_output:
             # If this item has an id and we've already recorded it, skip
-            iid = item.id if isinstance(item, (ReasoningItem, FunctionCallItem)) else None
+            iid = item.id if isinstance(item, ReasoningItem | FunctionCallItem) else None
             if isinstance(iid, str) and iid in existing_ids:
                 continue
             if isinstance(item, ReasoningItem):

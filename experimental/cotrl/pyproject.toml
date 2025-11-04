@@ -1,6 +1,6 @@
 [tool.ruff.lint]
 # Ignore specific rules for experimental code
-ignore = ["PLR0913"]  # Too many arguments
+# PLR0913 handled globally in root ruff.toml
 
 [tool.mypy]
 # Ignore missing type stubs for experimental code

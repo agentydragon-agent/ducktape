@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import hashlib
 import os
 import secrets
-from typing import Any, AsyncIterator, Sequence, cast
+from typing import Any, cast
 import uuid
 
 import asyncpg
@@ -91,7 +92,7 @@ class ClientAPIKey(Base):
     )
     revoked_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    responses: Mapped[list["Response"]] = relationship(
+    responses: Mapped[list[Response]] = relationship(
         back_populates="api_key", cascade="all, delete-orphan"
     )
 
@@ -116,7 +117,7 @@ class ResponseFrame(Base):
     )
     frame_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
-    response: Mapped["Response"] = relationship(back_populates="frames")
+    response: Mapped[Response] = relationship(back_populates="frames")
 
 
 class Response(Base):
@@ -149,7 +150,7 @@ class Response(Base):
     frames: Mapped[list[ResponseFrame]] = relationship(
         back_populates="response", cascade="all, delete-orphan"
     )
-    snapshot: Mapped["ResponseSnapshot | None"] = relationship(
+    snapshot: Mapped[ResponseSnapshot | None] = relationship(
         back_populates="response", cascade="all, delete-orphan", uselist=False
     )
 
@@ -297,7 +298,7 @@ class ResponsesDB:
             result = await session.execute(
                 update(ClientAPIKey)
                 .where(ClientAPIKey.id == key_id, ClientAPIKey.revoked_ts.is_(None))
-                .values(revoked_ts=datetime.now(timezone.utc))
+                .values(revoked_ts=datetime.now(UTC))
             )
             rowcount = int(result.rowcount or 0)
             if rowcount > 0:
@@ -344,7 +345,7 @@ class ResponsesDB:
     ) -> bool:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stmt = (
             pg_insert(Response)
             .values(
@@ -386,7 +387,7 @@ class ResponsesDB:
                 .values(
                     status="in_progress",
                     response_id=response_id,
-                    last_update_ts=datetime.now(timezone.utc),
+                    last_update_ts=datetime.now(UTC),
                 )
             )
             if update_result.rowcount:
@@ -430,7 +431,7 @@ class ResponsesDB:
                 .where(Response.key == key)
                 .values(
                     response_id=response_id,
-                    last_update_ts=datetime.now(timezone.utc),
+                    last_update_ts=datetime.now(UTC),
                 )
             )
             await self._emit_event(
@@ -466,7 +467,7 @@ class ResponsesDB:
                     response_id=response_id,
                     latency_ms=latency_ms,
                     token_usage_json=dump_usage(token_usage),
-                    last_update_ts=datetime.now(timezone.utc),
+                    last_update_ts=datetime.now(UTC),
                 )
             )
             snapshot = FinalResponseSnapshot(
@@ -504,7 +505,7 @@ class ResponsesDB:
                     status=ResponseStatus.ERROR.value,
                     status_reason=status_reason,
                     response_id=response_id,
-                    last_update_ts=datetime.now(timezone.utc),
+                    last_update_ts=datetime.now(UTC),
                 )
             )
             snapshot = FinalResponseSnapshot(

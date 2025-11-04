@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator, Sequence
 from types import SimpleNamespace
-from typing import Any, Iterable, Iterator, Sequence, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 
 from openai.types.chat import (
     ChatCompletionMessageParam,
@@ -27,7 +28,7 @@ except ImportError:  # OpenAI responses >= 0.9 (ResponseOutputMessage etc.)
     )
 
     ResponseMessageType = ResponseOutputMessage
-    ResponseMessagePartType = Union[ResponseOutputText, ResponseOutputRefusal]
+    ResponseMessagePartType = ResponseOutputText | ResponseOutputRefusal
 
 try:
     from openai.types.responses import ResponseOutput  # type: ignore[attr-defined]

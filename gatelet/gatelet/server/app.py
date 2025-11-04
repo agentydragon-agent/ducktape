@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from fastapi import Cookie, Depends, FastAPI, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -81,7 +81,7 @@ async def webhook_auth_error(request: Request, exc: AuthError):
 @app.get("/", response_class=HTMLResponse)
 async def root(
     request: Request,
-    session: Optional[str] = Cookie(None),
+    session: str | None = Cookie(None),
     csrf_protect: CsrfProtect = Depends(),
 ):
     """Root endpoint with service information and authentication options."""

@@ -100,13 +100,13 @@ class GradeSubmitInput(BaseModel):
     # Each entry assigns a fraction of credit [0,1] from a critique item to a canonical positive.
     # The grader server aggregates across critique items, clamps per-canonical totals to 1.0,
     # and computes coverage_recall accordingly.
-    coverage_credits: list["CoverageCredit"] = Field(
+    coverage_credits: list[CoverageCredit] = Field(
         ...,
         description="Per-critique fractional credits toward canonical positives",
     )
 
     @model_validator(mode="after")
-    def _validate_coverage_totals(self) -> "GradeSubmitInput":
+    def _validate_coverage_totals(self) -> GradeSubmitInput:
         """Ensure total credit per canonical does not exceed 1.0.
 
         Credits are already constrained to [0,1] individually; this aggregates by

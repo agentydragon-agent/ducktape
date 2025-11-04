@@ -7,7 +7,7 @@ Unified diff applier (multi-file) using the unidiff parser with strict context.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from unidiff import PatchSet
 

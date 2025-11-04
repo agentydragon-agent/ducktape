@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
-from typing import Any, Mapping, cast
+from typing import Any, cast
 
 from openai.types.responses import (
     Response as OpenAIResponse,
@@ -50,7 +51,7 @@ class FinalResponseSnapshot(BaseModel):
         response_json: Any,
         error_json: Any,
         token_usage_json: Any,
-    ) -> "FinalResponseSnapshot":
+    ) -> FinalResponseSnapshot:
         return cls(
             status=ResponseStatus(status),
             response=parse_response(response_json) if response_json is not None else None,

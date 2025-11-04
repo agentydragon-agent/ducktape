@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastmcp.client.client import CallToolResult
 
@@ -17,7 +17,7 @@ from adgn.mcp._shared.naming import build_mcp_function
 
 
 def test_fold_events_typed_ui_message() -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Simulate ui.send_message tool producing a CallToolResult with structured content
     result = to_pydantic(
         CallToolResult(

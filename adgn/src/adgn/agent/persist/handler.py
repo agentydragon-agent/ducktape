@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 import logging
-from typing import Any, Callable
+from typing import Any
 from uuid import UUID
 
 from adgn.agent.handler import (

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib import resources
 import os
 import platform
 import re
-from typing import Callable
 
 from fastmcp.client import Client
 from fastmcp.server import FastMCP

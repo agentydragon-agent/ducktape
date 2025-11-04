@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,11 +42,11 @@ class FieldSearch(_SearchBase):
 class BooleanSearch(_SearchBase):
     kind: Literal["boolean"] = "boolean"
     operator: BooleanOperator
-    operands: list["SearchExpression"]
+    operands: list[SearchExpression]
 
 
 SearchExpression = Annotated[
-    Union[TagSearch, TypeSearch, TextSearch, FieldSearch, BooleanSearch],
+    TagSearch | TypeSearch | TextSearch | FieldSearch | BooleanSearch,
     Field(discriminator="kind"),
 ]
 

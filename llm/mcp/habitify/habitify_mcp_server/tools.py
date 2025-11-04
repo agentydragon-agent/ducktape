@@ -3,7 +3,7 @@ Habitify MCP tools implementation.
 """
 
 from datetime import datetime
-from typing import Any, Literal, Optional, cast
+from typing import Any, Literal, cast
 
 from .habitify_client import HabitifyClient
 from .types import (
@@ -22,7 +22,7 @@ from .utils.error_utils import create_error_response, create_validation_error
 from .utils.habit_resolver import resolve_habit
 
 
-def validate_habit_identifier(**kwargs) -> Optional[ErrorResponse]:
+def validate_habit_identifier(**kwargs) -> ErrorResponse | None:
     """
     Validate that either an ID or name is provided to identify a habit.
 
@@ -47,8 +47,8 @@ VALID_STATUSES = {"completed", "skipped", "failed", "none"}
 
 async def _validate_and_resolve(
     client: HabitifyClient,
-    id: Optional[str] = None,
-    name: Optional[str] = None,
+    id: str | None = None,
+    name: str | None = None,
     action: str = "use",
 ) -> Any:
     """Validate habit identifier and resolve habit or return ErrorResponse."""
@@ -82,7 +82,7 @@ async def get_habits(client: HabitifyClient, include_archived: bool = False) -> 
 
 @with_client
 async def get_habit(
-    client: HabitifyClient, id: Optional[str] = None, name: Optional[str] = None
+    client: HabitifyClient, id: str | None = None, name: str | None = None
 ) -> ResultType:
     """
     Get a specific habit by ID or name.
@@ -145,12 +145,12 @@ async def get_habit(
 @with_client
 async def get_habit_status(
     client: HabitifyClient,
-    id: Optional[str] = None,
-    name: Optional[str] = None,
-    date: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    days: Optional[int] = None,
+    id: str | None = None,
+    name: str | None = None,
+    date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    days: int | None = None,
 ) -> ResultType:
     """
     MCP tool to get a habit's status for one or more dates.
@@ -255,12 +255,12 @@ async def get_habit_status(
 @with_client
 async def set_habit_status(
     client: HabitifyClient,
-    id: Optional[str] = None,
-    name: Optional[str] = None,
+    id: str | None = None,
+    name: str | None = None,
     status: str = "completed",
-    date: Optional[str] = None,
-    note: Optional[str] = None,
-    value: Optional[float] = None,
+    date: str | None = None,
+    note: str | None = None,
+    value: float | None = None,
 ) -> ResultType:
     """
     Set a habit's status for a specific date.

@@ -440,7 +440,7 @@ class ConfigLoader:
 
         return create_messages
 
-    def test_full_optimization_workflow(  # noqa: PLR0913
+    def test_full_optimization_workflow(
         self,
         temp_db,
         sample_seeds_yaml,

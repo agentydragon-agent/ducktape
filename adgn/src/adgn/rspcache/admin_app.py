@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 from uuid import UUID
 
 from asyncpg import UniqueViolationError

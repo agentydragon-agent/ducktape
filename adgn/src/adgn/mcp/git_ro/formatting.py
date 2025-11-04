@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Sequence, TypeVar
+from collections.abc import Sequence
+from typing import TypeVar
 
 from pydantic import BaseModel, Field
 import pygit2

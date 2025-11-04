@@ -1,7 +1,7 @@
 """Integration test to verify approval system is wired correctly."""
 
 import asyncio
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 

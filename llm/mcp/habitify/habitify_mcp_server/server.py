@@ -2,7 +2,7 @@
 Habitify MCP Server implementation.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -14,7 +14,7 @@ from .types import Status
 def create_habitify_mcp_server(
     debug: bool = False,
     log_level: str = "INFO",
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     port: int = 3000,
 ) -> FastMCP:
     """
@@ -56,7 +56,7 @@ def create_habitify_mcp_server(
         return await tools.get_habits(include_archived=include_archived)  # type: ignore[call-arg]
 
     @server.tool()
-    async def get_habit(id: Optional[str] = None, name: Optional[str] = None) -> dict[str, Any]:
+    async def get_habit(id: str | None = None, name: str | None = None) -> dict[str, Any]:
         """
         Get details of a specific habit by ID or name.
 
@@ -71,12 +71,12 @@ def create_habitify_mcp_server(
 
     @server.tool()
     async def get_habit_status(
-        id: Optional[str] = None,
-        name: Optional[str] = None,
-        date: Optional[str] = None,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        days: Optional[int] = None,
+        id: str | None = None,
+        name: str | None = None,
+        date: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        days: int | None = None,
     ) -> dict[str, Any]:
         """
         Get the status of a habit for one or more dates.
@@ -114,12 +114,12 @@ def create_habitify_mcp_server(
 
     @server.tool()
     async def set_habit_status(
-        id: Optional[str] = None,
-        name: Optional[str] = None,
+        id: str | None = None,
+        name: str | None = None,
         status: Status = Status.COMPLETED,
-        date: Optional[str] = None,
-        note: Optional[str] = None,
-        value: Optional[float] = None,
+        date: str | None = None,
+        note: str | None = None,
+        value: float | None = None,
     ) -> dict[str, Any]:
         """
         Set a habit's status for a specific date.

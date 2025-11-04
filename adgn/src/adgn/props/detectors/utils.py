@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Iterable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .models import Detection
@@ -18,20 +19,20 @@ def iter_py_files(root: Path) -> Iterable[Path]:
         yield p
 
 
-def run_file_detector(root: Path, finder: Callable[[Path], list["Detection"]]) -> list["Detection"]:
+def run_file_detector(root: Path, finder: Callable[[Path], list[Detection]]) -> list[Detection]:
     """Apply a per-file detector across the repository Python files."""
-    detections: list["Detection"] = []
+    detections: list[Detection] = []
     for path in iter_py_files(root):
         detections.extend(finder(path))
     return detections
 
 
 def make_root_detector(
-    finder: Callable[[Path], list["Detection"]],
-) -> Callable[[Path], list["Detection"]]:
+    finder: Callable[[Path], list[Detection]],
+) -> Callable[[Path], list[Detection]]:
     """Wrap a per-file finder into a repository-level detector."""
 
-    def _run(root: Path) -> list["Detection"]:
+    def _run(root: Path) -> list[Detection]:
         return run_file_detector(root, finder)
 
     return _run

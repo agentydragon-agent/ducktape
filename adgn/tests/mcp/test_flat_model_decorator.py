@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-from typing import Optional
 
 from fastmcp.client import Client
 from fastmcp.server.context import Context
@@ -14,7 +13,7 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 class InModel(BaseModel):
     a: int = Field(description="required int")
-    b: Optional[str] = Field(default=None, description="optional text")
+    b: str | None = Field(default=None, description="optional text")
 
 
 class OutModel(BaseModel):

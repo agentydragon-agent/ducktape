@@ -2,16 +2,14 @@
 Utility to resolve a habit by name or ID.
 """
 
-from typing import Optional, Union
-
 from ..habitify_client import HabitifyClient, HabitifyError
 from ..types import ErrorResponse, ResolvedHabit
 from .error_utils import create_error_response, create_validation_error
 
 
 async def resolve_habit(
-    client: HabitifyClient, id: Optional[str] = None, name: Optional[str] = None
-) -> Union[ResolvedHabit, ErrorResponse]:
+    client: HabitifyClient, id: str | None = None, name: str | None = None
+) -> ResolvedHabit | ErrorResponse:
     """
     Utility to resolve a habit by name or ID.
 

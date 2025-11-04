@@ -12,13 +12,12 @@ def _make_policy_for_decision(decision_enum: str) -> str:
         "from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest\n"
         "from adgn.agent.policies.scaffold import run\n"
         + (
-            """
+            f"""
 def decide(ctx: PolicyRequest):
-    return (%s, 'ok')
+    return ({decision_enum}, 'ok')
 if __name__ == '__main__':
     raise SystemExit(run(decide))
 """
-            % (decision_enum)
         )
     )
 

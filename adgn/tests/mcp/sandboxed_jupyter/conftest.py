@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 import contextlib
 from contextlib import contextmanager
 import os
@@ -9,7 +10,7 @@ import socket
 import subprocess
 import sys
 import time
-from typing import IO, Any, Iterator
+from typing import IO, Any
 
 import pytest
 

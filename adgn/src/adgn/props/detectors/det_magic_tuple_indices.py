@@ -34,7 +34,7 @@ def _find_in_file(path: Path) -> list[Detection]:
         return out
 
     for fn in ast.walk(node):
-        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
             body = fn.body if fn.body is not None else []
             for st in body:
                 if (

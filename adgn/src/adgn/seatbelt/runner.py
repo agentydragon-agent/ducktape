@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import os
 from pathlib import Path
 import shutil
@@ -180,7 +180,7 @@ async def run_sandboxed_async(
     )
 
     cmd = [sx, "-f", str(policy_file), *argv]
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=str(cwd) if cwd else None,
@@ -194,7 +194,7 @@ async def run_sandboxed_async(
     else:
         await proc.wait()
         out_b, err_b = None, None
-    ended = datetime.now(timezone.utc)
+    ended = datetime.now(UTC)
     keep = trace if keep_files is None else keep_files
     return _finalize_result(
         returncode=proc.returncode,
@@ -312,7 +312,7 @@ class AsyncSeatbeltPopen:
                 self._proc.terminate()
                 try:
                     await asyncio.wait_for(self._proc.wait(), timeout=grace)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     self._proc.kill()
                     # Ensure we wait for process exit regardless of outer cancellations
                     await asyncio.shield(self._proc.wait())

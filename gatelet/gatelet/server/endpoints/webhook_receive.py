@@ -1,7 +1,7 @@
 """Webhook receiver endpoints."""
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
@@ -25,7 +25,7 @@ async def receive(
     integration_name: str,
     request: Request,
     db_session: AsyncSession = DB_SESSION,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Receive webhook payload for a specific integration."""
     # Check if integration exists
     query = select(WebhookIntegration).where(

@@ -89,10 +89,10 @@ def _find_in_file(path: Path) -> list[Detection]:
     except Exception:
         return out
     for fn in ast.walk(node):
-        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
             opt_strs = _collect_optional_str(fn)
             for st in fn.body:
-                if isinstance(st, (ast.If, ast.While)):
+                if isinstance(st, ast.If | ast.While):
                     nm = _match_none_or_empty(st.test)
                     if nm and nm in opt_strs:
                         sl = getattr(st, "lineno", 1)

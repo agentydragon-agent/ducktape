@@ -87,7 +87,7 @@ class GraderScoresheet(ABC):
     async def generate_test_cases(self) -> list[TestCase]:
         """Generate test cases that validate this behavioral requirement."""
 
-    def _log_interaction(  # noqa: PLR0913
+    def _log_interaction(
         self,
         test_case_name: str,
         request_type: str,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 from uuid import UUID
 
 import httpx
@@ -39,7 +38,7 @@ def run(
     uvicorn.run(target, host=host, port=resolved_port, reload=reload)
 
 
-def _admin_client(admin_url: str, token: Optional[str]) -> httpx.Client:
+def _admin_client(admin_url: str, token: str | None) -> httpx.Client:
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -75,7 +74,7 @@ def mint_key(
     )
 
 
-def _resolve_key_id(client: httpx.Client, name: Optional[str], key_id: Optional[str]) -> UUID:
+def _resolve_key_id(client: httpx.Client, name: str | None, key_id: str | None) -> UUID:
     if key_id:
         return UUID(key_id)
     if not name:

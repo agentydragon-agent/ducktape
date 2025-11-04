@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import json
-from typing import Iterable
 
 from fastmcp.client.messages import MessageHandler
 from mcp import types

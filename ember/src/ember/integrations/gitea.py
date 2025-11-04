@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 import requests
@@ -45,7 +45,7 @@ class GiteaRepository(BaseModel):
 
 class GiteaUser(BaseModel):
     login: str
-    username: Optional[str] = None
+    username: str | None = None
 
     @property
     def handle(self) -> str:
@@ -56,7 +56,7 @@ class GiteaComment(BaseModel):
     id: int
     body: str
     user: GiteaUser
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
 
 class GiteaBranchInfo(BaseModel):

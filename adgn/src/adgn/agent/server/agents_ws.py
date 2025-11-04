@@ -80,7 +80,7 @@ class AgentStatusData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
-    def from_core(cls, core: AgentStatusCore) -> "AgentStatusData":
+    def from_core(cls, core: AgentStatusCore) -> AgentStatusData:
         """Build a WS-friendly AgentStatusData from the internal status core.
 
         Centralizes the mapping and ensures JSON-friendly fields (e.g., last_event_at ISO string).

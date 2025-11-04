@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
 import os
-from typing import Callable, cast
+from typing import cast
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
@@ -214,7 +215,7 @@ class AgentContainer:
         """Front-door MCP client connected to the compositor (if started)."""
         return self._mcp_client
 
-    async def list_mcp_entries(self) -> dict[str, "ServerEntry"]:
+    async def list_mcp_entries(self) -> dict[str, ServerEntry]:
         """Return full per-server entries via compositor_meta resources.
 
         Empty when MCP is not initialized.

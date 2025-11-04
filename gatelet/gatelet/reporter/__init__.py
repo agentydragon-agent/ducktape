@@ -6,7 +6,7 @@ import json
 import os
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 import psutil
@@ -59,7 +59,7 @@ async def send_event(
     payload: dict[str, Any],
     *,
     token: str | None = None,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     close_client = False
@@ -84,7 +84,7 @@ async def send_battery_status(
     integration: str,
     *,
     token: str | None = None,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
     payload = gather_battery()
     return await send_event(url, integration, payload, token=token, client=client)

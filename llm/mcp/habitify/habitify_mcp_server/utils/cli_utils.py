@@ -2,8 +2,6 @@
 CLI-specific utility functions.
 """
 
-from typing import Tuple
-
 import typer
 from rich.console import Console
 
@@ -14,7 +12,7 @@ from ..habitify_client import HabitifyClient, HabitifyError
 
 async def resolve_habit_for_cli(
     habit: str, client: HabitifyClient, err_console: Console
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """
     Resolve a habit by ID or name for CLI commands.
 

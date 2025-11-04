@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 import json
 import logging
-from typing import Annotated, Any, Callable, Literal, Type
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -86,9 +87,9 @@ HandlerFn = Callable[[WsContext, Any], Any]
 
 class WsRouter:
     def __init__(self) -> None:
-        self._handlers: dict[Type[BaseModel], HandlerFn] = {}
+        self._handlers: dict[type[BaseModel], HandlerFn] = {}
 
-    def on(self, msg_type: Type[BaseModel]):
+    def on(self, msg_type: type[BaseModel]):
         def _deco(fn: HandlerFn) -> HandlerFn:
             self._handlers[msg_type] = fn
             return fn

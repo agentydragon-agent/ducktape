@@ -4,12 +4,13 @@ Provides consistent date handling across CLI and API components.
 """
 
 import datetime
-from typing import Callable, Optional, Tuple, TypeVar
+from typing import TypeVar
+from collections.abc import Callable
 
 T = TypeVar("T")
 
 
-def parse_date(date_string: Optional[str] = None) -> datetime.datetime:
+def parse_date(date_string: str | None = None) -> datetime.datetime:
     """
     Parse a date string to a datetime object.
 
@@ -33,7 +34,7 @@ def parse_date(date_string: Optional[str] = None) -> datetime.datetime:
 
 
 def _normalize_date(
-    date: Optional[str | datetime.date | datetime.datetime] = None,
+    date: str | datetime.date | datetime.datetime | None = None,
 ) -> datetime.datetime:
     """
     Convert various date formats to a datetime object.
@@ -58,7 +59,7 @@ def _normalize_date(
 
 
 def _format_with_template(
-    date: Optional[str | datetime.date | datetime.datetime],
+    date: str | datetime.date | datetime.datetime | None,
     formatter: Callable[[datetime.datetime], T],
 ) -> T:
     """
@@ -76,7 +77,7 @@ def _format_with_template(
 
 
 def format_date_yyyy_mm_dd(
-    date: Optional[str | datetime.date | datetime.datetime] = None,
+    date: str | datetime.date | datetime.datetime | None = None,
 ) -> str:
     """
     Format a date as YYYY-MM-DD.
@@ -91,7 +92,7 @@ def format_date_yyyy_mm_dd(
 
 
 def format_date_for_api(
-    date: Optional[str | datetime.date | datetime.datetime] = None,
+    date: str | datetime.date | datetime.datetime | None = None,
 ) -> str:
     """
     Format a date for the Habitify API (ISO format with timezone).
@@ -123,7 +124,7 @@ def format_date_for_api(
 
 
 def format_date_human(
-    date: Optional[str | datetime.date | datetime.datetime] = None,
+    date: str | datetime.date | datetime.datetime | None = None,
 ) -> str:
     """
     Get a human-readable date format.
@@ -155,10 +156,10 @@ def validate_date_format(date_str: str) -> bool:
 
 
 def create_date_range(
-    start_date: Optional[str | datetime.date | datetime.datetime] = None,
-    end_date: Optional[str | datetime.date | datetime.datetime] = None,
-    days: Optional[int] = None,
-) -> Tuple[datetime.datetime, datetime.datetime, list[datetime.datetime]]:
+    start_date: str | datetime.date | datetime.datetime | None = None,
+    end_date: str | datetime.date | datetime.datetime | None = None,
+    days: int | None = None,
+) -> tuple[datetime.datetime, datetime.datetime, list[datetime.datetime]]:
     """
     Create a date range with flexible parameter combinations.
 

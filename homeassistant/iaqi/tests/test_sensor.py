@@ -96,7 +96,7 @@ def memory_handler():
         ("1000", "51", 60.0, "CO₂: 1000.0 ppm, PM2.5: 51.0 μg/m³"),
     ],
 )
-async def test_sensor_update(  # noqa: PLR0913
+async def test_sensor_update(
     hass,
     co2_value,
     pm25_value,

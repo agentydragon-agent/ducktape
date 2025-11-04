@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
-from typing import List
 
 import pytest
 
@@ -47,7 +46,7 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     test_script = resources.files(ember).joinpath(f"resources/{test_relative}")
     subprocess.run(["bash", str(test_script)], check=True, env=env, text=True)
 
-    fake_session_state: dict[str, List[str]] = {"sent": [], "closed": []}
+    fake_session_state: dict[str, list[str]] = {"sent": [], "closed": []}
 
     class FakeSession:
         async def __aenter__(self) -> FakeSession:

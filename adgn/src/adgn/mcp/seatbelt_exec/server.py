@@ -187,7 +187,7 @@ class SeatbeltExecMCP(NotifyingFastMCP):
                             proc.wait(),
                             timeout=t2,
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         # Best-effort termination; __aexit__ will also ensure cleanup
                         timed_out = True
                         try:

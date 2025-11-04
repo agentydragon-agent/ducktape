@@ -1,6 +1,6 @@
 """Authentication dependencies for FastAPI routes."""
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import Cookie, Depends
 
@@ -11,8 +11,8 @@ from .handlers import AuthContext, admin_auth, key_path_auth, session_auth
 class AuthDependency:
     """Provide the active authentication context."""
 
-    def __init__(self, initial_context: Optional[AuthContext] = None):
-        self.context: Optional[AuthContext] = initial_context
+    def __init__(self, initial_context: AuthContext | None = None):
+        self.context: AuthContext | None = initial_context
 
     def set_context(self, context: AuthContext) -> None:
         self.context = context

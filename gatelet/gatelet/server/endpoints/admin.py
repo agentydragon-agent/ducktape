@@ -3,7 +3,6 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 from fastapi import (
     APIRouter,
@@ -52,7 +51,7 @@ SESSION_DURATION = timedelta(hours=1)
 
 
 async def _get_admin_session(
-    session_token: Optional[str] = Cookie(None, alias="admin_session"),
+    session_token: str | None = Cookie(None, alias="admin_session"),
     db_session: AsyncSession = DB_SESSION,
 ) -> AdminSession:
     if not session_token:

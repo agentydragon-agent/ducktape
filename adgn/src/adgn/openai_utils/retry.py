@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 import functools
-from typing import Any, Awaitable, Callable, ParamSpec, TypeVar, cast
+from typing import Any, ParamSpec, TypeVar, cast
 
 import httpx
 import openai

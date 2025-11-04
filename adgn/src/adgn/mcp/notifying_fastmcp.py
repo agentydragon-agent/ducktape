@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 import logging
-from typing import Any, Awaitable, Callable, cast
+from typing import Any, cast
 from weakref import WeakSet
 
 import anyio
@@ -31,8 +32,8 @@ class _CapturingServer(LowLevelServer):
     def __init__(
         self,
         *a,
-        on_session_created: "Callable[[ServerSession], None] | None" = None,
-        on_session_created_async: "Callable[[ServerSession], Awaitable[None]] | None" = None,
+        on_session_created: Callable[[ServerSession], None] | None = None,
+        on_session_created_async: Callable[[ServerSession], Awaitable[None]] | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
         **kw,
     ):

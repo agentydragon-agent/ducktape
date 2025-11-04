@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import argparse
 import ast
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from functools import lru_cache
 from pathlib import Path
 import tomllib
-from typing import Dict, Iterable, List, Sequence, Set
 
 
 @dataclass
@@ -22,14 +22,14 @@ class AliasAssign:
 
 @dataclass
 class FunctionContext:
-    params: Set[str]
-    param_kinds: Dict[str, str]
-    positional_order: List[str]
-    keyword_only: Set[str]
+    params: set[str]
+    param_kinds: dict[str, str]
+    positional_order: list[str]
+    keyword_only: set[str]
     vararg: str | None
     kwarg: str | None
-    alias_assigns: Dict[str, AliasAssign] = field(default_factory=dict)
-    invalid_aliases: Set[str] = field(default_factory=set)
+    alias_assigns: dict[str, AliasAssign] = field(default_factory=dict)
+    invalid_aliases: set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -41,8 +41,8 @@ class Config:
 class FileAnalyzer(ast.NodeVisitor):
     def __init__(self, path: str) -> None:
         self.path = path
-        self.findings: List[str] = []
-        self.stack: List[FunctionContext] = []
+        self.findings: list[str] = []
+        self.stack: list[FunctionContext] = []
 
     # -- Import alias detection -------------------------------------------------
     def visit_Import(self, node: ast.Import) -> None:  # noqa: N802 (ast API)
@@ -144,14 +144,14 @@ class FileAnalyzer(ast.NodeVisitor):
         self.stack.pop()
 
     def _make_context(self, node: ast.AST) -> FunctionContext:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             raise TypeError(f"expected function node, got {type(node).__name__}")
 
         args = node.args
-        params: List[str] = []
-        param_kinds: Dict[str, str] = {}
-        positional_order: List[str] = []
-        keyword_only: Set[str] = set()
+        params: list[str] = []
+        param_kinds: dict[str, str] = {}
+        positional_order: list[str] = []
+        keyword_only: set[str] = set()
 
         for arg in args.posonlyargs:
             params.append(arg.arg)
@@ -196,13 +196,13 @@ class FileAnalyzer(ast.NodeVisitor):
             if record is not None and line > record.line:
                 ctx.invalid_aliases.add(name)
 
-    def _iter_store_names(self, target: ast.AST) -> List[str]:
-        names: List[str] = []
+    def _iter_store_names(self, target: ast.AST) -> list[str]:
+        names: list[str] = []
 
         def _walk(node: ast.AST) -> None:
             if isinstance(node, ast.Name):
                 names.append(node.id)
-            elif isinstance(node, (ast.Tuple, ast.List)):
+            elif isinstance(node, ast.Tuple | ast.List):
                 for elt in node.elts:
                     _walk(elt)
             elif isinstance(node, ast.Starred):
@@ -224,7 +224,7 @@ class FileAnalyzer(ast.NodeVisitor):
             )
 
     def _report_trivial_wrapper(self, node: ast.AST, ctx: FunctionContext) -> None:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             return
 
         body = list(node.body)
@@ -266,15 +266,13 @@ class FileAnalyzer(ast.NodeVisitor):
             else:
                 func_expr = "<call>"
 
-        name = (
-            node.name if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else "<lambda>"
-        )
+        name = node.name if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) else "<lambda>"
         self.findings.append(
             f"{self.path}:{node.lineno}:{node.col_offset} TRIVIAL_FUNCTION {name} -> {func_expr} Thin wrapper around another call; inline or reuse callee."
         )
 
     def _forwards_all_params(self, call: ast.Call, ctx: FunctionContext) -> bool:
-        forwarded: Set[str] = set()
+        forwarded: set[str] = set()
         positional_remaining = list(ctx.positional_order)
 
         for arg in call.args:
@@ -336,7 +334,7 @@ class FileAnalyzer(ast.NodeVisitor):
         return None
 
 
-def detect_file(path: Path) -> List[str]:
+def detect_file(path: Path) -> list[str]:
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except Exception:
@@ -370,8 +368,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
-def collect_files(raw_paths: Iterable[str]) -> List[Path]:
-    files: List[Path] = []
+def collect_files(raw_paths: Iterable[str]) -> list[Path]:
+    files: list[Path] = []
     for raw in raw_paths:
         candidate = Path(raw)
         if candidate.is_dir():
@@ -384,7 +382,7 @@ def collect_files(raw_paths: Iterable[str]) -> List[Path]:
 def run(paths: Iterable[str], scope: tuple[str, ...], *, config: Config | None = None) -> int:
     cfg = config or load_config()
     files = collect_files(paths)
-    results: List[str] = []
+    results: list[str] = []
     for file_path in files:
         if not _in_scope(file_path, scope, cfg.project_root):
             continue
@@ -404,10 +402,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     return run(args.paths, scope_specs)
 
 
-def _parse_scope(raw: List[str] | None) -> tuple[str, ...]:
+def _parse_scope(raw: list[str] | None) -> tuple[str, ...]:
     if not raw:
         return ()
-    specs: List[str] = []
+    specs: list[str] = []
     for item in raw:
         for fragment in item.split(","):
             fragment = fragment.strip()

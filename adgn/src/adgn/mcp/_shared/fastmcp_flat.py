@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import functools
 import inspect
 import logging
 from typing import (
     Annotated,
     Any,
-    Awaitable,
-    Callable,
     TypeVar,
     cast,
     get_args,

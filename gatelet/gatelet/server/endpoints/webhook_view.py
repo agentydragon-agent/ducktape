@@ -1,7 +1,7 @@
 """Webhook viewing endpoints."""
 
 import math
-from typing import Annotated, Any, Dict, Optional
+from typing import Annotated, Any
 
 from compact_json import Formatter
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -68,10 +68,10 @@ async def get_webhook_integration(
 
 async def get_webhook_payloads(
     db_session: AsyncSession,
-    integration_name: Optional[str] = None,
+    integration_name: str | None = None,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get webhook payloads with pagination.
 
     Args:
@@ -207,7 +207,7 @@ async def list_all_payloads(
     )
 
 
-async def list_integration_payloads(  # noqa: PLR0913
+async def list_integration_payloads(
     request: Request,
     integration_name: str,
     auth: Auth,

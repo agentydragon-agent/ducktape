@@ -12,7 +12,7 @@ import os
 import sys
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 import yaml
@@ -144,8 +144,8 @@ class ApiReferenceCollector:
         method: str,
         endpoint: str,
         expected_status: int,
-        params: Optional[dict[str, Any]] = None,
-        json_data: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Make a request to the API, validate response, and save as reference.

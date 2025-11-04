@@ -1,6 +1,7 @@
 import asyncio
+from collections.abc import Iterator
 from enum import StrEnum
-from typing import Annotated, Iterator, Literal
+from typing import Annotated, Literal
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError

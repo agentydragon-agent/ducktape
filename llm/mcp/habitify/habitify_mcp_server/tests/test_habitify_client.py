@@ -26,7 +26,7 @@ REFERENCE_DIR = os.path.join(
 def load_example(filename: str) -> dict:
     """Load an example response from a YAML file."""
     filepath = os.path.join(REFERENCE_DIR, filename)
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         return yaml.safe_load(f)
 
 

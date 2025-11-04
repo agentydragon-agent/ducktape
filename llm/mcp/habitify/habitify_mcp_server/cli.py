@@ -9,7 +9,6 @@ import signal
 import subprocess
 import sys
 from datetime import datetime
-from typing import Optional
 
 import typer
 from dotenv import load_dotenv
@@ -59,7 +58,7 @@ def mcp(
         "stdio", "--transport", "-t", help="Transport type: stdio or sse"
     ),
     port: int = typer.Option(3000, "--port", "-p", help="Port for SSE transport"),
-    api_key: Optional[str] = typer.Option(
+    api_key: str | None = typer.Option(
         None,
         "--api-key",
         "-k",
@@ -132,7 +131,7 @@ def mcp(
 @app.command("install")
 def install(
     name: str = typer.Option("Habitify", "--name", "-n", help="Name to register the server as"),
-    api_key: Optional[str] = typer.Option(
+    api_key: str | None = typer.Option(
         None,
         "--api-key",
         "-k",
@@ -189,7 +188,7 @@ def list_habits(
     include_archived: bool = typer.Option(
         False, "--include-archived", "-a", help="Include archived habits"
     ),
-    api_key: Optional[str] = typer.Option(
+    api_key: str | None = typer.Option(
         None,
         "--api-key",
         "-k",
@@ -203,7 +202,7 @@ def list_habits(
 
 async def _list_habits_async(
     include_archived: bool = False,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> None:
     """Async implementation of the list command."""
     # Get API key from command line or environment
@@ -253,10 +252,10 @@ async def _list_habits_async(
 @app.command("status")
 def status(
     habit: str = typer.Argument(..., help="Habit ID or name"),
-    date: Optional[str] = typer.Option(
+    date: str | None = typer.Option(
         None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"
     ),
-    api_key: Optional[str] = typer.Option(
+    api_key: str | None = typer.Option(
         None,
         "--api-key",
         "-k",
@@ -270,8 +269,8 @@ def status(
 
 async def _status_async(
     habit: str,
-    date: Optional[str] = None,
-    api_key: Optional[str] = None,
+    date: str | None = None,
+    api_key: str | None = None,
 ) -> None:
     """Async implementation of the status command."""
     # Get API key from command line or environment
@@ -326,14 +325,14 @@ def log(
         "-s",
         help="Status to set (completed, skipped, failed, none)",
     ),
-    date: Optional[str] = typer.Option(
+    date: str | None = typer.Option(
         None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"
     ),
-    note: Optional[str] = typer.Option(None, "--note", "-n", help="Optional note to attach"),
-    value: Optional[float] = typer.Option(
+    note: str | None = typer.Option(None, "--note", "-n", help="Optional note to attach"),
+    value: float | None = typer.Option(
         None, "--value", "-v", help="Optional value (for number/timer habits)"
     ),
-    api_key: Optional[str] = typer.Option(
+    api_key: str | None = typer.Option(
         None,
         "--api-key",
         "-k",
@@ -357,10 +356,10 @@ def log(
 async def _log_async(
     habit: str,
     status: str,
-    date: Optional[str] = None,
-    note: Optional[str] = None,
-    value: Optional[float] = None,
-    api_key: Optional[str] = None,
+    date: str | None = None,
+    note: str | None = None,
+    value: float | None = None,
+    api_key: str | None = None,
 ) -> None:
     """Async implementation of the log command."""
     # Get API key from command line or environment

@@ -585,7 +585,7 @@ class ProbeResult:
         )
 
     @classmethod
-    def from_record(cls, record: ProbeRecord) -> "ProbeResult":
+    def from_record(cls, record: ProbeRecord) -> ProbeResult:
         raw: Any | None = None
         if record.ok and record.response is not None:
             if record.kind == "responses":

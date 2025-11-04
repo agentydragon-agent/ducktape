@@ -5,7 +5,6 @@ from http import HTTPStatus
 import logging
 import os
 import time
-from typing import Optional, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 import httpx
@@ -147,7 +146,7 @@ async def count_open_prs_by_author(
 
 async def enforce_quota(
     client: httpx.AsyncClient, owner: str, repo: str, doer: str
-) -> Tuple[HTTPStatus, str]:
+) -> tuple[HTTPStatus, str]:
     if not doer:
         return HTTPStatus.UNAUTHORIZED, "no user"
     doer_l = doer.lower()
@@ -170,7 +169,7 @@ def log_decision(
     status: HTTPStatus,
     reason: str,
     started_at: float,
-    pr_index: Optional[int] = None,
+    pr_index: int | None = None,
 ) -> None:
     outcome = "allow" if status == HTTPStatus.NO_CONTENT else "deny"
     DURATION.labels(action, outcome).observe(max(time.monotonic() - started_at, 0))

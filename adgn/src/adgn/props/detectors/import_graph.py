@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Set
 
 
 @dataclass(frozen=True)
@@ -42,12 +41,12 @@ def _resolve_from_module(base: str, module: str | None, level: int) -> str | Non
     return ".".join(p for p in parts if p)
 
 
-def build_import_graph(root: Path) -> Dict[str, Set[str]]:
+def build_import_graph(root: Path) -> dict[str, set[str]]:
     """Build a directed graph of top-level module imports.
 
     Edge m -> n means module m has a top-level import of module n (or its submodule).
     """
-    graph: Dict[str, Set[str]] = {}
+    graph: dict[str, set[str]] = {}
     for file_path in root.rglob("*.py"):
         if any(part in {".git", "__pycache__", ".venv", "venv"} for part in file_path.parts):
             continue
@@ -72,10 +71,10 @@ def build_import_graph(root: Path) -> Dict[str, Set[str]]:
     return graph
 
 
-def _has_path(graph: Dict[str, Set[str]], src: str, dst: str, *, max_visits: int = 10000) -> bool:
+def _has_path(graph: dict[str, set[str]], src: str, dst: str, *, max_visits: int = 10000) -> bool:
     if src == dst:
         return True
-    seen: Set[str] = set()
+    seen: set[str] = set()
     stack: list[str] = [src]
     visits = 0
     while stack:
@@ -94,6 +93,6 @@ def _has_path(graph: Dict[str, Set[str]], src: str, dst: str, *, max_visits: int
     return False
 
 
-def would_introduce_cycle(graph: Dict[str, Set[str]], a: str, b: str) -> bool:
+def would_introduce_cycle(graph: dict[str, set[str]], a: str, b: str) -> bool:
     """Return True if adding edge a->b would create a cycle (i.e., b reaches a)."""
     return _has_path(graph, b, a)

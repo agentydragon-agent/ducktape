@@ -31,7 +31,7 @@ ALLOWED_IMPORT_ALIASES: set[tuple[str, str]] = {
 def _collect_top_level_names(mod: ast.Module) -> set[str]:
     names: set[str] = set()
     for stmt in mod.body:
-        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
             names.add(stmt.name)
         elif isinstance(stmt, ast.Assign):
             for t in stmt.targets:

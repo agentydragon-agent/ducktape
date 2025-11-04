@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from typing import Any, Iterator
+from typing import Any
+from collections.abc import Iterator
 
 from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
 from tana.domain.nodes import BaseNode, DOC_CLASS, TupleNode, UnknownNode
@@ -48,7 +49,7 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
 
     # Construction ----------------------------------------------------------
     @classmethod
-    def from_documents(cls, documents: Iterable[dict[str, Any]]) -> "TanaGraph":
+    def from_documents(cls, documents: Iterable[dict[str, Any]]) -> TanaGraph:
         """Build a graph from raw JSON documents."""
 
         def _make_node(raw: dict[str, Any]) -> BaseNode:

@@ -3,7 +3,6 @@
 import logging
 import os
 import sys
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -11,10 +10,10 @@ logger = logging.getLogger(__name__)
 
 
 def load_api_key(
-    api_key_override: Optional[str] = None,
+    api_key_override: str | None = None,
     exit_on_missing: bool = True,
     logger_func=None,
-) -> Optional[str]:
+) -> str | None:
     """
     Load the Habitify API key from various sources.
 
@@ -63,6 +62,6 @@ def load_api_key(
     return api_key
 
 
-def get_api_base_url() -> Optional[str]:
+def get_api_base_url() -> str | None:
     """Get the optional Habitify API base URL from environment."""
     return os.environ.get("HABITIFY_API_BASE_URL")

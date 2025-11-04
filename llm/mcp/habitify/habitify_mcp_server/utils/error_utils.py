@@ -2,14 +2,15 @@
 Error handling utilities for Habitify MCP.
 """
 
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any
+from collections.abc import Callable
 
 import httpx
 
 from ..types import ErrorResponse
 
 # Define a type for error handler functions
-ErrorHandler = Callable[[Union[Exception, str], Optional[Dict[str, Any]]], ErrorResponse]
+ErrorHandler = Callable[[Exception | str, dict[str, Any] | None], ErrorResponse]
 
 # Error categories for better classification
 ERROR_CATEGORIES = {
@@ -42,7 +43,7 @@ def classify_error(error: Exception) -> str:
             return "validation"
         else:
             return "api"
-    elif isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
+    elif isinstance(error, httpx.ConnectError | httpx.TimeoutException):
         return "network"
     elif isinstance(error, ValueError):
         return "validation"
@@ -50,9 +51,9 @@ def classify_error(error: Exception) -> str:
 
 
 def _create_error_base(
-    error_message: Union[str, Exception],
-    context: Optional[Dict[str, Any]] = None,
-    category: Optional[str] = None,
+    error_message: str | Exception,
+    context: dict[str, Any] | None = None,
+    category: str | None = None,
 ) -> ErrorResponse:
     """
     Internal function to create an error response with common handling.
@@ -85,7 +86,7 @@ def _create_error_base(
 
 def create_error_response(
     error: Exception,
-    context: Optional[Dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
 ) -> ErrorResponse:
     """
     Create a simple error response that forwards the original error message.
@@ -101,9 +102,7 @@ def create_error_response(
     return _create_error_base(error, context, category)
 
 
-def create_validation_error(
-    message: str, context: Optional[Dict[str, Any]] = None
-) -> ErrorResponse:
+def create_validation_error(message: str, context: dict[str, Any] | None = None) -> ErrorResponse:
     """
     Create a validation error response for parameter validation failures.
 
@@ -117,7 +116,7 @@ def create_validation_error(
     return _create_error_base(message, context, "validation")
 
 
-def create_not_found_error(message: str, context: Optional[Dict[str, Any]] = None) -> ErrorResponse:
+def create_not_found_error(message: str, context: dict[str, Any] | None = None) -> ErrorResponse:
     """
     Create a not found error response.
 
@@ -131,7 +130,7 @@ def create_not_found_error(message: str, context: Optional[Dict[str, Any]] = Non
     return _create_error_base(message, context, "not_found")
 
 
-def create_auth_error(message: str, context: Optional[Dict[str, Any]] = None) -> ErrorResponse:
+def create_auth_error(message: str, context: dict[str, Any] | None = None) -> ErrorResponse:
     """
     Create an authentication error response.
 

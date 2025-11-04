@@ -382,7 +382,7 @@ async def eval_issue_spec(
                     f = fr.finding
                     # All variants have kind; only some carry a property field
                     kind = f.kind
-                    if isinstance(f, (PropertyIncorrectlyAssigned, PropertyShouldBeAssigned)):
+                    if isinstance(f, PropertyIncorrectlyAssigned | PropertyShouldBeAssigned):
                         details.append({"kind": str(kind), "property": str(f.property)})
                         if kind == exp.finding and f.property == exp.property:
                             found = True

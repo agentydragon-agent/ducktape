@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager, contextmanager
+from datetime import UTC
 import os
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastapi.testclient import TestClient
 from fastmcp.server import FastMCP
@@ -458,10 +459,10 @@ def agent_ws_box(ws_session, make_agent_http):
                         import os
 
                         if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
-                            from datetime import datetime, timezone
+                            from datetime import datetime
 
                             print(
-                                f"[ws:agent {datetime.now(timezone.utc).isoformat()}] recv: {_short_payload(p)}"
+                                f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}"
                             )
                     except Exception:
                         pass
