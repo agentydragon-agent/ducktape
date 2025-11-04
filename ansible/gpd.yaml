@@ -9,7 +9,7 @@
 
   roles:
     - role: cli
-    - role: cli_nix_migrated
+    - role: legacy_without_home_manager/cli
     - role: gui
     - role: gui_nix_migrated
     - role: laptop
