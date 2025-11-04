@@ -4,7 +4,7 @@
 
 - name: Disable possible culprit extensions for Pop!_OS black screen bug
   include_role:
-    name: disable_gnome_shell_extensions
+    name: legacy_without_home_manager/disable_gnome_shell_extensions
   vars:
     gnome_shell_disable_extensions:
       - cosmic-workspaces@system76.com
