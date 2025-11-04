@@ -752,9 +752,12 @@ in {
           };
         };
       };
-      # Apply scroll-on-output=false to every profile
+      # Apply common settings to every profile: scroll-on-output=false and JetBrainsMono Nerd Font
     in
-      builtins.mapAttrs (_: profile: profile // {scrollOnOutput = false;}) baseProfiles;
+      builtins.mapAttrs (_: profile: profile // {
+        scrollOnOutput = false;
+        font = "JetBrainsMono Nerd Font 11";
+      }) baseProfiles;
   };
 
   # Zsh configuration - full Nix management
