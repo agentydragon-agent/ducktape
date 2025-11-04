@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastmcp.client import Client as FastMcpClient
+from fastmcp.client import Client
 
 from adgn.mcp._shared.constants import COMPOSITOR_ADMIN_SERVER_NAME, COMPOSITOR_META_SERVER_NAME
 from adgn.mcp.compositor.admin import make_compositor_admin_server
@@ -21,7 +21,7 @@ All mounts are pinned by default to prevent accidental unmounts.
 async def mount_standard_inproc_servers(
     *,
     compositor: Compositor,
-    gateway_client: FastMcpClient | None = None,
+    gateway_client: Client | None = None,
 ) -> None:
     """Mount standard servers on the given compositor, pinned by default.
 

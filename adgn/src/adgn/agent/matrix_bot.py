@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastmcp.client import Client as McpClient
+from fastmcp.client import Client
 from pydantic import TypeAdapter
 import typer
 
@@ -107,7 +107,7 @@ def run(
 
         # Client with notifications buffer so UI can reflect MCP updates
         notif_buffer = NotificationsBuffer(compositor=comp)
-        async with McpClient(comp, message_handler=notif_buffer.handler) as mcp_client:
+        async with Client(comp, message_handler=notif_buffer.handler) as mcp_client:
             agent = await MiniCodex.create(
                 model=model,
                 mcp_client=mcp_client,

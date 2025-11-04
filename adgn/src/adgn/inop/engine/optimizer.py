@@ -42,7 +42,7 @@ from pathlib import Path
 import signal
 import sys
 
-from fastmcp.client import Client as McpClient
+from fastmcp.client import Client
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.transcript_handler import TranscriptHandler
@@ -311,7 +311,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
     comp = Compositor("compositor")
     _server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
     await comp.mount_inproc("prompt_feedback", _server)
-    async with McpClient(comp) as mcp_client:
+    async with Client(comp) as mcp_client:
         # Create MiniCodex PE with system prompt at init
         model = args.pe_model
         # Build the expert prompt-engineer system message (same wording formerly in PromptEngineer.prompt_messages)

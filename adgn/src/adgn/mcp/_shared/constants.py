@@ -1,6 +1,6 @@
 # Shared constants for MCP mcp/_shared modules
 
-from signal import SIGKILL as _SIGKILL, SIGTERM as _SIGTERM
+from signal import SIGKILL, SIGTERM
 from urllib.parse import urlunparse
 
 SLEEP_FOREVER_CMD: list[str] = ["/bin/sh", "-lc", "sleep infinity"]
@@ -17,8 +17,8 @@ def signal_exit_code(sig: int) -> int:
     return SIGNAL_EXIT_OFFSET + int(sig)
 
 
-EXIT_CODE_SIGTERM: int = signal_exit_code(_SIGTERM)
-EXIT_CODE_SIGKILL: int = signal_exit_code(_SIGKILL)
+EXIT_CODE_SIGTERM: int = signal_exit_code(SIGTERM)
+EXIT_CODE_SIGKILL: int = signal_exit_code(SIGKILL)
 
 # Common server names
 CRITIC_SUBMIT_SERVER_NAME: str = "critic_submit"

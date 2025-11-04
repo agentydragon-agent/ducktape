@@ -1,295 +1,101 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
-from types import SimpleNamespace
-from typing import Any, Union, get_args, get_origin
+from collections.abc import Iterator
+from typing import Any, TypeAlias
 
 from openai.types.chat import (
     ChatCompletionMessageParam,
     ChatCompletionMessageToolCallParam,
-    ChatCompletionToolParam,
 )
-from openai.types.responses import Response
-from pydantic import TypeAdapter
+from openai.types.responses import (
+    Response,
+    ResponseOutputMessage,
+    ResponseOutputRefusal,
+    ResponseOutputText,
+)
+from pydantic import BaseModel, TypeAdapter
 
-try:  # OpenAI responses <= 0.8 (ResponseMessage family available)
-    from openai.types.responses import (  # type: ignore[attr-defined]
-        ResponseMessage as _ResponseMessage,
-        ResponseMessageContentPart as _ResponseMessageContentPart,
-    )
-
-    ResponseMessageType = _ResponseMessage
-    ResponseMessagePartType = _ResponseMessageContentPart
-except ImportError:  # OpenAI responses >= 0.9 (ResponseOutputMessage etc.)
-    from openai.types.responses import (  # type: ignore[attr-defined]
-        ResponseOutputMessage,
-        ResponseOutputRefusal,
-        ResponseOutputText,
-    )
-
-    ResponseMessageType = ResponseOutputMessage
-    ResponseMessagePartType = ResponseOutputText | ResponseOutputRefusal
-
-try:
-    from openai.types.responses import ResponseOutput  # type: ignore[attr-defined]
-except ImportError:
-    ResponseOutput = None  # type: ignore[assignment]
-
-try:
-    from openai.types.responses import (
-        ResponseOutputToolCall as _ResponseOutputToolCall,  # type: ignore[attr-defined]
-    )
-except ImportError:
-    _ResponseOutputToolCall = None  # type: ignore[assignment]
-
-try:
-    from openai.types.responses import ResponseFunctionToolCall  # type: ignore[attr-defined]
-except ImportError:
-    ResponseFunctionToolCall = None  # type: ignore[assignment]
-
-_CHAT_MESSAGES = TypeAdapter(list[ChatCompletionMessageParam])
-_CHAT_TOOL_CALLS = TypeAdapter(list[ChatCompletionMessageToolCallParam])
-_CHAT_TOOL_PARAMS = TypeAdapter(list[ChatCompletionToolParam])
-_RESPONSE_MESSAGES = TypeAdapter(list[ResponseMessageType])
-_RESPONSE_PARTS = TypeAdapter(list[ResponseMessagePartType])
+# Union type for response content parts
+ResponseContentPart: TypeAlias = ResponseOutputText | ResponseOutputRefusal
 
 
-def _is_instance(value: Any, typ: Any) -> bool:
-    origin = get_origin(typ)
-    if origin is Union:
-        return any(isinstance(value, arg) for arg in get_args(typ))
-    return isinstance(value, typ)
+class ToolCallInfo(BaseModel):
+    """Structured tool call information extracted from responses."""
+
+    name: str | None
+    arguments: str | None
+    call_id: str | None
+    tool_id: str | None
+    status: str | None
+    type: str | None
 
 
-def _is_iterable_of(items: Any, typ: Any) -> bool:
-    return isinstance(items, list) and all(_is_instance(elem, typ) for elem in items)
+# DATA EXTRACTION: Work with validated models only
+def message_role(message: ResponseOutputMessage | ChatCompletionMessageParam) -> str:
+    """Extract role from a validated message."""
+    return message.role.lower() if message.role else ""
 
 
-def parse_chat_messages(obj: Any) -> list[ChatCompletionMessageParam]:
-    if obj is None:
-        return []
-    if isinstance(obj, ChatCompletionMessageParam):
-        return [obj]
-    if _is_iterable_of(obj, ChatCompletionMessageParam):
-        return list(obj)
-    return _CHAT_MESSAGES.validate_python(obj)
+def message_content(message: ResponseOutputMessage | ChatCompletionMessageParam) -> Any:
+    """Extract content from a validated message."""
+    return message.content
 
 
-def parse_tool_params(obj: Any) -> list[ChatCompletionToolParam]:
-    if obj is None:
-        return []
-    if isinstance(obj, ChatCompletionToolParam):
-        return [obj]
-    if _is_iterable_of(obj, ChatCompletionToolParam):
-        return list(obj)
-    return _CHAT_TOOL_PARAMS.validate_python(obj)
-
-
-def parse_response_messages(obj: Any) -> list[ResponseMessageType]:
-    if obj is None:
-        return []
-    if _is_instance(obj, ResponseMessageType):
-        return [obj]
-    if _is_iterable_of(obj, ResponseMessageType):
-        return list(obj)
-    return _RESPONSE_MESSAGES.validate_python(obj)
-
-
-def parse_response_parts(obj: Any) -> list[ResponseMessagePartType]:
-    if obj is None:
-        return []
-    if _is_instance(obj, ResponseMessagePartType):
-        return [obj]
-    if _is_iterable_of(obj, ResponseMessagePartType):
-        return list(obj)
-    return _RESPONSE_PARTS.validate_python(obj)
-
-
-def parse_response(obj: Any) -> Response:
-    if isinstance(obj, Response):
-        return obj
-    return Response.model_validate(obj)
-
-
-def dump_chat_messages(messages: Sequence[ChatCompletionMessageParam]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for msg in messages:
-        if hasattr(msg, "model_dump"):
-            out.append(msg.model_dump(mode="json", exclude_none=True))  # type: ignore[no-untyped-call]
-        else:
-            out.append(dict(msg))
-    return out
-
-
-def dump_response_messages(messages: Sequence[ResponseMessageType]) -> list[dict[str, Any]]:
-    dumped: list[dict[str, Any]] = []
-    for msg in messages:
-        if hasattr(msg, "model_dump"):
-            dumped.append(msg.model_dump(mode="json", exclude_none=True))
-        else:
-            dumped.append(dict(msg))
-    return dumped
-
-
-def message_role(message: ResponseMessageType | ChatCompletionMessageParam) -> str:
-    base = getattr(message, "role", None) or getattr(message, "message_role", None)
-    return (base or "").lower()
-
-
-def message_content(message: ResponseMessageType | ChatCompletionMessageParam) -> Any:
-    return getattr(message, "content", None)
-
-
-def message_content_as_text(message: ResponseMessageType | ChatCompletionMessageParam) -> str:
-    content = message_content(message)
+def message_content_as_text(message: ResponseOutputMessage | ChatCompletionMessageParam) -> str:
+    """Extract text content from a validated message."""
+    content = message.content
     if isinstance(content, str):
         return content
-    parts = parse_response_parts(content)
-    if parts:
-        return "\n".join(iter_resolved_text(parts))
-    return ""
 
+    if content is None:
+        return ""
 
-def iter_resolved_text(parts: Iterable[ResponseMessagePartType]) -> Iterator[str]:
-    for part in parts:
-        text = None
-        for attr in ("text", "input_text", "content", "refusal"):
-            value = getattr(part, attr, None)
-            if value:
-                text = value
-                break
-        if text is None and isinstance(part, dict):
-            text = (
-                part.get("text")
-                or part.get("input_text")
-                or part.get("content")
-                or part.get("refusal")
-            )
-        if isinstance(text, str) and text:
-            yield text
-            continue
-        if isinstance(text, list):
-            fragments: list[str] = []
-            for entry in text:
-                if isinstance(entry, str):
-                    fragments.append(entry)
-                elif isinstance(entry, dict):
-                    for key in ("text", "input_text", "content", "refusal"):
-                        val = entry.get(key)
-                        if isinstance(val, str):
-                            fragments.append(val)
-            if fragments:
-                yield "\n".join(fragments)
-            continue
-        if text is not None:
-            yield str(text)
-
-
-def message_tool_calls(
-    message: ResponseMessageType | ChatCompletionMessageParam,
-) -> list[ChatCompletionMessageToolCallParam]:
-    value = getattr(message, "tool_calls", None) or []
-    if _is_iterable_of(value, ChatCompletionMessageToolCallParam):
-        return list(value)
-    return _CHAT_TOOL_CALLS.validate_python(value)
+    try:
+        parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
+        return "\n".join(_extract_text_from_parts(parts))
+    except Exception:
+        return str(content)
 
 
 def tool_call_arguments(call: ChatCompletionMessageToolCallParam) -> str:
-    func = getattr(call, "function", None)
-    args = getattr(func, "arguments", None) if func is not None else None
-    return args if isinstance(args, str) else ""
+    """Extract arguments from a validated tool call."""
+    if not call.function or not call.function.arguments:
+        return ""
+    return str(call.function.arguments)
 
 
-def iter_tool_calls_from_response(response: Response) -> Iterator[SimpleNamespace]:
-    output = getattr(response, "output", None) or []
-    for item in output:
-        yield from _iter_tool_calls_from_item(item)
-
-
-def _iter_tool_calls_from_item(item: Any) -> Iterator[SimpleNamespace]:
-    item_type, item_data = _response_item_payload(item)
-    if item_type in {"tool_call", "function_call", "custom_tool_call"}:
-        payload = _tool_payload(item, item_data)
-        tool_call = _make_tool_call(payload, item_data if item_data is not None else item)
-        if tool_call is not None:
-            yield tool_call
-        return
-    if item_type == "message" and item_data:
-        for part in item_data.get("content", []) or []:
-            if not isinstance(part, dict):
-                continue
-            tool_call_data = part.get("tool_call")
-            if not tool_call_data:
-                continue
-            payload = tool_call_data.get("function") or tool_call_data
-            tool_call = _make_tool_call(payload, tool_call_data)
-            if tool_call is not None:
-                yield tool_call
-
-
-def _response_item_payload(item: Any) -> tuple[str | None, dict[str, Any] | None]:
-    item_type = getattr(item, "type", None)
-    item_data: dict[str, Any] | None = None
-    if hasattr(item, "model_dump"):
-        try:
-            item_data = item.model_dump(mode="json", exclude_none=True)
-            item_type = item_type or item_data.get("type")
-        except TypeError:
-            item_data = None
-    elif isinstance(item, dict):
-        item_data = item
-        item_type = item_type or item_data.get("type")
-    return item_type, item_data
-
-
-def _tool_payload(item: Any, data: dict[str, Any] | None) -> Any:
-    if hasattr(item, "function"):
-        return item.function
-    if data and isinstance(data.get("function"), dict):
-        return data["function"]
-    if data:
-        return data
-    if ResponseFunctionToolCall is not None and isinstance(item, ResponseFunctionToolCall):
-        return item
-    return item
-
-
-def _make_tool_call(payload: Any, raw: Any) -> SimpleNamespace | None:
-    if payload is None:
-        return None
-    name, arguments = _extract_name_and_arguments(payload)
-    call_id = getattr(payload, "call_id", None)
-    tool_id = getattr(payload, "id", None)
-    status = getattr(payload, "status", None)
-    type_name = getattr(payload, "type", None)
-    if isinstance(payload, dict):
-        call_id = payload.get("call_id", call_id)
-        tool_id = payload.get("id", tool_id)
-        status = payload.get("status", status)
-        type_name = payload.get("type", type_name)
-    function_ns = SimpleNamespace(name=name, arguments=arguments)
-    return SimpleNamespace(
-        function=function_ns,
-        call_id=call_id,
-        id=tool_id,
-        status=status,
-        type=type_name,
-        raw=raw,
+def extract_tool_call_info(tool_call: ChatCompletionMessageToolCallParam) -> ToolCallInfo:
+    """Extract structured info from a validated tool call."""
+    return ToolCallInfo(
+        name=tool_call.function.name if tool_call.function else None,
+        arguments=tool_call.function.arguments if tool_call.function else None,
+        call_id=tool_call.id,
+        tool_id=tool_call.id,
+        status=None,  # Not in this model
+        type=tool_call.type,
     )
 
 
-def _extract_name_and_arguments(payload: Any) -> tuple[str | None, Any]:
-    if hasattr(payload, "function"):
-        func = getattr(payload, "function")
-        return getattr(func, "name", None), getattr(func, "arguments", None)
-    name = getattr(payload, "name", None)
-    arguments = getattr(payload, "arguments", None)
-    if isinstance(payload, dict):
-        function_section = payload.get("function")
-        if isinstance(function_section, dict):
-            name = function_section.get("name", name)
-            arguments = function_section.get("arguments", arguments)
-        else:
-            name = payload.get("name", name)
-            arguments = payload.get("arguments", arguments)
-    return name, arguments
+# RESPONSE PROCESSING: Work with proper Response models
+def iter_tool_calls_from_response(response: Response) -> Iterator[ToolCallInfo]:
+    """Extract tool call information from a validated Response."""
+    if not response.output:
+        return
+    for item in response.output:
+        # Handle ResponseOutputMessage items that might contain tool calls
+        if hasattr(item, "tool_calls") and item.tool_calls:
+            tool_calls = TypeAdapter(list[ChatCompletionMessageToolCallParam]).validate_python(
+                item.tool_calls
+            )
+            for tool_call in tool_calls:
+                yield extract_tool_call_info(tool_call)
+
+
+# PRIVATE HELPERS
+def _extract_text_from_parts(parts: list[ResponseContentPart]) -> Iterator[str]:
+    """Extract text from validated content parts."""
+    for part in parts:
+        if isinstance(part, ResponseOutputText) and part.text:
+            yield part.text
+        elif isinstance(part, ResponseOutputRefusal) and part.refusal:
+            yield part.refusal

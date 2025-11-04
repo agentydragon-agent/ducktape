@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
 import os
-from typing import cast
+from typing import TypeAlias, cast
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
@@ -77,7 +77,7 @@ class CloseResult:
     error: str | None = None
 
 
-ActorResult = SamplingSnapshot | CloseResult | None
+ActorResult: TypeAlias = SamplingSnapshot | CloseResult | None
 
 
 class _ActorMsg:

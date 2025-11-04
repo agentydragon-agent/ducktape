@@ -10,7 +10,7 @@ from adgn.mcp._shared.constants import (
 )
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.snapshots import ServerEntry as CompositorStateValue
+from adgn.mcp.snapshots import ServerEntry
 
 
 class _AttachServerArgs(BaseModel):
@@ -60,7 +60,7 @@ class CompositorMetaClient:
     def client(self) -> Client:
         return self._client
 
-    async def list_states(self) -> dict[str, CompositorStateValue]:
+    async def list_states(self) -> dict[str, ServerEntry]:
         comp = getattr(getattr(self._client, "transport", None), "server", None)
         if not isinstance(comp, Compositor):
             raise RuntimeError("CompositorMetaClient requires an in-process Compositor transport")

@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 import time
 
-from fastmcp.client import Client as McpClient
+from fastmcp.client import Client
 import typer
 
 from adgn.agent.agent import MiniCodex
@@ -67,7 +67,7 @@ async def _execute(
     run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    async with McpClient(comp) as mcp_client:
+    async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
             model=model,
             mcp_client=mcp_client,

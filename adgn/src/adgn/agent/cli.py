@@ -11,7 +11,7 @@ import sys
 import threading
 from typing import Any
 
-from fastmcp.client import Client as McpClient
+from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 import typer
 from typer.main import get_command
@@ -151,7 +151,7 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
     comp = Compositor("compositor")
     for name, spec in cfg.mcpServers.items():
         await comp.mount_server(name, spec)
-    async with McpClient(comp) as mcp_client:
+    async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
             model=model,
             mcp_client=mcp_client,
