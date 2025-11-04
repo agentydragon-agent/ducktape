@@ -1,11 +1,11 @@
 dependencies:
   - role: common
-  # petermosmans.customize-gnome moved to gui_nix_migrated role
+  # petermosmans.customize-gnome moved to legacy_without_home_manager/gui role
   - role: anki
     tags: [anki]
   # Needs to be before gnome-terminal-solarized because it uses the fonts.
   - role: nerd_fonts
     become: yes  # needed to write fonts system-wide
-  # gnome-terminal-solarized moved to gui_nix_migrated role
+  # gnome-terminal-solarized moved to legacy_without_home_manager/gui role
   - role: timekpr
   # - role: google-drive-client  # Temporarily disabled for wyrm

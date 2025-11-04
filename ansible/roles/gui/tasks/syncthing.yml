@@ -5,4 +5,4 @@
       - syncthing
       - syncthing-gtk
 
-# Syncthing-GTK autostart configuration moved to gui_nix_migrated role
+# Syncthing-GTK autostart configuration moved to legacy_without_home_manager/gui role

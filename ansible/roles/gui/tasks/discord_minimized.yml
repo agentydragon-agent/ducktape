@@ -7,4 +7,4 @@
       name: discord
       state: present
 
-  # Discord autostart configuration moved to gui_nix_migrated role
+  # Discord autostart configuration moved to legacy_without_home_manager/gui role

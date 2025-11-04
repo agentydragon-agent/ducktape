@@ -11,7 +11,7 @@
     - role: cli
     - role: legacy_without_home_manager/cli
     - role: gui
-    - role: gui_nix_migrated
+    - role: legacy_without_home_manager/gui
     - role: laptop
     - role: wireguard
       tags: [wireguard]

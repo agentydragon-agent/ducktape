@@ -131,7 +131,7 @@
     # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
     use: apt
 
-# Discord autostart migrated to gui_nix_migrated, but package install remains:
+# Discord autostart migrated to legacy_without_home_manager/gui, but package install remains:
 - name: Ensure Discord is installed
   become: true
   apt:
@@ -139,9 +139,9 @@
     state: present
 - include_tasks: wezterm.yml
 
-# GNOME terminal configuration moved to gui_nix_migrated role
+# GNOME terminal configuration moved to legacy_without_home_manager/gui role
 
-# wm_datetime_format.yml removed - datetime configuration moved to gui_nix_migrated role
+# wm_datetime_format.yml removed - datetime configuration moved to legacy_without_home_manager/gui role
 - include_tasks: xorg_terminate.yml
 - include_tasks: element.yml
   tags: element
