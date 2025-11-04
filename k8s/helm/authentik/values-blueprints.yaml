@@ -13,6 +13,7 @@ matrix:
 harbor:
   externalHost: "https://registry.k3s.agentydragon.com"
   adminGroup: "harbor-admins"
+  useExternalSecret: true
 
 # Embedded outpost configuration for forward-auth providers.
 forwardAuth:

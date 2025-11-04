@@ -1,2 +1,7 @@
 bootstrap:
   enabled: true
+
+secretGenerator:
+  harbor:
+    enabled: true
+    secretLength: 32  # Generate 32-byte hex string
