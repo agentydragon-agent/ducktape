@@ -35,7 +35,7 @@ data:
 {{- end }}
 {{ printf "}" | indent 4 }}
 {{- end }}
-{{- if .Values.bootstrap.script }}
-{{ .Values.bootstrap.script | indent 4 }}
+{{- if .Values.bootstrap.enabled }}
+{{ .Files.Get "scripts/bootstrap.sh" | indent 4 }}
 {{- end }}
 {{- end }}

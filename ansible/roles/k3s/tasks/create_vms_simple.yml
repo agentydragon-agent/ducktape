@@ -34,14 +34,14 @@
     content: |
       #!/bin/bash
       # This script is run via Proxmox console or qemu-guest-agent
-      
+
       # Add SSH key for management (from your laptop, not atlas)
       mkdir -p /home/ubuntu/.ssh
       echo "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}" >> /home/ubuntu/.ssh/authorized_keys
       chmod 600 /home/ubuntu/.ssh/authorized_keys
       chmod 700 /home/ubuntu/.ssh
       chown -R ubuntu:ubuntu /home/ubuntu/.ssh
-      
+
       # Install k3s
       curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="{{ k3s_version }}" \
@@ -51,7 +51,7 @@
         --cluster-dns={{ k3s_cluster_dns }} \
         --disable traefik \
         --write-kubeconfig-mode 644
-      
+
       # Save token for worker
       cat /var/lib/rancher/k3s/server/node-token > /tmp/k3s-node-token
     dest: /tmp/setup-k3s-master.sh
@@ -78,9 +78,9 @@
       2. Login with cloud-init credentials
       3. Run: sudo apt-get update && sudo apt-get install -y qemu-guest-agent
       4. Run: sudo systemctl start qemu-guest-agent
-      
+
       Or use Proxmox web UI Console.
-      
+
       Once guest agent is running, we can use qm guest exec for automation.
   loop: "{{ k3s_vms }}"
   tags: [k3s, manual-setup]

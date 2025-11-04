@@ -17,6 +17,13 @@ spec:
     spec:
       serviceAccountName: {{ (.Values.externalSecrets).serviceAccount | default "vault-controller" }}
       restartPolicy: Never
+{{- if .Values.bootstrap.enabled }}
+      volumes:
+      - name: bootstrap-scripts
+        configMap:
+          name: {{ .Values.bootstrap.scriptsConfigMap | default "vault-bootstrap-scripts" }}
+          defaultMode: 0755
+{{- end }}
       initContainers:
       - name: wait-for-vault
         image: curlimages/curl:7.85.0
@@ -79,10 +86,25 @@ spec:
           echo "Manual unsealing for initial startup..."
           vault operator unseal "$UNSEAL_KEY"
           
+          # Authenticate with root token for bootstrap configuration
+          export VAULT_TOKEN="$ROOT_TOKEN"
+          
+          # Run bootstrap script if enabled
+{{- if .Values.bootstrap.enabled }}
+          echo "Running Vault bootstrap configuration..."
+          /scripts/bootstrap.sh
+{{- end }}
+          
           echo "Vault initialization complete - auto-unseal configured for future restarts"
         env:
         - name: VAULT_ADDR
           value: "https://vault.{{ include "vault-ducktape.namespace" . }}.svc:8200"
         - name: VAULT_SKIP_VERIFY
           value: "true"
+{{- if .Values.bootstrap.enabled }}
+        volumeMounts:
+        - name: bootstrap-scripts
+          mountPath: /scripts
+          readOnly: true
+{{- end }}
 {{- end }}
