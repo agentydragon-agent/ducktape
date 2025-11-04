@@ -62,7 +62,7 @@ class MatrixClient:
         self._aggregate_status = ConversationStatus()
 
     @classmethod
-    def from_projected_secrets(  # noqa: PLR0913
+    def from_projected_secrets(
         cls,
         *,
         base_url: str | None = None,

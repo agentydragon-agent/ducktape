@@ -40,6 +40,7 @@ ignore = [
     "PLR0912",  # too many branches
     "PLR0915",  # too many statements
     "PLR0911",  # too many returns
+    "PLR0913",  # too many arguments - often leads to annoying unhelpful refactors
     "B904",     # raise from e
     "E501"      # line length (formatter handles wrapping where needed)
 ]
