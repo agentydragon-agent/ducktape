@@ -15,7 +15,7 @@
   };
   shell_environment_policy = {
     "inherit" = "all";
-    "set" = { CODEX_AGENT = "1"; };
+    "set" = {CODEX_AGENT = "1";};
   };
   sandbox_mode = "workspace-write";
   sandbox_workspace_write = {

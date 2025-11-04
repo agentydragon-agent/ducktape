@@ -1,25 +1,27 @@
-{ pkgs, config, lib, ... }:
-
-let
+{
+  pkgs,
+  config,
+  lib,
+  ...
+}: let
   # Generate MCP config file in Nix
   mcpConfig = pkgs.writeText "mcp-template.json" (builtins.toJSON {
     mcpServers = {
       local-sqlite = {
         url = "http://localhost:__MCP_PORT__";
-        transport = { type = "sse"; };
+        transport = {type = "sse";};
         description = "Local SQLite MCP server";
       };
       local-files = {
         url = "http://localhost:__WEB_PORT__";
-        transport = { type = "http"; };
+        transport = {type = "http";};
         description = "Local file server";
       };
     };
   });
-in
-{
+in {
   # Dependencies
-  packages = [ pkgs.nodejs pkgs.python3 ];
+  packages = [pkgs.nodejs pkgs.python3];
 
   # Python virtual environment
   languages.python = {
@@ -35,8 +37,8 @@ in
 
   # Services
   processes = {
-    mcp = { exec = "npx @modelcontextprotocol/server-sqlite --port $MCP_PORT"; };
-    web = { exec = "python -m http.server $WEB_PORT"; };
+    mcp = {exec = "npx @modelcontextprotocol/server-sqlite --port $MCP_PORT";};
+    web = {exec = "python -m http.server $WEB_PORT";};
   };
 
   enterShell = ''

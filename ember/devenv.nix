@@ -1,6 +1,10 @@
-{ pkgs, lib, config, inputs, ... }:
-
 {
+  pkgs,
+  lib,
+  config,
+  inputs,
+  ...
+}: {
   # Core utilities inside the shell
   packages = [
     pkgs.git
@@ -14,7 +18,7 @@
       enable = true;
       sync = {
         enable = true;
-        extras = [ "dev" ];
+        extras = ["dev"];
       };
     };
   };

@@ -1,12 +1,14 @@
-{ config, lib, pkgs, ... }:
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
   cfg = config.services.claudeCodeRouter;
   # Resolve CCR flake at evaluation time so the service is pinned by flake ref
   ccrFlake = builtins.getFlake cfg.flakeRef;
   ccrPkg = ccrFlake.packages.${pkgs.system}.ccr-cli;
-in
-{
+in {
   options.services.claudeCodeRouter = with lib; {
     enable = mkEnableOption "Launchd agent for Claude Code Router (CCR)";
 
@@ -25,13 +27,19 @@ in
       description = "Optional shell env file to source before starting CCR (e.g., ~/.config/claude-code-router/env).";
     };
 
-    runAtLoad = mkOption { type = types.bool; default = true; };
-    keepAlive = mkOption { type = types.bool; default = true; };
+    runAtLoad = mkOption {
+      type = types.bool;
+      default = true;
+    };
+    keepAlive = mkOption {
+      type = types.bool;
+      default = true;
+    };
   };
 
   config = lib.mkIf cfg.enable {
     # Install CCR CLI into the system profile to ensure the wrapper is present
-    environment.systemPackages = [ ccrPkg ];
+    environment.systemPackages = [ccrPkg];
 
     # Launchd user agent to run CCR
     launchd.user.agents.ccr = {
@@ -42,9 +50,11 @@ in
           "/bin/sh"
           "-lc"
           (let
-            sourceEnv = if cfg.environmentFile != null then "set -a; . ${cfg.environmentFile}; set +a; " else "";
-          in
-            "${sourceEnv}exec ${ccrPkg}/bin/ccr start")
+            sourceEnv =
+              if cfg.environmentFile != null
+              then "set -a; . ${cfg.environmentFile}; set +a; "
+              else "";
+          in "${sourceEnv}exec ${ccrPkg}/bin/ccr start")
         ];
         RunAtLoad = cfg.runAtLoad;
         KeepAlive = cfg.keepAlive;
@@ -55,4 +65,3 @@ in
     };
   };
 }
-

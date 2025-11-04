@@ -1,6 +1,10 @@
-{ pkgs, lib, config, inputs, ... }:
-
 {
+  pkgs,
+  lib,
+  config,
+  inputs,
+  ...
+}: {
   # Native tools and headers needed for wt development
   packages = with pkgs; [
     git
@@ -16,7 +20,7 @@
       enable = true;
       sync = {
         enable = true;
-        extras = [ "dev" ];
+        extras = ["dev"];
       };
     };
   };

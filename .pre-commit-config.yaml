@@ -110,6 +110,15 @@ repos:
       - id: buildifier
       - id: buildifier-lint
 
+  # Alejandra Nix formatter
+  - repo: local
+    hooks:
+      - id: alejandra
+        name: alejandra
+        entry: alejandra --quiet
+        language: system
+        files: \.nix$
+
   # Jsonnet formatter for specimen .libsonnet files (adgn_llm)
   # - repo: https://github.com/serokell/jsonnet-pre-commit
   #   rev: v0.2.0

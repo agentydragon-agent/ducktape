@@ -1,6 +1,10 @@
-{ pkgs, lib, config, inputs, ... }:
-
 {
+  pkgs,
+  lib,
+  config,
+  inputs,
+  ...
+}: {
   packages = with pkgs; [
     git
     pkg-config
@@ -13,7 +17,7 @@
       enable = true;
       sync = {
         enable = true;
-        extras = [ "dev" ];
+        extras = ["dev"];
       };
     };
   };

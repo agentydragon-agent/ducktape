@@ -1,8 +1,12 @@
-{ pkgs, lib, config, inputs, ... }:
-
 {
+  pkgs,
+  lib,
+  config,
+  inputs,
+  ...
+}: {
   # Basic packages available in the shell
-  packages = [ pkgs.git pkgs.nodejs_20 ];
+  packages = [pkgs.git pkgs.nodejs_20];
 
   # Python (devenv-managed venv)
   languages.python = {
@@ -12,7 +16,7 @@
       enable = true;
       sync = {
         enable = true;
-        extras = [ "dev" ];
+        extras = ["dev"];
       };
     };
   };
