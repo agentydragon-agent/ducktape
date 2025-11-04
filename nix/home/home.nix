@@ -183,7 +183,7 @@ in {
   # Delta - better git diffs
   programs.delta = {
     enable = true;
-    enableGitIntegration = true; # Explicitly enable as suggested by warning
+    enableGitIntegration = true;  # Explicitly enable as suggested by warning
     options = {
       navigate = true;
       light = false; # Default to dark theme
