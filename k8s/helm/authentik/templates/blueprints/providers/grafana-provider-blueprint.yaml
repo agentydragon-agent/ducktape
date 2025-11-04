@@ -13,7 +13,7 @@ data:
       labels:
         blueprints.goauthentik.io/instantiate: "true"
     context:
-      grafana_client_secret: !Env [GRAFANA_OAUTH_SECRET, "changeme"]
+      grafana_client_secret: !Env GRAFANA_OAUTH_SECRET
     entries:
       # Create OAuth2 Provider for Grafana
       - model: authentik_providers_oauth2.oauth2provider
