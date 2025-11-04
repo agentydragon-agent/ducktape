@@ -40,6 +40,16 @@ spec:
               value: ":{{ .Values.service.port }}"
             - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
               value: /var/lib/registry
+            {{- if .Values.auth.token.enabled }}
+            - name: REGISTRY_AUTH_TOKEN_REALM
+              value: "{{ .Values.auth.token.realm }}"
+            - name: REGISTRY_AUTH_TOKEN_SERVICE
+              value: "{{ .Values.auth.token.service }}"
+            - name: REGISTRY_AUTH_TOKEN_ISSUER
+              value: "{{ .Values.auth.token.issuer }}"
+            - name: REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE
+              value: "/certs/authentik-ca.crt"
+            {{- end }}
 {{- if .Values.extraEnv }}
 {{ toYaml .Values.extraEnv | indent 12 }}
 {{- end }}
@@ -49,6 +59,11 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/registry
+            {{- if .Values.auth.token.enabled }}
+            - name: authentik-ca
+              mountPath: /certs
+              readOnly: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /v2/
@@ -71,6 +86,11 @@ spec:
 {{- else }}
           emptyDir: {}
 {{- end }}
+        {{- if .Values.auth.token.enabled }}
+        - name: authentik-ca
+          configMap:
+            name: authentik-ca-certificate
+        {{- end }}
       {{- if .Values.affinity }}
       affinity:
 {{ toYaml .Values.affinity | indent 8 }}

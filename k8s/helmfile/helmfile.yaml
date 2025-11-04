@@ -1,0 +1,160 @@
+helmDefaults:
+  wait: false
+  timeout: 120
+  createNamespace: true
+
+repositories:
+  - name: traefik
+    url: https://helm.traefik.io/traefik
+  - name: goauthentik
+    url: https://charts.goauthentik.io
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+  - name: jetstack
+    url: https://charts.jetstack.io
+  - name: gitea-charts
+    url: https://dl.gitea.io/charts/
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
+  - name: openebs
+    url: https://openebs.github.io/charts
+  - name: openebs-zfs
+    url: https://openebs.github.io/zfs-localpv
+  - name: external-secrets
+    url: https://charts.external-secrets.io
+  - name: harbor
+    url: https://helm.goharbor.io
+
+releases:
+  # Cluster-wide infrastructure (CSI drivers, operators)
+  - name: cluster-infrastructure
+    namespace: kube-system
+    chart: ../helm/cluster-infrastructure
+    values:
+      - values/cluster-infrastructure.yaml
+
+  - name: sealed-secrets
+    namespace: kube-system
+    chart: bitnami/sealed-secrets
+    version: 2.5.19
+    values:
+      - values/sealed-secrets.yaml
+
+  - name: traefik
+    namespace: traefik
+    chart: ../helm/traefik
+
+  - name: cert-manager
+    namespace: cert-manager
+    chart: jetstack/cert-manager
+    version: v1.19.1
+    values:
+      - values/cert-manager.yaml
+
+  - name: cert-manager-bootstrap
+    namespace: cert-manager
+    chart: ../helm/cert-manager-bootstrap
+
+  - name: external-secrets
+    namespace: external-secrets
+    chart: ../helm/external-secrets
+    values:
+      - ../helm/external-secrets/values-install.yaml
+      - ../helm/external-secrets/values-operator.yaml
+    needs:
+      - cert-manager/cert-manager-bootstrap  # Requires CA issuer for webhook certificate
+
+  - name: authentik
+    namespace: authentik
+    chart: ../helm/authentik
+    values:
+      - ../helm/authentik/values-authentik.yaml
+      - ../helm/authentik/values-postgresql.yaml
+      - ../helm/authentik/values-redis.yaml
+      - ../helm/authentik/values-blueprints.yaml
+      - ../helm/authentik/values-secrets.yaml
+    set:
+      - name: global.postgresql.auth.password
+        value: >
+          {{ exec "kubectl" (list "-n" "authentik" "get" "secret"
+          "authentik-secrets" "-o" "jsonpath={.data.postgresql-password}") |
+          b64dec }}
+      - name: global.redis.password
+        value: >
+          {{ exec "kubectl" (list "-n" "authentik" "get" "secret"
+          "authentik-secrets" "-o" "jsonpath={.data.redis-password}") |
+          b64dec }}
+
+  - name: vault
+    namespace: vault
+    chart: ../helm/vault
+    values:
+      - ../helm/vault/values-namespace.yaml
+      - ../helm/vault/values-tls.yaml
+      - ../helm/vault/values-vault-server.yaml
+      - ../helm/vault/values-bootstrap.yaml
+      - ../helm/vault/values-external-secrets.yaml
+      - ../helm/vault/values-seal.yaml
+      - ../helm/vault/values-oidc.yaml
+      - ../helm/vault/values-secrets.yaml
+      - ../helm/vault/values-auto-unseal.yaml
+    needs:
+      - kube-system/sealed-secrets  # Root token is stored as sealed secret
+      - cert-manager/cert-manager-bootstrap  # TLS certificates for Vault
+
+  - name: gitea
+    namespace: gitea
+    chart: ../helm/gitea
+
+  - name: ember
+    namespace: ember
+    chart: ../helm/ember
+
+  - name: rspcache
+    namespace: rspcache
+    chart: ../helm/rspcache
+
+  - name: guacamole-shared-secret
+    namespace: guacamole
+    chart: ../helm/shared-secret
+    values:
+      - values/guacamole-secret.yaml
+
+  - name: guacamole-postgresql
+    namespace: guacamole
+    chart: bitnami/postgresql
+    version: 18.1.1
+    values:
+      - values/guacamole-postgresql.yaml
+
+  - name: guacamole
+    namespace: guacamole
+    chart: ../helm/guacamole
+    values:
+      - values/guacamole.yaml
+
+  - name: webhook-inbox
+    namespace: webhook-inbox
+    chart: ../helm/webhook-inbox
+    values:
+      - values/webhook-inbox.yaml
+
+  - name: gitea-mirrors
+    namespace: gitea-mirrors
+    chart: ../helm/gitea-mirrors
+    timeout: 120  # 2 minutes instead of default 10 minutes
+    values:
+      - values/gitea-mirrors.yaml
+    needs:
+      - kube-system/cluster-infrastructure  # Depends on ZFS CSI driver
+
+  - name: harbor
+    namespace: harbor
+    chart: harbor/harbor
+    version: "1.16.0"
+    values:
+      - values/harbor.yaml
+    needs:
+      - authentik/authentik  # Depends on Authentik OIDC provider
+      - cert-manager/cert-manager-bootstrap  # Depends on CA issuer
+      - kube-system/cluster-infrastructure  # Depends on persistent storage

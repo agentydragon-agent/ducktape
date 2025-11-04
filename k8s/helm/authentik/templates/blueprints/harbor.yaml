@@ -1,0 +1,2 @@
+# Authentik Blueprint for Harbor OIDC Provider
+{{ include "common.blueprintConfigMapFromFile" (dict "context" . "name" "authentik-blueprints-harbor" "filename" "harbor.yaml" "file" "blueprints/harbor.yaml") }}
