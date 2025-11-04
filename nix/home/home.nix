@@ -81,8 +81,7 @@ in
   imports = [
     ccr.homeManagerModules.claude-code-router
     ./packages/google-drive-service.nix
-    "${homeManagerMaster}/modules/programs/codex.nix"
-  ]; # codex module only exists on this pinned HM commit
+  ];
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
@@ -96,6 +95,13 @@ in
     enable = true;
     path = homeManagerMaster;
   };
+
+  # Enable Google Drive on specific machines only
+  # NOTE: Requires git credentials for private repo git.k3s.agentydragon.com
+  # to be configured on the host (e.g., via git credential helper)
+  services.google-drive.enable = let
+    hostname = builtins.getEnv "HOSTNAME";
+  in builtins.elem hostname ["gpd" "agentydragon" "wyrm"];
 
   nix.package = pkgs.nix;
 
@@ -210,9 +216,10 @@ in
     extraLuaConfig = builtins.readFile ./config/nvim/init.lua;
   };
 
-  # Delta - better git diffs (using git.delta until programs.delta is fixed)
-  programs.git.delta = {
+  # Delta - better git diffs
+  programs.delta = {
     enable = true;
+    enableGitIntegration = true;  # Explicitly enable as suggested by warning
     options = {
       navigate = true;
       light = false;  # Default to dark theme
