@@ -210,10 +210,9 @@ in
     extraLuaConfig = builtins.readFile ./config/nvim/init.lua;
   };
 
-  # Delta - better git diffs
-  programs.delta = {
+  # Delta - better git diffs (using git.delta until programs.delta is fixed)
+  programs.git.delta = {
     enable = true;
-    enableGitIntegration = true;
     options = {
       navigate = true;
       light = false;  # Default to dark theme
