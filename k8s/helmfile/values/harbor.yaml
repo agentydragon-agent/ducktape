@@ -60,12 +60,13 @@ oidc:
   name: "Authentik"
   endpoint: "https://auth.k3s.agentydragon.com/application/o/harbor/"
   clientId: "harbor"
-  clientSecret: "" # Will be set via sealed secret or external secret
-  groupsClaim: "groups"
+  clientSecret: "" # Will be set via external secret from Vault
+  groupsClaim: "groups"  
   adminGroup: "harbor-admins"
   scope: "openid,profile,email,groups"
   userClaim: "preferred_username"
   verifySignature: true
+  useExternalSecret: true
 
 # Disable internal Harbor authentication since we're using OIDC
 core:

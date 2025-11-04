@@ -415,6 +415,11 @@
         dev_env_user: agentydragon
       tags: [dev_env]
 
+    - name: Install homelab CA certificate for system trust
+      ansible.builtin.import_role:
+        name: docker_registry_client
+      tags: [ca-trust]
+
     # TODO: configure - plus for remote desktop
     # - name: Configure Authentik
     #   ansible.builtin.include_role:
