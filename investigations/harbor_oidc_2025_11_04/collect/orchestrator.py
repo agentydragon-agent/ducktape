@@ -35,7 +35,7 @@ class ScientistMode:
         self.base_dir = (
             Path(output_dir)
             if output_dir
-            else Path(f"/tmp/harbor-scientist-{timestamp}")
+            else Path(f"observations/harbor-collection-{timestamp}")
         )
         self.base_dir.mkdir(parents=True, exist_ok=True)
 

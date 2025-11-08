@@ -18,6 +18,13 @@ class TestUserManager:
         server_pod = self.k8s._get_first_pod_by_component(AUTHENTIK_NAMESPACE, "server")
         user_created = False
 
+        if not server_pod:
+            self.logger.error(
+                f"❌ No Authentik server pod found in {AUTHENTIK_NAMESPACE}"
+            )
+            yield {"error": "No Authentik server pod found"}
+            return
+
         try:
             # Create user
             create_cmd = f"""
