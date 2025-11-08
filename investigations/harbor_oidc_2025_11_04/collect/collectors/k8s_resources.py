@@ -14,7 +14,7 @@ class K8sResourceCollector(BaseCollector):
 
     async def collect(self) -> None:
         """Collect ALL Kubernetes resources and states."""
-        self.logger.info("☸️  COLLECTING ALL K8S RESOURCES...")
+        self.logger.info("Collecting Kubernetes resources")
 
         # Run namespace and cluster collections in parallel
         await asyncio.gather(

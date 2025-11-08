@@ -20,6 +20,7 @@ from .config import (
     HARBOR_NAMESPACE,
     HARBOR_PORTAL,
     HARBOR_REGISTRY,
+    IS_PROD,
 )
 from .k8s_client import K8sClient
 from .testing.oidc_e2e import OIDCTester
@@ -50,8 +51,12 @@ class ScientistMode:
         )
         self.logger = logging.getLogger(__name__)
 
+        # Show which environment we're targeting
+        env_mode = "production" if IS_PROD else "test"
+        self.logger.info(f"Starting collection in {env_mode} environment")
+        self.logger.info(f"Output directory: {self.base_dir}")
         self.logger.info(
-            f"🧪 SCIENTIST MODE ACTIVATED - Data collection at: {self.base_dir}"
+            f"Targeting namespaces: harbor={HARBOR_NAMESPACE}, authentik={AUTHENTIK_NAMESPACE}"
         )
 
         # Create subdirectories
@@ -90,7 +95,7 @@ class ScientistMode:
 
     async def enable_observability(self) -> None:
         """Enable maximum observability on all components."""
-        self.logger.info("🔧 ENABLING MAXIMUM OBSERVABILITY...")
+        self.logger.info("Enabling debug logging on all components")
 
         # Harbor components - try multiple env vars for different versions
         harbor_debug = {
@@ -123,19 +128,20 @@ class ScientistMode:
 
         # Enable PostgreSQL logging with more detail
         pg_commands = [
-            "ALTER SYSTEM SET log_statement = 'all';",
-            "ALTER SYSTEM SET log_duration = on;",
-            "ALTER SYSTEM SET log_min_duration_statement = 100;",
-            "ALTER SYSTEM SET log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h ';",
-            "SELECT pg_reload_conf();",
+            "ALTER SYSTEM SET log_statement = 'all'",
+            "ALTER SYSTEM SET log_duration = on",
+            "ALTER SYSTEM SET log_min_duration_statement = 100",
+            # Simplified log_line_prefix to avoid shell escaping issues
+            "ALTER SYSTEM SET log_line_prefix = '%t [%p]: user=%u,db=%d '",
+            "SELECT pg_reload_conf()",
         ]
 
         self.command_runner.run_psql_commands(pg_commands, log_results=True)
 
         # Wait for services to stabilize
-        self.logger.info("⏳ Waiting 30s for services to stabilize...")
+        self.logger.info("Waiting 30s for services to stabilize...")
         await asyncio.sleep(30)
-        self.logger.info("✅ Observability maximized!")
+        self.logger.info("Debug logging enabled")
 
     def _enable_debug_for_deployments(
         self, namespace: str, debug_config: dict[str, dict[str, str]]
@@ -144,16 +150,16 @@ class ScientistMode:
         for deployment, env_vars in debug_config.items():
             success = self.k8s.set_deployment_env(namespace, deployment, env_vars)
             if success:
-                self.logger.info(f"✅ Enabled debug for {deployment}")
+                self.logger.info(f"Enabled debug logging for {deployment}")
             else:
-                self.logger.error(f"❌ Failed to enable debug for {deployment}")
+                self.logger.error(f"Failed to enable debug for {deployment}")
 
     async def run_full_collection(self) -> None:
         """Run the complete data collection suite."""
-        self.logger.info("🚀 STARTING FULL SCIENTIST MODE DATA COLLECTION...")
+        self.logger.info("Starting full data collection")
 
         # First enable observability (must run before other collections)
-        self.logger.info("🔧 Enabling debug logging")
+        self.logger.info("Configuring debug logging")
         await self.enable_observability()
 
         # Define parallel collection tasks: (name, function)
@@ -174,13 +180,13 @@ class ScientistMode:
         # Check results
         for (name, _), result in zip(collection_tasks, results):
             if isinstance(result, Exception):
-                self.logger.error(f"❌ {name} failed: {result}")
+                self.logger.error(f"{name} failed: {result}")
             else:
-                self.logger.info(f"✅ {name} completed")
+                self.logger.info(f"{name} completed")
 
         # Generate report
         self.generate_report()
-        self.logger.info(f"✅ DATA COLLECTION COMPLETE! Results in: {self.base_dir}")
+        self.logger.info(f"Collection complete. Results in: {self.base_dir}")
 
     def generate_report(self) -> None:
         """Generate comprehensive report of data collected."""
@@ -216,4 +222,4 @@ Directory: {self.base_dir}
         report_file = self.base_dir / "REPORT.md"
         report_file.write_text(report)
 
-        self.logger.info(f"📋 Report generated: {report_file}")
+        self.logger.info(f"Report generated: {report_file}")

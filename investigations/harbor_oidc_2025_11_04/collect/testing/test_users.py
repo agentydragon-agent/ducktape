@@ -26,7 +26,7 @@ class TestUserManager:
             return
 
         try:
-            # Create user
+            # Create user - use manage.py shell to ensure Django is configured
             create_cmd = f"""
 from authentik.core.models import User
 user = User.objects.create_user(
@@ -37,10 +37,11 @@ user = User.objects.create_user(
 user.save()
 print(f'Created user: {{user.username}} (ID: {{user.pk}})')
 """
+            # Use manage.py shell instead of python -c to get Django setup
             result = self.k8s.exec_in_pod(
                 AUTHENTIK_NAMESPACE,
                 server_pod,
-                ["python", "-c", create_cmd],
+                ["ak", "shell", "-c", create_cmd],
             )
             self.logger.info(f"✅ Created test user: {username}")
             user_created = True
@@ -63,10 +64,11 @@ deleted = User.objects.filter(username='{username}').delete()
 print(f'Deleted {{deleted[0]}} users')
 """
                 try:
+                    # Use manage.py shell for cleanup too
                     cleanup_result = self.k8s.exec_in_pod(
                         AUTHENTIK_NAMESPACE,
                         server_pod,
-                        ["python", "-c", cleanup_cmd],
+                        ["ak", "shell", "-c", cleanup_cmd],
                     )
                     self.logger.info(f"✅ Test user cleaned up: {cleanup_result}")
                 except Exception as e:

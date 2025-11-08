@@ -22,7 +22,7 @@ class DatabaseCollector(BaseCollector):
 
     async def collect(self) -> None:
         """Collect ALL database information."""
-        self.logger.info("🗃️  COLLECTING ALL DATABASE INFO...")
+        self.logger.info("Collecting database information")
 
         # Get admin password from secret
         self.admin_password = self.k8s.get_secret_value(
@@ -81,11 +81,15 @@ class DatabaseCollector(BaseCollector):
     ) -> None:
         """Run a database query in a pod."""
         if is_dump:
-            command = ["sh", "-c", query]
+            # For dumps, use shell to get FULL dump
+            result = self.k8s.exec_in_pod(namespace, pod, ["sh", "-c", query])
         else:
-            command = ["psql", "-U", POSTGRES_USER, "-d", database, "-c", query]
+            # Use the dedicated psql method for regular queries
+            result = self.k8s.exec_psql(
+                namespace, pod, query, database=database, user=POSTGRES_USER
+            )
 
-        result = self.k8s.exec_in_pod(namespace, pod, command)
+        # Write FULL unfiltered result
         self.write_output(result, output_file, description)
 
     def _ensure_admin_password(self) -> None:
