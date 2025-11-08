@@ -7,8 +7,8 @@ appVersion: "1.18.2"
 
 dependencies:
   - name: common-lib
-    version: ^0.1.1
-    repository: file://../common-lib
+    version: "*"
+    repository: "file://../common-lib"
   - name: vault
     version: 0.28.0
     repository: https://helm.releases.hashicorp.com

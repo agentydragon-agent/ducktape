@@ -1,9 +1,0 @@
-dependencies:
-- name: common-lib
-  repository: file://../common-lib
-  version: 0.1.1
-- name: gitea
-  repository: https://dl.gitea.io/charts/
-  version: 12.4.0
-digest: sha256:38b1f200c5bc1d53e9deace90844727679a63950d9cd4a5751ae3828d7d1f9dc
-generated: "2025-10-31T17:50:32.022322189-07:00"

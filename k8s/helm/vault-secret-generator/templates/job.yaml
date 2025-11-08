@@ -1,0 +1,88 @@
+{{- range $secretConfig := .Values.secrets }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "vault-secret-generator.fullname" $ }}-{{ $secretConfig.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "vault-secret-generator.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: secret-generator
+    vault-secret-generator/secret-name: {{ $secretConfig.name }}
+  {{- with $.Values.job.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ $.Values.job.backoffLimit }}
+  ttlSecondsAfterFinished: {{ $.Values.job.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "vault-secret-generator.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: secret-generator
+        vault-secret-generator/secret-name: {{ $secretConfig.name }}
+    spec:
+      restartPolicy: {{ $.Values.job.restartPolicy }}
+      serviceAccountName: {{ include "vault-secret-generator.serviceAccountName" $ }}
+      containers:
+      - name: generate-{{ $secretConfig.name }}-secrets
+        image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+        imagePullPolicy: {{ $.Values.image.pullPolicy }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Generating secrets for {{ $secretConfig.name }} at {{ $secretConfig.path }}..."
+          
+          # Check existing values and generate new ones as needed
+          {{- range $field := $secretConfig.fields }}
+          echo "Processing field: {{ $field.name }}"
+          
+          {{- if $field.onlyIfMissing }}
+          # Check if {{ $field.name }} already exists
+          EXISTING_{{ $field.name | upper | replace "-" "_" }}=$(vault kv get -field={{ $field.name }} {{ $secretConfig.path }} 2>/dev/null || echo "")
+          
+          if [ -z "$EXISTING_{{ $field.name | upper | replace "-" "_" }}" ]; then
+            echo "Generating new {{ $field.name }}..."
+            {{ $field.name | upper | replace "-" "_" }}=$(head -c {{ $field.length | default 32 }} /dev/urandom | base64 | tr -d '/+' | tr -d '=')
+          else
+            echo "{{ $field.name }} already exists, keeping existing value"
+            {{ $field.name | upper | replace "-" "_" }}="$EXISTING_{{ $field.name | upper | replace "-" "_" }}"
+          fi
+          {{- else }}
+          # Always generate new {{ $field.name }}
+          echo "Generating new {{ $field.name }}..."
+          {{ $field.name | upper | replace "-" "_" }}=$(head -c {{ $field.length | default 32 }} /dev/urandom | base64 | tr -d '/+' | tr -d '=')
+          {{- end }}
+          
+          {{- end }}
+          
+          # Build the vault kv put command
+          echo "Storing secrets in Vault at {{ $secretConfig.path }}..."
+          vault kv put {{ $secretConfig.path }} \
+          {{- range $field := $secretConfig.fields }}
+            {{ $field.name }}="${{ $field.name | upper | replace "-" "_" }}" \
+          {{- end }}
+          
+          echo "Successfully generated and stored secrets for {{ $secretConfig.name }}"
+        env:
+        - name: VAULT_ADDR
+          value: {{ $.Values.vault.address | quote }}
+        - name: VAULT_CACERT
+          value: "/etc/vault-tls/ca.crt"
+        - name: VAULT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ $.Values.vault.rootTokenSecretName }}
+              key: {{ $.Values.vault.rootTokenSecretKey }}
+        volumeMounts:
+        - name: vault-tls
+          mountPath: /etc/vault-tls
+          readOnly: true
+      volumes:
+      - name: vault-tls
+        secret:
+          secretName: {{ $.Values.vault.tlsSecretName }}
+{{- end }}

@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-mirror-controller
+  namespace: {{ .Values.namespace | default "gitea" }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea-mirror-controller
+  template:
+    metadata:
+      labels:
+        app: gitea-mirror-controller
+    spec:
+      serviceAccountName: gitea-mirror-controller
+      containers:
+      - name: controller
+        image: {{ .Values.controller.image | default "gitea-mirror-controller:latest" }}
+        imagePullPolicy: {{ .Values.controller.imagePullPolicy | default "IfNotPresent" }}
+        env:
+        - name: GITEA_URL
+          value: {{ .Values.controller.giteaUrl | default "http://gitea-mirrors:3000" }}
+        - name: GITEA_USER
+          value: {{ .Values.controller.giteaUser | default "gitea_admin" }}
+        - name: GITEA_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: gitea-admin-token
+              key: token
+        resources:
+          limits:
+            memory: 256Mi
+            cpu: 500m
+          requests:
+            memory: 128Mi
+            cpu: 100m
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-mirror-controller
+  namespace: {{ .Values.namespace | default "gitea" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gitea-mirror-controller
+rules:
+- apiGroups: ["gitea.io"]
+  resources: ["giteamirrors"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: ["gitea.io"]
+  resources: ["giteamirrors/status"]
+  verbs: ["patch", "update"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gitea-mirror-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gitea-mirror-controller
+subjects:
+- kind: ServiceAccount
+  name: gitea-mirror-controller
+  namespace: {{ .Values.namespace | default "gitea" }}

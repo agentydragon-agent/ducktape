@@ -50,8 +50,9 @@ persistence:
       storageClass: "local-path"
       size: 5Gi
 
-# Harbor core configuration
-harborAdminPassword: "HarborAdmin123!" # Change this!
+# Harbor core configuration - admin password managed via ExternalSecret
+existingSecretAdminPassword: "harbor-oidc-secret"
+existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD"
 
 # Authentik OIDC Integration
 authMode: "oidc_auth"

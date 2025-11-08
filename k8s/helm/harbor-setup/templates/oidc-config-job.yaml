@@ -1,14 +1,20 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: harbor-oidc-config
-  namespace: harbor
+  name: oidc-config
+  namespace: {{ .Release.Namespace }}
   labels:
     app: harbor
     component: oidc-config
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
   annotations:
-    argocd.argoproj.io/sync-wave: "10"
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300  # 5 minute timeout
   template:
     metadata:
       labels:
@@ -36,11 +42,21 @@ spec:
             sleep 10
           done
           
-          echo "Configuring Harbor OIDC settings..."
+          echo "Logging into Harbor to create session..."
           
-          # Configure OIDC settings
+          # Login to Harbor to create session (required for system-level API access)
+          COOKIE_JAR=$(mktemp)
+          curl -X POST -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "principal=admin&password=${HARBOR_ADMIN_PASSWORD}" \
+            -c "$COOKIE_JAR" \
+            -f \
+            http://harbor-core:80/c/login
+          
+          echo "Configuring Harbor OIDC settings with session authentication..."
+          
+          # Configure OIDC settings using session cookie (provides proper RBAC authorization)
           curl -X PUT -H "Content-Type: application/json" \
-            -u admin:HarborAdmin123! \
+            -b "$COOKIE_JAR" \
             -d '{
               "auth_mode": "oidc_auth",
               "oidc_name": "Authentik",
@@ -54,7 +70,10 @@ spec:
               "oidc_verify_cert": true,
               "oidc_auto_onboard": true
             }' \
-            http://harbor-core:80/api/v2.0/configurations
+            http://harbor-core:80/api/internal/configurations
+          
+          # Cleanup
+          rm -f "$COOKIE_JAR"
           
           echo "Harbor OIDC configuration completed successfully"
         env:
@@ -63,3 +82,8 @@ spec:
             secretKeyRef:
               name: harbor-oidc-secret
               key: OIDC_CLIENT_SECRET
+        - name: HARBOR_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: harbor-oidc-secret
+              key: HARBOR_ADMIN_PASSWORD

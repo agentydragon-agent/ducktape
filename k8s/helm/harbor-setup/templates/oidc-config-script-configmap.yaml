@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oidc-config-script
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: harbor
+    component: oidc-config-script
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  harbor-oidc-config-session.sh: |
+{{ .Files.Get "scripts/harbor-oidc-config-session.sh" | indent 4 }}

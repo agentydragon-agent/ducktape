@@ -1,0 +1,11 @@
+apiVersion: v2
+name: harbor-setup
+description: Harbor initialization and configuration jobs
+type: application
+version: 0.1.0
+appVersion: "1.0"
+
+dependencies:
+  - name: common-lib
+    version: "*"
+    repository: "file://../common-lib"
