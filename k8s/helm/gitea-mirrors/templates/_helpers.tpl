@@ -47,3 +47,17 @@ Selector labels
 app.kubernetes.io/name: {{ include "gitea-mirrors.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Derive mirror name from URL
+Strips https://github.com/ or https://gitlab.com/ prefixes
+Converts / to - for nested paths
+*/}}
+{{- define "gitea-mirrors.mirrorName" -}}
+{{- $url := . -}}
+{{- $url = regexReplaceAll "^https?://" $url "" -}}
+{{- $url = regexReplaceAll "^(github\\.com|gitlab\\.com|bitbucket\\.org)/" $url "" -}}
+{{- $url = regexReplaceAll "/" $url "-" -}}
+{{- $url = regexReplaceAll "\\.git$" $url "" -}}
+{{- $url | lower -}}
+{{- end }}

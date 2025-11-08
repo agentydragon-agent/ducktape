@@ -1,0 +1,52 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# Vault connection configuration
+vault:
+  address: "https://vault.vault.svc.cluster.local:8200"
+  namespace: "vault"
+  tlsSecretName: "vault-tls"
+  rootTokenSecretName: "vault-root-token"
+  rootTokenSecretKey: "root-token"
+
+# Service account for the secret generator job
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Job configuration
+job:
+  restartPolicy: OnFailure
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+
+# Image for the vault container
+image:
+  repository: hashicorp/vault
+  tag: "1.17.2"
+  pullPolicy: IfNotPresent
+
+# Secrets to generate - list of secret configurations
+secrets: []
+# Example:
+# secrets:
+#   - name: "harbor-secrets"
+#     path: "kv/harbor"
+#     fields:
+#       - name: "client-secret"
+#         length: 32
+#         onlyIfMissing: true
+#       - name: "admin-password" 
+#         length: 24
+#         onlyIfMissing: true
+#   - name: "gitea-oauth"
+#     path: "kv/gitea"
+#     fields:
+#       - name: "client-secret"
+#         length: 48
+#         onlyIfMissing: false  # Always regenerate

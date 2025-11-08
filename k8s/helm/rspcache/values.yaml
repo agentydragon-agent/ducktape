@@ -109,7 +109,7 @@ admin:
     annotations:
       cert-manager.io/cluster-issuer: homelab-ca-issuer
       traefik.ingress.kubernetes.io/router.entrypoints: websecure
-      traefik.ingress.kubernetes.io/router.middlewares: authentik-authentik-forwardauth@kubernetescrd
+      traefik.ingress.kubernetes.io/router.middlewares: authentik-forwardauth@kubernetescrd
     hosts:
       - host: rspcache-admin.k3s.agentydragon.com
         paths:

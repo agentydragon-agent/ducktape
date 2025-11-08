@@ -1,0 +1,11 @@
+{{- range .Values.mirrors }}
+---
+apiVersion: gitea.io/v1alpha1
+kind: GiteaMirror
+metadata:
+  name: {{ include "gitea-mirrors.mirrorName" .url }}
+  namespace: {{ $.Values.namespace | default "gitea" }}
+spec:
+  url: {{ .url }}
+  interval: {{ $.Values.global.syncInterval | default "6h" }}
+{{- end }}

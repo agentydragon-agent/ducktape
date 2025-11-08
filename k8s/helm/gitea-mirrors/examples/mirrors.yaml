@@ -1,0 +1,28 @@
+# Example GiteaMirror resources
+---
+apiVersion: gitea.io/v1alpha1
+kind: GiteaMirror
+metadata:
+  name: openai-python
+  namespace: gitea
+spec:
+  url: https://github.com/openai/openai-python
+  interval: 6h
+---
+apiVersion: gitea.io/v1alpha1
+kind: GiteaMirror
+metadata:
+  name: traefik
+  namespace: gitea
+spec:
+  url: https://github.com/traefik/traefik
+  interval: 6h
+---
+apiVersion: gitea.io/v1alpha1
+kind: GiteaMirror
+metadata:
+  name: logseq
+  namespace: gitea
+spec:
+  url: https://github.com/logseq/logseq
+  interval: 4h

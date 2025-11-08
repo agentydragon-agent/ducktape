@@ -39,9 +39,14 @@ authentik:
       paths:
         - /
       pathType: Prefix
+      tls:
+        - hosts:
+            - auth.k3s.agentydragon.com
+          secretName: authentik-tls
       annotations:
-        traefik.ingress.kubernetes.io/router.entrypoints: web
-        ingress.kubernetes.io/force-ssl-redirect: "false"
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        traefik.ingress.kubernetes.io/router.tls: "true"
+        cert-manager.io/cluster-issuer: homelab-ca-issuer
 
   worker:
     replicas: 1

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: vault-secret-generator
+description: A generic Helm chart for generating random secrets in Vault
+type: application
+version: 0.1.0
+appVersion: "1.0"
+
+dependencies:
+- name: common-lib
+  version: "*"
+  repository: "file://../common-lib"

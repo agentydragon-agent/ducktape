@@ -1,0 +1,96 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: admin-init
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: harbor
+    component: admin-init
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300  # 5 minute timeout
+  template:
+    metadata:
+      labels:
+        app: harbor
+        component: admin-init
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-database
+        image: postgres:15
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Waiting for PostgreSQL to be ready..."
+          until pg_isready -h harbor-database -p 5432 -U postgres; do
+            echo "PostgreSQL is not ready yet..."
+            sleep 5
+          done
+          echo "PostgreSQL is ready"
+        env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: harbor-database
+              key: POSTGRES_PASSWORD
+      containers:
+      - name: init-admin-password
+        image: postgres:15
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Initializing Harbor admin password..."
+          
+          # Check if admin user exists and get current salt
+          ADMIN_EXISTS=$(psql -h harbor-database -U postgres -d registry -t -c "SELECT COUNT(*) FROM harbor_user WHERE username = 'admin';" | xargs)
+          
+          if [ "$ADMIN_EXISTS" -eq 0 ]; then
+            echo "Admin user doesn't exist yet, Harbor will create it with our password"
+            exit 0
+          fi
+          
+          # Get existing salt or generate new one if needed
+          EXISTING_SALT=$(psql -h harbor-database -U postgres -d registry -t -c "SELECT salt FROM harbor_user WHERE username = 'admin';" | xargs)
+          
+          if [ -z "$EXISTING_SALT" ]; then
+            # Generate salt if missing
+            SALT=$(head -c 24 /dev/urandom | base64 | tr -d '/+' | cut -c1-32)
+            echo "Generated new salt: $SALT"
+          else
+            SALT="$EXISTING_SALT"
+            echo "Using existing salt: $SALT"
+          fi
+          
+          # Calculate salted hash: MD5(salt + password)
+          SALTED_HASH=$(echo -n "${SALT}${HARBOR_ADMIN_PASSWORD}" | md5sum | cut -d' ' -f1)
+          
+          # Update admin user with correct salted password hash
+          psql -h harbor-database -U postgres -d registry -c "
+            UPDATE harbor_user 
+            SET password = '$SALTED_HASH', salt = '$SALT'
+            WHERE username = 'admin';
+          "
+          
+          echo "Harbor admin password initialized successfully"
+        env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: harbor-database
+              key: POSTGRES_PASSWORD
+        - name: HARBOR_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: harbor-oidc-secret
+              key: HARBOR_ADMIN_PASSWORD

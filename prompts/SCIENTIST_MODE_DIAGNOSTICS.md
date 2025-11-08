@@ -14,6 +14,12 @@ Individual checks one by one are inefficient, error-prone, and lead to missing c
 
 Put together a very exhaustive list of **all checks and information gathering** you could possibly want for information about this issue. Write a parallelized Python script with timeouts around all operations that collects under a common directory with timestamped subdirs full **unredacted, unfiltered outputs** of all diagnostic commands.
 
+**CRITICAL: NEVER CREATE NEW DATA COLLECTION SCRIPTS**
+- There should be **ONE AND ONLY ONE** data collection script per investigation
+- **ALWAYS extend the existing script** - NEVER create a new one
+- If you need to add observability setup, add it as a new function in THE SAME script
+- The script grows and evolves with the investigation - it's a living document
+
 ### Phase 2: Scientific Method Loop - NO MANUAL CHECKS
 
 Operate in the **"collect → analyze → update script → repeat until fixed"** loop:
@@ -27,6 +33,12 @@ Operate in the **"collect → analyze → update script → repeat until fixed"*
 
 **🚫 DO NOT DO MANUAL CHECKS ONCE**  
 **✅ TEACH THE SCRIPT to do it automatically and run it forever into the future automatically all in ONE turnkey command**
+
+**CRITICAL RULE: NO ADHOC INFORMATION GATHERING**
+- **NEVER** run one-off `curl`, `kubectl`, or other diagnostic commands outside the script
+- **ALWAYS** add new information gathering steps to the script FIRST
+- **THEN** run the script to collect all data systematically
+- The script IS your lab notebook - it should contain ALL your information gathering
 
 ### Phase 3: Lab Notebook Documentation
 
@@ -50,20 +62,34 @@ Use permanent storage structure (NOT temporary folders):
 investigations/
   <issue_name>/
     LAB_NOTEBOOK.md
-    <collection_script>.py
+    <collection_script>.py  # Script MUST be colocated with investigation data
     observations/
       YYYY-MM-DD-HHMMSS/
         <all collected data>
 ```
 
+**SCRIPT LOCATION RULE**: The data collection script MUST be stored in the investigation folder, NOT in a separate scripts directory. This ensures:
+- Script evolution is tracked alongside the investigation
+- Script and data remain together for future reference
+- Investigation is self-contained and reproducible
+
 ### Data Collection Script Requirements
 
+**CRITICAL: Treat the collection script as an ongoing software artifact**, not a throwaway script:
+- **Continuously refactor** - DRY up repetitive code, extract common patterns
+- **Maintain code quality** - use proper abstractions, type hints, docstrings
+- **Evolve architecture** - refactor to use appropriate SDKs (e.g., Kubernetes Python SDK instead of kubectl)
+- **Apply software engineering principles** - SOLID, DRY, KISS, YAGNI
+- **Version control mindset** - each update should improve the codebase
+
+**Technical Requirements**:
 - **Maximum parallelism** - use asyncio to run all operations concurrently with individual timeouts
 - **DRY and modular design** - create reusable building blocks like:
   - `run_command_with_timeout(cmd, timeout)` - execute shell commands with capture
   - `dump_k8s_job_status(job_name, namespace)` - comprehensive Kubernetes job diagnostics  
   - `dump_api_status(url, description)` - API endpoint testing with validation
   - `collect_logs(service, container, lines)` - standardized log collection
+- **Use appropriate SDKs** - prefer native Python SDKs over shelling out (e.g., kubernetes-python over kubectl)
 - **Timestamped subdirectories** for each run
 - **Unredacted, unfiltered outputs** - capture everything (no privacy/redaction by default)
 - **Graceful degradation** in absence of elevated privileges  
@@ -71,6 +97,14 @@ investigations/
 - **Easily extensible** - add new checks as you discover more areas to investigate
 - **Progressive enhancement** - as you zoom in on ideas of what could be wrong, progressively update collection script to include automated checks for such conditions
 - **Future-oriented maintenance** - treat as a longer-lived diagnostic tool that will evolve over time
+
+**Code Quality Standards**:
+- **Refactor regularly** - when you see repetition, extract it
+- **Use configuration over hardcoding** - data-driven approach for collections
+- **Proper error handling** - graceful failures with meaningful messages
+- **Logging and observability** - the script should explain what it's doing
+- **Documentation** - inline comments for complex logic, docstrings for functions
+- **Testing mindset** - structure code to be testable even if tests aren't written yet
 
 ### Source Code Investigation
 
@@ -140,9 +174,9 @@ Source code management:
 
 **GATHER ALL THE LOGS, TURN ON ALL THE KNOBS**
 
-**IMPORTANT**: Turning on debug logging and observability knobs is a **system mutation** that should be done **outside** the data collection script. Create a separate script for putting the system into high-observability mode, but document/automate this process.
+**IMPORTANT**: Turning on debug logging and observability knobs is a **system mutation** that should be added to the SAME data collection script as a separate function. DO NOT create a separate script - add it as an `enable_observability()` or similar function that can be called before data collection.
 
-**High-Observability Setup** (separate script/process):
+**High-Observability Setup** (function in same script):
 - Enable debug/trace logging on ALL components
 - Increase log verbosity to maximum levels
 - Enable audit logging where available

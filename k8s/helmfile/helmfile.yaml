@@ -158,3 +158,10 @@ releases:
       - authentik/authentik  # Depends on Authentik OIDC provider
       - cert-manager/cert-manager-bootstrap  # Depends on CA issuer
       - kube-system/cluster-infrastructure  # Depends on persistent storage
+
+  - name: harbor-setup
+    namespace: harbor
+    chart: ../helm/harbor-setup
+    needs:
+      - harbor/harbor  # Runs after Harbor is deployed
+      - vault/vault    # Depends on Vault for admin password

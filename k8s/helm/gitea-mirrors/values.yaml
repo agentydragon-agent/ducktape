@@ -1,5 +1,37 @@
 # Gitea Mirrors - wrapper chart values
-# Passes configuration to the gitea subchart
+
+namespace: gitea
+
+# Controller configuration
+controller:
+  image: gitea-mirror-controller:latest
+  imagePullPolicy: IfNotPresent
+  giteaUrl: http://gitea-mirrors:3000
+  giteaUser: gitea_admin
+
+# Global mirror settings
+global:
+  syncInterval: "6h"
+
+# List of repositories to mirror
+# Names will be automatically derived from URLs
+mirrors:
+  - url: https://github.com/openai/openai-python
+  - url: https://github.com/openai/openai-cookbook
+  - url: https://github.com/helmfile/helmfile
+  - url: https://github.com/nvim-orgmode/orgmode
+  - url: https://github.com/chipsenkbeil/org-roam.nvim
+  - url: https://github.com/musistudio/llms
+  - url: https://github.com/juanfont/headscale
+  - url: https://github.com/typokign/matrix-chart
+  - url: https://github.com/All-Hands-AI/OpenHands
+  - url: https://github.com/anyproto/any-sync
+  - url: https://github.com/anyproto/anytype-heart
+  - url: https://github.com/anyproto/anytype-ts
+  - url: https://github.com/logseq/logseq
+  - url: https://github.com/go-gitea/gitea
+  - url: https://github.com/traefik/traefik
+  - url: https://github.com/cert-manager/cert-manager
 
 # Storage configuration for our custom PVC
 storage:
@@ -7,11 +39,7 @@ storage:
   hostPath:
     enabled: true
     path: "/mnt/gitea-mirrors"
-    nodeName: k3s-master  # Pin to master node where we'll mount the virtiofs
-  zfs:
-    enabled: false  # ZFS not available on k3s VMs
-    storageClassName: "zfs-tank-git"
-    datasetName: "gitea-public-mirrors"
+    nodeName: k3s-master
 
 # PostgreSQL subchart - disabled
 postgresql:
@@ -21,8 +49,8 @@ postgresql:
 gitea:
   persistence:
     enabled: true
-    create: false  # Don't create a new PVC
-    claimName: gitea-mirrors-data  # Use our ZFS PVC
+    create: false
+    claimName: gitea-mirrors-data
     
   postgresql:
     enabled: false
