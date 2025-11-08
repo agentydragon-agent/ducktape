@@ -20,7 +20,6 @@ from .config import (
     HARBOR_NAMESPACE,
     HARBOR_PORTAL,
     HARBOR_REGISTRY,
-    IS_PROD,
 )
 from .k8s_client import K8sClient
 from .testing.oidc_e2e import OIDCTester
@@ -34,9 +33,7 @@ class ScientistMode:
     def __init__(self, output_dir: Optional[str] = None):
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.base_dir = (
-            Path(output_dir)
-            if output_dir
-            else Path(f"observations/harbor-collection-{timestamp}")
+            Path(output_dir) if output_dir else Path(f"observations/{timestamp}")
         )
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -52,8 +49,7 @@ class ScientistMode:
         self.logger = logging.getLogger(__name__)
 
         # Show which environment we're targeting
-        env_mode = "production" if IS_PROD else "test"
-        self.logger.info(f"Starting collection in {env_mode} environment")
+        self.logger.info("Starting collection in production environment")
         self.logger.info(f"Output directory: {self.base_dir}")
         self.logger.info(
             f"Targeting namespaces: harbor={HARBOR_NAMESPACE}, authentik={AUTHENTIK_NAMESPACE}"
@@ -184,42 +180,4 @@ class ScientistMode:
             else:
                 self.logger.info(f"{name} completed")
 
-        # Generate report
-        self.generate_report()
         self.logger.info(f"Collection complete. Results in: {self.base_dir}")
-
-    def generate_report(self) -> None:
-        """Generate comprehensive report of data collected."""
-        report = f"""
-# Harbor OIDC Integration - Data Collection Report
-Generated: {datetime.now()}
-Directory: {self.base_dir}
-
-## Collections Completed
-- Logs: All Harbor and Authentik components
-- K8s Resources: All namespaces and cluster-wide
-- Databases: Schema and data dumps
-- API Tests: All endpoints tested
-- Diagnostics: Harbor OIDC specific checks
-- E2E Tests: OIDC flow testing
-
-## Next Steps
-1. Review logs in `logs/` directory
-2. Check API test results in `api_tests/`
-3. Examine database configuration in `databases/`
-4. Analyze K8s resources in `k8s/`
-5. Check diagnostics in `diagnostics/`
-6. Review E2E test results in `e2e/`
-
-## Key Files
-- `logs/harbor-core.log` - Main Harbor logs
-- `api_tests/harbor-oidc-login.txt` - OIDC endpoint test
-- `databases/harbor-oidc-config.txt` - OIDC configuration
-- `diagnostics/internal-oidc-test.txt` - Internal OIDC test
-- `e2e/oidc-test-results.txt` - E2E test results
-"""
-
-        report_file = self.base_dir / "REPORT.md"
-        report_file.write_text(report)
-
-        self.logger.info(f"Report generated: {report_file}")
