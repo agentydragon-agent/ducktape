@@ -27,7 +27,7 @@ class LogCollector(BaseCollector):
 
     async def collect(self) -> None:
         """Gather all logs from Harbor and Authentik components."""
-        self.logger.info("🪵 GATHERING ALL THE LOGS...")
+        self.logger.info("Collecting logs from all components")
 
         tasks = []
 

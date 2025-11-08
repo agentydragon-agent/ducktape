@@ -8,7 +8,6 @@ from ..config import (
     AUTHENTIK_BASE_URL,
     HARBOR_ADMIN_PASSWORD_KEY,
     HARBOR_BASE_URL,
-    HARBOR_CORE_POD,
     HARBOR_NAMESPACE,
     HARBOR_OIDC_SECRET,
 )
@@ -24,7 +23,7 @@ class APICollector(BaseCollector):
 
     async def collect(self) -> None:
         """Test API endpoints."""
-        self.logger.info("🔗 TESTING API ENDPOINTS...")
+        self.logger.info("Testing API endpoints")
 
         self._ensure_admin_password()
 
@@ -67,14 +66,19 @@ class APICollector(BaseCollector):
             ),
         ]
 
-        self._run_pod_commands(
-            HARBOR_NAMESPACE,
-            HARBOR_CORE_POD,
-            [
-                (cmd, f"api_tests/{output_file}", f"Internal test: {cmd}")
-                for cmd, output_file in internal_tests
-            ],
-        )
+        # Get harbor-core pod dynamically
+        core_pod = self.k8s._get_first_pod_by_component(HARBOR_NAMESPACE, "core")
+        if core_pod:
+            self._run_pod_commands(
+                HARBOR_NAMESPACE,
+                core_pod,
+                [
+                    (cmd, f"api_tests/{output_file}", f"Internal test: {cmd}")
+                    for cmd, output_file in internal_tests
+                ],
+            )
+        else:
+            self.logger.error("❌ No Harbor core pod found for internal API tests")
 
     def _run_pod_commands(
         self, namespace: str, pod: str, commands: list[tuple[str, str, str]]

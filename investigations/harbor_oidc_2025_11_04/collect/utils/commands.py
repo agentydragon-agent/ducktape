@@ -25,8 +25,13 @@ class CommandRunner:
 
     def run_psql_commands(self, commands: list[str], log_results: bool = False) -> None:
         """Run PostgreSQL commands in the database pod."""
-        cmd_list = [
-            (f"psql -U {POSTGRES_USER} -c '{cmd}'", None, f"PostgreSQL: {cmd}")
-            for cmd in commands
-        ]
-        self.run_pod_commands(HARBOR_NAMESPACE, HARBOR_DATABASE_POD, cmd_list)
+        for cmd in commands:
+            result = self.k8s.exec_psql(
+                HARBOR_NAMESPACE, HARBOR_DATABASE_POD, cmd, user=POSTGRES_USER
+            )
+            if log_results:
+                # Log first 100 chars of result
+                result_preview = result[:100] + "..." if len(result) > 100 else result
+                self.logger.info(f"PostgreSQL: {cmd}: {result_preview}")
+            else:
+                self.logger.debug(f"PostgreSQL: {cmd}")

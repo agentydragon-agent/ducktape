@@ -39,9 +39,14 @@ class K8sClient:
         self, namespace: str, component: str
     ) -> Optional[str]:
         """Get the name of the first pod matching a component label."""
-        pods = self._get_pods_by_label(namespace, f"component={component}")
-        if pods.items:
-            return pods.items[0].metadata.name
+        # Try both old-style and new-style labels
+        for label in [
+            f"component={component}",
+            f"app.kubernetes.io/component={component}",
+        ]:
+            pods = self._get_pods_by_label(namespace, label)
+            if pods.items:
+                return pods.items[0].metadata.name
         return None
 
     @handle_api_exception()
@@ -52,13 +57,15 @@ class K8sClient:
         container: Optional[str] = None,
         previous: bool = False,
     ) -> str:
-        """Get logs from a pod using K8s SDK."""
+        """Get logs from a pod using K8s SDK - returns FULL unfiltered logs."""
         return self.v1.read_namespaced_pod_log(
             name=pod_name,
             namespace=namespace,
             container=container,
             previous=previous,
-            tail_lines=None,  # Get all logs
+            tail_lines=None,  # Get ALL logs, no truncation
+            timestamps=False,  # Don't add timestamps, keep original format
+            limit_bytes=None,  # No size limit
         )
 
     @handle_api_exception()
@@ -88,10 +95,32 @@ class K8sClient:
         all_logs = []
         for pod in pods.items:
             if pod.status.phase in ["Running", "Succeeded", "Failed"]:
-                pod_logs = self.get_pod_logs(
-                    namespace, pod.metadata.name, previous=previous
-                )
-                all_logs.append(f"=== Pod: {pod.metadata.name} ===\n{pod_logs}")
+                pod_name = pod.metadata.name
+                # Check if pod has multiple containers
+                if len(pod.spec.containers) > 1:
+                    # Collect logs from each container
+                    for container in pod.spec.containers:
+                        container_name = container.name
+                        header = f"\n{'=' * 60}\nPod: {pod_name}\nContainer: {container_name}\n{'=' * 60}\n"
+                        try:
+                            pod_logs = self.get_pod_logs(
+                                namespace,
+                                pod_name,
+                                container=container_name,
+                                previous=previous,
+                            )
+                            all_logs.append(header + pod_logs)
+                        except Exception as e:
+                            all_logs.append(header + f"Error getting logs: {e}")
+                else:
+                    header = f"\n{'=' * 60}\nPod: {pod_name}\n{'=' * 60}\n"
+                    try:
+                        pod_logs = self.get_pod_logs(
+                            namespace, pod_name, previous=previous
+                        )
+                        all_logs.append(header + pod_logs)
+                    except Exception as e:
+                        all_logs.append(header + f"Error getting logs: {e}")
 
         return "\n\n".join(all_logs)
 
@@ -148,6 +177,26 @@ class K8sClient:
         )
 
     @handle_api_exception(return_on_error="")
+    def exec_psql(
+        self,
+        namespace: str,
+        pod_name: str,
+        sql_command: str,
+        database: Optional[str] = None,
+        user: str = "postgres",
+    ) -> str:
+        """Execute PostgreSQL command in a pod.
+
+        Handles all quoting automatically - just pass the raw SQL.
+        """
+        cmd = ["psql", "-U", user]
+        if database:
+            cmd.extend(["-d", database])
+        cmd.extend(["-c", sql_command])
+
+        return self.exec_in_pod(namespace, pod_name, cmd)
+
+    @handle_api_exception(return_on_error="")
     def get_secret_value(self, namespace: str, secret_name: str, key: str) -> str:
         """Get a value from a Kubernetes secret."""
         secret = self.v1.read_namespaced_secret(secret_name, namespace)
@@ -157,46 +206,73 @@ class K8sClient:
 
     @handle_api_exception(return_on_error=False)
     def set_deployment_env(
-        self, namespace: str, deployment_name: str, env_vars: dict[str, str]
+        self,
+        namespace: str,
+        deployment_name: str,
+        env_vars: dict[str, str],
+        max_retries: int = 3,
     ) -> bool:
-        """Set environment variables on a deployment."""
-        # Get deployment
-        deployment = self.apps_v1.read_namespaced_deployment(deployment_name, namespace)
+        """Set environment variables on a deployment with retry logic."""
+        import time
 
-        # Update environment variables
-        for container in deployment.spec.template.spec.containers:
-            if not container.env:
-                container.env = []
+        # First check if deployment exists
+        try:
+            deployment = self.apps_v1.read_namespaced_deployment(
+                deployment_name, namespace
+            )
+        except client.rest.ApiException as e:
+            if e.status == 404:
+                self.logger.warning(f"Deployment {deployment_name} not found, skipping")
+                return False
+            raise
 
-            for key, value in env_vars.items():
-                # Update existing or add new
-                found = False
-                for env in container.env:
-                    if env.name == key:
-                        env.value = value
-                        found = True
-                        break
-                if not found:
-                    container.env.append(client.V1EnvVar(name=key, value=value))
+        # Retry logic for conflicts
+        for attempt in range(max_retries):
+            try:
+                # Get fresh deployment on each retry
+                deployment = self.apps_v1.read_namespaced_deployment(
+                    deployment_name, namespace
+                )
 
-        # Patch deployment
-        self.apps_v1.patch_namespaced_deployment(
-            name=deployment_name, namespace=namespace, body=deployment
-        )
+                # Update environment variables
+                for container in deployment.spec.template.spec.containers:
+                    if not container.env:
+                        container.env = []
 
-        # Trigger rollout restart
-        deployment.spec.template.metadata.annotations = (
-            deployment.spec.template.metadata.annotations or {}
-        )
-        deployment.spec.template.metadata.annotations[
-            "kubectl.kubernetes.io/restartedAt"
-        ] = datetime.now().isoformat()
+                    for key, value in env_vars.items():
+                        # Update existing or add new
+                        found = False
+                        for env in container.env:
+                            if env.name == key:
+                                env.value = value
+                                found = True
+                                break
+                        if not found:
+                            container.env.append(client.V1EnvVar(name=key, value=value))
 
-        self.apps_v1.patch_namespaced_deployment(
-            name=deployment_name, namespace=namespace, body=deployment
-        )
+                # Trigger rollout restart
+                deployment.spec.template.metadata.annotations = (
+                    deployment.spec.template.metadata.annotations or {}
+                )
+                deployment.spec.template.metadata.annotations[
+                    "kubectl.kubernetes.io/restartedAt"
+                ] = datetime.now().isoformat()
 
-        return True
+                # Patch deployment
+                self.apps_v1.patch_namespaced_deployment(
+                    name=deployment_name, namespace=namespace, body=deployment
+                )
+
+                return True
+
+            except client.rest.ApiException as e:
+                if e.status == 409 and attempt < max_retries - 1:
+                    # Conflict - retry after brief delay
+                    time.sleep(0.5)
+                    continue
+                raise
+
+        return False
 
     def _to_dict(self, obj) -> dict:
         """Convert K8s object to dictionary."""

@@ -1,6 +1,12 @@
-# Usage
+# Harbor OIDC Investigation
+
+Collects diagnostic data for Harbor + Authentik OIDC integration issues.
+
+## Usage
 
 ```bash
 direnv allow
-python harbor_scientist_mode.py [output_dir]
+python collect.py [output_dir]
 ```
+
+Output goes to `observations/` by default.

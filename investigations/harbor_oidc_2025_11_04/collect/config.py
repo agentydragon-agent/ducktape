@@ -1,14 +1,17 @@
 """Configuration constants for Harbor OIDC investigation."""
 
+import os
+
 # Timeouts
 TIMEOUT_SHORT = 15  # For quick commands
 TIMEOUT_MEDIUM = 60  # For medium commands
 TIMEOUT_LONG = 300  # For long-running commands like log collection
 MAX_WORKERS = 20  # Parallel execution limit
 
-# Namespaces
-HARBOR_NAMESPACE = "harbor"
-AUTHENTIK_NAMESPACE = "authentik"
+# Namespaces - Production environment
+HARBOR_NAMESPACE = os.getenv("HARBOR_NAMESPACE", "harbor")
+AUTHENTIK_NAMESPACE = os.getenv("AUTHENTIK_NAMESPACE", "authentik")
+VAULT_NAMESPACE = os.getenv("VAULT_NAMESPACE", "vault")
 
 # Harbor Components
 HARBOR_CORE = "harbor-core"
@@ -32,15 +35,15 @@ HARBOR_OIDC_SECRET = "harbor-oidc-secret"
 HARBOR_ADMIN_PASSWORD_KEY = "HARBOR_ADMIN_PASSWORD"
 
 # Database
-HARBOR_DATABASE_POD = "harbor-database-0"
-HARBOR_CORE_POD = "harbor-core-0"
+HARBOR_DATABASE_POD = "harbor-database-0"  # This is a StatefulSet, so name is stable
+# Note: HARBOR_CORE_POD should be dynamically selected as it's a Deployment
 POSTGRES_USER = "postgres"
 REGISTRY_DB = "registry"
 
-# API Endpoints
+# API Endpoints - Production URLs
 HARBOR_HOST = "registry.k3s.agentydragon.com"
-HARBOR_BASE_URL = f"https://{HARBOR_HOST}"
 AUTHENTIK_BASE_URL = "https://auth.k3s.agentydragon.com"
+HARBOR_BASE_URL = f"https://{HARBOR_HOST}"
 
 # Common test commands
 OIDC_LOGIN_CURL_CMD = ["curl", "-s", "-I", "http://localhost:8080/c/oidc/login"]

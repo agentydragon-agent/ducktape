@@ -7,7 +7,6 @@ import aiohttp
 
 from ..config import (
     HARBOR_ADMIN_PASSWORD_KEY,
-    HARBOR_CORE_POD,
     HARBOR_HOST,
     HARBOR_NAMESPACE,
     HARBOR_OIDC_SECRET,
@@ -30,7 +29,7 @@ class DiagnosticsCollector(BaseCollector):
 
     async def collect_harbor_oidc_diagnostics(self) -> None:
         """Collect specific diagnostics for Harbor OIDC 404 issue."""
-        self.logger.info("🔍 COLLECTING HARBOR OIDC DIAGNOSTICS...")
+        self.logger.info("Collecting Harbor OIDC diagnostics")
 
         # Run diagnostic commands in harbor-core
         diagnostic_commands = [
@@ -46,7 +45,12 @@ class DiagnosticsCollector(BaseCollector):
             ),
         ]
 
-        self._run_pod_commands(HARBOR_NAMESPACE, HARBOR_CORE_POD, diagnostic_commands)
+        # Get harbor-core pod dynamically
+        core_pod = self.k8s._get_first_pod_by_component(HARBOR_NAMESPACE, "core")
+        if core_pod:
+            self._run_pod_commands(HARBOR_NAMESPACE, core_pod, diagnostic_commands)
+        else:
+            self.logger.error("❌ No Harbor core pod found")
 
         # Get recent pod restart info
         self._collect_pod_restart_info(
@@ -58,7 +62,7 @@ class DiagnosticsCollector(BaseCollector):
 
     async def collect_harbor_version_info(self) -> None:
         """Collect detailed Harbor version and build information."""
-        self.logger.info("📦 COLLECTING DETAILED HARBOR VERSION INFO...")
+        self.logger.info("Collecting Harbor version information")
 
         version_info = []
 

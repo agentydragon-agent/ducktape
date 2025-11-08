@@ -5,7 +5,6 @@ import re
 
 from ..config import (
     AUTHENTIK_NAMESPACE,
-    HARBOR_CORE_POD,
     HARBOR_DATABASE_POD,
     HARBOR_NAMESPACE,
     OIDC_LOGIN_CURL_CMD,
@@ -26,7 +25,7 @@ class OIDCTester:
 
     async def test_oidc_e2e_flow(self) -> None:
         """Test complete OIDC login flow end-to-end."""
-        self.logger.info("🔐 TESTING E2E OIDC FLOW...")
+        self.logger.info("Testing end-to-end OIDC flow")
 
         test_results = []
         test_username = f"test-oidc-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -53,11 +52,18 @@ class OIDCTester:
                     self.logger.info("Testing OIDC login flow...")
 
                     # Get OIDC login URL and extract state
-                    login_test = self.k8s.exec_in_pod(
-                        HARBOR_NAMESPACE,
-                        HARBOR_CORE_POD,
-                        OIDC_LOGIN_CURL_CMD,
+                    core_pod = self.k8s._get_first_pod_by_component(
+                        HARBOR_NAMESPACE, "core"
                     )
+                    if core_pod:
+                        login_test = self.k8s.exec_in_pod(
+                            HARBOR_NAMESPACE,
+                            core_pod,
+                            OIDC_LOGIN_CURL_CMD,
+                        )
+                    else:
+                        login_test = "ERROR: No Harbor core pod found"
+                        self.logger.error("❌ No Harbor core pod found for OIDC test")
                     test_results.append(f"OIDC Login Response:\n{login_test}")
 
                     # Parse redirect URL to get authorization endpoint
@@ -77,19 +83,22 @@ class OIDCTester:
                     # For now, we verify the endpoints are working
 
                     # Test callback endpoint exists
-                    callback_test = self.k8s.exec_in_pod(
-                        HARBOR_NAMESPACE,
-                        HARBOR_CORE_POD,
-                        [
-                            "curl",
-                            "-s",
-                            "-o",
-                            "/dev/null",
-                            "-w",
-                            "%{http_code}",
-                            "http://localhost:8080/c/oidc/callback?error=test",
-                        ],
-                    )
+                    if core_pod:
+                        callback_test = self.k8s.exec_in_pod(
+                            HARBOR_NAMESPACE,
+                            core_pod,
+                            [
+                                "curl",
+                                "-s",
+                                "-o",
+                                "/dev/null",
+                                "-w",
+                                "%{http_code}",
+                                "http://localhost:8080/c/oidc/callback?error=test",
+                            ],
+                        )
+                    else:
+                        callback_test = "ERROR: No core pod"
                     test_results.append(f"Callback endpoint test: HTTP {callback_test}")
 
                     # Step 4: Verify OIDC is properly configured in database
