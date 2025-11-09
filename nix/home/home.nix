@@ -32,11 +32,6 @@ let
     sha256 = "1glrqwsg3imzadm6w036jazi9lwpsi30lkfgnnqzd7fkk0526004";
   };
 
-  solarizedLight = nix-colors.colorSchemes.solarized-light;
-  solarizedDark = nix-colors.colorSchemes.solarized-dark;
-
-  # Custom packages
-
   gnomeNvim = pkgs.vimUtils.buildVimPlugin {
     pname = "gnome.nvim";
     version = "2024-11-26";
@@ -81,6 +76,10 @@ in {
   imports = [
     ccr.homeManagerModules.claude-code-router
     ./packages/google-drive-service.nix
+    ./modules/gnome-workspace-shortcuts.nix
+    ./modules/flameshot-screenshots.nix
+    ./modules/solarized.nix
+    ./modules/codex.nix
     "${homeManagerMaster}/modules/programs/codex.nix"
   ];
   nixpkgs.config.allowUnfree = true;
@@ -143,15 +142,6 @@ in {
     };
 
     # Service management removed; use your own runner if needed.
-  };
-
-  # Bat configuration with Solarized themes
-  programs.bat = {
-    enable = true;
-    config = {
-      # Default theme - can be overridden by BAT_THEME environment variable
-      theme = "Solarized (dark)";
-    };
   };
 
   programs.git = {
@@ -218,30 +208,6 @@ in {
     extraLuaConfig = builtins.readFile ./config/nvim/init.lua;
   };
 
-  # Delta - better git diffs
-  programs.delta = {
-    enable = true;
-    enableGitIntegration = true; # Explicitly enable as suggested by warning
-    options = {
-      navigate = true;
-      light = false; # Default to dark theme
-      side-by-side = true;
-      line-numbers = true;
-      syntax-theme = "Solarized (dark)"; # Use same theme as bat
-      features = "decorations";
-      decorations = {
-        commit-decoration-style = "bold yellow box ul";
-        file-style = "bold yellow ul";
-        file-decoration-style = "none";
-        hunk-header-decoration-style = "cyan box ul";
-      };
-      line-numbers-left-style = "cyan";
-      line-numbers-right-style = "cyan";
-      line-numbers-minus-style = "124";
-      line-numbers-plus-style = "28";
-    };
-  };
-
   # GPG configuration
   programs.gpg = {
     enable = true;
@@ -278,11 +244,6 @@ in {
 
   # Dircolors configuration (migrated from dotfiles/dir_colors/dircolors)
   programs.dircolors.enable = true;
-
-  # Midnight Commander configuration (migrated from dotfiles/config/mc/solarized.ini)
-  xdg.configFile."mc/solarized.ini" = {
-    source = ./mc-solarized.ini;
-  };
 
   # AppImageLauncher configuration (migrated from dotfiles/config/appimagelauncher.cfg)
   xdg.configFile."appimagelauncher.cfg".text = ''
@@ -322,8 +283,7 @@ in {
       terraform
       uv
       yq
-
-      # Tools Ansible installs via cargo
+      zsh
       atuin
 
       # Tools from GitHub releases / binary downloads
@@ -356,12 +316,12 @@ in {
 
       # Formatters for conform.nvim
       stylua # Lua formatter
-      python312Packages.black # Python formatter
-      python312Packages.isort # Python import sorter
+      python312Packages.black
+      python312Packages.isort
 
-      # Machine Learning packages (from wyrm.yaml dev-ml role)
+      # Machine Learning packages
       python312Packages.pandas
-      python312Packages.pytorch # PyTorch
+      python312Packages.pytorch
       python312Packages.numpy
 
       # Kubernetes tools (with helm-diff plugin bundled)
@@ -371,14 +331,6 @@ in {
       myHelmfile
       # Dotfile management (keeping rcm approach)
       rcm
-
-      # Zsh - oh-my-zsh managed via git clone in ~/.oh-my-zsh
-      zsh
-      # oh-my-zsh is intentionally NOT managed by Nix because:
-      # 1. .zshrc expects it at ~/.oh-my-zsh (not a Nix store path)
-      # 2. It needs to be a writable git repository for updates
-      # 3. Custom themes/plugins go in ~/.oh-my-zsh/custom/
-      # 4. Ansible's cli role handles the git clone for all systems
 
       # Modern ls replacement with colors and icons
       eza
@@ -406,13 +358,13 @@ in {
       mtr
 
       # Additional tools migrated from Ansible
-      curl # HTTP client
-      wget # File downloader
-      pwgen # Password generator
-      nmap # Network scanner
-      htop # Interactive process viewer
-      iftop # Network traffic monitor
-      iotop # I/O usage monitor
+      curl
+      wget
+      pwgen
+      nmap
+      htop
+      iftop
+      iotop
 
       # Zsh theme
       zsh-powerlevel10k # Powerlevel10k theme for zsh
@@ -431,10 +383,11 @@ in {
       # These extensions were installed via petermosmans.customize-gnome role:
       # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
       gnomeExtensions.panel-date-format # ID 1462: Panel Date Format ✓
-      gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher ✓
-      gnomeExtensions.vertical-workspaces # ID 5177: V-Shell (Vertical Workspaces) ✓
+      # night-theme-switcher managed by solarized module
       gnomeExtensions.cronomix # ID 6003: Cronomix ✓
       # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
+
+      # vertical-workspaces managed by gnome-workspace-shortcuts module
     ]
     ++ [
       # Get comby from older nixpkgs where it's not broken
@@ -446,15 +399,6 @@ in {
 
   # Session variables (migrated from dotfiles/profile)
   home.sessionVariables = {
-    # Bat theme environment variables for light/dark mode switching
-    BAT_THEME_DARK = "Solarized (dark)";
-    BAT_THEME_LIGHT = "Solarized (light)";
-    # Default to dark theme
-    BAT_THEME = "Solarized (dark)";
-
-    # Midnight Commander skin
-    MC_SKIN = "$HOME/.config/mc/solarized.ini";
-
     # Editor
     EDITOR = "nvim";
     VISUAL = "nvim";
@@ -480,19 +424,6 @@ in {
 
     # pnpm global packages
     PNPM_HOME = "$HOME/.local/share/pnpm";
-  };
-
-  # Wyrm-specific pip configuration for tankshare storage
-  # This creates ~/.config/pip/pip.conf to use shared cache
-  # Only applies when hostname is wyrm (detected via existence of /tank/share)
-  xdg.configFile."pip/pip.conf" = lib.mkIf (builtins.pathExists "/tank/share") {
-    text = ''
-      [global]
-      cache-dir = /tank/share/pip-cache
-
-      [install]
-      user = true
-    '';
   };
 
   # XDG MIME type associations - SKIPPED
@@ -533,16 +464,6 @@ in {
     Categories=Network;InstantMessaging;
     X-GNOME-Autostart-enabled=true
   '';
-  xdg.configFile."autostart/flameshot.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Flameshot
-    Exec=flameshot
-    Icon=flameshot
-    Terminal=false
-    Categories=Graphics;
-    X-GNOME-Autostart-enabled=true
-  '';
 
   # GNOME dconf settings (migrated from Ansible gui role)
   dconf = {
@@ -575,60 +496,6 @@ in {
 
       "org/gnome/terminal/legacy" = {default-show-menubar = false;};
 
-      # Set default terminal
-      "org/gnome/desktop/applications/terminal" = {
-        exec = "gnome-terminal.wrapper";
-        exec-arg = lib.hm.gvariant.mkNothing lib.hm.gvariant.type.string; # Unset the argument
-      };
-
-      # Pop!_OS workspace shortcuts workaround
-      # Clear Pop!_OS defaults to free up Ctrl+Alt+↑/↓
-      "org/gnome/shell/extensions/pop-shell" = {
-        pop-workspace-up = [];
-        pop-workspace-down = [];
-        pop-monitor-left = [];
-        pop-monitor-right = [];
-        pop-monitor-up = [];
-        pop-monitor-down = [];
-      };
-
-      # Clear GNOME vertical workspace shortcuts
-      "org/gnome/desktop/wm/keybindings" = {
-        switch-to-workspace-up = [];
-        switch-to-workspace-down = [];
-        move-to-workspace-up = [];
-        move-to-workspace-down = [];
-        # Set horizontal workspace shortcuts to Ctrl+Alt+(Shift+)↑/↓
-        switch-to-workspace-left = ["<Primary><Alt>Up"];
-        switch-to-workspace-right = ["<Primary><Alt>Down"];
-        move-to-workspace-left = ["<Primary><Shift><Alt>Up"];
-        move-to-workspace-right = ["<Primary><Shift><Alt>Down"];
-      };
-
-      # Unbind default GNOME screenshot keys for Flameshot
-      "org/gnome/shell/keybindings" = {
-        show-screenshot-ui = []; # Was PrnSc
-        screenshot = []; # Was Shift+PrnSc
-        screenshot-window = []; # Was Alt+PrnSc
-      };
-
-      # Flameshot custom keybinding
-      "org/gnome/settings-daemon/plugins/media-keys" = {
-        custom-keybindings = [
-          "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot-gui/"
-        ];
-      };
-
-      "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot-gui" = {
-        name = "Flameshot GUI";
-        command = "flameshot gui";
-        binding = "Print";
-      };
-
-      # Disable screensaver and screen blanking (for VM)
-      "org/gnome/desktop/session" = {idle-delay = lib.hm.gvariant.mkUint32 0;}; # 0 = never
-      "org/gnome/desktop/screensaver" = {lock-enabled = false;};
-
       "org/gnome/shell" = {
         # Enable user extensions
         disable-user-extensions = false;
@@ -650,7 +517,7 @@ in {
 
           # Extensions from Ansible (petermosmans.customize-gnome)
           "panel-date-format@keiii.github.com" # Panel Date Format
-          "nightthemeswitcher@romainvigier.fr" # Night Theme Switcher
+          # nightthemeswitcher managed by solarized module
           "vertical-workspaces@G-dH.github.com" # V-Shell (replaces cosmic-workspaces)
           "cronomix@zagortenay333" # Cronomix (note: different UUID than expected)
           # Note: Desaturate All extension not currently installed
@@ -662,13 +529,6 @@ in {
           "popx11gestures@system76.com"
         ];
       };
-
-      # Night Theme Switcher extension settings
-      "org/gnome/shell/extensions/nightthemeswitcher/commands" = {
-        enabled = true;
-        sunrise = "switch_gnome_terminal_profile light";
-        sunset = "switch_gnome_terminal_profile dark";
-      };
     };
   };
 
@@ -678,9 +538,7 @@ in {
     suspend = "systemctl suspend";
     npm = "pnpm";
     npx = "echo '❌ No you idiot, use pnpm dlx' && false";
-    gs = "git status --short --branch";
     gmrc = "glab mr create --fill --remove-source-branch --yes";
-    grcb = "git for-each-ref --sort=-committerdate";
     vimdiff = "nvim -d";
     alert = ''notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"'';
 
@@ -692,109 +550,24 @@ in {
     lm = "eza -l --sort=modified --reverse --icons=auto --group-directories-first";
   };
 
-  # GNOME Terminal Solarized profiles using nix-colors schemes
-  # This creates both profiles which can be switched dynamically with switch_gnome_terminal_profile
-  programs.gnome-terminal = {
-    enable = true;
-    showMenubar = false;
-
-    profile = let
-      # Helper function to build a terminal palette from a color scheme
-      mkTerminalPalette = scheme: [
-        "#${scheme.palette.base01}" # black
-        "#${scheme.palette.base08}" # red
-        "#${scheme.palette.base0B}" # green
-        "#${scheme.palette.base09}" # yellow/orange
-        "#${scheme.palette.base0D}" # blue
-        "#${scheme.palette.base0E}" # magenta
-        "#${scheme.palette.base0C}" # cyan
-        "#${scheme.palette.base06}" # white
-        "#${scheme.palette.base00}" # bright black
-        "#${scheme.palette.base08}" # bright red
-        "#${scheme.palette.base0B}" # bright green
-        "#${scheme.palette.base0A}" # bright yellow
-        "#${scheme.palette.base0D}" # bright blue
-        "#${scheme.palette.base0F}" # bright magenta (violet)
-        "#${scheme.palette.base0C}" # bright cyan
-        "#${scheme.palette.base07}" # bright white
-      ];
-
-      # Base profile definitions
-      baseProfiles = {
-        # Solarized Light profile
-        "b1dcc9dd-5262-4d8d-a863-c897e6d979b9" = {
-          visibleName = "Solarized Light";
-          default = true;
-          colors = {
-            foregroundColor = "#${solarizedLight.palette.base05}";
-            backgroundColor = "#${solarizedLight.palette.base07}";
-            boldColor = "#${solarizedLight.palette.base04}";
-            palette = mkTerminalPalette solarizedLight;
-            cursor = {
-              foreground = "#${solarizedLight.palette.base07}";
-              background = "#${solarizedLight.palette.base05}";
-            };
-          };
-        };
-
-        # Solarized Dark profile
-        "5083e06b-024e-46be-9cd2-892b814f1fc8" = {
-          visibleName = "Solarized Dark";
-          colors = {
-            foregroundColor = "#${solarizedDark.palette.base05}";
-            backgroundColor = "#${solarizedDark.palette.base00}";
-            boldColor = "#${solarizedDark.palette.base06}";
-            palette = mkTerminalPalette solarizedDark;
-            cursor = {
-              foreground = "#${solarizedDark.palette.base00}";
-              background = "#${solarizedDark.palette.base05}";
-            };
-          };
-        };
-      };
-      # Apply common settings to every profile: scroll-on-output=false and JetBrainsMono Nerd Font
-    in
-      builtins.mapAttrs (_: profile:
-        profile
-        // {
-          scrollOnOutput = false;
-          font = "JetBrainsMono Nerd Font 11";
-        })
-      baseProfiles;
-  };
-
-  # Zsh configuration - full Nix management
   programs.zsh = {
     enable = true;
 
     # .zshenv content (loaded for all zsh invocations, including scripts)
     envExtra = "skip_global_compinit=1";
 
-    # Disable auto-correction
+    # No auto-correction
     enableCompletion = true;
     autocd = true;
 
-    # History configuration
-    history = {
-      size = 10000000;
-      save = 10000000;
-      extended = true; # Timestamps
-      share = true; # Share between sessions
-      ignoreDups = true;
-      ignoreSpace = true;
-    };
-
-    # Autosuggestions configuration
     autosuggestion = {
       enable = true;
       strategy = ["history" "completion"];
       highlight = "fg=244";
     };
 
-    # Syntax highlighting
     syntaxHighlighting.enable = true;
 
-    # Oh My Zsh configuration
     oh-my-zsh = {
       enable = true;
       custom = "${pkgs.zsh-powerlevel10k}/share/zsh-powerlevel10k";
@@ -812,16 +585,13 @@ in {
         "lein"
         "python"
         "rust"
-        "screen"
       ];
     };
 
-    # Environment variables
     sessionVariables = {
       ZSH_ALIAS_FINDER_AUTOMATIC = "true";
       COMPLETION_WAITING_DOTS = "%F{yellow}...%f";
       DISABLE_UNTRACKED_FILES_DIRTY = "true";
-      HIST_STAMPS = "yyyy-mm-dd";
       RPROMPT = "%*";
       DEFAULT_USER = "agentydragon";
       ZSH_THEME_TERM_TITLE_IDLE = "%n: %~ $";
@@ -836,13 +606,7 @@ in {
     enable = true;
     enableCompletion = true;
 
-    # History configuration
-    historyControl = ["ignoreboth"];
-    historySize = 10000000;
-    historyFileSize = 10000000;
-
     shellOptions = [
-      "histappend"
       "checkwinsize"
       "globstar"
     ];
@@ -857,6 +621,7 @@ in {
     enableBashIntegration = true;
     enableZshIntegration = true;
     flags = ["--disable-up-arrow"];
+    # zsh and bash have no fancy history config, Atuin handles it
   };
 
   # Direnv - per-directory environment management
@@ -986,22 +751,13 @@ in {
     '';
   };
 
-  # Powerlevel10k configuration
-  # Sourced in zsh-init.sh
+  # Powerlevel10k configuration, sourced in zsh-init.sh
   home.file.".p10k.zsh".source = ./p10k.zsh;
-
-  programs.codex = {
-    enable = true;
-    package = unstablePkgs.codex;
-    custom-instructions = builtins.readFile ../../dotfiles/codex/instructions.md;
-    settings = import ./codex-settings.nix;
-  };
 
   programs.claude-code = {
     enable = true;
     settings = {
       theme = "dark";
-      model = "claude-3-5-sonnet-20241022";
       includeCoAuthoredBy = false;
       permissions = {
         allow = [
@@ -1013,13 +769,11 @@ in {
           "Task"
           "Bash(git status:*)"
           "Bash(git diff:*)"
-        ];
-        ask = [
-          "Bash(*)"
-        ];
-        deny = [
           "WebFetch"
+          "WebSearch"
         ];
+        ask = ["Bash(*)"];
+        deny = [];
         defaultMode = "ask";
       };
     };
