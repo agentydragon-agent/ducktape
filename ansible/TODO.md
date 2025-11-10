@@ -28,3 +28,5 @@ The implementation is incomplete and needs:
 - [ ] Migrate deprecated modules
 - [ ] Add molecule tests for roles
 - [ ] Document vault variable requirements
+- [ ] install powerlevel10k on vps
+- [ ] git-commit-ai: include standard diff scaffolding; show progress with rich or similar
