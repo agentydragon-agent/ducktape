@@ -8,26 +8,16 @@
       - pkg-config  # Required for finding libraries
     state: present
 
+# Migrated to Nix home-manager:
+# - pipx tools, pnpm (nodePackages.pnpm)
+# - Rust toolchain (rustc, cargo), sccache, atuin
+# - comby, gh, glab, gitstatus, kubeseal
+
 # User-level development tools
 - name: Install user-level development tools
   become: true
   become_user: "{{ my_user | default(ansible_user_id) }}"
   block:
-    # pipx tools installation moved to cli_nix_migrated role
-
-    - name: Install pnpm package manager
-      github_release_install:
-        release_spec:
-          repo: "pnpm/pnpm"
-          version: "latest"
-          asset_pattern: "pnpm-linux-x64$"  # The standalone binary
-        method:
-          name: binary
-          dest_path: "{{ ansible_user_dir }}/.local/bin/pnpm"
-      when: ansible_architecture == "x86_64" and ansible_system == "Linux"
-      tags: [pnpm]
-
-    # pnpm global tools installation moved to cli_nix_migrated role
 
     # Check for legacy npm-global directory that should be removed
     - name: Check if npm-global directory exists
@@ -70,21 +60,11 @@
       changed_when: false
       failed_when: claude_version_check.rc != 0
 
-    # Rust installation moved to cli_nix_migrated - Nix provides rustc and cargo
-
-    # sccache and atuin installation moved to cli_nix_migrated role
+    # See consolidated migration comment above
 
     # Import claude-mcp after Claude Code is installed
     - import_role:
         name: claude-mcp
       tags: [claude, mcp]
 
-# comby installation moved to cli_nix_migrated role
-
-# GitHub CLI (gh) installation moved to cli_nix_migrated role
-
-# GitLab CLI (glab) installation moved to cli_nix_migrated role
-
-# gitstatus installation moved to cli_nix_migrated role
-
-# kubeseal installation moved to cli_nix_migrated role
+# See consolidated migration comment above

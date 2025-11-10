@@ -1,3 +1,6 @@
+# Migrated to Nix home-manager:
+# - git (programs.git), jq
+
 - name: Install dev env
   become: true
   ansible.builtin.apt:
@@ -17,10 +20,8 @@
       - gcc
       - gcc
       - ghc
-      - git
       - gitk
       - gnuplot
-      - jq
       - jupyter-nbconvert
       - make
       - markdown

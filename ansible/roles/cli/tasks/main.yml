@@ -7,8 +7,6 @@
     content: |
       DPkg::Lock::Timeout "180";
 
-# - name: Include glab
-#   include_tasks: tasks/glab.yml
 # - name: Include Trilium client
 #   include_tasks: tasks/trilium_client.yml
 
@@ -16,7 +14,13 @@
   vars:
     bazel_state: absent
 
-# Neovim PPA moved to cli_nix_migrated - Nix provides unstablePkgs.neovim
+# Migrated to Nix home-manager:
+# - Neovim (unstablePkgs.neovim)
+# - CLI packages: curl, htop, iftop, iotop, nmap, pwgen, rcm, ripgrep, wget, zsh
+# - Media/network: ffmpeg, mosh
+# - File utilities: ncdu, pv, tree, sqlite, gnupg
+# - tmux (programs.tmux)
+# - nodejs (nodejs_22), oh-my-zsh (programs.zsh.oh-my-zsh)
 
 - name: Install CLI packages
   become: true
@@ -25,46 +29,27 @@
     pkg:
       # removed 2024-04-13, defaults in pop os:
       #   diffutils
-      - curl
-      - ffmpeg
-      - gnupg
-      - gnupg-agent
+      # See consolidated migration comment above
+      - gnupg-agent  # gnupg moved to Nix, but keeping agent for system integration
       - gnuplot
       - grep
       - gzip
-      - htop
-      - iftop
-      - iotop
       - iputils-ping
       - libsecret-tools  # for secret-tool, for Ansible Vault
       - locate
       - mc
       - mmv
-      - mosh
-      - ncdu
       - netcat-openbsd
       - nethogs
-      - nmap
       - pkg-config
-      - pv
-      - pwgen
       - python3
       - python3-pip
-      - rcm
-      - ripgrep
       - screen
       - sed
-      - sqlite3
-      - tmux
-      - tree
-      - unrar-free
       - sudo # for become: agentydragon further down
-      - wget
+      - unrar-free
       - xxd
       - yasm
-      - zsh
-
-# Neovim installation moved to cli_nix_migrated
 
 # Modern systems require using pipx or apt for Python CLI tools
 - name: Install pipx for Python CLI tools
@@ -93,7 +78,6 @@
   ansible.builtin.apt:
     pkg:
       - silversearcher-ag  # I replaced with rg
-
       - hyphen-en-ca
       - hyphen-en-gb
     state: absent
@@ -110,11 +94,6 @@
   snap:
     name: tio
     classic: true
-
-# nodejs.yml moved to cli_nix_migrated - Nix provides nodejs_20
-
-- include_tasks: oh_my_zsh.yml
-  tags: [zsh]
 
 # Set zsh as default shell
 - name: Set zsh as login shell

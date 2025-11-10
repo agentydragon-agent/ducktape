@@ -365,6 +365,13 @@ in {
       htop
       iftop
       iotop
+      ffmpeg
+      mosh
+      ncdu
+      pv
+      tree
+      sqlite
+      gnupg
 
       # Zsh theme
       zsh-powerlevel10k # Powerlevel10k theme for zsh
