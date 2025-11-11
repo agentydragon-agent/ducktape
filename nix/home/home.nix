@@ -75,7 +75,6 @@ in {
     [
       ./packages/google-drive-service.nix
       (import ./modules/solarized.nix {inherit pkgs lib enableGui;})
-      "${homeManagerMaster}/modules/programs/codex.nix"
     ]
     ++ lib.optionals enableGui [
       ./modules/gnome-workspace-shortcuts.nix
