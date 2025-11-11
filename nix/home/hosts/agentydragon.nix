@@ -4,10 +4,15 @@
   pkgs,
   lib,
   ...
-}: let
-  hostLib = import ../lib/host-bootstrap.nix {inherit lib;};
-in
-  hostLib.mkHostConfig "agentydragon" {
-    home.stateVersion = "24.05";
-    services.google-drive.enable = false;
-  }
+}: {
+  imports = [
+    (import ../home.nix {
+      inherit config pkgs lib;
+      enableGui = true;
+    })
+  ];
+
+  # Agentydragon-specific configuration (desktop with full GUI)
+  home.stateVersion = "24.05";
+  services.google-drive.enable = false;
+}

@@ -75,7 +75,6 @@ in {
     [
       ./packages/google-drive-service.nix
       (import ./modules/solarized.nix {inherit pkgs lib enableGui;})
-      ./modules/codex.nix
       "${homeManagerMaster}/modules/programs/codex.nix"
     ]
     ++ lib.optionals enableGui [
@@ -164,6 +163,13 @@ in {
       "mergetool \"nbdime\"".cmd = "git-nbmergetool merge \"$BASE\" \"$LOCAL\" \"$REMOTE\" \"$MERGED\"";
       mergetool.prompt = false;
     };
+  };
+
+  # Codex configuration using home-manager module with custom settings
+  programs.codex = {
+    enable = true;
+    package = unstablePkgs.codex;
+    settings = import ./codex-settings.nix;
   };
 
   programs.neovim = {

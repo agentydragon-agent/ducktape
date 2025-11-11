@@ -4,11 +4,15 @@
   pkgs,
   lib,
   ...
-}: let
-  hostLib = import ../lib/host-bootstrap.nix {inherit lib;};
-in
-  hostLib.mkHostConfig "gpd" {
-    # GPD-specific configuration
-    home.stateVersion = "24.05";
-    services.google-drive.enable = true;
-  }
+}: {
+  imports = [
+    (import ../home.nix {
+      inherit config pkgs lib;
+      enableGui = true;
+    })
+  ];
+
+  # GPD-specific configuration (laptop with full GUI)
+  home.stateVersion = "24.05";
+  services.google-drive.enable = true;
+}
