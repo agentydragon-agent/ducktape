@@ -1,5 +1,4 @@
-# Migrated to Nix home-manager:
-# - git (programs.git), jq
+# Migrated to Nix home-manager: git (programs.git), jq
 
 - name: Install dev env
   become: true
@@ -18,7 +17,6 @@
       - firejail
       - flex
       - gcc
-      - gcc
       - ghc
       - gitk
       - gnuplot
@@ -27,7 +25,6 @@
       - markdown
       - sloccount
       - tidy  # HTML tidy
-      #- npm <- "you have requested an impossible situations"
 
       # TODO: this seems to not provide tree-sitter cli though
       # so does not provide latex higlihting
@@ -35,11 +32,6 @@
 
       #- protobuf-compiler
       #- pyqt5-dev-tools
-
-# TODO: cargo broken
-#- name: Install stylua (Lua formatter for Neovim)
-#  community.general.cargo:
-#    name: stylua
 
 # Include heavy/optional dev packages (controlled by include_heavy_dev_packages variable)
 - include_tasks: dev-env-heavy.yml
