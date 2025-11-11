@@ -132,4 +132,3 @@
     # - import_role:
     #     name: gpu-passthrough
     #   tags: [gpu-passthrough]
-

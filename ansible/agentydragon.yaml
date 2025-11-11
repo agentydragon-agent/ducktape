@@ -9,17 +9,15 @@
   remote_user: "{{ my_user }}"
 
   roles:
-    - role: docker
-    - role: cli
-    - role: gui
-    - role: laptop
-    - role: scanbox
-    - role: wireguard
-      tags: [wireguard]
+    #- role: docker
+    #- role: cli
+    #- role: gui
+    #- role: laptop
+    #- role: scanbox
     - role: tailscale-client
-      tags: [tailscale]
     - role: k3s-client
-      tags: [k3s-client]
+    # - role: wireguard
+    #   tags: [wireguard]
 
   tasks:
     - name: Install CUDA (NVidia-specific)
