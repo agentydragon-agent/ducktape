@@ -56,13 +56,12 @@ repos:
     rev: v0.11.10
     hooks:
       - id: ruff-check
-        name: ruff-check (repo-wide)
+        name: ruff-check
         args: [--fix]
         files: "\\.py$"
       - id: ruff-format
-        name: ruff-format (repo-wide)
+        name: ruff-format
         files: "\\.py$"
-
 
   # Static type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
