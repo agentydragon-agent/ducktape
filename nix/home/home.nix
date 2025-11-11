@@ -356,7 +356,6 @@ in {
       gnupg
 
       # Zsh theme
-      zsh-powerlevel10k # Powerlevel10k theme for zsh
 
       # vertical-workspaces managed by gnome-workspace-shortcuts module
     ]
@@ -560,8 +559,6 @@ in {
 
     oh-my-zsh = {
       enable = true;
-      custom = "${pkgs.zsh-powerlevel10k}/share/zsh-powerlevel10k";
-      theme = "powerlevel10k";
       plugins = [
         "alias-finder"
         "bazel"
@@ -577,6 +574,14 @@ in {
         "rust"
       ];
     };
+
+    plugins = [
+      {
+        name = "powerlevel10k";
+        src = pkgs.zsh-powerlevel10k;
+        file = "share/zsh-powerlevel10k/powerlevel10k.zsh-theme";
+      }
+    ];
 
     sessionVariables = {
       ZSH_ALIAS_FINDER_AUTOMATIC = "true";
