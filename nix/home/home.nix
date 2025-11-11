@@ -248,7 +248,7 @@ in {
           black
           isort
           pandas
-          pytorch
+          torch
           numpy
         ]))
 
