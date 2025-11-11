@@ -218,7 +218,7 @@
       After completing the manual steps, rerun this playbook.
   when:
     - tailscale_up is defined
-    - tailscale_up.rc is not none
+    - tailscale_up.rc is defined
     - tailscale_up.rc != 0
     - tailscale_registration_required | default(true)
     - not (headscale_register_result is defined and
