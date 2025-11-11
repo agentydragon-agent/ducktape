@@ -3,6 +3,7 @@
   pkgs,
   lib,
   enableGui ? true,
+  enableKube ? true,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -302,10 +303,14 @@ in {
       # Machine Learning packages now in python3.withPackages above
 
       # Kubernetes tools (with helm-diff plugin bundled)
+    ]
+    ++ lib.optionals enableKube [
       kubectl
       myKubernetesHelm
       kubeseal
       myHelmfile
+    ]
+    ++ [
       # Dotfile management (keeping rcm approach)
       rcm
 

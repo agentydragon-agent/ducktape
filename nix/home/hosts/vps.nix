@@ -9,6 +9,7 @@
     (import ../home.nix {
       inherit config pkgs lib;
       enableGui = false;
+      enableKube = false;
     })
   ];
 
