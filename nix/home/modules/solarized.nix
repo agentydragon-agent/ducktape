@@ -14,21 +14,8 @@ in {
   home.packages = with pkgs; [
     gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher
 
-    # Python package with switch_gnome_terminal_profile utility
-    (python3.withPackages (ps:
-      with ps; [
-        pygobject3
-        dbus-python
-        absl-py
-        (ps.buildPythonPackage {
-          pname = "switch-gnome-terminal-profile";
-          version = "0.1.0";
-          src = ../../../adgn;
-          format = "pyproject";
-          nativeBuildInputs = [ps.setuptools];
-          propagatedBuildInputs = [ps.pygobject3 ps.dbus-python ps.absl-py];
-        })
-      ]))
+    # GNOME terminal profile switcher - standalone derivation
+    (pkgs.callPackage ../../../gnome-terminal-profile-switcher {})
 
     # Required system libraries
     gobject-introspection

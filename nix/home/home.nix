@@ -99,10 +99,10 @@ in {
   # Enable Google Drive on specific machines only
   # NOTE: Requires git credentials for private repo git.k3s.agentydragon.com
   # to be configured on the host (e.g., via git credential helper)
-  services.google-drive.enable = let
+  services.google-drive.enable = lib.mkDefault (let
     hostname = builtins.getEnv "HOSTNAME";
   in
-    builtins.elem hostname ["gpd" "agentydragon" "wyrm"];
+    builtins.elem hostname ["gpd" "agentydragon" "wyrm"]);
 
   nix.package = pkgs.nix;
 
@@ -268,8 +268,18 @@ in {
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
   home.packages = with pkgs;
     [
-      python312Packages.autopep8
-      python312Packages.pydeps
+      # Python development environment
+      (python3.withPackages (ps:
+        with ps; [
+          autopep8
+          pydeps
+          black
+          isort
+          pandas
+          pytorch
+          numpy
+        ]))
+
       unstablePkgs.pyright
 
       ansible
@@ -304,7 +314,7 @@ in {
 
       # Development languages/compilers
       go
-      python312 # Python 3.12 for ML compatibility
+      # python312 moved to python3.withPackages in solarized.nix to avoid collision
 
       # Development tools
       direnv
@@ -316,13 +326,8 @@ in {
 
       # Formatters for conform.nvim
       stylua # Lua formatter
-      python312Packages.black
-      python312Packages.isort
 
-      # Machine Learning packages
-      python312Packages.pandas
-      python312Packages.pytorch
-      python312Packages.numpy
+      # Machine Learning packages now in python3.withPackages above
 
       # Kubernetes tools (with helm-diff plugin bundled)
       kubectl

@@ -8,5 +8,5 @@
   hostLib = import ../lib/host-bootstrap.nix {inherit lib;};
 in
   hostLib.mkHostConfig "agentydragon" {
-    services.google-drive.enable = true;
+    services.google-drive.enable = false;
   }
