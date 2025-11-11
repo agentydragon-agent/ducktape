@@ -1,0 +1,11 @@
+---
+# Headscale/Tailscale configuration for agentydragon
+
+# Enable automatic registration with headscale server
+headscale_auto_register: true
+
+# User to register under on headscale server
+headscale_register_user: "agentydragon"
+
+# Delegate headscale API commands to VPS server
+headscale_delegate_host: "root@agentydragon.com"
