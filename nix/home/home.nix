@@ -2,6 +2,7 @@
   config,
   pkgs,
   lib,
+  enableGui ? true,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -69,19 +70,18 @@ let
   commonShellInit = builtins.readFile ./shell/common-init.sh;
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.sh;
-
-  # Import claude-code-router HM module pinned to a specific commit
-  ccr = builtins.getFlake "github:agentydragon/claude-code-router/2b7c2ca";
 in {
-  imports = [
-    ccr.homeManagerModules.claude-code-router
-    ./packages/google-drive-service.nix
-    ./modules/gnome-workspace-shortcuts.nix
-    ./modules/flameshot-screenshots.nix
-    ./modules/solarized.nix
-    ./modules/codex.nix
-    "${homeManagerMaster}/modules/programs/codex.nix"
-  ];
+  imports =
+    [
+      ./packages/google-drive-service.nix
+      (import ./modules/solarized.nix {inherit pkgs lib enableGui;})
+      ./modules/codex.nix
+      "${homeManagerMaster}/modules/programs/codex.nix"
+    ]
+    ++ lib.optionals enableGui [
+      ./modules/gnome-workspace-shortcuts.nix
+      ./modules/flameshot-screenshots.nix
+    ];
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
@@ -110,39 +110,6 @@ in {
     "nix-command"
     "flakes"
   ];
-
-  # Claude Code Router config and transformers via Home Manager
-  programs.claudeCodeRouter = {
-    enable = true;
-
-    # Match reasoning models used by the router's transformer
-    reasoningModelPatterns = ["^o.(-mini)?$" "^gpt-5$"];
-
-    # Optional: set OpenAI reasoning effort (o3/gpt-5)
-    reasoningEffort = "medium";
-
-    systemReplace = {
-      search = "Claude Code";
-      replace = "OpenAI Code";
-      regex = false;
-    };
-
-    providers.openai = {
-      apiBaseUrl = "https://api.openai.com/v1/chat/completions";
-      models = ["o3" "o4-mini" "gpt-5"];
-      useTransformers = ["system-replace" "openai-reasoning"];
-    };
-
-    router = {
-      default = "openai,gpt-5";
-      background = "openai,gpt-5";
-      think = "openai,gpt-5";
-      longContext = "openai,gpt-5";
-      webSearch = "openai,gpt-5";
-    };
-
-    # Service management removed; use your own runner if needed.
-  };
 
   programs.git = {
     enable = true;
@@ -381,6 +348,9 @@ in {
       # Zsh theme
       zsh-powerlevel10k # Powerlevel10k theme for zsh
 
+      # vertical-workspaces managed by gnome-workspace-shortcuts module
+    ]
+    ++ lib.optionals enableGui [
       # Fonts - using modern individual nerd-fonts packages
       nerd-fonts.fira-code
       nerd-fonts.droid-sans-mono
@@ -398,16 +368,14 @@ in {
       # night-theme-switcher managed by solarized module
       gnomeExtensions.cronomix # ID 6003: Cronomix ✓
       # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
-
-      # vertical-workspaces managed by gnome-workspace-shortcuts module
     ]
     ++ [
       # Get comby from older nixpkgs where it's not broken
       oldPkgs.comby
     ];
 
-  # Enable fontconfig for proper font management
-  fonts.fontconfig.enable = true;
+  # Enable fontconfig for proper font management (only when GUI is enabled)
+  fonts.fontconfig.enable = enableGui;
 
   # Session variables (migrated from dotfiles/profile)
   home.sessionVariables = {

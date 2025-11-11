@@ -3,6 +3,7 @@
 {
   pkgs,
   lib,
+  enableGui ? true,
   ...
 }: let
   # Import nix-colors for Solarized color schemes
@@ -11,16 +12,18 @@
   solarizedDark = nix-colors.colorSchemes.solarized-dark;
 in {
   # Install Night Theme Switcher extension and theme switching utility
-  home.packages = with pkgs; [
-    gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher
+  home.packages = with pkgs;
+    [
+      # Required system libraries (always needed for other tools)
+      gobject-introspection
+      glib
+    ]
+    ++ lib.optionals enableGui [
+      gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher
 
-    # GNOME terminal profile switcher - standalone derivation
-    (pkgs.callPackage ../../../gnome-terminal-profile-switcher {})
-
-    # Required system libraries
-    gobject-introspection
-    glib
-  ];
+      # GNOME terminal profile switcher - standalone derivation
+      (pkgs.callPackage ../../../gnome-terminal-profile-switcher {})
+    ];
 
   # Bat theme environment variables for light/dark mode switching
   home.sessionVariables = {
@@ -38,9 +41,9 @@ in {
     source = ../mc-solarized.ini;
   };
 
-  # GNOME Terminal Solarized profiles using nix-colors schemes
+  # GNOME Terminal Solarized profiles using nix-colors schemes (GUI only)
   # This creates both profiles which can be switched dynamically with switch_gnome_terminal_profile
-  programs.gnome-terminal = {
+  programs.gnome-terminal = lib.mkIf enableGui {
     enable = true;
     showMenubar = false;
 
@@ -142,7 +145,7 @@ in {
     };
   };
 
-  dconf.settings = {
+  dconf.settings = lib.mkIf enableGui {
     # Set default terminal
     "org/gnome/desktop/applications/terminal" = {
       exec = "gnome-terminal.wrapper";
