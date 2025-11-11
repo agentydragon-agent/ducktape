@@ -9,6 +9,7 @@
 in
   hostLib.mkHostConfig "wyrm" {
     # Wyrm-specific configuration
+    home.stateVersion = "24.05";
     services.google-drive.enable = true;
 
     # Disable screensaver and screen blanking (for VM/wyrm)

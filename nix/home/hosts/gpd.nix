@@ -9,5 +9,6 @@
 in
   hostLib.mkHostConfig "gpd" {
     # GPD-specific configuration
+    home.stateVersion = "24.05";
     services.google-drive.enable = true;
   }

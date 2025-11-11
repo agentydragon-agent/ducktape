@@ -9,6 +9,9 @@
 in
   hostLib.mkHostConfig "vps" {
     # VPS-specific configuration (minimal GUI, server-focused)
+    # Set appropriate state version for VPS (override the invalid 25.05 from base config)
+    home.stateVersion = lib.mkForce "24.05";
+
     # Disable GUI-specific modules that don't make sense on a server
     programs.gnome-terminal.enable = lib.mkForce false;
 
@@ -21,6 +24,7 @@ in
       htop
       neovim
       tmux
+      eza # Better ls replacement
       # Development tools that make sense on server
       nodejs_22
       python312

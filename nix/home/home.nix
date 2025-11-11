@@ -88,7 +88,7 @@ in {
   home.homeDirectory = "/home/agentydragon";
 
   # Home Manager release your configuration is compatible with.
-  home.stateVersion = "25.05";
+  # NOTE: stateVersion is set per-host in hosts/*.nix files
 
   # Let Home Manager install and manage itself.
   programs.home-manager = {
