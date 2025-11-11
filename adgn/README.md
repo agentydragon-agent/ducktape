@@ -20,7 +20,6 @@ Environment and setup (direnv + devenv)
 - Single test file/case: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
 - Lint/format: `ruff format .`, `ruff check . --fix`
 - Pre-commit: `pre-commit install`, `pre-commit run -a`
-- Optional extras: `python -m pip install -e '.[gnome]'` (GNOME console script deps - system libs required)
 
 ## Agent Presets (MiniCodex UI)
 - Agents are created from presets (YAML) discovered via platformdirs:
@@ -40,7 +39,6 @@ Environment and setup (direnv + devenv)
 
 ## Console scripts
 - rspcache → adgn.rspcache.cli:main
-- switch_gnome_terminal_profile → adgn.gnome.switch_gnome_terminal_profile:run
 - LLM: adgn-mini-codex, adgn-llm-edit, adgn-sysrw, adgn-properties, sandbox-jupyter
 - Worktree tooling (`wt`, `wt-install`) now lives in the sibling `wt/` project
 

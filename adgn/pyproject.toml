@@ -184,7 +184,6 @@ testpaths = ["tests"]
 skip-globs = ["tests/detectors/fixtures/**"]
 
 [project.scripts]
-switch_gnome_terminal_profile = "adgn.gnome.switch_gnome_terminal_profile:run"
 rspcache = "adgn.rspcache.cli:app"
 # LLM console scripts
 adgn-sysrw = "adgn.llm.sysrw.cli:app"
