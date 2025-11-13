@@ -46,4 +46,10 @@ AUTHENTIK_BASE_URL = "https://auth.k3s.agentydragon.com"
 HARBOR_BASE_URL = f"https://{HARBOR_HOST}"
 
 # Common test commands
-OIDC_LOGIN_CURL_CMD = ["curl", "-s", "-I", "http://localhost:8080/c/oidc/login"]
+OIDC_LOGIN_CURL_CMD = [
+    "curl",
+    "-s",
+    "-c",
+    "/tmp/harbor_session.txt",
+    "http://localhost:8080/c/oidc/login?redirect_url=/harbor/projects",
+]
