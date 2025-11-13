@@ -50,11 +50,28 @@ persistence:
       storageClass: "local-path"
       size: 5Gi
 
-# Harbor core configuration
-# Note: OIDC authentication now managed by Terraform (see terraform/applications/)
-# Admin password and OIDC settings configured via Terraform providers
+# Harbor core configuration - admin password managed via ExternalSecret
+existingSecretAdminPassword: "harbor-oidc-secret"
+existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD"
 
-# Basic Harbor configuration (OIDC section removed - managed by Terraform)
+# Authentik OIDC Integration
+authMode: "oidc_auth"
+
+oidc:
+  name: "Authentik"
+  endpoint: "https://auth.k3s.agentydragon.com/application/o/harbor/"
+  clientId: "harbor"
+  clientSecret: "" # Will be set via external secret from Vault
+  groupsClaim: "groups"  
+  adminGroup: "harbor-admins"
+  scope: "openid,profile,email,groups"
+  userClaim: "preferred_username"
+  verifySignature: true
+  useExternalSecret: true
+  externalSecretName: "harbor-oidc-secret"
+  externalSecretKey: "OIDC_CLIENT_SECRET"
+
+# Disable internal Harbor authentication since we're using OIDC
 core:
   secret: "not-a-secure-secret-change-me"
   

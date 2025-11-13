@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$"
+exclude: ".*/testdata/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|^archive/"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -132,8 +132,7 @@ repos:
       - id: terraform_validate
         name: terraform_validate
         description: Validates all Terraform configuration files
-        
-  # TFLint with isolated Go environment 
+  # TFLint with isolated Go environment
   - repo: local
     hooks:
       - id: tflint
