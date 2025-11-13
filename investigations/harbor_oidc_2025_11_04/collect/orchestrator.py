@@ -11,6 +11,7 @@ from .collectors.database import DatabaseCollector
 from .collectors.diagnostics import DiagnosticsCollector
 from .collectors.k8s_resources import K8sResourceCollector
 from .collectors.logs import LogCollector
+from .collectors.secrets import SecretsCollector
 from .config import (
     AUTHENTIK_NAMESPACE,
     AUTHENTIK_SERVER,
@@ -51,6 +52,7 @@ class ScientistMode:
         # Show which environment we're targeting
         self.logger.info("Starting collection in production environment")
         self.logger.info(f"Output directory: {self.base_dir}")
+        self.logger.info(f"Full resolved path: {self.base_dir.resolve()}")
         self.logger.info(
             f"Targeting namespaces: harbor={HARBOR_NAMESPACE}, authentik={AUTHENTIK_NAMESPACE}"
         )
@@ -88,6 +90,9 @@ class ScientistMode:
             self.k8s, self.file_writer, self.logger
         )
         self.oidc_tester = OIDCTester(self.k8s, self.file_writer, self.logger)
+        self.secrets_collector = SecretsCollector(
+            self.k8s, self.file_writer, self.logger
+        )
 
     async def enable_observability(self) -> None:
         """Enable maximum observability on all components."""
@@ -166,6 +171,7 @@ class ScientistMode:
             ("test_api_endpoints", self.api_collector.collect()),
             ("collect_diagnostics", self.diagnostics_collector.collect()),
             ("test_oidc_e2e_flow", self.oidc_tester.test_oidc_e2e_flow()),
+            ("compare_secrets", self.secrets_collector.collect()),
         ]
 
         # Run all collections in parallel
