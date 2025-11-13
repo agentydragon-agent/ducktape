@@ -9,7 +9,7 @@
 # Certificate (must exist before nginx site is enabled)
 # ---------------------------------------------------------------------------
 
-- name: "obtain Let’s Encrypt certificate"
+- name: "Obtain Let's Encrypt certificate"
   ansible.builtin.import_role:
     name: letsencrypt
   vars:

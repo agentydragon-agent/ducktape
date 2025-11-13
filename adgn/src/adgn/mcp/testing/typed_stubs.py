@@ -82,12 +82,12 @@ async def call_tool_typed(
     session: Client,
     name: str,
     payload: BaseModel | dict[str, object],
-    out_type: object,
+    out_type: type[T_Out],
     *,
     exclude_none: bool = True,
     input_model: type[BaseModel] | None = None,
     wrapper_field: str | None = None,
-) -> Any:
+) -> T_Out:
     """Call an MCP tool with a Pydantic input and parse a Pydantic output.
 
     Requires structuredContent from the server; raises otherwise.
@@ -100,7 +100,7 @@ async def call_tool_typed(
         tool_name=name,
     )
     _result, structured = await _call_structured(session, name, args)
-    adapter: TypeAdapter[Any] = TypeAdapter(out_type)
+    adapter: TypeAdapter[T_Out] = TypeAdapter(out_type)
     try:
         parsed = adapter.validate_python(structured)
     except ValidationError:
@@ -108,7 +108,7 @@ async def call_tool_typed(
             parsed = adapter.validate_python(structured["result"])
         else:
             raise
-    return cast(Any, parsed)
+    return parsed
 
 
 class ToolStub(Generic[T_Out]):
@@ -118,7 +118,7 @@ class ToolStub(Generic[T_Out]):
         self,
         session: Client,
         name: str,
-        out_type: object,
+        out_type: type[T_Out],
         *,
         exclude_none: bool = True,
         input_model: type[BaseModel] | None = None,
@@ -132,27 +132,24 @@ class ToolStub(Generic[T_Out]):
         self._wrapper_field = wrapper_field
 
     async def __call__(self, payload: BaseModel | dict[str, object]) -> T_Out:
-        return cast(
-            T_Out,
-            await call_tool_typed(
-                self._session,
-                self._name,
-                payload,
-                self._out_type,
-                exclude_none=self._exclude_none,
-                input_model=self._input_model,
-                wrapper_field=self._wrapper_field,
-            ),
+        return await call_tool_typed(
+            self._session,
+            self._name,
+            payload,
+            self._out_type,
+            exclude_none=self._exclude_none,
+            input_model=self._input_model,
+            wrapper_field=self._wrapper_field,
         )
 
 
-def _resolve_output_type(hinted_output: object, out_model: object) -> object:
+def _resolve_output_type(hinted_output: object, out_model: object) -> type[Any]:
     if hinted_output is not None:
         if isinstance(hinted_output, type):
             return hinted_output
         origin = get_origin(hinted_output)
         if origin is not None or isinstance(hinted_output, types.UnionType):
-            return hinted_output
+            return cast(type[Any], hinted_output)
     if isinstance(out_model, type):
         return out_model
     return object
@@ -162,7 +159,7 @@ def _resolve_output_type(hinted_output: object, out_model: object) -> object:
 class ToolModels:
     # Public types tests should use
     Input: type[BaseModel] | None
-    Output: object
+    Output: type[Any]  # This should be a type, not an instance
     # Internal wiring details for FastMCP registry
     _arg_model: type[BaseModel] | None = None
     _wrapper_field: str | None = None
@@ -203,7 +200,7 @@ class TypedClient:
         self._exclude_none = exclude_none
         self._models: dict[str, ToolModels] = {}
 
-    def stub(self, name: str, out_type: object) -> ToolStub[Any]:
+    def stub(self, name: str, out_type: type[T_Out]) -> ToolStub[T_Out]:
         meta = self._models.get(name)
         input_model = meta.Input if meta else None
         wrapper_field = meta._wrapper_field if meta else None

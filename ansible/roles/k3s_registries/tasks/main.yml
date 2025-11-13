@@ -23,5 +23,5 @@
   loop:
     - k3s
     - k3s-agent
-  ignore_errors: yes
+  failed_when: false
   tags: [k3s, registries]

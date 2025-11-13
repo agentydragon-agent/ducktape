@@ -2,7 +2,7 @@
 # Disable Trilium – stop container and remove nginx site configs.
 
 - name: Remove Trilium server container if present
-  ansible.builtin.docker_container:
+  community.docker.docker_container:
     name: trilium-server
     state: absent
 

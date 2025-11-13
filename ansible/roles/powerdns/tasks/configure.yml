@@ -2,7 +2,7 @@
 # PowerDNS configuration tasks
 
 - name: Configure firewall for PowerDNS
-  ansible.builtin.ufw:
+  community.general.ufw:
     rule: allow
     port: "{{ item }}"
     proto: "{{ 'tcp' if item == powerdns_webserver_port else 'any' }}"

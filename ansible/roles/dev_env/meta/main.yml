@@ -1,0 +1,4 @@
+---
+dependencies:
+  - role: firecrawl
+    tags: [firecrawl]

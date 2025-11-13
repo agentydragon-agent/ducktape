@@ -259,12 +259,17 @@ in {
       ast-grep
       awscli2
       bazelisk
+      gnuplot
       jq
+      mc
+      mmv
+      nethogs
       pre-commit
       ruff
       speedtest-cli
       terraform
       uv
+      xxd
       yq
       zsh
       atuin
@@ -360,7 +365,7 @@ in {
       # vertical-workspaces managed by gnome-workspace-shortcuts module
     ]
     ++ lib.optionals enableGui [
-      # Fonts - using modern individual nerd-fonts packages
+      # Fonts - using modern individual nerd-fonts packages (covers ansible nerd_fonts role)
       nerd-fonts.fira-code
       nerd-fonts.droid-sans-mono
       nerd-fonts.jetbrains-mono
@@ -369,6 +374,13 @@ in {
       nerd-fonts.meslo-lg
       nerd-fonts.profont
       nerd-fonts.ubuntu-mono
+      # Additional fonts from ansible nerd_fonts defaults
+      nerd-fonts.hack
+      nerd-fonts.sauce-code-pro # SourceCodePro
+      nerd-fonts.iosevka
+      nerd-fonts.victor-mono
+      nerd-fonts.proggy-clean
+      nerd-fonts.caskaydia-cove # CascadiaCode
 
       # GNOME Shell Extensions (migrated from Ansible gui role)
       # These extensions were installed via petermosmans.customize-gnome role:

@@ -7,7 +7,7 @@
     project_src: "{{ firecrawl_project_path }}"
     state: absent
   when: firecrawl_project_path is defined and firecrawl_project_path != ""
-  ignore_errors: true
+  failed_when: false
 
 - name: Remove Firecrawl project directory
   become: true

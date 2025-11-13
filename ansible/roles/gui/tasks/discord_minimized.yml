@@ -3,7 +3,7 @@
   block:
   - name: Ensure Discord is installed
     become: true
-    apt:
+    ansible.builtin.apt:
       name: discord
       state: present
 

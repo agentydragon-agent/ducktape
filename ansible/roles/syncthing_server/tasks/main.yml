@@ -1,0 +1,68 @@
+# GUI lives on http://10.13.13.1:8384
+
+- name: Install syncthing package
+  ansible.builtin.apt:
+    name: syncthing
+    update_cache: yes
+    state: latest
+
+- name: Create SyncThing group
+  ansible.builtin.group:
+    name: syncthing
+    state: present
+
+- name: Create SyncThing user
+  ansible.builtin.user:
+    name: syncthing
+    group: syncthing
+    comment: Syncthing service account
+    system: no   # regular user, gets /etc/passwd entry
+    home: /srv/syncthing
+    shell: /bin/bash
+    create_home: yes
+    state: present
+
+- name: Create SyncThing /srv directory
+  ansible.builtin.file:
+    path: /srv/syncthing
+    state: directory
+    owner: syncthing
+    group: syncthing
+    mode: 0700
+
+- name: Check if config.xml already exists
+  ansible.builtin.stat:
+    path: /srv/syncthing/.local/state/syncthing/config.xml
+  register: st_cfg
+
+- name: Bail out if config.xml did not exist
+  when: not st_cfg.stat.exists
+  ansible.builtin.fail:
+    msg: Syncthing config not found. Generate one.
+
+# ---------------------------------------------------------------------------
+# TLS certificate required by nginx reverse-proxy site
+# ---------------------------------------------------------------------------
+
+- name: Enable & start syncthing system service
+  become: true
+  ansible.builtin.systemd:
+    name: syncthing@syncthing   # template instance for the “syncthing” user
+    enabled: yes
+    state: started
+
+#- name: SyncThing server
+#  include_role:
+#    name: rolehippie.syncthing
+#  vars:
+#    syncthing_general_users:
+#      - username: syncthing
+#        home: /srv/syncthing
+#        config:
+#          # device:                 # <- will be merged into **all** remotes
+#          #   autoAcceptFolders: true
+#          folders:
+#            - id: logseq
+#              path: /srv/syncthing/logseq
+#
+# GUI lives on 10.13.13.1:8384

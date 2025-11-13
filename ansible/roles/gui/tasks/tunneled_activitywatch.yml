@@ -15,7 +15,7 @@
   tags: activitywatch
 
 - name: Start and enable ActivityWatch tunnel
-  systemd:
+  ansible.builtin.systemd:
     name: aw-tunnel.service
     scope: user
     state: started

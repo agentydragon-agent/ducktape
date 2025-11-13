@@ -1,11 +1,11 @@
 # Python binary & unit file installed with rcup
 
-- name: reload user systemd daemon
+- name: Reload user systemd daemon
   ansible.builtin.systemd:
     daemon_reload: yes
     scope: user
 
-- name: enable & start login_event_webhook_reporter
+- name: Enable & start login_event_webhook_reporter
   ansible.builtin.systemd:
     name: login_event_webhook_reporter.service
     enabled: yes

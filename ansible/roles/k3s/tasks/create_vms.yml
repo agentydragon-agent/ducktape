@@ -16,12 +16,14 @@
   ansible.builtin.shell: |
     qm set {{ item.vmid }} --cores {{ item.cores }} --memory {{ item.memory }}
   loop: "{{ k3s_vms }}"
+  changed_when: true
   tags: [k3s, vm-config]
 
 - name: Resize VM disks
   ansible.builtin.shell: |
     qm resize {{ item.vmid }} scsi0 {{ item.disk_size }}
   loop: "{{ k3s_vms }}"
+  changed_when: true
   tags: [k3s, vm-config]
 
 - name: Configure cloud-init settings
@@ -32,6 +34,7 @@
       --sshkeys /root/.ssh/id_rsa.pub \
       --ciuser {{ k3s_ssh_user }}
   loop: "{{ k3s_vms }}"
+  changed_when: true
   tags: [k3s, vm-config]
 
 - name: Start VMs

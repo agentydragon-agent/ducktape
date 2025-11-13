@@ -13,7 +13,7 @@
       register: current_mime_associations
       changed_when: false
       failed_when: false
-      loop: "{{ xdg_mime_associations | default([]) }}"
+      loop: "{{ gui_xdg_mime_associations | default([]) }}"
       loop_control:
         label: "{{ item.mime_type }}"
 

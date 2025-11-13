@@ -16,7 +16,7 @@ from typing import Any, cast
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 import tiktoken
 
 from adgn.openai_utils.client_factory import get_async_openai
@@ -27,20 +27,26 @@ from adgn.openai_utils.retry import (
 
 from .constants import TOOLS_HEADER
 from .openai_typing import (
+    MessageRole,
+    StandardAssistantMessage,
+    StandardMessage,
+    StandardUserMessage,
+    chat_param_message_content_as_text,
+    chat_param_message_role,
+    chat_param_message_tool_calls,
+    chat_param_to_standard_message,
     dump_chat_messages,
     dump_response_messages,
     iter_resolved_text,
     iter_tool_calls_from_response,
     message_content,
-    message_content_as_text,
-    message_role,
-    message_tool_calls,
     parse_chat_messages,
     parse_response,
     parse_response_messages,
     parse_response_parts,
-    parse_tool_params,
-    tool_call_arguments,
+    parse_tools_list,
+    response_message_content_as_text,
+    response_message_role,
 )
 from .schemas import (
     CCRRequest,
@@ -163,17 +169,17 @@ def estimate_tokens(text: str) -> int:
 
 
 def tokens_for_chat_messages(msgs: Any) -> int:
-    messages = parse_chat_messages(msgs)
+    if (messages := parse_chat_messages(msgs)) is None:
+        return 0
     parts: list[str] = []
     for message in messages:
-        parts.append(message_role(message))
-        text = message_content_as_text(message)
-        if text:
+        parts.append(chat_param_message_role(message))
+        if text := chat_param_message_content_as_text(message):
             parts.append(text)
-        for call in message_tool_calls(message):
-            args = tool_call_arguments(call)
-            if args:
-                parts.append(args)
+        if tool_calls := chat_param_message_tool_calls(message):
+            for call in tool_calls:
+                if args := call["function"]["arguments"]:
+                    parts.append(args)
     return estimate_tokens("\n".join(parts))
 
 
@@ -217,22 +223,22 @@ MODEL_PREFIX = "You are powered by the model"
 MCP_HEADER = "# MCP Server Instructions"
 
 
-def index_of_last_assistant_before_final(msgs: Any) -> int | None:
-    typed = parse_chat_messages(msgs)
-    for i in range(len(typed) - 2, -1, -1):
-        if message_role(typed[i]) == "assistant":
+def index_of_last_assistant_before_final(msgs: list[StandardMessage]) -> int | None:
+    """Find index of last assistant message before the final message."""
+    for i in range(len(msgs) - 2, -1, -1):
+        if msgs[i].role == MessageRole.ASSISTANT:
             return i
     return None
 
 
 def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, Any]] | None:
-    tools = parse_tool_params(tools_val)
+    tools = parse_tools_list(tools_val)
     if not tools:
         return None
     normalized: list[dict[str, Any]] = []
     for tool in tools:
-        if hasattr(tool, "model_dump"):
-            payload = tool.model_dump(mode="json", exclude_none=True)  # type: ignore[no-untyped-call]
+        if isinstance(tool, BaseModel):
+            payload = tool.model_dump(mode="json", exclude_none=True)
         else:
             payload = dict(tool)
         normalized.append(payload)
@@ -374,7 +380,8 @@ def anthro_to_openai_messages(
                     },
                 )
 
-    return parse_chat_messages(raw_messages)
+    parsed = parse_chat_messages(raw_messages)
+    return parsed or []
 
 
 def anthro_to_responses_input(
@@ -417,12 +424,14 @@ def anthro_to_responses_input(
                 },
             )
     validated = parse_response_messages(out)
+    if validated is None:
+        return []
     return dump_response_messages(validated)
 
 
 def build_grader_prompt(
-    prefix_messages: list[dict[str, Any]],
-    raw_bad_branch: list[dict[str, Any]],
+    prefix_messages: list[StandardMessage],
+    raw_bad_branch: list[StandardMessage],
     raw_new_asst_obj: dict[str, Any],
 ) -> list[dict[str, Any]]:
     sys = {
@@ -452,10 +461,13 @@ def build_grader_prompt(
         "role": "user",
         "content": (
             "The following is a past conversation between user and an AI coding assistant:\n"
-            + json.dumps(prefix_messages, ensure_ascii=False)
+            + json.dumps([msg.model_dump() for msg in prefix_messages], ensure_ascii=False)
             + "\n\n"
             + "BAD_BRANCH_JSON (from bad assistant turn through the user's complaint, inclusive):\n"
-            + json.dumps(raw_bad_branch if raw_bad_branch is not None else [], ensure_ascii=False)
+            + json.dumps(
+                [msg.model_dump() for msg in raw_bad_branch] if raw_bad_branch is not None else [],
+                ensure_ascii=False,
+            )
             + "\n\n"
             + "NEW_ASSISTANT_REPLY_JSON:\n"
             + json.dumps(raw_new_asst_obj or {}, ensure_ascii=False)
@@ -520,43 +532,54 @@ async def run_eval(
 
     def responses_prev_assistant_index(inp: Any) -> int | None:
         parsed = parse_response_messages(inp)
+        if parsed is None:
+            return None
         for i in range(len(parsed) - 2, -1, -1):
-            if message_role(parsed[i]) == "assistant":
+            if response_message_role(parsed[i]) == MessageRole.ASSISTANT:
                 return i
         return None
 
     def responses_extract_system_text(inp: Any) -> str:
         parsed = parse_response_messages(inp)
+        if parsed is None:
+            return ""
         buf: list[str] = []
         for it in parsed:
-            if message_role(it) != "system":
+            if response_message_role(it) != MessageRole.SYSTEM:
                 continue
-            buf.append(message_content_as_text(it))
+            buf.append(response_message_content_as_text(it))
         return "\n\n".join([t for t in buf if t])
 
     def responses_slice_prefix(inp: Any, end_idx: int) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         parsed = parse_response_messages(inp)
+        if parsed is None:
+            return out
         for it in parsed[:end_idx]:
-            role = message_role(it)
-            if role not in ("user", "assistant"):
+            role = response_message_role(it)
+            if role not in (MessageRole.USER, MessageRole.ASSISTANT):
                 continue
             content = message_content(it)
             if isinstance(content, list):
                 parts = parse_response_parts(content)
-                content = [p.model_dump(mode="json", exclude_none=True) for p in parts]
+                if parts is not None:
+                    content = [p.model_dump(mode="json", exclude_none=True) for p in parts]
             out.append({"role": role, "content": content})
         return out
 
-    def responses_to_ccr_messages(inp: Any) -> list[dict[str, Any]]:
-        msgs: list[dict[str, Any]] = []
+    def responses_to_ccr_messages(inp: Any) -> list[StandardMessage]:
+        msgs: list[StandardMessage] = []
         parsed = parse_response_messages(inp)
+        if parsed is None:
+            return msgs
         for it in parsed:
-            role = message_role(it)
-            if role in ("user", "assistant"):
-                txt = message_content_as_text(it)
-                if txt.strip():
-                    msgs.append({"role": role, "content": txt})
+            role = response_message_role(it)
+            if role in (MessageRole.USER, MessageRole.ASSISTANT):
+                if txt := response_message_content_as_text(it).strip():
+                    if role == MessageRole.USER:
+                        msgs.append(StandardUserMessage(content=txt))
+                    else:  # MessageRole.ASSISTANT
+                        msgs.append(StandardAssistantMessage(content=txt))
         return msgs
 
     validate_template_file(template_path)
@@ -643,7 +666,15 @@ async def run_eval(
                 )
                 new_sys = rewrite_system_with_template(sys_val, template_path)
                 # 2) Build OpenAI sampling request BEFORE the bad assistant turn
-                msgs = ar.messages
+                if (chat_params := parse_chat_messages(ar.messages)) is None:
+                    log_event(
+                        {
+                            "correlation_id": item.correlation_id,
+                            "status": "parse_messages_failed",
+                        },
+                    )
+                    return None, None
+                msgs = [chat_param_to_standard_message(msg) for msg in chat_params]
                 prev_asst_idx = index_of_last_assistant_before_final(msgs)
                 if prev_asst_idx is None:
                     log_event(
@@ -764,7 +795,7 @@ async def run_eval(
                 new_asst_obj if isinstance(new_asst_obj, dict) else new_asst_obj.model_dump()
             )
             base_prefix = msgs[:-2] if len(msgs) >= 2 else []
-            base_prefix = [m for m in base_prefix if m.get("role") != "system"]
+            base_prefix = [m for m in base_prefix if m.role != MessageRole.SYSTEM]
             # Compute bad branch (inclusive of complaint)
             complaint_idx = len(msgs) - 1
             raw_bad_branch = msgs[prev_asst_idx_for_grader : complaint_idx + 1]
@@ -775,7 +806,7 @@ async def run_eval(
 
             # Build a provisional grader input to compute tokens; start from minimal
             def mk_grader_input(
-                prefix_subset: list[dict[str, Any]],
+                prefix_subset: list[StandardMessage],
             ) -> list[dict[str, Any]]:
                 gm = build_grader_prompt(
                     prefix_subset,
@@ -1137,7 +1168,9 @@ async def run_eval(
                         shared_prefix = msgs_disp
                         bad_branch = []
                     else:
-                        shared_prefix = [m for m in (msgs_disp[:idx]) if m.get("role") != "system"]
+                        shared_prefix = [
+                            m for m in (msgs_disp[:idx]) if m.role != MessageRole.SYSTEM
+                        ]
                         bad_branch = msgs_disp[idx:]
                 else:
                     # CCR item
@@ -1148,13 +1181,17 @@ async def run_eval(
                         template_file,
                     )
                     _msgs = ar.get("messages")
-                    msgs = _msgs if _msgs is not None else []
+                    raw_msgs = _msgs if _msgs is not None else []
+                    if (chat_params := parse_chat_messages(raw_msgs)) is None:
+                        msgs = []
+                    else:
+                        msgs = [chat_param_to_standard_message(msg) for msg in chat_params]
                     idx = index_of_last_assistant_before_final(msgs)
                     if idx is None:
                         shared_prefix = msgs
                         bad_branch = []
                     else:
-                        shared_prefix = [m for m in (msgs[:idx]) if m.get("role") != "system"]
+                        shared_prefix = [m for m in (msgs[:idx]) if m.role != MessageRole.SYSTEM]
                         bad_branch = msgs[idx:]
                 grade = grades_map.get(cid) or {}
                 rows.append(

@@ -12,7 +12,7 @@
       register: release_check
 
     - name: Verify release_check results
-      assert:
+      ansible.builtin.assert:
         that:
           - release_check.latest_version is defined
           - release_check.asset_url is defined
@@ -21,7 +21,7 @@
 
     # Test 2: Install with pinned version
     - name: Set test version
-      set_fact:
+      ansible.builtin.set_fact:
         test_version: "v3.0.0-alpha-4"
 
     - name: Install AppImageLauncher with pinned version
@@ -35,7 +35,7 @@
       become: true
 
     - name: Verify installation success
-      assert:
+      ansible.builtin.assert:
         that:
           - install_result.latest_version is defined
           - install_result.asset_url is defined
@@ -57,11 +57,11 @@
           become: true
       rescue:
         - name: Verify version acknowledgment failed as expected
-          set_fact:
+          ansible.builtin.set_fact:
             version_ack_test_passed: true
 
     - name: Assert version acknowledgment test passed
-      assert:
+      ansible.builtin.assert:
         that: version_ack_test_passed is defined and version_ack_test_passed
         success_msg: "Version acknowledgment correctly detected new version"
         fail_msg: "Version acknowledgment test failed"

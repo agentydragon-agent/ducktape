@@ -1,0 +1,26 @@
+---
+- name: Restart k3s master
+  delegate_to: "{{ item.name }}"
+  ansible.builtin.systemd:
+    name: k3s
+    state: restarted
+  become: true
+  loop: "{{ k3s_vms | selectattr('role', 'equalto', 'master') | list }}"
+
+- name: Restart k3s workers
+  delegate_to: "{{ item.name }}"
+  ansible.builtin.systemd:
+    name: k3s-agent
+    state: restarted
+  become: true
+  loop: "{{ k3s_vms | selectattr('role', 'equalto', 'worker') | list }}"
+
+- name: Wait for k3s nodes
+  delegate_to: "{{ (k3s_vms | selectattr('role', 'equalto', 'master') | first).name }}"
+  ansible.builtin.shell: |
+    kubectl get nodes
+  register: kubectl_result
+  until: kubectl_result.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false

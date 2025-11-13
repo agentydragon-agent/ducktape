@@ -32,6 +32,9 @@ devenv.local.nix
 .direnv
 .direnv/
 
+# Ansible cache directories
+.ansible/
+
 .cache/
 .uv-cache/
 **/.uv-cache/

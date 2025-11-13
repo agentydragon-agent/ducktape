@@ -1,0 +1,62 @@
+---
+# Migrated to Nix: autopep8, ruff, pre-commit, speedtest-cli, ansible, pydeps,
+# atuin, sccache, bazelisk, ast-grep, pyright, comby
+
+# Tasks migrated to Nix home-manager
+# These are kept here for non-Nix systems but skipped on machines using home-manager
+
+- name: Install Python tools via pipx
+  ansible.builtin.include_tasks: pipx_tools.yml
+  tags: [pipx]
+
+- name: Install Node.js tools via pnpm
+  ansible.builtin.include_tasks: pnpm_tools.yml
+  tags: [pnpm]
+
+- name: Install Rust tools via cargo
+  ansible.builtin.include_tasks: cargo_tools.yml
+  tags: [cargo]
+
+# oh_my_zsh.yml moved to Nix home-manager (programs.zsh.oh-my-zsh)
+
+# Development tools installed via various methods
+- name: Install Comby code transformation tool
+  ansible.builtin.include_tasks: comby.yml
+  tags: [comby, dev-tools]
+
+- name: Install GitLab CLI
+  ansible.builtin.include_tasks: glab.yml
+  tags: [glab, gitlab, dev-tools]
+
+- name: Install gitstatus for fast git prompt
+  ansible.builtin.include_tasks: gitstatus.yml
+  tags: [gitstatus, dev-tools]
+
+# Tools that Nix provides but Ansible needs to install on non-Nix systems
+- name: Install Neovim text editor
+  ansible.builtin.include_tasks: neovim.yml
+  tags: [neovim]
+
+- name: Install Node.js runtime
+  ansible.builtin.include_tasks: nodejs.yml
+  tags: [nodejs]
+
+- name: Install Rust toolchain
+  ansible.builtin.include_tasks: rust.yml
+  tags: [rust]
+
+# CLI utilities moved from main cli role
+- name: Install CLI utilities for non-Nix systems
+  ansible.builtin.include_tasks: cli_utils.yml
+  tags: [cli_utils]
+
+# Bazel toolchain moved from main cli role
+- name: Install Bazel for non-Nix systems
+  ansible.builtin.include_tasks: bazel.yml
+  tags: [bazel]
+
+# Claude MCP configuration (legacy setup)
+- name: Apply Claude MCP role
+  ansible.builtin.import_role:
+    name: legacy_claude_mcp
+  tags: [claude, mcp]

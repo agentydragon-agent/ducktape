@@ -2,20 +2,26 @@
 
 - name: System-wide apt lock acquire timeout (3 min)
   become: true
-  copy:
+  ansible.builtin.copy:
     dest: /etc/apt/apt.conf.d/99locktimeout
+    mode: '0644'
     content: |
       DPkg::Lock::Timeout "180";
 
 # - name: Include Trilium client
 #   include_tasks: tasks/trilium_client.yml
 
-- include_tasks: tasks/bazel.yml
+- name: Remove Bazel installation
+  ansible.builtin.include_tasks: tasks/bazel.yml
   vars:
     bazel_state: absent
 
 # Migrated to Nix home-manager:
-# - Neovim (unstablePkgs.neovim)
+# - Neovim (programs.neovim) + version validation (moved to legacy_cli)
+# - pipx tools: ansible, autopep8, speedtest-cli, pydeps (moved to legacy_cli)
+# - Bazel toolchain: bazelisk (replaces bazel, moved to legacy_cli)
+# - CLI utilities: mc, xxd, nethogs, mmv, gnuplot (moved to legacy_cli)
+# - Removed: screen (deprecated, use tmux instead)
 # - CLI packages: curl, htop, iftop, iotop, nmap, pwgen, rcm, ripgrep, wget, zsh
 # - Media/network: ffmpeg, mosh
 # - File utilities: ncdu, pv, tree, sqlite, gnupg
@@ -31,47 +37,20 @@
       #   diffutils
       # See consolidated migration comment above
       - gnupg-agent  # gnupg moved to Nix, but keeping agent for system integration
-      - gnuplot
       - grep
       - gzip
       - iputils-ping
       - libsecret-tools  # for secret-tool, for Ansible Vault
       - locate
-      - mc
-      - mmv
       - netcat-openbsd
-      - nethogs
       - pkg-config
       - python3
       - python3-pip
-      - screen
       - sed
       - sudo # for become: agentydragon further down
       - unrar-free
-      - xxd
       - yasm
 
-# Modern systems require using pipx or apt for Python CLI tools
-- name: Install pipx for Python CLI tools
-  become: true
-  ansible.builtin.apt:
-    pkg:
-      - pipx
-    state: latest
-
-# Upgrade pipx to latest version via pip (Ubuntu package is too old)
-- name: Upgrade pipx to latest version via pip
-  become: true
-  become_user: "{{ my_user | default(ansible_user_id) }}"
-  ansible.builtin.pip:
-    name: pipx
-    state: latest
-    extra_args: --user --upgrade --force-reinstall
-
-# Ensure the user's pipx is in PATH for subsequent tasks
-- name: Add user's local bin to PATH for pipx
-  set_fact:
-    ansible_env: "{{ ansible_env | combine({'PATH': ansible_env.PATH + ':' + ansible_user_dir + '/.local/bin'}) }}"
 
 - name: Remove retired pkgs
   become: true
@@ -91,7 +70,7 @@
 
 - name: Install snaps
   become: true
-  snap:
+  community.general.snap:
     name: tio
     classic: true
 
@@ -99,15 +78,15 @@
 - name: Set zsh as login shell
   become: true
   tags: [zsh]
-  user:
-    name: "{{ my_user | default(ansible_user_id) }}"
+  ansible.builtin.user:
+    name: "{{ cli_user | default(ansible_user_id) }}"
     shell: /bin/zsh
 
 # Remove default Ubuntu directories (only if empty)
 # I have custom dirs configured via user-dirs.dirs
 - name: Check if default Ubuntu directories are empty
-  find:
-    paths: "/home/{{ my_user | default(ansible_user_id) }}/{{ item }}"
+  ansible.builtin.find:
+    paths: "/home/{{ cli_user | default(ansible_user_id) }}/{{ item }}"
     file_type: any
   loop:
     - Desktop
@@ -120,53 +99,31 @@
     - Videos
   register: dir_contents
   become: true
-  become_user: "{{ my_user | default(ansible_user_id) }}"
+  become_user: "{{ cli_user | default(ansible_user_id) }}"
   failed_when: false  # Don't fail if directory doesn't exist
 
 - name: Ensure default directories are either absent or empty
-  file:
-    path: "/home/{{ my_user | default(ansible_user_id) }}/{{ item.item }}"
+  ansible.builtin.file:
+    path: "/home/{{ cli_user | default(ansible_user_id) }}/{{ item.item }}"
     state: absent
   when: item.matched == 0  # Directory exists but is empty
   loop: "{{ dir_contents.results }}"
   become: true
-  become_user: "{{ my_user | default(ansible_user_id) }}"
+  become_user: "{{ cli_user | default(ansible_user_id) }}"
   failed_when:
     - item.failed is defined and item.failed == false  # Directory exists
     - item.matched > 0  # And is not empty
 
-# Deploy dotfiles before dev-env to ensure npmrc is in place
-- import_tasks: tasks/dotfiles.yml
+# Deploy dotfiles before dev_env to ensure npmrc is in place
+- name: Import dotfiles configuration tasks
+  ansible.builtin.import_tasks: tasks/dotfiles.yml
 
-- import_tasks: tasks/dev-env.yml
+- name: Import development environment setup tasks
+  ansible.builtin.import_tasks: dev-env.yml
 
-# - name: Check Neovim is >= 0.11 (for DEC mode 2031 for auto color scheme switching)
-#   block:
-#   - name: Get Neovim version
-#     command: nvim --version
-#     register: raw_nvim_version
-#     changed_when: false
-#
-#   - name: Parse clean Neovim version string (strip prefix and suffix)
-#     set_fact:
-#       nvim_version_string: "{{ raw_nvim_version.stdout_lines[0] | regex_replace(
-#         '^NVIM v(\\d+\\.\\d+(?:\\.\\d+)?).*',
-#         '\\1'
-#       ) }}"
-#
-#   - name: Fail if version parsing failed
-#     fail:
-#       msg: "Couldn't parse Neovim version from: {{ raw_nvim_version }}"
-#     when: nvim_version_string is not defined or nvim_version_string == ''
-#
-#   - name: Assert Neovim is at least 0.11
-#     assert:
-#       that:
-#         - "nvim_version_string is version('0.11', '>=')"
-#       fail_msg: "Neovim must be at least 0.11, got {{ nvim_version_string }}"
+# TODO: update Neovim Lazy plugins? (moved to legacy_cli)
 
-# TODO: update Neovim Lazy plugins?
-
-- include_tasks: tasks/locale.yml
+- name: Configure system locale settings
+  ansible.builtin.include_tasks: tasks/locale.yml
 
 # TODO: hyphenation patterns? hyphen-cs hyphen-de

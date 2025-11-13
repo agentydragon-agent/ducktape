@@ -1,0 +1,46 @@
+---
+# Profile creation only - dependencies handled by gnome-terminal-solarized role
+- name: Set default variables
+  ansible.builtin.set_fact:
+    font: "{{ gnome_terminal_solarized_font_family }} {{ gnome_terminal_solarized_font_size }}"
+
+- name: Create temp directory for gnome-terminal-solarized
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: gnome-terminal-solarized
+  register: temp_dir
+  changed_when: false
+
+- name: Clone gnome-terminal-colors-solarized
+  ansible.builtin.git:
+    repo: https://github.com/aruhier/gnome-terminal-colors-solarized
+    dest: "{{ temp_dir.path }}"
+    depth: 1
+    version: master
+  changed_when: false
+
+- name: Apply Solarized profiles
+  ansible.builtin.include_tasks: apply_profile.yml
+  vars:
+    profile_name: "{{ item.profile_name }}"
+    dir: "{{ temp_dir.path }}/colors/{{ item.variant }}"
+  loop:
+    - { profile_name: 'Solarized Light', variant: 'light' }
+    - { profile_name: 'Solarized Dark', variant: 'dark' }
+
+- name: Set Solarized Light as the default profile
+  ansible.builtin.script: >
+    apply.py
+    set-default 'Solarized Light'
+  register: set_default
+  changed_when: (set_default.stdout | from_json).changed
+
+- name: Debug set_default output
+  when: ansible_verbosity >= 1
+  block:
+    - name: Debug stdout
+      ansible.builtin.debug:
+        msg: "stdout: {{ set_default.stdout }}"
+    - name: Debug stderr
+      ansible.builtin.debug:
+        msg: "stderr: {{ set_default.stderr_lines }}"

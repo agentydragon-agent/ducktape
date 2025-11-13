@@ -3,9 +3,7 @@ dependencies:
   # petermosmans.customize-gnome moved to legacy_without_home_manager/gui role
   - role: anki
     tags: [anki]
-  # Needs to be before gnome-terminal-solarized because it uses the fonts.
-  - role: nerd_fonts
-    become: yes  # needed to write fonts system-wide
+  # Fonts now managed by Nix home-manager (legacy_nerd_fonts only in legacy_gui)
   # gnome-terminal-solarized moved to legacy_without_home_manager/gui role
   - role: timekpr
-  # - role: google-drive-client  # Temporarily disabled for wyrm
+  # - role: google_drive_client  # Temporarily disabled for wyrm

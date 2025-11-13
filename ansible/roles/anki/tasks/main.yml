@@ -1,20 +1,20 @@
 # Check glibc version - newer Anki requires glibc 2.36+
 - name: Check glibc version
-  command: ldd --version
+  ansible.builtin.command: ldd --version
   register: glibc_version_check
   changed_when: false
 
 - name: Extract glibc version
-  set_fact:
+  ansible.builtin.set_fact:
     glibc_version: "{{ glibc_version_check.stdout_lines[0] | regex_search('\\d+\\.\\d+') }}"
 
 - name: Skip Anki installation on systems with older glibc
-  debug:
+  ansible.builtin.debug:
     msg: "Skipping Anki installation - requires glibc 2.36+ but system has {{ glibc_version }}"
   when: glibc_version is version('2.36', '<')
 
 - name: End play if glibc is too old
-  meta: end_play
+  ansible.builtin.meta: end_play
   when: glibc_version is version('2.36', '<')
 
 # Install Anki (only runs on systems with glibc 2.36+)
@@ -73,17 +73,19 @@
       register: latest_release_version
       changed_when: false
 
-    - ansible.builtin.debug:
+    - name: Debug latest Anki release version
+      ansible.builtin.debug:
         var: latest_release_version
         verbosity: 1
 
     - name: Assert latest release version was found
-      assert:
+      ansible.builtin.assert:
         that:
           - latest_release_version != ""
 
     - name: Get latest Anki release URL
       ansible.builtin.shell: |
+        set -o pipefail
         jq --raw-output '
           .assets[]
           | select(.name | test("anki-launcher.tar.zst"))
@@ -93,7 +95,7 @@
       changed_when: false
 
     - name: Assert latest release URL found
-      assert:
+      ansible.builtin.assert:
         that:
           - latest_release_url != ""
 
@@ -117,7 +119,8 @@
 
     # - ansible.builtin.debug:
     #     var: anki_version_data
-    - ansible.builtin.debug:
+    - name: Debug latest Anki release URL
+      ansible.builtin.debug:
         var: latest_release_url
 
     - name: Install latest Anki
@@ -140,12 +143,12 @@
             cmd: ./install.sh
             chdir: "{{ tmp_path }}/anki-launcher"
 
-    - name: Stat {{ anki_binary_path }}
+    - name: Stat anki binary at {{ anki_binary_path }}
       ansible.builtin.stat:
         path: "{{ anki_binary_path }}"
       register: installed_anki_binary
 
-    - name: Check {{ anki_binary_path }} now exists
+    - name: Check Anki binary now exists at {{ anki_binary_path }}
       ansible.builtin.assert:
         that:
           - installed_anki_binary.stat.exists

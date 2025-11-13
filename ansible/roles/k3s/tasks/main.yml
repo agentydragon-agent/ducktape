@@ -12,19 +12,19 @@
 - name: Check if Ubuntu cloud image template exists
   ansible.builtin.shell: |
     pvesh get \
-      /nodes/{{ proxmox_node }}/qemu/{{ k3s_vm_template }} \
+      /nodes/{{ k3s_proxmox_node }}/qemu/{{ k3s_vm_template }} \
       --output-format json 2>/dev/null || echo '{}'
   register: template_check
   changed_when: false
   tags: [k3s, vm-creation]
 
 - name: Download and create Ubuntu cloud image template if missing
-  include_tasks: create_template.yml
+  ansible.builtin.include_tasks: create_template.yml
   when: template_check.stdout == '{}'
   tags: [k3s, vm-creation]
 
 - name: Create k3s VMs
-  include_tasks: create_vms.yml
+  ansible.builtin.include_tasks: create_vms.yml
   tags: [k3s, vm-creation]
 
 - name: Wait for VMs to be accessible via SSH
@@ -38,9 +38,10 @@
 
 # Copy SSH keys from local machine to VMs for direct access
 - name: Get local SSH public key
-  ansible.builtin.shell: cat ~/.ssh/id_ed25519.pub
+  ansible.builtin.command: cat ~/.ssh/id_ed25519.pub
   register: local_ssh_key
   delegate_to: localhost
+  changed_when: false
   tags: [k3s, ssh-setup]
 
 - name: Add local SSH key to k3s VMs
@@ -49,6 +50,7 @@
       {{ k3s_ssh_user }}@{{ item.ip }} \
       'echo "{{ local_ssh_key.stdout }}" >> ~/.ssh/authorized_keys'
   loop: "{{ k3s_vms }}"
+  changed_when: true
   tags: [k3s, ssh-setup]
 
 - name: Add k3s nodes to inventory for direct SSH
@@ -64,7 +66,7 @@
   tags: [k3s, inventory]
 
 - name: Install k3s on nodes
-  include_tasks: install_k3s.yml
+  ansible.builtin.include_tasks: install_k3s.yml
   tags: [k3s, installation]
 
 # TODO: Fix kubectl configuration - copy task expects local file but k3s.yaml is remote
@@ -73,5 +75,5 @@
 #  tags: [k3s, kubectl]
 
 - name: Configure insecure registry for k3s nodes
-  include_tasks: configure_registry.yml
+  ansible.builtin.include_tasks: configure_registry.yml
   tags: [k3s, registry]

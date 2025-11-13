@@ -1,7 +1,7 @@
 ---
 # PowerDNS role handlers
 
-- name: restart powerdns
+- name: Restart powerdns
   community.docker.docker_compose_v2:
     project_src: /opt/powerdns
     state: restarted

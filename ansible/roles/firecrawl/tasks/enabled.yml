@@ -43,6 +43,7 @@
         docker ps --filter "publish=3002" || true
       register: port_check_before
       failed_when: false
+      changed_when: false
 
     - name: Show what's using port 3002
       ansible.builtin.debug:
@@ -50,10 +51,12 @@
 
     - name: Find all containers with firecrawl in name
       ansible.builtin.shell: |
+        set -o pipefail
         docker ps -aq --filter "name=firecrawl" | xargs -r docker stop
         docker ps -aq --filter "name=firecrawl" | xargs -r docker rm
       register: cleanup_result
       failed_when: false  # Don't fail if no containers found
+      changed_when: cleanup_result.stdout != ""
 
     - name: Ensure firecrawl compose project is fully down
       community.docker.docker_compose_v2:
@@ -63,11 +66,12 @@
         remove_orphans: true
       failed_when: false  # Don't fail if project doesn't exist
 
-    - name: Verify port {{ firecrawl_port }} is now free
+    - name: Verify Firecrawl port is now free {{ firecrawl_port }}
       ansible.builtin.shell: |
         lsof -i :{{ firecrawl_port }} || echo "Port {{ firecrawl_port }} is free"
       register: port_check_after
       failed_when: false
+      changed_when: false
 
     - name: Show port status after cleanup
       ansible.builtin.debug:

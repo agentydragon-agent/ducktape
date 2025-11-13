@@ -240,7 +240,7 @@ def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
         state.file_path.write_text(state.content.rstrip("\n") + "\n", encoding="utf-8")
         return SaveResult(ok=True)
 
-    @mcp.flat_model(output_model=DoneResponse)
+    @mcp.flat_model()
     def done(input: DoneInput) -> DoneResponse:
         """Finish the editing session with Success|Failure using early bailouts.
 

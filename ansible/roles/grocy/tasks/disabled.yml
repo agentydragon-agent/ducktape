@@ -4,7 +4,7 @@
 # later without loss.
 
 - name: Stop and remove Grocy Docker container if present
-  ansible.builtin.docker_container:
+  community.docker.docker_container:
     name: grocy
     state: absent
 

@@ -31,7 +31,8 @@
   when: (docker_state | default('present')) != 'absent'
 
 # 3. User convenience
-- ansible.builtin.user:
+- name: Add user to docker group
+  ansible.builtin.user:
     name: "{{ ansible_user_id }}"
     groups: docker
     append: true
@@ -39,7 +40,8 @@
   when: (docker_state | default('present')) != 'absent'
 
 # 4. Service
-- service:
+- name: Start and enable Docker service
+  ansible.builtin.service:
     name: docker
     state: started
     enabled: true

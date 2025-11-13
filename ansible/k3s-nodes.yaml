@@ -1,7 +1,8 @@
 ---
 # Deploy tailscale client to k3s cluster nodes so they can be accessed
 # via headscale Magic DNS from anywhere on the network
-- hosts: k3s_nodes
+- name: Deploy k3s cluster nodes
+  hosts: k3s_nodes
   vars_files:
     - vars/common_vars.yml
   vars:
@@ -10,7 +11,7 @@
   become: true
 
   roles:
-    - role: tailscale-client
+    - role: tailscale_client
       tags: [tailscale]
     - role: k3s_dns_resolver
       tags: [k3s, dns]

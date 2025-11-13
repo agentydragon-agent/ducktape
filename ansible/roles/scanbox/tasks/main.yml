@@ -1,26 +1,26 @@
 ---
-- name: install samba
-  apt:
+- name: Install samba
+  ansible.builtin.apt:
     name:
     - samba
     state: present
   become: yes
 
-- name: create loop-back sparse file
-  command: fallocate -l {{ scanbox_size }} {{ scanbox_img }}
+- name: Create loop-back sparse file
+  ansible.builtin.command: fallocate -l {{ scanbox_size }} {{ scanbox_img }}
   args:
     creates: "{{ scanbox_img }}"
   become: yes
 
-- name: make ext4 FS on loop-file
-  filesystem:
+- name: Make ext4 FS on loop-file
+  community.general.filesystem:
     fstype: ext4
     dev: "{{ scanbox_img }}"
     opts: "-m0 -L SCANBOX"
   become: yes
 
-- name: create mount point
-  file:
+- name: Create mount point
+  ansible.builtin.file:
     path: "{{ scanbox_mount }}"
     state: directory
     owner: root
@@ -28,8 +28,8 @@
     mode: "0755"
   become: yes
 
-- name: mount loop-file
-  mount:
+- name: Mount loop-file
+  ansible.posix.mount:
     path: "{{ scanbox_mount }}"
     src: "{{ scanbox_img }}"
     fstype: ext4
@@ -37,23 +37,23 @@
     state: mounted
   become: yes
 
-- name: ensure scanbox system account
-  user:
+- name: Ensure scanbox system account
+  ansible.builtin.user:
     name: "{{ scanbox_user }}"
     system: yes
     create_home: no
   become: yes
 
-- name: own mount point
-  file:
+- name: Own mount point
+  ansible.builtin.file:
     path: "{{ scanbox_mount }}"
     owner: "{{ scanbox_user }}"
     group: "{{ scanbox_user }}"
     mode: "0750"
   become: yes
 
-- name: append ScanBox share to smb.conf
-  blockinfile:
+- name: Append ScanBox share to smb.conf
+  ansible.builtin.blockinfile:
     path: /etc/samba/smb.conf
     marker: ";-- ANSIBLE SCANBOX --"
     block: |
@@ -71,15 +71,15 @@
   notify: restart smbd
   become: yes
 
-- name: add {{ ansible_user_id }} to {{ scanbox_user }} group
-  user:
+- name: Add current user to scanbox group
+  ansible.builtin.user:
     name: "{{ ansible_user_id }}"
     groups: "{{ scanbox_user }}"
     append: yes
   become: yes
 
-- name: widen dir perms for group write
-  file:
+- name: Widen dir perms for group write
+  ansible.builtin.file:
     path: "{{ scanbox_mount }}"
     mode: "0770"
   become: yes

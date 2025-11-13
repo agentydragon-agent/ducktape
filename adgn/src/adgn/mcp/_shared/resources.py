@@ -22,7 +22,7 @@ def extract_single_text_content(res: mcp_types.ReadResourceResult) -> str:
         raise RuntimeError("expected a single text part, found blob content")
     if len(text_parts) != 1:
         raise RuntimeError(f"expected exactly one text part, found {len(text_parts)}")
-    return text_parts[0].text
+    return str(text_parts[0].text)
 
 
 async def read_text_json(session: ClientSession, uri: str) -> Any:

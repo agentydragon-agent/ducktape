@@ -543,7 +543,7 @@ class ResponsesDB:
                 .limit(limit)
             )
             result = await session.execute(stmt)
-            items = result.scalars().all()
+            items = list(result.scalars().all())
             total_value = await session.scalar(select(func.count()).select_from(Response))
         return items, int(total_value or 0)
 

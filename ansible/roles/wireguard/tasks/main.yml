@@ -1,23 +1,23 @@
 - name: Install WireGuard packages
   become: true
   ansible.builtin.package:
-    name: "{{ wg_packages }}"
+    name: "{{ wireguard_packages }}"
     state: present
 
-- name: Deploy {{ wg_interface }} config
+- name: Deploy WireGuard interface config ({{ wireguard_interface }})
   become: true
   ansible.builtin.template:
     src: wg0.conf.j2
-    dest: "{{ wg_conf_path }}"
+    dest: "{{ wireguard_conf_path }}"
     owner: root
     group: root
     mode: "0600"
   notify: restart wireguard
 
-- name: Enable & start wg-quick@{{ wg_interface }}
+- name: Enable & start wg-quick@{{ wireguard_interface }}
   become: true
   ansible.builtin.systemd:
-    name: "wg-quick@{{ wg_interface }}"
+    name: "wg-quick@{{ wireguard_interface }}"
     enabled: true
     state: started
     daemon_reload: true
@@ -33,7 +33,7 @@
     #   Docker rewrites FORWARD table every time it restarts;
     #   anything you add directly to FORWARD can disappear.
     #   DOCKER-USER is for administrator rules and Docker leaves it intact.
-    iptables:
+    ansible.builtin.iptables:
       chain: DOCKER-USER
       in_interface: wg0
       out_interface: wg0
@@ -42,7 +42,7 @@
       state: present
 
   - name: Allow wg0 → any (return path)
-    iptables:
+    ansible.builtin.iptables:
       chain: DOCKER-USER
       in_interface: wg0
       jump: ACCEPT

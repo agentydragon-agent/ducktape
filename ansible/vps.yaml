@@ -11,7 +11,8 @@
 # thing. It runs ~2x/day by default.
 
 ---
-- hosts: vps
+- name: Configure VPS server
+  hosts: vps
   remote_user: root
   vars_files:
     - group_vars/all.yml
@@ -179,7 +180,7 @@
 
     - name: "Let's Encrypt | *.k3s.agentydragon.com (wildcard)"
       ansible.builtin.import_role:
-        name: letsencrypt-dns
+        name: letsencrypt_dns
       vars:
         letsencrypt_dns_cert_name: "k3s-wildcard"
         letsencrypt_dns_domains:
@@ -189,7 +190,7 @@
 
     - name: Apply headscale role
       ansible.builtin.import_role:
-        name: headscale-server
+        name: headscale_server
       tags: [headscale]
 
     - name: Restart headscale service
@@ -225,21 +226,23 @@
 
     - name: Apply tailscale role
       ansible.builtin.import_role:
-        name: tailscale-client
+        name: tailscale_client
       tags: [tailscale]
 
-    - name: nginx.conf
+    - name: Copy nginx.conf
       ansible.builtin.copy:
         src: nginx.conf
         dest: /etc/nginx/nginx.conf
+        mode: '0644'
 
-    - name: nginx website configs
+    - name: Nginx website configs
       tags: [nginx]
       block:
         - name: "Create static nginx configuration"
           ansible.builtin.copy:
             src: nginx-sites/{{ item }}
             dest: /etc/nginx/sites-available/{{ item }}
+            mode: '0644'
           loop:
             - agentydragon.com
             - adgn.link
@@ -294,7 +297,7 @@
         apply:
           tags: trilium
       vars:
-        trilium_state: absent
+        trilium_server_state: absent
       tags: [trilium]
 
     - name: Bazel remote cache
@@ -307,7 +310,7 @@
       tags: [bazel-remote-cache]
 
     - name: Start and enable nginx
-      service:
+      ansible.builtin.service:
         name: nginx
         state: started
         enabled: true
@@ -315,7 +318,7 @@
 
     - name: Syncthing server
       ansible.builtin.include_role:
-        name: syncthing-server
+        name: syncthing_server
         apply:
           tags: syncthing
       tags: syncthing
@@ -328,7 +331,7 @@
       tags: activitywatch
       vars:
         # Listens on localhost; uploading data works via SSH tunnel.
-        activitywatch_state: present
+        activitywatch_server_state: present
 
     # Setup agentydragon user with CLI tools and dotfiles
     - name: Setup agentydragon user environment
@@ -379,23 +382,23 @@
       ansible.builtin.import_role:
         name: cli
       vars:
-        my_user: agentydragon
-        ducktape_path: "/home/agentydragon/code/ducktape"
+        cli_user: agentydragon
+        cli_ducktape_path: "/home/agentydragon/code/ducktape"
       tags: [dotfiles]
       # CLI role tasks that need root will handle their own become
 
     # Apply Claude MCP role for agentydragon user
     - name: Apply Claude MCP role
       ansible.builtin.import_role:
-        name: claude-mcp
+        name: legacy_claude_mcp
       tags: [claude, mcp]
 
     - name: Install shared development environment for agentydragon
       ansible.builtin.import_role:
-        name: dev-env
+        name: dev_env
       vars:
-        my_user: agentydragon
-      tags: [dev-env]
+        dev_env_user: agentydragon
+      tags: [dev_env]
 
     # TODO: configure - plus for remote desktop
     # - name: Configure Authentik
@@ -404,7 +407,7 @@
     #   tags: [authentik]
 
   handlers:
-    - name: restart systemd-resolved
+    - name: Restart systemd-resolved
       ansible.builtin.systemd:
         name: systemd-resolved
         state: restarted
@@ -412,7 +415,7 @@
       become: true
       tags: [dns, powerdns]
 
-    - name: restart systemd-networkd
+    - name: Restart systemd-networkd
       ansible.builtin.systemd:
         name: systemd-networkd
         state: restarted
@@ -422,7 +425,7 @@
 
     # Only triggers if nginx config files changed.
     - name: Reload nginx
-      systemd:
+      ansible.builtin.systemd:
         name: nginx
         state: reloaded
         daemon_reload: true
@@ -430,6 +433,7 @@
       tags: [nginx]
 
     - name: Restart fail2ban
+      tags: [fail2ban]
       block:
         - name: Validate fail2ban configuration
           ansible.builtin.command:
@@ -444,7 +448,6 @@
           when: fail2ban_config_check.rc != 0
 
         - name: Restart fail2ban service
-          systemd:
+          ansible.builtin.systemd:
             name: fail2ban
             state: restarted
-      tags: [fail2ban]

@@ -66,12 +66,13 @@ def _load_instructions() -> str:
     """Load and render instructions with embedded shared constants via Jinja2."""
     raw = resources.files(__package__).joinpath("instructions.j2.md").read_text(encoding="utf-8")
     tmpl = Template(raw)
-    return tmpl.render(
+    rendered = tmpl.render(
         RUNTIME_SERVER_NAME=RUNTIME_SERVER_NAME,
         RUNTIME_EXEC_TOOL_NAME=RUNTIME_EXEC_TOOL_NAME,
         TRUSTED_POLICY_PATH=None,
         TRUSTED_POLICY_URL=APPROVAL_POLICY_RESOURCE_URI,
     )
+    return str(rendered)
 
 
 class ApprovalPolicyServer(NotifyingFastMCP):

@@ -1,7 +1,7 @@
 - name: KiCad
   block:
   - name: Enable KiCad 8 PPA
-    deb822_repository:
+    ansible.builtin.deb822_repository:
       name: kicad-8
       uris: https://ppa.launchpadcontent.net/kicad/kicad-8.0-releases/ubuntu
       suites: [ "{{ ansible_distribution_release }}" ]
@@ -11,7 +11,7 @@
 
   - name: Install KiCad
     become: true
-    apt:
+    ansible.builtin.apt:
       name: kicad
       state: present
       update_cache: yes  # deb822_repository doesn't reliably trigger apt cache update

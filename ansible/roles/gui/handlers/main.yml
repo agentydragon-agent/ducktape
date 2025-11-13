@@ -1,7 +1,9 @@
-- name: reload pop-shell
+- name: Reload pop-shell
   listen: reload pop-shell extension
   # TODO: GNOME 42+: might have one-shot reload? (gnome-extensions reload pop-shell@...)
-  command: gnome-extensions enable pop-shell@system76.com && gnome-extensions disable pop-shell@system76.com
+  ansible.builtin.command: >-
+    gnome-extensions enable pop-shell@system76.com &&
+    gnome-extensions disable pop-shell@system76.com
   register: _reload
   failed_when: _reload.rc != 0
   changed_when: _reload.rc == 0

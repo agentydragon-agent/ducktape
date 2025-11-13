@@ -207,9 +207,8 @@ adgn-mcp-seatbelt-exec = "adgn.mcp.seatbelt_exec.stdio_main:main"
 python_version = "3.12"
 ignore_missing_imports = true
 warn_return_any = true
-# Canonical invocation runs from repository root:
-#   mypy --config-file pyproject.toml
-# With repo-root CWD, the source root for the adgn package is "src".
+# Run from within adgn/ directory: mypy --config-file pyproject.toml src/adgn
+# Source root for the adgn package is "src" from adgn/ directory
 mypy_path = ["src"]
 packages = ["adgn"]
 namespace_packages = true
@@ -218,9 +217,8 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 check_untyped_defs = true
 # Exclude specimen code from type-checking (authoring data; not production code)
-# Exclude specimen code from type-checking (authoring data; not production code)
-# Use a broad regex that matches both "src/..." and "adgn/src/..." paths
-exclude = "(^|/)(adgn/)?src/adgn/(props/specimens|third_party)/.*|^tests/detectors/fixtures/.*|^vendor/.*"
+# Paths relative to adgn/ directory
+exclude = "^src/adgn/(props/specimens|third_party)/.*|^tests/detectors/fixtures/.*|^vendor/.*"
 [[tool.mypy.overrides]]
 module = ["tests.agent.testdata.approval_policy.*"]
 ignore_errors = true

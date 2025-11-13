@@ -10,10 +10,11 @@ from typing import Any
 
 from ..extract_common import iter_wire_lines
 from ..openai_typing import (
+    MessageRole,
     dump_response_messages,
-    message_content_as_text,
-    message_role,
     parse_response_messages,
+    response_message_content_as_text,
+    response_message_role,
 )
 
 PROVIDER_WIRE = Path(
@@ -56,11 +57,11 @@ def extract_system_text_from_responses_input(payload: dict[str, Any]) -> str:
     sys_parts: list[str] = []
     seen_user = False
     for item in parsed:
-        role = message_role(item)
-        text = message_content_as_text(item)
-        if role == "user":
+        role = response_message_role(item)
+        text = response_message_content_as_text(item)
+        if role == MessageRole.USER:
             seen_user = True
-        if (role in ("", "system") and not seen_user) and text:
+        if (role == MessageRole.SYSTEM and not seen_user) and text:
             sys_parts.append(text)
     return "\n\n".join(p for p in sys_parts if p)
 

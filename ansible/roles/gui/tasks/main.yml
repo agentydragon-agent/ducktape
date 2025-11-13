@@ -71,19 +71,21 @@
       - fonts-bebas-neue
       - fonts-roboto
 
-- include_tasks: obs_studio.yml
-- include_tasks: kicad.yml
+- name: Install OBS Studio
+  ansible.builtin.include_tasks: obs_studio.yml
+- name: Install KiCad
+  ansible.builtin.include_tasks: kicad.yml
 
 - name: VSCode
   install_handler:
-    apt: code
-    snap: { name: code, classic: true }
+    ansible.builtin.apt: code
+    community.general.snap: { name: code, classic: true }
     use: snap
 
 - name: FreeCAD
   install_handler:
-    apt: freecad
-    snap: freecad
+    ansible.builtin.apt: freecad
+    community.general.snap: freecad
     use: snap
 
 
@@ -96,21 +98,21 @@
 
 - name: Install snaps
   become: true
-  snap:
+  community.general.snap:
     name:
       - whatsdesk
       - yt-dlp
 
 - name: Ensure no youtube-dl (deprecated)
   become: true
-  snap:
+  community.general.snap:
     name: youtube-dl
     state: absent
 
 - name: Telegram
   install_handler:
-    apt: telegram-desktop
-    snap: telegram-desktop
+    ansible.builtin.apt: telegram-desktop
+    community.general.snap: telegram-desktop
     flatpak: com.telegram.desktop
     # trying out on 2023-11-24: install Telegram as snap
     # if it still works in a couple months, keep it like this
@@ -122,8 +124,8 @@
 
 - name: Slack
   install_handler:
-    apt: slack-desktop
-    snap: slack
+    ansible.builtin.apt: slack-desktop
+    community.general.snap: slack
     # Slack has to be installed as an APT package, not as a Snap.
     #
     # Slack Snap on Pop OS won't start because it's confined from reading
@@ -134,22 +136,27 @@
 # Discord autostart migrated to legacy_without_home_manager/gui, but package install remains:
 - name: Ensure Discord is installed
   become: true
-  apt:
+  ansible.builtin.apt:
     name: discord
     state: present
-- include_tasks: wezterm.yml
+- name: Install WezTerm terminal
+  ansible.builtin.include_tasks: wezterm.yml
 
 # GNOME terminal configuration moved to legacy_without_home_manager/gui role
 
 # wm_datetime_format.yml removed - datetime configuration moved to legacy_without_home_manager/gui role
-- include_tasks: xorg_terminate.yml
-- include_tasks: element.yml
+- name: Configure X.org terminate shortcut
+  ansible.builtin.include_tasks: xorg_terminate.yml
+- name: Install Element Matrix client
+  ansible.builtin.include_tasks: element.yml
   tags: element
-- include_tasks: google_chrome.yml
+- name: Install Google Chrome
+  ansible.builtin.include_tasks: google_chrome.yml
 
 
 # Install Tana desktop application
-- import_tasks: tana.yml
+- name: Install Tana desktop application
+  ansible.builtin.import_tasks: tana.yml
   tags: tana
 
 # AppImageLauncher installation with version acknowledgment
@@ -165,14 +172,18 @@
   when: dpkg_arch == "amd64"
   tags: appimagelauncher
 
-- import_tasks: syncthing.yml
+- name: Configure Syncthing GUI
+  ansible.builtin.import_tasks: syncthing.yml
   tags: syncthing
 
-- import_tasks: login_event_webhook_reporter.yml
+- name: Configure login event webhook reporter
+  ansible.builtin.import_tasks: login_event_webhook_reporter.yml
   tags: login_event_webhook_reporter
 
-- import_tasks: tunneled_activitywatch.yml
+- name: Configure tunneled ActivityWatch
+  ansible.builtin.import_tasks: tunneled_activitywatch.yml
   tags: activitywatch
 
-- import_tasks: xdg_mime_types.yml
+- name: Configure XDG MIME type associations
+  ansible.builtin.import_tasks: xdg_mime_types.yml
   tags: [mime, xdg]

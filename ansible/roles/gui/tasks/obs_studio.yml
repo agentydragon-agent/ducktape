@@ -1,7 +1,7 @@
 - name: OBS Studio
   block:
   - name: Enable OBS Studio PPA
-    deb822_repository:
+    ansible.builtin.deb822_repository:
       name: obs-studio-ppa
       uris: https://ppa.launchpadcontent.net/obsproject/obs-studio/ubuntu
       suites: [ "{{ ansible_distribution_release }}" ]

@@ -40,6 +40,6 @@ k3s_ssh_user: ubuntu
 k3s_ssh_public_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
 
 # Proxmox API Configuration
-proxmox_api_host: "{{ ansible_host }}"
-proxmox_api_user: root@pam
-proxmox_node: atlas
+k3s_proxmox_api_host: "{{ ansible_host }}"
+k3s_proxmox_api_user: root@pam
+k3s_proxmox_node: atlas

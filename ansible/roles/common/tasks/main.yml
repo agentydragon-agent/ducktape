@@ -1,12 +1,12 @@
 ---
 - name: Get raw dpkg architecture
-  command: dpkg --print-architecture
+  ansible.builtin.command: dpkg --print-architecture
   register: raw_dpkg_arch
   changed_when: false
   tags: [always]
 
 - name: Set dpkg_arch fact to architecture string
-  set_fact:
+  ansible.builtin.set_fact:
     dpkg_arch: "{{ raw_dpkg_arch.stdout }}"
   tags: [always]
 
@@ -14,13 +14,13 @@
 - name: Check for problematic packages in global Python environment
   block:
     - name: Check if pytest-socket is installed globally
-      command: pip show pytest-socket
+      ansible.builtin.command: pip show pytest-socket
       register: pytest_socket_check
       failed_when: false
       changed_when: false
 
     - name: Fail if pytest-socket is in global environment
-      fail:
+      ansible.builtin.fail:
         msg: |
           ⚠️  ERROR: pytest-socket is installed in your global Python environment!
           This package can interfere with network-dependent tests and tools.
@@ -33,10 +33,10 @@
       when: pytest_socket_check.rc == 0
 
     - name: Set fact for pytest-socket presence
-      set_fact:
+      ansible.builtin.set_fact:
         has_pytest_socket: "{{ pytest_socket_check.rc == 0 }}"
 
 - name: Report Python environment health
-  debug:
+  ansible.builtin.debug:
     msg: |
       pytest-socket: {{ 'FOUND ⚠️' if has_pytest_socket else 'Not found ✅' }}

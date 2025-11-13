@@ -18,12 +18,12 @@
 
 - name: Check if Go is installed in user directory
   ansible.builtin.stat:
-    path: "{{ go_install_dir }}/go/bin/go"
+    path: "{{ golang_install_dir }}/go/bin/go"
   register: go_binary
 
 - name: Check installed Go version
-  ansible.builtin.command: "{{ go_install_dir }}/go/bin/go version"
-  register: installed_go_version
+  ansible.builtin.command: "{{ golang_install_dir }}/go/bin/go version"
+  register: installed_golang_version
   when: go_binary.stat.exists
   changed_when: false
 
@@ -31,37 +31,37 @@
   ansible.builtin.fail:
     msg: |
       Wrong Go version installed!
-      Expected: go{{ go_version }}
-      Found: {{ installed_go_version.stdout }}
+      Expected: go{{ golang_version }}
+      Found: {{ installed_golang_version.stdout }}
 
       Manual resolution required:
-      rm -rf {{ go_install_dir }}/go
+      rm -rf {{ golang_install_dir }}/go
       Then re-run this playbook
   when:
     - go_binary.stat.exists
-    - "'go' + go_version not in installed_go_version.stdout"
+    - "'go' + golang_version not in installed_golang_version.stdout"
 
-- name: Install Go {{ go_version }}
+- name: Install Go {{ golang_version }}
   when: not go_binary.stat.exists
   block:
     - name: Create install directory
       ansible.builtin.file:
-        path: "{{ go_install_dir }}"
+        path: "{{ golang_install_dir }}"
         state: directory
         mode: '0755'
 
     - name: Download and extract Go tarball directly
       ansible.builtin.unarchive:
-        src: "{{ go_download_url }}"
-        dest: "{{ go_install_dir }}"
+        src: "{{ golang_download_url }}"
+        dest: "{{ golang_install_dir }}"
         remote_src: yes
-        creates: "{{ go_install_dir }}/go/bin/go"
+        creates: "{{ golang_install_dir }}/go/bin/go"
 
 - name: Verify Go installation
-  ansible.builtin.command: "{{ go_install_dir }}/go/bin/go version"
-  register: go_version_output
+  ansible.builtin.command: "{{ golang_install_dir }}/go/bin/go version"
+  register: golang_version_output
   changed_when: false
 
 - name: Display Go version
   ansible.builtin.debug:
-    msg: "Installed: {{ go_version_output.stdout }}"
+    msg: "Installed: {{ golang_version_output.stdout }}"

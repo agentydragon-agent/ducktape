@@ -1,6 +1,6 @@
 ---
 # Default XDG MIME type associations
-xdg_mime_associations:
+gui_xdg_mime_associations:
   - mime_type: "text/html"
     desktop_file: "google-chrome.desktop"
   - mime_type: "application/x-virt-viewer"

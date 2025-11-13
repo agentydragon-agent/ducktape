@@ -2,7 +2,7 @@
 # PowerDNS-Admin tasks
 
 - name: Configure firewall for PowerDNS-Admin
-  ansible.builtin.ufw:
+  community.general.ufw:
     rule: allow
     port: "{{ powerdns_admin_port }}"
     proto: tcp

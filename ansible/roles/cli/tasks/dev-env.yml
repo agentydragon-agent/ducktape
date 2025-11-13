@@ -34,7 +34,9 @@
       #- pyqt5-dev-tools
 
 # Include heavy/optional dev packages (controlled by include_heavy_dev_packages variable)
-- include_tasks: dev-env-heavy.yml
+- name: Install heavy development packages
+  ansible.builtin.include_tasks: dev-env-heavy.yml
 
 # Include user-level development tools
-- import_tasks: dev-env-user.yml
+- name: Import user-level development tools setup
+  ansible.builtin.import_tasks: dev-env-user.yml

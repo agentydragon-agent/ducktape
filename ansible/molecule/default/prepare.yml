@@ -3,7 +3,7 @@
   hosts: all
   tasks:
     - name: Install test dependencies
-      apt:
+      ansible.builtin.apt:
         update_cache: true
         name:
           - xvfb
@@ -14,6 +14,7 @@
           - dconf-cli # for final test - 'dconf' utility
 
     - name: Start fake X server
-      shell: |
+      ansible.builtin.shell: |
         Xvfb :99 -screen 0 1024x768x24 &
         echo $! > /tmp/xvfb.pid
+      changed_when: true

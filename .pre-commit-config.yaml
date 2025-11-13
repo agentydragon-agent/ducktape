@@ -38,18 +38,18 @@ repos:
         files: "\\.ya?ml$"
         exclude: "ansible/host_vars/.*\\.yml$|^k8s/.*\\.ya?ml$"
 
-  # TODO: slow
-  # - repo: local
-  #   hooks:
-  #     - id: ansible-lint
-  #       name: ansible-lint (ansible/)
-  #       entry: python ansible/tools/run_ansible_lint.py
-  #       language: python
-  #       additional_dependencies:
-  #         - ansible-lint==24.9.2
-  #         - ansible-core==2.18.2
-  #       pass_filenames: false
-  #       files: "^ansible/"
+  # Ansible-lint with compatibility fix for ansible-core 2.19.0+
+  # NOTE: ansible-core 2.19.0 fucking removed ansible.parsing.yaml.constructor module
+  # that ansible-lint depends on, causing ModuleNotFoundError. Pin to 2.18.x
+  # until ansible-lint is updated. See: https://github.com/ansible/ansible/issues/85243
+  - repo: https://github.com/ansible/ansible-lint
+    rev: v24.9.2
+    hooks:
+      - id: ansible-lint
+        files: "^ansible/"
+        args: ["--config-file", "ansible/.ansible-lint"]
+        additional_dependencies:
+          - ansible-core>=2.18.0,<2.19.0  # Avoid fucking breaking module removal in 2.19.0
 
   # Ruff = linter + import sorter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -87,9 +87,6 @@ repos:
         files: "^adgn/src/(adgn|wt)/"
         args:
           - "--config-file=adgn/pyproject.toml"
-          - "--namespace-packages"
-          - "--ignore-missing-imports"
-          - "--explicit-package-bases"
         additional_dependencies:
           - pydantic>=2
           - types-PyYAML

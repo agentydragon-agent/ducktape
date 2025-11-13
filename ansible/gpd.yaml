@@ -1,5 +1,6 @@
 ---
-- hosts: gpd
+- name: Configure GPD Win Max 2 laptop
+  hosts: gpd
   vars_files:
     - vars/common_vars.yml
   vars:
@@ -9,16 +10,16 @@
 
   roles:
     - role: cli
-    - role: legacy_without_home_manager/cli
+    - role: legacy_cli
     - role: gui
-    - role: legacy_without_home_manager/gui
+    - role: legacy_gui
     - role: laptop
     - role: wireguard
       tags: [wireguard]
-    - role: tailscale-client
+    - role: tailscale_client
       tags: [tailscale]
-    - role: k3s-client
-      tags: [k3s-client]
+    - role: k3s_client
+      tags: [k3s_client]
   tasks:
     # TODO: add Ubuntu startup programs, like Flameshot etc.
 
@@ -50,5 +51,5 @@
 
     - name: Install shared development environment
       ansible.builtin.import_role:
-        name: dev-env
-      tags: [dev-env]
+        name: dev_env
+      tags: [dev_env]

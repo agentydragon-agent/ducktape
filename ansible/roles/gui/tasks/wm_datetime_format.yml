@@ -1,17 +1,19 @@
 ---
 # Dependencies of dconf module.
 # https://docs.ansible.com/ansible/latest/collections/community/general/dconf_module.html#notes
-- ansible.builtin.apt:
+- name: Install dconf dependencies
+  ansible.builtin.apt:
     pkg:
       - python3-pip
-- ansible.builtin.pip:
+- name: Install Python packages for dconf
+  ansible.builtin.pip:
     name:
       - psutil
 
 # TODO: hmm, what WM did I write this for again?
 
 - name: Configure custom datetime indicator
-  ansible.builtin.dconf:
+  community.general.dconf:
     key: "/com/canonical/indicator/datetime/{{ item.suffix }}"
     value: "{{ item.value }}"
   loop:

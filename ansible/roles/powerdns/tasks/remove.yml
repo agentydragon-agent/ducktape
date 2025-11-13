@@ -6,7 +6,7 @@
     project_src: /opt/powerdns
     state: absent
   become: true
-  ignore_errors: yes
+  failed_when: false
 
 - name: Remove PowerDNS directories
   ansible.builtin.file:
@@ -17,13 +17,13 @@
     - /opt/powerdns
 
 - name: Remove firewall rules
-  ansible.builtin.ufw:
+  community.general.ufw:
     rule: allow
     port: "{{ item }}"
     proto: "{{ 'tcp' if item == powerdns_webserver_port else 'any' }}"
     delete: yes
   become: true
-  ignore_errors: yes
+  failed_when: false
   loop:
     - "53"
     - "{{ powerdns_webserver_port }}"

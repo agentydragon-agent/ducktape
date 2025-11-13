@@ -16,3 +16,4 @@ collections:
   - community.docker
   - community.general        # cargo
   - community.crypto         # ACME / TLS certificates
+  - ansible.netcommon        # iptables module

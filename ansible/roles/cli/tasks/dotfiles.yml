@@ -5,7 +5,7 @@
   block:
     - name: Debug - Check if ducktape exists
       ansible.builtin.stat:
-        path: "{{ ducktape_path }}"
+        path: "{{ cli_ducktape_path }}"
       register: ducktape_stat
 
     - name: Assert ducktape repository exists
@@ -14,17 +14,17 @@
           - ducktape_stat.stat.exists
           - ducktape_stat.stat.isdir
         fail_msg: >-
-          Ducktape repository must be cloned to {{ ducktape_path }} before
+          Ducktape repository must be cloned to {{ cli_ducktape_path }} before
           running this playbook. Run:
-          git clone git@gitlab.com:agentydragon/ducktape {{ ducktape_path }}
-        success_msg: "Ducktape repository found at {{ ducktape_path }}"
+          git clone git@gitlab.com:agentydragon/ducktape {{ cli_ducktape_path }}
+        success_msg: "Ducktape repository found at {{ cli_ducktape_path }}"
 
     # This is interactive if the files already exist.
     # The uncommented script fails if that happens.
     #
     # - name: Install ducktape dotfiles
     #   ansible.builtin.command: >
-    #     rcup -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles
+    #     rcup -B {{ rcup_computer }} -x vim -x README.md -d {{ cli_ducktape_path }}/dotfiles
     #   register: rcup_result
 
     - name: Install ducktape dotfiles, fail if would need overwrite
@@ -32,12 +32,12 @@
       args:
         executable: python3
       environment:
-        HOME: "/home/{{ my_user | default(ansible_user_id) }}"
-        USER: "{{ my_user | default(ansible_user_id) }}"
-        RCRC: "{{ ducktape_path }}/dotfiles/rcrc"
+        HOME: "/home/{{ cli_user | default(ansible_user_id) }}"
+        USER: "{{ cli_user | default(ansible_user_id) }}"
+        RCRC: "{{ cli_ducktape_path }}/dotfiles/rcrc"
       timeout: 10
       become: true
-      become_user: "{{ my_user | default(ansible_user_id) }}"
+      become_user: "{{ cli_user | default(ansible_user_id) }}"
       register: rcup_result
       failed_when: rcup_result.rc != 0
       ignore_errors: true
@@ -48,7 +48,7 @@
           Dotfiles installation requires manual intervention.
 
           SSH to the machine and run:
-          RCRC={{ ducktape_path }}/dotfiles/rcrc rcup -B {{ rcup_computer }}
+          RCRC={{ cli_ducktape_path }}/dotfiles/rcrc rcup -B {{ rcup_computer }}
 
           You'll likely need to confirm overwriting pre-existing default files (like .bashrc).
       when:

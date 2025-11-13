@@ -1,5 +1,6 @@
 ---
-- hosts: wyrm
+- name: Configure wyrm machine
+  hosts: wyrm
   vars_files:
     - vars/common_vars.yml
   vars:
@@ -8,32 +9,38 @@
   remote_user: "{{ my_user }}"
 
   handlers:
-    - name: restart docker
+    - name: Restart docker
       ansible.builtin.service:
         name: docker
+        state: restarted
+      become: true
+
+    - name: Restart nix-daemon
+      ansible.builtin.systemd:
+        name: nix-daemon
         state: restarted
       become: true
 
   roles:
     - role: cli
 
-    - role: dev-env
-      tags: [dev-env]
+    - role: dev_env
+      tags: [dev_env]
 
     - role: golang
       tags: [golang, go]
       vars:
-        go_version: "1.25.0"
+        golang_version: "1.25.0"
 
     - role: docker
     - role: gui
     # dev-ml migrated to Nix (renamed to dev-ml_nix_migrated)
-    - role: tailscale-client
+    - role: tailscale_client
       tags: [tailscale]
-    - role: k3s-client
-      tags: [k3s-client]
+    - role: k3s_client
+      tags: [k3s_client]
 
-    - role: k3s-dns-forwarding
+    - role: k3s_dns_forwarding
       tags: [k3s-dns]
 
     # - role: nvidia-guest
@@ -54,20 +61,13 @@
       become: true
       tags: [nix]
       register: nix_config_changed
-
-    - name: Restart nix-daemon if config changed
-      ansible.builtin.systemd:
-        name: nix-daemon
-        state: restarted
-      become: true
-      when: nix_config_changed.changed
-      tags: [nix]
+      notify: restart nix-daemon
 
     # Disable screensaver and screen blanking for headless VM
     - name: Disable GNOME screensaver and screen blanking
       become: true
       become_user: "{{ my_user }}"
-      dconf:
+      community.general.dconf:
         key: "{{ item.key }}"
         value: "{{ item.value }}"
       loop:
@@ -83,7 +83,8 @@
     # TODO: Disable screen blanking further?
 
     # Storage configuration for tankshare
-    - include_role:
+    - name: Apply tankshare role
+      ansible.builtin.include_role:
         name: tankshare
       tags: [storage, docker]
 
@@ -114,7 +115,7 @@
       notify: restart docker
       tags: [storage, docker]
 
-    # pnpm is installed in dev-env-user.yml via github_release_install
+    # pnpm is installed in dev_env-user.yml via github_release_install
     # Configuration is managed via dotfiles/npmrc
 
     - name: Create pip cache directory on tankshare
@@ -184,6 +185,7 @@
         # Keep 00-header for basic system info (OS version, kernel)
       tags: [motd]
 
-    - include_role:
+    - name: Apply Docker registry client role
+      ansible.builtin.include_role:
         name: docker_registry_client
       tags: [docker, registry]

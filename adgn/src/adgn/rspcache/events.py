@@ -13,7 +13,7 @@ class EventBase(BaseModel):
 
 
 class ResponseStatusEvent(EventBase):
-    type: Literal["response_status"]
+    type: Literal["response_status"] = "response_status"
     key: str
     response_id: str | None = None
     status: str
@@ -21,7 +21,7 @@ class ResponseStatusEvent(EventBase):
 
 
 class FrameAppendedEvent(EventBase):
-    type: Literal["frame"]
+    type: Literal["frame"] = "frame"
     key: str
     response_id: str | None = None
     ordinal: int
@@ -30,14 +30,14 @@ class FrameAppendedEvent(EventBase):
 
 
 class APIKeyCreatedEvent(EventBase):
-    type: Literal["api_key_created"]
+    type: Literal["api_key_created"] = "api_key_created"
     id: str
     name: str
     upstream_alias: str
 
 
 class APIKeyRevokedEvent(EventBase):
-    type: Literal["api_key_revoked"]
+    type: Literal["api_key_revoked"] = "api_key_revoked"
     id: str
 
 

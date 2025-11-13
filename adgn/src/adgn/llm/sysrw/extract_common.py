@@ -8,11 +8,12 @@ from typing import Any, TextIO
 
 from .constants import TOOLS_HEADER
 from .openai_typing import (
+    MessageRole,
     iter_resolved_text,
-    message_content_as_text,
-    message_role,
     parse_response_messages,
     parse_response_parts,
+    response_message_content_as_text,
+    response_message_role,
 )
 
 
@@ -57,9 +58,9 @@ def sys_has_tools_header(system: Any) -> bool:
 
 def find_last_user_text_from_msg(msg: Any) -> str | None:
     """Extract plain text from a single user message object (CCR-style)."""
-    if message_role(msg) != "user":
+    if response_message_role(msg) != MessageRole.USER:
         return None
-    text = message_content_as_text(msg)
+    text = response_message_content_as_text(msg)
     return text or None
 
 
@@ -68,8 +69,8 @@ def find_last_user_text_from_messages(messages: Any) -> str | None:
     parsed = parse_response_messages(messages)
     if parsed:
         last = parsed[-1]
-        if message_role(last) == "user":
-            text = message_content_as_text(last)
+        if response_message_role(last) == MessageRole.USER:
+            text = response_message_content_as_text(last)
             return text or None
         return None
     if not isinstance(messages, list) or not messages:

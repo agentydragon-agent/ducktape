@@ -45,9 +45,15 @@ releases:
     chart: ../helm/authentik
     set:
       - name: global.postgresql.auth.password
-        value: "{{ exec \"kubectl\" (list \"-n\" \"authentik\" \"get\" \"secret\" \"authentik-secrets\" \"-o\" \"jsonpath={.data.postgresql-password}\") | b64dec }}"
+        value: >
+          {{ exec "kubectl" (list "-n" "authentik" "get" "secret"
+          "authentik-secrets" "-o" "jsonpath={.data.postgresql-password}") |
+          b64dec }}
       - name: global.redis.password
-        value: "{{ exec \"kubectl\" (list \"-n\" \"authentik\" \"get\" \"secret\" \"authentik-secrets\" \"-o\" \"jsonpath={.data.redis-password}\") | b64dec }}"
+        value: >
+          {{ exec "kubectl" (list "-n" "authentik" "get" "secret"
+          "authentik-secrets" "-o" "jsonpath={.data.redis-password}") |
+          b64dec }}
 
   - name: gitea
     namespace: gitea

@@ -4,6 +4,7 @@
 - name: Install k3s on master node
   delegate_to: "{{ item.name }}"
   ansible.builtin.shell: |
+    set -o pipefail
     curl -sfL https://get.k3s.io | sh -s - \
       --cluster-cidr={{ k3s_cluster_cidr }} \
       --service-cidr={{ k3s_service_cidr }} \
@@ -13,6 +14,7 @@
   loop: "{{ k3s_vms | selectattr('role', 'equalto', 'master') | list }}"
   environment:
     INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  changed_when: true
   tags: [k3s, install-master]
 
 - name: Wait for k3s master to be ready
@@ -24,6 +26,7 @@
   until: kubectl_result.rc == 0
   retries: 30
   delay: 10
+  changed_when: false
   tags: [k3s, install-master]
 
 - name: Get k3s node token from master
@@ -32,6 +35,7 @@
     sudo cat /var/lib/rancher/k3s/server/node-token
   loop: "{{ k3s_vms | selectattr('role', 'equalto', 'master') | list }}"
   register: node_token
+  changed_when: false
   tags: [k3s, install-master]
 
 - name: Set master URL and token facts
@@ -43,10 +47,12 @@
 - name: Install k3s on worker nodes
   delegate_to: "{{ item.name }}"
   ansible.builtin.shell: |
+    set -o pipefail
     curl -sfL https://get.k3s.io | K3S_URL=https://{{ k3s_master_ip }}:6443 K3S_TOKEN={{ k3s_node_token }} sh -
   loop: "{{ k3s_vms | selectattr('role', 'equalto', 'worker') | list }}"
   environment:
     INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  changed_when: true
   tags: [k3s, install-worker]
 
 - name: Label worker nodes
@@ -54,4 +60,5 @@
   ansible.builtin.shell: |
     kubectl label node {{ item.name }} node-role.kubernetes.io/worker=worker --overwrite
   loop: "{{ k3s_vms | selectattr('role', 'equalto', 'worker') | list }}"
+  changed_when: true
   tags: [k3s, install-worker]

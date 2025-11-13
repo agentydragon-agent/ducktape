@@ -1,5 +1,6 @@
 ---
-- hosts: agentydragon
+- name: Configure agentydragon laptop
+  hosts: agentydragon
   vars_files:
     - vars/common_vars.yml
   vars:
@@ -15,8 +16,8 @@
     #- role: gui
     #- role: laptop
     #- role: scanbox
-    - role: tailscale-client
-    - role: k3s-client
+    - role: tailscale_client
+    - role: k3s_client
     # - role: wireguard
     #   tags: [wireguard]
 
@@ -28,8 +29,8 @@
 
     - name: Install shared development environment
       ansible.builtin.import_role:
-        name: dev-env
-      tags: [dev-env]
+        name: dev_env
+      tags: [dev_env]
 
 
     # TODO: does not seem to work. getting this on trying to suspend, plus

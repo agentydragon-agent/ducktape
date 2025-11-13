@@ -1,5 +1,6 @@
 ---
-- hosts: atlas
+- name: Configure atlas Proxmox host
+  hosts: atlas
   vars_files:
     - vars/common_vars.yml
   vars:
@@ -50,7 +51,7 @@
       become: true
       become_user: "{{ my_user }}"
       tags: [dotfiles]
-      ignore_errors: yes  # In case SSH keys aren't set up yet
+      failed_when: false  # In case SSH keys aren't set up yet
 
     - name: Install Firefox
       ansible.builtin.package:
@@ -100,35 +101,41 @@
         state: started
       tags: [desktop]
 
-    - import_role:
-        name: system-inspection-nopasswd
+    - name: Apply system inspection nopasswd role
+      ansible.builtin.import_role:
+        name: system_inspection_nopasswd
       tags: [sudo, system]
 
-    - import_role:
-        name: tailscale-client
+    - name: Apply Tailscale client role
+      ansible.builtin.import_role:
+        name: tailscale_client
       tags: [tailscale]
 
-    - import_role:
+    - name: Apply CLI role
+      ansible.builtin.import_role:
         name: cli
       tags: [cli]
 
     # cli_nix_migrated excluded - atlas now uses Nix/home-manager for migrated packages
 
-    - import_role:
+    - name: Apply Nix role
+      ansible.builtin.import_role:
         name: nix
       tags: [nix]
       vars:
         nix_trusted_users: "root {{ my_user }}"
 
-    - import_role:
+    - name: Apply k3s role
+      ansible.builtin.import_role:
         name: k3s
       tags: [k3s]
 
-    - import_role:
-        name: dnsmasq-k3s
+    - name: Apply dnsmasq k3s role
+      ansible.builtin.import_role:
+        name: dnsmasq_k3s
       tags: [dnsmasq, dns]
 
     # TODO
-    # - import_role:
+    # - ansible.builtin.import_role:
     #     name: gpu-passthrough
     #   tags: [gpu-passthrough]

@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+# Passwordless sudo for read-only system inspection commands
+
+{% for command in system_inspection_nopasswd_commands %}
+{{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ command }}
+{% endfor %}
