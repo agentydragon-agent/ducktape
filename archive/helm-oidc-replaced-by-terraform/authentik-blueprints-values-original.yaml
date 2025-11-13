@@ -9,12 +9,11 @@ matrix:
   # this value (during a secret rotation) bumps the blueprint revision.
   clientSecretCiphertext: AgCM+dDa03q94A++BHvQy+lWS7nWfH7cal4TJJW98puyR805e48URqb0/Fs75MO9JBplpmYqDInvuAQY6y8XAJGKD0GqpMj6WAvJ3Q8Mks9HhqZgS7U1lvV33Mnvx+H2UYL/FNbGlw9QzqDyCxZN/AhUFk4zVlb3HTmG38zVHllURsKDid8PfSW1s6mb6On/IqbwDLIrb8E82oMOBb3/wnMJINKEz6TiKY4GVp/wzGYl/xR7rPM+PUe5BVAShBXRAAHkmA9VNniqi9zUhzAM4I6Vxx5ZAsMVJQp8Wxu+0QnRSEa9D4/yPVsNLDyiDHkC9KPC5zUYZ84sQAs/sM/Kd41rtJD5CcjlR7vvJwYGRMplr7iIbsqcxrxairDjqcsSdLSsYucj4rOUX/hFXOVtAKjwb82TDG9DvrZ2ZL1n/Y+SAidGqNHw63hFGkLJbOgWvE8sarYB23YyUiCUaL/cbMpVLcjEo2KXITPoyu/54jls0bH1ZMjrwZHGrtmqmAgoakktvb1fDheHy2wytA2OwIiOwFQbS2d1Nq3sMbHH/360QeFea9ckmA8XSzDc2x5DlkYAr7kk/w6c4RuxJW+UkVd9EW3oEs7NEuupRwFswMgZ9rSs3tt8YHVhJ8b+lO/EqBXOEKbX/3LVGROlyiOk/IrtY28mQPSGD3c+8aiZFqRf3ejih334RcPOxqZJdW8pabxoRxHkVD6T3LLHOdfr3UBCEoR9/ClDQzL29qi0HVEf5OHfW6/yhBRjIYxO
 
-# Harbor OIDC blueprint defaults - NOW MANAGED BY TERRAFORM
-# See: terraform/applications/ for Harbor OIDC configuration
-# harbor:
-#   externalHost: "https://registry.k3s.agentydragon.com"
-#   adminGroup: "harbor-admins"
-#   useExternalSecret: true
+# Harbor OIDC blueprint defaults.
+harbor:
+  externalHost: "https://registry.k3s.agentydragon.com"
+  adminGroup: "harbor-admins"
+  useExternalSecret: true
 
 # Embedded outpost configuration for forward-auth providers.
 forwardAuth:

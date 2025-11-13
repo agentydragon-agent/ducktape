@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harbor-config-scripts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: harbor
+    component: config-scripts
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  configure-harbor.sh: |
+{{ .Files.Get "scripts/configure-harbor.sh" | indent 4 }}
