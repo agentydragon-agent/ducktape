@@ -27,35 +27,35 @@ resource "proxmox_vm_qemu" "k3s_master" {
   name        = "k3s-master"
   target_node = "atlas"
   vmid        = 200
-  
+
   clone = "ubuntu-22.04-cloudinit-template"
-  
+
   cores   = 2
   sockets = 1
   memory  = 4096
-  
+
   disk {
     size    = "50G"
     type    = "scsi"
     storage = "local-zfs"
   }
-  
+
   network {
     model  = "virtio"
     bridge = "vmbr0"
   }
-  
+
   ipconfig0 = "ip=10.0.200.200/16,gw=10.0.0.1"
-  
+
   # Cloud-init user data
   cicustom = "user=local:snippets/k3s-master-cloud-init.yml"
-  
+
   # SSH key for management (optional, not from atlas)
   sshkeys = file("~/.ssh/id_ed25519.pub")
-  
+
   lifecycle {
     ignore_changes = [
-      disk,  # Prevent recreation on disk size changes
+      disk, # Prevent recreation on disk size changes
     ]
   }
 }
@@ -65,33 +65,33 @@ resource "proxmox_vm_qemu" "k3s_worker" {
   name        = "k3s-worker"
   target_node = "atlas"
   vmid        = 201
-  
+
   clone = "ubuntu-22.04-cloudinit-template"
-  
+
   cores   = 2
   sockets = 1
   memory  = 4096
-  
+
   disk {
     size    = "50G"
     type    = "scsi"
     storage = "local-zfs"
   }
-  
+
   network {
     model  = "virtio"
     bridge = "vmbr0"
   }
-  
+
   ipconfig0 = "ip=10.0.200.201/16,gw=10.0.0.1"
-  
+
   cicustom = "user=local:snippets/k3s-worker-cloud-init.yml"
-  
+
   sshkeys = file("~/.ssh/id_ed25519.pub")
-  
+
   # Ensure master starts first
   depends_on = [proxmox_vm_qemu.k3s_master]
-  
+
   lifecycle {
     ignore_changes = [disk]
   }

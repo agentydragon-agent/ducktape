@@ -44,3 +44,63 @@ powerdns_admin_state: present
 
 # Allow DNS updates from localhost, Docker networks, and VPS IP
 powerdns_allow_dnsupdate_from: "127.0.0.1,172.16.0.0/12,172.235.48.86"
+
+# PowerDNS zones configuration
+# TODO: This ansible role doesn't properly update existing zones - it doesn't 
+# delete old records when configurations change. Manual cleanup via pdnsutil
+# may be required when updating existing zones. Eventually we'll move all DNS
+# management into the k8s cluster anyway.
+powerdns_domains:
+  - name: "agentydragon.com"
+    type: "NATIVE"
+    records:
+      - name: "@"
+        type: "SOA"
+        content: "ns1.agentydragon.com. hostmaster.agentydragon.com. 2024092700 3600 1800 604800 300"
+        ttl: 300
+      - name: "@"
+        type: "NS"
+        content: "ns1.agentydragon.com."
+        ttl: 300
+      - name: "ns1"
+        type: "A"
+        content: "98.51.154.161"  # VPS IP
+        ttl: 300
+
+  - name: "k3s.agentydragon.com"
+    type: "NATIVE"
+    records:
+      - name: "@"
+        type: "SOA"
+        content: "ns1.agentydragon.com. hostmaster.agentydragon.com. 2025092704 3600 1800 604800 300"
+        ttl: 300
+      - name: "@"
+        type: "NS"
+        content: "ns1.agentydragon.com."
+        ttl: 300
+      - name: "*"
+        type: "A"
+        content: "172.235.48.86"  # VPS internal IP
+        ttl: 300
+
+  - name: "test-cluster.agentydragon.com"
+    type: "NATIVE"
+    records:
+      - name: "@"
+        type: "SOA"
+        content: "ns1.agentydragon.com. hostmaster.agentydragon.com. 2025111300 3600 1800 604800 300"
+        ttl: 300
+      - name: "@"
+        type: "NS"
+        content: "ns1.agentydragon.com."
+        ttl: 300
+      # Delegate all subdomains to cluster PowerDNS
+      - name: "*"
+        type: "NS"
+        content: "ns1.test-cluster.agentydragon.com."
+        ttl: 300
+      # Cluster PowerDNS nameserver record
+      - name: "ns1"
+        type: "A"
+        content: "10.0.3.3"  # Cluster PowerDNS LoadBalancer VIP
+        ttl: 300
