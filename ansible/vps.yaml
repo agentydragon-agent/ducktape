@@ -91,7 +91,7 @@
           # Forward queries for our authoritative domains to PowerDNS
           # This will be used in addition to the global DNS servers
           DNS={{ ansible_default_ipv4.address }}#powerdns
-          Domains=~agentydragon.com ~adgn.link ~k3s.agentydragon.com
+          Domains=~agentydragon.com ~adgn.link ~k3s.agentydragon.com ~test-cluster.agentydragon.com
         owner: root
         group: root
         mode: '0644'
@@ -116,10 +116,12 @@
         update_cache: true
         upgrade: dist
 
-    - name: Install nginx  # noqa: package-latest
+    - name: Install nginx with stream module  # noqa: package-latest
       become: true
       ansible.builtin.apt:
-        name: nginx
+        name:
+          - nginx
+          - libnginx-mod-stream
         state: latest
 
     - name: Create fail2ban ignore IP configuration
@@ -188,6 +190,16 @@
         letsencrypt_dns_provider: "powerdns"
       tags: [letsencrypt, k3s-wildcard]
 
+    - name: "Let's Encrypt | *.test-cluster.agentydragon.com (wildcard)"
+      ansible.builtin.import_role:
+        name: letsencrypt-dns
+      vars:
+        letsencrypt_dns_cert_name: "test-cluster-wildcard"
+        letsencrypt_dns_domains:
+          - "*.test-cluster.agentydragon.com"
+        letsencrypt_dns_provider: "powerdns"
+      tags: [letsencrypt, test-cluster-wildcard]
+
     - name: Apply headscale role
       ansible.builtin.import_role:
         name: headscale_server
@@ -255,6 +267,7 @@
             - adgn.link
             - atlas.agentydragon.com
             - k3s.agentydragon.com
+            - test-cluster.agentydragon.com
           notify:
             - Reload nginx
 
@@ -278,6 +291,7 @@
             - adgn.link
             - atlas.agentydragon.com
             - k3s.agentydragon.com
+            - test-cluster.agentydragon.com
           notify:
             - Reload nginx
 
@@ -366,24 +380,6 @@
                  - Add the key to GitHub: https://github.com/settings/keys
                  - Or use GitHub CLI: gh auth login
             success_msg: "SSH key is set up for agentydragon user"
-
-        - name: Create code directory
-          become: true
-          become_user: agentydragon
-          ansible.builtin.file:
-            path: "/home/agentydragon/code"
-            state: directory
-            mode: '0755'
-
-        - name: Clone ducktape repository
-          become: true
-          become_user: agentydragon
-          ansible.builtin.git:
-            repo: git@github.com:agentydragon/ducktape.git
-            dest: "{{ ducktape_path }}"
-            version: devel
-            accept_hostkey: true
-            depth: 1  # Shallow clone for speed
 
     # Apply CLI role (outside the block so tags work independently)
     - name: Apply CLI role
