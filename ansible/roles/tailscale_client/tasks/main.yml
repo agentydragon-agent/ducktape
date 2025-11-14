@@ -57,12 +57,6 @@
     - (tailscale_authkey | default('') | trim) | length == 0
   tags: [tailscale, connect]
 
-- name: Debug headscale authkey result
-  ansible.builtin.debug:
-    var: headscale_authkey_result
-  when: headscale_authkey_result is defined
-  tags: [tailscale, connect]
-
 - name: Record generated headscale auth key
   ansible.builtin.set_fact:
     tailscale_authkey: "{{ headscale_authkey_result.stdout | trim }}"
@@ -72,11 +66,6 @@
     - headscale_authkey_result.rc == 0
     - headscale_authkey_result.stdout is defined
     - (headscale_authkey_result.stdout | trim) != ""
-  tags: [tailscale, connect]
-
-- name: Debug authkey value
-  ansible.builtin.debug:
-    msg: "tailscale_authkey: '{{ tailscale_authkey | default('NOT_SET') }}'"
   tags: [tailscale, connect]
 
 - name: Get machine registration info
