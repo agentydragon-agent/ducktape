@@ -10,7 +10,7 @@ platforms:
     image: geerlingguy/docker-ubuntu2204-ansible:latest
     pre_build_image: true
     privileged: true
-    ansible.builtin.command: ""
+    command: ""
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
 
