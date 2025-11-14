@@ -4,7 +4,7 @@
 - name: Create RFC 2136 credentials file
   ansible.builtin.copy:
     content: |
-      dns_rfc2136_server = 127.0.0.1
+      dns_rfc2136_server = {{ powerdns_dns_bind_address }}
       dns_rfc2136_port = 53
       dns_rfc2136_name = certbot
       dns_rfc2136_secret = {{ vault_powerdns_tsig_secret }}
@@ -17,7 +17,7 @@
 
 - name: Test DNS resolution to PowerDNS
   ansible.builtin.command:
-    cmd: dig @127.0.0.1 k3s.agentydragon.com NS
+    cmd: dig @{{ powerdns_dns_bind_address }} k3s.agentydragon.com NS
   register: dns_test
   failed_when: "'NOERROR' not in dns_test.stdout"
   changed_when: false

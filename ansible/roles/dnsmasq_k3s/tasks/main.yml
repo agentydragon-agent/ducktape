@@ -23,8 +23,8 @@
       # Listen on standard DNS port
       port=53
 
-      # k3s wildcard - all services go to Traefik LoadBalancer IP
-      address=/k3s.local/10.0.200.100
+      # k3s wildcard - all services go to k3s master (handles ingress)
+      address=/k3s.local/{{ hostvars['k3s-master']['ansible_host'] }}
 
       # Don't forward k3s.local queries upstream
       local=/k3s.local/

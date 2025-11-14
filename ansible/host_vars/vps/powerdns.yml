@@ -41,3 +41,6 @@ vault_powerdns_tsig_secret: !vault |
 # PowerDNS configuration
 powerdns_state: present
 powerdns_admin_state: present
+
+# Allow DNS updates from localhost, Docker networks, and VPS IP
+powerdns_allow_dnsupdate_from: "127.0.0.1,172.16.0.0/12,172.235.48.86"

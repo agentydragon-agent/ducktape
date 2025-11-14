@@ -6,7 +6,7 @@ services:
       - ./sqlite-data:/var/lib/powerdns
       - ./config/pdns.conf:/etc/powerdns/pdns.conf:ro
     ports:
-      - "{{ ansible_default_ipv4.address }}:53:53/tcp"
-      - "{{ ansible_default_ipv4.address }}:53:53/udp"
+      - "{{ powerdns_dns_bind_address }}:53:53/tcp"
+      - "{{ powerdns_dns_bind_address }}:53:53/udp"
       - "127.0.0.1:{{ powerdns_webserver_port }}:{{ powerdns_webserver_port }}"
     restart: unless-stopped

@@ -20,7 +20,7 @@ api-key={{ powerdns_api_key }}
 
 # DNS Update configuration
 dnsupdate=yes
-allow-dnsupdate-from=127.0.0.1,172.16.0.0/12
+allow-dnsupdate-from={{ powerdns_allow_dnsupdate_from | default('127.0.0.1,172.16.0.0/12') }}
 
 # Logging
 loglevel=6
