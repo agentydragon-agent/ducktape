@@ -153,7 +153,7 @@ class EncryptedEncoder:
         # If the *server* is not configured with a key, encryption is entirely
         # disabled and we always serve plaintext JSON irrespective of any
         # client-supplied ``?key`` parameter.  This matches the behaviour
-        # documented in the function’s docstring and avoids runtime errors when
+        # documented in the function's docstring and avoids runtime errors when
         # attempting to instantiate ``Fernet(None)``.
 
         if not self.key:
@@ -388,11 +388,11 @@ def _render_events_page(
 
     if redirect_needed:
         # Recreate original path (with key embedded if applicable) so sharing
-        # the resulting URL preserves the user’s chosen addressing scheme.
+        # the resulting URL preserves the user's chosen addressing scheme.
         base_path = req.url.path if key_style == "path" and key_value else "/"
 
         redirect_target = str(URL(base_path).include_query_params(**params))
-        # Also propagate *query-style* key if that’s how it was supplied.
+        # Also propagate *query-style* key if that's how it was supplied.
         if key_style == "query" and key_value:
             redirect_target = str(
                 URL(redirect_target).include_query_params(key=key_value),

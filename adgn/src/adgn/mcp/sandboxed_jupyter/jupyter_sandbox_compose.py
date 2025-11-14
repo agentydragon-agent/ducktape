@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field, ValidationError
 import yaml
 
 from adgn.llm.sandboxer import Policy as SandboxPolicy
-from adgn.mcp.sandboxed_jupyter._paths import ensure_dir
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ class ComposerConfig(BaseModel):
 
 
 def _write_default_jupyter_config(config_dir: Path, extra_py: str | None) -> None:
-    ensure_dir(config_dir)
+    config_dir.mkdir(parents=True, exist_ok=True)
     default_lines = [
         "c = get_config()",
         "c.KernelSpecManager.ensure_native_kernel = False",
@@ -174,7 +173,7 @@ def compose_from_config_raw(raw_text: str) -> None:
     policy_dir = bundle_dir / "policies"
 
     for d in (bundle_dir, runtime_dir, config_dir, kernels_dir, policy_dir):
-        ensure_dir(d)
+        d.mkdir(parents=True, exist_ok=True)
 
     # Write Jupyter config (defaults + appended extras)
     _write_default_jupyter_config(config_dir, jupyter_cfg.config_py_extra)
@@ -194,7 +193,7 @@ def compose_from_config_raw(raw_text: str) -> None:
 
     # Kernelspec
     kdir = kernels_dir / kernel.name
-    ensure_dir(kdir)
+    kdir.mkdir(parents=True, exist_ok=True)
     argv = [
         sys.executable,
         "-m",

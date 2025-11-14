@@ -17,7 +17,6 @@ import yaml
 
 from adgn.llm.sandboxer import Policy
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
-from adgn.mcp.sandboxed_jupyter._paths import ensure_dir
 from adgn.util.net import wait_for_port
 import docker
 
@@ -324,11 +323,8 @@ def _seatbelt(
     trace: bool,
 ) -> int:
     # Ensure fresh runtime dir for logs/config; use provided run_root
-    ensure_dir(run_root / "runtime")
-    ensure_dir(run_root / "config")
-    ensure_dir(run_root / "data")
-    ensure_dir(run_root / "mpl")
-    ensure_dir(run_root / "scratch")
+    for subdir in ("runtime", "config", "data", "mpl", "scratch"):
+        (run_root / subdir).mkdir(parents=True, exist_ok=True)
 
     # Jupyter Server config (keep compact and explicit)
     jsc = (
@@ -484,11 +480,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     run_root = Path(args.run_root)
-    ensure_dir(run_root)
-    ensure_dir(run_root / "runtime")
-    ensure_dir(run_root / "config")
-    ensure_dir(run_root / "data")
-    ensure_dir(run_root / "mpl")
+    run_root.mkdir(parents=True, exist_ok=True)
+    for subdir in ("runtime", "config", "data", "mpl"):
+        (run_root / subdir).mkdir(parents=True, exist_ok=True)
 
     # Diagnostics
     if args.trace:

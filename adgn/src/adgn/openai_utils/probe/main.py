@@ -362,10 +362,11 @@ def is_excluded(mid: str) -> bool:
 
 def priority_index(mid: str) -> int:
     fam = family_of(mid)
+    priority: list[Family] = FAMILY_PRIORITY
     try:
-        return FAMILY_PRIORITY.index(fam)
+        return priority.index(fam)
     except ValueError:
-        return len(FAMILY_PRIORITY)
+        return len(priority)
 
 
 # Error codes and rules

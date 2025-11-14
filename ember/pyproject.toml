@@ -16,6 +16,7 @@ dependencies = [
     "ipython>=8.26",
     "requests>=2.32",
     "jinja2>=3.1",
+    "kubernetes-asyncio>=26.1",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +27,7 @@ dev = [
 
 [project.scripts]
 emberd = "ember.__main__:main"
-ember-eval = "ember.eval_runner:cli_main"
+ember-eval = "ember.evals.runner:cli_main"
 ember-python = "ember.runtime.python_session:cli_main"
 
 [tool.setuptools]
