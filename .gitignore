@@ -6,13 +6,18 @@
 **/bazel-*
 **/node_modules/
 
-# Python
+# Packaging artifacts
+**/*.egg-info
+
+# Temporary Helm chart downloads
+**/tmpcharts-*
+
+# Python caches and virtualenvs
 **/__pycache__/
 **/.pytest_cache/
 **/.mypy_cache/
 **/.ruff_cache/
 **/.venv/
-**/*.egg-info
 **/.ipynb_checkpoints/
 
 # Development environments
