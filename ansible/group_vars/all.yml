@@ -1,4 +1,2 @@
-# Global Wireguard configuration
-wg_port: 51820
-wg_hub: "vps"
-wg_mesh_cidr: "10.13.13.0/24"
+# Global variables for all hosts
+# (Empty for now - WireGuard configuration removed)

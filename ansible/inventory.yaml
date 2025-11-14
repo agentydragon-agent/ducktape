@@ -1,11 +1,3 @@
-wg_peers:
-  hosts:
-    vps:
-    agentydragon:
-    gpd:
-    homeassistant: # (not managed by Ansible but included in mesh)
-    pixel6: # Pixel 6 phone
-
 all:
   hosts:
     vps:
