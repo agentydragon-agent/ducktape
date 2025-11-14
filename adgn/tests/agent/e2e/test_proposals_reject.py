@@ -33,7 +33,6 @@ def _patch_model(monkeypatch: pytest.MonkeyPatch, create_fn: Callable[[Any], Any
     )
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_policy_proposal_reject_updates_ui(
     page: Page, run_server, responses_factory, policy_allow_all: str, sqlite_persistence

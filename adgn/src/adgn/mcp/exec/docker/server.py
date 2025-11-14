@@ -15,13 +15,12 @@ Use make_container_exec_server(...) to construct a server instance.
 
 from __future__ import annotations
 
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-
-from .._shared.container_session import (
+from adgn.mcp._shared.container_session import (
     ContainerOptions,
     make_container_lifespan,
     register_container,
 )
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 
 def make_container_exec_server(

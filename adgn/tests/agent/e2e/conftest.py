@@ -9,6 +9,9 @@ import pytest
 from adgn.agent.server.app import create_app
 from tests.agent.helpers import start_uvicorn_app
 
+# Auto-apply e2e marker to all tests in this directory
+pytestmark = [pytest.mark.e2e]
+
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page, Playwright
 

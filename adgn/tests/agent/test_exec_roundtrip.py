@@ -7,7 +7,7 @@ import pytest
 from adgn.agent.agent import AgentResult, MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.types import ExecInput, ExecResult
+from adgn.mcp.exec.models import BaseExecResult, ExecInput, Exited
 from adgn.openai_utils.client_factory import build_client
 
 # Use /bin/echo -n for portability and to avoid trailing newline
@@ -20,13 +20,14 @@ async def _assert_exec_echo(sess) -> None:
     # Call via compositor using namespaced tool key
     from adgn.mcp.testing.typed_stubs import call_tool_typed
 
-    res: ExecResult = await call_tool_typed(
+    res: BaseExecResult = await call_tool_typed(
         sess,
         build_mcp_function(SERVER_NAME, "exec"),
         ExecInput(cmd=ECHO_CMD, timeout_ms=10_000),
-        ExecResult,
+        BaseExecResult,
     )
-    assert res.exit_code == 0
+    assert isinstance(res.exit, Exited)
+    assert res.exit.exit_code == 0
     assert (res.stdout or "") == "hello"
     assert (res.stderr or "") == ""
 

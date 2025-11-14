@@ -6,13 +6,8 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.exec_common.io_limits import (
-    TimeoutMs,
-    clamp_stdin_bytes,
-    validate_max_bytes,
-)
-from adgn.mcp.exec_common.models import StreamOut
-from adgn.mcp.exec_common.subprocess_utils import emit_stream, run_proc
+from adgn.mcp.exec.models import BaseExecResult, TimeoutMs, render_outcome_to_result
+from adgn.mcp.exec.subprocess import run_proc
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 
@@ -22,14 +17,6 @@ class DirectExecArgs(BaseModel):
     cwd: Path | None = None
     timeout_ms: TimeoutMs
     stdin_text: str | None = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class DirectExecResult(BaseModel):
-    exit: int
-    stdout: str | StreamOut | None = None
-    stderr: str | StreamOut | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -46,7 +33,7 @@ def make_direct_exec_server(
     mcp = NotifyingFastMCP(name, instructions="Local command execution (unsandboxed)")
 
     @mcp.flat_model()
-    def exec(input: DirectExecArgs) -> DirectExecResult:
+    async def exec(input: DirectExecArgs) -> BaseExecResult:
         """Execute a command locally (no sandbox)."""
         if not input.cmd or not all(isinstance(x, str) for x in input.cmd):
             raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
@@ -54,21 +41,14 @@ def make_direct_exec_server(
         if cwd_val is None and default_cwd is not None:
             cwd_val = default_cwd
 
-        try:
-            max_b = validate_max_bytes(input.max_bytes)
-        except Exception as e:
-            raise ToolError(f"INVALID_MAX_BYTES: {e}") from e
-
-        stdin_b = clamp_stdin_bytes(input.stdin_text, max_b)
-        # Preserve sub-second precision derived from timeout_ms
-        timeout_s = max(0.001, float(int(input.timeout_ms)) / 1000.0)
-
-        code, out_b, err_b = run_proc(input.cmd, timeout_s, cwd_val, stdin_b)
-        return DirectExecResult(
-            exit=code,
-            stdout=emit_stream(out_b, max_b) if out_b is not None else "",
-            stderr=emit_stream(err_b, max_b) if err_b is not None else "",
+        timeout_s = max(0.001, input.timeout_ms / 1000.0)
+        outcome = await run_proc(
+            input.cmd,
+            timeout_s,
+            cwd=cwd_val,
+            stdin=input.stdin_text,
         )
+        return render_outcome_to_result(outcome, input.max_bytes)
 
     return mcp
 

@@ -16,9 +16,8 @@ Page = playwright.Page  # type: ignore[attr-defined]
 """E2E Abort test. Shared fixtures are provided in tests/agent/e2e/conftest.py."""
 
 
-@pytest.mark.integration
-def test_ui_e2e_abort_sampling(page: Page, run_server, responses_factory):
-    """E2E: start a long sampling call, click Abort in UI, and verify the run stops.
+def test_ui_abort_sampling(page: Page, run_server, responses_factory):
+    """Start a long sampling call, click Abort in UI, and verify the run stops.
 
     - FE: exercise Abort button visibility/interaction
     - BE: exercise WS abort → session.cancel_active_run → sampling cancellation

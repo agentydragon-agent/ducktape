@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.types import ExecInput, ExecResult
-from adgn.mcp.docker_exec.server import make_container_exec_server
+from adgn.mcp.exec.docker.server import make_container_exec_server
+from adgn.mcp.exec.models import BaseExecResult, ExecInput, Exited, TimedOut
 from adgn.mcp.testing.typed_stubs import call_tool_typed
 
 
@@ -23,10 +22,10 @@ def _runtime_spec_persession(image: str = "alpine:3.19"):
     return server
 
 
-async def _run_exec(sess, cmd, timeout_ms: int, shell: bool = True) -> ExecResult:
+async def _run_exec(sess, cmd, timeout_ms: int, shell: bool = True) -> BaseExecResult:
     # Use known Pydantic IO models by name for clarity and stability
     payload = ExecInput(cmd=cmd, timeout_ms=timeout_ms, shell=shell)
-    return await call_tool_typed(sess, "exec", payload, ExecResult)
+    return await call_tool_typed(sess, "exec", payload, BaseExecResult)
 
 
 @pytest.mark.asyncio
@@ -47,16 +46,14 @@ async def test_runtime_per_session_timeout_then_next_call_ok(
                 sess,
                 build_mcp_function("runtime", "exec"),
                 ExecInput(cmd=cmd, timeout_ms=timeout_ms, shell=shell),
-                ExecResult,
+                BaseExecResult,
             )
 
         res_timeout = await _run_ns(["sh", "-lc", "sleep 3"], timeout_ms=500, shell=True)
-        assert res_timeout.timed_out is True
-        # Standardized timeout exit code should be SIGTERM
-        assert res_timeout.exit_code == EXIT_CODE_SIGTERM
+        assert isinstance(res_timeout.exit, TimedOut)
 
         # Next call should work; container should have been restarted
         res_ok = await _run_ns(["/bin/echo", "-n", "ok"], timeout_ms=5000, shell=False)
-        assert res_ok.timed_out is False
-        assert res_ok.exit_code == 0
+        assert isinstance(res_ok.exit, Exited)
+        assert res_ok.exit.exit_code == 0
         assert (res_ok.stdout or "") == "ok"

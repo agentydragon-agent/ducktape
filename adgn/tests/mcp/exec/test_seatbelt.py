@@ -7,10 +7,9 @@ from pathlib import Path
 from fastmcp.client import Client
 import pytest
 
-from adgn.mcp.seatbelt_exec.server import (
+from adgn.mcp.exec.seatbelt import (
     SandboxExecArgs,
     SeatbeltExecMCP,
-    StreamOut,
 )
 from adgn.mcp.testing.typed_stubs import TypedClient
 from adgn.seatbelt.model import (
@@ -93,15 +92,11 @@ async def test_sandbox_exec_echo_roundtrip(open_seatbelt_session) -> None:
         )
         assert res.timeout is False
         assert res.exit_code == 0
-        out_val = (
-            res.stdout.truncated_text if isinstance(res.stdout, StreamOut) else (res.stdout or "")
-        )
-        assert out_val == "HELLO_MINIMAL\n"
+        assert isinstance(res.stdout, str)  # Short output should not be truncated
+        assert res.stdout == "HELLO_MINIMAL\n"
         # stderr should be empty or None
-        err_val = (
-            res.stderr.truncated_text if isinstance(res.stderr, StreamOut) else (res.stderr or "")
-        )
-        assert err_val in ("", None)
+        assert isinstance(res.stderr, str)  # Short error should not be truncated
+        assert res.stderr in ("", None)
         # duration exists and is a non-negative int
         assert isinstance(res.duration_ms, int) and res.duration_ms >= 0
 
@@ -129,10 +124,8 @@ async def test_sandbox_exec_write_denied(open_seatbelt_session) -> None:
         # Expect non-zero exit due to sandbox denial
         assert isinstance(res.exit_code, int) and res.exit_code != 0
         # Stderr should have some diagnostic
-        err_val = (
-            res.stderr.truncated_text if isinstance(res.stderr, StreamOut) else (res.stderr or "")
-        )
-        assert (err_val or "").strip() != ""
+        assert isinstance(res.stderr, str)  # Short error should not be truncated
+        assert res.stderr != ""
         # File should not exist (write was denied)
         assert not os.path.exists(out_path)
         # Trace collection remains flaky across versions; rely on stderr for now
@@ -179,9 +172,7 @@ async def test_sandbox_exec_cwd_and_env(tmp_path: Path, open_seatbelt_session) -
         )
         assert res.timeout is False
         assert res.exit_code == 0
-        out_val = (
-            res.stdout.truncated_text if isinstance(res.stdout, StreamOut) else (res.stdout or "")
-        )
-        assert out_val.splitlines()[:2] == [str(tmp_path), "BAR"]
+        assert isinstance(res.stdout, str)  # Short output should not be truncated
+        assert res.stdout.splitlines()[:2] == [str(tmp_path), "BAR"]
 
     # No policy CRUD tests; server no longer stores policies.

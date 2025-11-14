@@ -32,7 +32,7 @@ export const MCP_PRESETS: McpPreset[] = [
     defaultName: 'seatbelt',
     defaults: {
       inproc: {
-        factory: 'adgn.mcp.seatbelt_exec.server:make_seatbelt_exec_mcp',
+        factory: 'adgn.mcp.exec.seatbelt:SeatbeltExecMCP',
         args: [],
         kwargs: { name: 'seatbelt' },
       },

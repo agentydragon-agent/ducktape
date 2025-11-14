@@ -22,7 +22,7 @@ from adgn.mcp._shared.container_session import ContainerOptions, NetworkMode
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import ExecResult
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.docker_exec.server import make_container_exec_server
+from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.matrix.control import make_matrix_control_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.openai_utils.client_factory import build_client

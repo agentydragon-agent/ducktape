@@ -34,9 +34,8 @@ def _patch_model(monkeypatch: pytest.MonkeyPatch, create_fn: Callable[[Any], Any
     )
 
 
-@pytest.mark.integration
 def test_approvals_delivery_and_user_approve(page: Page, run_server, responses_factory):
-    """E2E: agent attempts a tool call -> policy asks -> UI shows pending -> user approves -> tool runs.
+    """Agent attempts a tool call → policy asks → UI shows pending → user approves → tool runs.
 
     Flow:
       - Attach in-proc echo MCP server via HTTP (inproc factory spec)

@@ -20,7 +20,7 @@ from adgn.mcp.approval_policy.clients import PolicyReaderClient
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
-from adgn.mcp.docker_exec.server import make_container_exec_server
+from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.policy_gateway.middleware import install_policy_gateway
 from adgn.mcp.testing.simple_servers import make_simple_mcp
 
@@ -336,7 +336,7 @@ def docker_exec_server_alpine():
         ephemeral=True,
     )
     # Expose the tool under name expected by docker exec tests
-    from adgn.mcp.docker_exec.server import make_container_exec_server
+    from adgn.mcp.exec.docker.server import make_container_exec_server
 
     return make_container_exec_server(opts, tool_exec_name="docker_exec")
 
@@ -389,7 +389,7 @@ def docker_inproc_spec_py312():
         describe=True,
         ephemeral=True,
     )
-    from adgn.mcp.docker_exec.server import make_container_exec_server
+    from adgn.mcp.exec.docker.server import make_container_exec_server
 
     server = make_container_exec_server(opts)
     return server

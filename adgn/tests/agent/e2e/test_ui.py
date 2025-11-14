@@ -23,9 +23,8 @@ def _extract_agent_id(url: str) -> str | None:
     return vals[0] if vals else None
 
 
-@pytest.mark.integration
-def test_ui_e2e_create_chat_and_restore(page: Page, run_server, responses_factory):
-    """E2E: create agent via UI, send two prompts, restart server, and verify hydration in snapshot.
+def test_ui_create_chat_and_restore(page: Page, run_server, responses_factory):
+    """Create agent via UI, send two prompts, restart server, and verify hydration in snapshot.
 
     - FE: exercise Svelte UI flows (agent creation, chatting, rendering messages)
     - BE: exercise FastAPI HTTP+WS, agent container, persistence + restore

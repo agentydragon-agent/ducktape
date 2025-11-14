@@ -6,7 +6,7 @@ from adgn.mcp._shared.constants import (
 )
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.docker_exec.server import attach_container_exec, make_container_exec_server
+from adgn.mcp.exec.docker.server import attach_container_exec, make_container_exec_server
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 

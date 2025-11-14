@@ -11,8 +11,8 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.types import ExecInput
-from adgn.mcp.docker_exec.server import make_container_exec_server
+from adgn.mcp.exec.docker.server import make_container_exec_server
+from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils.model import (
     AssistantMessage,
     FakeOpenAIModel,

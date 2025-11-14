@@ -9,25 +9,20 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.exec_common.io_limits import (
-    TimeoutMs,
-    clamp_stdin_bytes,
-    validate_max_bytes,
-)
-from adgn.mcp.exec_common.models import StreamOut
-from adgn.mcp.exec_common.subprocess_utils import emit_stream, run_proc
+from adgn.mcp.exec.models import BaseExecResult, ExecOutcome, TimeoutMs, render_outcome_to_result
+from adgn.mcp.exec.subprocess import run_proc
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
 
 
-def _run_in_bwrap(
+async def _run_in_bwrap(
     cmd: list[str],
     timeout_s: float,
     cwd: Path | None,
-    stdin_b: bytes | None,
-) -> tuple[int, bytes, bytes]:
+    stdin_text: str | None,
+) -> ExecOutcome:
     if sys.platform != "linux":
         raise ToolError("NOT_LINUX: bubblewrap sandbox available only on Linux")
     if which(BWRAP) is None:
@@ -66,7 +61,7 @@ def _run_in_bwrap(
     ]
 
     # chdir handled inside bwrap; pass cwd=None to subprocess
-    return run_proc(argv, timeout_s=timeout_s, cwd=None, stdin_b=stdin_b)
+    return await run_proc(argv, timeout_s=timeout_s, cwd=None, stdin=stdin_text)
 
 
 class BwrapExecArgs(BaseModel):
@@ -75,14 +70,6 @@ class BwrapExecArgs(BaseModel):
     cwd: Path | None = None
     timeout_ms: TimeoutMs
     stdin_text: str | None = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class BwrapExecResult(BaseModel):
-    exit: int
-    stdout: str | StreamOut | None = None
-    stderr: str | StreamOut | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -99,7 +86,7 @@ def make_bwrap_exec_server(
     mcp = NotifyingFastMCP(name, instructions="Local command execution via bubblewrap (Linux)")
 
     @mcp.flat_model()
-    def exec(input: BwrapExecArgs) -> BwrapExecResult:
+    async def exec(input: BwrapExecArgs) -> BaseExecResult:
         """Execute a command inside a bubblewrap sandbox (Linux only)."""
         if not input.cmd or not all(isinstance(x, str) for x in input.cmd):
             raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
@@ -107,20 +94,9 @@ def make_bwrap_exec_server(
         if cwd_val is None and default_cwd is not None:
             cwd_val = default_cwd
 
-        try:
-            max_b = validate_max_bytes(input.max_bytes)
-        except Exception as e:
-            raise ToolError(f"INVALID_MAX_BYTES: {e}") from e
-
-        stdin_b = clamp_stdin_bytes(input.stdin_text, max_b)
-        timeout_s = max(0.001, float(int(input.timeout_ms)) / 1000.0)
-
-        code, out_b, err_b = _run_in_bwrap(input.cmd, timeout_s, cwd_val, stdin_b)
-        return BwrapExecResult(
-            exit=code,
-            stdout=emit_stream(out_b, max_b) if out_b is not None else "",
-            stderr=emit_stream(err_b, max_b) if err_b is not None else "",
-        )
+        timeout_s = max(0.001, input.timeout_ms / 1000.0)
+        outcome = await _run_in_bwrap(input.cmd, timeout_s, cwd_val, input.stdin_text)
+        return render_outcome_to_result(outcome, input.max_bytes)
 
     return mcp
 

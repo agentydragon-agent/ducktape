@@ -51,13 +51,13 @@ from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
+
+# in-proc embed is used; no external HTTP readiness needed
+from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import make_loop_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.mcp.policy_gateway.middleware import install_policy_gateway
 from adgn.mcp.runtime.server import make_runtime_server
-
-# in-proc embed is used; no external HTTP readiness needed
-from adgn.mcp.seatbelt_exec.server import attach_seatbelt_exec
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
 from adgn.mcp.ui.server import make_ui_server
 from adgn.openai_utils.client_factory import build_client

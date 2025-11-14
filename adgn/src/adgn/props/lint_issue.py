@@ -26,8 +26,9 @@ from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import LINT_SUBMIT_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.types import ExecInput, SimpleOk
+from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.exec.models import ExecInput
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.builders import make_item_tool_call
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto

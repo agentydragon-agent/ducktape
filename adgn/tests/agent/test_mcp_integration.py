@@ -6,11 +6,8 @@ from fastmcp.mcp_config import StdioMCPServer
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.direct_exec.server import (
-    DirectExecArgs,
-    DirectExecResult,
-    make_direct_exec_server,
-)
+from adgn.mcp.exec.direct import DirectExecArgs, make_direct_exec_server
+from adgn.mcp.exec.models import BaseExecResult, Exited
 from adgn.mcp.testing.typed_stubs import call_tool_typed
 
 # FastMCP stdio client (hard import)
@@ -69,8 +66,9 @@ async def test_direct_inprocess_server(make_compositor) -> None:
             max_bytes=100_000,
             timeout_ms=5000,
         )
-        result = await call_tool_typed(sess, tool_name, payload, DirectExecResult)
-        assert result.exit == 0
+        result = await call_tool_typed(sess, tool_name, payload, BaseExecResult)
+        assert isinstance(result.exit, Exited)
+        assert result.exit.exit_code == 0
 
 
 @pytest.mark.asyncio

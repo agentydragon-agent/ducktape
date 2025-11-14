@@ -9,7 +9,7 @@ from fastmcp.server import FastMCP
 from adgn.mcp._shared.constants import DOCKER_SERVER_NAME
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.docker_exec.server import make_container_exec_server
+from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.props.prop_utils import props_definitions_root
 import docker
 from docker.errors import ImageNotFound
