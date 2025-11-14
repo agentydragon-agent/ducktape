@@ -42,15 +42,16 @@ repos:
   # NOTE: ansible-core 2.19.0 fucking removed ansible.parsing.yaml.constructor module
   # that ansible-lint depends on, causing ModuleNotFoundError. Pin to 2.18.x
   # until ansible-lint is updated. See: https://github.com/ansible/ansible/issues/85243
-  - repo: https://github.com/ansible/ansible-lint
-    rev: v24.9.2
+  - repo: local
     hooks:
       - id: ansible-lint
-        files: "^ansible/"
-        exclude: "k8s/.*"  # Exclude k8s files that cause parsing issues
-        args: ["--config-file", ".ansible-lint.yaml"]
-        additional_dependencies:
-          - ansible-core>=2.18.0,<2.19.0  # Avoid fucking breaking module removal in 2.19.0
+        name: ansible-lint
+        entry: bash -c 'if git diff --cached --name-only | grep -E -q "^ansible/.*\.(yml|yaml)$"; then
+          ansible-lint --config-file .ansible-lint.yaml ansible/; else
+          echo "No ansible files changed, skipping ansible-lint"; fi'
+        language: system
+        files: "^ansible/.*\\.(yml|yaml)$"
+        pass_filenames: false
 
   # Ruff = linter + import sorter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
