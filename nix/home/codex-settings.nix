@@ -18,7 +18,6 @@
   sandbox_mode = "workspace-write";
   sandbox_workspace_write = {
     writable_roots = [
-      "/home/agentydragon/.pyenv"
       "/home/agentydragon/.cache/sccache"
       "/home/agentydragon/.cache/nix"
       "/nix"

@@ -34,22 +34,6 @@ home-manager switch -f home.nix
 
 echo ">>> Step 3: Verifying configuration..."
 
-echo "Checking GNOME extensions..."
-EXTENSIONS=$(dconf read /org/gnome/shell/enabled-extensions 2>/dev/null || echo "[]")
-if [ "$EXTENSIONS" != "[]" ]; then
-    echo "✓ GNOME extensions configured"
-else
-    echo "⚠ No GNOME extensions found"
-fi
-
-echo "Checking terminal profiles..."
-PROFILES=$(dconf list /org/gnome/terminal/legacy/profiles:/ 2>/dev/null | wc -l)
-if [ "$PROFILES" -gt 0 ]; then
-    echo "✓ Found $PROFILES terminal profile(s)"
-else
-    echo "⚠ No terminal profiles found"
-fi
-
 echo "Checking Claude MCP configuration..."
 if command -v claude &> /dev/null; then
     MCP_SERVERS=$(claude mcp list 2>/dev/null | wc -l)

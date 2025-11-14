@@ -74,7 +74,9 @@ let
 in {
   imports =
     [
+      ccr.homeManagerModules.claude-code-router
       ./packages/google-drive-service.nix
+      "${homeManagerMaster}/modules/programs/codex.nix"
       (import ./modules/solarized.nix {inherit pkgs lib enableGui;})
     ]
     ++ lib.optionals enableGui [
@@ -95,13 +97,10 @@ in {
     path = homeManagerMaster;
   };
 
-  # Enable Google Drive on specific machines only
+  # Google Drive service - disabled by default, enabled per-host
   # NOTE: Requires git credentials for private repo git.k3s.agentydragon.com
   # to be configured on the host (e.g., via git credential helper)
-  services.google-drive.enable = lib.mkDefault (let
-    hostname = builtins.getEnv "HOSTNAME";
-  in
-    builtins.elem hostname ["gpd" "agentydragon" "wyrm"]);
+  services.google-drive.enable = lib.mkDefault false;
 
   nix.package = pkgs.nix;
 
@@ -385,6 +384,7 @@ in {
       gnupg
 
       # Zsh theme
+      zsh-powerlevel10k # Powerlevel10k theme for zsh
 
       # vertical-workspaces managed by gnome-workspace-shortcuts module
     ]
@@ -411,6 +411,7 @@ in {
       # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
       gnomeExtensions.panel-date-format # ID 1462: Panel Date Format ✓
       # night-theme-switcher managed by solarized module
+      gnomeExtensions.vertical-workspaces # ID 5177: V-Shell (Vertical Workspaces) ✓
       gnomeExtensions.cronomix # ID 6003: Cronomix ✓
       # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
     ]
@@ -575,6 +576,9 @@ in {
     lm = "eza -l --sort=modified --reverse --icons=auto --group-directories-first";
   };
 
+  # GNOME Terminal profiles handled by solarized module
+
+  # Zsh configuration - full Nix management
   programs.zsh = {
     enable = true;
 
@@ -798,6 +802,12 @@ in {
   # Powerlevel10k configuration, sourced in zsh-init.sh
   home.file.".p10k.zsh".source = ./p10k.zsh;
 
+  programs.codex = {
+    enable = true;
+    package = unstablePkgs.codex;
+    custom-instructions = builtins.readFile ../../dotfiles/codex/instructions.md;
+    settings = import ./codex-settings.nix;
+  };
   programs.claude-code = {
     enable = true;
     settings = {
@@ -825,6 +835,11 @@ in {
 
   # Create Worthy config directory
   home.file.".config/worthy/.keep".text = "";
+
+  # Warn if legacy .npm-global directory exists (should be removed in favor of pnpm)
+  home.activation.warnLegacyNpmGlobal = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    [[ -d "$HOME/.npm-global" ]] && echo "⚠️  WARNING: Remove legacy ~/.npm-global directory (replaced by pnpm)"
+  '';
 
   # Additional Claude Code MCP wiring is handled via programs.claude-code.
 }

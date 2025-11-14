@@ -59,7 +59,9 @@ Your proposed strategy makes perfect sense! Here's the refined plan:
 #### What We Had to Skip/Disable
 - ❌ **XDG MIME associations** (mimeapps.list): Home-manager would replace all 105 associations with just 2. Kept in Ansible to preserve existing associations.
 - ❌ **Claude MCP configuration** (.claude.json): File contains many other Claude settings beyond MCP servers. Need in-place editing solution, not file replacement.
-- ❌ **NPM global packages** (jscpd, madge, @openai/codex): Not available in nixpkgs. Users must install manually with: `pnpm add -g jscpd madge @openai/codex`
+- ❌ **NPM global packages** (jscpd, madge, @openai/codex@0.53.0): Not available in nixpkgs. Users must install manually with: `pnpm add -g jscpd madge @openai/codex@0.53.0`
+  
+- [ ] Automate bumping of @openai/codex via CI (e.g. GitHub Actions schedule and PR workflow)
 - ⚠️ **Package conflicts**: Some packages installed via both Nix and system (ruff, gh). This is harmless but creates duplication.
 
 #### Ansible Role Split (2025-08-28)

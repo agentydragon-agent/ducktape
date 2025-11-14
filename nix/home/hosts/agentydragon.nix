@@ -15,5 +15,5 @@
 
   # Agentydragon-specific configuration (desktop with full GUI)
   home.stateVersion = "24.05";
-  services.google-drive.enable = false;
+  services.google-drive.enable = true;
 }
