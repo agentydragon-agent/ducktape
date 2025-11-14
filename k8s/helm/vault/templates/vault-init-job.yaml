@@ -1,0 +1,88 @@
+{{- if .Values.vault.server.standalone.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-init
+  namespace: {{ include "vault-ducktape.namespace" . }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    metadata:
+      name: vault-init
+    spec:
+      serviceAccountName: {{ (.Values.externalSecrets).serviceAccount | default "vault-controller" }}
+      restartPolicy: Never
+      initContainers:
+      - name: wait-for-vault
+        image: curlimages/curl:7.85.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Waiting for Vault to be ready..."
+          until curl -k https://vault.{{ include "vault-ducktape.namespace" . }}.svc:8200/v1/sys/health; do
+            echo "Vault not ready, waiting..."
+            sleep 5
+          done
+          echo "Vault is ready"
+      containers:
+      - name: vault-init
+        image: hashicorp/vault:1.18.2
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          
+          # Install kubectl (vault image is based on alpine)
+          apk add --no-cache curl
+          curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          mv kubectl /usr/local/bin/
+          
+          # Check if Vault is already initialized
+          if vault status 2>/dev/null | grep -q "Initialized.*true"; then
+            echo "Vault is already initialized and should auto-unseal"
+            exit 0
+          fi
+          
+          echo "Initializing Vault..."
+          # Initialize and capture output
+          INIT_OUTPUT=$(vault operator init -key-shares=1 -key-threshold=1)
+          
+          # Extract unseal key and root token using grep
+          UNSEAL_KEY=$(echo "$INIT_OUTPUT" | grep "Unseal Key 1:" | awk '{print $NF}')
+          ROOT_TOKEN=$(echo "$INIT_OUTPUT" | grep "Initial Root Token:" | awk '{print $NF}')
+          
+          echo "Vault initialized successfully"
+          echo "Storing unseal key in Kubernetes secret for auto-unseal..."
+          
+          # Create the unseal key secret for auto-unseal
+          kubectl create secret generic vault-unseal-key \
+            --namespace={{ include "vault-ducktape.namespace" . }} \
+            --from-literal=unseal-key="$UNSEAL_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Store root token in separate secret for initial access
+          kubectl create secret generic vault-root-token \
+            --namespace={{ include "vault-ducktape.namespace" . }} \
+            --from-literal=root-token="$ROOT_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Manual unseal this time (auto-unseal will work on next restart)
+          echo "Manual unsealing for initial startup..."
+          vault operator unseal "$UNSEAL_KEY"
+          
+          echo "Vault initialization complete - auto-unseal configured for future restarts"
+        env:
+        - name: VAULT_ADDR
+          value: "https://vault.{{ include "vault-ducktape.namespace" . }}.svc:8200"
+        - name: VAULT_SKIP_VERIFY
+          value: "true"
+{{- end }}

@@ -48,7 +48,7 @@ claude_config_path: "{{ ansible_env.HOME }}/.claude.json"
 ```yaml
 - hosts: localhost
   roles:
-    - claude-mcp
+    - legacy_without_home_manager/claude-mcp
 ```
 
 This will check if MCP servers are configured and fail if they're not.
@@ -57,7 +57,7 @@ This will check if MCP servers are configured and fail if they're not.
 ```yaml
 - hosts: localhost
   roles:
-    - role: claude-mcp
+    - role: legacy_without_home_manager/claude-mcp
       vars:
         claude_mcp_auto_apply: true
 ```
@@ -66,7 +66,7 @@ This will check if MCP servers are configured and fail if they're not.
 ```yaml
 - hosts: localhost
   roles:
-    - role: claude-mcp
+    - role: legacy_without_home_manager/claude-mcp
       vars:
         claude_mcp_servers:
           memory:
@@ -85,7 +85,7 @@ This will check if MCP servers are configured and fail if they're not.
 If you prefer to configure MCP servers manually:
 
 ```bash
-~/code/ducktape/ansible/roles/claude-mcp/files/apply-mcp-config.py
+~/code/ducktape/ansible/roles/legacy_without_home_manager/claude-mcp/files/apply-mcp-config.py
 ```
 
 This script reads the server configuration from the Ansible role's `defaults/main.yml` file, ensuring there's a single source of truth for the MCP server definitions.

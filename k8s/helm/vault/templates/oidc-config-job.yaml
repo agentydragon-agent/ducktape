@@ -1,4 +1,4 @@
-{{- if .Values.oidc.enabled }}
+{{- if and .Values.oidc .Values.oidc.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -8,7 +8,7 @@ metadata:
 {{ include "vault-ducktape.labels" . | indent 4 }}
   annotations:
     "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-weight": "20"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 3

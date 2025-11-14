@@ -1,19 +1,33 @@
 ---
-- name: Check if tankshare is mounted
+- name: Ensure tankshare mount point exists
+  ansible.builtin.file:
+    path: /mnt/tankshare
+    state: directory
+    mode: "0755"
+  tags: [storage, docker]
+
+- name: Ensure tankshare is mounted with short-lived cache
+  ansible.builtin.mount:
+    path: /mnt/tankshare
+    src: tankshare
+    fstype: virtiofs
+    # Docker extracts hundreds of thousands of files on this share; with
+    # virtiofsd defaults the host keeps a cached FD per inode until the guest
+    # drops it, which hits RLIMIT_NOFILE (~1M) quickly. Short timeouts push the
+    # kernel to send FORGETs and keep the handle cache under control.
+    opts: defaults,cache=auto,entry_timeout=1,attr_timeout=1
+    state: mounted
+  register: tankshare_mount_result
+  tags: [storage, docker]
+
+- name: Gather tankshare mount status
   ansible.builtin.stat:
     path: /mnt/tankshare
   register: tankshare_mount_local
   tags: [storage, docker]
 
-- name: Ensure tankshare is mounted
-  ansible.builtin.assert:
-    that:
-      - tankshare_mount_local.stat.exists
-      - tankshare_mount_local.stat.isdir
-    fail_msg: "/mnt/tankshare is not mounted; aborting."
-  tags: [storage, docker]
-
 - name: Expose tankshare mount fact
   ansible.builtin.set_fact:
     tankshare_mount: "{{ tankshare_mount_local }}"
+    tankshare_mount_opts: "{{ tankshare_mount_result }}"
   tags: [storage, docker]

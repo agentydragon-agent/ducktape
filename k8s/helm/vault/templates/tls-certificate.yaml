@@ -1,0 +1,20 @@
+{{- if .Values.tls.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-internal-tls
+  namespace: {{ include "vault-ducktape.namespace" . }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+spec:
+  secretName: {{ .Values.tlsSecretName }}
+  issuerRef:
+    name: {{ .Values.tls.issuerName }}
+    kind: {{ .Values.tls.issuerKind }}
+  privateKey:
+    rotationPolicy: Always
+  dnsNames:
+    - vault.{{ include "vault-ducktape.namespace" . }}.svc
+    - vault.{{ include "vault-ducktape.namespace" . }}.svc.cluster.local
+    - vault.k3s.agentydragon.com
+{{- end }}

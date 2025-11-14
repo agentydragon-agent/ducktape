@@ -229,6 +229,13 @@
         name: tailscale_client
       tags: [tailscale]
 
+    - name: Install Nix package manager
+      ansible.builtin.import_role:
+        name: nix
+      vars:
+        nix_trusted_users: agentydragon
+      tags: [nix]
+
     - name: Copy nginx.conf
       ansible.builtin.copy:
         src: nginx.conf
@@ -265,6 +272,7 @@
             state: link
             src: /etc/nginx/sites-available/{{ item }}
             dest: /etc/nginx/sites-enabled/{{ item }}
+            force: true
           loop:
             - agentydragon.com
             - adgn.link
@@ -389,7 +397,7 @@
 
     - name: Apply CLI nix migrated role
       ansible.builtin.import_role:
-        name: legacy_without_home_manager/cli
+        name: legacy_cli
       vars:
         my_user: agentydragon
       tags: [dotfiles]

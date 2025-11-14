@@ -1,0 +1,38 @@
+{{- if .Values.vault.server.standalone.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-init
+  namespace: {{ include "vault-ducktape.namespace" . }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create", "get", "patch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["vault-unseal-key"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-init
+  namespace: {{ include "vault-ducktape.namespace" . }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+subjects:
+{{- if and .Values.externalSecrets .Values.externalSecrets.serviceAccount }}
+- kind: ServiceAccount
+  name: {{ .Values.externalSecrets.serviceAccount }}
+  namespace: {{ include "vault-ducktape.namespace" . }}
+{{- end }}
+- kind: ServiceAccount
+  name: {{ include "vault-ducktape.serviceAccountName" . }}
+  namespace: {{ include "vault-ducktape.namespace" . }}
+roleRef:
+  kind: Role
+  name: vault-init
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

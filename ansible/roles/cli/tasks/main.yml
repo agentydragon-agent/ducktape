@@ -40,6 +40,7 @@
       # removed 2024-04-13, defaults in pop os:
       #   diffutils
       # See consolidated migration comment above
+      - ffmpeg
       - gnupg-agent  # gnupg moved to Nix, but keeping agent for system integration
       - grep
       - gzip
@@ -58,7 +59,6 @@
   become: true
   ansible.builtin.apt:
     pkg:
-      - silversearcher-ag  # I replaced with rg
       - hyphen-en-ca
       - hyphen-en-gb
     state: absent
@@ -133,5 +133,4 @@
 
 - name: Configure system locale settings
   ansible.builtin.include_tasks: tasks/locale.yml
-
 # TODO: hyphenation patterns? hyphen-cs hyphen-de

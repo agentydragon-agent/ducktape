@@ -1,41 +1,302 @@
 ---
-# Separate playbook for k3s cluster provisioning
-# This is split from atlas.yaml since k3s node setup requires SSH access
-# that may not work with existing VMs
+# K3s cluster provisioning via qm guest exec
+# This playbook manages temporary SSH keys and configures k3s + Tailscale on new VMs
+# Run after Terraform creates VMs with basic cloud-init
 
-- name: Provision k3s cluster on atlas
-  hosts: atlas
+- hosts: atlas
   vars_files:
     - vars/common_vars.yml
-  remote_user: root
+  vars:
+    temp_ssh_key_path: "/tmp/ansible_temp_key"
+    ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+  tasks:
+    - name: Get k3s node configuration from Terraform
+      shell: cd ../terraform/k3s && terraform output -json k3s_nodes_ansible
+      register: tf_k3s_nodes
+      delegate_to: localhost
+      run_once: true
+
+    - name: Set k3s_nodes from terraform output
+      set_fact:
+        k3s_nodes: "{{ tf_k3s_nodes.stdout | from_json }}"
+        ssh_common_args: "{{ ssh_common_args }}"
+
+    - name: Generate temporary SSH key pair for provisioning
+      community.crypto.openssh_keypair:
+        path: "{{ temp_ssh_key_path }}"
+        type: ed25519
+        comment: "Temporary Ansible provisioning key"
+        force: true
+      delegate_to: localhost
+      run_once: true
+
+    - name: Wait for QEMU guest agent to be ready
+      command: "qm guest exec {{ item.vm_id }} -- whoami"
+      register: guest_agent_test
+      until: guest_agent_test.rc == 0
+      retries: 30
+      delay: 10
+      loop: "{{ k3s_nodes }}"
+      failed_when: false
+
+    - name: Add temporary SSH key to VMs via guest exec
+      command: >
+        qm guest exec {{ item.vm_id }} --
+        bash -c "
+        mkdir -p /home/ubuntu/.ssh &&
+        chmod 700 /home/ubuntu/.ssh &&
+        echo '{{ lookup('file', temp_ssh_key_path + '.pub') }}' >> /home/ubuntu/.ssh/authorized_keys &&
+        chmod 600 /home/ubuntu/.ssh/authorized_keys &&
+        chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+        "
+      loop: "{{ k3s_nodes }}"
+
+    - name: Test SSH connectivity with temporary key
+      command: >
+        ssh {{ ssh_common_args }} -i {{ temp_ssh_key_path }} ubuntu@{{ item.ip }}
+        "echo 'SSH connection successful to {{ item.name }}'"
+      loop: "{{ k3s_nodes }}"
+      delegate_to: localhost
+      register: ssh_test
+
+    - name: Display SSH test results
+      debug:
+        msg: "{{ ssh_test.results | map(attribute='stdout') | list }}"
+
+# Second play: Configure the VMs using temporary SSH connection
+- hosts: localhost
+  vars_files:
+    - vars/common_vars.yml
+  vars:
+    temp_ssh_key_path: "/tmp/ansible_temp_key"
 
   tasks:
-    - name: Notice about existing cluster
-      ansible.builtin.debug:
-        msg: |
-          This playbook provisions NEW k3s VMs.
-          If k3s VMs already exist, this will fail unless they're destroyed first.
-          Current k3s cluster (if any) can be managed via kubectl.
+    - name: Add k3s nodes to temporary inventory
+      add_host:
+        name: "{{ item.name }}"
+        ansible_host: "{{ item.ip }}"
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: "{{ temp_ssh_key_path }}"
+        ansible_ssh_common_args: "{{ hostvars['atlas']['ssh_common_args'] }}"
+        ansible_remote_tmp: "/tmp"
+        k3s_type: "{{ item.k3s_type }}"
+        vm_id: "{{ item.vm_id }}"
+        groups: temp_k3s_nodes
+      loop: "{{ hostvars['atlas']['k3s_nodes'] }}"
 
-    - name: Check if k3s VMs already exist
-      ansible.builtin.shell: |
-        qm list | grep -E 'k3s-master|k3s-worker' || echo "No k3s VMs found"
-      register: existing_vms
-      changed_when: false
+# Third play: Configure k3s and Tailscale on the temporary inventory
+- hosts: temp_k3s_nodes
+  vars_files:
+    - vars/common_vars.yml
+  become: true
 
-    - name: Display existing VMs
-      ansible.builtin.debug:
-        var: existing_vms.stdout_lines
-      when: existing_vms.stdout != "No k3s VMs found"
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
 
-    - name: Provision k3s cluster
-      import_role:
-        name: k3s
-      tags: [k3s]
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - ca-certificates
+          - apt-transport-https
+        state: present
 
-    - name: Post-provisioning notice
-      ansible.builtin.debug:
-        msg: |
-          k3s cluster provisioning complete!
-          Note: Atlas root SSH keys have been removed from nodes for security.
-          Future management should be done via kubectl.
+    - import_role:
+        name: tailscale-client
+      vars:
+        headscale_register_user: "{{ my_user }}"
+        headscale_delegate_host: vps
+        headscale_auto_register: true
+      tags: [tailscale]
+
+    # Get existing cluster token for join operations via qm exec
+    - name: Get existing k3s server token
+      shell: qm guest exec {{ existing_cluster.master_vm_id }} -- sudo cat /var/lib/rancher/k3s/server/node-token
+      register: existing_cluster_token_raw
+      delegate_to: atlas
+      run_once: true
+      when: k3s_type in ['join_server', 'agent']
+      tags: [k3s, k3s-join]
+
+    # Parse the JSON response from qm guest exec to extract the token
+    - name: Extract k3s token from qm guest exec JSON response
+      set_fact:
+        existing_cluster_token:
+          stdout: "{{ (existing_cluster_token_raw.stdout | from_json)['out-data'] | trim }}"
+      run_once: true
+      when:
+        - k3s_type in ['join_server', 'agent']
+        - existing_cluster_token_raw is defined
+        - not (existing_cluster_token_raw.skipped | default(false))
+      tags: [k3s, k3s-join]
+
+    # Install k3s server on bootstrap node (new cluster)
+    - name: Install k3s server (bootstrap new cluster)
+      shell: |
+        curl -sfL https://get.k3s.io | sh -s - \
+          --disable traefik \
+          --write-kubeconfig-mode 644 \
+          --node-ip {{ ansible_default_ipv4.address }}
+      when: k3s_type == "bootstrap_server"
+      environment:
+        INSTALL_K3S_VERSION: "v1.28.2+k3s1"
+      tags: [k3s, k3s-server]
+
+    # Install k3s agent (worker node)
+    - name: Install k3s agent (join existing cluster as worker)
+      shell: |
+        curl -sfL https://get.k3s.io | sh -
+      when: k3s_type == "agent"
+      environment:
+        INSTALL_K3S_VERSION: "v1.29.0+k3s1"  # Match existing cluster version
+        K3S_URL: "https://{{ existing_cluster.master_ip }}:6443"
+        K3S_TOKEN: "{{ existing_cluster_token.stdout }}"
+        INSTALL_K3S_EXEC: "agent --with-node-id"  # Add unique node ID to avoid hostname conflicts
+      tags: [k3s, k3s-agent]
+
+    # Wait for k3s server to be ready
+    - name: Wait for k3s server to be ready
+      shell: kubectl get nodes
+      register: kubectl_result
+      until: kubectl_result.rc == 0
+      retries: 30
+      delay: 10
+      when: k3s_type in ['bootstrap_server', 'join_server']
+      tags: [k3s, k3s-server]
+
+    # Wait for k3s agent to be ready
+    - name: Wait for k3s agent to be ready
+      shell: systemctl is-active k3s-agent
+      register: agent_status
+      until: agent_status.stdout == "active"
+      retries: 30
+      delay: 10
+      when: k3s_type == "agent"
+      tags: [k3s, k3s-agent]
+
+# Fifth play: Get k3s token and configure worker nodes
+- hosts: localhost
+  vars_files:
+    - vars/common_vars.yml
+  vars:
+    temp_ssh_key_path: "/tmp/ansible_temp_key"
+
+  tasks:
+    # Get master node info
+    - name: Set master and worker node facts
+      set_fact:
+        bootstrap_masters: >-
+          {{ hostvars['atlas']['k3s_nodes']
+             | selectattr('k3s_type', 'equalto', 'bootstrap_server')
+             | list }}
+        join_servers: >-
+          {{ hostvars['atlas']['k3s_nodes']
+             | selectattr('k3s_type', 'equalto', 'join_server')
+             | list }}
+        k3s_workers: >-
+          {{ hostvars['atlas']['k3s_nodes']
+             | selectattr('k3s_type', 'equalto', 'agent')
+             | list }}
+      tags: [k3s, k3s-token]
+
+    # Get k3s token from NEW bootstrap master (if we're bootstrapping)
+    - name: Get k3s token from new bootstrap master
+      shell: >
+        ssh {{ hostvars['atlas']['ssh_common_args'] }} -i {{ temp_ssh_key_path }} ubuntu@{{ bootstrap_masters[0].ip }} \
+        "sudo cat /var/lib/rancher/k3s/server/node-token"
+      register: k3s_token_result
+      when: bootstrap_masters | length > 0
+      tags: [k3s, k3s-token]
+
+    - name: Set k3s token and master IP from existing cluster (if joining)
+      set_fact:
+        k3s_token: >-
+          {{ hostvars[groups['temp_k3s_nodes'][0]]['existing_cluster_token']['stdout']
+             if (bootstrap_masters | length == 0)
+             else k3s_token_result.stdout }}
+        k3s_master_ip: >-
+          {{ bootstrap_masters[0].ip
+             if (bootstrap_masters | length > 0)
+             else existing_cluster.master_ip }}
+      tags: [k3s, k3s-token]
+
+    # Add all worker nodes to inventory
+    - name: Add worker nodes to temporary inventory
+      add_host:
+        name: "{{ item.name }}"
+        ansible_host: "{{ item.ip }}"
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: "{{ temp_ssh_key_path }}"
+        ansible_ssh_common_args: "{{ hostvars['atlas']['ssh_common_args'] }}"
+        k3s_role: "agent"
+        k3s_master_ip: "{{ k3s_master.ip }}"
+        groups: temp_k3s_workers
+      loop: "{{ k3s_workers }}"
+      tags: [k3s, k3s-workers]
+
+# Sixth play: Configure worker nodes
+- hosts: temp_k3s_workers
+  vars_files:
+    - vars/common_vars.yml
+  become: true
+
+  tasks:
+    - name: Install k3s agent on worker
+      shell: |
+        curl -sfL https://get.k3s.io |
+          K3S_URL=https://{{ k3s_master_ip }}:6443 \
+          K3S_TOKEN={{ hostvars['localhost']['k3s_token'] }} sh -
+      environment:
+        INSTALL_K3S_VERSION: "v1.28.2+k3s1"
+      tags: [k3s, k3s-agent]
+
+# Fourth play: Cleanup temporary SSH keys
+- hosts: atlas
+  vars_files:
+    - vars/common_vars.yml
+  vars:
+    temp_ssh_key_path: "/tmp/ansible_temp_key"
+
+  tasks:
+    - name: Remove temporary SSH key from VMs
+      command: >
+        qm guest exec {{ item.vm_id }} --
+        bash -c "
+        if [ -f /home/ubuntu/.ssh/authorized_keys ]; then
+          grep -v '{{ lookup('file', temp_ssh_key_path + '.pub') }}' \
+            /home/ubuntu/.ssh/authorized_keys > /tmp/authorized_keys_clean && \
+          mv /tmp/authorized_keys_clean /home/ubuntu/.ssh/authorized_keys && \
+          chown ubuntu:ubuntu /home/ubuntu/.ssh/authorized_keys
+        fi
+        "
+      loop: "{{ k3s_nodes }}"
+
+    - name: Remove temporary SSH key files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ temp_ssh_key_path }}"
+        - "{{ temp_ssh_key_path }}.pub"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Verify SSH key cleanup
+      command: >
+        qm guest exec {{ item.vm_id }} --
+        bash -c "
+        if [ -f /home/ubuntu/.ssh/authorized_keys ]; then
+          echo 'Remaining keys:' && cat /home/ubuntu/.ssh/authorized_keys
+        else
+          echo 'No authorized_keys file found'
+        fi
+        "
+      loop: "{{ k3s_nodes }}"
+      register: key_cleanup_result
+
+    - name: Display cleanup results
+      debug:
+        msg: "{{ key_cleanup_result.results | map(attribute='stdout_lines') | list }}"

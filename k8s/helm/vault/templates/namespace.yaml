@@ -1,4 +1,4 @@
-{{- if .Values.namespace.create }}
+{{- if and .Values.namespace .Values.namespace.create }}
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -19,6 +19,8 @@ spec:
   issuerRef:
     name: {{ .Values.tls.issuerName }}
     kind: {{ .Values.tls.issuerKind }}
+  privateKey:
+    rotationPolicy: Always
   dnsNames:
     - vault.{{ .Values.namespace.name }}.svc
     - vault.{{ .Values.namespace.name }}.svc.cluster.local

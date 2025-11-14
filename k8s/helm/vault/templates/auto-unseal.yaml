@@ -1,0 +1,60 @@
+{{- if .Values.autoUnseal.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-auto-unseal-script
+  namespace: {{ include "vault-ducktape.namespace" . }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+data:
+  auto-unseal.py: |
+{{ .Files.Get "scripts/auto-unseal.py" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-auto-unseal
+  namespace: {{ include "vault-ducktape.namespace" . }}
+  labels:
+{{ include "vault-ducktape.labels" . | indent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vault-auto-unseal
+  template:
+    metadata:
+      labels:
+        app: vault-auto-unseal
+    spec:
+      serviceAccountName: {{ include "vault-ducktape.serviceAccountName" . }}
+      containers:
+      - name: auto-unseal
+        image: {{ .Values.autoUnseal.image }}
+        command: ["python3", "/scripts/auto-unseal.py"]
+        env:
+        - name: VAULT_ADDR
+          value: "https://vault.vault.svc:8200"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+          readOnly: true
+        - name: unseal-key
+          mountPath: /vault/unseal
+          readOnly: true
+      volumes:
+      - name: scripts
+        configMap:
+          name: vault-auto-unseal-script
+          defaultMode: 0755
+      - name: unseal-key
+        secret:
+          secretName: vault-unseal-key
+{{- end }}
