@@ -1,56 +1,59 @@
-bazel-*
+# Editor and OS
 *.swp
-__pycache__
-.ipynb_checkpoints
-website/.sass-cache
-website/_cache
-
-**/.claude/settings.local.json
-
 .DS_Store
-node_modules
 
-# Stopgap against mess trying to mix RCM & non-RCM dotfiles
-# (Those are supposed to be non-RCM)
-dotfiles/config/cronomix/**
-dotfiles/config/OrcaSlicer/**
+# Build tools and dependencies
+**/bazel-*
+**/node_modules/
 
-# Packaging artifacts
-**/*.egg-info
-
-
-# Python caches and virtualenvs
+# Python
 **/__pycache__/
 **/.pytest_cache/
 **/.mypy_cache/
 **/.ruff_cache/
 **/.venv/
+**/*.egg-info
+**/.ipynb_checkpoints/
 
-# direnv / devenv
-.devenv*
-devenv.local.nix
-.direnv
-.direnv/
+# Development environments
+**/.devenv*
+**/devenv.local.nix
+**/.direnv/
 
-# Ansible cache directories
-.ansible/
-
-.cache/
-.uv-cache/
+# Caches and temporary files
+**/.ansible/
+**/.cache/
+**/.tmp/
 **/.uv-cache/
+**/.pre-commit-cache/
+**/logs/
 
-logs
-k8s/helm/**/charts/
+# Kubernetes and Helm
+**/Chart.lock
+**/charts/
+**/tmpcharts-*
+**/.helm-cache/
+**/.helm-config/
 
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate*
+*.tfvars
+!*.tfvars.example
+
+# Web and build artifacts
+**/.sass-cache/
+**/_cache/
+
+# Project-specific
+**/.claude/settings.local.json
 adgn/src/adgn/rspcache/admin_ui_dist/
 adgn/rspcache_admin_ui/src/generated/
 adgn/openai_openapi.yaml
+worktrees
 
-# Ignore Helm dependency locks & vendor directories
-k8s/helm/**/Chart.lock
-k8s/helm/**/charts/
-
-**/Chart.lock
-.pre-commit-cache/
-.helm-cache/
-.helm-config/
+# Stopgap against mess trying to mix RCM & non-RCM dotfiles
+# (Those are supposed to be non-RCM)
+dotfiles/config/cronomix/**
+dotfiles/config/OrcaSlicer/**
