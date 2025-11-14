@@ -1,24 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-import logging
-import os
 from typing import TypeAlias, cast
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import (
-    ApprovalHub,
-    ApprovalPolicyEngine,
-    load_default_policy_source,
-    make_policy_engine,
-)
+from adgn.agent.approvals import (ApprovalHub, ApprovalPolicyEngine,
+                                  load_default_policy_source,
+                                  make_policy_engine)
 from adgn.agent.persist import ApprovalOutcome
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -29,28 +26,24 @@ from adgn.agent.server.protocol import ApprovalPendingEvt
 from adgn.agent.server.rendering import render_compositor_instructions
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.agent.server.system_message import get_ui_system_message
-from adgn.mcp._shared.constants import (
-    APPROVAL_POLICY_SERVER_NAME_APPROVER,
-    APPROVAL_POLICY_SERVER_NAME_PROPOSER,
-    APPROVAL_POLICY_SERVER_NAME_READER,
-    RUNTIME_EXEC_TOOL_NAME,
-    RUNTIME_SERVER_NAME,
-    SEATBELT_EXEC_SERVER_NAME,
-    UI_SERVER_NAME,
-)
+from adgn.mcp._shared.constants import (APPROVAL_POLICY_SERVER_NAME_APPROVER,
+                                        APPROVAL_POLICY_SERVER_NAME_PROPOSER,
+                                        APPROVAL_POLICY_SERVER_NAME_READER,
+                                        RUNTIME_EXEC_TOOL_NAME,
+                                        RUNTIME_SERVER_NAME,
+                                        SEATBELT_EXEC_SERVER_NAME,
+                                        UI_SERVER_NAME)
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp.approval_policy.clients import PolicyApproverClient, PolicyReaderClient
-from adgn.mcp.approval_policy.server import (
-    ApprovalPolicyAdminServer,
-    ApprovalPolicyProposerServer,
-    ApprovalPolicyServer,
-)
+from adgn.mcp.approval_policy.clients import (PolicyApproverClient,
+                                              PolicyReaderClient)
+from adgn.mcp.approval_policy.server import (ApprovalPolicyAdminServer,
+                                             ApprovalPolicyProposerServer,
+                                             ApprovalPolicyServer)
 from adgn.mcp.chat.server import attach_persisted_chat_servers
-from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
+from adgn.mcp.compositor.clients import (CompositorAdminClient,
+                                         CompositorMetaClient)
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
-
-# in-proc embed is used; no external HTTP readiness needed
 from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import make_loop_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
