@@ -71,13 +71,9 @@ terraform/
    ```
 
 2. **Set up Terraform for future provisioning**
+   Install Terraform.
+   Create Proxmox user for Terraform.
    ```bash
-   # Install Terraform
-   wget https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip
-   unzip terraform_1.6.0_linux_amd64.zip
-   sudo mv terraform /usr/local/bin/
-   
-   # Create Proxmox user for Terraform
    ssh root@atlas "pveum user add terraform@pam --password <password>"
    ssh root@atlas "pveum acl modify / --user terraform@pam --role Administrator"
    ```
