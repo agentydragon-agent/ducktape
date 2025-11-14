@@ -39,17 +39,6 @@ class ConversationStatus(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
-class MatrixSecretOptions(BaseModel):
-    base_url: str | None = None
-    access_token_secret: ProjectedSecret | None = None
-    admin_user_id: str | None = None
-    state_store: Path | None = None
-    store_dir: Path | None = None
-    device_id: str = "ember-device"
-    pickle_key: str = "ember-matrix-store"
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
-
-
 class MatrixClient:
     """Matrix client that streams new room messages via an async queue."""
 
@@ -75,32 +64,38 @@ class MatrixClient:
     @classmethod
     def from_projected_secrets(
         cls,
-        options: MatrixSecretOptions | None = None,
+        *,
+        base_url: str | None = None,
+        access_token_secret: ProjectedSecret | None = None,
+        admin_user_id: str | None = None,
+        state_store: Path | None = None,
+        store_dir: Path | None = None,
+        device_id: str = "ember-device",
+        pickle_key: str = "ember-matrix-store",
     ) -> MatrixClient:
-        opts = options or MatrixSecretOptions()
-        resolved_base_url = opts.base_url or os.environ.get("MATRIX_BASE_URL")
+        resolved_base_url = base_url or os.environ.get("MATRIX_BASE_URL")
         if not resolved_base_url:
             raise RuntimeError(
                 "MATRIX_BASE_URL must be set (e.g. https://matrix.example.org)"
             )
 
-        secret = opts.access_token_secret or ProjectedSecret(
+        secret = access_token_secret or ProjectedSecret(
             name="matrix_access_token",
             env_var="MATRIX_ACCESS_TOKEN",
         )
 
         state_path = Path(
-            opts.state_store or "/var/lib/ember/matrix_state.json"
+            state_store or "/var/lib/ember/matrix_state.json"
         ).expanduser()
-        store_path = Path(opts.store_dir or "/var/lib/ember/matrix_store").expanduser()
+        store_path = Path(store_dir or "/var/lib/ember/matrix_store").expanduser()
         settings = MatrixSettings(
             base_url=resolved_base_url,
             access_token_secret=secret,
-            admin_user_id=opts.admin_user_id,
+            admin_user_id=admin_user_id,
             state_store=state_path,
             store_dir=store_path,
-            device_id=opts.device_id,
-            pickle_key=opts.pickle_key,
+            device_id=device_id,
+            pickle_key=pickle_key,
         )
         return cls(settings)
 
