@@ -1,6 +1,6 @@
 # GUI lives on http://10.13.13.1:8384
 
-- name: Install syncthing package
+- name: Install syncthing package  # noqa: package-latest
   ansible.builtin.apt:
     name: syncthing
     update_cache: yes

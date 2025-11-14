@@ -43,7 +43,7 @@
         mode: '0755'
       tags: [dotfiles]
 
-    - name: Clone ducktape repository if not present
+    - name: Clone ducktape repository if not present  # noqa: latest[git]
       ansible.builtin.git:
         repo: "git@gitlab.com:agentydragon/ducktape"
         dest: "{{ ducktape_path }}"

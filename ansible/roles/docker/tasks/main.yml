@@ -17,7 +17,7 @@
   when: (docker_state | default('present')) != 'absent'
 
 # 2. Engine + extras (compose v2 plugin, buildx)
-- name: Install Docker packages
+- name: Install Docker packages  # noqa: package-latest
   ansible.builtin.apt:
     name:
       - docker-ce

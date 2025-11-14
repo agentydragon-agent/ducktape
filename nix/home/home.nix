@@ -843,3 +843,4 @@ in {
 
   # Additional Claude Code MCP wiring is handled via programs.claude-code.
 }
+

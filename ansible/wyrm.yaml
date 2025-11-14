@@ -40,8 +40,6 @@
     - role: k3s_client
       tags: [k3s_client]
 
-    - role: k3s_dns_forwarding
-      tags: [k3s-dns]
 
     # - role: nvidia-guest
     #   tags: [nvidia, gpu]
