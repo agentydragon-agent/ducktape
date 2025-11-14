@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel, ConfigDict
 
 from .config import EmberSettings, load_settings
-from .runtime import PilotRuntime
+from .runtime import EmberRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def _settings() -> EmberSettings:
 
 def create_app(settings: EmberSettings | None = None) -> FastAPI:
     settings = settings or _settings()
-    runtime = PilotRuntime(settings)
+    runtime = EmberRuntime(settings)
 
     app = FastAPI(title="Ember", version="0.0.1")
 
@@ -63,10 +63,10 @@ def create_app(settings: EmberSettings | None = None) -> FastAPI:
     async def healthz() -> HealthResponse:
         return HealthResponse(status="ok")
 
-    async def _get_runtime() -> PilotRuntime:
+    async def _get_runtime() -> EmberRuntime:
         return runtime
 
-    runtime_dep_annotation = Annotated[PilotRuntime, Depends(_get_runtime)]
+    runtime_dep_annotation = Annotated[EmberRuntime, Depends(_get_runtime)]
 
     @app.post("/control/restart")
     async def control_restart(

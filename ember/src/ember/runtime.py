@@ -16,7 +16,7 @@ from .runtime.python_session import ensure_kernel as ensure_python_kernel
 logger = logging.getLogger(__name__)
 
 
-class PilotRuntime:
+class EmberRuntime:
     def __init__(self, settings: EmberSettings) -> None:
         self._settings = settings
         self._task: asyncio.Task[None] | None = None
