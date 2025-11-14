@@ -44,9 +44,9 @@
 - name: Install each requested Nerd Font
   ansible.builtin.include_tasks: "install_font.yml"
   vars:
-    family_path: "{{ nerd_fonts_install_dir }}/{{ item }}"
+    family_path: "{{ legacy_nerd_fonts_install_dir }}/{{ item }}"
     installed_version_path: "{{ family_path }}/.nerdfont_version"
-  loop: "{{ nerd_fonts_to_install }}"
+  loop: "{{ legacy_nerd_fonts_to_install }}"
   loop_control:
     label: "{{ item }}"
 

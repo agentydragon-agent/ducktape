@@ -1,7 +1,7 @@
 ---
 # This variable is the system-wide fonts directory (may vary by OS)
-nerd_fonts_install_dir: "/usr/local/share/fonts/NerdFonts"
-nerd_fonts_to_install:
+legacy_nerd_fonts_install_dir: "/usr/local/share/fonts/NerdFonts"
+legacy_nerd_fonts_to_install:
   # top 10 most popular by chatgpt suggestion
   - JetBrainsMono
   - Meslo

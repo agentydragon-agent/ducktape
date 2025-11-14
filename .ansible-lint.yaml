@@ -5,15 +5,21 @@
 # NOTE: Due to compatibility issues with ansible-core 2.19.0+ (which removed
 # ansible.parsing.yaml.constructor), the pre-commit hook pins ansible-core<2.19.0.
 # This config works with ansible-lint v24.9.2 + ansible-core 2.18.x.
+
+# Note: ansible.cfg moved to repo root with paths updated to ansible/ subdirectory
+
+# Skip false-positive warnings from incomplete ansible-lint module parameter database
+skip_list:
+  - args[module]  # Collection modules have incomplete parameter validation, causing false warnings
 exclude_paths:
   - "**/.venv"
   - "**/.venv/**"
-  - .ansible
-  - .ansible/**
+  - ".ansible"
+  - ".ansible/**"
   - "**/.uv-cache"
   - "**/.uv-cache/**"
-  - k8s/
-  - k8s/**
+  - "k8s/**/*.yaml"
+  - "ansible/roles/legacy_*/**"        # All legacy roles, being migrated to Nix home-manager
 
 # Custom modules and plugins configuration
 # Note: custom_module_paths and action_plugins are not valid in config file
@@ -26,6 +32,16 @@ mock_modules:
   - dconf_array_edit
   - install_handler
   - autostart_entry
+  - community.general.snap
+  - community.docker.docker_compose_v2
+  - community.docker.docker_container
+  - community.general.filesystem
 
 # Mock these roles if they're external/Galaxy roles
-mock_roles: []
+mock_roles:
+  - petermosmans.customize-gnome
+  - geerlingguy.docker
+  - systemli.letsencrypt
+  - nbigot.ansible-fail2ban
+  - diodonfrost.p10k
+  - rolehippie.syncthing

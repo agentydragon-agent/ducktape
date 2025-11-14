@@ -47,7 +47,8 @@ repos:
     hooks:
       - id: ansible-lint
         files: "^ansible/"
-        args: ["--config-file", "ansible/.ansible-lint"]
+        exclude: "k8s/.*"  # Exclude k8s files that cause parsing issues
+        args: ["--config-file", ".ansible-lint.yaml"]
         additional_dependencies:
           - ansible-core>=2.18.0,<2.19.0  # Avoid fucking breaking module removal in 2.19.0
 
