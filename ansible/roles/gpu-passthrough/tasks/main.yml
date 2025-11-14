@@ -19,6 +19,7 @@
   when:
     - ansible_hostname == 'atlas'
     - grub_config.changed
+  changed_when: true
   tags: [gpu-passthrough, iommu]
 
 - name: Load VFIO modules on boot
@@ -93,6 +94,7 @@
   become: true
   ansible.builtin.command: update-initramfs -u -k all
   when: ansible_hostname == 'atlas'
+  changed_when: true
   tags: [gpu-passthrough, initramfs]
 
 - name: Display GPU passthrough status
