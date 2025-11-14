@@ -181,6 +181,30 @@ in {
     extraLuaConfig = builtins.readFile ./config/nvim/init.lua;
   };
 
+  # Delta - better git diffs
+  programs.delta = {
+    enable = true;
+    enableGitIntegration = true; # Explicitly enable as suggested by warning
+    options = {
+      navigate = true;
+      light = false; # Default to dark theme
+      side-by-side = true;
+      line-numbers = true;
+      syntax-theme = "Solarized (dark)"; # Use same theme as bat
+      features = "decorations";
+      decorations = {
+        commit-decoration-style = "bold yellow box ul";
+        file-style = "bold yellow ul";
+        file-decoration-style = "none";
+        hunk-header-decoration-style = "cyan box ul";
+      };
+      line-numbers-left-style = "cyan";
+      line-numbers-right-style = "cyan";
+      line-numbers-minus-style = "124";
+      line-numbers-plus-style = "28";
+    };
+  };
+
   # GPG configuration
   programs.gpg = {
     enable = true;
