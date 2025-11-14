@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import shlex
 
-from ember.evals import gitea as gitea_helpers
+from ember.evals import gitea
 from ember.evals.definitions import Scenario, ScenarioSuite
 
 WORKSPACE_ROOT = Path("/var/lib/ember/workspace")
@@ -38,7 +38,7 @@ class RepoIssueTriageScenario(Scenario):
             "Ember, please review Issue #1 in the eval repository, summarise the problem, and propose a checklist of next actions as a comment."
         )
         await self.wait_seconds(300)
-        result = gitea_helpers.verify_issue_comment(
+        result = gitea.verify_issue_comment(
             self,
             issue=1,
             required_keywords=["summary", "checklist"],
@@ -121,7 +121,7 @@ class GitCommitWorkflowScenario(Scenario):
             )
         )
         await self.wait_seconds(300)
-        result = gitea_helpers.verify_branch_file(
+        result = gitea.verify_branch_file(
             self,
             branch_template="run-{run_id}",
             file="STATUS.md",

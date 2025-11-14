@@ -21,7 +21,7 @@ cleans everything up.
 ## Quick Start
 
 ```bash
-python -m ember.eval_runner \
+ember-eval \
   --matrix-base-url https://matrix.k3s.agentydragon.com \
   --matrix-access-token "$MATRIX_EVAL_TOKEN" \
   --ember-user-id "@ember-bot:matrix.k3s.agentydragon.com" \
@@ -35,11 +35,10 @@ python -m ember.eval_runner \
   --suite regression
 ```
 
-If you install `ember` in editable mode (`uv pip install -e .`), the
-`ember-eval` console script is also available:
+If you prefer to use the module directly, you can also run:
 
 ```bash
-ember-eval --matrix-base-url ... --matrix-access-token ... --ember-user-id ...
+python -m ember.evals.runner --matrix-base-url ... --matrix-access-token ... --ember-user-id ...
 ```
 
 The runner will:
