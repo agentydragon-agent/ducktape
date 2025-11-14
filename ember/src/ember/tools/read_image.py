@@ -53,8 +53,11 @@ def build_spec(workspace_root: Path, client: ObjectStoreClient) -> ToolSpec:
 
 def _resolve_path(workspace_root: Path, candidate: Path) -> Path:
     base = workspace_root.resolve()
-    path = candidate
-    path = (base / path).resolve() if not path.is_absolute() else path.resolve()
+    path = (
+        (base / candidate).resolve()
+        if not candidate.is_absolute()
+        else candidate.resolve()
+    )
     if not path.exists():
         raise ValueError(f"Image path does not exist: {candidate}")
     if not path.is_file():

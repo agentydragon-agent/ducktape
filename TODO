@@ -14,8 +14,6 @@ nvim-treesitter: folding
     vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
 
 TODO: add apt-file? not sure, hmm, looks quite heavy
-TODO: prompt on vps is currently not p10k; just set to agnoster with dirty index. might want to change.
 TODO: get rid of login_event_webhook_reporter -- already got activitywatch. might combine with halinuxcompanion => have it work
 TODO: rcm has symlink_dirs -- use
-
-NOTE: Shell migration TODOs moved to nix/home/todo
+TODO: properly pick a sane license schema probably agpl

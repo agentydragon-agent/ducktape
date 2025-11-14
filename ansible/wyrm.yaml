@@ -39,8 +39,6 @@
       tags: [tailscale]
     - role: k3s_client
       tags: [k3s_client]
-
-
     # - role: nvidia-guest
     #   tags: [nvidia, gpu]
     #   vars:

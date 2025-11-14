@@ -73,7 +73,7 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     monkeypatch.setenv("EMBER_MATRIX_ROOM_ID", "!room:example.org")
     monkeypatch.setattr(
         "ember.matrix_client.MatrixClient.from_projected_secrets",
-        lambda **_: FakeMatrixClient(),
+        lambda options=None: FakeMatrixClient(),
     )
 
     quickstart_path = resources.files(ember).joinpath(

@@ -1,4 +1,4 @@
-# GUI lives on http://10.13.13.1:8384
+# GUI lives on http://vps:8384 (WireGuard/Tailscale)
 
 - name: Install syncthing package  # noqa: package-latest
   ansible.builtin.apt:
@@ -65,4 +65,4 @@
 #            - id: logseq
 #              path: /srv/syncthing/logseq
 #
-# GUI lives on 10.13.13.1:8384
+# GUI lives on http://vps:8384 (WireGuard/Tailscale)

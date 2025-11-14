@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import textwrap
 import time
 
 from jupyter_client import BlockingKernelClient
@@ -207,14 +208,14 @@ def _launch_kernel() -> Path | None:
     ]
     try:
         env = os.environ.copy()
-        workspace = env.get("EMBER_WORKSPACE_DIR", "/var/lib/ember/workspace")
-        pythonpath = env.get("PYTHONPATH", "")
-        paths = [workspace] if workspace else []
-        if pythonpath:
-            paths.append(pythonpath)
-        if paths:
-            env["PYTHONPATH"] = ":".join(paths)
-        env.setdefault("IPYTHONDIR", workspace)
+        workspace = env.get("EMBER_WORKSPACE_DIR")
+        if workspace:
+            env.setdefault("IPYTHONDIR", workspace)
+            pythonpath = env.get("PYTHONPATH", "")
+            parts = [workspace]
+            if pythonpath:
+                parts.append(pythonpath)
+            env["PYTHONPATH"] = ":".join(parts)
 
         proc = subprocess.Popen(
             cmd,
@@ -240,8 +241,38 @@ def _launch_kernel() -> Path | None:
                 proc.pid,
                 CONNECTION_FILE,
             )
+            _initialize_kernel_environment(workspace)
             return CONNECTION_FILE
         time.sleep(0.1)
 
     logger.warning("IPython kernel did not create connection file %s", CONNECTION_FILE)
     return None
+
+
+def _initialize_kernel_environment(workspace: str | None) -> None:
+    """Ensure the persistent kernel has the workspace on sys.path."""
+    client = BlockingKernelClient()
+    client.load_connection_file(str(CONNECTION_FILE))
+    client.start_channels()
+    try:
+        code = textwrap.dedent(
+            f"""
+            import os, sys
+            _wp = {workspace!r}
+            if _wp and _wp not in sys.path:
+                sys.path.insert(0, _wp)
+            """
+        )
+        msg_id = client.execute(code)
+        client.get_shell_msg(timeout=10)
+        while True:
+            msg = client.get_iopub_msg(timeout=10)
+            if msg["parent_header"].get("msg_id") != msg_id:
+                continue
+            if (
+                msg.get("msg_type") == "status"
+                and msg.get("content", {}).get("execution_state") == "idle"
+            ):
+                break
+    finally:
+        client.stop_channels()

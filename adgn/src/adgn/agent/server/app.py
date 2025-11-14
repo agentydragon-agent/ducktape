@@ -688,7 +688,8 @@ def create_app(
     # -----------------------
 
     def _load_presets() -> dict[str, AgentPreset]:
-        return discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
+        presets: dict[str, AgentPreset] = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
+        return presets
 
     # Typed response models for presets listing
     class PresetSummary(BaseModel):

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from fastmcp.client.client import ClientSession
 from mcp import types as mcp_types
@@ -22,7 +22,11 @@ def extract_single_text_content(res: mcp_types.ReadResourceResult) -> str:
         raise RuntimeError("expected a single text part, found blob content")
     if len(text_parts) != 1:
         raise RuntimeError(f"expected exactly one text part, found {len(text_parts)}")
-    return str(text_parts[0].text)
+    text = text_parts[0].text
+    if text is None:
+        raise RuntimeError("text content part missing text payload")
+    text_str: str = text
+    return text_str
 
 
 async def read_text_json(session: ClientSession, uri: str) -> Any:
@@ -34,7 +38,8 @@ async def read_text_json(session: ClientSession, uri: str) -> Any:
     rr = await session.read_resource(parse_any_url(uri))
     s = extract_single_text_content(rr)
     # Parse as JSON into a generic Python structure
-    return TypeAdapter(dict).validate_json(s)
+    adapter = TypeAdapter(dict[str, Any])
+    return cast(dict[str, Any], adapter.validate_json(s))
 
 
 # Internal helpers; import explicitly where needed
@@ -50,4 +55,5 @@ async def read_text_json_typed(session: ClientSession, uri: str, model: type[T])
     """
     rr = await session.read_resource(parse_any_url(uri))
     s = extract_single_text_content(rr)
-    return TypeAdapter(model).validate_json(s)
+    adapter = TypeAdapter(model)
+    return cast(T, adapter.validate_json(s))
