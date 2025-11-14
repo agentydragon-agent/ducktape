@@ -1,24 +1,20 @@
 ---
 # Repository-wide ansible-lint configuration.
-# Exclude virtual environments and generated artefacts to keep lint runs focused.
+# File discovery is limited by running ansible-lint from ansible/ directory (see pre-commit config).
+# The 'kinds' configuration does NOT limit discovery scope - ansible-lint discovers all files
+# in the current directory first, then applies kinds filtering. Discovery scope is controlled
+# by the working directory when ansible-lint runs.
 #
 # NOTE: Due to compatibility issues with ansible-core 2.19.0+ (which removed
 # ansible.parsing.yaml.constructor), the pre-commit hook pins ansible-core<2.19.0.
 # This config works with ansible-lint v24.9.2 + ansible-core 2.18.x.
 
-# Note: ansible.cfg moved to repo root with paths updated to ansible/ subdirectory
+# Note: ansible.cfg moved to ansible/ subdirectory with relative paths
 
 # Skip false-positive warnings from incomplete ansible-lint module parameter database
 skip_list:
   - args[module]  # Collection modules have incomplete parameter validation, causing false warnings
 exclude_paths:
-  - "**/.venv"
-  - "**/.venv/**"
-  - ".ansible"
-  - ".ansible/**"
-  - "**/.uv-cache"
-  - "**/.uv-cache/**"
-  - "k8s/**/*.yaml"
   - "ansible/roles/legacy_*/**"        # All legacy roles, being migrated to Nix home-manager
 
 # Custom modules and plugins configuration
