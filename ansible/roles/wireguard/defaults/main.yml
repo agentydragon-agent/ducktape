@@ -1,7 +1,0 @@
-# Interface-wide settings
-wireguard_interface: wg0
-wireguard_port: 51820        # UDP
-wireguard_packages:
-  # - wireguard-tools   # Debian/Fedora/Arch share this name
-  - wireguard         # meta-pkg on Debian/Ubuntu
-wireguard_conf_path: "/etc/wireguard/{{ wireguard_interface }}.conf"

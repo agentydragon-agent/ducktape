@@ -10,14 +10,14 @@ There is ongoing work to implement a VPS-based remote desktop environment protec
 See the `authentik-remote-desktop` branch for:
 - Authentik identity provider role
 - Plans for browser-based remote desktop
-- WireGuard-only access configuration
+- Tailscale/Headscale-only access configuration
 
 The implementation is incomplete and needs:
 - [ ] Remote desktop server selection and setup (Guacamole/Apache Guacamole/etc)
 - [ ] Integration between Authentik and remote desktop
 - [ ] Desktop environment configuration
 - [ ] User provisioning automation
-- [ ] Performance optimization over WireGuard
+- [ ] Performance optimization over Tailscale/Headscale
 - [ ] Security hardening
 
 **DO NOT** uncomment the authentik role in `vps.yaml` until this work is complete.

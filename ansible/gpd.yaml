@@ -14,8 +14,8 @@
     - role: gui
     - role: legacy_gui
     - role: laptop
-    - role: wireguard
-      tags: [wireguard]
+    - role: wireguard_uninstall
+      tags: [wireguard, wireguard_uninstall]
     - role: tailscale_client
       tags: [tailscale]
     - role: k3s_client

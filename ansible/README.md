@@ -119,7 +119,6 @@ When provisioning a new VM or remote machine:
    ssh agentydragon@NEW_MACHINE_IP 'RCRC=~/code/ducktape/dotfiles/rcrc rcup -B new-vm'
    ```
    You'll need to confirm overwriting default files like .bashrc with 'y'.
-6. After successful deployment, update WireGuard configs on peer machines
 
 - TODO: Set hostname on the VM (currently using IP address)
 - TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
@@ -129,77 +128,9 @@ When provisioning a new VM or remote machine:
 - TODO: Handle Anki installation on Ubuntu 22.04 - newer Anki requires glibc 2.36+ but Ubuntu 22.04 has glibc 2.35. Need to either skip on older systems or find alternative installation method
 - TODO: (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
 
-## WireGuard
-
-The WireGuard VPN network provides secure connectivity between all managed devices using a hub-and-spoke topology with the VPS as the central hub.
-
-### Network Layout
-
-| Host | IP (10.13.13.x/24) | Description | Notes |
-|------|------------|-------------|-------|
-| `vps` | .1 | VPS Hub | Accessible at agentydragon.com:51820 |
-| `agentydragon` | .11 | ThinkPad X1 Extreme | |
-| `gpd` | .12 | GPD Win Max 2 | |
-| `atlas` | .30 | Proxmox host | TODO set this up |
-| `new-vm` | .31 | New Pop!_OS VM | |
-| `pixel6` | .50 | Pixel 6 phone | |
-| `homeassistant` | .100 | Home Assistant | Not managed by Ansible |
-
-### Adding a New Device
-
-To add a new device to the WireGuard network:
-
-1. Generate keypair and create host vars:
-   ```bash
-   cd ansible
-   python tools/make_wg_host.py <hostname>
-   ```
-
-2. Assign an IP address by editing `host_vars/<hostname>/wireguard.yml`:
-   ```yaml
-   wg_address: "10.13.13.XX/24"  # Choose an unused IP
-   ```
-
-3. Add the host to the `wg_peers` group in `inventory.yaml`:
-   ```yaml
-   wg_peers:
-     hosts:
-       # ... existing hosts ...
-       <hostname>: # Description
-   ```
-
-4. Deploy the configuration:
-   ```bash
-   # Deploy to VPS to update peer allowlist
-   ansible-playbook vps.yaml --tags wireguard
-
-   # Deploy to the new device (if managed by Ansible)
-   ansible-playbook <hostname>.yaml --tags wireguard
-   ```
-
-### Mobile Device Setup
-
-For mobile devices (Android/iOS), generate a QR code for easy setup:
-
-```bash
-cd ansible
-python tools/make_wg_qr.py <hostname>
-
-# Or save QR code to file
-python tools/make_wg_qr.py <hostname> -o wireguard-<hostname>.png
-```
-
-Scan the QR code with the WireGuard mobile app to import the configuration.
-
-### SyncThing
-
-All devices report ActivityWatch data to the central server on VPS
-
-Open on WireGuard network: <http://10.13.13.1:8384>
-
 ## Headscale (Tailscale Alternative)
 
-Headscale is a self-hosted control server for Tailscale that provides automatic peer discovery, Magic DNS, and seamless network roaming. It's configured to use the same IP range as WireGuard (10.13.0.0/16) for easy migration.
+Headscale is a self-hosted control server for Tailscale that provides automatic peer discovery, Magic DNS, and seamless network roaming.
 
 ### Network Layout
 
@@ -276,17 +207,6 @@ Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the orga
    # On the device:
    tailscale status
    ```
-
-### Migration from WireGuard
-
-To migrate from WireGuard to Headscale:
-
-1. **Deploy tailscale to a device** (this automatically stops WireGuard)
-2. **Register the device** with headscale
-3. **Verify connectivity** to other headscale devices
-4. **Repeat for all devices**
-
-The same IP addresses are preserved, so existing configurations (k3s, DNS, etc.) continue to work.
 
 ### Useful Commands
 

@@ -27,8 +27,8 @@
   roles:
     - role: common
     #- cli    # <- TODO:  needs ducktape, etc
-    - role: wireguard
-      tags: [wireguard]
+    - role: wireguard_uninstall
+      tags: [wireguard, wireguard_uninstall]
     - role: powerdns
       tags: [powerdns]
 

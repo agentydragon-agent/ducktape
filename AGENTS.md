@@ -39,7 +39,7 @@ This repository manages configuration and deployment for several systems:
 3. **Infrastructure Automation** (`ansible/`)
    - System configuration playbooks
    - Role development (GUI, CLI, dev environment)
-   - WireGuard/Headscale VPN management
+   - Headscale VPN management
 
 ### Secondary Active Areas
 - **Webhook Inbox** (`experimental/webhook_inbox/`)
@@ -96,10 +96,9 @@ See: @ansible/README.md
 - **System Base**: `cli/`, `gui/`, `system/`, `user/`
 - **Development**: `golang/`, `dev-env/`, `dev-clojure/`, `dev-ml/`
 - **Services**: `webhook_inbox/`, `trilium_server/`, `headscale-server/`, `syncthing-server/`
-- **Networking**: `wireguard/`, `tailscale-client/`
+- **Networking**: `tailscale-client/`
 
 ### Network Infrastructure
-- **WireGuard VPN**: Hub-and-spoke topology with VPS as hub (10.13.13.0/24)
 - **Headscale**: Self-hosted Tailscale controller (100.64.0.0/10)
 - **Syncthing**: Cross-device file synchronization
 
