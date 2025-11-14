@@ -66,11 +66,12 @@ repos:
 
   # Static type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.1
+    rev: v1.18.2
     hooks:
       - id: mypy
         name: mypy (generic)
         files: "^$"
+        language_version: python3.12
         additional_dependencies:
           # deps of gatelet that still lack bundled typings
           - types-psycopg2    # stubs for psycopg2-binary
@@ -86,6 +87,7 @@ repos:
       - id: mypy
         name: mypy (adgn)
         files: "^adgn/src/(adgn|wt)/"
+        language_version: python3.12
         args:
           - "--config-file=adgn/pyproject.toml"
         additional_dependencies:
