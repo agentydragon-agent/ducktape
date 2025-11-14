@@ -1,7 +1,8 @@
+{{- if .Values.bootstrap.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Values.bootstrap.scriptsConfigMap }}
+  name: {{ .Values.bootstrap.scriptsConfigMap | default "vault-bootstrap-scripts" }}
   namespace: {{ include "vault-ducktape.namespace" . }}
   labels:
 {{ include "vault-ducktape.labels" . | indent 4 }}
@@ -34,4 +35,7 @@ data:
 {{- end }}
 {{ printf "}" | indent 4 }}
 {{- end }}
+{{- if .Values.bootstrap.script }}
 {{ .Values.bootstrap.script | indent 4 }}
+{{- end }}
+{{- end }}

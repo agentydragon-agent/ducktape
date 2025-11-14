@@ -14,6 +14,9 @@ external-secrets:
     port: 9443
     certManager:
       enabled: true
+      issuerRef:
+        name: homelab-ca-issuer
+        kind: ClusterIssuer
   securityContext:
     fsGroup: 65534
     runAsNonRoot: true

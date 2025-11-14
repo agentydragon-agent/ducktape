@@ -79,3 +79,5 @@
     {{ _certbot_domain_args }}
   args:
     creates: "/etc/letsencrypt/live/{{ letsencrypt_cert_name }}/fullchain.pem"
+  async: 120
+  poll: 5

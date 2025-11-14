@@ -173,6 +173,26 @@ imagePullSecrets:
 {{- end }}
 {{- end -}}
 
+{{/* Get the internal registry URL for pulling images from within the cluster */}}
+{{- define "common.internalRegistry" -}}
+{{- if .Values.global }}
+{{- .Values.global.internalRegistry | default "registry.registry.svc.cluster.local:5000" -}}
+{{- else -}}
+{{- "registry.registry.svc.cluster.local:5000" -}}
+{{- end -}}
+{{- end -}}
+
+{{/* Build full image reference with registry */}}
+{{- define "common.image" -}}
+{{- $registry := include "common.internalRegistry" . -}}
+{{- $repository := required "image.repository is required" .Values.image.repository -}}
+{{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
+{{- if hasPrefix "registry.k3s.agentydragon.com/" $repository -}}
+{{- $repository = $repository | trimPrefix "registry.k3s.agentydragon.com/" -}}
+{{- end -}}
+{{- printf "%s/%s:%s" $registry $repository $tag -}}
+{{- end -}}
+
 {{/* Generate reflector annotations for EmberStack reflector */}}
 {{- define "common.reflectorAnnotations" -}}
 {{- $auto := (default "true" .auto) -}}

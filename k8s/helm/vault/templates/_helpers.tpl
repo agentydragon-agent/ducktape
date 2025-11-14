@@ -18,9 +18,9 @@ app.kubernetes.io/component: vault
 {{- end -}}
 
 {{- define "vault-ducktape.namespace" -}}
-{{- if .Values.namespace.create -}}
+{{- if and .Values.namespace .Values.namespace.create -}}
 {{- .Values.namespace.name -}}
 {{- else -}}
-{{- (.Values.namespace.name | default .Release.Namespace) -}}
+{{- ((.Values.namespace).name | default .Release.Namespace) -}}
 {{- end -}}
 {{- end -}}

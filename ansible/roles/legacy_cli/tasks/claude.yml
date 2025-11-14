@@ -26,5 +26,5 @@
 
 # Import claude-mcp after Claude Code is installed
 - import_role:
-    name: claude-mcp
+    name: legacy_claude_mcp
   tags: [claude, mcp]

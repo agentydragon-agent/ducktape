@@ -2,6 +2,8 @@ all:
   hosts:
     vps:
       ansible_host: agentydragon.com
+      ansible_user: root
+      ansible_remote_tmp: /tmp/.ansible
     agentydragon:
       ansible_connection: local_cached_sudo
       # (pyenv breaks interpreter detection)
