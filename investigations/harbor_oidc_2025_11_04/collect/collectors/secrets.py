@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from .base import BaseCollector
 
@@ -96,7 +96,7 @@ class SecretsCollector(BaseCollector):
             pass
         return None
 
-    async def check_harbor_api_config(self) -> Dict[str, Any]:
+    async def check_harbor_api_config(self) -> dict[str, Any]:
         """Get OIDC configuration from Harbor API."""
         try:
             # First get admin password
@@ -118,10 +118,6 @@ class SecretsCollector(BaseCollector):
             )
 
             # Get configuration via API
-            cmd = (
-                f"kubectl exec -n harbor deployment/harbor-core -- "
-                f"curl -s -u admin:{admin_pwd} http://localhost:8080/api/v2.0/configurations"
-            )
             result = await self.k8s.run_kubectl(
                 f"exec -n harbor deployment/harbor-core -- curl -s -u admin:{admin_pwd} http://localhost:8080/api/v2.0/configurations"
             )
@@ -250,7 +246,7 @@ class SecretsCollector(BaseCollector):
         for issue in report["issues"]:
             self.logger.warning(issue)
 
-    def _generate_markdown_report(self, report: Dict[str, Any]) -> str:
+    def _generate_markdown_report(self, report: dict[str, Any]) -> str:
         """Generate a markdown report from the comparison data."""
         lines = ["# Secret Comparison Report", ""]
 
