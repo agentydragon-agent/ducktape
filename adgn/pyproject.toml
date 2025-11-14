@@ -229,6 +229,10 @@ module = ["adgn.third_party.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
+module = ["adgn.src.adgn.third_party.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 module = ["tests.detectors.fixtures.*"]
 ignore_errors = true
 
