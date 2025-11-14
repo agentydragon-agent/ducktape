@@ -238,9 +238,9 @@
     - name: Nginx website configs
       tags: [nginx]
       block:
-        - name: "Create static nginx configuration"
-          ansible.builtin.copy:
-            src: nginx-sites/{{ item }}
+        - name: "Render nginx configuration from template"
+          ansible.builtin.template:
+            src: nginx-sites/{{ item }}.j2
             dest: /etc/nginx/sites-available/{{ item }}
             mode: '0644'
           loop:

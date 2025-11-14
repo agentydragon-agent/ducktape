@@ -31,10 +31,10 @@ server {
     # No CSP - let applications (Element, etc.) set their own CSP via meta tags or Traefik middlewares
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
 
-    # Proxy to k3s-master via Tailscale
+    # Proxy to k3s cluster via Traefik LoadBalancer
     location / {
-        # Forward to k3s-master node
-        proxy_pass http://100.64.0.4;
+        # Forward to k3s-master HTTPS endpoint via Traefik
+        proxy_pass https://k3s-master:443;
 
         # Preserve original hostname for k3s ingress routing
         proxy_set_header Host $host;
