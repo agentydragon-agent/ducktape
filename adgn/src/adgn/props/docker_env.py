@@ -9,7 +9,6 @@ from docker.errors import ImageNotFound
 from fastmcp.server import FastMCP
 
 from adgn.mcp._shared.constants import DOCKER_SERVER_NAME
-from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.props.prop_utils import props_definitions_root
@@ -124,6 +123,7 @@ def properties_docker_spec(
     }
 
     def _factory() -> FastMCP:
+        from adgn.mcp._shared.container_session import ContainerOptions
         return make_container_exec_server(
             ContainerOptions(
                 image=PROPERTIES_DOCKER_IMAGE,
