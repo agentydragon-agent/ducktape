@@ -137,16 +137,12 @@ def test_cli_bar_width(runner, git_repo_with_changes):
     assert result.output.strip() != ""
 
 
-def test_cli_no_changes(runner, temp_git_repo, run_git):
+def test_cli_no_changes(runner, temp_git_repo, run_git, monkeypatch):
     create_file(temp_git_repo, "file.py", "line1\n")
     git_add_commit(run_git)
 
-    original_dir = os.getcwd()
-    try:
-        os.chdir(temp_git_repo)
-        result = runner.invoke(main, [])
-    finally:
-        os.chdir(original_dir)
+    monkeypatch.chdir(temp_git_repo)
+    result = runner.invoke(main, [])
 
     assert result.exit_code == 0
     assert "No changes" in result.output
@@ -168,35 +164,27 @@ def test_cli_combined_options(runner, git_repo_with_changes):
 # CLI Integration Tests
 
 
-def test_cli_integration_basic(runner, temp_git_repo, run_git):
+def test_cli_integration_basic(runner, temp_git_repo, run_git, monkeypatch):
     create_file(temp_git_repo, "file.py", "line1\n")
     git_add_commit(run_git)
     create_file(temp_git_repo, "file.py", "line1\nline2\n")
 
-    original_dir = os.getcwd()
-    try:
-        os.chdir(temp_git_repo)
-        result = runner.invoke(main, [])
-    finally:
-        os.chdir(original_dir)
+    monkeypatch.chdir(temp_git_repo)
+    result = runner.invoke(main, [])
 
     assert result.exit_code == 0
     assert "file.py" in result.output
     assert "+1" in result.output
 
 
-def test_cli_integration_with_args(runner, temp_git_repo, run_git):
+def test_cli_integration_with_args(runner, temp_git_repo, run_git, monkeypatch):
     create_file(temp_git_repo, "file.py", "v1\n")
     git_add_commit(run_git)
     create_file(temp_git_repo, "file.py", "v2\n")
     git_add_commit(run_git)
 
-    original_dir = os.getcwd()
-    try:
-        os.chdir(temp_git_repo)
-        result = runner.invoke(main, ["HEAD~1", "HEAD"])
-    finally:
-        os.chdir(original_dir)
+    monkeypatch.chdir(temp_git_repo)
+    result = runner.invoke(main, ["HEAD~1", "HEAD"])
 
     assert result.exit_code == 0
     assert "file.py" in result.output
@@ -204,17 +192,13 @@ def test_cli_integration_with_args(runner, temp_git_repo, run_git):
     assert "-1" in result.output
 
 
-def test_cli_integration_invalid_column(runner, temp_git_repo, run_git):
+def test_cli_integration_invalid_column(runner, temp_git_repo, run_git, monkeypatch):
     create_file(temp_git_repo, "file.py", "line1\n")
     git_add_commit(run_git)
     create_file(temp_git_repo, "file.py", "line1\nline2\n")
 
-    original_dir = os.getcwd()
-    try:
-        os.chdir(temp_git_repo)
-        result = runner.invoke(main, ["--columns", "tree,invalid"])
-    finally:
-        os.chdir(original_dir)
+    monkeypatch.chdir(temp_git_repo)
+    result = runner.invoke(main, ["--columns", "tree,invalid"])
 
     assert result.exit_code == 2
     assert "Unknown column" in result.output
