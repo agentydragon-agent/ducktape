@@ -439,3 +439,92 @@ def test_progress_bars_align_consistently():
     # The bars should align at the same column positions
     assert len(set(start_positions)) == 1, f"Bar start positions don't align: {ranges}"
     assert len(set(end_positions)) == 1, f"Bar end positions don't align: {ranges}"
+
+
+def test_column_ordering():
+    """Test that columns appear in the order specified in config."""
+    changes = [
+        FileChange(path="file.py", additions=10, deletions=5),
+    ]
+    root = build_tree(changes)
+
+    # Test bars before tree
+    config = RenderConfig(columns=[Column.BARS, Column.TREE, Column.COUNTS])
+    diff_tree = DiffTree(root, config=config)
+
+    output = StringIO()
+    console = Console(file=output, width=80)
+    console.print(diff_tree)
+    result = output.getvalue()
+
+    # The output should have bars (█ characters) before the tree structure
+    # Find first occurrence of tree characters (. or └ or ├) and bar characters (█)
+    lines = result.split("\n")
+    for line in lines:
+        if "file.py" in line:
+            # Find positions of key elements
+            bar_pos = line.find("█") if "█" in line else -1
+            tree_char_positions = [
+                line.find(char) for char in [".", "└", "├", "│"] if char in line
+            ]
+            tree_pos = min(tree_char_positions) if tree_char_positions else -1
+
+            if bar_pos != -1 and tree_pos != -1:
+                # Bars should come before tree when BARS is listed first
+                assert bar_pos < tree_pos, f"Expected bars before tree, but got bar at {bar_pos}, tree at {tree_pos}"
+                break
+
+    # Test tree before bars (standard order)
+    config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.COUNTS])
+    diff_tree = DiffTree(root, config=config)
+
+    output = StringIO()
+    console = Console(file=output, width=80)
+    console.print(diff_tree)
+    result = output.getvalue()
+
+    lines = result.split("\n")
+    for line in lines:
+        if "file.py" in line:
+            bar_pos = line.find("█") if "█" in line else -1
+            tree_char_positions = [
+                line.find(char) for char in [".", "└", "├", "│"] if char in line
+            ]
+            tree_pos = min(tree_char_positions) if tree_char_positions else -1
+
+            if bar_pos != -1 and tree_pos != -1:
+                # Tree should come before bars when TREE is listed first
+                assert tree_pos < bar_pos, f"Expected tree before bars, but got tree at {tree_pos}, bar at {bar_pos}"
+                break
+
+
+def test_column_ordering_counts_first():
+    """Test counts column can appear first."""
+    changes = [
+        FileChange(path="file.py", additions=10, deletions=5),
+    ]
+    root = build_tree(changes)
+
+    # Counts first, then tree
+    config = RenderConfig(columns=[Column.COUNTS, Column.TREE])
+    diff_tree = DiffTree(root, config=config)
+
+    output = StringIO()
+    console = Console(file=output, width=80)
+    console.print(diff_tree)
+    result = output.getvalue()
+
+    lines = result.split("\n")
+    for line in lines:
+        if "file.py" in line:
+            # Find positions of key elements
+            plus_pos = line.find("+10") if "+10" in line else -1
+            tree_char_positions = [
+                line.find(char) for char in [".", "└", "├", "│"] if char in line
+            ]
+            tree_pos = min(tree_char_positions) if tree_char_positions else -1
+
+            if plus_pos != -1 and tree_pos != -1:
+                # Counts should come before tree when COUNTS is listed first
+                assert plus_pos < tree_pos, f"Expected counts before tree, but got counts at {plus_pos}, tree at {tree_pos}"
+                break
