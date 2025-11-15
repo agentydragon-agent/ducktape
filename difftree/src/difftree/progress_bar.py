@@ -90,30 +90,23 @@ class ProgressBar:
         num_partials = len(self.blocks.partials)
         partial_block_index = int((filled_width - full_blocks) * (num_partials + 1))
 
+        # Build bar components
+        full_part = self.blocks.full * full_blocks
+        partial_part = ""
+        if full_blocks < width and partial_block_index > 0:
+            partial_part = self.blocks.partials[min(partial_block_index - 1, num_partials - 1)]
+
+        # Ensure minimum sliver for non-zero values
+        if self.value > 0 and not full_part and not partial_part:
+            partial_part = self.blocks.partials[0]
+
+        # Combine parts and justify based on alignment
         if self.align == "right":
-            # RTL: build from right, growing leftward
-            bar_chars = ""
-            if full_blocks < width and partial_block_index > 0:
-                # Map index 1..(num_partials) to partials[0..(num_partials-1)]
-                bar_chars = self.blocks.partials[min(partial_block_index - 1, num_partials - 1)]
-            # Add full blocks
-            bar_chars += self.blocks.full * full_blocks
-            # Ensure minimum sliver for non-zero values
-            if self.value > 0 and not bar_chars:
-                bar_chars = self.blocks.partials[0]
-            # Right-align (pad left with empty)
-            bar_chars = bar_chars.rjust(width, self.blocks.empty)
+            # RTL: partial then full, right-justified
+            bar_chars = (partial_part + full_part).rjust(width, self.blocks.empty)
         else:
-            # LTR: build from left, growing rightward
-            bar_chars = self.blocks.full * full_blocks
-            if full_blocks < width and partial_block_index > 0:
-                # Map index 1..(num_partials) to partials[0..(num_partials-1)]
-                bar_chars += self.blocks.partials[min(partial_block_index - 1, num_partials - 1)]
-            # Ensure minimum sliver for non-zero values
-            if self.value > 0 and not bar_chars:
-                bar_chars = self.blocks.partials[0]
-            # Left-align (pad right with empty)
-            bar_chars = bar_chars.ljust(width, self.blocks.empty)
+            # LTR: full then partial, left-justified
+            bar_chars = (full_part + partial_part).ljust(width, self.blocks.empty)
 
         return Text(bar_chars, style=self.style)
 
