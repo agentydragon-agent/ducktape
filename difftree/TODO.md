@@ -14,8 +14,6 @@
   - Maintain preferred minimum progress bar size
   - Ensure progress bars remain useful and visible
 
-- [x] Minimum visible progress bar sliver
-
 - [ ] Collapse single-child directory paths
   - When a directory has exactly one child that's rendered, collapse them into one line
   - Should work with path separators: `a/b/c/d.txt` instead of separate tree levels
@@ -53,7 +51,6 @@
 
 ## Features
 
-- [x] Integration as git pager (automatic detection) - reads from stdin
 - [ ] Support for binary files visualization
 - [ ] Color scheme customization
 - [ ] Different tree styles (ascii, unicode, etc.)
@@ -93,8 +90,3 @@
 - [ ] Configuration file support (~/.config/git-diff-tree/config.toml)
 - [ ] Git alias setup helper (`git-diff-tree --install-alias`)
 - [ ] Performance optimization for large diffs (>1000 files)
-
-## Code Quality
-
-- [x] Use Rich's built-in Tree widget instead of custom tree rendering
-- [x] Use standard diff parser (unidiff) instead of custom parsing

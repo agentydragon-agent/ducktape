@@ -46,20 +46,23 @@ git-diff-tree COMMIT~1 COMMIT
 # Sort alphabetically
 git-diff-tree --sort alpha
 
-# Hide progress bars
-git-diff-tree --no-bars
+# Show only tree and counts (no bars or percentages)
+git-diff-tree --columns tree,counts
 
-# Hide counts
-git-diff-tree --no-counts
+# Show only tree and bars (no counts or percentages)
+git-diff-tree --columns tree,bars
 
-# Hide percentages
-git-diff-tree --no-percentages
+# Show only tree and percentages (no counts or bars)
+git-diff-tree --columns tree,percentages
 
 # Minimal output (only tree structure)
-git-diff-tree --no-bars --no-counts --no-percentages
+git-diff-tree --columns tree
 
 # Adjust progress bar width
 git-diff-tree --bar-width 30
+
+# Combine options
+git-diff-tree --sort alpha --columns tree,counts --bar-width 30
 ```
 
 ### As a git pager

@@ -50,8 +50,12 @@ def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, ma
     svn diff | difftree
 
     \b
-    # Sort alphabetically without progress bars
+    # Sort alphabetically and show only tree and counts
     difftree --sort alpha --columns tree,counts
+
+    \b
+    # Minimal output (tree structure only)
+    difftree --columns tree
     """
     try:
         # Validate column configuration early
