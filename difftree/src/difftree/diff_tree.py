@@ -23,8 +23,10 @@ class DiffTree:
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         """Render as a Table with aligned tree structure and statistics."""
-        max_additions, max_deletions = self._find_max_additions_deletions(self.root)
-        max_changes = max_additions + max_deletions if (max_additions + max_deletions) > 0 else 1
+        # Get totals from root (which has aggregated stats from all children)
+        total_additions = self.root.additions
+        total_deletions = self.root.deletions
+        total_changes = total_additions + total_deletions if (total_additions + total_deletions) > 0 else 1
 
         tree = self._build_tree_structure(self.root, depth=0)
 
@@ -43,8 +45,10 @@ class DiffTree:
 
         nodes_in_order = self._flatten_tree(self.root, depth=0)
 
-        # Calculate dynamic bar width if bars are included
-        bar_width = self._calculate_bar_width(tree_lines, options.max_width or 80)
+        # Calculate proportional bar widths based on total additions/deletions
+        green_width, red_width = self._calculate_proportional_bar_widths(
+            tree_lines, options.max_width or 80, total_additions, total_deletions
+        )
 
         table = Table.grid(padding=0)
 
@@ -55,8 +59,8 @@ class DiffTree:
                 table.add_column(justify="right")  # Additions (right-aligned)
                 table.add_column(justify="left")   # Deletions (left-aligned)
             elif column == Column.BARS:
-                table.add_column(justify="right", ratio=1)
-                table.add_column(justify="left", ratio=1)
+                table.add_column(justify="right")
+                table.add_column(justify="left")
             elif column == Column.PERCENTAGES:
                 table.add_column(justify="right")
 
@@ -70,26 +74,17 @@ class DiffTree:
                     row.append(additions_cell)
                     row.append(deletions_cell)
                 elif column == Column.BARS:
-                    green_cell, red_cell = self._make_bar_cells(node, max_additions, max_deletions, bar_width)
+                    green_cell, red_cell = self._make_bar_cells(
+                        node, total_additions, total_deletions, green_width, red_width
+                    )
                     row.append(green_cell)
                     row.append(red_cell)
                 elif column == Column.PERCENTAGES:
-                    row.append(self._make_percentage_cell(node, max_changes))
+                    row.append(self._make_percentage_cell(node, total_changes))
             table.add_row(*row)
 
         yield table
 
-    def _find_max_additions_deletions(self, node: TreeNode) -> tuple[int, int]:
-        """Find maximum additions and deletions across all nodes."""
-        max_additions = node.additions
-        max_deletions = node.deletions
-
-        for child in node.children.values():
-            child_max_add, child_max_del = self._find_max_additions_deletions(child)
-            max_additions = max(max_additions, child_max_add)
-            max_deletions = max(max_deletions, child_max_del)
-
-        return max_additions, max_deletions
 
     def _build_tree_structure(self, node: TreeNode, depth: int = 0) -> Tree:
         """Build Rich Tree with filenames only (no stats)."""
@@ -132,10 +127,13 @@ class DiffTree:
 
         return additions_cell, deletions_cell
 
-    def _calculate_bar_width(self, tree_lines: list[Text], terminal_width: int) -> int:
-        """Calculate dynamic bar width based on available space."""
+    def _calculate_proportional_bar_widths(
+        self, tree_lines: list[Text], terminal_width: int,
+        total_additions: int, total_deletions: int
+    ) -> tuple[int, int]:
+        """Calculate proportional bar widths based on total additions/deletions ratio."""
         if Column.BARS not in self.config.columns:
-            return self.config.bar_width
+            return 0, 0
 
         # Find maximum tree width
         max_tree_width = max((len(line.plain) for line in tree_lines), default=0)
@@ -147,29 +145,47 @@ class DiffTree:
         if Column.PERCENTAGES in self.config.columns:
             other_width += 10  # "  100.0%"
 
-        # Calculate remaining width for bars (2 bars total)
-        remaining = terminal_width - other_width
-        bar_width = max(remaining // 2, 10)  # Minimum 10 chars per bar
+        # Calculate total available space for bars
+        total_bar_space = terminal_width - other_width
+        total_changes = total_additions + total_deletions
 
-        return min(bar_width, self.config.bar_width) if self.config.bar_width else bar_width
+        # Handle edge case: no changes
+        if total_changes == 0:
+            half_space = total_bar_space // 2
+            return half_space, half_space
 
-    def _make_bar_cells(self, node: TreeNode, max_additions: int, max_deletions: int, bar_width: int) -> tuple[Text, Text]:
-        """Create bar cells (green and red progress bars)."""
+        # Calculate proportional widths based on ratio of additions to deletions
+        green_ratio = total_additions / total_changes
+        green_width = max(int(total_bar_space * green_ratio), 10)
+        red_width = max(total_bar_space - green_width, 10)
+
+        # Apply maximum width if configured
+        if self.config.bar_width:
+            green_width = min(green_width, self.config.bar_width)
+            red_width = min(red_width, self.config.bar_width)
+
+        return green_width, red_width
+
+    def _make_bar_cells(
+        self, node: TreeNode, total_additions: int, total_deletions: int,
+        green_width: int, red_width: int
+    ) -> tuple[Text, Text]:
+        """Create bar cells with proportional widths (green and red progress bars)."""
         if node.is_binary:
             return Text(CELL_PADDING), Text("")
 
         green_bar = ProgressBar(
             value=node.additions,
-            max_value=max_additions,
-            width=bar_width,
+            max_value=total_additions if total_additions > 0 else 1,
+            width=green_width,
             blocks=self.config.bar_right_blocks or DEFAULT_RIGHT_BLOCKS,
             align="right",
             style="green",
         )
         red_bar = ProgressBar(
             value=node.deletions,
-            max_value=max_deletions,
-            width=bar_width,
+            max_value=total_deletions if total_deletions > 0 else 1,
+            width=red_width,
             blocks=self.config.bar_left_blocks or DEFAULT_LEFT_BLOCKS,
             align="left",
             style="red",
