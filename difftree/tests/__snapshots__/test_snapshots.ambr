@@ -1,5 +1,5 @@
 # serializer version: 1
-# name: test_snapshot_config_variants[alphabetical_sort-alpha-<lambda>][alphabetical_sort]
+# name: test_snapshot_config_variants[alphabetical_sort-alpha-None][alphabetical_sort]
   '''
   [1;34m.[0m                        [32m+475[0m [31m-68[0m     [32m████████████████████[0m [31m██████████[0m   [36m100.0%[0m
   ├── [37mREADME.md[0m             [32m+20[0m [31m-3[0m      [32m                   ▉[0m [31m▍         [0m   [36m  4.2%[0m
@@ -19,7 +19,7 @@
   
   '''
 # ---
-# name: test_snapshot_config_variants[custom_bar_width-size-<lambda>][custom_bar_width]
+# name: test_snapshot_config_variants[custom_bar_width-size-config6][custom_bar_width]
   '''
   [1;34m.[0m                        [32m+475[0m [31m-68[0m     [32m██████████████████████████████[0m [31m██████████[0m   [36m100.0%[0m
   ├── [1;34msrc[0m                  [32m+320[0m [31m-58[0m     [32m         ▕████████████████████[0m [31m████████▌ [0m   [36m 69.6%[0m
@@ -39,7 +39,7 @@
   
   '''
 # ---
-# name: test_snapshot_config_variants[default_rendering-size-<lambda>][default_rendering]
+# name: test_snapshot_config_variants[default_rendering-size-None][default_rendering]
   '''
   [1;34m.[0m                        [32m+475[0m [31m-68[0m     [32m████████████████████[0m [31m██████████[0m   [36m100.0%[0m
   ├── [1;34msrc[0m                  [32m+320[0m [31m-58[0m     [32m      ▐█████████████[0m [31m████████▌ [0m   [36m 69.6%[0m
@@ -59,7 +59,7 @@
   
   '''
 # ---
-# name: test_snapshot_config_variants[minimal-size-<lambda>][minimal]
+# name: test_snapshot_config_variants[minimal-size-config5][minimal]
   '''
   [1;34m.[0m                     
   ├── [1;34msrc[0m               
@@ -79,7 +79,7 @@
   
   '''
 # ---
-# name: test_snapshot_config_variants[no_bars-size-<lambda>][no_bars]
+# name: test_snapshot_config_variants[no_bars-size-config2][no_bars]
   '''
   [1;34m.[0m                        [32m+475[0m [31m-68[0m     [36m100.0%[0m
   ├── [1;34msrc[0m                  [32m+320[0m [31m-58[0m     [36m 69.6%[0m
@@ -99,7 +99,7 @@
   
   '''
 # ---
-# name: test_snapshot_config_variants[no_counts-size-<lambda>][no_counts]
+# name: test_snapshot_config_variants[no_counts-size-config3][no_counts]
   '''
   [1;34m.[0m                        [32m████████████████████[0m [31m████████████[0m   [36m100.0%[0m
   ├── [1;34msrc[0m                  [32m      ▐█████████████[0m [31m██████████▏ [0m   [36m 69.6%[0m
@@ -119,7 +119,7 @@
   
   '''
 # ---
-# name: test_snapshot_config_variants[no_percentages-size-<lambda>][no_percentages]
+# name: test_snapshot_config_variants[no_percentages-size-config4][no_percentages]
   '''
   [1;34m.[0m                        [32m+475[0m [31m-68[0m     [32m████████████████████[0m [31m███████████[0m
   ├── [1;34msrc[0m                  [32m+320[0m [31m-58[0m     [32m      ▐█████████████[0m [31m█████████▍ [0m
@@ -139,7 +139,7 @@
   
   '''
 # ---
-# name: test_snapshot_scenarios[binary_file-<lambda>][binary_file]
+# name: test_snapshot_scenarios[binary_file-changes4][binary_file]
   '''
   [1;34m.[0m                        [32m+15[0m [31m-3[0m     [32m████████████████████[0m [31m█████████████[0m   [36m100.0%[0m
   ├── [1;34msrc[0m                  [32m+10[0m [31m-2[0m     [32m      ▕█████████████[0m [31m████████▋    [0m   [36m 66.7%[0m
@@ -151,7 +151,7 @@
   
   '''
 # ---
-# name: test_snapshot_scenarios[deep_nesting-<lambda>][deep_nesting]
+# name: test_snapshot_scenarios[deep_nesting-changes1][deep_nesting]
   '''
   [1;34m.[0m                                 [32m+45[0m [31m-10[0m     [32m████████████████████[0m [31m████████████[0m   [36m100.0%[0m
   └── [1;34ma[0m                             [32m+45[0m [31m-10[0m     [32m████████████████████[0m [31m████████████[0m   [36m100.0%[0m
@@ -167,7 +167,7 @@
   
   '''
 # ---
-# name: test_snapshot_scenarios[only_additions-<lambda>][only_additions]
+# name: test_snapshot_scenarios[only_additions-changes2][only_additions]
   '''
   [1;34m.[0m                      [32m+100[0m      [32m████████████████████[0m [31m          [0m   [36m100.0%[0m
   ├── [37mnew_file1.py[0m        [32m+50[0m      [32m          ██████████[0m [31m          [0m   [36m 50.0%[0m
@@ -177,7 +177,7 @@
   
   '''
 # ---
-# name: test_snapshot_scenarios[only_deletions-<lambda>][only_deletions]
+# name: test_snapshot_scenarios[only_deletions-changes3][only_deletions]
   '''
   [1;34m.[0m                       [31m-100[0m                [31m████████████████████[0m   [36m100.0%[0m
   ├── [37mold_file1.py[0m        [31m-50[0m                 [31m██████████          [0m   [36m 50.0%[0m
@@ -187,7 +187,7 @@
   
   '''
 # ---
-# name: test_snapshot_scenarios[small_tree-<lambda>][small_tree]
+# name: test_snapshot_scenarios[small_tree-changes0][small_tree]
   '''
   [1;34m.[0m              [32m+15[0m [31m-3[0m     [32m████████████████████[0m [31m██████████████[0m   [36m100.0%[0m
   ├── [37mmain.py[0m    [32m+10[0m [31m-2[0m     [32m      ▕█████████████[0m [31m█████████▎    [0m   [36m 66.7%[0m

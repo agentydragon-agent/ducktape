@@ -37,42 +37,42 @@ def render_to_string(changes: list[FileChange], sort_by: str = "size", config: R
     diff_tree = DiffTree(root, config=config)
     console.print(diff_tree)
 
-    return output.getvalue()
+    result = output.getvalue()
+    assert "…" not in result, f"Output contains ellipsis character (…)"
+    return result
 
 
 @pytest.mark.parametrize(
-    ("test_id", "sort_by", "config_factory"),
+    ("test_id", "sort_by", "config"),
     [
-        ("default_rendering", "size", lambda: None),
-        ("alphabetical_sort", "alpha", lambda: None),
-        ("no_bars", "size", lambda: RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.PERCENTAGES])),
-        ("no_counts", "size", lambda: RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])),
-        ("no_percentages", "size", lambda: RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.BARS])),
-        ("minimal", "size", lambda: RenderConfig(columns=[Column.TREE])),
-        ("custom_bar_width", "size", lambda: RenderConfig(columns=RenderConfig.default().columns, bar_width=30)),
+        ("default_rendering", "size", None),
+        ("alphabetical_sort", "alpha", None),
+        ("no_bars", "size", RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.PERCENTAGES])),
+        ("no_counts", "size", RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])),
+        ("no_percentages", "size", RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.BARS])),
+        ("minimal", "size", RenderConfig(columns=[Column.TREE])),
+        ("custom_bar_width", "size", RenderConfig(columns=RenderConfig.default().columns, bar_width=30)),
     ],
 )
-def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, config_factory):
+def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, config):
     """Snapshot test for different configuration variants."""
-    config = config_factory()
     output = render_to_string(complex_changes, sort_by=sort_by, config=config)
-    assert "…" not in output, f"Output contains ellipsis character (…): {output}"
     assert output == snapshot(name=test_id)
 
 
 @pytest.mark.parametrize(
-    ("test_id", "changes_factory"),
+    ("test_id", "changes"),
     [
         (
             "small_tree",
-            lambda: [
+            [
                 FileChange(path="main.py", additions=10, deletions=2),
                 FileChange(path="utils.py", additions=5, deletions=1),
             ],
         ),
         (
             "deep_nesting",
-            lambda: [
+            [
                 FileChange(path="a/b/c/d/e/file.py", additions=20, deletions=5),
                 FileChange(path="a/b/c/x/y/file.py", additions=15, deletions=3),
                 FileChange(path="a/b/file.py", additions=10, deletions=2),
@@ -80,7 +80,7 @@ def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, c
         ),
         (
             "only_additions",
-            lambda: [
+            [
                 FileChange(path="new_file1.py", additions=50, deletions=0),
                 FileChange(path="new_file2.py", additions=30, deletions=0),
                 FileChange(path="dir/new_file3.py", additions=20, deletions=0),
@@ -88,7 +88,7 @@ def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, c
         ),
         (
             "only_deletions",
-            lambda: [
+            [
                 FileChange(path="old_file1.py", additions=0, deletions=50),
                 FileChange(path="old_file2.py", additions=0, deletions=30),
                 FileChange(path="dir/old_file3.py", additions=0, deletions=20),
@@ -96,7 +96,7 @@ def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, c
         ),
         (
             "binary_file",
-            lambda: [
+            [
                 FileChange(path="src/code.py", additions=10, deletions=2),
                 FileChange(path="assets/image.png", additions=0, deletions=0, is_binary=True),
                 FileChange(path="assets/data.bin", additions=0, deletions=0, is_binary=True),
@@ -105,8 +105,6 @@ def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, c
         ),
     ],
 )
-def test_snapshot_scenarios(snapshot, test_id, changes_factory):
-    changes = changes_factory()
+def test_snapshot_scenarios(snapshot, test_id, changes):
     output = render_to_string(changes)
-    assert "…" not in output, f"Output contains ellipsis character (…): {output}"
     assert output == snapshot(name=test_id)
