@@ -88,10 +88,17 @@
   - **Tree placement**: Place renamed files under their **destination path** in tree
     - File appears at its new location, not old location
     - Show rename with arrow: `new.py ← old.py` or `new.py ← src/old.py`
-  - Example display:
+  - Example displays:
     ```
+    # Simple case: different directories, different filenames
     lib/
     └── new.py ← src/old.py     +5  -2  ████ ██
+
+    # Complex case: same filename, different directories
+    lib/
+    ├── bar/
+    │   └── foo.py ← lib/foo/foo.py     +3  -1  ██ █
+    └── baz.py     +2  -0  █
     ```
   - Edge cases to handle:
     - Renamed + modified (most common)
