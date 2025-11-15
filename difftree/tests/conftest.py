@@ -1,4 +1,4 @@
-"""Shared test fixtures for git-diff-tree tests."""
+"""Shared test fixtures for difftree tests."""
 
 from collections.abc import Generator
 from pathlib import Path

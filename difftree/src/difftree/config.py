@@ -1,4 +1,4 @@
-"""Configuration for git-diff-tree rendering."""
+"""Configuration for difftree rendering."""
 
 from __future__ import annotations
 

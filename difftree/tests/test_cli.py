@@ -73,8 +73,8 @@ def test_cli_columns_flag_invalid_column(runner, git_repo_with_changes):
     """Test --columns flag with invalid column name."""
     result = runner.invoke(main, ["--columns", "tree,invalid,counts"], obj={}, catch_exceptions=False)
 
-    # Should fail with error
-    assert result.exit_code == 1
+    # Should fail with Click parameter error (exit code 2)
+    assert result.exit_code == 2
     assert "Unknown column" in result.output
     assert "invalid" in result.output.lower()
 
@@ -216,6 +216,6 @@ def test_cli_integration_invalid_column(runner, temp_git_repo, run_git):
     finally:
         os.chdir(original_dir)
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "Unknown column" in result.output
     assert "invalid" in result.output

@@ -27,6 +27,6 @@
     set -euo pipefail
     uv sync --extra dev --quiet
     python --version
-    echo "git-diff-tree devenv ready. Use 'uv run pytest' to run tests."
+    echo "difftree devenv ready. Use 'uv run pytest' to run tests."
   '';
 }

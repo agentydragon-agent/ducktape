@@ -1,1 +1,1 @@
-"""Tests package for git-diff-tree."""
+"""Tests package for difftree."""

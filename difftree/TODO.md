@@ -82,6 +82,6 @@
 - [ ] Colored diff pass-through mode (like delta)
   - Show tree summary at top
   - Then pass through syntax-highlighted diff below
-- [ ] Configuration file support (~/.config/git-diff-tree/config.toml)
-- [ ] Git alias setup helper (`git-diff-tree --install-alias`)
+- [ ] Configuration file support (~/.config/difftree/config.toml)
+- [ ] Git alias setup helper (`difftree --install-alias`)
 - [ ] Performance optimization for large diffs (>1000 files)

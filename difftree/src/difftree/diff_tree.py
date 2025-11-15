@@ -40,7 +40,12 @@ class DiffTree:
             text = Text()
             for segment in line_segments:
                 if segment.text:
-                    text.append(segment.text, style=segment.style)
+                    # Apply dim style to tree decoration characters (box-drawing Unicode)
+                    style = segment.style
+                    if self._is_tree_decoration(segment.text):
+                        # Combine existing style with dim
+                        style = f"{segment.style} dim" if segment.style else "dim"
+                    text.append(segment.text, style=style)
             tree_lines.append(text)
 
         nodes_in_order = self._flatten_tree(self.root, depth=0)
@@ -79,6 +84,13 @@ class DiffTree:
 
         yield table
 
+
+    def _is_tree_decoration(self, text: str) -> bool:
+        """Check if text consists only of tree decoration characters (box-drawing + spaces)."""
+        if not text:
+            return False
+        # Box-drawing Unicode block is U+2500 to U+257F
+        return all(c == ' ' or '\u2500' <= c <= '\u257f' for c in text)
 
     def _get_collapsed_path_and_node(self, node: TreeNode, depth: int) -> tuple[str, TreeNode, int]:
         """

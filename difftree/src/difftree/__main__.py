@@ -1,14 +1,25 @@
 """CLI entry point for difftree."""
 
+import os
+import select
+import stat
 import sys
 
 import click
 from rich.console import Console
 
-from .config import RenderConfig, SortMode, parse_columns
+from .config import Column, RenderConfig, SortMode, parse_columns
 from .diff_tree import DiffTree
 from .parser import parse_git_diff, parse_unified_diff
 from .tree import build_tree, sort_tree
+
+
+def validate_columns(ctx, param, value):
+    """Click callback to validate and parse column configuration."""
+    try:
+        return parse_columns(value)
+    except ValueError as e:
+        raise click.BadParameter(str(e))
 
 
 @click.command()
@@ -20,11 +31,12 @@ from .tree import build_tree, sort_tree
     "--columns",
     type=str,
     default="tree,counts,bars,percentages",
+    callback=validate_columns,
     help="Columns to display (comma-separated): tree,counts,bars,percentages",
 )
 @click.option("--bar-width", type=int, default=20, help="Width of each progress bar (default: 20)")
 @click.option("--max-depth", type=int, default=None, help="Maximum tree depth to display")
-def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, max_depth: int | None) -> None:
+def main(diff_args: tuple[str, ...], sort: str, columns: list[Column], bar_width: int, max_depth: int | None) -> None:
     """
     Visualize diffs as a tree with progress bars.
 
@@ -58,29 +70,18 @@ def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, ma
     difftree --columns tree
     """
     try:
-        # Validate column configuration early
-        try:
-            column_list = parse_columns(columns)
-        except ValueError as e:
-            console = Console(stderr=True)
-            console.print(f"Error: {e}", style="bold red")
-            sys.exit(1)
-
         # Convert sort mode to enum
         sort_mode = SortMode(sort)
 
         # Check if stdin has actual data (not just EOF from capture_output=True)
-        import os
         has_stdin_data = False
         if not sys.stdin.isatty():
             # Try to peek at stdin to see if there's real data
             try:
                 # Use os.fstat to check if stdin is a regular file or pipe with data
                 mode = os.fstat(sys.stdin.fileno()).st_mode
-                import stat
                 if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
                     # It's a pipe or file, check if it has content
-                    import select
                     if select.select([sys.stdin], [], [], 0.0)[0]:
                         # Data is available, but it might just be EOF
                         # Try to peek at one byte
@@ -102,7 +103,7 @@ def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, ma
         root = build_tree(changes)
         sort_tree(root, sort_by=sort_mode)
 
-        config = RenderConfig(columns=column_list, bar_width=bar_width, sort_by=sort_mode, max_depth=max_depth)
+        config = RenderConfig(columns=columns, bar_width=bar_width, sort_by=sort_mode, max_depth=max_depth)
         diff_tree = DiffTree(root, config=config)
         console = Console()
         console.print(diff_tree)

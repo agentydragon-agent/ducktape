@@ -1,4 +1,4 @@
-# git-diff-tree
+# difftree
 
 Tree-style visualization of git diffs with progress bars.
 
@@ -28,56 +28,56 @@ pip install -e .
 
 ```bash
 # Show unstaged changes
-git-diff-tree
+difftree
 
 # Show changes between commits
-git-diff-tree HEAD~1 HEAD
+difftree HEAD~1 HEAD
 
 # Show staged changes
-git-diff-tree --cached
+difftree --cached
 
 # Show changes in a specific commit
-git-diff-tree COMMIT~1 COMMIT
+difftree COMMIT~1 COMMIT
 ```
 
 ### Sorting and display options
 
 ```bash
 # Sort alphabetically
-git-diff-tree --sort alpha
+difftree --sort alpha
 
 # Show only tree and counts (no bars or percentages)
-git-diff-tree --columns tree,counts
+difftree --columns tree,counts
 
 # Show only tree and bars (no counts or percentages)
-git-diff-tree --columns tree,bars
+difftree --columns tree,bars
 
 # Show only tree and percentages (no counts or bars)
-git-diff-tree --columns tree,percentages
+difftree --columns tree,percentages
 
 # Minimal output (only tree structure)
-git-diff-tree --columns tree
+difftree --columns tree
 
 # Adjust progress bar width
-git-diff-tree --bar-width 30
+difftree --bar-width 30
 
 # Combine options
-git-diff-tree --sort alpha --columns tree,counts --bar-width 30
+difftree --sort alpha --columns tree,counts --bar-width 30
 ```
 
 ### As a git pager
 
-You can use git-diff-tree as a custom pager for git diff:
+You can use difftree as a custom pager for git diff:
 
 ```bash
 # One-time use
-git diff | git-diff-tree
+git diff | difftree
 
 # Configure globally
-git config --global pager.diff "git-diff-tree"
+git config --global pager.diff "difftree"
 
 # Configure for specific repository
-git config pager.diff "git-diff-tree"
+git config pager.diff "difftree"
 ```
 
 ## Output format
