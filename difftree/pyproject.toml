@@ -1,0 +1,41 @@
+[project]
+name = "difftree"
+version = "0.0.1"
+description = "Tree-style visualization of diffs with progress bars"
+readme = "README.md"
+license = {text = "AGPL-3.0-or-later"}
+requires-python = ">=3.12"
+dependencies = [
+    "rich>=13.0",
+    "click>=8.0",
+    "unidiff>=0.7.0",
+]
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "syrupy>=4.0",  # For snapshot testing
+]
+
+[project.scripts]
+difftree = "difftree.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["difftree*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
