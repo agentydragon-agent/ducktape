@@ -85,9 +85,18 @@
        - Detect matching content hashes between deleted and added files
        - More complex, requires additional git queries
        - Less reliable than git's built-in detection
+  - **Tree placement**: Place renamed files under their **destination path** in tree
+    - File appears at its new location, not old location
+    - Show rename indicator alongside filename: `new.py (← old.py)` or `new.py ← src/old.py`
   - Example display:
     ```
-    src/old.py → src/new.py     +5  -2  ████ ██
+    lib/
+    └── new.py ← src/old.py     +5  -2  ████ ██
+    ```
+    Or more compact:
+    ```
+    lib/
+    └── new.py (was: src/old.py)     +5  -2  ████ ██
     ```
   - Edge cases to handle:
     - Renamed + modified (most common)
@@ -96,13 +105,12 @@
     - **Renames crossing diff scope boundary** (important):
       - When running `difftree` on a subdirectory (e.g., `git diff -- src/`)
       - File moved FROM current scope to outside: `src/old.py => lib/new.py`
-        - Only see deletion in tree, but git shows full rename
-        - Options: 1) Show as special "moved out" entry, 2) Fall back to showing as deletion
+        - Destination is outside tree scope, so **don't show it at all**
+        - Or optionally show under a special "moved out" section at bottom
       - File moved TO current scope from outside: `lib/old.py => src/new.py`
-        - Only see addition in tree, but git knows it's a rename
-        - Options: 1) Show as special "moved in" entry, 2) Fall back to showing as addition
+        - Show at destination path (src/new.py) with indicator showing external source
+        - Example: `src/new.py (← ../lib/old.py)` or `src/new.py (moved from outside)`
       - May need to track which paths are in scope and handle cross-boundary renames specially
-      - Could show abbreviated outside paths: `src/file.py → ../lib/file.py`
 - [ ] Colored diff pass-through mode (like delta)
   - Show tree summary at top
   - Then pass through syntax-highlighted diff below
