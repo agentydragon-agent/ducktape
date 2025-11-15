@@ -5,7 +5,7 @@ from io import StringIO
 from git_diff_tree.config import Column, RenderConfig
 from git_diff_tree.diff_tree import DiffTree
 from git_diff_tree.parser import FileChange
-from git_diff_tree.progress_bar import LEFT_BLOCKS, ProgressBar
+from git_diff_tree.progress_bar import LEFT_BLOCKS, RIGHT_BLOCKS, ProgressBar
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
@@ -528,3 +528,80 @@ def test_column_ordering_counts_first():
                 # Counts should come before tree when COUNTS is listed first
                 assert plus_pos < tree_pos, f"Expected counts before tree, but got counts at {plus_pos}, tree at {tree_pos}"
                 break
+
+
+def test_bar_proportionality():
+    """Test that progress bars render proportionally to actual changes."""
+    changes = [
+        FileChange(path="file1.py", additions=50, deletions=10),  # 5:1 ratio
+        FileChange(path="file2.py", additions=1, deletions=10),   # 1:10 ratio
+        FileChange(path="file3.py", additions=10, deletions=0),   # Only additions
+    ]
+    root = build_tree(changes)
+
+    # Use small bar width for easier counting
+    config = RenderConfig(columns=[Column.TREE, Column.BARS], bar_width=10)
+    diff_tree = DiffTree(root, config=config)
+
+    output = StringIO()
+    console = Console(file=output, width=80, force_terminal=True)
+    console.print(diff_tree)
+    result = output.getvalue()
+
+    # Replace block characters based on ANSI color codes
+    # Green (\x1b[32m) = additions = '+'
+    # Red (\x1b[31m) = deletions = '-'
+    # Process colored segments
+    import re
+    # Replace green segments: all blocks in green become '+'
+    result = re.sub(r'\x1b\[32m([^\x1b]+)\x1b\[0m', lambda m: '+' * len(m.group(1).strip()), result)
+    # Replace red segments: all blocks in red become '-'
+    result = re.sub(r'\x1b\[31m([^\x1b]+)\x1b\[0m', lambda m: '-' * len(m.group(1).strip()), result)
+
+    lines = result.split("\n")
+    file_lines = {}
+    for line in lines:
+        for file_path in ["file1.py", "file2.py", "file3.py"]:
+            if file_path in line:
+                file_lines[file_path] = line
+                break
+
+    # Count '+' and '-' for each file
+    file1_plus = file_lines["file1.py"].count("+")
+    file1_minus = file_lines["file1.py"].count("-")
+    file2_plus = file_lines["file2.py"].count("+")
+    file2_minus = file_lines["file2.py"].count("-")
+    file3_plus = file_lines["file3.py"].count("+")
+    file3_minus = file_lines["file3.py"].count("-")
+
+    # The bars are scaled to max values across all files:
+    # max_additions = 50 + 1 + 10 = 61 (including root aggregation)
+    # max_deletions = 10 + 10 + 0 = 20 (including root aggregation)
+
+    # File1: +50 -10
+    # Expected green bar: 50/61 ≈ 82% of 10 blocks ≈ 8 blocks
+    # Expected red bar: 10/20 = 50% of 10 blocks = 5 blocks
+    # Ratio: 8/5 = 1.6
+    expected_file1_ratio = 50.0 / 10.0  # Raw ratio
+    # But bars are scaled differently (50/61 vs 10/20), so actual visual ratio will be:
+    # (50/61) / (10/20) = (50/61) * (20/10) = 1000/610 ≈ 1.64
+    assert file1_plus >= 7 and file1_plus <= 9, f"file1.py should have ~8 '+', got {file1_plus}"
+    assert file1_minus >= 4 and file1_minus <= 6, f"file1.py should have ~5 '-', got {file1_minus}"
+
+    # File2: +1 -10
+    # Expected green bar: 1/61 ≈ 1.6% ≈ minimal sliver (1 char)
+    # Expected red bar: 10/20 = 50% = 5 blocks
+    assert file2_plus == 1, f"file2.py should have exactly 1 '+' (minimal sliver), got {file2_plus}"
+    assert file2_minus >= 4 and file2_minus <= 6, f"file2.py should have ~5 '-', got {file2_minus}"
+
+    # File2 and file1 should have same '-' count (both have 10 deletions at same scale)
+    assert abs(file2_minus - file1_minus) <= 1, (
+        f"file2.py and file1.py both have 10 deletions, should have similar '-' counts: "
+        f"file1={file1_minus}, file2={file2_minus}"
+    )
+
+    # File3: +10 -0
+    # Expected green bar: 10/61 ≈ 16.4% ≈ 1.6 blocks
+    # Expected red bar: 0/20 = 0% = 0 blocks
+    assert file3_plus >= 1 and file3_plus <= 3, f"file3.py should have ~2 '+', got {file3_plus}"
+    assert file3_minus == 0, f"file3.py should have no '-', got {file3_minus}"
