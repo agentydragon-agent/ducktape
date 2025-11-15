@@ -59,55 +59,52 @@ def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, c
     assert output == snapshot(name=test_id)
 
 
-def test_snapshot_small_tree(snapshot):
-    """Snapshot test with a small tree."""
-    changes = [
-        FileChange(path="main.py", additions=10, deletions=2),
-        FileChange(path="utils.py", additions=5, deletions=1),
-    ]
+@pytest.mark.parametrize(
+    ("test_id", "changes_factory"),
+    [
+        (
+            "small_tree",
+            lambda: [
+                FileChange(path="main.py", additions=10, deletions=2),
+                FileChange(path="utils.py", additions=5, deletions=1),
+            ],
+        ),
+        (
+            "deep_nesting",
+            lambda: [
+                FileChange(path="a/b/c/d/e/file.py", additions=20, deletions=5),
+                FileChange(path="a/b/c/x/y/file.py", additions=15, deletions=3),
+                FileChange(path="a/b/file.py", additions=10, deletions=2),
+            ],
+        ),
+        (
+            "only_additions",
+            lambda: [
+                FileChange(path="new_file1.py", additions=50, deletions=0),
+                FileChange(path="new_file2.py", additions=30, deletions=0),
+                FileChange(path="dir/new_file3.py", additions=20, deletions=0),
+            ],
+        ),
+        (
+            "only_deletions",
+            lambda: [
+                FileChange(path="old_file1.py", additions=0, deletions=50),
+                FileChange(path="old_file2.py", additions=0, deletions=30),
+                FileChange(path="dir/old_file3.py", additions=0, deletions=20),
+            ],
+        ),
+        (
+            "binary_file",
+            lambda: [
+                FileChange(path="src/code.py", additions=10, deletions=2),
+                FileChange(path="assets/image.png", additions=0, deletions=0, is_binary=True),
+                FileChange(path="assets/data.bin", additions=0, deletions=0, is_binary=True),
+                FileChange(path="README.md", additions=5, deletions=1),
+            ],
+        ),
+    ],
+)
+def test_snapshot_scenarios(snapshot, test_id, changes_factory):
+    changes = changes_factory()
     output = render_to_string(changes)
-    assert output == snapshot
-
-
-def test_snapshot_deep_nesting(snapshot):
-    """Snapshot test with deeply nested structure."""
-    changes = [
-        FileChange(path="a/b/c/d/e/file.py", additions=20, deletions=5),
-        FileChange(path="a/b/c/x/y/file.py", additions=15, deletions=3),
-        FileChange(path="a/b/file.py", additions=10, deletions=2),
-    ]
-    output = render_to_string(changes)
-    assert output == snapshot
-
-
-def test_snapshot_only_additions(snapshot):
-    """Snapshot test with only additions (no deletions)."""
-    changes = [
-        FileChange(path="new_file1.py", additions=50, deletions=0),
-        FileChange(path="new_file2.py", additions=30, deletions=0),
-        FileChange(path="dir/new_file3.py", additions=20, deletions=0),
-    ]
-    output = render_to_string(changes)
-    assert output == snapshot
-
-
-def test_snapshot_only_deletions(snapshot):
-    """Snapshot test with only deletions (no additions)."""
-    changes = [
-        FileChange(path="old_file1.py", additions=0, deletions=50),
-        FileChange(path="old_file2.py", additions=0, deletions=30),
-        FileChange(path="dir/old_file3.py", additions=0, deletions=20),
-    ]
-    output = render_to_string(changes)
-    assert output == snapshot
-
-
-def test_snapshot_binary_file(snapshot):
-    changes = [
-        FileChange(path="src/code.py", additions=10, deletions=2),
-        FileChange(path="assets/image.png", additions=0, deletions=0, is_binary=True),
-        FileChange(path="assets/data.bin", additions=0, deletions=0, is_binary=True),
-        FileChange(path="README.md", additions=5, deletions=1),
-    ]
-    output = render_to_string(changes)
-    assert output == snapshot
+    assert output == snapshot(name=test_id)
