@@ -220,8 +220,8 @@ def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, 
     return normalized
 
 
-def anthro_to_openai_messages(body: dict[str, Any], new_system_text: str | None) -> list[ChatCompletionMessageParam]:
-    """Translate Anthropics-style messages into OpenAI Chat format, returning SDK models."""
+def anthro_to_openai_messages(messages: list[StandardMessage], new_system_text: str | None) -> list[ChatCompletionMessageParam]:
+    """Translate StandardMessage instances into OpenAI Chat format, returning SDK models."""
 
     def _join_text_parts(parts: Iterable[dict[str, Any]]) -> str:
         texts: list[str] = []
@@ -240,11 +240,11 @@ def anthro_to_openai_messages(body: dict[str, Any], new_system_text: str | None)
     if new_system_text:
         raw_messages.append({"role": "system", "content": new_system_text})
 
-    for message in body.get("messages", []):
-        if not isinstance(message, dict):
-            continue
-        role = message.get("role")
-        content = message.get("content")
+    for message in messages:
+        # Convert StandardMessage to dict for processing
+        msg_dict = message.model_dump(mode="json", exclude_none=True)
+        role = msg_dict.get("role")
+        content = msg_dict.get("content")
 
         if isinstance(content, str):
             if role in ("user", "assistant") and content.strip():
@@ -254,9 +254,8 @@ def anthro_to_openai_messages(body: dict[str, Any], new_system_text: str | None)
         if isinstance(content, list):
             part_dicts: list[dict[str, Any]] = []
             for part in content:
-                if hasattr(part, "model_dump"):
-                    part_dicts.append(part.model_dump(mode="json", exclude_none=True))
-                elif isinstance(part, dict):
+                # Content parts are already dicts after model_dump
+                if isinstance(part, dict):
                     part_dicts.append(part)
                 else:
                     continue
@@ -592,8 +591,8 @@ async def run_eval(
                 if prev_asst_idx is None:
                     log_event({"correlation_id": item.correlation_id, "status": "no_prev_assistant"})
                     return None, None
-                context_body = {"messages": msgs[:prev_asst_idx]}
-                oai_messages = anthro_to_openai_messages(context_body, new_sys)
+                context_messages = msgs[:prev_asst_idx]
+                oai_messages = anthro_to_openai_messages(context_messages, new_sys)
                 in_tokens = tokens_for_chat_messages(oai_messages)
                 log_event(
                     {

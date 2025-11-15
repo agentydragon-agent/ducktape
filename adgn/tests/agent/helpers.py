@@ -9,7 +9,7 @@ from hamcrest import all_of, assert_that, contains_string, has_item, has_propert
 from uvicorn import Config, Server
 
 from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
-from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
+from adgn.openai_utils.model import AssistantMessageOut, InputItem, OpenAIModelProto, ResponsesRequest, ResponsesResult
 from adgn.util.net import pick_free_port
 
 # System notification tag constants
@@ -25,17 +25,17 @@ class NoopOpenAIClient(OpenAIModelProto):
         raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")
 
 
-def extract_input_text_content(messages: Sequence[Any]) -> list[str]:
+def extract_input_text_content(messages: Sequence[InputItem | AssistantMessageOut]) -> list[str]:
     """Extract input_text content from messages, returning list of text strings.
 
-    Handles both Pydantic models and dict messages.
+    All messages are Pydantic BaseModel instances (InputItem or AssistantMessageOut).
     """
     texts: list[str] = []
     for item in messages:
-        # Normalize to dict (some SDK items are Pydantic models)
-        msgd = item.model_dump(exclude_none=True) if hasattr(item, "model_dump") else item
+        # Convert to dict for uniform content extraction
+        msgd = item.model_dump(exclude_none=True)
         # Extract input_text content
-        contents = (msgd.get("content") or []) if isinstance(msgd, dict) else []
+        contents = msgd.get("content") or []
         for c in contents:
             if isinstance(c, dict) and c.get("type") == "input_text":
                 text = c.get("text")

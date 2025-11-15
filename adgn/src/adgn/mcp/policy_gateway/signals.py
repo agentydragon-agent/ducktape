@@ -85,22 +85,32 @@ def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
     return None
 
 
-def detect_policy_gateway_error(err: Any) -> PolicyGatewayError | None:
+def detect_policy_gateway_error(err: object) -> PolicyGatewayError | None:
     """Detect and classify policy-gateway errors robustly.
 
     Accepts either:
-    - A FastMCP CallToolResult (with is_error=True)
-    - An exception (McpError/ToolError/other)
+    - A CallToolResult (FastMCP or MCP) with is_error=True
+    - An exception with .error attribute
     - A raw error payload (dict/ErrorData)
 
     Returns a typed PolicyGatewayError when recognized; otherwise None.
+
+    NOTE: This function is currently unused in the codebase.
     """
     # Prefer structured error data when present (CallToolResult or exception with .error)
     error_data: mtypes.ErrorData | None = None
-    if hasattr(err, "is_error") and bool(getattr(err, "is_error", False)):
-        error_data = _coerce_error_data(getattr(err, "error", None))
-    if error_data is None and hasattr(err, "error"):
-        error_data = _coerce_error_data(err.error)
+    # Check for CallToolResult-like objects with is_error=True
+    if (
+        hasattr(err, "is_error")
+        and isinstance(getattr(err, "is_error"), bool)
+        and getattr(err, "is_error")
+        and hasattr(err, "error")
+    ):
+        error_data = _coerce_error_data(getattr(err, "error"))
+    # Check for exceptions with .error attribute (but not dicts)
+    if error_data is None and hasattr(err, "error") and not isinstance(err, dict):
+        error_data = _coerce_error_data(getattr(err, "error"))
+    # Check for direct error data
     if error_data is None and isinstance(err, dict | mtypes.ErrorData):
         error_data = _coerce_error_data(err)
 
