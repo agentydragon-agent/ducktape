@@ -60,7 +60,10 @@ def make_diff_tree(
     sort_by: SortMode = SortMode.ALPHA,
 ) -> DiffTree:
     """Build a DiffTree from file changes."""
-    return DiffTree(build_tree(changes, sort_by=sort_by), config=config)
+    from difftree.tree import sort_tree
+    root = build_tree(changes)
+    root = sort_tree(root, sort_by=sort_by)
+    return DiffTree(root, config=config)
 
 
 @pytest.fixture

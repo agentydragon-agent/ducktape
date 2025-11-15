@@ -220,11 +220,14 @@ class DiffTree:
             )
             return empty_green, empty_red
 
-        # Scale both bars by total_changes so they're proportional to the percentage
-        total_changes = total_additions + total_deletions
+        # Scale bars independently to maintain equal proportional scale:
+        # - Green bar scaled by total_additions (1 block = same number of added lines across all files)
+        # - Red bar scaled by total_deletions (1 block = same number of deleted lines across all files)
+        # Column widths are already proportional via ratio parameter, so 1 block represents
+        # the same number of line changes in both addition and deletion bars.
         green_bar = ProgressBar(
             value=node.additions,
-            max_value=total_changes if total_changes > 0 else 1,
+            max_value=total_additions if total_additions > 0 else 1,
             blocks=self.config.bar_right_blocks or DEFAULT_RIGHT_BLOCKS,
             align="right",
             style="green",
@@ -232,7 +235,7 @@ class DiffTree:
         )
         red_bar = ProgressBar(
             value=node.deletions,
-            max_value=total_changes if total_changes > 0 else 1,
+            max_value=total_deletions if total_deletions > 0 else 1,
             blocks=self.config.bar_left_blocks or DEFAULT_LEFT_BLOCKS,
             align="left",
             style="red",

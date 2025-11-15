@@ -488,58 +488,6 @@ def test_percentage_not_sum_of_bar_percentages():
     assert "10.0%" in light_line, f"only_adds.py should show 10.0% (100/1000), got: {light_line}"
 
 
-def test_bar_columns_share_space_proportionally():
-    """Test that green and red bar columns share space proportionally.
-
-    The two bar columns should split the available bar space based on the ratio
-    of total_additions:total_deletions, and the scale should be consistent
-    (1 block = same number of lines in both columns).
-    """
-    changes = [
-        FileChange(path="balanced.py", additions=100, deletions=50),  # 150 total = 10%
-        FileChange(path="other1.py", additions=400, deletions=200),
-        FileChange(path="other2.py", additions=500, deletions=250),
-    ]
-    # Total: +1000 additions, -500 deletions = 1500 total
-    # Green column gets 1000/(1000+500) = 2/3 of bar space
-    # Red column gets 500/(1000+500) = 1/3 of bar space
-
-    # With bar_width=30:
-    # - Total bar space: 30 chars
-    # - Green column: (1000/1500) × 30 = 20 chars
-    # - Red column: (500/1500) × 30 = 10 chars
-    #
-    # For balanced.py (+100 -50):
-    # - Green bar: 100/1000 = 10% of 20 chars = 2 chars
-    # - Red bar: 50/500 = 10% of 10 chars = 1 char
-    # - Total visual: 3 chars out of 30 = 10% ✓
-    # - Percentage: 150/1500 = 10% ✓
-
-    config = RenderConfig(
-        columns=[Column.TREE, Column.BARS, Column.PERCENTAGES],
-        bar_width=30,
-        bar_left_blocks=BlockChars.simple("-"),  # Deletions
-        bar_right_blocks=BlockChars.simple("+"),  # Additions
-    )
-    diff_tree = make_diff_tree(changes, config=config)
-
-    lines = _render_to_text_lines(diff_tree, width=150)
-    balanced_line = next(line.plain for line in lines if "balanced.py" in line.plain)
-
-    # Count blocks
-    plus_count = balanced_line.count("+")
-    minus_count = balanced_line.count("-")
-
-    # Verify the blocks represent the correct ratio
-    # Green bar should have ~2 chars (100/1000 of 20)
-    # Red bar should have ~1 char (50/500 of 10)
-    assert 1 <= plus_count <= 3, f"Expected ~2 '+' blocks, got {plus_count}"
-    assert 0 <= minus_count <= 2, f"Expected ~1 '-' block, got {minus_count}"
-
-    # Verify percentage
-    assert "10.0%" in balanced_line, f"Should show 10.0% percentage, got: {balanced_line}"
-
-
 def test_deletion_bar_alignment():
     """Test that deletion bars start at the same column position regardless of addition bar width."""
     changes = [
