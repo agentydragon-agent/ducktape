@@ -87,18 +87,23 @@
        - Less reliable than git's built-in detection
   - **Tree placement**: Place renamed files under their **destination path** in tree
     - File appears at its new location, not old location
-    - Show rename with arrow: `new.py ← old.py` or `new.py ← src/old.py`
+    - Show rename with arrow in filename
+    - **Path display for source**: Use path relative to common ancestor or destination parent
+      - Avoid redundant common prefixes
+      - Keep it concise while being unambiguous
   - Example displays:
     ```
     # Simple case: different directories, different filenames
     lib/
     └── new.py ← src/old.py     +5  -2  ████ ██
 
-    # Complex case: same filename, different directories
+    # Complex case: file moved within same parent (with path collapsing)
     lib/
-    ├── bar/
-    │   └── foo.py ← lib/foo/foo.py     +3  -1  ██ █
-    └── baz.py     +2  -0  █
+    ├── bar/foo.py ← foo/foo.py     +3  -1  ██ █
+    └── baz.py                       +2  -0  █
+
+    # Note: bar/foo.py is collapsed since bar/ has only one child
+    # Source path "foo/foo.py" is relative to lib/ (common parent)
     ```
   - Edge cases to handle:
     - Renamed + modified (most common)
