@@ -1,7 +1,6 @@
 """CLI entry point for git-diff-tree."""
 
 import sys
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -15,10 +14,7 @@ from .tree import build_tree, sort_tree
 @click.command()
 @click.argument("diff_args", nargs=-1)
 @click.option(
-    "--sort",
-    type=click.Choice(["size", "alpha"]),
-    default="size",
-    help="Sort mode: 'size' (default) or 'alpha'",
+    "--sort", type=click.Choice(["size", "alpha"]), default="size", help="Sort mode: 'size' (default) or 'alpha'"
 )
 @click.option(
     "--columns",
@@ -26,25 +22,9 @@ from .tree import build_tree, sort_tree
     default="tree,counts,bars,percentages",
     help="Columns to display (comma-separated): tree,counts,bars,percentages",
 )
-@click.option(
-    "--bar-width",
-    type=int,
-    default=20,
-    help="Width of each progress bar (default: 20)",
-)
-@click.option(
-    "--max-depth",
-    type=int,
-    default=None,
-    help="Maximum tree depth to display",
-)
-def main(
-    diff_args: tuple[str, ...],
-    sort: str,
-    columns: str,
-    bar_width: int,
-    max_depth: Optional[int],
-) -> None:
+@click.option("--bar-width", type=int, default=20, help="Width of each progress bar (default: 20)")
+@click.option("--max-depth", type=int, default=None, help="Maximum tree depth to display")
+def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, max_depth: int | None) -> None:
     """
     Visualize git diff as a tree with progress bars.
 
@@ -101,12 +81,7 @@ def main(
             console.print(f"Error: {e}", style="bold red")
             sys.exit(1)
 
-        config = RenderConfig(
-            columns=column_list,
-            bar_width=bar_width,
-            sort_by=sort,
-            max_depth=max_depth,
-        )
+        config = RenderConfig(columns=column_list, bar_width=bar_width, sort_by=sort, max_depth=max_depth)
 
         # Render tree
         diff_tree = DiffTree(root, config=config)

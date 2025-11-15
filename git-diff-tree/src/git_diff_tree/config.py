@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Optional
 
 
 class Column(StrEnum):
@@ -34,9 +33,7 @@ def parse_columns(columns_str: str) -> list[Column]:
             column_list.append(Column[col_upper])
         except KeyError:
             valid_options = ", ".join(c.value for c in Column)
-            raise ValueError(
-                f"Unknown column '{col}'. Valid options: {valid_options}"
-            ) from None
+            raise ValueError(f"Unknown column '{col}'. Valid options: {valid_options}") from None
     return column_list
 
 
@@ -47,19 +44,12 @@ class RenderConfig:
     columns: list[Column]
     bar_width: int = 20
     sort_by: str = "size"
-    max_depth: Optional[int] = None
+    max_depth: int | None = None
 
     @classmethod
     def default(cls) -> "RenderConfig":
         """Create default configuration with all columns."""
-        return cls(
-            columns=[
-                Column.TREE,
-                Column.COUNTS,
-                Column.BARS,
-                Column.PERCENTAGES,
-            ]
-        )
+        return cls(columns=[Column.TREE, Column.COUNTS, Column.BARS, Column.PERCENTAGES])
 
     @classmethod
     def minimal(cls) -> "RenderConfig":

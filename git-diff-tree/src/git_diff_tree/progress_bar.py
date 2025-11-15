@@ -59,16 +59,11 @@ class ProgressBar:
             bar_chars = BLOCKS[1]  # Smallest visible block: ▏
 
         # Pad to full width based on alignment
-        if self.align == "right":
-            bar_chars = bar_chars.rjust(self.width)
-        else:
-            bar_chars = bar_chars.ljust(self.width)
+        bar_chars = bar_chars.rjust(self.width) if self.align == "right" else bar_chars.ljust(self.width)
 
         return Text(bar_chars, style=self.style)
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         """Render the progress bar."""
         yield self.to_text()
 
@@ -91,14 +86,7 @@ class DualProgressBar:
         width: Width of each bar in characters (total width = 2 * width).
     """
 
-    def __init__(
-        self,
-        additions: int,
-        deletions: int,
-        max_additions: int,
-        max_deletions: int,
-        width: int = 20,
-    ):
+    def __init__(self, additions: int, deletions: int, max_additions: int, max_deletions: int, width: int = 20):
         self.additions = additions
         self.deletions = deletions
         self.max_additions = max_additions
@@ -108,22 +96,10 @@ class DualProgressBar:
     def to_text(self) -> Text:
         """Render the dual progress bar as a Text object."""
         # Create RTL bar for additions (green, right-aligned)
-        add_bar = ProgressBar(
-            self.additions,
-            self.max_additions,
-            width=self.width,
-            align="right",
-            style="green",
-        )
+        add_bar = ProgressBar(self.additions, self.max_additions, width=self.width, align="right", style="green")
 
         # Create LTR bar for deletions (red, left-aligned)
-        del_bar = ProgressBar(
-            self.deletions,
-            self.max_deletions,
-            width=self.width,
-            align="left",
-            style="red",
-        )
+        del_bar = ProgressBar(self.deletions, self.max_deletions, width=self.width, align="left", style="red")
 
         # Combine the two bars
         result = Text()
@@ -131,8 +107,6 @@ class DualProgressBar:
         result.append_text(del_bar.to_text())
         return result
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         """Render the dual progress bar."""
         yield self.to_text()

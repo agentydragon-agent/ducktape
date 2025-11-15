@@ -99,11 +99,7 @@ def _propagate_stats_upward(node: TreeNode) -> tuple[int, int]:
     return (total_additions, total_deletions)
 
 
-def sort_tree(
-    node: TreeNode,
-    sort_by: str = "size",
-    reverse: bool = True,
-) -> None:
+def sort_tree(node: TreeNode, sort_by: str = "size", reverse: bool = True) -> None:
     """
     Sort tree nodes in place.
 
@@ -121,11 +117,7 @@ def sort_tree(
 
     # Sort current level
     if sort_by == "size":
-        sorted_children = sorted(
-            node.children.items(),
-            key=lambda x: x[1].total_changes,
-            reverse=reverse,
-        )
+        sorted_children = sorted(node.children.items(), key=lambda x: x[1].total_changes, reverse=reverse)
     else:  # alpha
         sorted_children = sorted(
             node.children.items(),

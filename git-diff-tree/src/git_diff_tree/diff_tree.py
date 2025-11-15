@@ -1,8 +1,7 @@
 """Render tree structure with rich formatting and progress bars."""
 
-from typing import Optional
-
 from rich.console import Console, ConsoleOptions, RenderResult
+from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
@@ -18,11 +17,7 @@ class DiffTree:
     Follows Rich's Renderable protocol - use with console.print(DiffTree(...))
     """
 
-    def __init__(
-        self,
-        root: TreeNode,
-        config: Optional[RenderConfig] = None,
-    ):
+    def __init__(self, root: TreeNode, config: RenderConfig | None = None):
         """
         Initialize the diff tree.
 
@@ -33,9 +28,7 @@ class DiffTree:
         self.root = root
         self.config = config or RenderConfig.default()
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         """Rich console protocol for rendering.
 
         Strategy: Render tree structure to temp console, then build a Table
@@ -52,16 +45,12 @@ class DiffTree:
         """
         # Find max additions and deletions for scaling
         max_additions, max_deletions = self._find_max_additions_deletions(self.root)
-        max_changes = (
-            max_additions + max_deletions if (max_additions + max_deletions) > 0 else 1
-        )
+        max_changes = max_additions + max_deletions if (max_additions + max_deletions) > 0 else 1
 
         # Step 1: Build Rich Tree with ONLY filenames (no stats)
         tree = self._build_tree_structure(self.root, depth=0)
 
         # Step 2: Render tree to temporary console to get tree structure lines
-        from rich.segment import Segment
-
         temp_console = Console(record=True, width=options.max_width or 80)
         temp_console.print(tree)
         segments = temp_console._record_buffer
@@ -83,22 +72,22 @@ class DiffTree:
         table = Table.grid(padding=0)
         table.add_column(justify="left")  # Tree structure + filename
 
-        if Column.COUNTS in self.config.columns:
-            table.add_column(justify="right")  # Counts
-
-        if Column.BARS in self.config.columns:
-            table.add_column(justify="right")  # Green bar (RTL)
-            table.add_column(justify="left")  # Red bar (LTR)
-
-        if Column.PERCENTAGES in self.config.columns:
-            table.add_column(justify="right")  # Percentage
+        # Add columns in the order specified by config
+        for column in self.config.columns:
+            if column == Column.TREE:
+                continue  # Already added above
+            elif column == Column.COUNTS:
+                table.add_column(justify="right")  # Counts
+            elif column == Column.BARS:
+                table.add_column(justify="right")  # Green bar (RTL)
+                table.add_column(justify="left")  # Red bar (LTR)
+            elif column == Column.PERCENTAGES:
+                table.add_column(justify="right")  # Percentage
 
         # Step 5: Add rows pairing tree lines with node stats
-        for tree_line, node in zip(tree_lines, nodes_in_order):
+        for tree_line, node in zip(tree_lines, nodes_in_order, strict=True):
             row = [tree_line]
-            row.extend(
-                self._make_stat_cells(node, max_changes, max_additions, max_deletions)
-            )
+            row.extend(self._make_stat_cells(node, max_changes, max_additions, max_deletions))
             table.add_row(*row)
 
         yield table
@@ -125,11 +114,7 @@ class DiffTree:
 
         return max_additions, max_deletions
 
-    def _build_tree_structure(
-        self,
-        node: TreeNode,
-        depth: int = 0,
-    ) -> Tree:
+    def _build_tree_structure(self, node: TreeNode, depth: int = 0) -> Tree:
         """
         Build a Rich Tree with ONLY filenames (no stats).
 
@@ -150,22 +135,14 @@ class DiffTree:
         tree = Tree(label)
 
         # Add children if within depth limit
-        if (
-            (self.config.max_depth is None or depth < self.config.max_depth)
-            and not node.is_file
-            and node.children
-        ):
+        if (self.config.max_depth is None or depth < self.config.max_depth) and not node.is_file and node.children:
             for child in node.children.values():
                 child_tree = self._build_tree_structure(child, depth + 1)
                 tree.add(child_tree)
 
         return tree
 
-    def _flatten_tree(
-        self,
-        node: TreeNode,
-        depth: int = 0,
-    ) -> list[TreeNode]:
+    def _flatten_tree(self, node: TreeNode, depth: int = 0) -> list[TreeNode]:
         """
         Flatten tree into a list of nodes in render order.
 
@@ -181,23 +158,18 @@ class DiffTree:
         result = [node]
 
         # Add children if within depth limit
-        if (
-            (self.config.max_depth is None or depth < self.config.max_depth)
-            and not node.is_file
-            and node.children
-        ):
+        if (self.config.max_depth is None or depth < self.config.max_depth) and not node.is_file and node.children:
             for child in node.children.values():
                 result.extend(self._flatten_tree(child, depth + 1))
 
         return result
 
-    def _make_stat_cells(
-        self, node: TreeNode, max_changes: int, max_additions: int, max_deletions: int
-    ) -> list[Text]:
+    def _make_stat_cells(self, node: TreeNode, max_changes: int, max_additions: int, max_deletions: int) -> list[Text]:
         """
         Create stat cells for a tree node (counts, bars, percentage).
 
         These cells are added to the table row after the tree structure cell.
+        The order matches the order specified in config.columns.
 
         Args:
             node: TreeNode to create stats for.
@@ -210,51 +182,53 @@ class DiffTree:
         """
         cells = []
 
-        # Cell: Counts
-        if Column.COUNTS in self.config.columns:
-            counts = Text("  ")  # Spacing
-            if node.additions > 0:
-                counts.append(f"+{node.additions}", style="green")
-            counts.append(" ")
-            if node.deletions > 0:
-                counts.append(f"-{node.deletions}", style="red")
-            cells.append(counts)
+        # Generate cells in the order specified by config.columns
+        for column in self.config.columns:
+            if column == Column.TREE:
+                continue  # Tree is handled separately as the first column
 
-        # Cells: Progress bars (two separate cells for alignment)
-        if Column.BARS in self.config.columns:
-            # Green bar (RTL - additions)
-            green_bar = ProgressBar(
-                value=node.additions,
-                max_value=max_additions,
-                width=self.config.bar_width,
-                align="right",
-                style="green",
-            )
+            if column == Column.COUNTS:
+                counts = Text("  ")  # Spacing
+                if node.additions > 0:
+                    counts.append(f"+{node.additions}", style="green")
+                counts.append(" ")
+                if node.deletions > 0:
+                    counts.append(f"-{node.deletions}", style="red")
+                cells.append(counts)
 
-            # Red bar (LTR - deletions)
-            red_bar = ProgressBar(
-                value=node.deletions,
-                max_value=max_deletions,
-                width=self.config.bar_width,
-                align="left",
-                style="red",
-            )
+            if column == Column.BARS:
+                # Green bar (RTL - additions)
+                green_bar = ProgressBar(
+                    value=node.additions,
+                    max_value=max_additions,
+                    width=self.config.bar_width,
+                    align="right",
+                    style="green",
+                )
 
-            # Add spacing before green bar
-            green_cell = Text("  ")
-            green_cell.append_text(green_bar.to_text())
-            cells.append(green_cell)
-            cells.append(red_bar.to_text())
+                # Red bar (LTR - deletions)
+                red_bar = ProgressBar(
+                    value=node.deletions,
+                    max_value=max_deletions,
+                    width=self.config.bar_width,
+                    align="left",
+                    style="red",
+                )
 
-        # Cell: Percentage
-        if Column.PERCENTAGES in self.config.columns:
-            if max_changes > 0:
-                percentage = (node.total_changes / max_changes) * 100
-                pct_text = Text("  ")  # Spacing
-                pct_text.append(f"{percentage:5.1f}%", style="cyan")
-                cells.append(pct_text)
-            else:
-                cells.append(Text("  "))
+                # Add spacing before green bar
+                green_cell = Text("  ")
+                green_cell.append_text(green_bar.to_text())
+                cells.append(green_cell)
+                cells.append(red_bar.to_text())
+
+            if column == Column.PERCENTAGES:
+                if max_changes > 0:
+                    percentage = (node.total_changes / max_changes) * 100
+                    pct_text = Text("  ")  # Spacing
+                    pct_text.append(f"{percentage:5.1f}%", style="cyan")
+                    cells.append(pct_text)
+                else:
+                    cells.append(Text("  "))
 
         return cells
 

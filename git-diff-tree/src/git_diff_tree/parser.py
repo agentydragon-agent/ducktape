@@ -65,14 +65,7 @@ def parse_unified_diff(diff_output: str) -> list[FileChange]:
         additions = patched_file.added
         deletions = patched_file.removed
 
-        changes.append(
-            FileChange(
-                path=path,
-                additions=additions,
-                deletions=deletions,
-                is_binary=is_binary,
-            )
-        )
+        changes.append(FileChange(path=path, additions=additions, deletions=deletions, is_binary=is_binary))
 
     return changes
 
@@ -115,14 +108,7 @@ def parse_numstat_output(numstat_output: str) -> list[FileChange]:
         except ValueError:
             deletions = 0
 
-        changes.append(
-            FileChange(
-                path=path,
-                additions=additions,
-                deletions=deletions,
-                is_binary=is_binary,
-            )
-        )
+        changes.append(FileChange(path=path, additions=additions, deletions=deletions, is_binary=is_binary))
 
     return changes
 
@@ -147,12 +133,7 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
     if diff_args:
         cmd.extend(diff_args)
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     return parse_unified_diff(result.stdout)
 
