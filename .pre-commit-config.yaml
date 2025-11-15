@@ -51,7 +51,7 @@ repos:
       - id: ansible-lint
         files: "^ansible/"
         exclude: "k8s/.*"  # Exclude k8s files that cause parsing issues
-        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/ansible" && ANSIBLE_LINT_SKIP_VAULT=1 ANSIBLE_VAULT_IDENTITY_LIST= ansible-lint --config-file ../.ansible-lint.yaml'
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/ansible" && ./run-ansible-lint.sh'
         args: []  # Clear default args since we're using custom entry
         additional_dependencies:
           - ansible-core>=2.18.0,<2.19.0  # Avoid fucking breaking module removal in 2.19.0

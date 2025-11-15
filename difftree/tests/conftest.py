@@ -6,10 +6,11 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from difftree.parser import FileChange
-from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS
 import pytest
 from rich.console import Console
+
+from difftree.parser import FileChange
+from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS
 
 # Test constants
 PNG_HEADER = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"

@@ -1,10 +1,11 @@
 """Snapshot tests for ANSI-rendered output."""
 
+import pytest
+
 from difftree.config import Column, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.tree import build_tree, sort_tree
-import pytest
 
 from .conftest import render_to_string as render_renderable
 

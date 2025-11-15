@@ -2,15 +2,16 @@
 
 import re
 
+import pytest
+from rich.console import Console
+from rich.segment import Segment
+from rich.text import Text
+
 from difftree.config import Column, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
 from difftree.tree import build_tree
-import pytest
-from rich.console import Console
-from rich.segment import Segment
-from rich.text import Text
 
 from .conftest import render_to_string
 

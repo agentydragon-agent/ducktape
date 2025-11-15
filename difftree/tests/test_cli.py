@@ -3,8 +3,9 @@
 from pathlib import Path
 
 from click.testing import CliRunner
-from difftree.__main__ import main
 import pytest
+
+from difftree.__main__ import main
 
 from .conftest import create_file, git_add_commit
 
