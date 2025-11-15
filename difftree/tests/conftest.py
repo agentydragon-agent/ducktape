@@ -10,7 +10,7 @@ from difftree.config import RenderConfig, SortMode
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS
-from difftree.tree import build_tree, sort_tree
+from difftree.tree import build_tree
 import pytest
 from rich.console import Console
 
@@ -57,22 +57,10 @@ def render_to_string(
 def make_diff_tree(
     changes: list[FileChange],
     config: RenderConfig | None = None,
-    sort_by: SortMode | None = SortMode.ALPHA,
+    sort_by: SortMode = SortMode.ALPHA,
 ) -> DiffTree:
-    """Build a DiffTree from file changes.
-
-    Args:
-        changes: List of file changes
-        config: Optional render configuration (defaults to None, which uses DEFAULT_CONFIG)
-        sort_by: Sort mode (defaults to ALPHA; pass None for unsorted trees)
-
-    Returns:
-        DiffTree instance ready for rendering
-    """
-    root = build_tree(changes)
-    if sort_by is not None:
-        root = sort_tree(root, sort_by=sort_by)
-    return DiffTree(root, config=config)
+    """Build a DiffTree from file changes."""
+    return DiffTree(build_tree(changes, sort_by=sort_by), config=config)
 
 
 @pytest.fixture

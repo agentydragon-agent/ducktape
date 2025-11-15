@@ -11,7 +11,7 @@ from rich.console import Console
 from .config import Column, RenderConfig, SortMode, parse_columns
 from .diff_tree import DiffTree
 from .parser import parse_git_diff, parse_unified_diff
-from .tree import build_tree, sort_tree
+from .tree import build_tree
 
 
 def validate_columns(ctx, param, value):
@@ -98,9 +98,7 @@ def main(diff_args: tuple[str, ...], sort: str, columns: list[Column], bar_width
             console.print("No changes found.", style="yellow")
             sys.exit(0)
 
-        root = build_tree(changes)
-        root = sort_tree(root, sort_by=sort_mode)
-
+        root = build_tree(changes, sort_by=sort_mode)
         config = RenderConfig(columns=columns, bar_width=bar_width, sort_by=sort_mode, max_depth=max_depth)
         diff_tree = DiffTree(root, config=config)
         console = Console()
