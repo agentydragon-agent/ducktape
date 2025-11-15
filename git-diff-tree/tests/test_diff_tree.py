@@ -1,4 +1,4 @@
-"""Tests for tree renderer."""
+"""Tests for DiffTree renderable."""
 
 from io import StringIO
 
