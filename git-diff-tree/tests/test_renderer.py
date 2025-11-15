@@ -605,3 +605,45 @@ def test_bar_proportionality():
     # Expected red bar: 0/20 = 0% = 0 blocks
     assert file3_plus >= 1 and file3_plus <= 3, f"file3.py should have ~2 '+', got {file3_plus}"
     assert file3_minus == 0, f"file3.py should have no '-', got {file3_minus}"
+
+
+def test_deletion_bar_alignment():
+    """Test that deletion bars start at the same column position regardless of addition bar width."""
+    changes = [
+        FileChange(path="file1.py", additions=100, deletions=1),   # Mostly additions
+        FileChange(path="file2.py", additions=1, deletions=100),   # Mostly deletions
+        FileChange(path="file3.py", additions=50, deletions=50),   # Balanced
+    ]
+    root = build_tree(changes)
+
+    config = RenderConfig(columns=[Column.TREE, Column.BARS], bar_width=10)
+    diff_tree = DiffTree(root, config=config)
+
+    output = StringIO()
+    console = Console(file=output, width=120, force_terminal=True)
+    console.print(diff_tree)
+    result = output.getvalue()
+
+    # Replace deletion bar blocks with unique character 'X' based on ANSI color codes
+    import re
+    result = re.sub(r'\x1b\[31m([^\x1b]+)\x1b\[0m', lambda m: 'X' * len(m.group(1).strip()), result)
+
+    lines = result.split('\n')
+    # Filter to non-empty lines
+    lines = [line for line in lines if line.strip()]
+
+    # Expecting 4 lines: root + 3 files
+    assert len(lines) >= 4, f"Expected at least 4 lines, got {len(lines)}"
+
+    # Get the 3 file lines (skip root which is first)
+    file_lines = lines[1:4]
+
+    # Find position of first 'X' in each line
+    positions = []
+    for i, line in enumerate(file_lines):
+        pos = line.find('X')
+        assert pos != -1, f"No deletion bar found in line {i}: {line}"
+        positions.append(pos)
+
+    # All positions should be the same (deletion bars are left-aligned, start at same column)
+    assert len(set(positions)) == 1, f"Deletion bars not aligned: positions={positions}, lines={file_lines}"
