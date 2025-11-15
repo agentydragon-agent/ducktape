@@ -91,10 +91,10 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
         f"Turn 2: ReasoningItem not followed by FunctionCallItem: {turn2_types}"
     )
     fc1 = fc1_item
-    assert fc1.call_id == "call_1", f"Turn 2: Expected call_1, got {fc1.call_id}: {turn2_types}"
-    # Verify id and status preserved
-    assert fc1.id == "fc_id_1", f"FC1 id not preserved: {fc1.id}"
-    assert fc1.status == "completed", f"FC1 status not preserved: {fc1.status}"
+    # Verify call_id, id and status all preserved
+    assert (fc1.call_id, fc1.id, fc1.status) == ("call_1", "fc_id_1", "completed"), (
+        f"Turn 2: FC1 fields not preserved: call_id={fc1.call_id}, id={fc1.id}, status={fc1.status}, types={turn2_types}"
+    )
 
     fco1 = turn2_input[ri1_idx + 2]
     assert isinstance(fco1, FunctionCallOutputItem), (
@@ -115,8 +115,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     fc1_item = turn3_input[ri1_idx + 1]
     assert isinstance(fc1_item, FunctionCallItem)
     fc1 = fc1_item
-    assert fc1.call_id == "call_1"
-    assert fc1.id == "fc_id_1"
+    assert (fc1.call_id, fc1.id) == ("call_1", "fc_id_1")
     fco1 = turn3_input[ri1_idx + 2]
     assert isinstance(fco1, FunctionCallOutputItem)
     assert fco1.call_id == "call_1"
@@ -130,10 +129,10 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     fc2_item = turn3_input[ri2_idx + 1]
     assert isinstance(fc2_item, FunctionCallItem), f"Turn 3: RI2 not followed by FunctionCallItem: {turn3_types}"
     fc2 = fc2_item
-    assert fc2.call_id == "call_2", f"Turn 3: Expected call_2, got {fc2.call_id}: {turn3_types}"
-    # Verify id and status preserved
-    assert fc2.id == "fc_id_2", f"FC2 id not preserved: {fc2.id}"
-    assert fc2.status == "in_progress", f"FC2 status not preserved: {fc2.status}"
+    # Verify call_id, id and status all preserved
+    assert (fc2.call_id, fc2.id, fc2.status) == ("call_2", "fc_id_2", "in_progress"), (
+        f"Turn 3: FC2 fields not preserved: call_id={fc2.call_id}, id={fc2.id}, status={fc2.status}, types={turn3_types}"
+    )
 
     fco2 = turn3_input[ri2_idx + 2]
     assert isinstance(fco2, FunctionCallOutputItem)

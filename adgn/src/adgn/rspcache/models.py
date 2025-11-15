@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any
 
-from openai.types.responses import Response as OpenAIResponse, ResponseError, ResponseStreamEvent, ResponseUsage
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from openai.types.responses import (
+    Response as OpenAIResponse,
+    ResponseError,
+    ResponseStreamEvent,
+    ResponseUsage,
+)
+from pydantic import BaseModel, ConfigDict, TypeAdapter, field_serializer
 
 FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
 RESPONSE_ADAPTER: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
@@ -38,24 +43,9 @@ class FinalResponseSnapshot(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    @classmethod
-    def from_db(
-        cls, *, status: str, response_json: Any, error_json: Any, token_usage_json: Any
-    ) -> FinalResponseSnapshot:
-        return cls(
-            status=ResponseStatus(status),
-            response=parse_response(response_json) if response_json is not None else None,
-            error=parse_error(error_json) if error_json is not None else None,
-            token_usage=parse_usage(token_usage_json) if token_usage_json is not None else None,
-        )
-
-    def to_db_payload(self) -> dict[str, Any]:
-        return {
-            "status": self.status.value,
-            "response_json": dump_response(self.response),
-            "error_json": dump_error(self.error),
-            "token_usage_json": dump_usage(self.token_usage),
-        }
+    @field_serializer("status")
+    def serialize_status(self, value: ResponseStatus) -> str:
+        return value.value
 
 
 def stream_event_event_id(event: ResponseStreamEvent) -> str | None:
@@ -110,37 +100,7 @@ def parse_response(value: OpenAIResponse | Mapping[str, object]) -> OpenAIRespon
     return RESPONSE_ADAPTER.validate_python(value)
 
 
-def dump_response(value: OpenAIResponse | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return cast(dict[str, Any], value.model_dump(mode="json"))
-
-
-def parse_error(value: Any) -> ErrorPayload:
-    if value is None:
-        return ErrorPayload()
-    if isinstance(value, ErrorPayload):
-        return value
-    if isinstance(value, ResponseError):
-        return ErrorPayload.model_validate(value.model_dump(mode="json"))
-    if not isinstance(value, dict):
-        raise ValueError("error payload must be a mapping")
-    return ErrorPayload.model_validate(value)
-
-
-def dump_error(value: ErrorPayload | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return cast(dict[str, Any], value.model_dump(mode="json"))
-
-
 def parse_usage(value: ResponseUsage | Mapping[str, object]) -> ResponseUsage:
     if isinstance(value, ResponseUsage):
         return value
     return USAGE_ADAPTER.validate_python(value)
-
-
-def dump_usage(value: ResponseUsage | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return cast(dict[str, Any], value.model_dump(mode="json"))

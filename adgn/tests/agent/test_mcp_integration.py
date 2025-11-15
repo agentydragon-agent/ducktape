@@ -60,8 +60,8 @@ async def test_direct_inprocess_server(make_compositor) -> None:
         # Sanity-call exec via the namespaced tool using the typed helper
         payload = DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100_000, timeout_ms=5000)
         result = await call_tool_typed(sess, tool_name, payload, BaseExecResult)
-        assert isinstance(result.exit, Exited)
-        assert result.exit.exit_code == 0
+        # Compare whole exit object
+        assert result.exit == Exited(exit_code=0)
 
 
 @pytest.mark.asyncio

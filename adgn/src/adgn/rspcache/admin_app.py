@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from asyncpg import UniqueViolationError
@@ -15,8 +15,18 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
-from adgn.rspcache.models import FRAME_ADAPTER, dump_error, dump_response, dump_usage, stream_event_event_id
-from adgn.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponseFrame, ResponsesDB
+from adgn.rspcache.models import (
+    FRAME_ADAPTER,
+    FinalResponseSnapshot,
+    stream_event_event_id,
+)
+from adgn.rspcache.responses_db import (
+    APIKeyRecord,
+    ClientAPIKey,
+    Response,
+    ResponseFrame,
+    ResponsesDB,
+)
 
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200
@@ -60,27 +70,38 @@ class FrameRecordModel(BaseModel):
     ordinal: int
     frame_type: str | None = None
     event_id: str | None = None
-    created_ts: datetime
+    created_at: datetime
     frame: Any
 
 
 class ResponseRecordModel(BaseModel):
+    """API model for cached OpenAI API responses.
+
+    Attributes:
+        cache_key: SHA256 hash of request body (used for cache lookups)
+        response_id: OpenAI's response ID (e.g., 'resp_abc123'), nullable
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
-    key: str
+    # Core Response fields
+    cache_key: str
     response_id: str | None = None
-    api_key_id: UUID | None = None
-    api_key_name: str | None = None
     model: str
-    status: str
-    status_reason: str | None = None
-    created_ts: datetime
-    last_update_ts: datetime
+    status: (
+        Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"] | None
+    ) = None
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime
     latency_ms: int | None = None
-    token_usage: dict[str, Any] | None = None
-    request_body: dict[str, Any] | None = None
-    final_response: dict[str, Any] | None = None
-    response_error: dict[str, Any] | None = None
+
+    # TODO: Type this properly (OpenAI request model)
+    request_body: dict[str, Any]
+
+    # Nested relationships (typed)
+    api_key: APIKeyModel | None = None
+    snapshot: FinalResponseSnapshot | None = None
 
 
 class ResponseListModel(BaseModel):
@@ -104,7 +125,7 @@ class APIKeyModel(BaseModel):
     name: str
     token_prefix: str
     upstream_alias: str
-    created_ts: datetime
+    created_at: datetime
     revoked_ts: datetime | None = None
 
 
@@ -142,40 +163,20 @@ async def _shutdown() -> None:
     await _db.close()
 
 
-def _to_response_model(
-    record: Response,
-    *,
-    response_payload: dict[str, Any] | None = None,
-    error_payload: dict[str, Any] | None = None,
-    token_usage: dict[str, Any] | None = None,
-) -> ResponseRecordModel:
-    api_key_name = record.api_key.name if record.api_key else None
-    snapshot = record.snapshot.to_model() if record.snapshot else None
-    final_response_json = response_payload
-    error_json = error_payload
-    token_usage_json = token_usage
-    if snapshot is not None:
-        if final_response_json is None and snapshot.response is not None:
-            final_response_json = dump_response(snapshot.response)
-        if error_json is None and snapshot.error is not None:
-            error_json = dump_error(snapshot.error)
-        if token_usage_json is None and snapshot.token_usage is not None:
-            token_usage_json = dump_usage(snapshot.token_usage)
+def _to_response_model(record: Response) -> ResponseRecordModel:
+    """Convert DB Response record to API model."""
     return ResponseRecordModel(
-        key=record.key,
+        cache_key=record.cache_key,
         response_id=record.response_id,
-        api_key_id=record.api_key_id,
-        api_key_name=api_key_name,
         model=record.model,
         status=record.status,
-        status_reason=record.status_reason,
-        created_ts=record.created_ts,
-        last_update_ts=record.last_update_ts,
+        error=record.error,
+        created_at=record.created_ts,
+        updated_at=record.last_update_ts,
         latency_ms=record.latency_ms,
-        token_usage=token_usage_json or record.token_usage_json,
-        request_body=record.request_body_json,
-        final_response=final_response_json,
-        response_error=error_json,
+        request_body=record.request_body,
+        api_key=_to_api_key_model(record.api_key) if record.api_key else None,
+        snapshot=record.snapshot.to_model() if record.snapshot else None,
     )
 
 
@@ -185,7 +186,7 @@ def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:
         ordinal=frame.ordinal,
         frame_type=frame.frame_type or payload.type,
         event_id=frame.event_id or stream_event_event_id(payload),
-        created_ts=frame.created_ts,
+        created_at=frame.created_ts,
         frame=payload.model_dump(mode="json"),
     )
 
@@ -196,7 +197,7 @@ def _to_api_key_model(record: ClientAPIKey | APIKeyRecord) -> APIKeyModel:
         name=record.name,
         token_prefix=record.token_prefix,
         upstream_alias=record.upstream_alias,
-        created_ts=record.created_ts,
+        created_at=record.created_ts,
         revoked_ts=record.revoked_ts,
     )
 
@@ -218,13 +219,7 @@ async def get_response(identifier: str, db: ResponsesDB = Depends(get_db)) -> Re
     detail = await db.get_response_detail(identifier)
     if detail is None:
         raise HTTPException(status_code=404, detail="Response not found")
-    snapshot = detail.snapshot
-    return _to_response_model(
-        detail.record,
-        response_payload=dump_response(snapshot.response) if snapshot and snapshot.response else None,
-        error_payload=dump_error(snapshot.error) if snapshot and snapshot.error else None,
-        token_usage=dump_usage(snapshot.token_usage) if snapshot and snapshot.token_usage else None,
-    )
+    return _to_response_model(detail.record)
 
 
 @admin_app.get("/api/responses/{identifier}/frames", response_model=FrameListModel)

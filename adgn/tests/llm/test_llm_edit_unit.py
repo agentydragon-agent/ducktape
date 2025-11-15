@@ -60,8 +60,7 @@ async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_sessio
         await sess.call_tool(name="add_line_after", arguments={"line_number": 1, "content": "world"})
         # Finish successfully; should not run python syntax checks
         out = await client.done(DoneInput(outcome=EditorOutcome.SUCCESS, summary="ok"))
-        assert out.kind == "Success"
-        assert out.summary == "ok"
+        assert (out.kind, out.summary) == ("Success", "ok")
 
     # file saved with edits
     assert p.read_text(encoding="utf-8") == "hello\nworld\n"
@@ -93,8 +92,7 @@ async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path, editor_se
         await sess.call_tool(name="delete_line", arguments={"line_number": 1})
         await sess.call_tool(name="add_line_after", arguments={"line_number": 0, "content": "B"})
         out = await client.done(DoneInput(outcome=EditorOutcome.FAILURE, summary="abort"))
-        assert out.kind == "Failure"
-        assert out.summary == "abort"
+        assert (out.kind, out.summary) == ("Failure", "abort")
         # Ensure in-memory state reverted by reading current first line
         rr = await sess.call_tool(name="read_line_range", arguments={"start": 1, "end": 1})
         body = (rr.structured_content or {}).get("body", "")

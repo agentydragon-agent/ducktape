@@ -8,7 +8,6 @@ import tiktoken
 
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import FileInfo
-from adgn.openai_utils.model import AssistantMessageOut, ResponsesResult
 
 
 class _Tokenizer(Protocol):
@@ -180,26 +179,3 @@ class TruncationManager:
             return file_path.read_text()
         except UnicodeDecodeError:
             return "<<not a plaintext file>>"
-
-
-def extract_text_from_openai_response(response: ResponsesResult) -> str:
-    """Extract text content from OpenAI response, handling nested message structure.
-
-    Args:
-        response: OpenAI response object
-
-    Returns:
-        First text content found in the response
-
-    Raises:
-        RuntimeError: If no text content is found
-    """
-    for item in response.output:
-        if isinstance(item, AssistantMessageOut):
-            msg: AssistantMessageOut = item
-            text = msg.text
-            assert isinstance(text, str)
-            if text:
-                return text
-
-    raise RuntimeError("No text content found in OpenAI response")
