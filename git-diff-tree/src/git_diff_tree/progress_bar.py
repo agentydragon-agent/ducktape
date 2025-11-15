@@ -5,9 +5,13 @@ from typing import Literal
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.text import Text
 
-# Unicode block characters for progress bars (from empty to full)
-# Same as Rich's END_BLOCK_ELEMENTS plus full block
-BLOCKS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"]
+# Unicode block characters for progress bars
+# Left-growing blocks (for LTR bars): fills from left edge
+LEFT_BLOCKS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"]
+
+# Right-growing blocks (for RTL bars): fills from right edge
+# Note: Unicode has limited right-block granularity, so we approximate
+RIGHT_BLOCKS = [" ", "▕", "▕", "▐", "▐", "▐", "▉", "█", "█"]
 
 
 class ProgressBar:
@@ -47,24 +51,29 @@ class ProgressBar:
         # Calculate how many characters to fill
         filled_width = ratio * self.width
         full_blocks = int(filled_width)
-        partial_block_index = int((filled_width - full_blocks) * (len(BLOCKS) - 1))
 
         # Build the bar based on alignment direction
         if self.align == "right":
-            # RTL: partial block on LEFT, full blocks on RIGHT
+            # RTL: Use right-growing blocks, partial on LEFT, full blocks on RIGHT
+            partial_block_index = int((filled_width - full_blocks) * (len(RIGHT_BLOCKS) - 1))
             bar_chars = ""
             if full_blocks < self.width and partial_block_index > 0:
-                bar_chars = BLOCKS[partial_block_index]
-            bar_chars += BLOCKS[-1] * full_blocks
-        else:
-            # LTR: full blocks on LEFT, partial block on RIGHT
-            bar_chars = BLOCKS[-1] * full_blocks
-            if full_blocks < self.width and partial_block_index > 0:
-                bar_chars += BLOCKS[partial_block_index]
+                bar_chars = RIGHT_BLOCKS[partial_block_index]
+            bar_chars += RIGHT_BLOCKS[-1] * full_blocks
 
-        # Ensure any value >0 shows at least a minimal sliver
-        if self.value > 0 and not bar_chars:
-            bar_chars = BLOCKS[1]  # Smallest visible block: ▏
+            # Ensure any value >0 shows at least a minimal sliver
+            if self.value > 0 and not bar_chars:
+                bar_chars = RIGHT_BLOCKS[1]  # Smallest visible right block: ▕
+        else:
+            # LTR: Use left-growing blocks, full blocks on LEFT, partial on RIGHT
+            partial_block_index = int((filled_width - full_blocks) * (len(LEFT_BLOCKS) - 1))
+            bar_chars = LEFT_BLOCKS[-1] * full_blocks
+            if full_blocks < self.width and partial_block_index > 0:
+                bar_chars += LEFT_BLOCKS[partial_block_index]
+
+            # Ensure any value >0 shows at least a minimal sliver
+            if self.value > 0 and not bar_chars:
+                bar_chars = LEFT_BLOCKS[1]  # Smallest visible left block: ▏
 
         # Pad to full width based on alignment
         bar_chars = bar_chars.rjust(self.width) if self.align == "right" else bar_chars.ljust(self.width)
@@ -77,14 +86,14 @@ class ProgressBar:
 
 
 class DualProgressBar:
-    """Twin progress bars: additions (RTL, green) + deletions (LTR, red).
+    """Twin progress bars: additions (LTR, green) + deletions (RTL, red).
 
     Renders two progress bars side-by-side with no gap:
-    - Left bar: additions, right-aligned (fills RTL), green
-    - Right bar: deletions, left-aligned (fills LTR), red
+    - Left bar: additions, left-aligned (fills LTR), green
+    - Right bar: deletions, right-aligned (fills RTL), red
 
-    This creates a visual "breakpoint" where the bars meet, showing
-    the relative proportions of additions vs deletions.
+    This creates a visual separation between additions (growing left-to-right)
+    and deletions (growing right-to-left).
 
     Args:
         additions: Number of added lines.
@@ -103,11 +112,11 @@ class DualProgressBar:
 
     def to_text(self) -> Text:
         """Render the dual progress bar as a Text object."""
-        # Create RTL bar for additions (green, right-aligned)
-        add_bar = ProgressBar(self.additions, self.max_additions, width=self.width, align="right", style="green")
+        # Create LTR bar for additions (green, left-aligned)
+        add_bar = ProgressBar(self.additions, self.max_additions, width=self.width, align="left", style="green")
 
-        # Create LTR bar for deletions (red, left-aligned)
-        del_bar = ProgressBar(self.deletions, self.max_deletions, width=self.width, align="left", style="red")
+        # Create RTL bar for deletions (red, right-aligned)
+        del_bar = ProgressBar(self.deletions, self.max_deletions, width=self.width, align="right", style="red")
 
         # Combine the two bars
         result = Text()

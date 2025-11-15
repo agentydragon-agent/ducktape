@@ -79,8 +79,8 @@ class DiffTree:
             elif column == Column.COUNTS:
                 table.add_column(justify="right")  # Counts
             elif column == Column.BARS:
-                table.add_column(justify="right")  # Green bar (RTL)
-                table.add_column(justify="left")  # Red bar (LTR)
+                table.add_column(justify="left")  # Green bar (LTR)
+                table.add_column(justify="right")  # Red bar (RTL)
             elif column == Column.PERCENTAGES:
                 table.add_column(justify="right")  # Percentage
 
@@ -197,21 +197,21 @@ class DiffTree:
                 cells.append(counts)
 
             if column == Column.BARS:
-                # Green bar (RTL - additions)
+                # Green bar (LTR - additions, grows left to right)
                 green_bar = ProgressBar(
                     value=node.additions,
                     max_value=max_additions,
                     width=self.config.bar_width,
-                    align="right",
+                    align="left",
                     style="green",
                 )
 
-                # Red bar (LTR - deletions)
+                # Red bar (RTL - deletions, grows right to left)
                 red_bar = ProgressBar(
                     value=node.deletions,
                     max_value=max_deletions,
                     width=self.config.bar_width,
-                    align="left",
+                    align="right",
                     style="red",
                 )
 
