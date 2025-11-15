@@ -49,10 +49,18 @@ class ProgressBar:
         full_blocks = int(filled_width)
         partial_block_index = int((filled_width - full_blocks) * (len(BLOCKS) - 1))
 
-        # Build the bar
-        bar_chars = BLOCKS[-1] * full_blocks
-        if full_blocks < self.width and partial_block_index > 0:
-            bar_chars += BLOCKS[partial_block_index]
+        # Build the bar based on alignment direction
+        if self.align == "right":
+            # RTL: partial block on LEFT, full blocks on RIGHT
+            bar_chars = ""
+            if full_blocks < self.width and partial_block_index > 0:
+                bar_chars = BLOCKS[partial_block_index]
+            bar_chars += BLOCKS[-1] * full_blocks
+        else:
+            # LTR: full blocks on LEFT, partial block on RIGHT
+            bar_chars = BLOCKS[-1] * full_blocks
+            if full_blocks < self.width and partial_block_index > 0:
+                bar_chars += BLOCKS[partial_block_index]
 
         # Ensure any value >0 shows at least a minimal sliver
         if self.value > 0 and not bar_chars:
