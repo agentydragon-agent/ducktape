@@ -47,7 +47,8 @@ MULTILINE_WITH_COMMAS = dedent('''
 ''').strip()
 
 # Expected output: collapsed to one line
-EXPECTED_COLLAPSED = dedent('''
+EXPECTED_COLLAPSED = (
+    dedent('''
     """Test file."""
 
     import click
@@ -61,16 +62,14 @@ EXPECTED_COLLAPSED = dedent('''
     result = some_function(arg1="value1", arg2="value2", arg3="value3")
 
     my_dict = {"key1": "value1", "key2": "value2", "key3": "value3"}
-''').strip() + "\n"  # Formatters add trailing newline
+''').strip()
+    + "\n"
+)  # Formatters add trailing newline
 
 
 def remove_trailing_commas(content: str) -> str:
     """Remove trailing commas before closing brackets."""
-    patterns = [
-        (r',(\s*)\)', r'\1)'),
-        (r',(\s*)\]', r'\1]'),
-        (r',(\s*)\}', r'\1}'),
-    ]
+    patterns = [(r",(\s*)\)", r"\1)"), (r",(\s*)\]", r"\1]"), (r",(\s*)\}", r"\1}")]
     result = content
     for pattern, replacement in patterns:
         result = re.sub(pattern, replacement, result)
@@ -79,16 +78,14 @@ def remove_trailing_commas(content: str) -> str:
 
 def run_ruff_format(content: str, line_length: int = 120) -> str:
     """Run ruff format on content."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(content)
         f.flush()
         tmpfile = Path(f.name)
 
     try:
         subprocess.run(
-            ["ruff", "format", "--line-length", str(line_length), str(tmpfile)],
-            check=True,
-            capture_output=True,
+            ["ruff", "format", "--line-length", str(line_length), str(tmpfile)], check=True, capture_output=True
         )
         return tmpfile.read_text()
     finally:
@@ -103,24 +100,21 @@ def run_yapf(content: str) -> str:
         tmpfile.write_text(content)
 
         # Create yapf config
-        (tmpdir / ".style.yapf").write_text(dedent('''
+        (tmpdir / ".style.yapf").write_text(
+            dedent("""
             [style]
             based_on_style = google
             column_limit = 120
-        '''))
-
-        subprocess.run(
-            ["yapf", "--in-place", str(tmpfile)],
-            cwd=tmpdir,
-            check=True,
-            capture_output=True,
+        """)
         )
+
+        subprocess.run(["yapf", "--in-place", str(tmpfile)], cwd=tmpdir, check=True, capture_output=True)
         return tmpfile.read_text()
 
 
 def run_autopep8(content: str, aggressive: int = 2) -> str:
     """Run autopep8 on content."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(content)
         f.flush()
         tmpfile = Path(f.name)
@@ -169,19 +163,16 @@ def test_ruff_skip_magic_trailing_comma():
         tmpfile.write_text(MULTILINE_WITH_COMMAS)
 
         # Create ruff config with skip-magic-trailing-comma
-        (tmpdir / "ruff.toml").write_text(dedent('''
+        (tmpdir / "ruff.toml").write_text(
+            dedent("""
             line-length = 120
 
             [format]
             skip-magic-trailing-comma = true
-        '''))
-
-        subprocess.run(
-            ["ruff", "format", str(tmpfile)],
-            cwd=tmpdir,
-            check=True,
-            capture_output=True,
+        """)
         )
+
+        subprocess.run(["ruff", "format", str(tmpfile)], cwd=tmpdir, check=True, capture_output=True)
 
         result = tmpfile.read_text()
         assert result == EXPECTED_COLLAPSED
@@ -212,21 +203,17 @@ def test_com819_only_affects_oneliners():
 
     COM819 is NOT what we want - it only cleans up already-collapsed code.
     """
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-        f.write('foo = (1, 2, 3,)\n')  # One-liner with trailing comma
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        f.write("foo = (1, 2, 3,)\n")  # One-liner with trailing comma
         f.flush()
         tmpfile = Path(f.name)
 
     try:
         # Run ruff check with COM819
-        subprocess.run(
-            ["ruff", "check", "--select", "COM819", "--fix", str(tmpfile)],
-            check=True,
-            capture_output=True,
-        )
+        subprocess.run(["ruff", "check", "--select", "COM819", "--fix", str(tmpfile)], check=True, capture_output=True)
 
         # COM819 removes the trailing comma
-        assert tmpfile.read_text() == 'foo = (1, 2, 3)\n'
+        assert tmpfile.read_text() == "foo = (1, 2, 3)\n"
     finally:
         tmpfile.unlink()
 
