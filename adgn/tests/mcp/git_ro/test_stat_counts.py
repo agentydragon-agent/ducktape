@@ -38,10 +38,8 @@ async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
         items = result.items
         assert isinstance(items, list)
 
-        for it in items:
-            if it.path == "file.txt":
-                assert int(it.additions) == 2, f"Expected additions==2 for file.txt, got {it.additions}"
-                assert int(it.deletions) == 0, f"Expected deletions==0 for file.txt, got {it.deletions}"
-                break
-        else:
-            pytest.fail("file.txt not found in stat items")
+        # Find the file.txt item and compare all fields at once
+        file_items = [it for it in items if it.path == "file.txt"]
+        assert len(file_items) == 1, "Expected exactly one file.txt in stat items"
+        file_item = file_items[0]
+        assert (int(file_item.additions), int(file_item.deletions)) == (2, 0)

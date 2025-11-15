@@ -64,10 +64,11 @@ def test_flat_model_signature_exposed():
 
     sig = inspect.signature(demo)
     params = list(sig.parameters.values())
+
+    # Compare whole parameter specs directly
     assert len(params) == 2
-    assert params[0].name == "a"
-    assert params[1].name == "b"
-    assert params[0].kind is inspect.Parameter.KEYWORD_ONLY
+    assert (params[0].name, params[0].kind) == ("a", inspect.Parameter.KEYWORD_ONLY)
+    assert (params[1].name, params[1].kind) == ("b", inspect.Parameter.KEYWORD_ONLY)
 
 
 @pytest.mark.asyncio
