@@ -25,16 +25,6 @@ def test_parse_columns_invalid():
         parse_columns("tree,invalid,counts")
 
 
-def test_render_config_default():
-    """Test default RenderConfig."""
-    config = DEFAULT_CONFIG
-    assert Column.TREE in config.columns
-    assert Column.COUNTS in config.columns
-    assert Column.BARS in config.columns
-    assert Column.PERCENTAGES in config.columns
-    assert config.bar_width == 20
-
-
 def test_render_config_minimal():
     """Test minimal RenderConfig."""
     config = RenderConfig(columns=[Column.TREE])

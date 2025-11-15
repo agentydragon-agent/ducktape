@@ -57,14 +57,14 @@ def render_to_string(
 def make_diff_tree(
     changes: list[FileChange],
     config: RenderConfig | None = None,
-    sort_by: SortMode | None = None,
+    sort_by: SortMode | None = SortMode.ALPHA,
 ) -> DiffTree:
     """Build a DiffTree from file changes.
 
     Args:
         changes: List of file changes
         config: Optional render configuration (defaults to None, which uses DEFAULT_CONFIG)
-        sort_by: Optional sort mode (SortMode enum or None for unsorted)
+        sort_by: Sort mode (defaults to ALPHA; pass None for unsorted trees)
 
     Returns:
         DiffTree instance ready for rendering

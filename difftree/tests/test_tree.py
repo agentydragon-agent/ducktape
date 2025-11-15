@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from difftree.config import SortMode
 from difftree.parser import FileChange
 from difftree.tree import TreeNode, build_tree, sort_tree
 
@@ -73,7 +74,7 @@ def test_tree_statistics_aggregation(sample_changes: list[FileChange]):
 def test_sort_tree_by_size(sample_changes: list[FileChange]):
     """Test sorting tree by total changes (descending)."""
     root = build_tree(sample_changes)
-    root = sort_tree(root, sort_by="size", reverse=True)
+    root = sort_tree(root, sort_by=SortMode.SIZE, reverse=True)
 
     # Get children in order
     children_names = list(root.children.keys())
@@ -88,7 +89,7 @@ def test_sort_tree_by_size(sample_changes: list[FileChange]):
 def test_sort_tree_alphabetically(sample_changes: list[FileChange]):
     """Test sorting tree alphabetically."""
     root = build_tree(sample_changes)
-    root = sort_tree(root, sort_by="alpha")
+    root = sort_tree(root, sort_by=SortMode.ALPHA)
 
     # Get children in order
     children_names = list(root.children.keys())
