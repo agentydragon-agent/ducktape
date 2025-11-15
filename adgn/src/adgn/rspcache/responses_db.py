@@ -30,8 +30,6 @@ from adgn.rspcache.models import (
     ErrorPayload,
     FinalResponseSnapshot,
     ResponseStatus,
-    dump_response,
-    dump_usage,
     stream_event_event_id,
     stream_event_response_id,
 )
@@ -366,7 +364,7 @@ class ResponsesDB:
                     status=ResponseStatus.COMPLETE.value,
                     response_id=response_id,
                     latency_ms=latency_ms,
-                    token_usage_json=dump_usage(token_usage),
+                    token_usage_json=token_usage.model_dump(mode="json") if token_usage else None,
                     last_update_ts=datetime.now(UTC),
                 )
             )
@@ -499,7 +497,7 @@ class ResponsesDB:
             snapshot_model = snapshot.to_model()
             if snapshot_model.status != ResponseStatus.COMPLETE or snapshot_model.response is None:
                 return None
-            return cast(dict[str, Any] | None, dump_response(snapshot_model.response))
+            return snapshot_model.response.model_dump(mode="json")
 
     async def get_response_detail(self, identifier: str) -> ResponseDetail | None:
         if self._session_factory is None:

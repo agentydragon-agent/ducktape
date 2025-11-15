@@ -7,8 +7,15 @@ from adgn.inop.engine.models import GradedRollout
 from adgn.inop.io.logging_utils import DualOutputLogging
 from adgn.inop.prompting.context_window import context_window_tokens_by_id
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
-from adgn.inop.prompting.truncation_utils import TruncationManager, extract_text_from_openai_response
-from adgn.openai_utils.model import InputTextPart, OpenAIModelProto, ResponsesRequest, SystemMessage, UserMessage
+from adgn.inop.prompting.truncation_utils import TruncationManager
+from adgn.openai_utils.text_extraction import first_assistant_text
+from adgn.openai_utils.model import (
+    InputTextPart,
+    OpenAIModelProto,
+    ResponsesRequest,
+    SystemMessage,
+    UserMessage,
+)
 
 logger = DualOutputLogging.get_logger()
 
@@ -115,8 +122,7 @@ class PatternSummarizer(FeedbackProvider):
             tool_choice="auto",
         )
         resp = await self.model.responses_create(req)
-        text: str = extract_text_from_openai_response(resp)
-        return text
+        return first_assistant_text(resp)
         # TODO: store, log
 
     def verbal_description(self) -> str:
