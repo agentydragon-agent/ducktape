@@ -5,10 +5,11 @@ from importlib import resources
 from pathlib import Path
 
 from hamcrest import any_of, assert_that, contains_string, equal_to, has_entries, has_item
+from openai.types.responses import ResponseInputMessage
 import pytest
 
 from adgn.llm.sysrw.run_eval import read_dataset  # type: ignore
-from adgn.llm.sysrw.schemas import CrushSample
+from adgn.llm.sysrw.schemas import CCRSample, CrushSample
 
 ROOT = Path(str(resources.files("adgn.llm.sysrw")))
 DATA = ROOT / "data" / "_test"
@@ -27,6 +28,8 @@ async def test_read_ccr_min():
     assert len(ds) == 2
     s = ds[0]
     assert s.correlation_id == "ccr-1"
+    # Type narrowing: CCR dataset should only contain CCRSample instances
+    assert isinstance(s, CCRSample), f"Expected CCRSample, got {type(s)}"
     msgs = s.anthropic_request.messages
     assert_that(msgs[0]["role"], equal_to("user"))
     # last user message should contain the <bad> marker
@@ -54,9 +57,10 @@ async def test_read_crush_min():
     assert s_bad.correlation_id is None
     # Should be a CrushSample discriminated instance
     assert isinstance(s_bad, CrushSample)
-    # Responses-native payload preserved
-    raw = s_bad.oai_request
-    payload = raw if isinstance(raw, dict) else raw.model_dump()
-    assert isinstance(payload.get("input"), list)
-    roles = [(it.get("role") or "").lower() for it in payload.get("input") if isinstance(it, dict)]
+    # Responses-native payload preserved as Pydantic model
+    oai_req = s_bad.oai_request
+    input_data = oai_req.input
+    assert isinstance(input_data, list)
+    # Extract roles from the input messages (should be proper message objects)
+    roles = [item.role.lower() for item in input_data if isinstance(item, ResponseInputMessage)]
     assert any(r in ("user", "assistant") for r in roles)

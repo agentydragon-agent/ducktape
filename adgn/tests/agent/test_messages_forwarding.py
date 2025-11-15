@@ -9,7 +9,6 @@ from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import (
     AssistantMessage,
-    FakeOpenAIModel,
     FunctionCallItem,
     FunctionCallOutputItem,
     ReasoningItem,
@@ -17,6 +16,7 @@ from adgn.openai_utils.model import (
 )
 from tests.agent.ui.typed_asserts import assert_items_exclude_instance, assert_items_include_instances
 from tests.fixtures.responses import ResponsesFactory
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.fixture
@@ -35,23 +35,24 @@ def approval_policy_reader_allow_all(approval_policy_reader_stub):
 #   - reasoning_function_calls.ipynb: https://github.com/openai/openai-cookbook/blob/main/examples/reasoning_function_calls.ipynb
 
 
-_rf = ResponsesFactory("gpt-5-nano")
-
-
-def _make_reasoning_then_message(text: str):
+def _make_reasoning_then_message(text: str, rf: ResponsesFactory) -> ResponsesResult:
     # Ensure unique item IDs per response to avoid duplicate-id assertions in agent transcript
-    return _rf.make(_rf.make_item_reasoning(), _rf.assistant_text(text))
+    result: ResponsesResult = rf.make(rf.make_item_reasoning(), rf.assistant_text(text))
+    return result
 
 
-def _make_tool_call_resp(name: str, args: dict[str, Any], *, call_id: str | None = None) -> ResponsesResult:
-    return _rf.make_tool_call(name, args, call_id)
+def _make_tool_call_resp(
+    name: str, args: dict[str, Any], rf: ResponsesFactory, *, call_id: str | None = None
+) -> ResponsesResult:
+    result: ResponsesResult = rf.make_tool_call(name, args, call_id)
+    return result
 
 
 @pytest.mark.asyncio
-async def test_stateless_reasoning_forwarding(make_pg_compositor_echo) -> None:
+async def test_stateless_reasoning_forwarding(make_pg_compositor_echo, responses_factory: ResponsesFactory) -> None:
     """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
 
-    seq = [_make_reasoning_then_message("ok")]
+    seq = [_make_reasoning_then_message("ok", responses_factory)]
     client = FakeOpenAIModel(seq)
 
     async with make_pg_compositor_echo() as (mcp_client, _comp):
@@ -69,12 +70,14 @@ async def test_stateless_reasoning_forwarding(make_pg_compositor_echo) -> None:
 
 
 @pytest.mark.asyncio
-async def test_function_call_and_function_call_output_replay(make_pg_compositor_echo) -> None:
+async def test_function_call_and_function_call_output_replay(
+    make_pg_compositor_echo, responses_factory: ResponsesFactory
+) -> None:
     """Request1 produces a function_call; after local execution, messages() must include function_call and function_call_output."""
 
     seq = [
-        _make_tool_call_resp(build_mcp_function("echo", "echo"), {"text": "hi"}),
-        _make_reasoning_then_message("done"),
+        _make_tool_call_resp(build_mcp_function("echo", "echo"), {"text": "hi"}, responses_factory),
+        _make_reasoning_then_message("done", responses_factory),
     ]
     client = FakeOpenAIModel(seq)
 
@@ -94,19 +97,19 @@ async def test_function_call_and_function_call_output_replay(make_pg_compositor_
 
 
 @pytest.mark.asyncio
-async def test_mixed_reasoning_fc_ordering(make_pg_compositor_echo) -> None:
+async def test_mixed_reasoning_fc_ordering(make_pg_compositor_echo, responses_factory: ResponsesFactory) -> None:
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.
     """
 
     # Build a response with reasoning then function_call then assistant (our facade types)
-    resp = _rf.make(
-        _rf.make_item_reasoning(),
-        _rf.tool_call(build_mcp_function("echo", "echo"), {"text": "hi"}),
-        _rf.assistant_text("done"),
+    resp = responses_factory.make(
+        responses_factory.make_item_reasoning(),
+        responses_factory.tool_call(build_mcp_function("echo", "echo"), {"text": "hi"}),
+        responses_factory.assistant_text("done"),
     )
     # Use a final assistant message on the second call to avoid infinite tool-call loops
-    client = FakeOpenAIModel([resp, _make_reasoning_then_message("ok")])
+    client = FakeOpenAIModel([resp, _make_reasoning_then_message("ok", responses_factory)])
 
     async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
@@ -123,13 +126,13 @@ async def test_mixed_reasoning_fc_ordering(make_pg_compositor_echo) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_synthesized_reasoning_items(make_pg_compositor_echo) -> None:
+async def test_no_synthesized_reasoning_items(make_pg_compositor_echo, responses_factory: ResponsesFactory) -> None:
     """Ensure agent does not fabricate reasoning rs_* items when missing."""
 
     # Response with only a function_call (no reasoning)
     seq = [
-        _make_tool_call_resp(build_mcp_function("echo", "echo"), {"text": "hi"}),
-        _make_reasoning_then_message("done"),
+        _make_tool_call_resp(build_mcp_function("echo", "echo"), {"text": "hi"}, responses_factory),
+        _make_reasoning_then_message("done", responses_factory),
     ]
     client = FakeOpenAIModel(seq)
 

@@ -8,7 +8,8 @@ from adgn.agent.loggers import RecordingHandler
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.resources.server import ResourcesReadArgs
-from adgn.openai_utils.model import FakeOpenAIModel, FunctionCallItem, FunctionCallOutputItem
+from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.asyncio

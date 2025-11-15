@@ -12,15 +12,10 @@ from adgn.agent.runtime.container import build_container
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult
 
 
-def _policy_source_allow() -> str:
-    """Minimal allow-all policy program for container evaluator (no imports)."""
-    return "import sys, json\n_ = json.load(sys.stdin)\nprint(json.dumps({'decision': 'allow', 'rationale': 'ok'}))\n"
-
-
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_notifications_handler_in_container_inserts_system_message(
-    sqlite_persistence, monkeypatch: pytest.MonkeyPatch
+    sqlite_persistence, monkeypatch: pytest.MonkeyPatch, policy_allow_all: str
 ) -> None:
     # Persistence and container
     # Capture OpenAI requests
@@ -29,7 +24,8 @@ async def test_notifications_handler_in_container_inserts_system_message(
     async def _create(req: ResponsesRequest) -> ResponsesResult:
         captured.append(req)
         # Always return a simple assistant message; notifications come from admin set_policy
-        return ResponsesFactory("test-model").make_assistant_message("done")
+        result: ResponsesResult = ResponsesFactory("test-model").make_assistant_message("done")
+        return result
 
     client = make_mock(_create)
     # Build container headless (no UI) with allow-all policy
@@ -41,12 +37,12 @@ async def test_notifications_handler_in_container_inserts_system_message(
         client_factory=lambda _model: client,
         with_ui=False,
         docker_client=docker.from_env(),
-        initial_policy=_policy_source_allow(),
+        initial_policy=policy_allow_all,
     )
 
     try:
         # Trigger a policy update via admin MCP client (out-of-band notification)
-        await container.policy_approver.set_policy_text(_policy_source_allow())
+        await container.policy_approver.set_policy_text(policy_allow_all)
 
         # Run one turn; first sampling triggers notifier tool; second should include notification insert
         assert container.session is not None

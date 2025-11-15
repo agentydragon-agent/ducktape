@@ -9,10 +9,7 @@ import pytest
 from tests.agent.ws_helpers import has_finished_run, is_function_call_output_end_turn
 from tests.llm.support.openai_mock import make_mock
 
-from adgn.agent.server import protocol
 from adgn.mcp._shared.naming import build_mcp_function
-
-Envelope = protocol.Envelope
 
 
 @pytest.mark.timeout(10)

@@ -50,7 +50,10 @@ def parse_system_notification_payload(message: str | UserMessage) -> dict:
     if start == -1 or end == -1 or end <= start:
         raise ValueError("Not a tagged system notification message")
     payload_str = text[start + len(start_tag) : end].strip()
-    return json.loads(payload_str)
+    result = json.loads(payload_str)
+    if not isinstance(result, dict):
+        raise ValueError("Payload is not a JSON object")
+    return result
 
 
 def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed: bool | None = None) -> None:  # type: ignore[no-untyped-def]

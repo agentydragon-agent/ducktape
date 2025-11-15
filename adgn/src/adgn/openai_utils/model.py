@@ -76,7 +76,7 @@ class FunctionCallItem(BaseModel):
     type: Literal["function_call"] = "function_call"
     name: str
     arguments: str | None = None  # Must be string (JSON) if provided
-    call_id: str | None = None
+    call_id: str
     id: str | None = None  # Preserve the function call's unique ID from the API
     status: str | None = None  # Preserve the status field if present
     model_config = ConfigDict(extra="allow")
@@ -412,18 +412,3 @@ class BoundOpenAIModel:
 
 class OpenAIModelProto(Protocol):  # pragma: no cover - structural typing only
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult: ...
-
-
-class FakeOpenAIModel(OpenAIModelProto):
-    def __init__(self, outputs: list[ResponsesResult] | tuple[ResponsesResult, ...]) -> None:
-        self._outputs: list[ResponsesResult] = list(outputs)
-        self.calls = 0
-        self.captured: list[ResponsesRequest] = []
-
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        if not isinstance(req, ResponsesRequest):
-            raise TypeError("responses_create expects a ResponsesRequest instance")
-        self.captured.append(req.model_copy(deep=True))
-        idx = min(self.calls, len(self._outputs) - 1) if self._outputs else 0
-        self.calls += 1
-        return self._outputs[idx]

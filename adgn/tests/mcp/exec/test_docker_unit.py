@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import pytest
+from tests.conftest import make_container_opts
 
-from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.exec.models import ExecInput, Exited, TimedOut
 
 
 def _make_server(ephemeral: bool):
-    opts = ContainerOptions(image="alpine:3.19", ephemeral=ephemeral)
-
-    return make_container_exec_server(opts)
+    return make_container_exec_server(make_container_opts("alpine:3.19", ephemeral=ephemeral))
 
 
 @pytest.mark.asyncio

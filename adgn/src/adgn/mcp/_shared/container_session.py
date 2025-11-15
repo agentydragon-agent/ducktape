@@ -16,6 +16,7 @@ from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM, SLEEP_FOREVER_CMD
 from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo, NetworkMode
 from adgn.mcp.exec.models import MAX_BYTES_CAP, BaseExecResult, ExecInput, async_timer, render_raw_to_result
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.props.docker_env import WORKING_DIR
 
 # Exit code returned by SIGTERM; standardized for host-side timeouts
 
@@ -50,7 +51,7 @@ def _shell_join(cmd: Iterable[str]) -> str:
 @dataclass
 class ContainerOptions:
     image: str
-    working_dir: Path = Path("/workspace")
+    working_dir: Path = WORKING_DIR
     volumes: dict[str, dict[str, str]] | list[str] | None = None
     network_mode: NetworkMode = NetworkMode.NONE
     environment: dict[str, str] | None = None

@@ -10,7 +10,7 @@ from adgn.agent.approvals import ApprovalHub
 from adgn.agent.handler import ContinueDecision
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import FakeOpenAIModel
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.asyncio

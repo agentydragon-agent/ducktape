@@ -8,11 +8,8 @@ from tests.agent.ui_asserts import assert_ui_items_have, item_assistant_markdown
 from tests.agent.ws_helpers import drain_until_match, has_finished_run
 from tests.llm.support.openai_mock import make_mock
 
-from adgn.agent.server import protocol
-from adgn.agent.server.protocol import RunStatus, RunStatusEvt, UiStateSnapshot
+from adgn.agent.server.protocol import Envelope, RunStatus, RunStatusEvt, UiStateSnapshot
 from adgn.mcp._shared.naming import build_mcp_function
-
-Envelope = protocol.Envelope
 
 
 def _collect_payloads_until_finished(ws, *, limit: int = 200):

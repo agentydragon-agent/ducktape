@@ -38,11 +38,14 @@ def user_headers(cookie: str = "", authz: str = "", admin: bool = False) -> dict
     return hdrs
 
 
-def parse_owner_repo_from_uri(uri: str) -> tuple[str | None, str | None]:
+def parse_owner_repo_from_uri(uri: str) -> tuple[str, str] | None:
     if m := RE_OWNER_REPO_PULLS_OR_COMPARE.match(uri):
         g = m.groupdict()
-        return g.get("owner"), g.get("repo")
-    return None, None
+        owner = g.get("owner")
+        repo = g.get("repo")
+        if owner and repo:
+            return owner, repo
+    return None
 
 
 def parse_reopen_targets(uri: str) -> tuple[str, str, int] | None:

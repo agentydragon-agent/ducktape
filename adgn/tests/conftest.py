@@ -4,8 +4,10 @@ from collections.abc import Callable
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from importlib import resources
 import os
+from pathlib import Path
 import platform
 import re
+from typing import Any
 
 import docker
 from fastmcp.client import Client
@@ -234,12 +236,7 @@ def make_pg_compositor_box(approval_policy_reader_allow_all, make_pg_compositor)
 
     @asynccontextmanager
     async def _open():
-        server = make_container_exec_server(
-            ContainerOptions(
-                image="python:3.12-slim", working_dir="/workspace", volumes=None, describe=True, ephemeral=True
-            ),
-            name="box",
-        )
+        server = make_container_exec_server(make_container_opts("python:3.12-slim"), name="box")
         async with make_pg_compositor({"box": server, "approval_policy": approval_policy_reader_allow_all}) as pair:
             yield pair
 
@@ -302,7 +299,7 @@ def make_buffered_client():
 
 @pytest.fixture
 def docker_exec_server_alpine():
-    opts = ContainerOptions(image="alpine:3.19", working_dir="/workspace", volumes=None, describe=True, ephemeral=True)
+    opts = make_container_opts("alpine:3.19")
     # Expose the tool under name expected by docker exec tests
     from adgn.mcp.exec.docker.server import make_container_exec_server
 
@@ -311,7 +308,7 @@ def docker_exec_server_alpine():
 
 @pytest.fixture
 def docker_inproc_spec_alpine():
-    opts = ContainerOptions(image="alpine:3.19", working_dir="/workspace", volumes=None, describe=True, ephemeral=True)
+    opts = make_container_opts("alpine:3.19")
     return make_container_exec_server(opts)
 
 
@@ -343,9 +340,7 @@ def live_openai(request):
 @pytest.fixture
 def docker_inproc_spec_py312():
     """Alias expected by some tests: in-proc spec backed by Python 3.12 image."""
-    opts = ContainerOptions(
-        image="python:3.12-alpine", working_dir="/workspace", volumes=None, describe=True, ephemeral=True
-    )
+    opts = make_container_opts("python:3.12-alpine")
     from adgn.mcp.exec.docker.server import make_container_exec_server
 
     return make_container_exec_server(opts)
@@ -398,11 +393,21 @@ def require_sandbox_exec():
     return True
 
 
+# --- Helper functions for container configuration ---
+
+
+def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemeral: bool = True) -> ContainerOptions:
+    """Create standard ContainerOptions with proper Path type conversion."""
+    return ContainerOptions(
+        image=image, working_dir=Path(working_dir), volumes=None, describe=True, ephemeral=ephemeral
+    )
+
+
 # --- Shared lightweight fixtures used across agent and MCP tests ---
 
 
 @pytest.fixture
-def make_echo_spec(make_backend_server) -> callable:
+def make_echo_spec(make_backend_server) -> Callable[[], dict[str, Any]]:
     """Return a factory that produces in-proc FastMCP servers for echo tests."""
 
     def _spec() -> dict[str, object]:

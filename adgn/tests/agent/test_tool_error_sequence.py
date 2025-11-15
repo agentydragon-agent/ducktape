@@ -10,8 +10,8 @@ from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.reducer import BaseHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import FakeOpenAIModel
 from tests.agent.ws_helpers import assert_function_call_output_structured
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 def _make_failing_server() -> FastMCP:

@@ -36,6 +36,7 @@ from adgn.mcp.exec.bwrap import make_bwrap_exec_server
 from adgn.mcp.exec.direct import make_direct_exec_server
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.openai_utils.model import OpenAIModelProto
+from adgn.props.docker_env import WORKING_DIR
 
 """Mini Codex runner that delegates execution to the MiniCodex agent."""
 
@@ -110,7 +111,7 @@ class MiniCodexRunner(AgentRunner):
                 return make_container_exec_server(
                     ContainerOptions(
                         image=setup.docker.image,
-                        working_dir=Path("/workspace"),
+                        working_dir=WORKING_DIR,
                         volumes=volumes,
                         network_mode=network_mode,
                         environment=setup.docker.env or {},

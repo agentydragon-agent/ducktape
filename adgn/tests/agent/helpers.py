@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-import socket
 import threading
 import time
 from typing import Any
@@ -10,8 +9,8 @@ from hamcrest import all_of, assert_that, contains_string, has_item, has_propert
 from uvicorn import Config, Server
 
 from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
-from adgn.openai_utils.model import OpenAIModelProto
-from adgn.openai_utils.types import ResponsesRequest, ResponsesResult
+from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
+from adgn.util.net import pick_free_port
 
 # System notification tag constants
 SYSTEM_NOTIFICATION_START_TAG = "<system notification>"
@@ -52,17 +51,6 @@ def strip_system_notification_wrapper(text: str) -> str:
     if text.startswith(start_tag) and text.endswith(end_tag):
         return text[len(start_tag) : -len(end_tag)]
     return text
-
-
-def pick_free_port(host: str = "127.0.0.1") -> int:
-    """Return an available TCP port on host by briefly binding a socket.
-
-    Best-effort and race-tolerant for test usage.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((host, 0))
-        return s.getsockname()[1]
 
 
 def start_uvicorn_app(

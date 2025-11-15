@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 import requests
-from tests.agent.helpers import api_create_agent, start_uvicorn_app
+from tests.agent.helpers import api_create_agent
 from tests.llm.support.openai_mock import make_mock
 
-from adgn.agent.server.app import create_app
 from adgn.mcp._shared.naming import build_mcp_function
 
 # Skip if Playwright is not installed
@@ -18,21 +16,6 @@ if TYPE_CHECKING:
     from playwright.sync_api import Page
 else:
     Page = playwright.Page
-
-
-@pytest.fixture
-def run_server(tmp_path, monkeypatch: pytest.MonkeyPatch):
-    def _start(client_factory=None) -> dict[str, Any]:
-        db_path = tmp_path / "agent.sqlite"
-        monkeypatch.setenv("ADGN_AGENT_DB_PATH", str(db_path))
-        app = create_app(require_static_assets=True)
-        return start_uvicorn_app(app)
-
-    return _start
-
-
-def _patch_model(monkeypatch: pytest.MonkeyPatch, create_fn: Callable[[Any], Any]) -> None:
-    monkeypatch.setattr("adgn.agent.runtime.container.build_client", lambda *a, **k: make_mock(create_fn))
 
 
 def test_approvals_delivery_and_user_approve(page: Page, run_server, responses_factory):

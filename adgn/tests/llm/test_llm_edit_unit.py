@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from adgn.mcp.editor_server import DoneInput, is_python_path, make_editor_server
+from adgn.mcp.editor_server import DoneInput, EditorOutcome, is_python_path, make_editor_server
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_sessio
         # Append a line after the first line (1-based after = insert at index 1)
         await sess.call_tool(name="add_line_after", arguments={"line_number": 1, "content": "world"})
         # Finish successfully; should not run python syntax checks
-        out = await client.done(DoneInput(outcome="success", summary="ok"))
+        out = await client.done(DoneInput(outcome=EditorOutcome.SUCCESS, summary="ok"))
         assert out.kind == "Success"
         assert out.summary == "ok"
 
@@ -75,7 +75,7 @@ async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: P
     async with editor_session(p) as (client, sess):
         # Introduce a syntax error by replacing the function header
         await sess.call_tool(name="replace_text", arguments={"old_text": "def f():", "new_text": "def f(:"})
-        out = await client.done(DoneInput(outcome="success", summary="finish"))
+        out = await client.done(DoneInput(outcome=EditorOutcome.SUCCESS, summary="finish"))
         assert out.kind == "Failure"
         assert "Cannot complete" in (out.summary or "")
 
@@ -92,7 +92,7 @@ async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path, editor_se
         # Stage change to "B" in-memory: delete line 1 and insert B at start
         await sess.call_tool(name="delete_line", arguments={"line_number": 1})
         await sess.call_tool(name="add_line_after", arguments={"line_number": 0, "content": "B"})
-        out = await client.done(DoneInput(outcome="failure", summary="abort"))
+        out = await client.done(DoneInput(outcome=EditorOutcome.FAILURE, summary="abort"))
         assert out.kind == "Failure"
         assert out.summary == "abort"
         # Ensure in-memory state reverted by reading current first line

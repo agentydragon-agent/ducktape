@@ -33,4 +33,4 @@ ServerEntry = Annotated[InitializingServerEntry | RunningServerEntry | FailedSer
 
 class SamplingSnapshot(BaseModel):
     ts: str | None = None
-    servers: list[ServerEntry]
+    servers: dict[str, ServerEntry]

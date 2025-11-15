@@ -30,13 +30,17 @@ def create_chat_servers() -> tuple[ChatStore, Any, Any]:
     return store, human, assistant
 
 
-def user_markdown_message(content: str, *, id: Matcher[str] = anything()) -> Matcher[ChatMessage]:
+def user_markdown_message(content: str, *, id: Matcher[str] | None = None) -> Matcher[ChatMessage]:
     """Matcher for user markdown messages."""
+    if id is None:
+        id = anything()
     return has_properties(author=ChatAuthor.USER, mime="text/markdown", content=content, id=id)  # type: ignore[return-value]
 
 
-def assistant_markdown_message(content: str, *, id: Matcher[str] = anything()) -> Matcher[ChatMessage]:
+def assistant_markdown_message(content: str, *, id: Matcher[str] | None = None) -> Matcher[ChatMessage]:
     """Matcher for assistant markdown messages."""
+    if id is None:
+        id = anything()
     return has_properties(author=ChatAuthor.ASSISTANT, mime="text/markdown", content=content, id=id)  # type: ignore[return-value]
 
 

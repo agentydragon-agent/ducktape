@@ -3,17 +3,18 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 import pytest
 from tests.agent.ws_helpers import assert_finished, collect_payloads_until_finished, wait_for_accepted
-from tests.llm.support.openai_mock import make_mock
+from tests.llm.support.openai_mock import FakeOpenAIModel, make_mock
 
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import Envelope, UiStateSnapshot
 from adgn.agent.server.state import AssistantMarkdownItem
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import FakeOpenAIModel
 
 
 @pytest.mark.timeout(10)
-def test_ws_restore_existing_agent_across_app_restart(monkeypatch, tmp_path, responses_factory, make_agent_http):
+def test_ws_restore_existing_agent_across_app_restart(
+    monkeypatch, tmp_path, responses_factory, make_agent_http, patch_agent_build_client
+):
     """
     Persist an agent (via HTTP), restart the app (new FastAPI instance pointing to the
     same SQLite DB), then connect WS to lazily start the live container and run a turn.
@@ -56,7 +57,7 @@ def test_ws_restore_existing_agent_across_app_restart(monkeypatch, tmp_path, res
                 )
             return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r2")
 
-        monkeypatch.setattr("adgn.agent.runtime.container.build_client", lambda *a, **k: make_mock(responses_create))
+        patch_agent_build_client(make_mock(responses_create))
 
         # Open WS and run two turns to persist history
         with c1.websocket_connect(f"/ws?agent_id={agent_id}") as ws1:
@@ -77,7 +78,7 @@ def test_ws_restore_existing_agent_across_app_restart(monkeypatch, tmp_path, res
     with TestClient(app2) as c2:
         # Optional: patch model, though we only snapshot (no turn yet)
         fake_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
-        monkeypatch.setattr("adgn.agent.runtime.container.build_client", lambda *a, **k: fake_client)
+        patch_agent_build_client(fake_client)
 
         with c2.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
             # Should receive initial Accepted from server

@@ -12,16 +12,7 @@ from tests.agent.ws_helpers import (
 )
 from tests.llm.support.openai_mock import make_mock
 
-from adgn.agent.server import protocol
 from adgn.mcp._shared.naming import build_mcp_function
-
-Envelope = protocol.Envelope
-
-
-class DummyClient:
-    @property
-    def responses(self):  # pragma: no cover
-        raise AssertionError("responses.create should not be called directly in this test")
 
 
 @pytest.mark.timeout(15)

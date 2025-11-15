@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from adgn.mcp.editor_server import DoneInput, ReadInfoArgs, ReplaceTextArgs, Success
+from adgn.mcp.editor_server import DoneInput, EditorOutcome, ReadInfoArgs, ReplaceTextArgs, Success
 
 
 @pytest.mark.asyncio
@@ -21,7 +21,7 @@ async def test_editor_inproc_basic_ops(typed_editor_factory) -> None:
         assert result.ok is True
 
         # done(success=True) runs syntax check for .py and saves
-        done_result = await stub.done(DoneInput(outcome="success", summary=None))
+        done_result = await stub.done(DoneInput(outcome=EditorOutcome.SUCCESS, summary=None))
         assert isinstance(done_result, Success)
         assert done_result.kind == "Success"
 

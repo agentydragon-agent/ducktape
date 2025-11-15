@@ -17,3 +17,15 @@ def wait_for_port(host: str, port: int, *, timeout_secs: float = 10.0, interval_
         except OSError:
             time.sleep(interval_secs)
     raise TimeoutError(f"port did not become ready: {host}:{port}")
+
+
+def pick_free_port(host: str = "127.0.0.1") -> int:
+    """Return an available TCP port on host by briefly binding a socket.
+
+    Best-effort and race-tolerant for test usage.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, 0))
+        _, port = s.getsockname()
+        return int(port)

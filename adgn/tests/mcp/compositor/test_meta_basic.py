@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from pydantic import TypeAdapter
 import pytest
 
-from adgn.mcp._shared.resources import read_text_json_typed
+from adgn.mcp._shared.resources import extract_single_text_content
 from adgn.mcp._shared.uris import compositor_meta_state_uri
 from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
@@ -18,5 +19,7 @@ async def test_compositor_meta_resources_available(
     ):
         # Read per-mount state from the compositor_meta server
         # Expect running or initializing depending on initialization timing
-        entry = await read_text_json_typed(sess.session, compositor_meta_state_uri("backend"), ServerEntry)
+        rr = await sess.session.read_resource(compositor_meta_state_uri("backend"))
+        s = extract_single_text_content(rr)
+        entry: ServerEntry = TypeAdapter(ServerEntry).validate_json(s)
         assert isinstance(entry, RunningServerEntry)

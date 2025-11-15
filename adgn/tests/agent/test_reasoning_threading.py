@@ -5,7 +5,8 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import FakeOpenAIModel, FunctionCallItem, FunctionCallOutputItem, ReasoningItem
+from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ReasoningItem
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.asyncio

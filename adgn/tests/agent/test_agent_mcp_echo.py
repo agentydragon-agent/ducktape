@@ -11,13 +11,7 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler, BaseHandler
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import FakeOpenAIModel
-
-
-class DummyClient:
-    @property
-    def responses(self):  # pragma: no cover
-        raise AssertionError("responses.create should not be called directly in this test")
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @dataclass

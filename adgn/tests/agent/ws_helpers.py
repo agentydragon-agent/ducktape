@@ -21,7 +21,15 @@ from hamcrest import (
 )
 from hamcrest.core.matcher import Matcher
 
-from adgn.agent.server.protocol import Accepted, Envelope, RunStatus, RunStatusEvt, UiStateSnapshot, UiStateUpdated
+from adgn.agent.server.protocol import (
+    Accepted,
+    Envelope,
+    RunStatus,
+    RunStatusEvt,
+    ServerMessage,
+    UiStateSnapshot,
+    UiStateUpdated,
+)
 
 # ---- Tracing utilities -------------------------------------------------------
 
@@ -116,7 +124,11 @@ def drain(
         if do_trace:
             _trace(name, f"recv: {_short_payload(item)}")
         target = key(src)
-        hit = match.matches(target) if match is not None else bool(until(target))  # type: ignore[arg-type]
+        if match is not None:
+            hit = match.matches(target)
+        else:
+            assert until is not None, "Either until or match must be provided"
+            hit = bool(until(target))
         if hit:
             if do_trace:
                 _trace(name, "predicate matched; stopping drain")
@@ -280,7 +292,7 @@ def collect_envelopes_until_finished(ws, *, limit: int = 200):
 
 def collect_payloads_until_finished_auto_approve(ws, *, limit: int = 200):
     """Collect typed payloads until finished, auto-approving on approval_pending."""
-    payloads = []
+    payloads: list[ServerMessage] = []
     for _ in range(limit):
         env = Envelope.model_validate(ws.receive_json())
         p = env.payload

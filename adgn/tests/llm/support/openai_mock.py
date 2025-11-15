@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict
@@ -24,38 +24,24 @@ class CapturedRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class _CapturingResponses:
-    """Pydantic-only stub that returns a predefined sequence and records calls.
+class FakeOpenAIModel(OpenAIModelProto):
+    """Shared test mock that captures calls and returns predefined responses.
 
-    - calls: number of create() invocations
-    - captured: list of ResponsesRequest objects
+    Consolidated implementation for all OpenAI client mocking.
     """
 
-    def __init__(self, outputs: Iterable[ResponsesResult]) -> None:
+    def __init__(self, outputs: list[ResponsesResult] | tuple[ResponsesResult, ...]) -> None:
         self._outputs: list[ResponsesResult] = list(outputs)
         self.calls = 0
         self.captured: list[ResponsesRequest] = []
 
-    async def create(self, req: ResponsesRequest) -> ResponsesResult:
+    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+        if not isinstance(req, ResponsesRequest):
+            raise TypeError("responses_create expects a ResponsesRequest instance")
         self.captured.append(req.model_copy(deep=True))
         idx = min(self.calls, len(self._outputs) - 1) if self._outputs else 0
         self.calls += 1
         return self._outputs[idx]
-
-
-class CapturingClient(OpenAIModelProto):
-    """Shared test helper exposing a minimal responses.create stub for captures.
-
-    Provides .responses with a create(**kwargs) method that records typed
-    ResponseCreateParamsNonStreaming requests under .captured and returns a
-    predefined sequence of Response-like outputs.
-    """
-
-    def __init__(self, outputs: Iterable[Any]) -> None:
-        self.responses = _CapturingResponses(outputs)
-
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        return await self.responses.create(req)
 
 
 class OpenAIClient(Protocol):

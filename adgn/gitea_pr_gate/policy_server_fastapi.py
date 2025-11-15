@@ -78,7 +78,8 @@ async def get_doer_login(client: httpx.AsyncClient, cookie: str, authz: str) -> 
         resp = await client.get(f"{GITEA_BASE}api/v1/user", headers=user_headers(cookie, authz), timeout=API_TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
-        return data.get("login", "")
+        login = data.get("login", "")
+        return str(login) if login is not None else ""
     except httpx.HTTPStatusError as e:
         # Authentication/authorization failure
         raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail=f"auth error: {e.response.status_code}")
@@ -156,7 +157,7 @@ async def validate(request: Request, resources: AppResources = Depends(get_resou
     client = resources.http
     log = resources.log
     # 1) PR creation endpoints
-    if (owner_repo := parse_owner_repo_from_uri(orig_uri)) and all(owner_repo):
+    if owner_repo := parse_owner_repo_from_uri(orig_uri):
         owner, repo = owner_repo
         doer = proxy_user or await get_doer_login(client, cookie, authz)
         started = time.monotonic()

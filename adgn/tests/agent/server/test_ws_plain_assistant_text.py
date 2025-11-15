@@ -4,12 +4,9 @@ from concurrent.futures import CancelledError
 
 import pytest
 from tests.agent.helpers import expect_error, expect_run_finished
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
-from adgn.agent.server import protocol
-from adgn.openai_utils.model import FakeOpenAIModel
-
-Envelope = protocol.Envelope
-ErrorCode = protocol.ErrorCode
+from adgn.agent.server.protocol import ErrorCode
 
 
 @pytest.mark.timeout(3)

@@ -48,5 +48,8 @@ def test_attach_server_populates_sampling_servers(agent_app_client):
         s = client.get(f"/api/agents/{agent_id}/snapshot")
         assert s.status_code == 200
         snap = TypeAdapter(Snapshot).validate_python(s.json())
-        names = [e.name for e in (snap.sampling.servers or [])]
-        assert "echo" in names
+        if not snap.details or not snap.details.sampling.servers:
+            pytest.fail("No servers found in snapshot")
+
+        # Servers should be a dict[str, ServerEntry] where keys are server names
+        assert "echo" in snap.details.sampling.servers

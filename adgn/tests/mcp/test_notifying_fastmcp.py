@@ -50,8 +50,8 @@ async def test_notifying_fastmcp_queue_and_flush() -> None:
     # Now create a client; queued events should flush upon session creation
     rec = _Recorder()
     async with Client(server, message_handler=rec) as _c:
-        await rec.wait_updated(timeout=2.0)
-        await rec.wait_list_changed(timeout=2.0)
+        await rec.wait_updated()
+        await rec.wait_list_changed()
 
     # Validate received notifications
     assert "resource://foo" in rec.updated
@@ -71,10 +71,10 @@ async def test_notifying_fastmcp_multisession_broadcast() -> None:
         await server.broadcast_resource_list_changed()
 
         # Both recorders should receive both notifications
-        await rec1.wait_updated(timeout=2.0)
-        await rec2.wait_updated(timeout=2.0)
-        await rec1.wait_list_changed(timeout=2.0)
-        await rec2.wait_list_changed(timeout=2.0)
+        await rec1.wait_updated()
+        await rec2.wait_updated()
+        await rec1.wait_list_changed()
+        await rec2.wait_list_changed()
 
     assert "resource://multi/test" in rec1.updated
     assert "resource://multi/test" in rec2.updated

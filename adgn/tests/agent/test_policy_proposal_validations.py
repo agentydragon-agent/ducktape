@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from adgn.agent.server import protocol
+from adgn.agent.server.protocol import Envelope
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.llm.support.openai_mock import make_mock
-
-Envelope = protocol.Envelope
 
 
 def _collect_until(ws, pred, limit=200):

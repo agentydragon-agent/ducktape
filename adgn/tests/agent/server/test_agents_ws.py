@@ -10,15 +10,15 @@ from tests.agent.ws_helpers import (
     drain_json_until_match,
     wait_for_accepted,
 )
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 from adgn.agent.server.agents_ws import AgentCreatedMsg, AgentsHubMsg, AgentsSnapshotMsg, AgentStatusMsg
-from adgn.openai_utils.model import FakeOpenAIModel
 
 
 def test_agents_ws_initial_and_create_broadcast(ws_hub):
     client, ws = ws_hub
     init = ws.receive_json()
-    msg = TypeAdapter(AgentsHubMsg).validate_python(init)
+    msg: AgentsHubMsg = TypeAdapter(AgentsHubMsg).validate_python(init)
     assert isinstance(msg, AgentsSnapshotMsg), msg
     assert isinstance(msg.data.agents, list)
 
@@ -30,7 +30,7 @@ def test_agents_ws_initial_and_create_broadcast(ws_hub):
         kinds = []
         ids_ok = True
         for raw in acc:
-            m = TypeAdapter(AgentsHubMsg).validate_python(raw)
+            m: AgentsHubMsg = TypeAdapter(AgentsHubMsg).validate_python(raw)
             kinds.append(type(m).__name__)
             if isinstance(m, AgentCreatedMsg | AgentStatusMsg) and (m.data.id) != agent_id:
                 ids_ok = False

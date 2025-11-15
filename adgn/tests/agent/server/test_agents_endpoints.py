@@ -5,8 +5,7 @@ from concurrent.futures import CancelledError
 import pytest
 from tests.agent.ui_asserts import assert_ui_items_have, item_user_message
 from tests.agent.ws_helpers import assert_finished, drain_until_match, is_ui_state_event
-
-from adgn.openai_utils.model import FakeOpenAIModel
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.timeout(5)

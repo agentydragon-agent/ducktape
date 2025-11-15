@@ -50,7 +50,8 @@ def test_tool_call_exec_starts_exec_content_with_cmd():
     assert isinstance(it.content, ExecContent)
     assert it.content.content_kind == "Exec"
     # command assembled with conservative quoting
-    assert it.content.cmd is not None and it.content.cmd.startswith("echo ")
+    assert it.content.cmd is not None
+    assert it.content.cmd.startswith("echo ")
 
 
 def test_tool_call_json_starts_json_content_with_args():

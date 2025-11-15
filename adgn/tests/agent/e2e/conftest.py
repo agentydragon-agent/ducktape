@@ -73,7 +73,8 @@ def run_server(tmp_path, monkeypatch: pytest.MonkeyPatch):
         db_path = tmp_path / "agent.sqlite"
         monkeypatch.setenv("ADGN_AGENT_DB_PATH", str(db_path))
         app = create_app(require_static_assets=True)
-        return start_uvicorn_app(app)
+        result: dict[str, Any] = start_uvicorn_app(app)
+        return result
 
     return _start
 

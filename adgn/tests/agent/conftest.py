@@ -14,11 +14,12 @@ from pydantic import BaseModel
 import pytest
 
 from adgn.agent.approvals import ApprovalPolicyEngine
+from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt
 from adgn.mcp.editor_server import make_editor_server
-from adgn.openai_utils.model import FakeOpenAIModel, ResponsesResult
+from adgn.openai_utils.model import ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.agent.ws_helpers import (
     _short_payload,
@@ -26,6 +27,7 @@ from tests.agent.ws_helpers import (
     collect_payloads_until_finished_auto_approve,
     wait_for_accepted,
 )
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
 
@@ -60,25 +62,24 @@ def make_policy_evaluator(make_policy_engine):
 @pytest.fixture
 def policy_allow_all() -> str:
     """Return the text of the approve-all policy from packaged resources."""
-    from adgn.agent.policies.loader import approve_all_policy_text
-
     return approve_all_policy_text()
 
 
 @pytest.fixture
 def policy_ui_send_message_allow() -> str:
-    return make_policy(
+    result: str = make_policy(
         decision_expr="PolicyDecision.ALLOW",
         server="ui",
         tool="send_message",
         default="ask",
         doc="Allow UI send_message; ask otherwise.",
     )
+    return result
 
 
 @pytest.fixture
 def policy_failing_tests() -> str:
-    return fetch_policy("failing_tests")
+    return str(fetch_policy("failing_tests"))
 
 
 # --- Missing fixtures for default policy tests ---
@@ -86,13 +87,14 @@ def policy_failing_tests() -> str:
 
 @pytest.fixture
 def policy_version_test() -> str:
-    return make_policy(
+    result: str = make_policy(
         decision_expr="PolicyDecision.ALLOW",
         server="ui",
         tool="send_message",
         default="ask",
         doc="Version bump check policy used in tests.",
     )
+    return result
 
 
 @pytest.fixture
@@ -103,38 +105,15 @@ def policy_invalid_syntax() -> str:
 
 @pytest.fixture
 def policy_context_checking() -> str:
-    return fetch_policy("context_checking")
+    return str(fetch_policy("context_checking"))
 
 
 @pytest.fixture
 def policy_const() -> str:
-    return fetch_policy("const")
+    return str(fetch_policy("const"))
 
 
-# ---- Policy factory fixtures -----------------------------------------------
-
-
-@pytest.fixture(name="policy_fetch")
-def policy_fetch_factory() -> Callable[[str], str]:
-    """Factory to fetch approval policy text by short name.
-
-    Usage: policy_fetch("allow_all") → returns policy source text.
-    """
-    return fetch_policy
-
-
-@pytest.fixture(name="policy_make")
-def policy_make_factory() -> Callable[..., str]:
-    """Factory to build minimal ApprovalPolicy source.
-
-    Args:
-      decision_expr: e.g., "PolicyDecision.DENY_CONTINUE"
-      server: server name
-      tool: tool name
-      default: "ask" (default) or "allow"
-      doc: optional docstring
-    """
-    return make_policy
+# ---- Policy factory fixtures removed - use fetch_policy and make_policy directly ----
 
 
 # Shared model fixture for live tests that need a reasoning-capable model
@@ -207,7 +186,7 @@ def create_live_agent():
         # Create agent via API using a preset
         resp = client.post("/api/agents", json={"preset": "default"})
         assert resp.status_code == 200, resp.text
-        agent_id = resp.json()["id"]
+        agent_id = str(resp.json()["id"])
         # Attach typed specs via HTTP reconfigure, then runtime slots in-process
         if typed:
             # Enforce one format: ALL typed specs must be Pydantic models (McpServerSpec variants).

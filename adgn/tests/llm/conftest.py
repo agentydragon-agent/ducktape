@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -50,7 +50,7 @@ def patch_fake_editor(monkeypatch):
         async def wait(self) -> int:
             return self._code
 
-    async def _fake_shell(cmd: str, *args, **kwargs) -> Awaitable[_Proc]:
+    async def _fake_shell(cmd: str, *args, **kwargs) -> _Proc:
         # Extract COMMIT_EDITMSG path (last token)
         commit_path = cmd.rsplit(" ", 1)[-1]
         msg = (

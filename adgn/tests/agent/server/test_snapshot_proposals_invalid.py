@@ -33,7 +33,9 @@ async def test_snapshot_surfaces_invalid_proposal(sqlite_persistence) -> None:
 
     # Assert: proposals list exists and includes the proposal id
     assert_that(snap.approval_policy, not_none())
-    props = snap.approval_policy.proposals
+    policy = snap.approval_policy
+    assert policy is not None, "approval_policy should not be None"
+    props = policy.proposals
     assert_that(props, has_length(1))
     p = props[0]
     assert_that(p.id, equal_to("bad1"))

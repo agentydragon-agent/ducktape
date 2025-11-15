@@ -103,7 +103,9 @@ def _find_in_file(path: Path) -> list[Detection]:
                                 ranges=[LineRange(start_line=int(sl), end_line=int(sl))],
                                 detector=DET_NAME,
                                 confidence=0.8,
-                                message=("Optional[str] check 'x is None or x == ' → prefer 'if not {nm}' (safe-only)"),
+                                message=(
+                                    f"Optional[str] check '{nm} is None or {nm} == \"\"' → prefer 'if not {nm}' (safe-only)"
+                                ),
                                 snippet=read_snippet(path, sl, sl, context=0),
                             )
                         )

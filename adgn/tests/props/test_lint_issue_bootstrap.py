@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 import contextlib
 from pathlib import Path
 import shutil
@@ -7,16 +8,17 @@ import uuid
 
 from platformdirs import user_cache_dir
 import pytest
+from tests.conftest import make_container_opts
 from tests.fixtures.responses import ResponsesFactory
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.exec.models import ExecInput
-from adgn.openai_utils.model import AssistantMessage, FakeOpenAIModel, FunctionCallOutputItem, InputTextPart
-from adgn.props.docker_env import PropertiesDockerWiring
+from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart
+from adgn.props.docker_env import WORKING_DIR, PropertiesDockerWiring
 from adgn.props.lint_issue import LinterController, LintSubmitState
 from adgn.props.models.issue import Occurrence
 
@@ -35,7 +37,7 @@ def _make_seq() -> list:
 
 
 @pytest.fixture
-def content_root() -> Path:
+def content_root() -> Generator[Path, None, None]:
     """Workspace under XDG cache (Colima-compatible bind mount). Cleans up after test."""
     cache_root = Path(user_cache_dir("adgn-tests")) / "workspaces"
     cache_root.mkdir(parents=True, exist_ok=True)
@@ -67,24 +69,16 @@ async def test_lint_issue_bootstrap_small_files(
     # We'll create the PropertiesDockerWiring after we build the inproc spec below and assign it directly.
 
     # Real MCP manager (in-proc docker exec) and mocked OpenAI client
-    runtime_server = make_container_exec_server(
-        ContainerOptions(
-            image="python:3.12-slim",
-            working_dir="/workspace",
-            volumes={str(content_root): {"bind": "/workspace", "mode": "ro"}},
-            describe=False,
-            ephemeral=True,
-        )
-    )
+    opts = make_container_opts("python:3.12-slim")
+    opts.volumes = {str(content_root): {"bind": "/workspace", "mode": "ro"}}
+    opts.describe = False
+    runtime_server = make_container_exec_server(opts)
     # Use our shared Pydantic-only fake OpenAI client with canned outputs
     client = FakeOpenAIModel(_make_seq())
 
     # Now create the controller with real wiring
     wiring = PropertiesDockerWiring(
-        server_factory=lambda verifier: runtime_server,
-        working_dir=Path("/workspace"),
-        definitions_container_dir=None,
-        image_name="n/a",
+        server_factory=lambda: runtime_server, working_dir=WORKING_DIR, definitions_container_dir=None, image_name="n/a"
     )
     ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root, docker_wiring=wiring)
 

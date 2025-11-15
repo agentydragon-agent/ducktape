@@ -227,9 +227,7 @@ class Compositor(FastMCP):
     async def sampling_snapshot(self) -> SamplingSnapshot:
         """Return a SamplingSnapshot mirroring the manager's shape, aggregated over children."""
         entries_map = await self.server_entries()
-        # Preserve stable ordering by name for UI consistency
-        entries_list = [entries_map[k] for k in sorted(entries_map.keys())]
-        return SamplingSnapshot(ts=datetime.now(UTC).isoformat(), servers=entries_list)
+        return SamplingSnapshot(ts=datetime.now(UTC).isoformat(), servers=entries_map)
 
     async def mount_specs(self) -> dict[str, MCPServerTypes]:
         """Return a snapshot of current mount specs keyed by name."""

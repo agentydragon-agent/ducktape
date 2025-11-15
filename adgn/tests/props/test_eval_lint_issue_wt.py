@@ -64,7 +64,15 @@ async def test_iss014_anchor_windows(
         client=build_client("gpt-5"),
     )
 
-    ca = payload.corrected_anchors
+    # Extract corrected anchors from AnchorIncorrect findings
+    ca: dict[str, list[LineRange]] = {}
+    for finding_record in payload.findings:
+        if finding_record.finding.kind == "ANCHOR_INCORRECT":
+            file = finding_record.finding.correction.file
+            range_obj = finding_record.finding.correction.range
+            if file not in ca:
+                ca[file] = []
+            ca[file].append(range_obj)
 
     # Effective ranges: if agent omitted corrections (None) or file entry is None, treat as unchanged
     s, e = initial_range
@@ -74,7 +82,7 @@ async def test_iss014_anchor_windows(
         # Assert no unrelated non-null files were returned
         non_null_paths = {p for p, rs in ca.items() if rs is not None}
         assert non_null_paths <= {path}, f"Unexpected paths with ranges in corrected_anchors: {non_null_paths}"
-        effective = [(r.start_line, r.end_line) for r in (ca.get(path) or [])]
+        effective = [(r.start_line, r.end_line) for r in (ca.get(path) or []) if r.end_line is not None]
 
     assert len(effective) == 1, f"Expected exactly one effective range for {path}, got: {effective}"
     estart, eend = effective[0]

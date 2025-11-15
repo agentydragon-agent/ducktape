@@ -22,6 +22,7 @@ from adgn.inop.engine.models import (
     RunnerEnvironment,
     TaskDefinition,
     TaskType,
+    TrajectoryItem,
 )
 import adgn.inop.engine.optimizer
 import adgn.inop.engine.runner_factory
@@ -29,6 +30,7 @@ from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.runners.base import AgentRunner
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import FunctionCallItem, FunctionToolParam, ResponsesRequest
+from adgn.openai_utils.types import ReasoningEffort
 
 
 def mk_func_call(*, name: str, args: dict, call_id: str) -> FunctionCallItem:
@@ -101,9 +103,9 @@ def cfg_two_iters() -> OptimizerConfig:
         graders_file="graders.yaml",
         rollouts=RolloutConfig(max_parallel=1, max_turns=2, bash_timeout_ms=10_000),
         prompt_engineer=PromptEngineerConfig(
-            model="gpt-4o-mini", reasoning_effort="low", feedback_mode="full_rollouts"
+            model="gpt-4o-mini", reasoning_effort=ReasoningEffort.LOW, feedback_mode="full_rollouts"
         ),
-        grader=GraderConfig(model="gpt-4o-mini", reasoning_effort="low"),
+        grader=GraderConfig(model="gpt-4o-mini", reasoning_effort=ReasoningEffort.LOW),
         summarizer=SummarizerConfig(model="gpt-4o-mini", max_tokens=512),
         tokens=TokenConfig(
             max_response_tokens=512, reasoning_buffer_tokens=256, max_context_tokens=200_000, max_files_tokens=4096
@@ -128,7 +130,7 @@ async def test_optimize_prompts_two_iterations_async(
             (tmp_path / "ws").mkdir(parents=True, exist_ok=True)
 
         async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:
-            traj = [AssistantMessage(text="default")]
+            traj: list[TrajectoryItem] = [AssistantMessage(text="default")]
             files = {"README.md": f"prompt: {agent_instructions}"}
             return Rollout(
                 task_id=task.id,

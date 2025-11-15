@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 from adgn.llm.llm_edit import main
 from adgn.openai_utils import client_factory
-from adgn.openai_utils.model import FakeOpenAIModel
 
 
 def test_typer_cli_invokes_execute_without_sys(
@@ -30,7 +30,7 @@ def test_typer_cli_invokes_execute_without_sys(
     try:
         main([str(p), prompt, "--model", "o4-mini"])  # type: ignore[list-item]
     except SystemExit as e:  # Typer raises Exit to signal return code
-        exit_code = e.code or 0
+        exit_code = e.code if isinstance(e.code, int) else 0
 
     assert exit_code == 0
     # Ensure arguments were parsed correctly (no extra kwargs expected)

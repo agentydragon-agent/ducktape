@@ -18,6 +18,7 @@ import yaml
 
 from adgn.llm.sandboxer import Policy
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
+from adgn.props.docker_env import WORKING_DIR
 from adgn.util.net import wait_for_port
 
 StrPath = str | PathLike[str]
@@ -95,7 +96,7 @@ exec jupyter-mcp-server start \
 
 def _docker(workspace: Path, document_id: str, docker_image: str, start_new_runtime: bool, jupyter_port: int) -> int:
     token = secrets.token_urlsafe(24)
-    bash_script = _build_bash_script(Path("/workspace"), document_id, token, start_new_runtime)
+    bash_script = _build_bash_script(WORKING_DIR, document_id, token, start_new_runtime)
 
     run_root = f"/tmp/sjmcp-{secrets.token_hex(6)}"
 

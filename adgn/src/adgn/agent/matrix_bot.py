@@ -109,7 +109,9 @@ def run(
                 )
                 res = to_pydantic(res_client)
                 ex = TypeAdapter(BaseExecResult).validate_python(res.structuredContent or {})
-                stdout = ex.stdout or ""
+                stdout_stream = ex.stdout or ""
+                assert isinstance(stdout_stream, str), "Matrix API response should not be truncated"
+                stdout = stdout_stream
                 try:
                     data = json.loads(stdout)
                 except json.JSONDecodeError:

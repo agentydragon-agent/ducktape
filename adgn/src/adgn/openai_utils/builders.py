@@ -51,8 +51,6 @@ class ItemFactory:
     ) -> tuple[FunctionCallItem, FunctionCallOutputItem]:
         call = self.tool_call(name, arguments, call_id)
         if isinstance(output, FunctionCallOutputItem):
-            # Ensure call_id is present for type-checkers
-            assert call.call_id is not None
             if output.call_id == call.call_id:
                 out = output
             else:  # keep payload but align call_id

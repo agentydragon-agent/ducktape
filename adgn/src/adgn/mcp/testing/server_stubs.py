@@ -27,8 +27,11 @@ class ServerStub:
     Example:
         class ChatStub(ServerStub):
             # Define the interface - these get auto-wired
-            async def post(self, input: PostInput) -> PostResult: ...
-            async def read_pending_messages(self, input: ReadPendingInput) -> ReadPendingResult: ...
+            async def post(self, input: PostInput) -> PostResult:
+                raise NotImplementedError  # Auto-wired at runtime
+
+            async def read_pending_messages(self, input: ReadPendingInput) -> ReadPendingResult:
+                raise NotImplementedError  # Auto-wired at runtime
 
         # Usage
         async with Client(server) as session:
@@ -42,23 +45,14 @@ class ServerStub:
 
     def _auto_wire_methods(self) -> None:
         """Auto-wire methods based on type hints."""
-        # Get all methods defined in the subclass (not inherited)
+        # Get all methods defined in the subclass (not inherited from ServerStub)
         for name, method in inspect.getmembers(self.__class__, predicate=inspect.isfunction):
-            # Skip special methods and inherited methods
+            # Skip special methods and inherited methods from ServerStub
             if name.startswith("_") or hasattr(ServerStub, name):
                 continue
 
-            # Check if it's an async method
+            # Only wire async methods
             if not inspect.iscoroutinefunction(method):
-                continue
-
-            # Check if method has ellipsis body (stub method)
-            try:
-                source = inspect.getsource(method).strip()
-                if not source.endswith("..."):
-                    continue
-            except (OSError, TypeError):
-                # Can't get source, skip
                 continue
 
             # Get type hints
