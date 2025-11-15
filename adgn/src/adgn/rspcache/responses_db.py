@@ -109,7 +109,6 @@ class Response(Base):
     created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     last_update_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     latency_ms: Mapped[int | None] = mapped_column(Integer)
-    token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     api_key: Mapped[ClientAPIKey | None] = relationship(back_populates="responses")
     frames: Mapped[list[ResponseFrame]] = relationship(back_populates="response", cascade="all, delete-orphan")
@@ -366,7 +365,6 @@ class ResponsesDB:
                     status=ResponseStatus.COMPLETE.value,
                     response_id=response_id,
                     latency_ms=latency_ms,
-                    token_usage=token_usage.model_dump(mode="json") if token_usage else None,
                     last_update_ts=datetime.now(UTC),
                 )
             )
