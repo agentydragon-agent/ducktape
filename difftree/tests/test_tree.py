@@ -7,6 +7,13 @@ from difftree.parser import FileChange
 from difftree.tree import TreeNode, build_tree, sort_tree
 
 
+def _sorted_child_names(changes: list[FileChange], sort_by: SortMode, reverse: bool = True) -> list[str]:
+    """Build tree, sort it, and return children names in order."""
+    root = build_tree(changes, sort_by=SortMode.ALPHA)
+    root = sort_tree(root, sort_by=sort_by, reverse=reverse)
+    return list(root.children.keys())
+
+
 def test_build_tree_single_file():
     """Test building tree with a single file."""
     changes = [FileChange(path="test.py", additions=10, deletions=5)]
@@ -73,11 +80,7 @@ def test_tree_statistics_aggregation(sample_changes: list[FileChange]):
 
 def test_sort_tree_by_size(sample_changes: list[FileChange]):
     """Test sorting tree by total changes (descending)."""
-    root = build_tree(sample_changes)
-    root = sort_tree(root, sort_by=SortMode.SIZE, reverse=True)
-
-    # Get children in order
-    children_names = list(root.children.keys())
+    children_names = _sorted_child_names(sample_changes, SortMode.SIZE, reverse=True)
 
     # src should be first (most changes: 10+2+5+20+5+15+3 = 60)
     # tests should be second (8+1 = 9)
@@ -88,11 +91,7 @@ def test_sort_tree_by_size(sample_changes: list[FileChange]):
 
 def test_sort_tree_alphabetically(sample_changes: list[FileChange]):
     """Test sorting tree alphabetically."""
-    root = build_tree(sample_changes)
-    root = sort_tree(root, sort_by=SortMode.ALPHA)
-
-    # Get children in order
-    children_names = list(root.children.keys())
+    children_names = _sorted_child_names(sample_changes, SortMode.ALPHA)
 
     # Should be in alphabetical order
     assert children_names == sorted(children_names)

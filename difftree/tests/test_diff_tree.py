@@ -19,15 +19,12 @@ from .conftest import make_diff_tree, render_to_string
 
 def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
     """Render tree and return lines as Rich Text objects."""
-    # Use recording console to capture segments
     console = Console(record=True, width=width)
     console.print(diff_tree)
 
-    # Get segments and split into lines
     segments = console._record_buffer
     lines = list(Segment.split_lines(segments))
 
-    # Convert each line to Text object
     text_lines = []
     for line_segments in lines:
         text = Text()
@@ -37,6 +34,32 @@ def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
         text_lines.append(text)
 
     return text_lines
+
+
+def _find_line_with(lines: list[str], substring: str) -> str:
+    """Find first line containing substring."""
+    return next(line for line in lines if substring in line)
+
+
+def _find_tree_pos(line: str) -> int:
+    """Find position of first tree decoration character, or -1 if not found."""
+    positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
+    return min(positions) if positions else -1
+
+
+def _assert_column_before(result: str, filename: str, first: str, second: str, first_desc: str, second_desc: str):
+    """Assert that first marker appears before second marker in line containing filename."""
+    line = _find_line_with(result.split("\n"), filename)
+
+    first_pos = line.find(first) if first in line else -1
+
+    if second in ["tree_char"]:
+        second_pos = _find_tree_pos(line)
+    else:
+        second_pos = line.find(second) if second in line else -1
+
+    if first_pos != -1 and second_pos != -1:
+        assert first_pos < second_pos, f"Expected {first_desc} before {second_desc}, but got {first_desc} at {first_pos}, {second_desc} at {second_pos}"
 
 
 def test_renderer_initialization():
@@ -296,76 +319,30 @@ def test_tree_styling_preserved():
 def test_column_ordering():
     """Test that columns appear in the order specified in config."""
     changes = [FileChange(path="file.py", additions=10, deletions=5)]
-<<<<<<< HEAD
-    root = build_tree(changes)
-=======
->>>>>>> e3ad4dd (Add make_diff_tree test helper to DRY up test code)
 
     # Test bars before tree
     config = RenderConfig(columns=[Column.BARS, Column.TREE, Column.COUNTS])
-    diff_tree = make_diff_tree(changes, config=config)
-    result = render_to_string(diff_tree, width=80, force_terminal=False)
-
-    # The output should have bars (█ characters) before the tree structure
-    # Find first occurrence of tree characters (. or └ or ├) and bar characters (█)
-    lines = result.split("\n")
-    for line in lines:
-        if "file.py" in line:
-            # Find positions of key elements
-            bar_pos = line.find("█") if "█" in line else -1
-            tree_char_positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
-            tree_pos = min(tree_char_positions) if tree_char_positions else -1
-
-            if bar_pos != -1 and tree_pos != -1:
-                # Bars should come before tree when BARS is listed first
-                assert bar_pos < tree_pos, f"Expected bars before tree, but got bar at {bar_pos}, tree at {tree_pos}"
-                break
+    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
+    _assert_column_before(result, "file.py", "█", "tree_char", "bars", "tree")
 
     # Test tree before bars (standard order)
     config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.COUNTS])
-    diff_tree = make_diff_tree(changes, config=config)
-    result = render_to_string(diff_tree, width=80, force_terminal=False)
+    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
 
-    lines = result.split("\n")
-    for line in lines:
-        if "file.py" in line:
-            bar_pos = line.find("█") if "█" in line else -1
-            tree_char_positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
-            tree_pos = min(tree_char_positions) if tree_char_positions else -1
-
-            if bar_pos != -1 and tree_pos != -1:
-                # Tree should come before bars when TREE is listed first
-                assert tree_pos < bar_pos, f"Expected tree before bars, but got tree at {tree_pos}, bar at {bar_pos}"
-                break
+    line = _find_line_with(result.split("\n"), "file.py")
+    tree_pos = _find_tree_pos(line)
+    bar_pos = line.find("█") if "█" in line else -1
+    if bar_pos != -1 and tree_pos != -1:
+        assert tree_pos < bar_pos, f"Expected tree before bars, but got tree at {tree_pos}, bar at {bar_pos}"
 
 
 def test_column_ordering_counts_first():
     """Test counts column can appear first."""
     changes = [FileChange(path="file.py", additions=10, deletions=5)]
-<<<<<<< HEAD
-    root = build_tree(changes)
-=======
->>>>>>> e3ad4dd (Add make_diff_tree test helper to DRY up test code)
 
-    # Counts first, then tree
     config = RenderConfig(columns=[Column.COUNTS, Column.TREE])
-    diff_tree = make_diff_tree(changes, config=config)
-    result = render_to_string(diff_tree, width=80, force_terminal=False)
-
-    lines = result.split("\n")
-    for line in lines:
-        if "file.py" in line:
-            # Find positions of key elements
-            plus_pos = line.find("+10") if "+10" in line else -1
-            tree_char_positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
-            tree_pos = min(tree_char_positions) if tree_char_positions else -1
-
-            if plus_pos != -1 and tree_pos != -1:
-                # Counts should come before tree when COUNTS is listed first
-                assert plus_pos < tree_pos, (
-                    f"Expected counts before tree, but got counts at {plus_pos}, tree at {tree_pos}"
-                )
-                break
+    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
+    _assert_column_before(result, "file.py", "+10", "tree_char", "counts", "tree")
 
 
 def test_bar_proportionality():
