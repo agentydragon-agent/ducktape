@@ -50,11 +50,11 @@ class DiffTree:
             tree_lines, options.max_width or 80, total_additions, total_deletions
         )
 
-        table = Table.grid(padding=0)
+        table = Table.grid(padding=(0, 1))
 
         for column in self.config.columns:
             if column == Column.TREE:
-                table.add_column(justify="left")
+                table.add_column(justify="left", overflow="fold")
             elif column == Column.COUNTS:
                 table.add_column(justify="right")  # Additions (right-aligned)
                 table.add_column(justify="left")   # Deletions (left-aligned)

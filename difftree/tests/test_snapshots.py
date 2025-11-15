@@ -56,6 +56,7 @@ def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, c
     """Snapshot test for different configuration variants."""
     config = config_factory()
     output = render_to_string(complex_changes, sort_by=sort_by, config=config)
+    assert "…" not in output, f"Output contains ellipsis character (…): {output}"
     assert output == snapshot(name=test_id)
 
 
@@ -107,4 +108,5 @@ def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, c
 def test_snapshot_scenarios(snapshot, test_id, changes_factory):
     changes = changes_factory()
     output = render_to_string(changes)
+    assert "…" not in output, f"Output contains ellipsis character (…): {output}"
     assert output == snapshot(name=test_id)
