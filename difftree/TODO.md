@@ -87,16 +87,11 @@
        - Less reliable than git's built-in detection
   - **Tree placement**: Place renamed files under their **destination path** in tree
     - File appears at its new location, not old location
-    - Show rename indicator alongside filename: `new.py (← old.py)` or `new.py ← src/old.py`
+    - Show rename with arrow: `new.py ← old.py` or `new.py ← src/old.py`
   - Example display:
     ```
     lib/
     └── new.py ← src/old.py     +5  -2  ████ ██
-    ```
-    Or more compact:
-    ```
-    lib/
-    └── new.py (was: src/old.py)     +5  -2  ████ ██
     ```
   - Edge cases to handle:
     - Renamed + modified (most common)
@@ -109,7 +104,7 @@
         - Or optionally show under a special "moved out" section at bottom
       - File moved TO current scope from outside: `lib/old.py => src/new.py`
         - Show at destination path (src/new.py) with indicator showing external source
-        - Example: `src/new.py (← ../lib/old.py)` or `src/new.py (moved from outside)`
+        - Example: `src/new.py ← ../lib/old.py`
       - May need to track which paths are in scope and handle cross-boundary renames specially
 - [ ] Colored diff pass-through mode (like delta)
   - Show tree summary at top
