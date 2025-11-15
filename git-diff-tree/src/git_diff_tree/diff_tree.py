@@ -231,7 +231,3 @@ class DiffTree:
                     cells.append(Text("  "))
 
         return cells
-
-
-# Backward compatibility alias (deprecated)
-DiffTreeRenderer = DiffTree
