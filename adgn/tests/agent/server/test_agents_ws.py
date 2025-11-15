@@ -3,14 +3,6 @@ from __future__ import annotations
 from hamcrest import assert_that, has_item
 from pydantic import TypeAdapter
 import pytest
-
-from adgn.agent.server.agents_ws import (
-    AgentCreatedMsg,
-    AgentsHubMsg,
-    AgentsSnapshotMsg,
-    AgentStatusMsg,
-)
-from adgn.openai_utils.model import FakeOpenAIModel
 from tests.agent.ws_helpers import (
     ACTIVE_RUN_CLEARED,
     ACTIVE_RUN_SET,
@@ -18,6 +10,9 @@ from tests.agent.ws_helpers import (
     drain_json_until_match,
     wait_for_accepted,
 )
+
+from adgn.agent.server.agents_ws import AgentCreatedMsg, AgentsHubMsg, AgentsSnapshotMsg, AgentStatusMsg
+from adgn.openai_utils.model import FakeOpenAIModel
 
 
 def test_agents_ws_initial_and_create_broadcast(ws_hub):
@@ -37,9 +32,8 @@ def test_agents_ws_initial_and_create_broadcast(ws_hub):
         for raw in acc:
             m = TypeAdapter(AgentsHubMsg).validate_python(raw)
             kinds.append(type(m).__name__)
-            if isinstance(m, AgentCreatedMsg | AgentStatusMsg):
-                if (getattr(m, "data").id) != agent_id:
-                    ids_ok = False
+            if isinstance(m, AgentCreatedMsg | AgentStatusMsg) and (m.data.id) != agent_id:
+                ids_ok = False
         return ("AgentCreatedMsg" in kinds and "AgentStatusMsg" in kinds) and ids_ok
 
     acc: list[dict] = []
@@ -50,12 +44,7 @@ def test_agents_ws_initial_and_create_broadcast(ws_hub):
     assert _have_create_and_status(acc), acc
 
 
-def test_agents_ws_status_on_agent_ws_connect(
-    ws_hub,
-    agent_app_client,
-    patch_agent_build_client,
-    responses_factory,
-):
+def test_agents_ws_status_on_agent_ws_connect(ws_hub, agent_app_client, patch_agent_build_client, responses_factory):
     client, hub = ws_hub
     patch_agent_build_client(FakeOpenAIModel([responses_factory.make_assistant_message("ok")]))
     # Create an agent first
@@ -96,10 +85,7 @@ def test_agents_ws_run_status_mirrors(agent_app_client, agent_ws_box, responses_
 
             # Expect a live:true with active_run_id set; drain until a status for this agent
             acc1 = drain_json_until_match(
-                hub,
-                agent_status(box.agent_id, active_run_id=ACTIVE_RUN_SET),
-                limit=40,
-                mapper=lambda m: m,
+                hub, agent_status(box.agent_id, active_run_id=ACTIVE_RUN_SET), limit=40, mapper=lambda m: m
             )
             assert_that(acc1, has_item(agent_status(box.agent_id, active_run_id=ACTIVE_RUN_SET)))
 
@@ -107,11 +93,6 @@ def test_agents_ws_run_status_mirrors(agent_app_client, agent_ws_box, responses_
             # Ensure the run finished on the agent WS to avoid missing the hub update
             _ = box.collect(limit=180)
             acc2 = drain_json_until_match(
-                hub,
-                agent_status(box.agent_id, active_run_id=ACTIVE_RUN_CLEARED),
-                limit=60,
-                mapper=lambda m: m,
+                hub, agent_status(box.agent_id, active_run_id=ACTIVE_RUN_CLEARED), limit=60, mapper=lambda m: m
             )
-            assert_that(
-                acc2, has_item(agent_status(box.agent_id, active_run_id=ACTIVE_RUN_CLEARED))
-            )
+            assert_that(acc2, has_item(agent_status(box.agent_id, active_run_id=ACTIVE_RUN_CLEARED)))

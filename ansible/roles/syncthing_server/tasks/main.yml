@@ -3,7 +3,7 @@
 - name: Install syncthing package  # noqa: package-latest
   ansible.builtin.apt:
     name: syncthing
-    update_cache: yes
+    update_cache: true
     state: latest
 
 - name: Create SyncThing group
@@ -16,10 +16,10 @@
     name: syncthing
     group: syncthing
     comment: Syncthing service account
-    system: no   # regular user, gets /etc/passwd entry
+    system: false   # regular user, gets /etc/passwd entry
     home: /srv/syncthing
     shell: /bin/bash
-    create_home: yes
+    create_home: true
     state: present
 
 - name: Create SyncThing /srv directory
@@ -28,7 +28,7 @@
     state: directory
     owner: syncthing
     group: syncthing
-    mode: 0700
+    mode: "0700"
 
 - name: Check if config.xml already exists
   ansible.builtin.stat:
@@ -48,10 +48,10 @@
   become: true
   ansible.builtin.systemd:
     name: syncthing@syncthing   # template instance for the “syncthing” user
-    enabled: yes
+    enabled: true
     state: started
 
-#- name: SyncThing server
+# - name: SyncThing server
 #  include_role:
 #    name: rolehippie.syncthing
 #  vars:

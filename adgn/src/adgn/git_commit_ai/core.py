@@ -16,24 +16,14 @@ def _len_bytes(s: str) -> int:
     return len(s.encode("utf-8"))
 
 
-def _cap_append(
-    parts: list[str],
-    chunk: str,
-    cap_bytes: int,
-    truncation_note: str,
-) -> bool:
+def _cap_append(parts: list[str], chunk: str, cap_bytes: int, truncation_note: str) -> bool:
     """Append chunk to parts unless this would exceed cap; returns True if truncated."""
     current_bytes = _len_bytes("".join(parts))
     needed_bytes = _len_bytes(chunk)
     if current_bytes + needed_bytes >= cap_bytes:
         remaining_bytes = cap_bytes - current_bytes
         if remaining_bytes > 0:
-            parts.append(
-                chunk.encode("utf-8")[:remaining_bytes].decode(
-                    "utf-8",
-                    errors="ignore",
-                ),
-            )
+            parts.append(chunk.encode("utf-8")[:remaining_bytes].decode("utf-8", errors="ignore"))
         parts.append(truncation_note + "\n")
         return True
     parts.append(chunk)
@@ -182,9 +172,7 @@ def _build_ai_context(repo: pygit2.Repository, include_all: bool) -> str:
     ns_out = _format_name_status(repo, include_all) + "\n"
     _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
 
-    parts.append(
-        f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %s\n",
-    )
+    parts.append(f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %s\n")
     log_out = "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n"
     _cap_append(parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
 
@@ -220,12 +208,7 @@ def diffstat(repo: pygit2.Repository, passthru: list[str]) -> str:
     return "\n".join(lines)
 
 
-def build_prompt(
-    repo: pygit2.Repository,
-    diff: str,
-    passthru: list[str],
-    previous_message: str | None = None,
-) -> str:
+def build_prompt(repo: pygit2.Repository, diff: str, passthru: list[str], previous_message: str | None = None) -> str:
     include_all = include_all_from_passthru(passthru)
     context = _build_ai_context(repo, include_all)
     if previous_message:

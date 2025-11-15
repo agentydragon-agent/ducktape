@@ -1,6 +1,3 @@
-[tool.ruff.lint]
-# Ignore camelCase naming for Claude's API fields
-ignore = ["N815"]
 
 [tool.mypy]
 # This is experimental code

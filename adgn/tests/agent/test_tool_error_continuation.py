@@ -35,10 +35,7 @@ def _make_validation_server() -> FastMCP:
 
 @pytest.mark.asyncio
 async def test_tool_error_continues_turn(
-    monkeypatch: pytest.MonkeyPatch,
-    responses_factory,
-    make_pg_compositor,
-    approval_policy_reader_allow_all,
+    monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
 ) -> None:
     """Test that a tool validation error doesn't abort the turn.
 
@@ -50,9 +47,10 @@ async def test_tool_error_continues_turn(
     5. Successfully complete
     """
     server = _make_validation_server()
-    async with make_pg_compositor(
-        {"validator": server, "approval_policy": approval_policy_reader_allow_all}
-    ) as (mcp_client, _comp):
+    async with make_pg_compositor({"validator": server, "approval_policy": approval_policy_reader_allow_all}) as (
+        mcp_client,
+        _comp,
+    ):
 
         class _AutoHandler(BaseHandler):
             def on_before_sample(self):  # type: ignore[override]
@@ -65,13 +63,11 @@ async def test_tool_error_continues_turn(
             [
                 # First attempt with wrong mime type
                 responses_factory.make_tool_call(
-                    build_mcp_function("validator", "send_message"),
-                    {"mime": "text/plain", "content": "Hello"},
+                    build_mcp_function("validator", "send_message"), {"mime": "text/plain", "content": "Hello"}
                 ),
                 # After error, agent retries with correct mime type
                 responses_factory.make_tool_call(
-                    build_mcp_function("validator", "send_message"),
-                    {"mime": "text/markdown", "content": "Hello"},
+                    build_mcp_function("validator", "send_message"), {"mime": "text/markdown", "content": "Hello"}
                 ),
                 # Final message
                 responses_factory.make_assistant_message("Successfully sent message"),

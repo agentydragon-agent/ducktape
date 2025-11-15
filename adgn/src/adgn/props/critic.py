@@ -45,10 +45,7 @@ class ReportedIssue(BaseModel):
 class CriticSubmitPayload(BaseModel):
     """Structured critic output."""
 
-    issues: list[ReportedIssue] = Field(
-        default_factory=list,
-        description="Issues found",
-    )
+    issues: list[ReportedIssue] = Field(default_factory=list, description="Issues found")
     notes_md: str | None = Field(
         default=None,
         description="Optional Markdown note. Only for info not represented in structured form in `issues`.",
@@ -128,8 +125,7 @@ class AddOccurrenceInput(BaseModel):
     issue_id: IssueId
     file: Annotated[str, StringConstraints(pattern=r"^[^\n]+$")]
     ranges: Annotated[
-        list[RangeAtom],
-        Field(min_items=1, description="List of single lines (int) or spans [start,end]"),
+        list[RangeAtom], Field(min_items=1, description="List of single lines (int) or spans [start,end]")
     ]
 
     model_config = ConfigDict(extra="forbid")
@@ -158,14 +154,14 @@ class AddOccurrenceFilesInput(BaseModel):
 CRITIC_MCP_INSTRUCTIONS = (
     "Critique builder: incrementally add issues and occurrences, then call submit(issues) when complete.\n\n"
     "Notes:\n"
-    "- Tools are self‑describing via MCP; consult tool schemas instead of this banner.\n"
+    "- Tools are self-describing via MCP; consult tool schemas instead of this banner.\n"
     "- For multiple occurrences of the same issue, call add_occurrence repeatedly.\n"
     "- For a single occurrence spanning multiple files/ranges, use add_occurrence_files.\n"
 )
 
 
 def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -> None:
-    """Register critic submit tools on the provided server (tools‑builder pattern)."""
+    """Register critic submit tools on the provided server (tools-builder pattern)."""
 
     def _ensure_work_payload() -> CriticSubmitPayload:
         work = state.work
@@ -197,9 +193,7 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
                 )
                 break
         else:
-            work.issues.append(
-                ReportedIssue(id=payload.issue_id, rationale=payload.description, occurrences=[])
-            )
+            work.issues.append(ReportedIssue(id=payload.issue_id, rationale=payload.description, occurrences=[]))
         return ToolAck(
             message=f"issue {payload.issue_id} noted. note: you need to use add_occurrence to mark the site of at least one occurrence"
         )
@@ -221,9 +215,7 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
         work = _ensure_work_payload()
         for it in work.issues:
             if it.id == payload.issue_id:
-                files_map: dict[str, list[LineRange] | None] = {
-                    payload.file: _normalize_ranges(payload.ranges)
-                }
+                files_map: dict[str, list[LineRange] | None] = {payload.file: _normalize_ranges(payload.ranges)}
                 it.occurrences.append(Occurrence(files=files_map))
                 total_occs = sum(len(i.occurrences) for i in work.issues)
                 return ToolAck(
@@ -265,9 +257,7 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
             )
         actual_issues = len(work.issues)
         if payload.issues != actual_issues:
-            raise ToolError(
-                f"Submit count mismatch: reported {payload.issues} but found {actual_issues}."
-            )
+            raise ToolError(f"Submit count mismatch: reported {payload.issues} but found {actual_issues}.")
         state.result = work
         occs = sum(len(i.occurrences) for i in work.issues)
         return SubmitAck(issues=actual_issues, occurrences=occs)
@@ -281,11 +271,7 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
         raise ToolError(error.message)
 
 
-def make_critic_submit_server(
-    state: CriticSubmitState,
-    *,
-    name: str = CRITIC_SUBMIT_SERVER_NAME,
-) -> NotifyingFastMCP:
+def make_critic_submit_server(state: CriticSubmitState, *, name: str = CRITIC_SUBMIT_SERVER_NAME) -> NotifyingFastMCP:
     """Create a Critic MCP server with typed, flat tools (single source of truth).
 
     Agent builds a critique incrementally via tools and must call submit(issues)
@@ -330,8 +316,7 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):  # type: ignore[mis
                         files.append(f"{p}: (unspecified)")
                     else:
                         spans = ", ".join(
-                            f"{r.start_line}" + (f"-{r.end_line}" if r.end_line is not None else "")
-                            for r in ranges
+                            f"{r.start_line}" + (f"-{r.end_line}" if r.end_line is not None else "") for r in ranges
                         )
                         files.append(f"{p}: {spans}")
                 note = f" ({occ.note})" if occ.note else ""

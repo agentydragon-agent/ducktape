@@ -1,8 +1,8 @@
 """Session-scoped logging system for Claude Code hooks."""
 
+from datetime import datetime
 import json
 import logging
-from datetime import datetime
 from typing import NewType
 from uuid import UUID
 
@@ -59,25 +59,22 @@ class JSONFormatter(logging.Formatter):
         # Add any extra fields under 'extra' key to avoid conflicts
         extra_fields = {}
         for key, value in record.__dict__.items():
-            if (
-                key
-                not in [
-                    "name",
-                    "msg",
-                    "args",
-                    "levelname",
-                    "levelno",
-                    "created",
-                    "msecs",
-                    "relativeCreated",
-                    "getMessage",
-                    "exc_info",
-                    "exc_text",
-                    "stack_info",
-                    "message",
-                ]
-                + standard_fields
-            ):
+            if key not in [
+                "name",
+                "msg",
+                "args",
+                "levelname",
+                "levelno",
+                "created",
+                "msecs",
+                "relativeCreated",
+                "getMessage",
+                "exc_info",
+                "exc_text",
+                "stack_info",
+                "message",
+                *standard_fields,
+            ]:
                 extra_fields[key] = value
 
         if extra_fields:

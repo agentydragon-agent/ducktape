@@ -5,13 +5,13 @@ Claude Linter v2 - Main CLI entry point.
 A unified code quality and permission management system for Claude Code.
 """
 
+from datetime import datetime, timedelta
 import json
 import logging
+from pathlib import Path
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import click
@@ -30,16 +30,7 @@ logger = logging.getLogger(__name__)
 
 def _try_send_crash_notification(title: str, message: str) -> None:
     try:
-        subprocess.run(
-            [
-                "notify-send",
-                "-u",
-                "critical",
-                title,
-                message,
-            ],
-            check=False,
-        )
+        subprocess.run(["notify-send", "-u", "critical", title, message], check=False)
     except Exception as e:
         logger.debug(f"Failed to send crash notification: {e}")
 
@@ -72,11 +63,7 @@ def cli(ctx: click.Context) -> None:
 
 
 @cli.command()
-@click.option(
-    "--request-json",
-    type=str,
-    help="JSON request from Claude Code (stdin if not provided)",
-)
+@click.option("--request-json", type=str, help="JSON request from Claude Code (stdin if not provided)")
 def hook(request_json: str | None) -> None:
     """Handle Claude Code hook requests.
 
@@ -154,7 +141,7 @@ def hook(request_json: str | None) -> None:
         logger.error(f"FATAL: JSON parse error: {e}")
 
         # Send desktop notification
-        _try_send_crash_notification("Claude Linter Hook Crashed", f"JSON parse error: {str(e)}")
+        _try_send_crash_notification("Claude Linter Hook Crashed", f"JSON parse error: {e!s}")
 
         # DO NOT output JSON - just crash
         raise
@@ -181,10 +168,7 @@ def hook(request_json: str | None) -> None:
         logger.error(f"FATAL: Request validation error for {hook_type}: {e}", exc_info=True)
 
         # Send desktop notification
-        _try_send_crash_notification(
-            "Claude Linter Hook Crashed",
-            f"Request validation failed for {hook_type}: {str(e)}",
-        )
+        _try_send_crash_notification("Claude Linter Hook Crashed", f"Request validation failed for {hook_type}: {e!s}")
 
         # DO NOT output JSON - just crash
         raise
@@ -199,7 +183,7 @@ def hook(request_json: str | None) -> None:
         logger.error(f"FATAL: Hook bug: {e}", exc_info=True)
 
         # Send desktop notification
-        _try_send_crash_notification("Claude Linter Hook Bug", f"Hook implementation error: {str(e)}")
+        _try_send_crash_notification("Claude Linter Hook Bug", f"Hook implementation error: {e!s}")
 
         # DO NOT output JSON - just crash
         raise
@@ -211,7 +195,7 @@ def hook(request_json: str | None) -> None:
         logger.error(traceback.format_exc())
 
         # Send desktop notification
-        _try_send_crash_notification("Claude Linter Hook Crashed", f"Unexpected error in {hook_type}: {str(e)}")
+        _try_send_crash_notification("Claude Linter Hook Crashed", f"Unexpected error in {hook_type}: {e!s}")
 
         # DO NOT output JSON - just crash
         raise
@@ -223,7 +207,6 @@ def hook(request_json: str | None) -> None:
 @cli.group()
 def session() -> None:
     """Manage session-scoped permissions."""
-    pass
 
 
 @session.command("allow")
@@ -364,7 +347,6 @@ def _display_session(session_info: dict[str, Any]) -> None:
 @cli.group()
 def profile() -> None:
     """Manage permission profiles."""
-    pass
 
 
 @profile.command("activate")
@@ -391,13 +373,7 @@ def profile_list() -> None:
 @click.option("--categories", multiple=True, help="Categories to check/fix")
 @click.option("--json", "output_json", is_flag=True, help="Output results as JSON")
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed output")
-def check(
-    paths: tuple[Path, ...],
-    fix: bool,
-    categories: tuple[str, ...],
-    output_json: bool,
-    verbose: bool,
-) -> None:
+def check(paths: tuple[Path, ...], fix: bool, categories: tuple[str, ...], output_json: bool, verbose: bool) -> None:
     """Check files for linting issues (direct usage).
 
     Examples:
@@ -419,21 +395,14 @@ def check(
                 autofix_categories.append(AutofixCategory(cat))
             except ValueError:
                 click.echo(f"❌ Unknown category: {cat}", err=True)
-                click.echo(
-                    f"Valid categories: {', '.join(c.value for c in AutofixCategory)}",
-                    err=True,
-                )
+                click.echo(f"Valid categories: {', '.join(c.value for c in AutofixCategory)}", err=True)
                 sys.exit(1)
     elif fix:
         # Default to all categories if --fix is given without specific categories
         autofix_categories = list(AutofixCategory)
 
     # Create checker
-    checker = FileChecker(
-        fix=fix,
-        categories=autofix_categories,
-        verbose=verbose,
-    )
+    checker = FileChecker(fix=fix, categories=autofix_categories, verbose=verbose)
 
     # Collect all files
     all_files = []
@@ -443,11 +412,14 @@ def check(
         elif path.is_dir():
             # Find all Python files
             all_files.extend(path.rglob("*.py"))
+        elif "*" in str(path):
+            # Glob pattern - use Path.glob for pathlib compliance
+            parent_path = Path(str(path).split("*")[0]).parent if "*" in str(path) else Path.cwd()
+            pattern = str(path).replace(str(parent_path) + "/", "")
+            all_files.extend(parent_path.rglob(pattern))
         else:
-            # Might be a glob pattern
-            import glob
-
-            all_files.extend(Path(p) for p in glob.glob(str(path), recursive=True))
+            # Not a glob, treat as regular path
+            all_files.append(path)
 
     if not all_files:
         click.echo("⚠️  No files found to check")
@@ -474,11 +446,7 @@ def check(
 
     # Output results
     if output_json:
-        output = {
-            "total_violations": total_violations,
-            "files_checked": len(all_files),
-            "results": results,
-        }
+        output = {"total_violations": total_violations, "files_checked": len(all_files), "results": results}
         click.echo(json.dumps(output, indent=2))
     else:
         # Summary
@@ -507,10 +475,7 @@ def fix(paths: tuple[Path, ...], categories: tuple[str, ...]) -> None:
 @cli.command()
 @click.option("--dry-run", is_flag=True, help="Show what would be done without modifying files")
 @click.option(
-    "--config",
-    type=Path,
-    default=Path.home() / ".claude" / "settings.json",
-    help="Path to Claude config file",
+    "--config", type=Path, default=Path.home() / ".claude" / "settings.json", help="Path to Claude config file"
 )
 def install(dry_run: bool, config: Path) -> None:
     """Install claude-linter-v2 hooks in Claude Code configuration."""
@@ -529,7 +494,7 @@ def install(dry_run: bool, config: Path) -> None:
         sys.exit(1)
 
     try:
-        with open(config) as f:
+        with config.open() as f:
             claude_config = json.load(f)
     except json.JSONDecodeError as e:
         click.echo(f"❌ Error: Invalid JSON in {config}: {e}", err=True)
@@ -548,13 +513,7 @@ def install(dry_run: bool, config: Path) -> None:
     ]
 
     # Install for ALL known hook types
-    all_hook_types = [
-        "PreToolUse",
-        "PostToolUse",
-        "Stop",
-        "SubagentStop",
-        "Notification",
-    ]
+    all_hook_types = ["PreToolUse", "PostToolUse", "Stop", "SubagentStop", "Notification"]
     hooks = dict.fromkeys(all_hook_types, hook_config)
 
     # Check if hooks already exist
@@ -574,7 +533,7 @@ def install(dry_run: bool, config: Path) -> None:
     click.echo(f"   Command: {cl2_path}")
     click.echo("   Events:")
     for hook_name, _ in hooks.items():
-        status = "✅ exists" if hook_name in claude_config.get("hooks", {}) else "➕ new"
+        status = "✅ exists" if hook_name in claude_config.get("hooks", {}) else "+ new"
         click.echo(f"     - {hook_name} [{status}]")
 
     if dry_run:
@@ -595,7 +554,7 @@ def install(dry_run: bool, config: Path) -> None:
     claude_config["hooks"].update(hooks)
 
     # Write updated config
-    with open(config, "w") as f:
+    with config.open("w") as f:
         json.dump(claude_config, f, indent=2)
 
     click.echo("\n✅ Successfully installed claude-linter-v2 hooks!")

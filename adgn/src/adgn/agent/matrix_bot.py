@@ -20,17 +20,14 @@ from adgn.mcp._shared.config_loader import build_mcp_config
 from adgn.mcp._shared.constants import MATRIX_CONTROL_SERVER_NAME
 from adgn.mcp._shared.container_session import ContainerOptions, NetworkMode
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.types import ExecResult
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import make_container_exec_server
+from adgn.mcp.exec.models import BaseExecResult
 from adgn.mcp.matrix.control import make_matrix_control_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.openai_utils.client_factory import build_client
 
-app = typer.Typer(
-    help="Matrix-driven MiniCodex entrypoint (docker + yield-only control)",
-    no_args_is_help=True,
-)
+app = typer.Typer(help="Matrix-driven MiniCodex entrypoint (docker + yield-only control)", no_args_is_help=True)
 
 
 def _configure_logging_info() -> None:
@@ -40,28 +37,16 @@ def _configure_logging_info() -> None:
 @app.command()
 def run(
     model: str = typer.Option(os.getenv("OPENAI_MODEL", "o4-mini"), "--model"),
-    mcp_configs: list[Path] = typer.Option(
-        [],
-        "--mcp-config",
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        readable=True,
-        resolve_path=True,
+    mcp_configs: list[Path] = typer.Option(  # noqa: B008
+        [], "--mcp-config", exists=True, file_okay=True, dir_okay=False, readable=True, resolve_path=True
     ),
     homeserver: str = typer.Option(..., "--homeserver", help="Matrix homeserver base URL"),
     user_id: str = typer.Option(..., "--user-id", help="Matrix user id (e.g. @bot:example.com)"),
     access_token: str = typer.Option(..., "--access-token", help="Matrix access token"),
-    room: str = typer.Option(
-        ..., "--room", help="Room id or alias to watch (#alias:server or !id:server)"
-    ),
-    docker_image: str = typer.Option(
-        os.getenv("MATRIX_DOCKER_IMAGE", "curlimages/curl:8.8.0"), "--docker-image"
-    ),
+    room: str = typer.Option(..., "--room", help="Room id or alias to watch (#alias:server or !id:server)"),
+    docker_image: str = typer.Option(os.getenv("MATRIX_DOCKER_IMAGE", "curlimages/curl:8.8.0"), "--docker-image"),
     network_mode: str = typer.Option(os.getenv("MATRIX_DOCKER_NETWORK", "bridge"), "--network"),
-    system: str | None = typer.Option(
-        None, "--system", help="Override default system instructions"
-    ),
+    system: str | None = typer.Option(None, "--system", help="Override default system instructions"),
     initial_since: str | None = typer.Option(os.getenv("MATRIX_SINCE"), "--since"),
 ) -> None:
     """Run MiniCodex in headless Matrix mode using docker_exec + yield-only control."""
@@ -72,11 +57,7 @@ def run(
         _ = build_mcp_config(mcp_configs)
         ui_bus = ServerBus()
 
-        nm = (
-            NetworkMode(network_mode)
-            if network_mode in ("none", "bridge", "host")
-            else NetworkMode.BRIDGE
-        )
+        nm = NetworkMode(network_mode) if network_mode in ("none", "bridge", "host") else NetworkMode.BRIDGE
         env = {
             "MATRIX_BASE_URL": homeserver,
             "MATRIX_ACCESS_TOKEN": access_token,
@@ -113,10 +94,7 @@ def run(
                 mcp_client=mcp_client,
                 system=effective_system,
                 client=client,
-                handlers=[
-                    ServerModeHandler(bus=ui_bus, poll_notifications=notif_buffer.poll),
-                    DisplayEventsHandler(),
-                ],
+                handlers=[ServerModeHandler(bus=ui_bus, poll_notifications=notif_buffer.poll), DisplayEventsHandler()],
             )
 
             async def _sync_once(since: str | None) -> tuple[str, bool]:
@@ -125,17 +103,12 @@ def run(
                     qs["since"] = since
                 url = f"$MATRIX_BASE_URL/_matrix/client/v3/sync?{urlencode(qs)}"
                 hdr = "Authorization: Bearer $MATRIX_ACCESS_TOKEN"
-                cmd = [
-                    "sh",
-                    "-lc",
-                    f'curl -sS -H {json.dumps(hdr)} --fail --max-time 35 "{url}"',
-                ]
+                cmd = ["sh", "-lc", f'curl -sS -H {json.dumps(hdr)} --fail --max-time 35 "{url}"']
                 res_client = await mcp_client.session.call_tool(
-                    name=build_mcp_function("docker", "exec"),
-                    arguments={"cmd": cmd, "timeout_ms": 40_000},
+                    name=build_mcp_function("docker", "exec"), arguments={"cmd": cmd, "timeout_ms": 40_000}
                 )
                 res = to_pydantic(res_client)
-                ex = TypeAdapter(ExecResult).validate_python(res.structuredContent or {})
+                ex = TypeAdapter(BaseExecResult).validate_python(res.structuredContent or {})
                 stdout = ex.stdout or ""
                 try:
                     data = json.loads(stdout)

@@ -46,8 +46,7 @@ class BooleanSearch(_SearchBase):
 
 
 SearchExpression = Annotated[
-    TagSearch | TypeSearch | TextSearch | FieldSearch | BooleanSearch,
-    Field(discriminator="kind"),
+    TagSearch | TypeSearch | TextSearch | FieldSearch | BooleanSearch, Field(discriminator="kind")
 ]
 
 

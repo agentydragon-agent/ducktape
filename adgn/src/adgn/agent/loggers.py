@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from adgn.agent.handler import (
-    BaseHandler,
-    ToolCall,
-    ToolCallOutput,
-    to_jsonl_record,
-)
+from adgn.agent.handler import BaseHandler, ToolCall, ToolCallOutput, to_jsonl_record
 
 # TranscriptLoggerHandler removed; use TranscriptHandler from adgn.agent.transcript_handler instead.
 

@@ -58,10 +58,7 @@ class PlotDataPoint(BaseModel):
     count: int
 
 
-def create_plot_data_point(
-    iter_data: IterationSummary,
-    facet_name: str,
-) -> PlotDataPoint:
+def create_plot_data_point(iter_data: IterationSummary, facet_name: str) -> PlotDataPoint:
     """Create a plot data point for a given iteration and facet."""
     stats = iter_data.overall if facet_name == "overall" else iter_data.facets[facet_name]
 
@@ -157,12 +154,7 @@ class ScoreEvolutionPlotter:
         df_other = plot_df[plot_df["facet"] != "overall"]
 
         plot: ggplot = ggplot()
-        plot = plot + geom_line(
-            mapping=aes(x="iteration", y="mean", color="facet"),
-            data=df_other,
-            size=0.8,
-            alpha=0.7,
-        )
+        plot = plot + geom_line(mapping=aes(x="iteration", y="mean", color="facet"), data=df_other, size=0.8, alpha=0.7)
         plot = plot + geom_point(
             mapping=aes(x="iteration", y="mean", color="facet"),
             data=df_other,
@@ -171,23 +163,13 @@ class ScoreEvolutionPlotter:
             alpha=0.7,
         )
         plot = plot + geom_errorbar(
-            mapping=aes(
-                x="iteration",
-                ymin="ci_lower",
-                ymax="ci_upper",
-                color="facet",
-            ),
+            mapping=aes(x="iteration", ymin="ci_lower", ymax="ci_upper", color="facet"),
             data=df_other,
             width=0.1,
             position=position_dodge(width=dodge_width),
             alpha=0.7,
         )
-        plot = plot + geom_line(
-            mapping=aes(x="iteration", y="mean"),
-            data=df_overall,
-            color="black",
-            size=2.5,
-        )
+        plot = plot + geom_line(mapping=aes(x="iteration", y="mean"), data=df_overall, color="black", size=2.5)
         plot = plot + geom_point(
             mapping=aes(x="iteration", y="mean"),
             data=df_overall,
@@ -211,12 +193,7 @@ class ScoreEvolutionPlotter:
             color="Facet",
             caption="Error bars show 69% confidence interval of the mean",
         )
-        plot = plot + theme(
-            plot_title=element_text(size=14, ha="center"),
-            legend_position="right",
-        )
-
-        return plot
+        return plot + theme(plot_title=element_text(size=14, ha="center"), legend_position="right")
 
     def _create_faceted_plot(self, plot_df: pd.DataFrame) -> ggplot:
         """Create faceted plot - separate subplot for each facet."""
@@ -224,11 +201,7 @@ class ScoreEvolutionPlotter:
         plot: ggplot = ggplot(plot_df, aes(x="iteration", y="mean"))
         plot = plot + geom_line(size=1, color="steelblue")
         plot = plot + geom_point(size=2, color="steelblue")
-        plot = plot + geom_errorbar(
-            mapping=aes(ymin="ci_lower", ymax="ci_upper"),
-            width=0.1,
-            color="steelblue",
-        )
+        plot = plot + geom_errorbar(mapping=aes(ymin="ci_lower", ymax="ci_upper"), width=0.1, color="steelblue")
         plot = plot + facet_wrap("facet", scales="free_y", ncol=2)
         plot = plot + theme_minimal()
         plot = plot + labs(
@@ -237,15 +210,13 @@ class ScoreEvolutionPlotter:
             y="Score",
             caption="Error bars show 69% confidence interval of the mean",
         )
-        plot = plot + theme(
+        return plot + theme(
             plot_title=element_text(size=14, ha="center"),
             strip_text=element_text(size=10, margin={"t": 6, "b": 6}),
             axis_text_x=element_text(angle=0),
             panel_spacing=0.5,
             figure_size=(16, 12),
         )
-
-        return plot
 
 
 class ScoreEvolutionReporter:
@@ -254,12 +225,7 @@ class ScoreEvolutionReporter:
     def __init__(self, iterations_data: list[IterationSummary]):
         self.iterations_data = iterations_data
 
-    def generate_report(
-        self,
-        run_dir: Path,
-        log_path: Path,
-        plot_paths: tuple[Path, Path] | None = None,
-    ) -> str:
+    def generate_report(self, run_dir: Path, log_path: Path, plot_paths: tuple[Path, Path] | None = None) -> str:
         """Generate final score evolution report."""
         if not self.iterations_data:
             return "No score data to report."
@@ -277,7 +243,7 @@ class ScoreEvolutionReporter:
             report_parts.append(
                 f"  Iteration {iter_data.iteration:2d}: "
                 f"{overall.mean:5.2f} ± {overall.stdev:4.2f} "
-                f"(range: {overall.min:4.1f}-{overall.max:4.1f}, n={overall.count})",
+                f"(range: {overall.min:4.1f}-{overall.max:4.1f}, n={overall.count})"
             )
 
         if self.iterations_data and self.iterations_data[0].facets:
@@ -289,8 +255,7 @@ class ScoreEvolutionReporter:
                 for iter_data in self.iterations_data:
                     facet_stats = iter_data.facets[facet]
                     report_parts.append(
-                        f"    Iter {iter_data.iteration:2d}: "
-                        f"{facet_stats.mean:5.2f} ± {facet_stats.stdev:4.2f}",
+                        f"    Iter {iter_data.iteration:2d}: {facet_stats.mean:5.2f} ± {facet_stats.stdev:4.2f}"
                     )
 
         if plot_paths:
@@ -301,7 +266,7 @@ class ScoreEvolutionReporter:
                     "Score evolution plots saved to:",
                     f"  - Combined: {combined_path}",
                     f"  - Faceted: {faceted_path}",
-                ],
+                ]
             )
 
         report_parts.append("=" * 50)
@@ -323,8 +288,7 @@ class ScoreEvolutionTracker:
             iteration=iteration,
             overall=Stats.model_validate(self._stats.safe_stats(overall_scores)),
             facets={
-                name: Stats.model_validate(self._stats.safe_stats(scores))
-                for name, scores in facet_scores.items()
+                name: Stats.model_validate(self._stats.safe_stats(scores)) for name, scores in facet_scores.items()
             },
             timestamp=datetime.now(UTC).isoformat(),
         )
@@ -401,11 +365,7 @@ def analyze_rollout_logs(log_path: Path) -> AnalysisStats | None:
                 rollouts.append(rollout)
             except json.JSONDecodeError as e:
                 skipped_lines += 1
-                logger.warning(
-                    "Skipped malformed JSON line",
-                    line_num=line_num,
-                    error=str(e),
-                )
+                logger.warning("Skipped malformed JSON line", line_num=line_num, error=str(e))
                 continue
 
     if skipped_lines > 0:
@@ -443,7 +403,7 @@ def analyze_rollout_logs(log_path: Path) -> AnalysisStats | None:
                 total_tokens=total_tokens,
                 task_id=str(rollout.get("agent_id", "unknown")),
                 iteration=int(rollout.get("iteration", 1)),
-            ),
+            )
         )
 
     # Create DataFrame for efficient statistics computation
@@ -459,11 +419,7 @@ def analyze_rollout_logs(log_path: Path) -> AnalysisStats | None:
             median=float(rollout_df[col].median()),
         )
 
-    return AnalysisStats(
-        total_rollouts=len(rollout_data),
-        token_stats=token_stats,
-        rollout_details=rollout_data,
-    )
+    return AnalysisStats(total_rollouts=len(rollout_data), token_stats=token_stats, rollout_details=rollout_data)
 
 
 class CapacityEstimate(BaseModel):
@@ -483,10 +439,7 @@ class CapacityResult(BaseModel):
     rollout_stats: AnalysisStats
 
 
-def analyze_rollout_capacity(
-    log_path: Path,
-    context_limit: int = 200000,
-) -> CapacityResult | None:
+def analyze_rollout_capacity(log_path: Path, context_limit: int = 200000) -> CapacityResult | None:
     """Analyze rollout logs and estimate context capacity."""
     stats = analyze_rollout_logs(log_path)
     if not stats:
@@ -516,10 +469,7 @@ def analyze_rollout_capacity(
     )
 
 
-def print_rollout_analysis_report(
-    log_path: Path,
-    context_limits: list[int] | None = None,
-) -> None:
+def print_rollout_analysis_report(log_path: Path, context_limits: list[int] | None = None) -> None:
     """Print comprehensive rollout analysis report."""
     if context_limits is None:
         context_limits = [128000, 200000, 1000000]  # 128k, 200k, 1M tokens
@@ -541,17 +491,17 @@ def print_rollout_analysis_report(
         f"  Total tokens - Min: {stats.token_stats['total_tokens'].min:,}, "
         f"Max: {stats.token_stats['total_tokens'].max:,}, "
         f"Avg: {stats.token_stats['total_tokens'].avg:,.0f}, "
-        f"Median: {stats.token_stats['total_tokens'].median:,.0f}",
+        f"Median: {stats.token_stats['total_tokens'].median:,.0f}"
     )
     print(
         f"  Code tokens - Min: {stats.token_stats['code_tokens'].min:,}, "
         f"Max: {stats.token_stats['code_tokens'].max:,}, "
-        f"Avg: {stats.token_stats['code_tokens'].avg:,.0f}",
+        f"Avg: {stats.token_stats['code_tokens'].avg:,.0f}"
     )
     print(
         f"  Messages tokens - Min: {stats.token_stats['messages_tokens'].min:,}, "
         f"Max: {stats.token_stats['messages_tokens'].max:,}, "
-        f"Avg: {stats.token_stats['messages_tokens'].avg:,.0f}",
+        f"Avg: {stats.token_stats['messages_tokens'].avg:,.0f}"
     )
     print()
 
@@ -565,7 +515,5 @@ def print_rollout_analysis_report(
         print("  Estimated capacity:")
         print(f"    By average rollout size: {capacity.estimated_capacity.by_average} rollouts")
         print(f"    By median rollout size: {capacity.estimated_capacity.by_median} rollouts")
-        print(
-            f"    Conservative (max size): {capacity.estimated_capacity.conservative_max} rollouts"
-        )
+        print(f"    Conservative (max size): {capacity.estimated_capacity.conservative_max} rollouts")
         print()

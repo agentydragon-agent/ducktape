@@ -54,7 +54,7 @@
       ansible.builtin.unarchive:
         src: "{{ golang_download_url }}"
         dest: "{{ golang_install_dir }}"
-        remote_src: yes
+        remote_src: true
         creates: "{{ golang_install_dir }}/go/bin/go"
 
 - name: Verify Go installation

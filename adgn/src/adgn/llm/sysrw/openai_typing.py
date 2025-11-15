@@ -3,12 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from enum import StrEnum
 import json
-from typing import Annotated, Any, TypeAlias, cast
+from typing import Annotated, Any, Literal, cast
 
-from openai.types.chat import (
-    ChatCompletionMessageParam,
-    ChatCompletionMessageToolCallParam,
-)
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionMessageToolCallParam
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -17,10 +14,9 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 from pydantic import BaseModel, Field, TypeAdapter, model_validator
-from typing_extensions import Literal
 
 # Union type for response content parts
-ResponseContentPart: TypeAlias = ResponseOutputText | ResponseOutputRefusal
+type ResponseContentPart = ResponseOutputText | ResponseOutputRefusal
 
 
 class MessageRole(StrEnum):
@@ -62,7 +58,7 @@ class StandardAssistantMessage(BaseModel):
     tool_calls: list[ToolCallInfo] = []
 
     @model_validator(mode="after")
-    def validate_not_empty(self) -> "StandardAssistantMessage":
+    def validate_not_empty(self) -> StandardAssistantMessage:
         if self.content is None and not self.tool_calls:
             raise ValueError("Assistant message must have content or tool_calls")
         return self
@@ -116,9 +112,7 @@ def chat_param_to_standard_message(msg: ChatCompletionMessageParam) -> StandardM
 
             content_text = chat_param_message_content_as_text(msg)
             content = content_text if content_text else None
-            tool_calls = [
-                extract_chat_tool_call_info(call) for call in chat_param_message_tool_calls(msg)
-            ]
+            tool_calls = [extract_chat_tool_call_info(call) for call in chat_param_message_tool_calls(msg)]
 
             # Handle legacy function_call (convert to tool call, only for assistant)
             function_call = msg.get("function_call")
@@ -140,15 +134,11 @@ def chat_param_to_standard_message(msg: ChatCompletionMessageParam) -> StandardM
         case MessageRole.TOOL:
             tool_call_id = msg.get("tool_call_id")
             tool_call_id_str = tool_call_id if isinstance(tool_call_id, str) else ""
-            return StandardToolMessage(
-                content=chat_param_message_content_as_text(msg), tool_call_id=tool_call_id_str
-            )
+            return StandardToolMessage(content=chat_param_message_content_as_text(msg), tool_call_id=tool_call_id_str)
         case MessageRole.FUNCTION:
             name = msg.get("name")
             name_str = name if isinstance(name, str) else ""
-            return StandardFunctionMessage(
-                content=chat_param_message_content_as_text(msg), name=name_str
-            )
+            return StandardFunctionMessage(content=chat_param_message_content_as_text(msg), name=name_str)
         case _:
             raise ValueError(f"Unhandled MessageRole: {role}")
 
@@ -190,9 +180,7 @@ def iter_resolved_text(parts: list[ResponseContentPart]) -> Iterator[str]:
             yield part.refusal
 
 
-def chat_param_message_tool_calls(
-    message: ChatCompletionMessageParam,
-) -> list[ChatCompletionMessageToolCallParam]:
+def chat_param_message_tool_calls(message: ChatCompletionMessageParam) -> list[ChatCompletionMessageToolCallParam]:
     """Extract tool calls from a ChatCompletionMessageParam."""
     # Only assistant messages can have tool_calls
     try:
@@ -207,13 +195,7 @@ def chat_param_message_tool_calls(
             if tool_calls is None:
                 return []
             return TypeAdapter(list[ChatCompletionMessageToolCallParam]).validate_python(tool_calls)
-        case (
-            MessageRole.USER
-            | MessageRole.SYSTEM
-            | MessageRole.TOOL
-            | MessageRole.FUNCTION
-            | MessageRole.DEVELOPER
-        ):
+        case MessageRole.USER | MessageRole.SYSTEM | MessageRole.TOOL | MessageRole.FUNCTION | MessageRole.DEVELOPER:
             # Other message types don't have tool_calls
             return []
         case _:

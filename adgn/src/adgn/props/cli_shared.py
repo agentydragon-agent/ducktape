@@ -53,10 +53,7 @@ def detect_tools() -> list[str]:
             available.append(name)
     if "jscpd" not in available and shutil.which("npx"):
         cp = subprocess.run(
-            ["npx", "--yes", "--no-install", "jscpd", "--version"],
-            check=False,
-            text=True,
-            capture_output=True,
+            ["npx", "--yes", "--no-install", "jscpd", "--version"], check=False, text=True, capture_output=True
         )
         if cp.returncode == 0:
             available.append("jscpd(npx)")
@@ -84,16 +81,7 @@ def save_prompt_to_tmp(stem: str, text: str) -> Path:
 
 
 def build_cmd(model: str, workdir: Path, opts: BuildOptions) -> list[str]:
-    cmd: list[str] = [
-        "codex",
-        "exec",
-        "--model",
-        model,
-        "--sandbox",
-        opts.sandbox,
-        "-C",
-        str(workdir),
-    ]
+    cmd: list[str] = ["codex", "exec", "--model", model, "--sandbox", opts.sandbox, "-C", str(workdir)]
     if opts.extra_configs:
         for c in opts.extra_configs:
             cmd.extend(["-c", c])
@@ -115,13 +103,7 @@ async def run_check_minicodex_async(
 ) -> int:
     wiring = properties_docker_spec(workdir, mount_properties=True)
     server_factories = {wiring.server_name: wiring.server_factory}
-    res = await run_prompt_async(
-        prompt,
-        model,
-        server_factories,
-        client=client,
-        capture_transcript=not final_only,
-    )
+    res = await run_prompt_async(prompt, model, server_factories, client=client, capture_transcript=not final_only)
     if output_final_message:
         Path(output_final_message).write_text(res.final_text, encoding="utf-8")
     if not final_only and res.final_text:

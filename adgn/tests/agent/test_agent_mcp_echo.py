@@ -44,9 +44,7 @@ class RecordingHandler(BaseHandler):
 
 @pytest.mark.asyncio
 async def test_agent_mcp_echo_tool_use(
-    monkeypatch: pytest.MonkeyPatch,
-    responses_factory,
-    make_pg_compositor_echo,
+    monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_compositor_echo
 ) -> None:
     # Provide a two-step sequence via our shared Pydantic fake client
     client = FakeOpenAIModel(

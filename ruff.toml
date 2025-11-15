@@ -3,6 +3,8 @@
 
 # Prefer one-line formatting when code fits
 line-length = 120
+# Target Python 3.12+ consistently
+target-version = "py312"
 
 [format]
 # Ignore trailing commas when deciding whether to collapse to one line
@@ -14,33 +16,33 @@ select = [
     # Base
     "E", "F",
     # Pylint families
-    "PLC",  # convention
-    "PLE",  # errors
-    "PLR",  # refactor
-    "PLW",  # warnings
+    "PLC",   # convention
+    "PLE",   # errors
+    "PLR",   # refactor
+    "PLW",   # warnings
     # Modernization / quality
-    "UP",       # pyupgrade
-    "FURB",     # refurb
-    # Imports (isort replacement)
-    "I",
+    "UP",    # pyupgrade
+    "FA",    # future annotations
+    "FURB",  # refurb
+    "I",     # Imports (isort replacement)
     # Extras
     "YTT",
     "ASYNC",
-    "B",        # bugbear
-    "COM",      # commas
-    "C4",       # comprehensions
-    "LOG",      # logging
+    "B",     # bugbear
+    "COM",   # commas
+    "C4",    # comprehensions
+    "LOG",   # logging
     "PIE",
-    "PT",       # pytest
+    "PT",    # pytest
     "RSE",
-    "RET",      # returns
-    "SIM",      # simplify
+    "RET",   # returns
+    "SIM",   # simplify
     "SLOT",
-    "PTH",      # pathlib
+    "PTH",   # pathlib
     "NPY",
-    "PD",       # pandas
-    "N",        # naming
-    "RUF"       # ruff-specific
+    "PD",    # pandas
+    "N",     # naming
+    "RUF"    # ruff-specific
 ]
 # Keep these off globally; handled case-by-case or via constants
 ignore = [
@@ -50,10 +52,16 @@ ignore = [
     "PLR0911",  # too many returns
     "PLR0913",  # too many arguments - often leads to annoying unhelpful refactors
     "B904",     # raise from e
-    "E501"      # line length (formatter handles wrapping where needed)
+    "E501"      # line length (formatter handles wrapping)
 ]
+
 # Avoid conflicts between ruff-format and trailing-comma rules
 extend-ignore = ["COM812"]
+
+# Enforce modern typing
+[lint.pyupgrade]
+# Target Python 3.12+ - no runtime typing imports needed
+keep-runtime-typing = false
 
 [lint.isort]
 # Teach Ruff which packages are first-party so sectioning stays stable
@@ -68,3 +76,13 @@ split-on-trailing-comma = false
 "trilium/search_hack.py" = ["N806", "PD901", "PTH110", "PTH123"]  # Various style issues
 "trilium/papers/*.py" = ["N806", "PTH123"]  # Naming and pathlib issues
 "finance/*.py" = ["N802"]  # Function naming conventions
+
+# Project-specific ignores (consolidated from individual pyproject.toml files)
+"gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
+"adgn/src/adgn/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
+"gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
+
+# Test fixtures and specimens - these are deliberately broken examples for testing
+"adgn/tests/detectors/fixtures/**/*.py" = ["ALL"]  # Test fixtures with intentional issues
+"adgn/src/adgn/props/specimens/**/*.py" = ["ALL"]  # Code specimens for testing
+"adgn/src/adgn/third_party/**/*.py" = ["ALL"]  # Vendored third-party code

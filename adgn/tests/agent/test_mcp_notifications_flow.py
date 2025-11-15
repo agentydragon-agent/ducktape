@@ -13,12 +13,7 @@ from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.testing.typed_stubs import call_tool_typed
-from adgn.openai_utils.model import (
-    InputTextPart,
-    ResponsesRequest,
-    ResponsesResult,
-    UserMessage,
-)
+from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult, UserMessage
 from tests.llm.support.openai_mock import make_mock
 
 
@@ -62,19 +57,12 @@ def server() -> FastMCP:
 
 
 @pytest.mark.asyncio
-async def test_notifications_pre_sampling_out_of_band(
-    server: FastMCP,
-    responses_factory,
-    make_buffered_client,
-):
+async def test_notifications_pre_sampling_out_of_band(server: FastMCP, responses_factory, make_buffered_client):
     # Buffered client path via shared fixture
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         # Prime a protocol-level notification before sampling by calling the server tool once
         await call_tool_typed(
-            mcp_client,
-            build_mcp_function("notifier", "notify_policy"),
-            NotifyPolicyInput(),
-            NotifyPolicyOutput,
+            mcp_client, build_mcp_function("notifier", "notify_policy"), NotifyPolicyInput(), NotifyPolicyOutput
         )
 
         captured: list[ResponsesRequest] = []
@@ -107,17 +95,11 @@ async def test_notifications_pre_sampling_out_of_band(
                                 return True
             return False
 
-        assert any(_has_sysfyi(req) for req in captured), (
-            "expected system notification in request input"
-        )
+        assert any(_has_sysfyi(req) for req in captured), "expected system notification in request input"
 
 
 @pytest.mark.asyncio
-async def test_notifications_within_turn_from_tool(
-    server: FastMCP,
-    responses_factory,
-    make_buffered_client,
-):
+async def test_notifications_within_turn_from_tool(server: FastMCP, responses_factory, make_buffered_client):
     # Build notifier server and manager
     stage = {"n": 0}
     captured: list[ResponsesRequest] = []
@@ -127,9 +109,7 @@ async def test_notifications_within_turn_from_tool(
         stage["n"] += 1
         if stage["n"] == 1:
             # First model output: ask to call notifier.notify_policy
-            return responses_factory.make_tool_call(
-                build_mcp_function("notifier", "notify_policy"), {}
-            )
+            return responses_factory.make_tool_call(build_mcp_function("notifier", "notify_policy"), {})
         # Second (and later) model output: nothing else to do
         return responses_factory.make_assistant_message("done")
 
@@ -201,6 +181,4 @@ async def test_notifications_broadcast_outside_tool(responses_factory, make_buff
                                 return True
             return False
 
-        assert any(_has_sysfyi(req) for req in captured), (
-            "expected system notification after out-of-tool broadcast"
-        )
+        assert any(_has_sysfyi(req) for req in captured), "expected system notification after out-of-tool broadcast"

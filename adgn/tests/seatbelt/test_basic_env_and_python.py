@@ -14,18 +14,8 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC]
 @pytest.mark.parametrize(
     ("cmd", "set_env", "passthrough", "expect_substring"),
     [
-        (
-            ["/bin/sh", "-c", "yes hello | head -n 3"],
-            {"PYTHONUNBUFFERED": "1"},
-            [],
-            b"hello",
-        ),
-        (
-            [sys.executable, "-c", "print('HELLO_VENV')"],
-            {},
-            ["PATH", "PYTHONPATH"],
-            b"HELLO_VENV",
-        ),
+        (["/bin/sh", "-c", "yes hello | head -n 3"], {"PYTHONUNBUFFERED": "1"}, [], b"hello"),
+        ([sys.executable, "-c", "print('HELLO_VENV')"], {}, ["PATH", "PYTHONPATH"], b"HELLO_VENV"),
     ],
 )
 @pytest.mark.asyncio

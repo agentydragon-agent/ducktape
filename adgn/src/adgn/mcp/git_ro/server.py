@@ -78,8 +78,7 @@ class StatusInput(BaseModel):
     """Input model for git_status with optional pagination."""
 
     list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(),
-        description="Pagination for status entries (limit<=5000)",
+        default_factory=lambda: ListSlice(), description="Pagination for status entries (limit<=5000)"
     )
 
 
@@ -90,79 +89,46 @@ class DiffFormat(StrEnum):
 
 
 class DiffInput(BaseModel):
-    format: DiffFormat = Field(
-        default=DiffFormat.PATCH,
-        description='Output format: "patch" | "name-status" | "stat"',
-    )
-    staged: bool = Field(
-        default=False,
-        description="If true, diff --cached (staged changes)",
-    )
+    format: DiffFormat = Field(default=DiffFormat.PATCH, description='Output format: "patch" | "name-status" | "stat"')
+    staged: bool = Field(default=False, description="If true, diff --cached (staged changes)")
     unified: int = Field(
         default=0,
         ge=0,
         le=1000,
         description="Context lines (-U<N>) for patch format (0..1000; 0 shows only headers/hunks)",
     )
-    rev_a: str | None = Field(
-        default=None,
-        description="Left side rev for range diff (e.g., HEAD^)",
-    )
-    rev_b: str | None = Field(
-        default=None,
-        description="Right side rev for range diff (e.g., HEAD)",
-    )
-    paths: list[str] | None = Field(
-        default=None,
-        description="Optional pathspecs to limit diff",
-    )
+    rev_a: str | None = Field(default=None, description="Left side rev for range diff (e.g., HEAD^)")
+    rev_b: str | None = Field(default=None, description="Right side rev for range diff (e.g., HEAD)")
+    paths: list[str] | None = Field(default=None, description="Optional pathspecs to limit diff")
     find_renames: bool = Field(default=True, description="Detect renames (-M)")
     slice: TextSlice = Field(
-        default_factory=TextSlice,
-        description="Pagination for patch output (format=patch; max_chars<=500k)",
+        default_factory=TextSlice, description="Pagination for patch output (format=patch; max_chars<=500k)"
     )
     list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(),
-        description="Pagination for list outputs (name-status/stat; limit<=5000)",
+        default_factory=lambda: ListSlice(), description="Pagination for list outputs (name-status/stat; limit<=5000)"
     )
 
 
 class LogInput(BaseModel):
-    rev: str = Field(
-        default="HEAD",
-        description="Revision or range (e.g., HEAD, HEAD~10..HEAD)",
-    )
+    rev: str = Field(default="HEAD", description="Revision or range (e.g., HEAD, HEAD~10..HEAD)")
     max_count: int = Field(default=50, description="Maximum number of entries")
     oneline: bool = Field(default=True, description="Format each commit as one line")
-    slice: TextSlice = Field(
-        default_factory=TextSlice,
-        description="Pagination controls for large outputs",
-    )
+    slice: TextSlice = Field(default_factory=TextSlice, description="Pagination controls for large outputs")
 
 
 class ShowInput(BaseModel):
-    object: str = Field(
-        description="Object spec, e.g., HEAD, <sha>, or REV:PATH for blob content",
-    )
+    object: str = Field(description="Object spec, e.g., HEAD, <sha>, or REV:PATH for blob content")
     format: DiffFormat = Field(
-        default=DiffFormat.PATCH,
-        description='Output format: "patch" | "name-status" | "stat" (patch for blobs)',
+        default=DiffFormat.PATCH, description='Output format: "patch" | "name-status" | "stat" (patch for blobs)'
     )
-    slice: TextSlice = Field(
-        default_factory=TextSlice,
-        description="Pagination for patch/blob text outputs",
-    )
+    slice: TextSlice = Field(default_factory=TextSlice, description="Pagination for patch/blob text outputs")
     list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(),
-        description="Pagination for list outputs (name-status/stat)",
+        default_factory=lambda: ListSlice(), description="Pagination for list outputs (name-status/stat)"
     )
 
 
 class RevParseInput(BaseModel):
-    arg: str = Field(
-        default="HEAD",
-        description="Argument to rev-parse (e.g., HEAD, --show-toplevel)",
-    )
+    arg: str = Field(default="HEAD", description="Argument to rev-parse (e.g., HEAD, --show-toplevel)")
     short: bool = Field(default=False, description="If true, shorten OIDs")
 
 
@@ -175,45 +141,23 @@ class RevParseResult(BaseModel):
 
 
 class LsFilesInput(BaseModel):
-    cached: bool = Field(
-        default=False,
-        description="List index entries (same as non-cached here); kept for parity",
-    )
-    list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(),
-        description="Pagination controls for file lists",
-    )
+    cached: bool = Field(default=False, description="List index entries (same as non-cached here); kept for parity")
+    list_slice: ListSlice = Field(default_factory=lambda: ListSlice(), description="Pagination controls for file lists")
 
 
 class BranchListInput(BaseModel):
-    remote: bool = Field(
-        default=False,
-        description="List remote branches instead of local",
-    )
+    remote: bool = Field(default=False, description="List remote branches instead of local")
     list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(),
-        description="Pagination controls for branch lists",
+        default_factory=lambda: ListSlice(), description="Pagination controls for branch lists"
     )
 
 
 # Structured diff listing inputs/outputs
 class DiffListInput(BaseModel):
-    staged: bool = Field(
-        default=False,
-        description="If true, examine staged (index) changes; else worktree",
-    )
-    paths: list[str] | None = Field(
-        default=None,
-        description="Optional pathspecs to limit the diff",
-    )
-    find_renames: bool = Field(
-        default=True,
-        description="Detect renames (diff.find_similar)",
-    )
-    list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(),
-        description="Pagination controls for file lists",
-    )
+    staged: bool = Field(default=False, description="If true, examine staged (index) changes; else worktree")
+    paths: list[str] | None = Field(default=None, description="Optional pathspecs to limit the diff")
+    find_renames: bool = Field(default=True, description="Detect renames (diff.find_similar)")
+    list_slice: ListSlice = Field(default_factory=lambda: ListSlice(), description="Pagination controls for file lists")
 
 
 ## moved to formatting.py
@@ -221,16 +165,9 @@ class DiffListInput(BaseModel):
 
 class LogEntriesInput(BaseModel):
     rev: str = Field(default="HEAD", description="Revision to start from (e.g., HEAD)")
-    offset: int = Field(
-        default=0,
-        ge=0,
-        description="Number of commits to skip (pagination offset)",
-    )
+    offset: int = Field(default=0, ge=0, description="Number of commits to skip (pagination offset)")
     limit: int = Field(default=50, gt=0, le=1000, description="Max commits to return")
-    include_message: bool = Field(
-        default=False,
-        description="Include full commit message body",
-    )
+    include_message: bool = Field(default=False, description="Include full commit message body")
 
 
 class CommitEntry(BaseModel):
@@ -299,10 +236,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
     """
     state = GitRoState(git_repo=git_repo.resolve())
     display = f"Git (read-only): {git_repo.name}"
-    mcp = NotifyingFastMCP(
-        display,
-        instructions=f"Read-only Git tools scoped to repo: {git_repo}",
-    )
+    mcp = NotifyingFastMCP(display, instructions=f"Read-only Git tools scoped to repo: {git_repo}")
 
     @mcp.flat_model()
     def git_status(input: StatusInput) -> StatusPage:
@@ -345,10 +279,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         # Build base diff using repository-level APIs that match type stubs
         # Note: pygit2 stubs do not expose 'paths' filtering; filter results downstream if needed.
         a = None if repo.head_is_unborn else repo.head.target
-        if input.staged:
-            diff = repo.diff(a, None, cached=True)
-        else:
-            diff = repo.diff(a, None, cached=False)
+        diff = repo.diff(a, None, cached=True) if input.staged else repo.diff(a, None, cached=False)
 
         if input.find_renames:
             diff.find_similar()
@@ -380,7 +311,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
                 lines.append(f"{str(c.id)[:7]} {summary}")
             else:
                 lines.append(
-                    f"commit {c.id}\nAuthor: {c.author.name} <{c.author.email}>\nDate:   {c.commit_time}\n\n{c.message or ''}\n",
+                    f"commit {c.id}\nAuthor: {c.author.name} <{c.author.email}>\nDate:   {c.commit_time}\n\n{c.message or ''}\n"
                 )
             if i >= input.max_count:
                 break
@@ -415,7 +346,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
                     author_email=c.author.email,
                     commit_time=c.commit_time,
                     message=msg,
-                ),
+                )
             )
             if i >= input.limit:
                 break
@@ -423,11 +354,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         more = next(iter(walker), None)
         truncated = more is not None
         next_offset = input.offset + input.limit if truncated else None
-        return LogEntriesPage(
-            entries=entries,
-            truncated=truncated,
-            next_offset=next_offset,
-        )
+        return LogEntriesPage(entries=entries, truncated=truncated, next_offset=next_offset)
 
     @mcp.flat_model()
     async def git_show(input: ShowInput) -> ShowResult:
@@ -443,9 +370,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         if ":" in objspec:
             rev, path = objspec.split(":", 1)
             root_obj = repo.revparse_single(rev)
-            tree = (
-                root_obj.tree if isinstance(root_obj, pygit2.Commit) else root_obj.peel(pygit2.Tree)
-            )
+            tree = root_obj.tree if isinstance(root_obj, pygit2.Commit) else root_obj.peel(pygit2.Tree)
             cur: pygit2.Tree = tree
             for part in filter(None, path.split("/")):
                 entry = cur[part]
@@ -467,9 +392,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         elif isinstance(obj_any, pygit2.Commit):
             maybe_commit = obj_any
         else:
-            raise TypeError(
-                f"Unexpected git object type for {objspec}: {type(obj_any)!r}",
-            )
+            raise TypeError(f"Unexpected git object type for {objspec}: {type(obj_any)!r}")
         obj: pygit2.Commit = cast(pygit2.Commit, maybe_commit)
 
         # Build commit diff against first parent (or empty tree)
@@ -501,10 +424,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
             workdir = repo.workdir
             if not workdir:
                 raise ValueError("Repository has no working directory")
-            return RevParseResult(
-                kind="toplevel",
-                value=Path(workdir).resolve(),
-            )
+            return RevParseResult(kind="toplevel", value=Path(workdir).resolve())
         obj = repo.revparse_single(input.arg)
         oid = get_oid(obj)
         s = str(oid)
@@ -519,9 +439,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         repo = _open_repo(root)
         all_paths = [e.path for e in repo.index]
         items, truncated, next_offset, total = apply_list_slice(all_paths, input.list_slice)
-        return StringListPage(
-            items=items, truncated=truncated, next_offset=next_offset, total_items=total
-        )
+        return StringListPage(items=items, truncated=truncated, next_offset=next_offset, total_items=total)
 
     @mcp.flat_model()
     def git_branch_list(input: BranchListInput) -> StringListPage:
@@ -531,19 +449,12 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         kind = BranchType.REMOTE if input.remote else BranchType.LOCAL
         names = repo.listall_branches(kind)
         items, truncated, next_offset, total = apply_list_slice(names, input.list_slice)
-        return StringListPage(
-            items=items, truncated=truncated, next_offset=next_offset, total_items=total
-        )
+        return StringListPage(items=items, truncated=truncated, next_offset=next_offset, total_items=total)
 
     return mcp
 
 
-async def attach_git_ro(
-    comp: Compositor,
-    git_repo: Path,
-    *,
-    name: str = GIT_RO_SERVER_NAME,
-) -> NotifyingFastMCP:
+async def attach_git_ro(comp: Compositor, git_repo: Path, *, name: str = GIT_RO_SERVER_NAME) -> NotifyingFastMCP:
     """Mount read-only Git MCP server in-proc on a Compositor (preferred path)."""
     server = make_git_ro_server(git_repo, name=name)
     await comp.mount_inproc(name, server)

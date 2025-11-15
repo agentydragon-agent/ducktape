@@ -37,10 +37,7 @@ async def test_minimal():
     try:
         client = openai.AsyncOpenAI()
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": "Say 'test'"}],
-            max_tokens=10,
-            temperature=1.0,
+            model="gpt-4o-mini", messages=[{"role": "user", "content": "Say 'test'"}], max_tokens=10, temperature=1.0
         )
         print(f"✓ OpenAI API working - response: {response.choices[0].message.content}")
     except Exception as e:

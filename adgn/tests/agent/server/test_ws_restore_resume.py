@@ -2,24 +2,18 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 import pytest
+from tests.agent.ws_helpers import assert_finished, collect_payloads_until_finished, wait_for_accepted
+from tests.llm.support.openai_mock import make_mock
 
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import Envelope, UiStateSnapshot
 from adgn.agent.server.state import AssistantMarkdownItem
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import FakeOpenAIModel
-from tests.agent.ws_helpers import (
-    assert_finished,
-    collect_payloads_until_finished,
-    wait_for_accepted,
-)
-from tests.llm.support.openai_mock import make_mock
 
 
 @pytest.mark.timeout(10)
-def test_ws_restore_existing_agent_across_app_restart(
-    monkeypatch, tmp_path, responses_factory, make_agent_http
-):
+def test_ws_restore_existing_agent_across_app_restart(monkeypatch, tmp_path, responses_factory, make_agent_http):
     """
     Persist an agent (via HTTP), restart the app (new FastAPI instance pointing to the
     same SQLite DB), then connect WS to lazily start the live container and run a turn.
@@ -60,14 +54,9 @@ def test_ws_restore_existing_agent_across_app_restart(
                     {"mime": "text/markdown", "content": "**r2**"},
                     call_id="call_ui_msg_r2",
                 )
-            return responses_factory.make_tool_call(
-                build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r2"
-            )
+            return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r2")
 
-        monkeypatch.setattr(
-            "adgn.agent.runtime.container.build_client",
-            lambda *a, **k: make_mock(responses_create),
-        )
+        monkeypatch.setattr("adgn.agent.runtime.container.build_client", lambda *a, **k: make_mock(responses_create))
 
         # Open WS and run two turns to persist history
         with c1.websocket_connect(f"/ws?agent_id={agent_id}") as ws1:
@@ -75,10 +64,12 @@ def test_ws_restore_existing_agent_across_app_restart(
             # Start turns via REST; WS carries server-originated events
             http1 = make_agent_http(c1, agent_id)
             r1 = http1.prompt("hi")
-            assert r1.status_code == 200 and (r1.json() or {}).get("ok") is True
+            assert r1.status_code == 200
+            assert (r1.json() or {}).get("ok") is True
             collect_payloads_until_finished(ws1, limit=200)
             r2 = http1.prompt("again")
-            assert r2.status_code == 200 and (r2.json() or {}).get("ok") is True
+            assert r2.status_code == 200
+            assert (r2.json() or {}).get("ok") is True
             collect_payloads_until_finished(ws1, limit=200)
 
     # Second app: same DB; WS connect should lazily start the container and snapshot should include all prior UI state
@@ -86,10 +77,7 @@ def test_ws_restore_existing_agent_across_app_restart(
     with TestClient(app2) as c2:
         # Optional: patch model, though we only snapshot (no turn yet)
         fake_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
-        monkeypatch.setattr(
-            "adgn.agent.runtime.container.build_client",
-            lambda *a, **k: fake_client,
-        )
+        monkeypatch.setattr("adgn.agent.runtime.container.build_client", lambda *a, **k: fake_client)
 
         with c2.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
             # Should receive initial Accepted from server
@@ -107,11 +95,13 @@ def test_ws_restore_existing_agent_across_app_restart(
                             msgs.append(it.md)
                     break
             assert saw_snapshot, "ui_state_snapshot not received"
-            assert "**r1**" in msgs and "**r2**" in msgs, f"missing restored messages: {msgs}"
+            assert "**r1**" in msgs, f"missing restored message r1: {msgs}"
+            assert "**r2**" in msgs, f"missing restored message r2: {msgs}"
 
             # Finally, run a prompt via REST to confirm live container works
             http2 = make_agent_http(c2, agent_id)
             r3 = http2.prompt("hi")
-            assert r3.status_code == 200 and (r3.json() or {}).get("ok") is True
+            assert r3.status_code == 200
+            assert (r3.json() or {}).get("ok") is True
             payloads = collect_payloads_until_finished(ws, limit=100)
             assert_finished(payloads)

@@ -15,12 +15,7 @@ from rich.table import Table
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import (
-    Abort,
-    Auto,
-    Continue,
-    RequireAny,
-)
+from adgn.agent.loop_control import Abort, Auto, Continue, RequireAny
 from adgn.agent.reducer import BaseHandler
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
@@ -33,15 +28,8 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.builders import make_item_tool_call
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.props.models.issue import IssueCore, IssueId, LineRange, Occurrence
-from adgn.props.models.lint import (
-    AnchorIncorrect,
-    IssueLintFindingRecord,
-    LintSubmitPayload,
-)
-from adgn.props.prompts.util import (
-    build_input_schemas_json,
-    render_prompt_template,
-)
+from adgn.props.models.lint import AnchorIncorrect, IssueLintFindingRecord, LintSubmitPayload
+from adgn.props.prompts.util import build_input_schemas_json, render_prompt_template
 from adgn.props.prop_utils import pkg_dir, props_definitions_root
 from adgn.props.specimens.registry import SpecimenRegistry
 
@@ -76,12 +64,7 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
     if corrections:
         for pth, ranges in corrections.items():
             spans = ", ".join(
-                (
-                    f"[{r.start_line}, {r.end_line}]"
-                    if r.end_line is not None
-                    else f"[{r.start_line}]"
-                )
-                for r in ranges
+                (f"[{r.start_line}, {r.end_line}]" if r.end_line is not None else f"[{r.start_line}]") for r in ranges
             )
             anchors_tbl.add_row(pth, spans)
     else:
@@ -112,17 +95,11 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
     if obj.message_md:
         bits.append(Markdown(obj.message_md))
 
-    body: ConsoleRenderable = (
-        bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
-    )
+    body: ConsoleRenderable = bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
     return Panel(body, title="Lint result")
 
 
-def make_lint_submit_server(
-    state: LintSubmitState,
-    *,
-    name: str = "lint_submit",
-) -> NotifyingFastMCP:
+def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit") -> NotifyingFastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
     The linter agent must call this exactly once to signal completion. This flips
@@ -152,11 +129,7 @@ class LintConfig:
     dry_run: bool = False
 
 
-def make_nl_tool_call(
-    server_name: str,
-    container_path: Path,
-    call_id: str,
-) -> FunctionCallItem:
+def make_nl_tool_call(server_name: str, container_path: Path, call_id: str) -> FunctionCallItem:
     """Create a docker exec tool call to render a file with line numbers.
 
     Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
@@ -164,15 +137,11 @@ def make_nl_tool_call(
     return make_item_tool_call(
         call_id=call_id,
         name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
-        arguments=ExecInput(
-            cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)], timeout_ms=10_000
-        ).model_dump(),
+        arguments=ExecInput(cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)], timeout_ms=10_000).model_dump(),
     )
 
 
-def make_container_info_call(
-    wiring: PropertiesDockerWiring,
-) -> FunctionCallItem:
+def make_container_info_call(wiring: PropertiesDockerWiring) -> FunctionCallItem:
     """resources.read for resource://container.info on the docker server."""
     return make_item_tool_call(
         call_id="bootstrap:res",
@@ -186,15 +155,9 @@ def make_container_info_call(
     )
 
 
-def make_ls_workspace_call(
-    wiring: PropertiesDockerWiring, subpaths: list[str] | None = None
-) -> FunctionCallItem:
+def make_ls_workspace_call(wiring: PropertiesDockerWiring, subpaths: list[str] | None = None) -> FunctionCallItem:
     """docker_exec ls -la for /workspace or provided subpaths."""
-    targets = (
-        [str(wiring.working_dir)]
-        if not subpaths
-        else [str(wiring.working_dir / p) for p in subpaths]
-    )
+    targets = [str(wiring.working_dir)] if not subpaths else [str(wiring.working_dir / p) for p in subpaths]
     return make_item_tool_call(
         call_id="bootstrap:ls",
         name=build_mcp_function(wiring.server_name, DOCKER_EXEC_TOOL_NAME),
@@ -208,11 +171,7 @@ def make_ls_workspace_call(
 
 
 def _build_prompt(
-    issue: IssueCore,
-    *,
-    submit_tool_name: str,
-    occurrence: Occurrence,
-    wiring: PropertiesDockerWiring,
+    issue: IssueCore, *, submit_tool_name: str, occurrence: Occurrence, wiring: PropertiesDockerWiring
 ) -> str:
     # Do not include specimen slug or issue id. Include only issue fields.
     # The agent will read code from /workspace and property definitions from /props via MCP.
@@ -225,7 +184,7 @@ def _build_prompt(
 
     # Input schemas for the agent (always included)
     schemas_json = build_input_schemas_json(
-        (IssueCore, Occurrence, LineRange, LintSubmitPayload, IssueLintFindingRecord),
+        (IssueCore, Occurrence, LineRange, LintSubmitPayload, IssueLintFindingRecord)
     )
 
     prompt_md: str = render_prompt_template(
@@ -285,21 +244,15 @@ class LinterController(BaseHandler):
                     "start_offset": 0,
                     "max_bytes": 65536,
                 },
-            ),
+            )
         ]
         if self._dirs:
             self._step2 = [
                 make_item_tool_call(
                     call_id="bootstrap:ls",
-                    name=build_mcp_function(
-                        self._wiring.server_name,
-                        DOCKER_EXEC_TOOL_NAME,
-                    ),
-                    arguments={
-                        "cmd": ["ls", "-la"]
-                        + [str(self._wiring.working_dir / d) for d in self._dirs]
-                    },
-                ),
+                    name=build_mcp_function(self._wiring.server_name, DOCKER_EXEC_TOOL_NAME),
+                    arguments={"cmd": ["ls", "-la"] + [str(self._wiring.working_dir / d) for d in self._dirs]},
+                )
             ]
         else:
             self._step2 = []
@@ -311,10 +264,8 @@ class LinterController(BaseHandler):
                     continue
                 out.append(
                     make_nl_tool_call(
-                        self._wiring.server_name,
-                        self._wiring.working_dir / q,
-                        f"bootstrap:show:{len(out) + 1}",
-                    ),
+                        self._wiring.server_name, self._wiring.working_dir / q, f"bootstrap:show:{len(out) + 1}"
+                    )
                 )
             return out
 
@@ -327,11 +278,7 @@ class LinterController(BaseHandler):
                 rel = Path(host_p).resolve().relative_to(defs_dir).as_posix()
                 cont_path = docker_wiring.container_path_for_prop_rel(rel)
                 self._prop_calls.append(
-                    make_nl_tool_call(
-                        self._wiring.server_name,
-                        cont_path,
-                        f"bootstrap:prop:{i + 1}",
-                    ),
+                    make_nl_tool_call(self._wiring.server_name, cont_path, f"bootstrap:prop:{i + 1}")
                 )
 
     def on_before_sample(self):  # type: ignore[override]
@@ -408,11 +355,7 @@ async def lint_issue_run(
 
         # Controller: LinterController with identical bootstrap/tool policy
         ctrl = LinterController(
-            state=submit_state,
-            occ=occurrence,
-            content_root=content_root,
-            docker_wiring=wiring,
-            prop_host_paths=props,
+            state=submit_state, occ=occurrence, content_root=content_root, docker_wiring=wiring, prop_host_paths=props
         )
 
         # Build compositor and client
@@ -428,10 +371,7 @@ async def lint_issue_run(
                 mcp_client=mcp_client,
                 system="You are a code agent. Be concise.",
                 client=client,
-                handlers=[
-                    ctrl,
-                    *(handlers if handlers is not None else []),
-                ],
+                handlers=[ctrl, *(handlers if handlers is not None else [])],
                 parallel_tool_calls=True,
             )
             await agent.run(prompt)
@@ -465,9 +405,7 @@ async def run_specimen_lint_issue_async(
 
     # Require a single occurrence; do not run on the full issue or mutate the Issue
     if not (0 <= occurrence_index < len(irec.instances)):
-        raise SystemExit(
-            f"occurrence_index out of range: {occurrence_index} (instances={len(irec.instances)})",
-        )
+        raise SystemExit(f"occurrence_index out of range: {occurrence_index} (instances={len(irec.instances)})")
     occ = irec.instances[occurrence_index]
 
     # Build submit tool name for dry-run prompt

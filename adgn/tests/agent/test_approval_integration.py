@@ -27,14 +27,12 @@ async def test_approval_system_wired_and_blocks_on_ask(
 
     # Prepare approval engine with an ASK policy for echo.echo using shared factory
     engine = make_policy_engine(
-        policy_make(decision_expr="PolicyDecision.ASK", server="echo", tool="echo", default="ask"),
+        policy_make(decision_expr="PolicyDecision.ASK", server="echo", tool="echo", default="ask")
     )
 
     # Model tries to call the tool then returns text
     seq = [
-        responses_factory.make(
-            responses_factory.tool_call(build_mcp_function("echo", "echo"), {"text": "test"}),
-        ),
+        responses_factory.make(responses_factory.tool_call(build_mcp_function("echo", "echo"), {"text": "test"})),
         responses_factory.make_assistant_message("done"),
     ]
     client = FakeOpenAIModel(seq)
@@ -47,11 +45,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
     servers["approval_policy"] = reader
     async with make_pg_compositor(servers, notifier=None) as (mcp_client, _comp):
         agent = await MiniCodex.create(
-            model=responses_factory.model,
-            mcp_client=mcp_client,
-            system="test",
-            client=client,
-            handlers=[AutoHandler()],
+            model=responses_factory.model, mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
         )
 
         # Start the agent run in the background
@@ -66,7 +60,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
         assert len(pending) == 1, f"Expected 1 pending approval, got {len(pending)}"
 
         # Get the call_id from the pending approval
-        call_id = list(pending.keys())[0]
+        call_id = next(iter(pending.keys()))
 
         # Approve the tool call; agent should now complete
         approval_hub.resolve(call_id, ContinueDecision())

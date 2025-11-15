@@ -1,8 +1,8 @@
 """Predicate evaluation engine for access control."""
 
 import ast
-import logging
 from collections.abc import Callable
+import logging
 
 from .context import PredicateContext
 

@@ -1,9 +1,9 @@
 from fastmcp.client import Client
 import pytest
+from tests.util.notifications import enable_resources_caps, install_subscription_recorder
 
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
-from tests.util.notifications import enable_resources_caps, install_subscription_recorder
 
 
 @pytest.mark.asyncio
@@ -29,12 +29,14 @@ async def test_client_resource_subscribe_and_unsubscribe(make_pg_compositor):
     await comp.mount_inproc("origin", origin)
 
     # Gateway client connected to the compositor front door
-    async with Client(comp) as gw:
+    async with (
+        Client(comp) as gw,
         # Resources server mounted standalone using the compositor gateway client
-        async with Client(make_resources_server(gateway_client=gw, compositor=comp)) as res:
-            rc = ResourcesClient(res)
-            # Subscribe to the resource and then unsubscribe
-            await rc.subscribe(server="origin", uri="resource://foo/bar")
-            await rc.unsubscribe(server="origin", uri="resource://foo/bar")
-            assert recorder.subscribed, "expected origin to receive subscribe"
-            assert recorder.unsubscribed, "expected origin unsubscribe call"
+        Client(make_resources_server(gateway_client=gw, compositor=comp)) as res,
+    ):
+        rc = ResourcesClient(res)
+        # Subscribe to the resource and then unsubscribe
+        await rc.subscribe(server="origin", uri="resource://foo/bar")
+        await rc.unsubscribe(server="origin", uri="resource://foo/bar")
+        assert recorder.subscribed, "expected origin to receive subscribe"
+        assert recorder.unsubscribed, "expected origin unsubscribe call"

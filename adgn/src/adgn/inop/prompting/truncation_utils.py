@@ -8,10 +8,7 @@ import tiktoken
 
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import FileInfo
-from adgn.openai_utils.model import (
-    AssistantMessageOut,
-    ResponsesResult,
-)
+from adgn.openai_utils.model import AssistantMessageOut, ResponsesResult
 
 
 class _Tokenizer(Protocol):
@@ -41,10 +38,7 @@ class TruncationManager:
         """Helper to create truncated content with standard message."""
         if len(content) <= max_chars:
             return content
-        return (
-            content[:max_chars]
-            + f"\n... [TRUNCATED: {len(content)} chars total, showing first {max_chars}]"
-        )
+        return content[:max_chars] + f"\n... [TRUNCATED: {len(content)} chars total, showing first {max_chars}]"
 
     def _skipped_content(self, content: str, threshold: int) -> str:
         """Helper to create skipped content message."""
@@ -63,8 +57,7 @@ class TruncationManager:
         return self.count_tokens(json.dumps([{"path": path, "content": content}], indent=2))
 
     def _normalize_files(
-        self,
-        files: list[dict[str, str]] | list[FileInfo],
+        self, files: list[dict[str, str]] | list[FileInfo]
     ) -> list[tuple[str, str, dict[str, str] | FileInfo]]:
         out: list[tuple[str, str, dict[str, str] | FileInfo]] = []
         if files and isinstance(files[0], FileInfo):
@@ -76,12 +69,7 @@ class TruncationManager:
         out.sort(key=lambda t: len(t[1]), reverse=True)
         return out
 
-    def _binary_search_truncate(
-        self,
-        content: str,
-        budget: int,
-        path: str,
-    ) -> tuple[str | None, int]:
+    def _binary_search_truncate(self, content: str, budget: int, path: str) -> tuple[str | None, int]:
         """Find longest truncated content that fits in token budget; return (content, tokens)."""
         lo, hi = 0, len(content)
         best_content: str | None = None
@@ -98,10 +86,7 @@ class TruncationManager:
         return (best_content, best_tokens) if best_content is not None else (None, 0)
 
     def truncate_file_content_by_size(
-        self,
-        files: list[dict[str, str]],
-        max_size: int,
-        purpose: str | None = None,
+        self, files: list[dict[str, str]], max_size: int, purpose: str | None = None
     ) -> dict[str, str]:
         """Truncate file contents by character size.
 
@@ -128,9 +113,7 @@ class TruncationManager:
         return truncated
 
     def truncate_files_by_tokens(
-        self,
-        files_info: list[dict[str, str]] | list[FileInfo],
-        max_tokens: int,
+        self, files_info: list[dict[str, str]] | list[FileInfo], max_tokens: int
     ) -> list[dict[str, str]] | list[FileInfo]:
         """Truncate files to fit within token budget using binary search.
 
@@ -177,11 +160,7 @@ class TruncationManager:
         assert final <= max_tokens, f"File truncation failed: {final} tokens > {max_tokens} limit"
         return result
 
-    def truncate_file_by_bytes(
-        self,
-        file_path: Path,
-        max_bytes: int,
-    ) -> str:
+    def truncate_file_by_bytes(self, file_path: Path, max_bytes: int) -> str:
         """Read and truncate a single file by byte size.
 
         Args:
@@ -197,10 +176,7 @@ class TruncationManager:
             if file_size > max_bytes:
                 with file_path.open("r", encoding="utf-8") as f:
                     content = f.read(max_bytes)
-                return self._truncated_content(
-                    content,
-                    len(content),
-                )  # Will show the truncation message
+                return self._truncated_content(content, len(content))  # Will show the truncation message
             return file_path.read_text()
         except UnicodeDecodeError:
             return "<<not a plaintext file>>"

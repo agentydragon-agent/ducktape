@@ -4,8 +4,8 @@ from fastmcp.client import Client
 import pytest
 
 from adgn.mcp.exec.direct import DirectExecArgs, make_direct_exec_server
-from adgn.mcp.exec.models import BaseExecResult, Exited
-from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.mcp.exec.models import Exited
+from adgn.mcp.testing.exec_stubs import DirectExecServerStub
 
 
 @pytest.mark.asyncio
@@ -14,9 +14,7 @@ async def test_direct_exec_echo_inproc() -> None:
 
     server = make_direct_exec_server("exec")
     async with Client(server) as session:
-        client = TypedClient.from_server(server, session)
-        res: BaseExecResult = await client.exec(
-            DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100000, timeout_ms=5000)
-        )
+        stub = DirectExecServerStub.from_server(server, session)
+        res = await stub.exec(DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100000, timeout_ms=5000))
         assert res.exit == Exited(exit_code=0)
         assert res.stdout == "hello\n"

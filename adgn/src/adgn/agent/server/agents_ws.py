@@ -109,8 +109,7 @@ class AgentStatusMsg(BaseModel):
 
 
 AgentsHubMsg = Annotated[
-    AgentsSnapshotMsg | AgentCreatedMsg | AgentDeletedMsg | AgentStatusMsg,
-    Field(discriminator="type"),
+    AgentsSnapshotMsg | AgentCreatedMsg | AgentDeletedMsg | AgentStatusMsg, Field(discriminator="type")
 ]
 
 MSG_ADAPTER: TypeAdapter[AgentsHubMsg] = TypeAdapter(AgentsHubMsg)  # for validation if needed
@@ -143,10 +142,7 @@ class AgentsWSHub:
             return
         dead: set[WebSocket] = set()
         mtype = message.get("type") if isinstance(message, dict) else None
-        logger.info(
-            "agents_ws: broadcasting",
-            extra={"connections": len(self._connections), "type": mtype},
-        )
+        logger.info("agents_ws: broadcasting", extra={"connections": len(self._connections), "type": mtype})
         for ws in list(self._connections):
             try:
                 await ws.send_json(message)
@@ -164,17 +160,11 @@ class AgentsWSHub:
         msg = AgentDeletedMsg(data=AgentIdData(id=agent_id))
         await self.broadcast(msg.model_dump(mode="json"))
 
-    async def broadcast_agent_status(
-        self, *, agent_id: str, live: bool, active_run_id: UUID | None
-    ) -> None:
+    async def broadcast_agent_status(self, *, agent_id: str, live: bool, active_run_id: UUID | None) -> None:
         data = await self._build_agent_status(agent_id)
         logger.info(
             "agents_ws: agent_status",
-            extra={
-                "agent_id": agent_id,
-                "live": live,
-                "active_run_id": str(active_run_id) if active_run_id else None,
-            },
+            extra={"agent_id": agent_id, "live": live, "active_run_id": str(active_run_id) if active_run_id else None},
         )
         msg = AgentStatusMsg(data=data)
         await self.broadcast(msg.model_dump(mode="json"))
@@ -182,7 +172,7 @@ class AgentsWSHub:
     async def _build_initial_snapshot(self) -> AgentsSnapshotData:
         """Assemble a typed snapshot of all agents including current live/run status."""
         app = self._app
-        # Require presence – if not ready, let exceptions propagate
+        # Require presence - if not ready, let exceptions propagate
         rows = await app.state.persistence.list_agents()
         out: list[AgentBrief] = []
         for r in rows:
@@ -202,14 +192,7 @@ class AgentsWSHub:
                     not entries or all(isinstance(e, RunningServerEntry) for e in entries.values())
                 ):
                     lifecycle = AgentLifecycle.READY
-            out.append(
-                AgentBrief(
-                    id=r.id,
-                    live=(live_c is not None),
-                    active_run_id=active_run,
-                    lifecycle=lifecycle,
-                )
-            )
+            out.append(AgentBrief(id=r.id, live=(live_c is not None), active_run_id=active_run, lifecycle=lifecycle))
         return AgentsSnapshotData(agents=out)
 
     async def _build_agent_status(self, agent_id: str) -> AgentStatusData:
@@ -229,7 +212,7 @@ def register_agents_ws(app: FastAPI) -> None:
         raise RuntimeError("agents_ws_hub not initialized; app must set it during startup") from e
 
     @app.websocket("/ws/agents")
-    async def agents_websocket(ws: WebSocket) -> None:  # noqa: F811 (route name shadow in FastAPI ok)
+    async def agents_websocket(ws: WebSocket) -> None:
         hub: AgentsWSHub = app.state.agents_ws_hub
         await hub.connect(ws)
         try:

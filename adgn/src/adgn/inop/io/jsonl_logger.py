@@ -16,10 +16,7 @@ class JSONLLogger:
 
     def log(self, **fields: Any) -> None:
         """Log fields as JSON record with timestamp."""
-        record = {
-            "timestamp": datetime.now(UTC).isoformat(),
-            **fields,
-        }
+        record = {"timestamp": datetime.now(UTC).isoformat(), **fields}
         with self.log_path.open("a") as f:
             f.write(json.dumps(record) + "\n")
 

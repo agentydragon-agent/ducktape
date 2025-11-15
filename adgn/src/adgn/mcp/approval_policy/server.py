@@ -25,9 +25,7 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.uris import (
-    approval_policy_proposal_item_uri,
-)
+from adgn.mcp._shared.uris import approval_policy_proposal_item_uri
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -87,12 +85,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
 
     # proposal item URI helper removed; use approval_policy_proposal_item_uri directly
 
-    def __init__(
-        self,
-        engine: ApprovalPolicyEngine,
-        *,
-        name: str = APPROVAL_POLICY_SERVER_NAME_READER,
-    ) -> None:
+    def __init__(self, engine: ApprovalPolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER) -> None:
         super().__init__(name=name, instructions=_load_instructions())
         self._engine = engine
         # Required backend context must come from the engine
@@ -107,7 +100,8 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         def _notify(uri: str) -> None:
             # Fire-and-forget; schedule broadcast and signal completion to waiters
             logger.debug("engine notify uri=%s", uri)
-            asyncio.create_task(self._broadcast_and_signal(uri))
+            task = asyncio.create_task(self._broadcast_and_signal(uri))
+            task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
 
         # Install notifier hook on the engine (required wiring)
         self._engine.set_notifier(_notify)
@@ -127,17 +121,13 @@ class ApprovalPolicyServer(NotifyingFastMCP):
             ctx = ll.request_context
             sess = ctx.session
             self._session_subscriptions.setdefault(sess, set()).add(str(uri))
-            return None
 
         @ll.unsubscribe_resource()
         async def _unsubscribe(uri):  # type: ignore[no-redef]
             ctx = ll.request_context
             sess = ctx.session
-            try:
-                self._session_subscriptions.get(sess, set()).discard(str(uri))
-            finally:
-                # Do not error if unknown; protocol allows idempotent unsubscribe
-                return None
+            self._session_subscriptions.get(sess, set()).discard(str(uri))
+            # Do not error if unknown; protocol allows idempotent unsubscribe
 
         # Do not expose a server-local "list subscriptions" resource; the
         # aggregator (resources server) provides a single index for the UI.
@@ -159,11 +149,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
             content, _version = self._engine.get_policy()
             return content
 
-        @self.resource(
-            APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}",
-            name="proposal",
-            mime_type="text/x-python",
-        )
+        @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
         async def proposal_item(id: str) -> str:
             if (got := await self._persistence.get_policy_proposal(self._agent_id, id)) is None:
                 raise KeyError(id)
@@ -173,29 +159,20 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         async def decide(input: PolicyRequest) -> PolicyResponse:  # type: ignore[unused-ignore]
             """Evaluate a policy decision for a single tool call via Docker-backed evaluator."""
             evaluator = ContainerPolicyEvaluator(
-                agent_id=self._agent_id,
-                docker_client=self._docker,
-                engine=self._engine,
+                agent_id=self._agent_id, docker_client=self._docker, engine=self._engine
             )
             # Pass through input directly; it's already a PolicyRequest
             return await evaluator.decide(input)
 
-    async def wait_for_broadcast(
-        self, since_version: int | None = None, timeout: float | None = None
-    ) -> int:
+    async def wait_for_broadcast(self, since_version: int | None = None) -> int:
         """Await the next completed broadcast and return the new version.
 
         If since_version is provided, waits until a strictly higher version occurs.
+        Use asyncio.timeout() around this call to add a timeout.
         """
         target = (since_version or 0) + 1
         async with self._broadcast_cond:
-            if timeout is None:
-                await self._broadcast_cond.wait_for(lambda: self._broadcast_version >= target)
-            else:
-                await asyncio.wait_for(
-                    self._broadcast_cond.wait_for(lambda: self._broadcast_version >= target),
-                    timeout=timeout,
-                )
+            await self._broadcast_cond.wait_for(lambda: self._broadcast_version >= target)
             return self._broadcast_version
 
     # No nested IO models; see module-level CreateProposalArgs/ProposalDescriptor
@@ -212,10 +189,7 @@ async def attach_approval_policy_readonly(
     init_timeout_secs: float | None = None,
 ) -> ApprovalPolicyServer:
     """Attach the approval policy readonly server (resources only; no proposer tools)."""
-    server = ApprovalPolicyServer(
-        engine,
-        name=name,
-    )
+    server = ApprovalPolicyServer(engine, name=name)
     await comp.mount_inproc(name, server)
     return server
 
@@ -226,12 +200,7 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
     Uses the readonly server to broadcast resource updates.
     """
 
-    def __init__(
-        self,
-        *,
-        engine: ApprovalPolicyEngine,
-        name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER,
-    ) -> None:
+    def __init__(self, *, engine: ApprovalPolicyEngine, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER) -> None:
         super().__init__(name=name, instructions=None)
         self._engine = engine
         self._agent_id = engine.agent_id
@@ -245,22 +214,14 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
                 run_policy_source(
                     docker_client=self._docker,
                     source=input.content,
-                    input_payload={
-                        "name": build_mcp_function(UI_SERVER_NAME, "send_message"),
-                        "arguments": {},
-                    },
+                    input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
                 )
             new_id = uuid.uuid4().hex
-            await self._persistence.create_policy_proposal(
-                self._agent_id, proposal_id=new_id, content=input.content
-            )
+            await self._persistence.create_policy_proposal(self._agent_id, proposal_id=new_id, content=input.content)
             self._engine.notify_resource(approval_policy_proposal_item_uri(new_id))
             self._engine.notify_proposals_changed()
             return ProposalDescriptor(
-                id=new_id,
-                status=ProposalStatus.PENDING,
-                created_at=datetime.now(UTC),
-                decided_at=None,
+                id=new_id, status=ProposalStatus.PENDING, created_at=datetime.now(UTC), decided_at=None
             )
 
         @self.flat_model()
@@ -280,10 +241,7 @@ async def attach_approval_policy_proposer(
     name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER,
     init_timeout_secs: float | None = None,
 ) -> ApprovalPolicyProposerServer:
-    server = ApprovalPolicyProposerServer(
-        engine=engine,
-        name=name,
-    )
+    server = ApprovalPolicyProposerServer(engine=engine, name=name)
     await comp.mount_inproc(name, server)
     return server
 
@@ -294,12 +252,7 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
     Uses the readonly server to broadcast resource updates.
     """
 
-    def __init__(
-        self,
-        *,
-        engine: ApprovalPolicyEngine,
-        name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER,
-    ) -> None:
+    def __init__(self, *, engine: ApprovalPolicyEngine, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER) -> None:
         super().__init__(name=name, instructions=None)
         self._engine = engine
         self._agent_id = engine.agent_id
@@ -317,10 +270,7 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
                 run_policy_source(
                     docker_client=self._docker,
                     source=got.content,
-                    input_payload={
-                        "name": build_mcp_function(UI_SERVER_NAME, "send_message"),
-                        "arguments": {},
-                    },
+                    input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
                 )
             # Activate policy in engine (notifies via engine)
             self._engine.set_policy(got.content)
@@ -353,10 +303,7 @@ async def attach_approval_policy_admin(
     name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER,
     init_timeout_secs: float | None = None,
 ) -> ApprovalPolicyAdminServer:
-    server = ApprovalPolicyAdminServer(
-        engine=engine,
-        name=name,
-    )
+    server = ApprovalPolicyAdminServer(engine=engine, name=name)
     await comp.mount_inproc(name, server)
     return server
 

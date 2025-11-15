@@ -25,4 +25,4 @@
       ansible.builtin.apt:
         pkg: bazel
         state: "{{ legacy_bazel_state | default('present') }}"
-        update_cache: yes  # deb822_repository doesn't reliably trigger apt cache update
+        update_cache: true  # deb822_repository doesn't reliably trigger apt cache update

@@ -19,9 +19,10 @@ def _make_backend(name: str = "backend") -> FastMCP:
 @pytest.mark.asyncio
 async def test_admin_client_list_and_detach(make_pg_compositor, approval_policy_reader_allow_all):
     backend = _make_backend()
-    async with make_pg_compositor(
-        {"backend": backend, "approval_policy": approval_policy_reader_allow_all}
-    ) as (sess, comp):
+    async with make_pg_compositor({"backend": backend, "approval_policy": approval_policy_reader_allow_all}) as (
+        sess,
+        comp,
+    ):
         admin = CompositorAdminClient(sess)
         meta = CompositorMetaClient(sess)
         states = await meta.list_states()

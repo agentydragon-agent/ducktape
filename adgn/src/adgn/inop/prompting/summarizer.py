@@ -7,17 +7,8 @@ from adgn.inop.engine.models import GradedRollout
 from adgn.inop.io.logging_utils import DualOutputLogging
 from adgn.inop.prompting.context_window import context_window_tokens_by_id
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
-from adgn.inop.prompting.truncation_utils import (
-    TruncationManager,
-    extract_text_from_openai_response,
-)
-from adgn.openai_utils.model import (
-    InputTextPart,
-    OpenAIModelProto,
-    ResponsesRequest,
-    SystemMessage,
-    UserMessage,
-)
+from adgn.inop.prompting.truncation_utils import TruncationManager, extract_text_from_openai_response
+from adgn.openai_utils.model import InputTextPart, OpenAIModelProto, ResponsesRequest, SystemMessage, UserMessage
 
 logger = DualOutputLogging.get_logger()
 
@@ -57,7 +48,9 @@ class PatternSummarizer(FeedbackProvider):
         original_count = len(rollouts)
 
         system_tokens = self._count_tokens(self._SYSTEM_MESSAGE)
-        header_text = f"Analyze these {len(rollouts)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
+        header_text = (
+            f"Analyze these {len(rollouts)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
+        )
         ctx_window = context_window_tokens_by_id(self.context_model_id)
         remaining_tokens = ctx_window - system_tokens - self._count_tokens(header_text)
 
@@ -76,27 +69,20 @@ class PatternSummarizer(FeedbackProvider):
             facet_details: list[str] = []
             for facet_name, score_with_rationale in graded.grade.axes.items():
                 facet_details.append(
-                    f"\n    {facet_name}: {score_with_rationale.score}/10 - {score_with_rationale.rationale}",
+                    f"\n    {facet_name}: {score_with_rationale.score}/10 - {score_with_rationale.rationale}"
                 )
             task_summary += f"  Facets:{''.join(facet_details)}\n"
 
             # Only include files for coding tasks
             if graded.rollout.files:
                 # Convert files dict to list format expected by truncation manager
-                files_list = [
-                    {"path": path, "content": content}
-                    for path, content in graded.rollout.files.items()
-                ]
+                files_list = [{"path": path, "content": content} for path, content in graded.rollout.files.items()]
                 truncated_files = self.truncation_manager.truncate_file_content_by_size(
-                    files_list,
-                    self.max_file_size_pattern_analysis,
-                    "pattern analysis",
+                    files_list, self.max_file_size_pattern_analysis, "pattern analysis"
                 )
                 task_summary += f"  Files: {json.dumps(truncated_files, indent=2)}\n"
 
-            potential_tokens = self._count_tokens(
-                "\n".join([*rollout_summaries, task_summary]),
-            )
+            potential_tokens = self._count_tokens("\n".join([*rollout_summaries, task_summary]))
             if potential_tokens > remaining_tokens:
                 removed_count = original_count - len(rollout_summaries)
                 logger.warning(

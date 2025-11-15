@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator, model_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 
 class User(BaseModel):
@@ -13,4 +13,3 @@ class User(BaseModel):
     @model_validator(mode="after")
     def check(self) -> "User":
         return self
-

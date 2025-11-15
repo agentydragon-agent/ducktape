@@ -1,7 +1,7 @@
 """Violation tracking for quality gate in stop hook."""
 
-import logging
 from datetime import datetime
+import logging
 from typing import Any
 
 from ..config.models import Violation

@@ -18,14 +18,8 @@ Notes / Future work (TODOs):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypeAlias
 
-from adgn.openai_utils.model import (
-    AssistantMessageOut,
-    FunctionCallItem,
-    FunctionCallOutputItem,
-    InputItem,
-)
+from adgn.openai_utils.model import AssistantMessageOut, FunctionCallItem, FunctionCallOutputItem, InputItem
 
 # ---------------------------------------------------------------------------
 # Tool policy algebraic types (what the model is allowed/required to do next)
@@ -88,7 +82,7 @@ class Continue:
         via MCP and emit function_call_output), then continue the loop per tool_policy
         on subsequent iterations.
 
-    Compatibility notes (ex‑SyntheticAction)
+    Compatibility notes (ex-SyntheticAction)
     - Previously, SyntheticAction(outputs=[...]) provided "output-side" items to process locally.
       That behavior is now expressed by Continue(skip_sampling=True, inserts_input=(...)).
     - When skip_sampling=True, inserts_input SHOULD be output-shaped TranscriptItems encoded as
@@ -105,10 +99,7 @@ class Continue:
     # Skip-sampling path: accept adapter ResponseOut items (FunctionCallItem,
     # FunctionCallOutputItem, AssistantMessageOut). ReasoningItem MUST be produced
     # by the SDK/model, not injected here.
-    inserts_input: tuple[
-        InputItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut,
-        ...,
-    ] = ()
+    inserts_input: tuple[InputItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut, ...] = ()
     # When True: do NOT call the model this phase; execute directly from inserts_input
     skip_sampling: bool = False
 
@@ -119,4 +110,4 @@ class Abort:
 
 
 # Union type for loop decisions (for static type checking)
-LoopDecision: TypeAlias = Continue | Abort | NoLoopDecision
+type LoopDecision = Continue | Abort | NoLoopDecision

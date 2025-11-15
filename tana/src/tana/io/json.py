@@ -15,7 +15,7 @@ class WorkspaceDoc(BaseModel):
 
 
 class WorkspaceExport(BaseModel):
-    formatVersion: int | None = 1
+    format_version: int | None = Field(1, alias="formatVersion")
     docs: list[WorkspaceDoc]
     model_config = ConfigDict(extra="allow")
 

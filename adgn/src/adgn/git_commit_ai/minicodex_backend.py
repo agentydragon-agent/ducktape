@@ -11,11 +11,7 @@ import pygit2
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import (
-    Abort,
-    Continue,
-    RequireAny,
-)
+from adgn.agent.loop_control import Abort, Continue, RequireAny
 from adgn.agent.reducer import BaseHandler
 from adgn.llm.logging_config import configure_logging
 from adgn.mcp._shared.constants import SUBMIT_COMMIT_MESSAGE_SERVER_NAME
@@ -39,10 +35,7 @@ from adgn.openai_utils.model import FunctionCallItem
 
 
 def _default_bootstrap(
-    server: str,
-    *,
-    staged_limit: int = 2000,
-    patch_slice_chars: int = 50000,
+    server: str, *, staged_limit: int = 2000, patch_slice_chars: int = 50000
 ) -> list[FunctionCallItem]:
     """Build the default list of bootstrap tool calls for a commit flow.
 
@@ -105,10 +98,7 @@ class SubmitState:
 
 
 def make_submit_server(state: SubmitState):
-    m = NotifyingFastMCP(
-        "submit_commit_message",
-        instructions="Submit commit message (subject/body) and finish",
-    )
+    m = NotifyingFastMCP("submit_commit_message", instructions="Submit commit message (subject/body) and finish")
 
     @m.flat_model()
     def submit_commit_message(payload: CommitMessage) -> SimpleOk:
@@ -126,12 +116,7 @@ class CommitController(BaseHandler):
     commit diff (HEAD^..HEAD) so the agent has explicit amendment context.
     """
 
-    def __init__(
-        self,
-        state: SubmitState,
-        server_name: str,
-        amend: bool = False,
-    ) -> None:
+    def __init__(self, state: SubmitState, server_name: str, amend: bool = False) -> None:
         self._state = state
         self._server = server_name
         self._step = 0
@@ -145,9 +130,7 @@ class CommitController(BaseHandler):
                 f.tool_call(
                     name=build_mcp_function(self._server, "git_show"),
                     arguments=ShowInput(
-                        object="HEAD",
-                        format=DiffFormat.PATCH,
-                        slice=TextSlice(offset_chars=0, max_chars=50000),
+                        object="HEAD", format=DiffFormat.PATCH, slice=TextSlice(offset_chars=0, max_chars=50000)
                     ).model_dump(),
                     call_id="bootstrap:show-head",
                 ),
@@ -170,20 +153,11 @@ class CommitController(BaseHandler):
             return Abort()
         self._step += 1
         if self._step == 1:
-            return Continue(
-                tool_policy=RequireAny(),
-                inserts_input=tuple(self._bootstrap),
-                skip_sampling=True,
-            )
+            return Continue(tool_policy=RequireAny(), inserts_input=tuple(self._bootstrap), skip_sampling=True)
         return Continue(RequireAny())
 
 
-async def generate_commit_message_minicodex(
-    model: str,
-    *,
-    debug: bool = False,
-    amend: bool = False,
-) -> str:
+async def generate_commit_message_minicodex(model: str, *, debug: bool = False, amend: bool = False) -> str:
     """Run MiniCodex with docker_exec + submit_commit_message MCP servers and return the commit message text."""
     # Wire an in-proc read-only Git MCP server bound to the current repo
     gitdir = pygit2.discover_repository(str(Path.cwd()))
@@ -219,14 +193,9 @@ async def generate_commit_message_minicodex(
     for name in ("mini_codex", "MiniCodex", "adgn_llm.mini_codex", "mcp", "openai"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
-    handlers: list[BaseHandler] = [
-        CommitController(submit_state, GIT_RO_SERVER_NAME, amend=amend),
-    ]
+    handlers: list[BaseHandler] = [CommitController(submit_state, GIT_RO_SERVER_NAME, amend=amend)]
     if debug:
-        handlers.insert(
-            0,
-            DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)),
-        )
+        handlers.insert(0, DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
 
     # Build compositor, mount servers, and run agent with a client
     comp = Compositor("compositor")

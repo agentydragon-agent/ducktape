@@ -2,15 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.seatbelt.model import (
-    DefaultBehavior,
-    FileOp,
-    FileRule,
-    LiteralFilter,
-    ProcessRule,
-    SBPLPolicy,
-    Subpath,
-)
+from adgn.seatbelt.model import DefaultBehavior, FileOp, FileRule, LiteralFilter, ProcessRule, SBPLPolicy, Subpath
 from adgn.seatbelt.runner import run_sandboxed_async
 from tests._markers import REQUIRES_SANDBOX_EXEC
 
@@ -90,10 +82,7 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC]
                         Subpath(subpath="/usr/lib"),
                     ],
                 ),
-                FileRule(
-                    op=FileOp.FILE_READ_STAR,
-                    filters=[Subpath(subpath="/usr/lib")],
-                ),
+                FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/usr/lib")]),
                 FileRule(
                     op=FileOp.FILE_READ_STAR,
                     filters=[
@@ -119,11 +108,7 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC]
                     ],
                 ),
                 FileRule(
-                    op=FileOp.FILE_READ_STAR,
-                    filters=[
-                        Subpath(subpath="/usr/lib"),
-                        Subpath(subpath="/System/Library"),
-                    ],
+                    op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/usr/lib"), Subpath(subpath="/System/Library")]
                 ),
                 FileRule(
                     op=FileOp.FILE_READ_STAR,
@@ -149,13 +134,7 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC]
                         Subpath(subpath="/usr/lib"),
                     ],
                 ),
-                FileRule(
-                    op=FileOp.FILE_READ_STAR,
-                    filters=[
-                        Subpath(subpath="/usr/lib"),
-                        Subpath(subpath="/System"),
-                    ],
-                ),
+                FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/usr/lib"), Subpath(subpath="/System")]),
             ],
             {"exit": "nonzero"},
         ),
@@ -169,9 +148,7 @@ async def test_incremental_widening(label: str, add_rules, expect: dict):
         files=add_rules(),
     )
     res = await run_sandboxed_async(pol, ["/bin/echo", "OK"], trace=True)
-    print(
-        f"{label}: exit={res.exit_code} stderr_len={len(res.stderr or b'')} trace_len={len(res.trace_text or '')}"
-    )
+    print(f"{label}: exit={res.exit_code} stderr_len={len(res.stderr or b'')} trace_len={len(res.trace_text or '')}")
     if expect["exit"] == -6:
         assert res.exit_code == -6
     elif expect["exit"] == "nonzero":

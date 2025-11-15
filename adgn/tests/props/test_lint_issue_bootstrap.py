@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 import shutil
 import uuid
 
 from platformdirs import user_cache_dir
 import pytest
+from tests.fixtures.responses import ResponsesFactory
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
@@ -13,16 +15,10 @@ from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.exec.models import ExecInput
-from adgn.openai_utils.model import (
-    AssistantMessage,
-    FakeOpenAIModel,
-    FunctionCallOutputItem,
-    InputTextPart,
-)
+from adgn.openai_utils.model import AssistantMessage, FakeOpenAIModel, FunctionCallOutputItem, InputTextPart
 from adgn.props.docker_env import PropertiesDockerWiring
 from adgn.props.lint_issue import LinterController, LintSubmitState
 from adgn.props.models.issue import Occurrence
-from tests.fixtures.responses import ResponsesFactory
 
 
 def _make_seq() -> list:
@@ -90,22 +86,14 @@ async def test_lint_issue_bootstrap_small_files(
         definitions_container_dir=None,
         image_name="n/a",
     )
-    ctrl = LinterController(
-        state=LintSubmitState(),
-        occ=occ,
-        content_root=content_root,
-        docker_wiring=wiring,
-    )
+    ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root, docker_wiring=wiring)
 
-    async with make_pg_compositor(
-        {"runtime": runtime_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as (mcp_client, _comp):
+    async with make_pg_compositor({"runtime": runtime_server, "approval_policy": approval_policy_reader_allow_all}) as (
+        mcp_client,
+        _comp,
+    ):
         agent = await MiniCodex.create(
-            model="gpt-5",
-            mcp_client=mcp_client,
-            system="test",
-            client=client,
-            handlers=[ctrl, DisplayEventsHandler()],
+            model="gpt-5", mcp_client=mcp_client, system="test", client=client, handlers=[ctrl, DisplayEventsHandler()]
         )
 
         # Act
@@ -140,7 +128,5 @@ async def test_lint_issue_bootstrap_small_files(
     assert any(_is_final(m) for m in messages)
 
     # Cleanup workspace to avoid clutter under $HOME
-    try:
+    with contextlib.suppress(Exception):
         shutil.rmtree(content_root, ignore_errors=True)
-    except Exception:
-        pass

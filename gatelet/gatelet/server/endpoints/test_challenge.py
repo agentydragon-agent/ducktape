@@ -1,93 +1,48 @@
 """Tests for challenge-response authentication endpoints."""
 
-import html
 from datetime import datetime, timedelta
+import html
 from http import HTTPStatus
 
-import pytest
 from httpx import AsyncClient
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.config import settings
-from gatelet.server.endpoints.challenge import (
-    COMPUTE_OPTION_SOURCE,
-    compute_correct_option,
-)
-from gatelet.server.models import (  # type: ignore[import]
-    AuthCRSession,
-    AuthKey,
-    AuthNonce,
-)
+from gatelet.server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_option
+from gatelet.server.models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
 
 
 @pytest.fixture(autouse=True)
 async def _stub_data(monkeypatch):
     async def _states():
-        return [
-            {
-                "entity_id": "sensor.test",
-                "state": "on",
-                "last_changed": datetime(2020, 1, 1),
-            },
-        ]
+        return [{"entity_id": "sensor.test", "state": "on", "last_changed": datetime(2020, 1, 1)}]
 
     async def _payloads(*_args, **_kwargs):
-        return [
-            {
-                "id": 1,
-                "integration_name": "test",
-                "received_at": __import__("datetime").datetime(2020, 1, 1),
-            },
-        ]
+        return [{"id": 1, "integration_name": "test", "received_at": __import__("datetime").datetime(2020, 1, 1)}]
 
-    monkeypatch.setattr(
-        "gatelet.server.endpoints.homeassistant.fetch_states",
-        _states,
-    )
-    monkeypatch.setattr(
-        "gatelet.server.endpoints.webhook_view.get_latest_payloads",
-        _payloads,
-    )
+    monkeypatch.setattr("gatelet.server.endpoints.homeassistant.fetch_states", _states)
+    monkeypatch.setattr("gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads)
     monkeypatch.setattr("gatelet.server.app.fetch_states", _states)
     monkeypatch.setattr("gatelet.server.app.get_latest_payloads", _payloads)
 
 
 @pytest.mark.asyncio
-async def test_start_challenge_creates_nonce(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    test_auth_key: AuthKey,
-):
+async def test_start_challenge_creates_nonce(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
     response = await client.get(f"/cr/{test_auth_key.id}")
     assert response.status_code == HTTPStatus.OK
-    nonce = (
-        (await db_session.execute(select(AuthNonce).order_by(AuthNonce.id.desc())))
-        .scalars()
-        .first()
-    )
+    nonce = (await db_session.execute(select(AuthNonce).order_by(AuthNonce.id.desc()))).scalars().first()
     assert nonce is not None
     assert nonce.is_valid
 
 
 @pytest.mark.asyncio
-async def test_answer_challenge_success(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    test_auth_key: AuthKey,
-):
+async def test_answer_challenge_success(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
     await client.get(f"/cr/{test_auth_key.id}")
-    nonce = (
-        (await db_session.execute(select(AuthNonce).order_by(AuthNonce.id.desc())))
-        .scalars()
-        .first()
-    )
+    nonce = (await db_session.execute(select(AuthNonce).order_by(AuthNonce.id.desc()))).scalars().first()
     answer = str(
-        compute_correct_option(
-            test_auth_key.key_value,
-            nonce.nonce_value,
-            settings.auth.challenge_response.num_options,
-        ),
+        compute_correct_option(test_auth_key.key_value, nonce.nonce_value, settings.auth.challenge_response.num_options)
     )
     response = await client.get(f"/cr/{test_auth_key.id}/{nonce.nonce_value}/{answer}")
     assert response.status_code == HTTPStatus.FOUND
@@ -97,11 +52,7 @@ async def test_answer_challenge_success(
 
 
 @pytest.mark.asyncio
-async def test_session_extension(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    test_auth_session: AuthCRSession,
-):
+async def test_session_extension(client: AsyncClient, db_session: AsyncSession, test_auth_session: AuthCRSession):
     original_exp = datetime.now() + timedelta(seconds=1)
     test_auth_session.expires_at = original_exp
     await db_session.flush()
@@ -111,10 +62,7 @@ async def test_session_extension(
 
 
 @pytest.mark.asyncio
-async def test_challenge_template_contains_code(
-    client: AsyncClient,
-    test_auth_key: AuthKey,
-):
+async def test_challenge_template_contains_code(client: AsyncClient, test_auth_key: AuthKey):
     response = await client.get(f"/cr/{test_auth_key.id}")
     assert response.status_code == HTTPStatus.OK
 

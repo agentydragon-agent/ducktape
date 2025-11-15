@@ -48,12 +48,7 @@ class TestDiffParserEdgeCases:
                     "oldLines": 1,
                     "newStart": 10,
                     "newLines": 3,  # Added 2 lines
-                    "lines": [
-                        "-def foo():",
-                        "+def foo():",
-                        "+    # Added comment",
-                        "+    pass",
-                    ],
+                    "lines": ["-def foo():", "+def foo():", "+    # Added comment", "+    pass"],
                 },
                 {
                     "oldStart": 20,
@@ -126,13 +121,7 @@ class TestDiffIntelligenceEdgeCases:
 
         tool_response = {
             "structuredPatch": [
-                {
-                    "oldStart": 10,
-                    "oldLines": 1,
-                    "newStart": 10,
-                    "newLines": 1,
-                    "lines": ["-old", "+new"],
-                }
+                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-old", "+new"]}
             ]
         }
 
@@ -163,15 +152,10 @@ class TestDiffIntelligenceEdgeCases:
             ]
         }
 
-        violations = [
-            Violation(rule="E1", line=12, column=0, message="Between changes"),
-        ]
+        violations = [Violation(rule="E1", line=12, column=0, message="Between changes")]
 
         groups = di.analyze(
-            tool_name="Edit",
-            tool_input={"file_path": "/test.py"},
-            tool_response=tool_response,
-            violations=violations,
+            tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response, violations=violations
         )
 
         # Line 12 is within 3 lines of both line 10 and line 11
@@ -189,11 +173,7 @@ class TestDiffIntelligenceEdgeCases:
 
         groups = di.analyze(
             tool_name="Edit",
-            tool_input={
-                "file_path": "/test.py",
-                "old_string": "foo",
-                "new_string": "bar",
-            },
+            tool_input={"file_path": "/test.py", "old_string": "foo", "new_string": "bar"},
             tool_response=None,  # PreToolUse has no response
             violations=violations,
         )

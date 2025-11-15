@@ -1,19 +1,10 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+import uuid
 
-from fastapi import (
-    APIRouter,
-    Cookie,
-    Depends,
-    Form,
-    HTTPException,
-    Request,
-    Response,
-    status,
-)
+from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi_csrf_protect import CsrfProtect
 from pydantic import BaseModel
@@ -51,8 +42,7 @@ SESSION_DURATION = timedelta(hours=1)
 
 
 async def _get_admin_session(
-    session_token: str | None = Cookie(None, alias="admin_session"),
-    db_session: AsyncSession = DB_SESSION,
+    session_token: str | None = Cookie(None, alias="admin_session"), db_session: AsyncSession = DB_SESSION
 ) -> AdminSession:
     if not session_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
@@ -70,10 +60,7 @@ ADMIN_SESSION = Depends(_get_admin_session)
 
 @router.post("/admin/login", response_class=HTMLResponse)
 async def login(
-    request: Request,
-    password: str = Form(...),
-    db_session: AsyncSession = DB_SESSION,
-    csrf_protect: CsrfProtect = CSRF,
+    request: Request, password: str = Form(...), db_session: AsyncSession = DB_SESSION, csrf_protect: CsrfProtect = CSRF
 ) -> Response:
     await csrf_protect.validate_csrf(request)
     if not verify_password(password, settings.admin.password_hash):
@@ -90,9 +77,7 @@ async def login(
         )
 
     session = AdminSession(
-        session_token=uuid.uuid4().hex,
-        created_at=datetime.now(),
-        expires_at=datetime.now() + SESSION_DURATION,
+        session_token=uuid.uuid4().hex, created_at=datetime.now(), expires_at=datetime.now() + SESSION_DURATION
     )
     db_session.add(session)
     await db_session.flush()
@@ -103,11 +88,7 @@ async def login(
     return response
 
 
-@router.get(
-    "/admin/",
-    response_class=HTMLResponse,
-    dependencies=[Depends(get_admin_auth_with_context)],
-)
+@router.get("/admin/", response_class=HTMLResponse, dependencies=[Depends(get_admin_auth_with_context)])
 async def admin_root(request: Request, auth: Auth) -> HTMLResponse:
     async with get_db_session() as db_session:
         recent = await get_latest_payloads(db_session, limit=5)
@@ -132,29 +113,19 @@ async def list_keys(
     db_session: AsyncSession = DB_SESSION,
     csrf_protect: CsrfProtect = CSRF,
 ) -> HTMLResponse:
-    keys = (
-        (await db_session.execute(select(AuthKey).order_by(AuthKey.id))).scalars().all()
-    )
+    keys = (await db_session.execute(select(AuthKey).order_by(AuthKey.id))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = templates.TemplateResponse(
-        "admin_keys.html",
-        {"request": request, "keys": keys, "csrf_token": token},
-    )
+    response = templates.TemplateResponse("admin_keys.html", {"request": request, "keys": keys, "csrf_token": token})
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 
 
 @router.get("/admin/keys/new", response_class=HTMLResponse)
 async def new_key_form(
-    request: Request,
-    admin_session: AdminSession = ADMIN_SESSION,
-    csrf_protect: CsrfProtect = CSRF,
+    request: Request, admin_session: AdminSession = ADMIN_SESSION, csrf_protect: CsrfProtect = CSRF
 ) -> HTMLResponse:
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = templates.TemplateResponse(
-        "admin_key_new.html",
-        {"request": request, "csrf_token": token},
-    )
+    response = templates.TemplateResponse("admin_key_new.html", {"request": request, "csrf_token": token})
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 
@@ -168,17 +139,12 @@ async def create_key(
     csrf_protect: CsrfProtect = CSRF,
 ) -> HTMLResponse:
     await csrf_protect.validate_csrf(request)
-    key = AuthKey(
-        key_value=uuid.uuid4().hex,
-        description=description or None,
-        created_at=datetime.now(),
-    )
+    key = AuthKey(key_value=uuid.uuid4().hex, description=description or None, created_at=datetime.now())
     db_session.add(key)
     await db_session.flush()
     token, signed = csrf_protect.generate_csrf_tokens()
     response = templates.TemplateResponse(
-        "admin_key_created.html",
-        {"request": request, "key": key, "csrf_token": token},
+        "admin_key_created.html", {"request": request, "key": key, "csrf_token": token}
     )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
@@ -198,8 +164,7 @@ async def revoke_key(
     if key and not key.revoked_at:
         key.revoked_at = datetime.now()
         await db_session.flush()
-    response = RedirectResponse("/admin/keys/", status_code=302)
-    return response
+    return RedirectResponse("/admin/keys/", status_code=302)
 
 
 @router.get("/admin/admin-sessions/", response_class=HTMLResponse)
@@ -209,33 +174,16 @@ async def list_admin_sessions(
     db_session: AsyncSession = DB_SESSION,
     csrf_protect: CsrfProtect = CSRF,
 ) -> HTMLResponse:
-    sessions = (
-        (
-            await db_session.execute(
-                select(AdminSession).order_by(AdminSession.created_at),
-            )
-        )
-        .scalars()
-        .all()
-    )
+    sessions = (await db_session.execute(select(AdminSession).order_by(AdminSession.created_at))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
     response = templates.TemplateResponse(
-        "admin_sessions.html",
-        {
-            "request": request,
-            "sessions": sessions,
-            "csrf_token": token,
-            "session_type": "admin",
-        },
+        "admin_sessions.html", {"request": request, "sessions": sessions, "csrf_token": token, "session_type": "admin"}
     )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 
 
-@router.post(
-    "/admin/admin-sessions/{session_id}/invalidate",
-    response_class=RedirectResponse,
-)
+@router.post("/admin/admin-sessions/{session_id}/invalidate", response_class=RedirectResponse)
 async def invalidate_admin_session(
     session_id: int,
     request: Request,
@@ -263,33 +211,16 @@ async def list_llm_sessions(
     db_session: AsyncSession = DB_SESSION,
     csrf_protect: CsrfProtect = CSRF,
 ) -> HTMLResponse:
-    sessions = (
-        (
-            await db_session.execute(
-                select(AuthCRSession).order_by(AuthCRSession.created_at),
-            )
-        )
-        .scalars()
-        .all()
-    )
+    sessions = (await db_session.execute(select(AuthCRSession).order_by(AuthCRSession.created_at))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
     response = templates.TemplateResponse(
-        "admin_sessions.html",
-        {
-            "request": request,
-            "sessions": sessions,
-            "csrf_token": token,
-            "session_type": "llm",
-        },
+        "admin_sessions.html", {"request": request, "sessions": sessions, "csrf_token": token, "session_type": "llm"}
     )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 
 
-@router.post(
-    "/admin/llm-sessions/{session_id}/invalidate",
-    response_class=RedirectResponse,
-)
+@router.post("/admin/llm-sessions/{session_id}/invalidate", response_class=RedirectResponse)
 async def invalidate_llm_session(
     session_id: int,
     request: Request,
@@ -304,28 +235,18 @@ async def invalidate_llm_session(
         await db_session.delete(sess)
         await db_session.flush()
 
-    response = RedirectResponse("/admin/llm-sessions/", status_code=302)
-    return response
+    return RedirectResponse("/admin/llm-sessions/", status_code=302)
 
 
 @router.get("/admin/logs/", response_class=HTMLResponse)
-async def view_logs(
-    request: Request,
-    lines: int = 200,
-    admin_session: AdminSession = ADMIN_SESSION,
-) -> HTMLResponse:
+async def view_logs(request: Request, lines: int = 200, admin_session: AdminSession = ADMIN_SESSION) -> HTMLResponse:
     """Display the last ``lines`` lines of the server log file."""
     log_path = Path(settings.server.log_file)
     if log_path.exists():
         try:
-            log_text = "\n".join(
-                log_path.read_text(encoding="utf-8").splitlines()[-lines:],
-            )
+            log_text = "\n".join(log_path.read_text(encoding="utf-8").splitlines()[-lines:])
         except Exception:  # pragma: no cover - unexpected read error
             log_text = "<unable to read log file>"
     else:
         log_text = "<log file not found>"
-    return templates.TemplateResponse(
-        "admin_logs.html",
-        {"request": request, "log_text": log_text, "lines": lines},
-    )
+    return templates.TemplateResponse("admin_logs.html", {"request": request, "log_text": log_text, "lines": lines})

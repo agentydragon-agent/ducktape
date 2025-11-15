@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-import os
 from pathlib import Path
 
 from fastmcp.client import Client
 import pytest
+from tests._markers import REQUIRES_SANDBOX_EXEC
 
-from adgn.mcp.exec.seatbelt import (
-    SandboxExecArgs,
-    SeatbeltExecMCP,
-)
-from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.mcp.exec.models import Exited, TimedOut
+from adgn.mcp.exec.seatbelt import SandboxExecArgs, SeatbeltExecMCP
+from adgn.mcp.testing.exec_stubs import SeatbeltExecServerStub
 from adgn.seatbelt.model import (
     DefaultBehavior,
     FileOp,
@@ -23,7 +21,6 @@ from adgn.seatbelt.model import (
     SystemRule,
     TraceConfig,
 )
-from tests._markers import REQUIRES_SANDBOX_EXEC
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
 
@@ -35,10 +32,7 @@ def open_seatbelt_session(sqlite_persistence):
         import docker
 
         server = SeatbeltExecMCP(
-            name="seatbelt_exec",
-            agent_id="test-agent",
-            persistence=sqlite_persistence,
-            docker_client=docker.from_env(),
+            name="seatbelt_exec", agent_id="test-agent", persistence=sqlite_persistence, docker_client=docker.from_env()
         )
         async with Client(server) as sess:
             yield server, sess
@@ -79,9 +73,9 @@ def _extract_payload(resp):
 @pytest.mark.asyncio
 async def test_sandbox_exec_echo_roundtrip(open_seatbelt_session) -> None:
     async with open_seatbelt_session() as (_server, session):
-        # Execute echo under sandbox (typed client)
-        client = TypedClient.from_server(_server, session)
-        res = await client.sandbox_exec(
+        # Execute echo under sandbox (typed stub)
+        stub = SeatbeltExecServerStub.from_server(_server, session)
+        res = await stub.sandbox_exec(
             SandboxExecArgs(
                 policy=make_default_restrictive_policy(trace=False),
                 argv=["/bin/echo", "HELLO_MINIMAL"],
@@ -90,15 +84,16 @@ async def test_sandbox_exec_echo_roundtrip(open_seatbelt_session) -> None:
                 trace=False,
             )
         )
-        assert res.timeout is False
-        assert res.exit_code == 0
+        assert isinstance(res.exit, Exited)
+        assert res.exit.exit_code == 0
         assert isinstance(res.stdout, str)  # Short output should not be truncated
         assert res.stdout == "HELLO_MINIMAL\n"
         # stderr should be empty or None
         assert isinstance(res.stderr, str)  # Short error should not be truncated
         assert res.stderr in ("", None)
         # duration exists and is a non-negative int
-        assert isinstance(res.duration_ms, int) and res.duration_ms >= 0
+        assert isinstance(res.duration_ms, int)
+        assert res.duration_ms >= 0
 
 
 @pytest.mark.asyncio
@@ -110,8 +105,8 @@ async def test_sandbox_exec_write_denied(open_seatbelt_session) -> None:
         # Attempt to write to /tmp (normally allowed for a user; should be denied by sandbox)
         token = secrets.token_hex(6)
         out_path = f"/tmp/seatbelt_denied_{token}.txt"
-        client = TypedClient.from_server(_server, session)
-        res = await client.sandbox_exec(
+        stub = SeatbeltExecServerStub.from_server(_server, session)
+        res = await stub.sandbox_exec(
             SandboxExecArgs(
                 policy=make_default_restrictive_policy(trace=True),
                 argv=["/bin/sh", "-lc", f"echo DENIED > {out_path}"],
@@ -120,14 +115,15 @@ async def test_sandbox_exec_write_denied(open_seatbelt_session) -> None:
                 trace=True,
             )
         )
-        assert res.timeout is False
+        assert isinstance(res.exit, Exited)
         # Expect non-zero exit due to sandbox denial
-        assert isinstance(res.exit_code, int) and res.exit_code != 0
+        assert isinstance(res.exit.exit_code, int)
+        assert res.exit.exit_code != 0
         # Stderr should have some diagnostic
         assert isinstance(res.stderr, str)  # Short error should not be truncated
         assert res.stderr != ""
         # File should not exist (write was denied)
-        assert not os.path.exists(out_path)
+        assert not Path(out_path).exists()
         # Trace collection remains flaky across versions; rely on stderr for now
         # TODO(mpokorny): Revisit trace enablement and policy for reliable capture
 
@@ -138,19 +134,15 @@ async def test_sandbox_exec_timeout(open_seatbelt_session) -> None:
 
     async with open_seatbelt_session() as (_server, session):
         policy = make_default_restrictive_policy()
-        client = TypedClient.from_server(_server, session)
-        res = await client.sandbox_exec(
+        stub = SeatbeltExecServerStub.from_server(_server, session)
+        res = await stub.sandbox_exec(
             SandboxExecArgs(
-                policy=policy,
-                argv=["/bin/sh", "-lc", "sleep 2"],
-                max_bytes=100000,
-                timeout_ms=500,
-                trace=False,
+                policy=policy, argv=["/bin/sh", "-lc", "sleep 2"], max_bytes=100000, timeout_ms=500, trace=False
             )
         )
-        assert res.timeout is True
-        assert res.exit_code is None
-        assert isinstance(res.duration_ms, int) and res.duration_ms >= 0
+        assert isinstance(res.exit, TimedOut)
+        assert isinstance(res.duration_ms, int)
+        assert res.duration_ms >= 0
 
 
 @pytest.mark.asyncio
@@ -158,20 +150,20 @@ async def test_sandbox_exec_cwd_and_env(tmp_path: Path, open_seatbelt_session) -
     """Verify cwd and env injection (async)."""
     async with open_seatbelt_session() as (_server, session):
         policy = make_default_restrictive_policy()
-        client = TypedClient.from_server(_server, session)
-        res = await client.sandbox_exec(
+        stub = SeatbeltExecServerStub.from_server(_server, session)
+        res = await stub.sandbox_exec(
             SandboxExecArgs(
                 policy=policy,
                 argv=["/bin/sh", "-lc", "pwd; echo $FOO"],
-                cwd=str(tmp_path),
+                cwd=tmp_path,
                 env={"FOO": "BAR"},
                 max_bytes=100000,
                 timeout_ms=5_000,
                 trace=False,
             )
         )
-        assert res.timeout is False
-        assert res.exit_code == 0
+        assert isinstance(res.exit, Exited)
+        assert res.exit.exit_code == 0
         assert isinstance(res.stdout, str)  # Short output should not be truncated
         assert res.stdout.splitlines()[:2] == [str(tmp_path), "BAR"]
 

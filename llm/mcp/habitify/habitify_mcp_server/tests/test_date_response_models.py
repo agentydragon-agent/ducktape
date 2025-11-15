@@ -60,9 +60,7 @@ async def test_set_habit_status_returns_client_response_with_date_object(client)
     # Patch the client's request method
     with patch.object(client.client, "put", return_value=mock_resp):
         # Call the method with a string date
-        status = await client.set_habit_status(
-            "test-habit-id", "completed", "2025-02-15", "Test note"
-        )
+        status = await client.set_habit_status("test-habit-id", "completed", "2025-02-15", "Test note")
 
         # Verify we get a HabitStatusResponse (not a HabitStatus)
         assert isinstance(status, HabitStatusResponse)
@@ -87,9 +85,7 @@ async def test_check_habit_status_range_returns_client_responses(client):
     # Patch the client's request method to return our mock response
     with patch.object(client.client, "get", return_value=mock_resp) as mock_get:
         # Call the method with a date range (3 days)
-        statuses = await client.check_habit_status_range(
-            "test-habit-id", start_date="2025-03-15", days=3
-        )
+        statuses = await client.check_habit_status_range("test-habit-id", start_date="2025-03-15", days=3)
 
         # Should have made 3 calls for 3 days
         assert mock_get.call_count == 3

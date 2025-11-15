@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import getpass
 from collections.abc import Iterable
-
+import getpass
 import tomllib
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from tomlkit import dumps
@@ -36,9 +36,9 @@ async def _entity_counts(session: AsyncSession) -> Iterable[tuple[str, int]]:
 async def reset_db() -> None:
     """Drop and recreate tables and populate with sample data."""
     engine = create_async_engine(str(settings.database.dsn), future=True)
-    Session = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
 
-    async with Session() as session:
+    async with session_factory() as session:
         counts = await _entity_counts(session)
         if any(cnt > 0 for _, cnt in counts):
             print("Current entity counts:")
@@ -53,7 +53,7 @@ async def reset_db() -> None:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
-    async with Session.begin() as session:
+    async with session_factory.begin() as session:
         # Sample integration and payloads for UI demos
         integ = WebhookIntegration(
             name="sample",
@@ -65,13 +65,7 @@ async def reset_db() -> None:
         session.add(integ)
         await session.flush()
         for i in range(3):
-            session.add(
-                WebhookPayload(
-                    integration_name=integ.name,
-                    integration_id=integ.id,
-                    payload={"sample": i},
-                ),
-            )
+            session.add(WebhookPayload(integration_name=integ.name, integration_id=integ.id, payload={"sample": i}))
     await engine.dispose()
     print("Database initialized with sample webhook payloads.")
 
@@ -82,12 +76,12 @@ def change_password(password: str | None) -> None:
     pwd = password or getpass.getpass("New admin password: ")
     hashed = hash_password(pwd)
 
-    with open(CONFIG_PATH, "rb") as f:
+    with CONFIG_PATH.open("rb") as f:
         data = tomllib.load(f)
 
     data.setdefault("admin", {})["password_hash"] = hashed
 
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+    with CONFIG_PATH.open("w", encoding="utf-8") as f:
         f.write(dumps(data))
 
     print("Admin password updated in config.")

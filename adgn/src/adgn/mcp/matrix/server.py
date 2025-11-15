@@ -22,12 +22,7 @@ from typing import Any, cast
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
-from nio import (  # type: ignore
-    AsyncClient,
-    LoginResponse,
-    MatrixRoom,
-    RoomMessageText,
-)
+from nio import AsyncClient, LoginResponse, MatrixRoom, RoomMessageText  # type: ignore
 from pydantic import BaseModel, Field
 
 from adgn.agent.server.bus import ServerBus, UiEndTurn
@@ -43,17 +38,10 @@ logger = logging.getLogger(__name__)
 class MatrixConfig(BaseModel):
     homeserver: str = Field(description="Base URL, e.g. https://matrix.example.com")
     user_id: str = Field(description="Matrix user id, e.g. @bot:example.com")
-    access_token: str | None = Field(
-        default=None, description="Access token for the device (preferred)"
-    )
+    access_token: str | None = Field(default=None, description="Access token for the device (preferred)")
     password: str | None = Field(default=None, description="Password (fallback if no access token)")
-    room: str = Field(
-        description="Room id or alias to join/watch (e.g. !id:server or #alias:server)"
-    )
-    store_path: str | None = Field(
-        default=None,
-        description="Optional path for matrix-nio store (for E2EE / sessions)",
-    )
+    room: str = Field(description="Room id or alias to join/watch (e.g. !id:server or #alias:server)")
+    store_path: str | None = Field(default=None, description="Optional path for matrix-nio store (for E2EE / sessions)")
 
 
 class IncomingMessage(BaseModel):
@@ -74,9 +62,7 @@ class SendMessageInput(BaseModel):
 
 
 class YieldInput(BaseModel):
-    last_seen_event_id: str = Field(
-        description="The last event id the agent processed; used to advance cursor"
-    )
+    last_seen_event_id: str = Field(description="The last event id the agent processed; used to advance cursor")
 
 
 class MessageSendResult(BaseModel):
@@ -124,9 +110,7 @@ def _room_matches(r: MatrixRoom, room: str) -> bool:  # type: ignore[valid-type]
     )
 
 
-def _parse_text_event(
-    room: MatrixRoom, event: RoomMessageText, self_user: str
-) -> IncomingMessage | None:  # type: ignore[valid-type]
+def _parse_text_event(room: MatrixRoom, event: RoomMessageText, self_user: str) -> IncomingMessage | None:  # type: ignore[valid-type]
     """Build an IncomingMessage from a RoomMessageText or return None to skip.
 
     Skips self-sent messages and non-text bodies.
@@ -157,9 +141,7 @@ class _MatrixClient:
         self._bg_task: asyncio.Task[Any] | None = None
 
     async def start(self) -> None:
-        self._client = AsyncClient(
-            self.cfg.homeserver, self.cfg.user_id, store_path=self.cfg.store_path
-        )
+        self._client = AsyncClient(self.cfg.homeserver, self.cfg.user_id, store_path=self.cfg.store_path)
         c = self._client
         assert c is not None
 
@@ -201,7 +183,8 @@ class _MatrixClient:
                 try:
                     uri = f"matrix://inbox/{self._room_id}/{msg.event_id}"
                     # Fire and forget
-                    asyncio.create_task(self._notify(uri))
+                    task = asyncio.create_task(self._notify(uri))
+                    task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
                 except Exception as e:
                     logger.warning("matrix notify failed: %s", e)
             except Exception as e:
@@ -241,11 +224,7 @@ class _MatrixClient:
         rid = self._room_id
         if c is None or rid is None:
             raise RuntimeError("Matrix client not started or room not resolved")
-        res = await c.room_send(
-            rid,
-            message_type="m.room.message",
-            content={"msgtype": "m.text", "body": content},
-        )
+        res = await c.room_send(rid, message_type="m.room.message", content={"msgtype": "m.text", "body": content})
         # nio returns a Response with event_id for successful send
         eid = getattr(res, "event_id", None)
         return {"ok": True, "event_id": eid}

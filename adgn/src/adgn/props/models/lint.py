@@ -95,10 +95,7 @@ class LintSubmitPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    message_md: str = Field(
-        ...,
-        description="Concise Markdown report; do not restate pass/fail.",
-    )
+    message_md: str = Field(..., description="Concise Markdown report; do not restate pass/fail.")
     suggested_rationale: str | None = Field(
         default=None,
         description=(
@@ -106,9 +103,7 @@ class LintSubmitPayload(BaseModel):
             "(e.g., remove mentions of nonexistent callers and prescribe deleting dead code). Null means keep original."
         ),
     )
-    findings: list[IssueLintFindingRecord] = Field(
-        description="Lint findings.",
-    )
+    findings: list[IssueLintFindingRecord] = Field(description="Lint findings.")
 
     @model_validator(mode="after")
     def _validate_tp_fp_one_of(self) -> LintSubmitPayload:
@@ -121,7 +116,7 @@ class LintSubmitPayload(BaseModel):
             return self
         if type_counter[OtherError] == 0:
             raise ValueError(
-                "Findings must have: (a) exactly one false positive or true positive finding, or (b) at least 1 'other error' finding",
+                "Findings must have: (a) exactly one false positive or true positive finding, or (b) at least 1 'other error' finding"
             )
         return self
 

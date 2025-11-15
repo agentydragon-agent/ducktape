@@ -21,29 +21,19 @@ DB_SESSION = Depends(get_db_session)
 
 
 @router.post("/webhook/{integration_name}")
-async def receive(
-    integration_name: str,
-    request: Request,
-    db_session: AsyncSession = DB_SESSION,
-) -> dict[str, Any]:
+async def receive(integration_name: str, request: Request, db_session: AsyncSession = DB_SESSION) -> dict[str, Any]:
     """Receive webhook payload for a specific integration."""
     # Check if integration exists
-    query = select(WebhookIntegration).where(
-        WebhookIntegration.name == integration_name,
-    )
+    query = select(WebhookIntegration).where(WebhookIntegration.name == integration_name)
     result = await db_session.execute(query)
     integration = result.scalar_one_or_none()
 
     if not integration:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Integration '{integration_name}' not found",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Integration '{integration_name}' not found")
 
     if not integration.is_enabled:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Integration '{integration_name}' is disabled",
+            status_code=status.HTTP_403_FORBIDDEN, detail=f"Integration '{integration_name}' is disabled"
         )
 
     # Authenticate the request
@@ -56,34 +46,20 @@ async def receive(
         if auth_header := request.headers.get("Authorization"):
             scheme, _, credentials_value = auth_header.partition(" ")
             if credentials_value:
-                credentials = HTTPAuthorizationCredentials(
-                    scheme=scheme,
-                    credentials=credentials_value,
-                )
+                credentials = HTTPAuthorizationCredentials(scheme=scheme, credentials=credentials_value)
 
         # Validate the credentials
         await auth_handler.validate(request, credentials)
     except AuthError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed",
-            headers=e.headers,
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed", headers=e.headers)
 
     try:
         payload = await request.json()
     except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid JSON payload",
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload")
 
     # Store webhook payload
-    new_payload = WebhookPayload(
-        integration_name=integration_name,
-        integration_id=integration.id,
-        payload=payload,
-    )
+    new_payload = WebhookPayload(integration_name=integration_name, integration_id=integration.id, payload=payload)
 
     db_session.add(new_payload)
     await db_session.commit()

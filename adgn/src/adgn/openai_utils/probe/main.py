@@ -1,8 +1,8 @@
 """Probe OpenAI models via Responses and Chat APIs.
 
-- Filters model list by family and a configurable regex to exclude noise (e.g., fine‑tunes).
+- Filters model list by family and a configurable regex to exclude noise (e.g., fine-tunes).
 - Smart selection prioritizes models recently OK (from cache) and slowly samples others; skips very recently seen.
-- Uses fast/slow QPS and repeats; early‑stops on fatal, non‑retryable errors.
+- Uses fast/slow QPS and repeats; early-stops on fatal, non-retryable errors.
 - Emits JSONL events and persists faithful responses to XDG cache; TUI renders a live table.
 """
 
@@ -37,15 +37,7 @@ from adgn.openai_utils.probe.core import (
     family_of,
 )
 
-__all__ = [
-    "ErrorCode",
-    "Family",
-    "FAMILY_PRIORITY",
-    "FATAL_CODES",
-    "ModelProbe",
-    "ProbeRun",
-    "family_of",
-]
+__all__ = ["FAMILY_PRIORITY", "FATAL_CODES", "ErrorCode", "Family", "ModelProbe", "ProbeRun", "family_of"]
 
 # ---------- Constants & utilities ----------
 
@@ -163,16 +155,10 @@ _db_pool: asyncpg.Pool | None = None
 
 async def _get_db_pool() -> asyncpg.Pool:
     """Get or create database connection pool."""
-    global _db_pool
+    global _db_pool  # noqa: PLW0603
     if _db_pool is None:
         _db_pool = await asyncpg.create_pool(
-            host=DB_HOST,
-            port=DB_PORT,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            min_size=1,
-            max_size=10,
+            host=DB_HOST, port=DB_PORT, database=DB_NAME, user=DB_USER, password=DB_PASSWORD, min_size=1, max_size=10
         )
     return _db_pool
 
@@ -285,20 +271,9 @@ async def _write_probe_result(res: ProbeResult) -> None:
                 request_id,  # request_id
                 api_key_suffix,  # api_key_suffix
             )
-            _log_event(
-                "db_write",
-                model=res.model_id,
-                kind=res.kind,
-                ok=res.ok,
-                has_error_body=bool(error_body_json),
-            )
+            _log_event("db_write", model=res.model_id, kind=res.kind, ok=res.ok, has_error_body=bool(error_body_json))
         except Exception as e:
-            _log_event(
-                "db_write_error",
-                model=res.model_id,
-                kind=res.kind,
-                error=str(e),
-            )
+            _log_event("db_write_error", model=res.model_id, kind=res.kind, error=str(e))
             raise
 
 
@@ -356,7 +331,6 @@ FAMILY_DROP: set[Family] = set()
 
 
 def is_excluded(mid: str) -> bool:
-    global DROP_MODEL_ID_RE
     return bool(DROP_MODEL_ID_RE.search(mid)) if DROP_MODEL_ID_RE is not None else False
 
 
@@ -465,41 +439,15 @@ class ProbeResult:
 
     @classmethod
     def success(
-        cls,
-        *,
-        model_id: str,
-        kind: ProbeKind,
-        raw: Response | ChatCompletion,
-        start_ts: datetime,
-        end_ts: datetime,
+        cls, *, model_id: str, kind: ProbeKind, raw: Response | ChatCompletion, start_ts: datetime, end_ts: datetime
     ) -> ProbeResult:
-        return cls(
-            model_id=model_id,
-            kind=kind,
-            ok=True,
-            raw=raw,
-            start_ts=start_ts,
-            end_ts=end_ts,
-        )
+        return cls(model_id=model_id, kind=kind, ok=True, raw=raw, start_ts=start_ts, end_ts=end_ts)
 
     @classmethod
     def failure(
-        cls,
-        *,
-        model_id: str,
-        kind: ProbeKind,
-        exc: BaseException,
-        start_ts: datetime | None,
-        end_ts: datetime,
+        cls, *, model_id: str, kind: ProbeKind, exc: BaseException, start_ts: datetime | None, end_ts: datetime
     ) -> ProbeResult:
-        return cls(
-            model_id=model_id,
-            kind=kind,
-            ok=False,
-            exc=exc,
-            start_ts=start_ts,
-            end_ts=end_ts,
-        )
+        return cls(model_id=model_id, kind=kind, ok=False, exc=exc, start_ts=start_ts, end_ts=end_ts)
 
     @property
     def latency_s(self) -> float | None:

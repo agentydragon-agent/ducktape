@@ -5,11 +5,7 @@ import re
 
 import pytest
 
-from adgn.props.specimens.registry import (
-    SpecimenRegistry,
-    find_specimens_base,
-    list_specimen_names,
-)
+from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names
 
 
 def _all_specimens() -> list[str]:
@@ -23,10 +19,7 @@ def test_specimen_issues_and_false_positives_load(specimen: str) -> None:
     base = find_specimens_base()
     _rec, errors = SpecimenRegistry.load_lenient(specimen, base=base)
     if errors:
-        print(
-            f"Specimen '{specimen}' has invalid Jsonnet files (count={len(errors)}):",
-            flush=True,
-        )
+        print(f"Specimen '{specimen}' has invalid Jsonnet files (count={len(errors)}):", flush=True)
 
         for line in errors:
             print(line, flush=True)

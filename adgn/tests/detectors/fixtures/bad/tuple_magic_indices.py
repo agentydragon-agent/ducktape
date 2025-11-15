@@ -4,4 +4,3 @@ def f(x):
     b = t[3]
     c = t[5]
     return a, b, c
-

@@ -7,14 +7,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from adgn.agent.handler import (
-    AssistantText,
-    BaseHandler,
-    Response,
-    ToolCall,
-    ToolCallOutput,
-    UserText,
-)
+from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.openai_utils.model import ReasoningItem
 
@@ -29,12 +22,7 @@ class RunPersistenceHandler(BaseHandler):
     Uses an explicit run binding so it can remain attached across runs.
     """
 
-    def __init__(
-        self,
-        *,
-        persistence: Persistence,
-        get_run_id: Callable[[], UUID | None] | None = None,
-    ) -> None:
+    def __init__(self, *, persistence: Persistence, get_run_id: Callable[[], UUID | None] | None = None) -> None:
         self._persistence = persistence
         self._get_run_id = get_run_id
         self._current_run_id: UUID | None = None
@@ -88,12 +76,7 @@ class RunPersistenceHandler(BaseHandler):
             raise RuntimeError(f"persistence_drain_failed: {', '.join(kinds)}")
 
     def _record_event(
-        self,
-        *,
-        type: EventType,
-        payload: dict[str, Any],
-        call_id: str | None = None,
-        tool_key: str | None = None,
+        self, *, type: EventType, payload: dict[str, Any], call_id: str | None = None, tool_key: str | None = None
     ) -> None:
         """Common append path: guard run, bump seq, enqueue append_event.
 
@@ -121,16 +104,10 @@ class RunPersistenceHandler(BaseHandler):
 
     # BaseHandler typed hooks --------------------------------------------------
     def on_user_text_event(self, evt: UserText) -> None:
-        self._record_event(
-            type=EventType.USER_TEXT,
-            payload=evt.model_dump(mode="json", exclude_none=True),
-        )
+        self._record_event(type=EventType.USER_TEXT, payload=evt.model_dump(mode="json", exclude_none=True))
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        self._record_event(
-            type=EventType.ASSISTANT_TEXT,
-            payload=evt.model_dump(mode="json", exclude_none=True),
-        )
+        self._record_event(type=EventType.ASSISTANT_TEXT, payload=evt.model_dump(mode="json", exclude_none=True))
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._record_event(
@@ -144,18 +121,10 @@ class RunPersistenceHandler(BaseHandler):
         # Persist full Pydantic MCP CallToolResult (with content when available)
         payload_model = to_pydantic(evt.result)
         payload = payload_model.model_dump(mode="json", by_alias=True)
-        self._record_event(
-            type=EventType.FUNCTION_CALL_OUTPUT, payload=payload, call_id=evt.call_id
-        )
+        self._record_event(type=EventType.FUNCTION_CALL_OUTPUT, payload=payload, call_id=evt.call_id)
 
     def on_reasoning(self, item: ReasoningItem) -> None:
-        self._record_event(
-            type=EventType.REASONING,
-            payload=item.model_dump(mode="json", exclude_none=True),
-        )
+        self._record_event(type=EventType.REASONING, payload=item.model_dump(mode="json", exclude_none=True))
 
     def on_response(self, evt: Response) -> None:
-        self._record_event(
-            type=EventType.RESPONSE,
-            payload=evt.model_dump(mode="json", exclude_none=True),
-        )
+        self._record_event(type=EventType.RESPONSE, payload=evt.model_dump(mode="json", exclude_none=True))

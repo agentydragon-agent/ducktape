@@ -5,12 +5,12 @@ This script helps you install the Habitify MCP server to Claude Desktop,
 making its tools available to Claude for habit tracking.
 """
 
-import os
+from pathlib import Path
 import subprocess
 import sys
 
 # Add the parent directory to the path so we can import the server
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from habitify_mcp_server.config import get_api_base_url, load_api_key
 
 # Load API key using our common utility
@@ -38,12 +38,7 @@ print(f"Server name: {server_name}")
 
 # Run the MCP install command
 try:
-    result = subprocess.run(
-        cmd,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
     if result.stdout:
         print(result.stdout)
 except subprocess.CalledProcessError as e:

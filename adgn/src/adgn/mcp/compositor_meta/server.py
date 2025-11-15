@@ -1,19 +1,12 @@
 from __future__ import annotations
 
-from adgn.mcp._shared.constants import (
-    COMPOSITOR_META_SERVER_NAME,
-    COMPOSITOR_META_STATE_URI_FMT,
-)
+from adgn.mcp._shared.constants import COMPOSITOR_META_SERVER_NAME, COMPOSITOR_META_STATE_URI_FMT
 from adgn.mcp.compositor.server import Compositor, MountEvent
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.snapshots import ServerEntry
 
 
-def make_compositor_meta_server(
-    *,
-    compositor: Compositor,
-    name: str = COMPOSITOR_META_SERVER_NAME,
-) -> NotifyingFastMCP:
+def make_compositor_meta_server(*, compositor: Compositor, name: str = COMPOSITOR_META_SERVER_NAME) -> NotifyingFastMCP:
     """Expose Compositor mount metadata as resources on a dedicated server.
 
     This removes the need for synthetic mcp-server:// URIs and avoids special-casing
@@ -22,8 +15,7 @@ def make_compositor_meta_server(
     m = NotifyingFastMCP(
         name=name,
         instructions=(
-            "Compositor metadata. Resources under this server expose per-mount state, "
-            "instructions and capabilities."
+            "Compositor metadata. Resources under this server expose per-mount state, instructions and capabilities."
         ),
     )
 

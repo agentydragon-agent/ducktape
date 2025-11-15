@@ -13,89 +13,36 @@ import typer
 
 from adgn.openai_utils.client_factory import get_async_openai
 
-from . import (
-    compare_eval_vs_ccr,
-    extract_dataset_ccr,
-    extract_dataset_crush,
-    leaderboard,
-    run_eval,
-)
+from . import compare_eval_vs_ccr, extract_dataset_ccr, extract_dataset_crush, leaderboard, run_eval
 from .templates import validate_template_file
 
-app = typer.Typer(
-    help="System rewriter toolkit: extract datasets, run evals, and compare against CCR.",
-)
+app = typer.Typer(help="System rewriter toolkit: extract datasets, run evals, and compare against CCR.")
 
 # Typer singletons to avoid B008 in function defaults
-ARG_TEMPLATE = typer.Argument(
-    ...,
-    help="Path to system prompt template (mustache-style: {{toolsBlob}}, etc.)",
-)
-ARG_RUN_DIR = typer.Argument(
-    ...,
-    help="Path to eval run directory (contains samples.jsonl)",
-)
+ARG_TEMPLATE = typer.Argument(..., help="Path to system prompt template (mustache-style: {{toolsBlob}}, etc.)")
+ARG_RUN_DIR = typer.Argument(..., help="Path to eval run directory (contains samples.jsonl)")
 
 OPT_DATASET = typer.Option(
     None,
     "--dataset",
     "-d",
-    help=(
-        "Dataset JSONL path(s); repeat to mix CCR and Crush samples. "
-        "Defaults to built-in dataset if omitted."
-    ),
+    help=("Dataset JSONL path(s); repeat to mix CCR and Crush samples. Defaults to built-in dataset if omitted."),
 )
-OPT_OUT_DIR_RUN = typer.Option(
-    None,
-    "--out-dir",
-    help="Output directory. If omitted, writes to runs/<ts>.",
-)
-OPT_N = typer.Option(
-    None,
-    "--n",
-    help="Limit number of samples to process",
-)
-OPT_CONCURRENCY = typer.Option(
-    32,
-    "--concurrency",
-    help="Parallelism for sampling/grading",
-)
+OPT_OUT_DIR_RUN = typer.Option(None, "--out-dir", help="Output directory. If omitted, writes to runs/<ts>.")
+OPT_N = typer.Option(None, "--n", help="Limit number of samples to process")
+OPT_CONCURRENCY = typer.Option(32, "--concurrency", help="Parallelism for sampling/grading")
 
-OPT_SOURCE = typer.Option(
-    "auto",
-    "--source",
-    help="ccr|crush|auto (default: auto)",
-)
-OPT_WIRE_LOG = typer.Option(
-    None,
-    "--wire-log",
-    help="Crush only: path to provider-wire.log",
-)
+OPT_SOURCE = typer.Option("auto", "--source", help="ccr|crush|auto (default: auto)")
+OPT_WIRE_LOG = typer.Option(None, "--wire-log", help="Crush only: path to provider-wire.log")
 OPT_SCAN_DIR = typer.Option(
-    None,
-    "--scan-dir",
-    help="Crush only: scan DIR recursively for **/.crush/logs/provider-wire.log (repeatable)",
+    None, "--scan-dir", help="Crush only: scan DIR recursively for **/.crush/logs/provider-wire.log (repeatable)"
 )
-OPT_OUTPUT = typer.Option(
-    None,
-    "--output",
-    help="Output JSONL path (default depends on source)",
-)
+OPT_OUTPUT = typer.Option(None, "--output", help="Output JSONL path (default depends on source)")
 OPT_RUNS_DIR = typer.Option(
-    Path(__file__).parent / "runs",
-    "--runs-dir",
-    help="Directory containing eval runs (runs/<ts>)",
+    Path(__file__).parent / "runs", "--runs-dir", help="Directory containing eval runs (runs/<ts>)"
 )
-OPT_COMPARE_OUT_DIR = typer.Option(
-    None,
-    "--out-dir",
-    help="Output directory for diffs",
-)
-OPT_COMPARE_LIMIT = typer.Option(
-    5,
-    "--limit",
-    help="Max number of samples to compare",
-)
+OPT_COMPARE_OUT_DIR = typer.Option(None, "--out-dir", help="Output directory for diffs")
+OPT_COMPARE_LIMIT = typer.Option(5, "--limit", help="Max number of samples to compare")
 
 
 @app.command("run")
@@ -119,15 +66,13 @@ def cmd_run(
             n_limit=n,
             concurrency=concurrency,
             client=get_async_openai(),
-        ),
+        )
     )
 
 
 @app.command("compare")
 def cmd_compare(
-    run_dir: Path = ARG_RUN_DIR,
-    out_dir: Path | None = OPT_COMPARE_OUT_DIR,
-    limit: int = OPT_COMPARE_LIMIT,
+    run_dir: Path = ARG_RUN_DIR, out_dir: Path | None = OPT_COMPARE_OUT_DIR, limit: int = OPT_COMPARE_LIMIT
 ):
     """Diff eval sampler requests vs actual CCR chat completion requests."""
     out = out_dir or (run_dir / "compare_vs_ccr")
@@ -157,10 +102,7 @@ def cmd_compare(
         (case_dir / "ccr_request.json").write_text(ccr_json, encoding="utf-8")
         # Diff
         diff_text = compare_eval_vs_ccr.unified_diff_str(
-            ccr_json,
-            eval_json,
-            fromfile="ccr_request.json",
-            tofile="eval_request.json",
+            ccr_json, eval_json, fromfile="ccr_request.json", tofile="eval_request.json"
         )
         (case_dir / "diff.unified.txt").write_text(diff_text, encoding="utf-8")
         wrote.append(str(case_dir))
@@ -216,13 +158,8 @@ def cmd_extract(
                 total += len(recs)
         print(
             json.dumps(
-                {
-                    "event": "dataset_crush_written",
-                    "count": total,
-                    "path": str(out_path),
-                    "files_scanned": len(logs),
-                },
-            ),
+                {"event": "dataset_crush_written", "count": total, "path": str(out_path), "files_scanned": len(logs)}
+            )
         )
         return
 
@@ -241,12 +178,7 @@ def cmd_leaderboard(
     limit: int | None = typer.Option(None, "--limit", help="Limit rows"),
     # --since removed; grouping by template consolidates runs regardless of timestamp
 ) -> None:
-    table, errors, missing = leaderboard.generate(
-        runs_dir=runs_dir,
-        sort_key=sort_key,
-        asc=asc,
-        limit=limit,
-    )
+    table, errors, missing = leaderboard.generate(runs_dir=runs_dir, sort_key=sort_key, asc=asc, limit=limit)
     console = Console()
     console.print(table)
     if missing:

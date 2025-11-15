@@ -1,4 +1,4 @@
-from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse, ApprovalDecision
+from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 
 
 def decide(req: PolicyRequest) -> PolicyResponse:

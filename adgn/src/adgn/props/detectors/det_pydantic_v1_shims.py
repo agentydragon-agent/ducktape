@@ -19,20 +19,19 @@ def _find_in_file(path: Path) -> list[Detection]:
         return out
 
     for n in ast.walk(node):
-        if isinstance(n, ast.ImportFrom) and n.module:
-            if n.module.startswith("pydantic.v1"):
-                sl = getattr(n, "lineno", 1)
-                out.append(
-                    Detection(
-                        property=PROP,
-                        path=str(path),
-                        ranges=[LineRange(start_line=int(sl), end_line=int(sl))],
-                        detector=DET_NAME,
-                        confidence=0.95,
-                        message="Import from pydantic.v1 — target Pydantic 2 APIs only.",
-                        snippet=read_snippet(path, sl, sl, context=0),
-                    ),
+        if isinstance(n, ast.ImportFrom) and n.module and n.module.startswith("pydantic.v1"):
+            sl = getattr(n, "lineno", 1)
+            out.append(
+                Detection(
+                    property=PROP,
+                    path=str(path),
+                    ranges=[LineRange(start_line=int(sl), end_line=int(sl))],
+                    detector=DET_NAME,
+                    confidence=0.95,
+                    message="Import from pydantic.v1 — target Pydantic 2 APIs only.",
+                    snippet=read_snippet(path, sl, sl, context=0),
                 )
+            )
         if isinstance(n, ast.Import):
             for alias in n.names:
                 if alias.name == "pydantic.v1":
@@ -46,7 +45,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                             confidence=0.95,
                             message="Importing pydantic.v1 — target Pydantic 2 APIs only.",
                             snippet=read_snippet(path, sl, sl, context=0),
-                        ),
+                        )
                     )
         if isinstance(n, ast.ClassDef):
             # Inner 'Config' class indicates v1 style config
@@ -63,10 +62,10 @@ def _find_in_file(path: Path) -> list[Detection]:
                             confidence=0.9,
                             message="Pydantic v1 style `class Config:` — use model_config = ConfigDict(...).",
                             snippet=read_snippet(path, sl, el, context=0),
-                        ),
+                        )
                     )
             # Decorators @validator/root_validator
-            for dec in n.decorator_list:
+            for _dec in n.decorator_list:
                 # Class decorators are unlikely; we focus on function decorators below
                 pass
         if isinstance(n, ast.FunctionDef):
@@ -82,7 +81,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                             confidence=0.9,
                             message="Pydantic v1 validator decorator — use field_validator/model_validator in v2.",
                             snippet=read_snippet(path, sl, sl, context=0),
-                        ),
+                        )
                     )
 
     return out

@@ -14,14 +14,7 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from adgn.agent.persist import ApprovalOutcome
 from adgn.agent.runtime.container import AgentContainer
 from adgn.agent.server.agents_ws import AgentsWSHub
-from adgn.agent.server.protocol import (
-    Accepted,
-    ApprovalBrief,
-    Envelope,
-    ErrorCode,
-    ErrorEvt,
-    UiStateSnapshot,
-)
+from adgn.agent.server.protocol import Accepted, ApprovalBrief, Envelope, ErrorCode, ErrorEvt, UiStateSnapshot
 
 
 async def _agents_status_broadcast_impl(
@@ -47,10 +40,7 @@ class PingIn(BaseModel):
     nonce: str | None = None
 
 
-IncomingMsg = Annotated[
-    HelloIn | ResumeIn | PingIn,
-    Field(discriminator="type"),
-]
+IncomingMsg = Annotated[HelloIn | ResumeIn | PingIn, Field(discriminator="type")]
 
 
 class WsContext:
@@ -114,7 +104,8 @@ router = WsRouter()
 async def _h_hello_resume_snapshot(ctx: WsContext, _msg: BaseModel) -> None:
     await ctx.cm.send_payload(Accepted())
     # Kick off incremental sampling snapshot streaming without blocking
-    asyncio.create_task(ctx.container.sampling_snapshot_incremental())
+    task = asyncio.create_task(ctx.container.sampling_snapshot_incremental())
+    task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
     sampling = None
     session = ctx.session
     if session is None:
@@ -130,9 +121,7 @@ async def _h_hello_resume_snapshot(ctx: WsContext, _msg: BaseModel) -> None:
             for req in session.approval_hub._requests.values()
         ]
     await ctx.cm._emit_ui_bus_messages()
-    await ctx.cm.send_payload(
-        UiStateSnapshot(v="ui_state_v1", seq=session.ui_state.seq, state=session.ui_state)
-    )
+    await ctx.cm.send_payload(UiStateSnapshot(v="ui_state_v1", seq=session.ui_state.seq, state=session.ui_state))
     snapshot = await session.build_snapshot(sampling=sampling)
     await ctx.cm.send_payload(snapshot)
 
@@ -175,9 +164,7 @@ def register_ws(app: FastAPI) -> None:
 
         if not container.ui:
             logger.error("ws: container missing UI facet", extra={"agent_id": container.agent_id})
-            await _ws_send(
-                ws, ErrorEvt(code=ErrorCode.AGENT_ERROR, message="agent missing UI facet")
-            )
+            await _ws_send(ws, ErrorEvt(code=ErrorCode.AGENT_ERROR, message="agent missing UI facet"))
             await ws.close()
             return
         cm = container.ui.manager
@@ -185,15 +172,7 @@ def register_ws(app: FastAPI) -> None:
 
         # Send Accepted only after container is ensured live so callers waiting for
         # Accepted can proceed with a consistent view (e.g., HTTP /api/agents shows live)
-        await _ws_send(
-            ws,
-            Envelope(
-                session_id="bootstrap",
-                event_id=0,
-                event_ts=datetime.now(UTC),
-                payload=Accepted(),
-            ),
-        )
+        await _ws_send(ws, Envelope(session_id="bootstrap", event_id=0, event_ts=datetime.now(UTC), payload=Accepted()))
 
         await cm.connect(ws)
         cm._session = session
@@ -203,11 +182,10 @@ def register_ws(app: FastAPI) -> None:
         # Broadcast agent live status to general agents hub and bind hub to manager
         hub: AgentsWSHub = app.state.agents_ws_hub  # require hub presence
         active_run_id = session.active_run.run_id if session and session.active_run else None
-        asyncio.create_task(
-            hub.broadcast_agent_status(
-                agent_id=container.agent_id, live=True, active_run_id=active_run_id
-            )
+        task = asyncio.create_task(
+            hub.broadcast_agent_status(agent_id=container.agent_id, live=True, active_run_id=active_run_id)
         )
+        task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
         cm.configure_status_hub(hub, container.agent_id)
         try:
             while True:

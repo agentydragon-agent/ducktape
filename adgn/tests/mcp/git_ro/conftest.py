@@ -54,10 +54,7 @@ def repo_git_ro(tmp_path: Path) -> Path:
     _commit_all(repo, "rename + modify")
 
     big = repo_path / "big.txt"
-    big.write_text(
-        "\n".join(f"line {i}" for i in range(20000)) + "\n",
-        encoding="utf-8",
-    )
+    big.write_text("\n".join(f"line {i}" for i in range(20000)) + "\n", encoding="utf-8")
     idx = repo.index
     idx.add(str(big.relative_to(repo_path)))
     idx.write()

@@ -1,10 +1,10 @@
 # Discord is in Pop!_OS proprietary repo: http://apt.pop-os.org/properietaryI
 - name: Set Discord to autostart, minimized
   block:
-  - name: Ensure Discord is installed
-    become: true
-    ansible.builtin.apt:
-      name: discord
-      state: present
+    - name: Ensure Discord is installed
+      become: true
+      ansible.builtin.apt:
+        name: discord
+        state: present
 
   # Discord autostart configuration moved to legacy_without_home_manager/gui role

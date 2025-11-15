@@ -3,9 +3,9 @@ Date utility functions for Habitify.
 Provides consistent date handling across CLI and API components.
 """
 
+from collections.abc import Callable
 import datetime
 from typing import TypeVar
-from collections.abc import Callable
 
 T = TypeVar("T")
 
@@ -33,9 +33,7 @@ def parse_date(date_string: str | None = None) -> datetime.datetime:
             raise ValueError(f"Invalid date format: {date_string}. Please use YYYY-MM-DD.")
 
 
-def _normalize_date(
-    date: str | datetime.date | datetime.datetime | None = None,
-) -> datetime.datetime:
+def _normalize_date(date: str | datetime.date | datetime.datetime | None = None) -> datetime.datetime:
     """
     Convert various date formats to a datetime object.
 
@@ -59,8 +57,7 @@ def _normalize_date(
 
 
 def _format_with_template(
-    date: str | datetime.date | datetime.datetime | None,
-    formatter: Callable[[datetime.datetime], T],
+    date: str | datetime.date | datetime.datetime | None, formatter: Callable[[datetime.datetime], T]
 ) -> T:
     """
     Format a date using a formatter function.
@@ -76,9 +73,7 @@ def _format_with_template(
     return formatter(normalized_date)
 
 
-def format_date_yyyy_mm_dd(
-    date: str | datetime.date | datetime.datetime | None = None,
-) -> str:
+def format_date_yyyy_mm_dd(date: str | datetime.date | datetime.datetime | None = None) -> str:
     """
     Format a date as YYYY-MM-DD.
 
@@ -91,9 +86,7 @@ def format_date_yyyy_mm_dd(
     return _format_with_template(date, lambda d: d.strftime("%Y-%m-%d"))
 
 
-def format_date_for_api(
-    date: str | datetime.date | datetime.datetime | None = None,
-) -> str:
+def format_date_for_api(date: str | datetime.date | datetime.datetime | None = None) -> str:
     """
     Format a date for the Habitify API (ISO format with timezone).
 
@@ -123,9 +116,7 @@ def format_date_for_api(
     return _format_with_template(date, lambda d: d.strftime("%Y-%m-%dT%H:%M:%S+00:00"))
 
 
-def format_date_human(
-    date: str | datetime.date | datetime.datetime | None = None,
-) -> str:
+def format_date_human(date: str | datetime.date | datetime.datetime | None = None) -> str:
     """
     Get a human-readable date format.
 

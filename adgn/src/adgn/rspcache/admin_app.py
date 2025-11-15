@@ -15,20 +15,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
-from adgn.rspcache.models import (
-    FRAME_ADAPTER,
-    dump_error,
-    dump_response,
-    dump_usage,
-    stream_event_event_id,
-)
-from adgn.rspcache.responses_db import (
-    APIKeyRecord,
-    ClientAPIKey,
-    Response,
-    ResponseFrame,
-    ResponsesDB,
-)
+from adgn.rspcache.models import FRAME_ADAPTER, dump_error, dump_response, dump_usage, stream_event_event_id
+from adgn.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponseFrame, ResponsesDB
 
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200
@@ -204,7 +192,7 @@ def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:
 
 def _to_api_key_model(record: ClientAPIKey | APIKeyRecord) -> APIKeyModel:
     return APIKeyModel(
-        id=getattr(record, "id"),
+        id=record.id,
         name=record.name,
         token_prefix=record.token_prefix,
         upstream_alias=record.upstream_alias,
@@ -221,10 +209,7 @@ async def list_responses(
 ) -> ResponseListModel:
     items, total = await db.list_responses(limit=limit, offset=offset)
     return ResponseListModel(
-        items=[_to_response_model(item) for item in items],
-        limit=limit,
-        offset=offset,
-        total=total,
+        items=[_to_response_model(item) for item in items], limit=limit, offset=offset, total=total
     )
 
 
@@ -236,9 +221,7 @@ async def get_response(identifier: str, db: ResponsesDB = Depends(get_db)) -> Re
     snapshot = detail.snapshot
     return _to_response_model(
         detail.record,
-        response_payload=dump_response(snapshot.response)
-        if snapshot and snapshot.response
-        else None,
+        response_payload=dump_response(snapshot.response) if snapshot and snapshot.response else None,
         error_payload=dump_error(snapshot.error) if snapshot and snapshot.error else None,
         token_usage=dump_usage(snapshot.token_usage) if snapshot and snapshot.token_usage else None,
     )
@@ -253,10 +236,7 @@ async def get_frames(
 ) -> FrameListModel:
     frames = await db.get_frames(identifier, limit=limit, after_ordinal=after)
     return FrameListModel(
-        items=[_to_frame_model(frame) for frame in frames],
-        count=len(frames),
-        limit=limit,
-        after=after,
+        items=[_to_frame_model(frame) for frame in frames], count=len(frames), limit=limit, after=after
     )
 
 
@@ -279,9 +259,7 @@ async def list_keys(db: ResponsesDB = Depends(get_db)) -> APIKeyListModel:
 
 
 @admin_app.post("/api/keys", response_model=CreateKeyResponse)
-async def create_key(
-    payload: CreateKeyRequest, db: ResponsesDB = Depends(get_db)
-) -> CreateKeyResponse:
+async def create_key(payload: CreateKeyRequest, db: ResponsesDB = Depends(get_db)) -> CreateKeyResponse:
     try:
         token, record = await db.create_api_key(payload.name, alias=payload.alias)
     except UniqueViolationError as exc:

@@ -1,8 +1,8 @@
-import re
 from http import HTTPStatus
+import re
 
-import pytest
 from httpx import AsyncClient
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,40 +18,23 @@ def _extract_csrf(page_text: str) -> str:
 async def _login(client: AsyncClient) -> str:
     home = await client.get("/")
     token = _extract_csrf(home.text)
-    response = await client.post(
-        "/admin/login",
-        data={"password": "gatelet", "csrf_token": token},
-    )
+    response = await client.post("/admin/login", data={"password": "gatelet", "csrf_token": token})
     assert response.status_code == HTTPStatus.FOUND
     return response.cookies["admin_session"]
 
 
 @pytest.mark.asyncio
-async def test_list_llm_sessions(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    test_auth_session: AuthCRSession,
-):
+async def test_list_llm_sessions(client: AsyncClient, db_session: AsyncSession, test_auth_session: AuthCRSession):
     session_cookie = await _login(client)
-    response = await client.get(
-        "/admin/llm-sessions/",
-        cookies={"admin_session": session_cookie},
-    )
+    response = await client.get("/admin/llm-sessions/", cookies={"admin_session": session_cookie})
     assert response.status_code == HTTPStatus.OK
     assert test_auth_session.session_token in response.text
 
 
 @pytest.mark.asyncio
-async def test_invalidate_llm_session(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    test_auth_session: AuthCRSession,
-):
+async def test_invalidate_llm_session(client: AsyncClient, db_session: AsyncSession, test_auth_session: AuthCRSession):
     session_cookie = await _login(client)
-    response = await client.get(
-        "/admin/llm-sessions/",
-        cookies={"admin_session": session_cookie},
-    )
+    response = await client.get("/admin/llm-sessions/", cookies={"admin_session": session_cookie})
     token = _extract_csrf(response.text)
 
     response = await client.post(
@@ -62,8 +45,6 @@ async def test_invalidate_llm_session(
     assert response.status_code == HTTPStatus.FOUND
 
     result = (
-        await db_session.execute(
-            select(AuthCRSession).where(AuthCRSession.id == test_auth_session.id),
-        )
+        await db_session.execute(select(AuthCRSession).where(AuthCRSession.id == test_auth_session.id))
     ).scalar_one_or_none()
     assert result is None

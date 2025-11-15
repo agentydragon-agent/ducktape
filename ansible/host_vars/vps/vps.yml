@@ -1,5 +1,5 @@
 syncthing_user: syncthing
-#syncthing_graph_path: /srv/logseq   # where the repo lives
+# syncthing_graph_path: /srv/logseq   # where the repo lives
 syncthing_graph_path: /srv/syncthing
 syncthing_open_ports: true
 

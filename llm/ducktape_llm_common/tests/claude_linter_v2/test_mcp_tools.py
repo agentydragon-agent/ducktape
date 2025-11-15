@@ -1,28 +1,16 @@
 """Unit tests for MCP tool handling in claude-linter-v2."""
 
-import json
 from datetime import datetime
+import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
-from ducktape_llm_common.claude_linter_v2.config.models import (
-    AutofixCategory,
-    PostToolHookConfig,
-)
+from ducktape_llm_common.claude_linter_v2.config.models import AutofixCategory, PostToolHookConfig
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
-from ducktape_llm_common.claude_linter_v2.hooks.outcomes import (
-    PostToolSuccess,
-    PreToolApprove,
-    PreToolDeny,
-)
-from ducktape_llm_common.claude_linter_v2.hooks.requests import (
-    PostToolUseRequest,
-    PreToolUseRequest,
-    ToolInput,
-)
+from ducktape_llm_common.claude_linter_v2.hooks.outcomes import PostToolSuccess, PreToolApprove, PreToolDeny
+from ducktape_llm_common.claude_linter_v2.hooks.requests import PostToolUseRequest, PreToolUseRequest, ToolInput
 from ducktape_llm_common.claude_linter_v2.types import SessionID
+import pytest
 
 
 class TestMCPTools:
@@ -154,10 +142,7 @@ class TestMCPTools:
             session_id=str(session_id),
             hook_event_name="PostToolUse",
             tool_name="mcp_editor_save",
-            tool_input=ToolInput(
-                file_path=str(test_file),
-                content="import os\nimport sys\n\n\ndef test():\n    pass",
-            ),
+            tool_input=ToolInput(file_path=str(test_file), content="import os\nimport sys\n\n\ndef test():\n    pass"),
             tool_result={"saved": True},
         )
 
@@ -200,10 +185,7 @@ class TestMCPTools:
                     {
                         "id": 1,
                         "labels": ["Person", "Developer"],
-                        "properties": {
-                            "name": "Alice",
-                            "skills": ["Python", "JavaScript"],
-                        },
+                        "properties": {"name": "Alice", "skills": ["Python", "JavaScript"]},
                     }
                 ],
                 "relationships": [],
@@ -221,11 +203,7 @@ class TestMCPTools:
             hook_event_name="PostToolUse",
             tool_name="mcp_api_call",
             tool_input=ToolInput(endpoint="/api/users", method="GET"),
-            tool_result={
-                "error": "Connection timeout",
-                "status_code": None,
-                "success": False,
-            },
+            tool_result={"error": "Connection timeout", "status_code": None, "success": False},
         )
 
         # Should still process normally - hooks don't care about tool success
@@ -233,7 +211,7 @@ class TestMCPTools:
         assert isinstance(outcome, PostToolSuccess)
 
     @pytest.mark.parametrize(
-        "tool_name,input_fields,should_check_python",
+        ("tool_name", "input_fields", "should_check_python"),
         [
             # Standard MCP tools - no Python checking
             ("mcp_memory_create", {"name": "test", "content": "data"}, False),
@@ -243,16 +221,8 @@ class TestMCPTools:
             ("mcp_fs_write", {"file_path": "test.py", "content": "print('hi')"}, True),
             ("mcp_editor_format", {"file_path": "app.py", "content": "x=1"}, True),
             # Edge cases
-            (
-                "mcp_tool",
-                {"file_path": "test.js", "content": "console.log()"},
-                False,
-            ),  # JS file
-            (
-                "mcp_tool",
-                {"file_path": None, "content": "print('hi')"},
-                False,
-            ),  # No path
+            ("mcp_tool", {"file_path": "test.js", "content": "console.log()"}, False),  # JS file
+            ("mcp_tool", {"file_path": None, "content": "print('hi')"}, False),  # No path
         ],
     )
     def test_mcp_tool_python_detection(self, handler, session_id, tool_name, input_fields, should_check_python):
@@ -331,11 +301,7 @@ class TestMCPToolsUnexpectedFormats:
             hook_event_name="PreToolUse",
             tool_name="mcp_finance_get_stock_price",
             tool_input=ToolInput(
-                symbol="AAPL",
-                date="2024-01-15",
-                exchange="NASDAQ",
-                include_extended_hours=True,
-                currency="USD",
+                symbol="AAPL", date="2024-01-15", exchange="NASDAQ", include_extended_hours=True, currency="USD"
             ),
         )
 
@@ -350,22 +316,13 @@ class TestMCPToolsUnexpectedFormats:
             hook_event_name="PostToolUse",
             tool_name="mcp_weather_forecast",
             tool_input=ToolInput(
-                location={
-                    "type": "coordinates",
-                    "lat": 37.7749,
-                    "lon": -122.4194,
-                    "name": "San Francisco",
-                },
+                location={"type": "coordinates", "lat": 37.7749, "lon": -122.4194, "name": "San Francisco"},
                 forecast_days=7,
                 units="metric",
                 include_alerts=True,
             ),
             tool_result={
-                "current": {
-                    "temp": 18.5,
-                    "feels_like": 17.2,
-                    "conditions": "Partly cloudy",
-                },
+                "current": {"temp": 18.5, "feels_like": 17.2, "conditions": "Partly cloudy"},
                 "forecast": [
                     {"date": "2024-01-16", "high": 20, "low": 12},
                     {"date": "2024-01-17", "high": 19, "low": 11},
@@ -420,18 +377,10 @@ class TestMCPToolsUnexpectedFormats:
             tool_input=ToolInput(
                 device_id="light.living_room",
                 action="set_state",
-                payload={
-                    "on": True,
-                    "brightness": 75,
-                    "color": {"r": 255, "g": 200, "b": 100},
-                    "transition_time": 2.5,
-                },
+                payload={"on": True, "brightness": 75, "color": {"r": 255, "g": 200, "b": 100}, "transition_time": 2.5},
                 confirm=True,
             ),
-            tool_result={
-                "success": True,
-                "device_state": {"on": True, "brightness": 75},
-            },
+            tool_result={"success": True, "device_state": {"on": True, "brightness": 75}},
         )
 
         outcome = handler._handle_post_hook(request, session_id)
@@ -514,10 +463,7 @@ class TestMCPToolsUnexpectedFormats:
                 variables=["x", "y"],
                 initial_guess=[1.0, 1.0],
                 method="BFGS",
-                constraints=[
-                    {"type": "ineq", "fun": "x + y - 1"},
-                    {"type": "eq", "fun": "x - 2*y"},
-                ],
+                constraints=[{"type": "ineq", "fun": "x + y - 1"}, {"type": "eq", "fun": "x - 2*y"}],
                 bounds=[(-10, 10), (-10, 10)],
                 options={"maxiter": 1000, "ftol": 1e-9},
             ),
@@ -538,10 +484,7 @@ class TestMCPToolsUnexpectedFormats:
                 measurement_basis="computational",
                 shots=1024,
                 backend="simulator",
-                noise_model={
-                    "depolarizing": 0.01,
-                    "readout_error": [[0.97, 0.03], [0.02, 0.98]],
-                },
+                noise_model={"depolarizing": 0.01, "readout_error": [[0.97, 0.03], [0.02, 0.98]]},
                 optimization_level=3,
                 seed=42,
             ),
@@ -572,11 +515,7 @@ class TestMCPToolsUnexpectedFormats:
             tool_input=ToolInput(
                 required_field="value",
                 optional_field=None,
-                nested_object={
-                    "key1": "value1",
-                    "key2": None,
-                    "key3": {"nested": None},
-                },
+                nested_object={"key1": "value1", "key2": None, "key3": {"nested": None}},
                 array_with_nulls=[1, None, 3, None, 5],
                 completely_null=None,
             ),
@@ -653,7 +592,7 @@ class TestMCPToolLogging:
         assert log_file.exists()
 
         # Read and verify log content
-        with open(log_file) as f:
+        with log_file.open() as f:
             lines = f.readlines()
 
         # Should have decision logs and final log
@@ -684,7 +623,7 @@ class TestMCPToolLogging:
 
         # Read log file
         log_file = tmp_path / f"{session_id}.log"
-        with open(log_file) as f:
+        with log_file.open() as f:
             content = f.read()
 
         # Should have logged decision points

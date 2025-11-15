@@ -1,9 +1,8 @@
 import datetime
 import json
-import os
+from pathlib import Path
 import sys
 import tempfile
-from pathlib import Path
 
 import click
 from pydantic import ValidationError
@@ -25,10 +24,9 @@ def evaluate_pre(req: HookRequest) -> HookResponse:
         return HookResponse()
 
     # Run hooks on temp file
-    tmp = tempfile.NamedTemporaryFile("w", delete=False, suffix=Path(inp.file_path).suffix)
-    tmp.write(inp.content)
-    tmp_path = tmp.name
-    tmp.close()
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=Path(inp.file_path).suffix) as tmp:
+        tmp.write(inp.content)
+        tmp_path = tmp.name
 
     try:
         # Get config for fixing
@@ -55,9 +53,8 @@ def evaluate_pre(req: HookRequest) -> HookResponse:
         if fixed_content == fixed_again_content:
             # All violations were fixable - let normal permission flow continue
             return HookResponse()
-        else:
-            # Pre-commit keeps changing things - non-fixable violations found
-            return _block_with_reason(out2, err2)
+        # Pre-commit keeps changing things - non-fixable violations found
+        return _block_with_reason(out2, err2)
 
     finally:
         Path(tmp_path).unlink()
@@ -97,35 +94,32 @@ def evaluate_post(req: HookRequest) -> HookResponse:
                     "This is just a notification - your changes have been saved."
                 ),
             )
-        else:
-            # No violations
-            return HookResponse()
-    else:
-        # Write tool - keep original behavior with autofixes
-        config = get_merged_config([file_path], fix=True)
-        runner = PreCommitRunner(config)
+        # No violations
+        return HookResponse()
+    # Write tool - keep original behavior with autofixes
+    config = get_merged_config([file_path], fix=True)
+    runner = PreCommitRunner(config)
 
-        # First run: apply autofixes
-        ret1, out1, err1 = runner.run([file_path], cwd=str(Path(file_path).parent))
-        content_after_fixes = Path(file_path).read_text()
+    # First run: apply autofixes
+    ret1, out1, err1 = runner.run([file_path], cwd=str(Path(file_path).parent))
+    content_after_fixes = Path(file_path).read_text()
 
-        if content_after_fixes == original:
-            return HookResponse()
-        return HookResponse(decision="block", reason="FYI: Auto-fixes were applied")
+    if content_after_fixes == original:
+        return HookResponse()
+    return HookResponse(decision="block", reason="FYI: Auto-fixes were applied")
 
 
 @click.group()
 @click.version_option()
 def cli():
     """Claude Linter CLI."""
-    pass
 
 
 @cli.command("check")
 @click.option("--files", "-f", multiple=True, type=click.Path(exists=True))
 def check(files):
     """Run checks on given files or all in current directory."""
-    paths = list(files) if files else [os.getcwd()]
+    paths = list(files) if files else [str(Path.cwd())]
     config = get_merged_config(paths)
     runner = PreCommitRunner(config)
     runner.run(paths)
@@ -137,12 +131,7 @@ def check(files):
 
 @cli.command("clean")
 @click.option("--dry-run", is_flag=True, help="Show what would be deleted without deleting")
-@click.option(
-    "--older-than",
-    type=int,
-    default=7,
-    help="Delete logs older than N days (default: 7)",
-)
+@click.option("--older-than", type=int, default=7, help="Delete logs older than N days (default: 7)")
 def clean(dry_run: bool, older_than: int) -> None:
     """Clean up old log files."""
     log_dir = Path.home() / ".cache" / "claude-linter"
@@ -240,7 +229,7 @@ def unified_hook():
 
     # Log exit code
     log_data["exit_code"] = 0
-    with open(log_file, "w") as f:
+    with Path(log_file).open("w") as f:
         json.dump(log_data, f, indent=2)
 
     sys.exit(0)

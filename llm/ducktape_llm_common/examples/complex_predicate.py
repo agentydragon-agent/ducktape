@@ -19,7 +19,7 @@ def safe_shell_pipeline(ctx: PredicateContext) -> bool:
         return False
 
     # Define safe commands and their allowed flags
-    SAFE_COMMANDS = {
+    safe_commands = {
         "grep": {"-r", "-i", "-n", "-v", "-E", "-F", "-l", "-c", "--include", "--exclude"},
         "find": {"-name", "-type", "-path", "-maxdepth", "-mindepth", "-exec", "-print"},
         "ls": {"-l", "-a", "-h", "-R", "-t", "-S", "-r", "-1"},
@@ -41,8 +41,8 @@ def safe_shell_pipeline(ctx: PredicateContext) -> bool:
         # Split by pipe
         pipeline_parts = ctx.command.split("|")
 
-        for part in pipeline_parts:
-            part = part.strip()
+        for part_raw in pipeline_parts:
+            part = part_raw.strip()
             if not part:
                 continue
 
@@ -59,11 +59,11 @@ def safe_shell_pipeline(ctx: PredicateContext) -> bool:
             cmd = tokens[0]
 
             # Check if command is in safe list
-            if cmd not in SAFE_COMMANDS:
+            if cmd not in safe_commands:
                 return False
 
             # Check flags (simple check - just look for strings starting with -)
-            allowed_flags = SAFE_COMMANDS[cmd]
+            allowed_flags = safe_commands[cmd]
             for token in tokens[1:]:
                 if token.startswith("-") and token not in allowed_flags:
                     # Unknown flag

@@ -37,10 +37,7 @@ async def test_list_changes_subscriptions_visible_and_cleared_on_unmount():
         rc = ResourcesClient(client)
         await rc.subscribe_list_changes(server="origin")
         idx = await rc.list_subscriptions()
-        assert_that(
-            idx.list_subscriptions,
-            has_item(has_properties(server="origin", present=True, active=True)),
-        )
+        assert_that(idx.list_subscriptions, has_item(has_properties(server="origin", present=True, active=True)))
 
         # Unmount origin; selection should be cleared from the index
         await comp.unmount_server("origin")

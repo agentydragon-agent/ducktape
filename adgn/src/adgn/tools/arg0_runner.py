@@ -34,10 +34,7 @@ def _safe_join(root: Path, rel: str) -> Path:
 
 def _apply_patch_cli(argv: list[str]) -> int:
     # Read patch from arg or stdin
-    if len(argv) >= 2 and argv[1] not in ("-", "--"):
-        patch_text = argv[1]
-    else:
-        patch_text = sys.stdin.read()
+    patch_text = argv[1] if len(argv) >= 2 and argv[1] not in ("-", "--") else sys.stdin.read()
     if not patch_text:
         print("apply_patch: missing patch text (arg or stdin)", file=sys.stderr)
         return 2
@@ -58,13 +55,7 @@ def _apply_patch_cli(argv: list[str]) -> int:
             p.unlink()
 
     # Single black-box dispatcher; allow multi-file patches in CLI
-    apply_patch_auto(
-        patch_text,
-        _open_fn,
-        _write_fn,
-        _remove_fn,
-        require_single_file=False,
-    )
+    apply_patch_auto(patch_text, _open_fn, _write_fn, _remove_fn, require_single_file=False)
     return 0
 
 

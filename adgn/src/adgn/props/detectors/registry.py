@@ -27,12 +27,7 @@ def all_detectors() -> list[DetectorSpec]:
     return list(_REGISTRY)
 
 
-def run_all(
-    root: Path,
-    detector_names: Iterable[str] | None = None,
-    *,
-    workers: int | None = None,
-) -> list[Detection]:
+def run_all(root: Path, detector_names: Iterable[str] | None = None, *, workers: int | None = None) -> list[Detection]:
     """Run all (or selected) detectors.
 
     Concurrency is controlled by a single flag:
@@ -62,10 +57,7 @@ def run_all(
             ]
 
     # Determine execution mode based on workers
-    if workers is None:
-        auto_workers = min(len(selected), os.cpu_count() or 1)
-    else:
-        auto_workers = int(workers)
+    auto_workers = min(len(selected), os.cpu_count() or 1) if workers is None else int(workers)
 
     if auto_workers <= 1:
         out: list[Detection] = []

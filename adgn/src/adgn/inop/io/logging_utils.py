@@ -23,9 +23,7 @@ class ToolAwareConsoleRenderer(structlog.dev.ConsoleRenderer):
                 isinstance(tools, list)
                 and tools
                 and all(
-                    isinstance(t, dict)
-                    and isinstance(t.get("name"), str)
-                    and isinstance(t.get("args"), dict)
+                    isinstance(t, dict) and isinstance(t.get("name"), str) and isinstance(t.get("args"), dict)
                     for t in tools
                 )
             ):
@@ -52,11 +50,7 @@ class DualOutputLogging:
     """Utility class for setting up structured logging with dual output."""
 
     @staticmethod
-    def setup_logging(
-        logs_dir: str = "logs",
-        log_filename: str = "optimizer.jsonl",
-        verbose: bool = False,
-    ) -> None:
+    def setup_logging(logs_dir: str = "logs", log_filename: str = "optimizer.jsonl", verbose: bool = False) -> None:
         """Configure structlog with dual output: pretty console + structured file logs.
 
         Args:
@@ -72,8 +66,7 @@ class DualOutputLogging:
         timestamper = structlog.processors.TimeStamper(fmt="iso")
         shared_processors: list[
             Callable[
-                [Any, str, MutableMapping[str, Any]],
-                Mapping[str, Any] | str | bytes | bytearray | tuple[Any, ...],
+                [Any, str, MutableMapping[str, Any]], Mapping[str, Any] | str | bytes | bytearray | tuple[Any, ...]
             ]
         ] = [
             structlog.stdlib.filter_by_level,
@@ -88,10 +81,7 @@ class DualOutputLogging:
 
         # Configure structlog
         structlog.configure(
-            processors=[
-                *shared_processors,
-                structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-            ],
+            processors=[*shared_processors, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),
             wrapper_class=structlog.stdlib.BoundLogger,
@@ -100,16 +90,10 @@ class DualOutputLogging:
 
         # Create formatters
         console_formatter = structlog.stdlib.ProcessorFormatter(
-            processor=ToolAwareConsoleRenderer(
-                colors=True,
-                pad_event=30,
-                repr_native_str=False,
-            ),
+            processor=ToolAwareConsoleRenderer(colors=True, pad_event=30, repr_native_str=False)
         )
 
-        file_formatter = structlog.stdlib.ProcessorFormatter(
-            processor=structlog.processors.JSONRenderer(),
-        )
+        file_formatter = structlog.stdlib.ProcessorFormatter(processor=structlog.processors.JSONRenderer())
 
         # Setup handlers
         console_handler = logging.StreamHandler(sys.stdout)

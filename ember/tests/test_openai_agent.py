@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 from typing import cast
@@ -192,7 +192,7 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
 @pytest.mark.asyncio
 async def test_sleep_until_user_message_rejected_when_enforced_policy_blocks() -> None:
     policy = EnforcedSleepUntilUserMessagePolicy(timeout_seconds=30)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     status = ConversationStatus(last_user_message_at=now, last_agent_message_at=now - timedelta(seconds=60))
 
     class Provider:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from importlib import resources
 import os
 import platform
 import re
 
+import docker
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from openai import AsyncOpenAI
@@ -26,7 +27,6 @@ from adgn.mcp.testing.simple_servers import make_simple_mcp
 
 # Top-level imports for fixtures
 from adgn.mcp.testing.typed_stubs import TypedClient
-import docker
 
 # Ensure shared fixtures from tests/fixtures are always registered, even when
 # running a subset of tests or in parallel workers where the module wouldn't be
@@ -40,16 +40,10 @@ pytest_plugins = (
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("adgn")
     group.addoption(
-        "--trace-ws",
-        action="store_true",
-        default=True,
-        help="Emit detailed WS traces during tests (default: on)",
+        "--trace-ws", action="store_true", default=True, help="Emit detailed WS traces during tests (default: on)"
     )
     group.addoption(
-        "--no-trace-ws",
-        action="store_true",
-        default=False,
-        help="Disable WS traces added by the test helpers",
+        "--no-trace-ws", action="store_true", default=False, help="Disable WS traces added by the test helpers"
     )
 
 
@@ -70,10 +64,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
-    if (
-        item.get_closest_marker("requires_sandbox_exec") is not None
-        and platform.system() != "Darwin"
-    ):
+    if item.get_closest_marker("requires_sandbox_exec") is not None and platform.system() != "Darwin":
         pytest.skip("seatbelt sandbox tests require macOS (sandbox-exec unavailable)")
     if item.get_closest_marker("macos") is not None and platform.system() != "Darwin":
         pytest.skip("macOS-only test")
@@ -85,10 +76,8 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     except docker.errors.DockerException as exc:
         pytest.skip(f"Docker not available: {exc}")
     else:
-        try:
+        with suppress(Exception):
             client.close()
-        except Exception:
-            pass
 
 
 @pytest.fixture(autouse=True)
@@ -181,11 +170,7 @@ def make_pg_compositor(approval_hub: ApprovalHub):
     """
 
     @asynccontextmanager
-    async def _open(
-        servers: dict[str, FastMCP],
-        *,
-        notifier=None,
-    ):
+    async def _open(servers: dict[str, FastMCP], *, notifier=None):
         comp = Compositor("comp")
         # Mount all provided servers under the compositor
         for name, srv in servers.items():
@@ -201,12 +186,7 @@ def make_pg_compositor(approval_hub: ApprovalHub):
         try:
             _reader_client = await stack.enter_async_context(Client(reader))
             policy_reader = PolicyReaderClient(_reader_client)
-            install_policy_gateway(
-                comp,
-                hub=approval_hub,
-                policy_reader=policy_reader,
-                pending_notifier=notifier,
-            )
+            install_policy_gateway(comp, hub=approval_hub, policy_reader=policy_reader, pending_notifier=notifier)
             # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
             await mount_standard_inproc_servers(compositor=comp, gateway_client=None)
             async with Client(comp) as sess:
@@ -256,17 +236,11 @@ def make_pg_compositor_box(approval_policy_reader_allow_all, make_pg_compositor)
     async def _open():
         server = make_container_exec_server(
             ContainerOptions(
-                image="python:3.12-slim",
-                working_dir="/workspace",
-                volumes=None,
-                describe=True,
-                ephemeral=True,
+                image="python:3.12-slim", working_dir="/workspace", volumes=None, describe=True, ephemeral=True
             ),
             name="box",
         )
-        async with make_pg_compositor(
-            {"box": server, "approval_policy": approval_policy_reader_allow_all}
-        ) as pair:
+        async with make_pg_compositor({"box": server, "approval_policy": approval_policy_reader_allow_all}) as pair:
             yield pair
 
     return _open
@@ -328,13 +302,7 @@ def make_buffered_client():
 
 @pytest.fixture
 def docker_exec_server_alpine():
-    opts = ContainerOptions(
-        image="alpine:3.19",
-        working_dir="/workspace",
-        volumes=None,
-        describe=True,
-        ephemeral=True,
-    )
+    opts = ContainerOptions(image="alpine:3.19", working_dir="/workspace", volumes=None, describe=True, ephemeral=True)
     # Expose the tool under name expected by docker exec tests
     from adgn.mcp.exec.docker.server import make_container_exec_server
 
@@ -343,15 +311,8 @@ def docker_exec_server_alpine():
 
 @pytest.fixture
 def docker_inproc_spec_alpine():
-    opts = ContainerOptions(
-        image="alpine:3.19",
-        working_dir="/workspace",
-        volumes=None,
-        describe=True,
-        ephemeral=True,
-    )
-    server = make_container_exec_server(opts)
-    return server
+    opts = ContainerOptions(image="alpine:3.19", working_dir="/workspace", volumes=None, describe=True, ephemeral=True)
+    return make_container_exec_server(opts)
 
 
 # --- Compatibility / opt-in fixtures used across suites ---
@@ -383,16 +344,11 @@ def live_openai(request):
 def docker_inproc_spec_py312():
     """Alias expected by some tests: in-proc spec backed by Python 3.12 image."""
     opts = ContainerOptions(
-        image="python:3.12-alpine",
-        working_dir="/workspace",
-        volumes=None,
-        describe=True,
-        ephemeral=True,
+        image="python:3.12-alpine", working_dir="/workspace", volumes=None, describe=True, ephemeral=True
     )
     from adgn.mcp.exec.docker.server import make_container_exec_server
 
-    server = make_container_exec_server(opts)
-    return server
+    return make_container_exec_server(opts)
 
 
 # --- Approval policy reader presets ------------------------------------------
@@ -404,16 +360,9 @@ async def approval_policy_reader_allow_all(sqlite_persistence) -> FastMCP:
 
     Uses the packaged approve_all.py source and evaluates via Docker.
     """
-    policy_text = (
-        resources.files("adgn.agent.policies")
-        .joinpath("approve_all.py")
-        .read_text(encoding="utf-8")
-    )
+    policy_text = resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
     eng = ApprovalPolicyEngine(
-        docker_client=docker.from_env(),
-        agent_id="tests",
-        persistence=sqlite_persistence,
-        policy_source=policy_text,
+        docker_client=docker.from_env(), agent_id="tests", persistence=sqlite_persistence, policy_source=policy_text
     )
     return ApprovalPolicyServer(eng)
 

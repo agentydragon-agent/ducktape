@@ -7,12 +7,7 @@ from typing import Any, ParamSpec, TypeVar, cast
 import httpx
 import openai
 from openai import AsyncOpenAI
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential_jitter,
-)
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 # Default retry policy: 5 attempts, exponential backoff with jitter (~0.5s..60s)
 _DEFAULT_ATTEMPTS = 10

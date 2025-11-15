@@ -1,9 +1,9 @@
-import re
 from http import HTTPStatus
 from pathlib import Path
+import re
 
-import pytest
 from httpx import AsyncClient
+import pytest
 
 from gatelet.server.config import settings
 
@@ -17,10 +17,7 @@ def _extract_csrf(page_text: str) -> str:
 async def _login(client: AsyncClient) -> str:
     home = await client.get("/")
     token = _extract_csrf(home.text)
-    response = await client.post(
-        "/admin/login",
-        data={"password": "gatelet", "csrf_token": token},
-    )
+    response = await client.post("/admin/login", data={"password": "gatelet", "csrf_token": token})
     assert response.status_code == HTTPStatus.FOUND
     return response.cookies["admin_session"]
 

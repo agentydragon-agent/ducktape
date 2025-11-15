@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Callable, Literal, Protocol
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
@@ -43,7 +44,7 @@ def build_spec(
 
 
 def _evaluate_enforced_policy(status: ConversationStatus, policy: EnforcedSleepUntilUserMessagePolicy) -> str | None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     user_ts = status.last_user_message_at
     agent_ts = status.last_agent_message_at

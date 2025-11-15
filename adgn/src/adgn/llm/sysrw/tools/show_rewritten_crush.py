@@ -17,12 +17,7 @@ from ..openai_typing import (
     response_message_role,
 )
 
-PROVIDER_WIRE = Path(
-    os.environ.get(
-        "CRUSH_WIRE_LOG",
-        str(Path.home() / ".crush" / "logs" / "provider-wire.log"),
-    ),
-)
+PROVIDER_WIRE = Path(os.environ.get("CRUSH_WIRE_LOG", str(Path.home() / ".crush" / "logs" / "provider-wire.log")))
 DEMO_TEMPLATE = Path(__file__).parent / "demo_template.txt"
 
 ENV_INTRO = "Here is useful information about the environment you are running in:"
@@ -70,24 +65,13 @@ def extract_ccr_blobs(system_text: str) -> dict[str, Any]:
     s = system_text or ""
     env_git_blobs: list[str] = []
     if ENV_INTRO in s:
-        env_re = re.compile(
-            re.escape(ENV_INTRO) + r"\n<env>[\s\S]*?</env>\s*",
-            re.MULTILINE,
-        )
+        env_re = re.compile(re.escape(ENV_INTRO) + r"\n<env>[\s\S]*?</env>\s*", re.MULTILINE)
         env_git_blobs = [m.group(0) for m in env_re.finditer(s)]
     tools_blob = ""
     i_tools = s.find(TOOLS_HEADER)
     if i_tools != -1:
         after = i_tools + len(TOOLS_HEADER)
-        nxt = [
-            x
-            for x in [
-                s.find(ENV_INTRO, after),
-                s.find(MODEL_PREFIX, after),
-                s.find(MCP_HEADER, after),
-            ]
-            if x != -1
-        ]
+        nxt = [x for x in [s.find(ENV_INTRO, after), s.find(MODEL_PREFIX, after), s.find(MCP_HEADER, after)] if x != -1]
         end = min(nxt) if nxt else len(s)
         tools_blob = s[after:end]
     mm = re.search(r"^" + re.escape(MODEL_PREFIX) + r"[^\n]*\n?", s, flags=re.MULTILINE)
@@ -97,12 +81,7 @@ def extract_ccr_blobs(system_text: str) -> dict[str, Any]:
     if i_mcp != -1:
         nl = s.find("\n", i_mcp)
         mcp_section = "" if nl == -1 else s[nl + 1 :]
-    return {
-        "toolsBlob": tools_blob,
-        "envGitBlobs": env_git_blobs,
-        "modelLine": model_line,
-        "mcpSection": mcp_section,
-    }
+    return {"toolsBlob": tools_blob, "envGitBlobs": env_git_blobs, "modelLine": model_line, "mcpSection": mcp_section}
 
 
 def rewrite_system_with_template_py(system_text: str, template_path: Path) -> str:
@@ -126,39 +105,22 @@ def rewrite_system_with_template_py(system_text: str, template_path: Path) -> st
     return out
 
 
-def build_rewritten_request(
-    orig: dict[str, Any],
-    new_system_text: str,
-) -> dict[str, Any]:
+def build_rewritten_request(orig: dict[str, Any], new_system_text: str) -> dict[str, Any]:
     req = copy.deepcopy(orig)
     inp = req.get("input")
     if not isinstance(inp, list):
-        req["input"] = [
-            {
-                "role": "system",
-                "content": [{"type": "input_text", "text": new_system_text}],
-            },
-        ]
+        req["input"] = [{"role": "system", "content": [{"type": "input_text", "text": new_system_text}]}]
     else:
         # Keep only first 2 non-system items for readability
         # Find first explicit user index
         first_user = None
         for i, it in enumerate(inp):
-            if (
-                isinstance(it, dict)
-                and (it.get("role") or it.get("message_role") or "").lower() == "user"
-            ):
+            if isinstance(it, dict) and (it.get("role") or it.get("message_role") or "").lower() == "user":
                 first_user = i
                 break
         tail = inp[first_user:] if first_user is not None else []
         tail = tail[:2]
-        req["input"] = [
-            {
-                "role": "system",
-                "content": [{"type": "input_text", "text": new_system_text}],
-            },
-            *tail,
-        ]
+        req["input"] = [{"role": "system", "content": [{"type": "input_text", "text": new_system_text}]}, *tail]
 
     validated = parse_response_messages(req.get("input"))
     if validated:
@@ -190,13 +152,8 @@ def main():
             rewritten["input"] = rewritten["input"][:3]
         print(
             json.dumps(
-                {
-                    "original_crush_request": orig,
-                    "rewritten_crush_request": rewritten,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
+                {"original_crush_request": orig, "rewritten_crush_request": rewritten}, ensure_ascii=False, indent=2
+            )
         )
         return 0
     print(json.dumps({"error": "no request found", "path": str(PROVIDER_WIRE)}))

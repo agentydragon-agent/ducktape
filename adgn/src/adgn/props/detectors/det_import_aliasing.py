@@ -75,7 +75,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                                     f"Import alias without local collision: 'import {alias.name} as {alias_name}' — prefer direct name unless disambiguation/collision."
                                 ),
                                 snippet=read_snippet(path, sl, sl, context=0),
-                            ),
+                            )
                         )
         elif isinstance(stmt, ast.ImportFrom):
             for alias in stmt.names:
@@ -83,9 +83,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                     original = alias.name
                     alias_name = alias.asname
                     full_mod = stmt.module or ""
-                    allowed = (full_mod, original) in {
-                        ("torch.nn", "functional")
-                    } and alias_name in {"F"}
+                    allowed = (full_mod, original) in {("torch.nn", "functional")} and alias_name in {"F"}
                     if original != alias_name and original not in top_names and not allowed:
                         sl = getattr(stmt, "lineno", 1)
                         modname = full_mod
@@ -100,7 +98,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                                     f"Import alias without local collision: 'from {modname} import {original} as {alias_name}' — prefer direct name unless disambiguation/collision."
                                 ),
                                 snippet=read_snippet(path, sl, sl, context=0),
-                            ),
+                            )
                         )
     return out
 

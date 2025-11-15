@@ -6,26 +6,15 @@ import logging
 from typing import Any
 import uuid
 
-from fastmcp.server.middleware.middleware import (
-    CallNext,
-    Middleware,
-    MiddlewareContext,
-)
+from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
 from mcp import McpError, types as mtypes
 from mcp.types import ErrorData
 
-from adgn.agent.approvals import (
-    ApprovalHub,
-    ApprovalRequest,
-    ApprovalToolCall,
-)
+from adgn.agent.approvals import ApprovalHub, ApprovalRequest, ApprovalToolCall
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.persist import ApprovalOutcome
-from adgn.agent.policies.policy_types import (
-    ApprovalDecision,
-    PolicyRequest,
-)
+from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest
 from adgn.mcp._shared.constants import (
     POLICY_BACKEND_RESERVED_MISUSE_CODE,
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
@@ -84,13 +73,8 @@ def _raise_if_reserved_code(e: McpError, name: str) -> None:
 
     if (
         stamped
-        or (
-            code
-            in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
-        )
-        or (
-            msg in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG)
-        )
+        or (code in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE))
+        or (msg in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG))
     ):
         raise McpError(
             ErrorData(
@@ -117,21 +101,16 @@ def _policy_denied_error(decision: ApprovalDecision, name: str, reason: str | No
         ErrorData(
             code=code,
             message=msg,
-            data={
-                POLICY_GATEWAY_STAMP_KEY: True,
-                "decision": str(decision),
-                "name": name,
-                "reason": reason,
-            },
+            data={POLICY_GATEWAY_STAMP_KEY: True, "decision": str(decision), "name": name, "reason": reason},
         )
     )
 
 
 class PolicyGatewayMiddleware(Middleware):
-    """Approval‑enforcing middleware installed on the aggregating FastMCP server.
+    """Approval-enforcing middleware installed on the aggregating FastMCP server.
 
     - Gates tools/call via the provided policy evaluator and ApprovalHub
-    - Denials raise explicit JSON‑RPC errors using reserved codes/messages
+    - Denials raise explicit JSON-RPC errors using reserved codes/messages
     - ASK blocks until ApprovalHub resolves to Continue/Abort/Bypass
     """
 
@@ -148,20 +127,14 @@ class PolicyGatewayMiddleware(Middleware):
         self._record = record_outcome
         self._policy_reader = policy_reader
 
-    async def on_call_tool(
-        self,
-        context: MiddlewareContext[Any],
-        call_next: CallNext[Any, ToolResult],
-    ) -> ToolResult:
+    async def on_call_tool(self, context: MiddlewareContext[Any], call_next: CallNext[Any, ToolResult]) -> ToolResult:
         name = context.message.name
         arguments = context.message.arguments
         tool_key = name  # canonical function name
 
         # Evaluate decision via MCP reader server when available; fallback to local evaluator
         try:
-            decision_res = await self._policy_reader.decide(
-                PolicyRequest(name=name, arguments=arguments)
-            )
+            decision_res = await self._policy_reader.decide(PolicyRequest(name=name, arguments=arguments))
             decision = decision_res.decision
             rationale = decision_res.rationale
         except Exception as e:  # policy engine failure → explicit evaluator error
@@ -170,11 +143,7 @@ class PolicyGatewayMiddleware(Middleware):
                 ErrorData(
                     code=POLICY_EVALUATOR_ERROR_CODE,
                     message=POLICY_EVALUATOR_ERROR_MSG,
-                    data={
-                        POLICY_GATEWAY_STAMP_KEY: True,
-                        "name": name,
-                        "reason": f"{type(e).__name__}: {e}",
-                    },
+                    data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "reason": f"{type(e).__name__}: {e}"},
                 )
             )
 
@@ -205,10 +174,7 @@ class PolicyGatewayMiddleware(Middleware):
                                     code_val = None
                                 try:
                                     data = getattr(ed, "data", None)
-                                    if (
-                                        isinstance(data, dict)
-                                        and data.get(POLICY_GATEWAY_STAMP_KEY) is True
-                                    ):
+                                    if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
                                         stamped_downstream = True
                                 except Exception:
                                     stamped_downstream = False
@@ -218,7 +184,7 @@ class PolicyGatewayMiddleware(Middleware):
                         else:
                             msg = getattr(err, "message", None)
                             try:
-                                code_val = int(getattr(err, "code"))  # type: ignore[arg-type]
+                                code_val = int(err.code)  # type: ignore[arg-type]
                             except Exception:
                                 code_val = None
                     if msg is None:
@@ -227,20 +193,9 @@ class PolicyGatewayMiddleware(Middleware):
                         stamped_downstream
                         or (
                             code_val
-                            in (
-                                POLICY_DENIED_ABORT_CODE,
-                                POLICY_DENIED_CONTINUE_CODE,
-                                POLICY_EVALUATOR_ERROR_CODE,
-                            )
+                            in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
                         )
-                        or (
-                            msg
-                            in (
-                                POLICY_DENIED_ABORT_MSG,
-                                POLICY_DENIED_CONTINUE_MSG,
-                                POLICY_EVALUATOR_ERROR_MSG,
-                            )
-                        )
+                        or (msg in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG))
                     ):
                         raise McpError(
                             ErrorData(
@@ -270,27 +225,19 @@ class PolicyGatewayMiddleware(Middleware):
                         ErrorData(
                             code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
                             message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
-                            data={
-                                POLICY_GATEWAY_STAMP_KEY: True,
-                                "name": name,
-                                "backend_code": "unknown",
-                            },
+                            data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
                         )
                     )
                 raise
 
         if decision is ApprovalDecision.DENY_ABORT:
             if self._record is not None:
-                await self._record(
-                    "pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_ABORT
-                )
+                await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
             raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, rationale)
 
         if decision is ApprovalDecision.DENY_CONTINUE:
             if self._record is not None:
-                await self._record(
-                    "pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_CONTINUE
-                )
+                await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_CONTINUE)
             raise _policy_denied_error(ApprovalDecision.DENY_CONTINUE, name, rationale)
 
         # ASK: block until resolved via ApprovalHub
@@ -298,9 +245,7 @@ class PolicyGatewayMiddleware(Middleware):
         req = ApprovalRequest(
             tool_key=tool_key,
             tool_call=ApprovalToolCall(
-                name=name,
-                call_id=call_id,
-                args_json=(json.dumps(arguments) if arguments else None),
+                name=name, call_id=call_id, args_json=(json.dumps(arguments) if arguments else None)
             ),
         )
         # Register + notify before awaiting
@@ -331,13 +276,10 @@ class PolicyGatewayMiddleware(Middleware):
                 ErrorData(
                     code=-32603,
                     message="internal_error: unknown approval decision type",
-                    data={
-                        POLICY_GATEWAY_STAMP_KEY: True,
-                        "name": name,
-                        "decision_type": type(decision_obj).__name__,
-                    },
+                    data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "decision_type": type(decision_obj).__name__},
                 )
             )
+        return None
 
 
 def install_policy_gateway(
@@ -355,9 +297,6 @@ def install_policy_gateway(
     """
     comp.add_middleware(
         PolicyGatewayMiddleware(
-            hub=hub,
-            pending_notifier=pending_notifier,
-            record_outcome=record_outcome,
-            policy_reader=policy_reader,
+            hub=hub, pending_notifier=pending_notifier, record_outcome=record_outcome, policy_reader=policy_reader
         )
     )

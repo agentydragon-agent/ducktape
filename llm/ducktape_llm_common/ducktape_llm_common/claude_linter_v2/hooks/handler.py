@@ -1,8 +1,9 @@
 """Hook handler implementation for Claude Code hooks."""
 
+import contextlib
+from datetime import datetime
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -124,12 +125,7 @@ class HookHandler:
             logger.info(f"Logging configured: level={log_level}, file={log_file}")
 
     def _log_hook_call(
-        self,
-        session_id: SessionID,
-        hook_type: str,
-        request: BaseHookRequest,
-        outcome: Any,
-        response: Any,
+        self, session_id: SessionID, hook_type: str, request: BaseHookRequest, outcome: Any, response: Any
     ) -> None:
         """Log detailed hook information to session log file."""
         log_file = self.log_dir / f"{session_id}.log"
@@ -158,20 +154,16 @@ class HookHandler:
                 log_entry["decision_details"]["tool_input"] = request.tool_input.model_dump()
 
         # Write to log file
-        with open(log_file, "a") as f:
+        with log_file.open("a") as f:
             f.write(json.dumps(log_entry) + "\n")
 
     def _log_decision(self, session_id: SessionID, decision_point: str, details: dict[str, Any]) -> None:
         """Log a specific decision point."""
         log_file = self.log_dir / f"{session_id}.log"
 
-        log_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "decision_point": decision_point,
-            "details": details,
-        }
+        log_entry = {"timestamp": datetime.now().isoformat(), "decision_point": decision_point, "details": details}
 
-        with open(log_file, "a") as f:
+        with log_file.open("a") as f:
             f.write(f"DECISION: {json.dumps(log_entry)}\n")
 
     def handle(self, hook_type: str, request: BaseHookRequest) -> BaseResponse:
@@ -217,16 +209,15 @@ class HookHandler:
         """Dispatch to appropriate typed handler."""
         if hook_type == "PreToolUse" and isinstance(request, PreToolUseRequest):
             return self._handle_pre_hook(request, session_id)
-        elif hook_type == "PostToolUse" and isinstance(request, PostToolUseRequest):
+        if hook_type == "PostToolUse" and isinstance(request, PostToolUseRequest):
             return self._handle_post_hook(request, session_id)
-        elif hook_type == "Stop" and isinstance(request, StopRequest):
+        if hook_type == "Stop" and isinstance(request, StopRequest):
             return self._handle_stop_hook(request, session_id)
-        elif hook_type == "SubagentStop" and isinstance(request, SubagentStopRequest):
+        if hook_type == "SubagentStop" and isinstance(request, SubagentStopRequest):
             return self._handle_subagent_stop(request, session_id)
-        elif hook_type == "Notification" and isinstance(request, NotificationRequest):
+        if hook_type == "Notification" and isinstance(request, NotificationRequest):
             return self._handle_notification(request, session_id)
-        else:
-            raise HookBugError(f"Invalid hook type: {hook_type}")
+        raise HookBugError(f"Invalid hook type: {hook_type}")
 
     def _handle_pre_hook(self, request: PreToolUseRequest, session_id: SessionID) -> HookOutcome:
         """Handle PreToolUse with early bailout pattern."""
@@ -251,9 +242,7 @@ class HookHandler:
         # Access control check - early bailout
         action, message = self._check_access_control(request, session_id)
         self._log_decision(
-            session_id,
-            "access_control",
-            {"action": action.value if action else None, "message": message},
+            session_id, "access_control", {"action": action.value if action else None, "message": message}
         )
 
         if action == RuleAction.DENY:
@@ -274,10 +263,7 @@ class HookHandler:
         self._log_decision(
             session_id,
             "file_type_check",
-            {
-                "is_python": is_python,
-                "file_path": (request.tool_input.file_path if request.tool_input else None),
-            },
+            {"is_python": is_python, "file_path": (request.tool_input.file_path if request.tool_input else None)},
         )
 
         if not is_python:
@@ -314,11 +300,7 @@ class HookHandler:
             self._log_decision(
                 session_id,
                 "llm_analysis",
-                {
-                    "ok": llm_ok,
-                    "message": llm_message,
-                    "violations_count": len(llm_violations_found),
-                },
+                {"ok": llm_ok, "message": llm_message, "violations_count": len(llm_violations_found)},
             )
 
         # Combine all violations
@@ -400,9 +382,7 @@ class HookHandler:
         # Apply autofix if configured
         autofix_msg = self._try_autofix(request, config)
         self._log_decision(
-            session_id,
-            "autofix_attempt",
-            {"attempted": autofix_msg is not None, "message": autofix_msg},
+            session_id, "autofix_attempt", {"attempted": autofix_msg is not None, "message": autofix_msg}
         )
         if autofix_msg:
             messages.append(autofix_msg)
@@ -441,10 +421,9 @@ class HookHandler:
         # Determine if this needs LLM attention
         if autofix_msg:
             return PostToolNotifyLLM(llm_message=f"Autofix: {' | '.join(messages)}")
-        elif self._has_important_info(messages):
+        if self._has_important_info(messages):
             return PostToolNotifyLLM(llm_message=f"Violations: {' | '.join(messages)}")
-        else:
-            return PostToolSuccess()
+        return PostToolSuccess()
 
     def _handle_stop_hook(self, request: StopRequest, session_id: SessionID) -> HookOutcome:
         """
@@ -603,10 +582,8 @@ class HookHandler:
 
             try:
                 # Try to close D-Bus notification if function available
-                try:
+                with contextlib.suppress(Exception):
                     close_desktop_notification(notification_id)
-                except Exception:
-                    pass
 
                 self.session_manager.clear_notification_id(session_id)
                 logger.debug(f"Cleared notification {notification_id} for session {session_id}")
@@ -656,11 +633,7 @@ class HookHandler:
 
         # Type check instead of hasattr - only PostToolHookConfig has auto_fix
         if not isinstance(hook_config, PostToolHookConfig):
-            self._log_decision(
-                request.typed_session_id,
-                "autofix_skip",
-                {"reason": "not_post_tool_hook_config"},
-            )
+            self._log_decision(request.typed_session_id, "autofix_skip", {"reason": "not_post_tool_hook_config"})
             return None
 
         file_path = request.tool_input.file_path or ""
@@ -760,15 +733,11 @@ class HookHandler:
                 else:
                     # Only out-of-diff violations remain - mark file as effectively fixed
                     self.violation_tracker.mark_file_fixed(session_id, file_path)
-            else:
-                # For other tools (Write, etc), track all violations normally
-                if all_violations:
-                    self.violation_tracker.add_violations(
-                        session_id=session_id,
-                        violations=all_violations,
-                        file_path=file_path,
-                        severity="mixed",
-                    )
+            # For other tools (Write, etc), track all violations normally
+            elif all_violations:
+                self.violation_tracker.add_violations(
+                    session_id=session_id, violations=all_violations, file_path=file_path, severity="mixed"
+                )
         else:
             # File is completely clean - mark as fixed
             self.violation_tracker.mark_file_fixed(session_id, file_path)
@@ -776,10 +745,7 @@ class HookHandler:
     def _has_important_info(self, messages: list[str]) -> bool:
         """Check if messages contain important info that Claude should see."""
         # Simple heuristic - if we applied autofix or have warnings, it's important
-        for msg in messages:
-            if "autofix" in msg.lower() or "warning:" in msg.lower():
-                return True
-        return False
+        return any("autofix" in msg.lower() or "warning:" in msg.lower() for msg in messages)
 
     def _build_permissions_info(self, session_id: SessionID) -> str | None:
         """Build a string describing current permissions."""

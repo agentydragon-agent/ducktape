@@ -39,8 +39,8 @@
     regexp: "^{{ item.key }} ="
     line: "{{ item.key }} = {{ item.value }}"
     mode: '0644'
-    create: yes
-    backup: yes
+    create: true
+    backup: true
   loop:
     - { key: "experimental-features", value: "nix-command flakes" }
     - { key: "trusted-users", value: "root {{ nix_trusted_users | default(ansible_user_id) }}" }
@@ -51,5 +51,5 @@
   ansible.builtin.systemd:
     name: nix-daemon
     state: started
-    enabled: yes
+    enabled: true
   become: true

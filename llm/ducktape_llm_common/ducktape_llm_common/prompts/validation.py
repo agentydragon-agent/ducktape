@@ -1,7 +1,7 @@
 """Validation utilities for prompts."""
 
-import re
 from pathlib import Path
+import re
 
 import yaml
 
@@ -197,9 +197,7 @@ class PromptValidator:
             issues.append("Contains excessive blank lines")
 
         # Check for trailing whitespace
-        lines_with_trailing = [
-            i + 1 for i, line in enumerate(content.split("\n")) if line.endswith(" ") or line.endswith("\t")
-        ]
+        lines_with_trailing = [i + 1 for i, line in enumerate(content.split("\n")) if line.endswith((" ", "\t"))]
         if lines_with_trailing:
             issues.append(
                 f"Trailing whitespace on lines: {lines_with_trailing[:5]}"
@@ -213,7 +211,7 @@ class PromptValidator:
         issues = []
 
         # Check for references to other prompts
-        prompt_refs = re.findall(r'(?:see|refer to|load)\s+["\']?(\w+_prompt)["\']?', content, re.I)
+        prompt_refs = re.findall(r'(?:see|refer to|load)\s+["\']?(\w+_prompt)["\']?', content, re.IGNORECASE)
         if prompt_refs:
             available_prompts = set(discover_prompts().keys())
             for ref in prompt_refs:

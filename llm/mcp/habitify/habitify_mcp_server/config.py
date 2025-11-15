@@ -9,11 +9,7 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 
-def load_api_key(
-    api_key_override: str | None = None,
-    exit_on_missing: bool = True,
-    logger_func=None,
-) -> str | None:
+def load_api_key(api_key_override: str | None = None, exit_on_missing: bool = True, logger_func=None) -> str | None:
     """
     Load the Habitify API key from various sources.
 
@@ -48,9 +44,7 @@ def load_api_key(
         logger_func("Error: HABITIFY_API_KEY environment variable is required")
         logger_func("Please set it using one of these methods:")
         logger_func("  1. Add it to your .env file: HABITIFY_API_KEY=your_api_key_here")
-        logger_func(
-            "  2. Set it as an environment variable: export HABITIFY_API_KEY=your_api_key_here"
-        )
+        logger_func("  2. Set it as an environment variable: export HABITIFY_API_KEY=your_api_key_here")
 
         # Add command-line option hint if appropriate
         if api_key_override is not None:  # Means the caller supports --api-key

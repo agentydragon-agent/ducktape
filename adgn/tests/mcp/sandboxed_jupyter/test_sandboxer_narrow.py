@@ -8,8 +8,7 @@ import yaml
 
 @pytest.mark.macos
 @pytest.mark.xfail(
-    strict=False,
-    reason="Narrow sandbox policy is brittle across macOS dyld/SSV changes; keep as documentation test",
+    strict=False, reason="Narrow sandbox policy is brittle across macOS dyld/SSV changes; keep as documentation test"
 )
 def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
     """Narrowed version of hello-world test: no read '/' — allow only minimal system paths.
@@ -22,11 +21,7 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
     policy = tmp_path / "policy_narrow.yaml"
     policy_dict = {
         "env": {
-            "set": {
-                "TMPDIR": (tmp_path / "tmp").as_posix(),
-                "HOME": tmp_path.as_posix(),
-                "PYTHONUNBUFFERED": "1",
-            },
+            "set": {"TMPDIR": (tmp_path / "tmp").as_posix(), "HOME": tmp_path.as_posix(), "PYTHONUNBUFFERED": "1"},
             "passthrough": [],
         },
         "fs": {
@@ -62,23 +57,14 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
         "platform": {
             "trace": True,
             "seatbelt": {
-                "extra_allow": {
-                    "sysctl_read": True,
-                    "file_read_extra": [],
-                    "mach_lookup": ["com.apple.cfprefsd.agent"],
-                },
+                "extra_allow": {"sysctl_read": True, "file_read_extra": [], "mach_lookup": ["com.apple.cfprefsd.agent"]}
             },
         },
     }
     policy.write_text(yaml.safe_dump(policy_dict, sort_keys=False))
 
     def _run_and_print(argv: list[str]) -> subprocess.CompletedProcess:
-        cp = subprocess.run(
-            argv,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        cp = subprocess.run(argv, check=False, capture_output=True, text=True)
         print("CMD:", " ".join(argv))
         print("STDOUT:\n" + cp.stdout)
         print("STDERR:\n" + cp.stderr)
@@ -130,7 +116,7 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
             "--",
             "/bin/echo",
             "HELLO_ECHO",
-        ],
+        ]
     )
     # 2) Shell pipeline yes|head
     cp_pipe = _run_and_print(
@@ -145,7 +131,7 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
             "/bin/sh",
             "-lc",
             "yes hello | head -n 5",
-        ],
+        ]
     )
 
     assert cp_echo.returncode == 0

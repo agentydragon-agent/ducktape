@@ -4,9 +4,7 @@ import socket
 import time
 
 
-def wait_for_port(
-    host: str, port: int, *, timeout_secs: float = 10.0, interval_secs: float = 0.25
-) -> None:
+def wait_for_port(host: str, port: int, *, timeout_secs: float = 10.0, interval_secs: float = 0.25) -> None:
     """Block until host:port accepts TCP connections or timeout.
 
     Uses monotonic time; raises TimeoutError on expiry.

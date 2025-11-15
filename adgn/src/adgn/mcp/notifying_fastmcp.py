@@ -56,12 +56,7 @@ class _CapturingServer(LowLevelServer):
         async with AsyncExitStack() as stack:
             lifespan_context = await stack.enter_async_context(self.lifespan(self))
             session = await stack.enter_async_context(
-                ServerSession(
-                    read_stream,
-                    write_stream,
-                    initialization_options,
-                    stateless=stateless,
-                )
+                ServerSession(read_stream, write_stream, initialization_options, stateless=stateless)
             )
             logger.debug("_CapturingServer.run: session created; awaiting incoming messages")
             if self._on_session_created:
@@ -73,12 +68,7 @@ class _CapturingServer(LowLevelServer):
 
                     async def _serve(msg):
                         try:
-                            await self._handle_message(
-                                msg,
-                                session,
-                                lifespan_context,
-                                raise_exceptions,
-                            )
+                            await self._handle_message(msg, session, lifespan_context, raise_exceptions)
                         except BaseException as exc:  # do not cancel siblings
                             logger.exception("Server responder error: %s", exc)
 
@@ -98,16 +88,12 @@ class _CapturingServer(LowLevelServer):
             merged.update(values or {})
             caps[group] = merged
         return super().create_initialization_options(
-            notification_options=notification_options,
-            experimental_capabilities=caps,
-            **kwargs,
+            notification_options=notification_options, experimental_capabilities=caps, **kwargs
         )
 
     # Ensure standard capabilities reflect subscribe support when handlers exist
     def get_capabilities(
-        self,
-        notification_options: NotificationOptions,
-        experimental_capabilities: dict[str, dict[str, Any]],
+        self, notification_options: NotificationOptions, experimental_capabilities: dict[str, dict[str, Any]]
     ):
         from mcp import types as mcp_types
 
@@ -185,7 +171,7 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
         results = await asyncio.gather(*send_tasks, return_exceptions=True)
         logger.debug("broadcast done: results=%s", [repr(r) for r in results])
         # Best-effort: drop sessions that errored
-        for s, r in zip(sessions, results):
+        for s, r in zip(sessions, results, strict=False):
             if isinstance(r, Exception):
                 logger.warning("send_resource_updated failed: %s", r)
                 self._sessions.discard(s)
@@ -202,11 +188,7 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
         self._pending_uris.clear()
         tasks: list[Awaitable[Any]] = []
         if uris:
-            tasks.extend(
-                s.send_resource_updated(ANY_URL.validate_python(uri))
-                for s in sessions
-                for uri in uris
-            )
+            tasks.extend(s.send_resource_updated(ANY_URL.validate_python(uri)) for s in sessions for uri in uris)
         if self._pending_list_changed:
             self._pending_list_changed = False
             tasks.extend(s.send_resource_list_changed() for s in sessions)
@@ -220,10 +202,8 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
             self._pending_list_changed = True
             return
         logger.debug("broadcast_resource_list_changed: sessions=%d", len(sessions))
-        results = await asyncio.gather(
-            *[s.send_resource_list_changed() for s in sessions], return_exceptions=True
-        )
-        for s, r in zip(sessions, results):
+        results = await asyncio.gather(*[s.send_resource_list_changed() for s in sessions], return_exceptions=True)
+        for s, r in zip(sessions, results, strict=False):
             if isinstance(r, Exception):
                 logger.warning("send_resource_list_changed failed: %s", r)
                 self._sessions.discard(s)

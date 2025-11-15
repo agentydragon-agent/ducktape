@@ -28,13 +28,7 @@ FAMILY_RULES: dict[Family, str] = {
 FAMILY_RES = {fam: re.compile(pattern, re.IGNORECASE) for fam, pattern in FAMILY_RULES.items()}
 
 # Global family priority for ordering
-FAMILY_PRIORITY: list[Family] = [
-    Family.GPT_5,
-    Family.O3,
-    Family.O4_MINI,
-    Family.O1,
-    Family.GPT_41,
-]
+FAMILY_PRIORITY: list[Family] = [Family.GPT_5, Family.O3, Family.O4_MINI, Family.O1, Family.GPT_41]
 
 
 def family_of(mid: str) -> Family:
@@ -131,7 +125,7 @@ def compute_cell_stats(calls: list[Any]) -> CellStats:
     total = len(calls)
     ok_calls = [c for c in calls if c.ok]
     ok = len(ok_calls)
-    success_rate_pct = int(round((ok / total) * 100)) if total else 0
+    success_rate_pct = round((ok / total) * 100) if total else 0
 
     # Latency among successful
     succ_lats = [float(c.latency_s) for c in ok_calls if c.latency_s is not None]
@@ -211,8 +205,4 @@ def build_cell(calls: list[Any]) -> tuple[str, ErrorCode | None, str | None]:
 
     code_txt = stats.top_error_code.value if stats.top_error_code else "ERROR"
     plus = "+" if stats.error_kinds > 1 else ""
-    return (
-        f"[red]{code_txt}{plus} [{stats.success_rate_pct}%][/red]",
-        stats.top_error_code,
-        stats.top_error_desc,
-    )
+    return (f"[red]{code_txt}{plus} [{stats.success_rate_pct}%][/red]", stats.top_error_code, stats.top_error_desc)

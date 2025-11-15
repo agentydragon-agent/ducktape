@@ -7,7 +7,7 @@ Intent
 - Keep this short, actionable, and tailored for the web-chat workflow.
 
 If future toggles (markdown on/off, etc.) are needed, add optional params
-but keep the default equal to the UI’s typical behavior.
+but keep the default equal to the UI's typical behavior.
 """
 
 from __future__ import annotations

@@ -5,6 +5,7 @@ import pytest
 from adgn.agent.loop_control import Abort, Auto, Continue
 from adgn.agent.reducer import BaseHandler, Reducer
 from adgn.openai_utils.model import InputTextPart, UserMessage
+from tests.agent.helpers import extract_input_text_content
 
 
 class _InsertsHandler(BaseHandler):
@@ -34,19 +35,7 @@ def test_aggregating_merges_inserts_additively():
     assert dec.tool_policy.__class__ is Auto
     assert len(dec.inserts_input) == 2
     # Extract texts from input messages and assert ordering
-    texts: list[str] = []
-    for item in dec.inserts_input:
-        d = item.model_dump(exclude_none=True)
-        contents = d.get("content") or []
-        texts.extend(
-            [
-                c.get("text")
-                for c in contents
-                if isinstance(c, dict)
-                and c.get("type") == "input_text"
-                and isinstance(c.get("text"), str)
-            ]
-        )
+    texts = extract_input_text_content(dec.inserts_input)
     assert texts == ["payload:m1", "payload:m2"]
 
 

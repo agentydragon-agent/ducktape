@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Iterable
 import json
 import os
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 import httpx
 import psutil
-import tomlkit
 from pydantic import BaseModel
+import tomlkit
 
 
 class ReporterConfig(BaseModel):
@@ -45,12 +45,7 @@ def gather_battery() -> dict[str, Any]:
         return {"available": False}
     if info is None:
         return {"available": False}
-    return {
-        "available": True,
-        "percent": info.percent,
-        "secs_left": info.secsleft,
-        "plugged": info.power_plugged,
-    }
+    return {"available": True, "percent": info.percent, "secs_left": info.secsleft, "plugged": info.power_plugged}
 
 
 async def send_event(
@@ -67,11 +62,7 @@ async def send_event(
         client = httpx.AsyncClient()
         close_client = True
     try:
-        resp = await client.post(
-            f"{url.rstrip('/')}/webhook/{integration}",
-            json=payload,
-            headers=headers,
-        )
+        resp = await client.post(f"{url.rstrip('/')}/webhook/{integration}", json=payload, headers=headers)
         resp.raise_for_status()
         return resp.json()
     finally:
@@ -80,21 +71,14 @@ async def send_event(
 
 
 async def send_battery_status(
-    url: str,
-    integration: str,
-    *,
-    token: str | None = None,
-    client: httpx.AsyncClient | None = None,
+    url: str, integration: str, *, token: str | None = None, client: httpx.AsyncClient | None = None
 ) -> dict[str, Any]:
     payload = gather_battery()
     return await send_event(url, integration, payload, token=token, client=client)
 
 
 def _load_payload(spec: str) -> dict[str, Any]:
-    if spec.startswith("@"):
-        data = Path(spec[1:]).read_text(encoding="utf-8")
-    else:
-        data = spec
+    data = Path(spec[1:]).read_text(encoding="utf-8") if spec.startswith("@") else spec
     return json.loads(data)
 
 
@@ -103,11 +87,7 @@ async def _run(config: ReporterConfig) -> None:
         raise RuntimeError("no reporters enabled in config")
     while True:
         if config.battery_enabled:
-            result = await send_battery_status(
-                config.url,
-                config.integration,
-                token=config.token,
-            )
+            result = await send_battery_status(config.url, config.integration, token=config.token)
             print(json.dumps(result))
         await asyncio.sleep(config.interval)
 
@@ -121,10 +101,7 @@ async def _run_event(
     token: str | None = None,
 ) -> None:
     result = await send_event(
-        url or config.url,
-        integration or config.integration,
-        payload,
-        token=token or config.token,
+        url or config.url, integration or config.integration, payload, token=token or config.token
     )
     print(json.dumps(result))
 
@@ -144,15 +121,7 @@ def main(argv: Iterable[str] | None = None) -> None:
 
     if args.cmd == "event":
         payload = _load_payload(args.payload)
-        asyncio.run(
-            _run_event(
-                config,
-                payload,
-                url=args.url,
-                integration=args.integration,
-                token=args.token,
-            ),
-        )
+        asyncio.run(_run_event(config, payload, url=args.url, integration=args.integration, token=args.token))
     else:
         asyncio.run(_run(config))
 

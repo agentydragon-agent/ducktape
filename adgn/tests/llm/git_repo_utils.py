@@ -8,9 +8,7 @@ from __future__ import annotations
 import pygit2
 
 
-def _init_repo(
-    tmpdir: str, name: str = "Test User", email: str = "test@example.com"
-) -> pygit2.Repository:
+def _init_repo(tmpdir: str, name: str = "Test User", email: str = "test@example.com") -> pygit2.Repository:
     repo = pygit2.init_repository(tmpdir, initial_head="main")
     cfg = repo.config
     cfg["user.name"] = name

@@ -1,21 +1,16 @@
 from __future__ import annotations
 
 from pydantic import TypeAdapter
+from tests.agent.ws_helpers import wait_for_accepted
 import yaml
 
 from adgn.agent.presets import AgentPreset
 from adgn.agent.server.protocol import Snapshot
 from adgn.openai_utils.model import FakeOpenAIModel
-from tests.agent.ws_helpers import wait_for_accepted
 
 
 def test_preset_initial_policy_loaded_into_engine(
-    agent_app_client,
-    tmp_path,
-    monkeypatch,
-    policy_ui_send_message_allow,
-    patch_agent_build_client,
-    responses_factory,
+    agent_app_client, tmp_path, monkeypatch, policy_ui_send_message_allow, patch_agent_build_client, responses_factory
 ):
     # Prepare a preset with an explicit approval policy
     d = tmp_path / "presets"
@@ -50,19 +45,15 @@ def test_preset_initial_policy_loaded_into_engine(
             if payload.get("type") == "snapshot":
                 snap = TypeAdapter(Snapshot).validate_python(payload)
                 content = snap.approval_policy.content if snap.approval_policy else ""
-                assert "class ApprovalPolicy" in content and "TEST_CASES" in content
+                assert "class ApprovalPolicy" in content
+                assert "TEST_CASES" in content
                 break
         else:
             raise AssertionError("snapshot not received")
 
 
 def test_preset_policy_with_failing_tests_falls_back(
-    agent_app_client,
-    tmp_path,
-    monkeypatch,
-    policy_failing_tests,
-    patch_agent_build_client,
-    responses_factory,
+    agent_app_client, tmp_path, monkeypatch, policy_failing_tests, patch_agent_build_client, responses_factory
 ):
     # Prepare a preset with an explicit approval policy that fails its test
     d = tmp_path / "presets"

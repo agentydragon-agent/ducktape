@@ -1,10 +1,9 @@
 """Test the stop hook quality gate functionality."""
 
-import pytest
-
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
 from ducktape_llm_common.claude_linter_v2.hooks.requests import StopRequest
 from ducktape_llm_common.claude_linter_v2.types import parse_session_id
+import pytest
 
 
 @pytest.fixture
@@ -51,10 +50,7 @@ def test_stop_hook_blocks_with_unfixed_errors(handler, session_id, tmp_path):
     )
 
     # Create stop hook request
-    request = StopRequest(
-        hook_event_name="Stop",
-        session_id=str(session_id),
-    )
+    request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
 
     # Handle the hook
     result = handler.handle("Stop", request)
@@ -93,10 +89,7 @@ def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
     )
 
     # Create stop hook request
-    request = StopRequest(
-        hook_event_name="Stop",
-        session_id=str(session_id),
-    )
+    request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
 
     # Handle the hook
     result = handler.handle("Stop", request)
@@ -110,10 +103,7 @@ def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
 def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
     """Test that stop hook passes when there are no violations."""
     # Create stop hook request
-    request = StopRequest(
-        hook_event_name="Stop",
-        session_id=str(session_id),
-    )
+    request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
 
     # Handle the hook
     result = handler.handle("Stop", request)
@@ -139,10 +129,7 @@ def test_stop_hook_passes_when_quality_gate_disabled(handler, session_id, tmp_pa
     )
 
     # Create stop hook request
-    request = StopRequest(
-        hook_event_name="Stop",
-        session_id=str(session_id),
-    )
+    request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
 
     # Handle the hook
     result = handler.handle("Stop", request)
@@ -157,25 +144,13 @@ def test_violations_marked_as_fixed(handler, session_id, tmp_path):
     """Test that violations can be marked as fixed."""
     # Add violations
     handler.violation_tracker.add_violation(
-        session_id=session_id,
-        file_path="/test/file.py",
-        line=10,
-        message="Bare except clause",
-        severity="error",
+        session_id=session_id, file_path="/test/file.py", line=10, message="Bare except clause", severity="error"
     )
     handler.violation_tracker.add_violation(
-        session_id=session_id,
-        file_path="/test/file.py",
-        line=20,
-        message="Line too long",
-        severity="warning",
+        session_id=session_id, file_path="/test/file.py", line=20, message="Line too long", severity="warning"
     )
     handler.violation_tracker.add_violation(
-        session_id=session_id,
-        file_path="/test/other.py",
-        line=5,
-        message="Missing docstring",
-        severity="warning",
+        session_id=session_id, file_path="/test/other.py", line=5, message="Missing docstring", severity="warning"
     )
 
     # Mark one file as fixed
@@ -187,10 +162,7 @@ def test_violations_marked_as_fixed(handler, session_id, tmp_path):
     assert unfixed[0].file_path == "/test/other.py"
 
     # Stop hook should only report the unfixed violation
-    request = StopRequest(
-        hook_event_name="Stop",
-        session_id=str(session_id),
-    )
+    request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
 
     result = handler.handle("Stop", request)
     # Since only warnings remain, should allow stop

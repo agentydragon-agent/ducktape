@@ -34,9 +34,7 @@ def validate_habit_identifier(**kwargs) -> ErrorResponse | None:
 
     if not id_param and not name_param:
         action = kwargs.get("action", "use")
-        return create_validation_error(
-            f"Either a habit ID or habit name is required to {action} a habit."
-        )
+        return create_validation_error(f"Either a habit ID or habit name is required to {action} a habit.")
 
     return None
 
@@ -46,10 +44,7 @@ VALID_STATUSES = {"completed", "skipped", "failed", "none"}
 
 
 async def _validate_and_resolve(
-    client: HabitifyClient,
-    id: str | None = None,
-    name: str | None = None,
-    action: str = "use",
+    client: HabitifyClient, id: str | None = None, name: str | None = None, action: str = "use"
 ) -> Any:
     """Validate habit identifier and resolve habit or return ErrorResponse."""
     validation_error = validate_habit_identifier(id=id, name=name, action=action)
@@ -81,9 +76,7 @@ async def get_habits(client: HabitifyClient, include_archived: bool = False) -> 
 
 
 @with_client
-async def get_habit(
-    client: HabitifyClient, id: str | None = None, name: str | None = None
-) -> ResultType:
+async def get_habit(client: HabitifyClient, id: str | None = None, name: str | None = None) -> ResultType:
     """
     Get a specific habit by ID or name.
 
@@ -213,10 +206,7 @@ async def get_habit_status(
             # Build the status item
             items.append(
                 DateRangeStatusItem(
-                    date=date_str,
-                    formatted_date=formatted_date,
-                    status=status.status,
-                    completed=is_completed,
+                    date=date_str, formatted_date=formatted_date, status=status.status, completed=is_completed
                 )
             )
 
@@ -233,23 +223,19 @@ async def get_habit_status(
             end_date=last_date or format_date_yyyy_mm_dd(None),
             date_count=len(items),
         )
-    else:
-        # Single date query (original behavior)
-        # Parse date if provided or default to today
-        date_str = date or datetime.now().strftime("%Y-%m-%d")
+    # Single date query (original behavior)
+    # Parse date if provided or default to today
+    date_str = date or datetime.now().strftime("%Y-%m-%d")
 
-        status = await client.check_habit_status(resolved.habit_id, date_str)
+    status = await client.check_habit_status(resolved.habit_id, date_str)
 
-        # Format the status value for easier use by LLMs
-        readable_date = format_date_human(date_str)
+    # Format the status value for easier use by LLMs
+    readable_date = format_date_human(date_str)
 
-        # Status is now a Pydantic model, use attribute access
-        return StatusResult(
-            status=status.status,
-            date=date_str,
-            formatted_date=readable_date,
-            completed=status.status == "completed",
-        )
+    # Status is now a Pydantic model, use attribute access
+    return StatusResult(
+        status=status.status, date=date_str, formatted_date=readable_date, completed=status.status == "completed"
+    )
 
 
 @with_client
@@ -291,11 +277,7 @@ async def set_habit_status(
         )
 
     result = await client.set_habit_status(
-        resolved.habit_id,
-        cast(Literal["completed", "skipped", "failed", "none"], status),
-        date,
-        note,
-        value,
+        resolved.habit_id, cast(Literal["completed", "skipped", "failed", "none"], status), date, note, value
     )
 
     # Format the response for easier use by LLMs
@@ -303,9 +285,5 @@ async def set_habit_status(
 
     # Pydantic handles optional fields
     return LogResult(
-        status=result.status,
-        date=result.date,
-        formatted_date=date_str,
-        note=result.note,
-        value=result.value,
+        status=result.status, date=result.date, formatted_date=date_str, note=result.note, value=result.value
     )

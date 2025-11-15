@@ -29,7 +29,7 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC]
 # - Use sudo fs_usage -w -f pathname -t 3 echo (in one shell) + /bin/echo OK (in another) to capture actual paths;
 #   grep for /(System|usr|private) to shortlist candidates. DYLD_PRINT_SEARCHING=1 may help outside sandbox.
 # - Keep xfail with exact signature (SIGABRT -6, empty stderr/trace) per OS, and record when a specific allowance flips to success.
-# - If minimal remains brittle across 13–15, recommend compromise: allow file-read* "/" while denying /Users and limiting writes.
+# - If minimal remains brittle across 13-15, recommend compromise: allow file-read* "/" while denying /Users and limiting writes.
 
 
 def test_default_deny_without_dyld_roots_emits_warning():
@@ -65,8 +65,7 @@ async def test_default_deny_narrow_policy_exec_aborts_or_fails():
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(
-    reason="Even with explicit dyld roots, this host still aborts; will refine once stable",
-    strict=False,
+    reason="Even with explicit dyld roots, this host still aborts; will refine once stable", strict=False
 )
 async def test_default_deny_with_explicit_dyld_roots_succeeds():
     # Allow the known dyld/system roots explicitly

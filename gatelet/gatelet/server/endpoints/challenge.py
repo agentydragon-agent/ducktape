@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import hashlib
 import inspect
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -53,34 +53,25 @@ async def _validate_key(key_id: int, db_session: AsyncSession) -> AuthKey:
     result = await db_session.execute(stmt)
     key: AuthKey | None = result.scalar_one_or_none()
     if not key or not key.is_valid(settings.auth.key_in_url.key_validity):
-        raise AuthHandlerError()
+        raise AuthHandlerError
     return key
 
 
 async def _new_challenge(key: AuthKey, db_session: AsyncSession):
     nonce_value = uuid.uuid4().hex
     nonce = AuthNonce(
-        nonce_value=nonce_value,
-        expires_at=datetime.now() + settings.auth.challenge_response.nonce_validity,
+        nonce_value=nonce_value, expires_at=datetime.now() + settings.auth.challenge_response.nonce_validity
     )
     db_session.add(nonce)
     await db_session.flush()
 
-    correct_idx = compute_correct_option(
-        key.key_value,
-        nonce_value,
-        settings.auth.challenge_response.num_options,
-    )
+    correct_idx = compute_correct_option(key.key_value, nonce_value, settings.auth.challenge_response.num_options)
     options = _create_options(settings.auth.challenge_response.num_options)
     return nonce, str(correct_idx), options
 
 
 @router.get("/cr/{key_id}", response_class=HTMLResponse)
-async def start_challenge(
-    key_id: int,
-    request: Request,
-    db_session: AsyncSession = DB_SESSION,
-):
+async def start_challenge(key_id: int, request: Request, db_session: AsyncSession = DB_SESSION):
     key = await _validate_key(key_id, db_session)
     nonce, _, options = await _new_challenge(key, db_session)
     return templates.TemplateResponse(
@@ -97,12 +88,7 @@ async def start_challenge(
     )
 
 
-async def _render_new_challenge(
-    request: Request,
-    key: AuthKey,
-    db_session: AsyncSession,
-    message: str,
-):
+async def _render_new_challenge(request: Request, key: AuthKey, db_session: AsyncSession, message: str):
     nonce, _, options = await _new_challenge(key, db_session)
     return templates.TemplateResponse(
         "challenge.html",
@@ -120,31 +106,18 @@ async def _render_new_challenge(
 
 @router.get("/cr/{key_id}/{nonce_value}/{answer}", response_class=HTMLResponse)
 async def answer_challenge(
-    key_id: int,
-    nonce_value: str,
-    answer: str,
-    request: Request,
-    db_session: AsyncSession = DB_SESSION,
+    key_id: int, nonce_value: str, answer: str, request: Request, db_session: AsyncSession = DB_SESSION
 ):
     key = await _validate_key(key_id, db_session)
     stmt = select(AuthNonce).where(AuthNonce.nonce_value == nonce_value)
     nonce = (await db_session.execute(stmt)).scalar_one_or_none()
     if not nonce or not nonce.is_valid:
-        return await _render_new_challenge(
-            request,
-            key,
-            db_session,
-            "Invalid or expired challenge",
-        )
+        return await _render_new_challenge(request, key, db_session, "Invalid or expired challenge")
 
     nonce.used_at = datetime.now()
     await db_session.flush()
 
-    correct_idx = compute_correct_option(
-        key.key_value,
-        nonce_value,
-        settings.auth.challenge_response.num_options,
-    )
+    correct_idx = compute_correct_option(key.key_value, nonce_value, settings.auth.challenge_response.num_options)
     if answer != str(correct_idx):
         return await _render_new_challenge(request, key, db_session, "Incorrect answer")
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Test script for D-Bus notifications."""
 
-import sys
 from pathlib import Path
+import sys
 
 # Add the package to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -21,7 +21,7 @@ print(f"Updating config at {config_path} to enable D-Bus notifications...")
 
 # Read existing config
 if config_path.exists():
-    with open(config_path) as f:
+    with config_path.open() as f:
         existing = f.read()
 
     # Check if already enabled
@@ -29,7 +29,7 @@ if config_path.exists():
         # Backup existing
         backup_path = config_path.with_suffix(".toml.bak")
         print(f"Backing up existing config to {backup_path}")
-        with open(backup_path, "w") as f:
+        with backup_path.open("w") as f:
             f.write(existing)
 
         # Add the setting
@@ -40,12 +40,12 @@ if config_path.exists():
             # Add new line
             new_content = existing.rstrip() + "\nsend_notifications_to_dbus = true\n"
 
-        with open(config_path, "w") as f:
+        with config_path.open("w") as f:
             f.write(new_content)
         print("✓ Enabled D-Bus notifications in config")
 else:
     # Create new config
-    with open(config_path, "w") as f:
+    with config_path.open("w") as f:
         f.write(config_content)
     print("✓ Created config with D-Bus notifications enabled")
 

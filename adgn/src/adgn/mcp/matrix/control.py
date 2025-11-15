@@ -24,10 +24,7 @@ class YieldInput(BaseModel):
 
 
 def make_matrix_control_server(name: str, bus: ServerBus) -> NotifyingFastMCP:
-    mcp = NotifyingFastMCP(
-        name,
-        instructions=("Matrix control: yield-only control to signal end of turn."),
-    )
+    mcp = NotifyingFastMCP(name, instructions=("Matrix control: yield-only control to signal end of turn."))
 
     @mcp.flat_model()
     def do_yield(input: YieldInput) -> UiEndTurn:
@@ -38,12 +35,7 @@ def make_matrix_control_server(name: str, bus: ServerBus) -> NotifyingFastMCP:
     return mcp
 
 
-async def attach_matrix_control(
-    comp: Compositor,
-    bus: ServerBus,
-    *,
-    name: str = "matrix_control",
-):
+async def attach_matrix_control(comp: Compositor, bus: ServerBus, *, name: str = "matrix_control"):
     """Attach matrix control MCP in-proc (encapsulated)."""
     server = make_matrix_control_server(name, bus)
     await comp.mount_inproc(name, server)

@@ -132,7 +132,7 @@ blocks_stop_hook = false
     assert e722_config.blocks_stop_hook is False
 
 
-def test_config_loader_integration(tmp_path):
+def test_config_loader_integration(tmp_path, monkeypatch):
     """Test ConfigLoader with ModularConfig."""
     # Create config file
     config_path = tmp_path / ".claude-linter.toml"
@@ -146,23 +146,17 @@ blocks_pre_hook = false
 """
     config_path.write_text(config_content)
 
-    # Change to tmp directory
-    import os
+    # Change to tmp directory using pytest's monkeypatch
+    monkeypatch.chdir(tmp_path)
 
-    original_cwd = os.getcwd()
-    os.chdir(tmp_path)
+    # Test loading
+    loader = ConfigLoader()
+    config = loader.config
 
-    try:
-        # Test loading
-        loader = ConfigLoader()
-        config = loader.config
+    assert isinstance(config, ModularConfig)
+    assert config.version == "2.0"
 
-        assert isinstance(config, ModularConfig)
-        assert config.version == "2.0"
-
-        hasattr_config = config.get_rule_config("python.hasattr")
-        assert hasattr_config is not None
-        assert hasattr_config.enabled is False
-        assert hasattr_config.blocks_pre_hook is False
-    finally:
-        os.chdir(original_cwd)
+    hasattr_config = config.get_rule_config("python.hasattr")
+    assert hasattr_config is not None
+    assert hasattr_config.enabled is False
+    assert hasattr_config.blocks_pre_hook is False

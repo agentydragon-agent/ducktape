@@ -5,10 +5,7 @@ import json
 import shlex
 from typing import Any
 
-from adgn.mcp._shared.constants import (
-    RUNTIME_EXEC_TOOL_NAME,
-    RUNTIME_SERVER_NAME,
-)
+from adgn.mcp._shared.constants import RUNTIME_EXEC_TOOL_NAME, RUNTIME_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function, tool_matches
 from adgn.openai_utils.model import ReasoningItem
 
@@ -26,13 +23,7 @@ class DisplayEventsHandler(BaseHandler):
     console output entirely.
     """
 
-    def __init__(
-        self,
-        *,
-        max_lines: int = 200,
-        max_bytes: int = 8192,
-        write: Callable[[str], None] = print,
-    ) -> None:
+    def __init__(self, *, max_lines: int = 200, max_bytes: int = 8192, write: Callable[[str], None] = print) -> None:
         self._max_lines = max_lines
         self._max_bytes = max_bytes
         self._write = write
@@ -85,11 +76,7 @@ class DisplayEventsHandler(BaseHandler):
         header = f"▶ {name} input:"
         return f"{header}\n{self._pp_json(args)}"
 
-    def _render_tool_result(
-        self,
-        call: ToolCall | None,
-        output: ToolCallOutput,
-    ) -> str:
+    def _render_tool_result(self, call: ToolCall | None, output: ToolCallOutput) -> str:
         result = output.result
         structured = result.structured_content
         if structured is not None:
@@ -103,13 +90,10 @@ class DisplayEventsHandler(BaseHandler):
         else:
             data = {"isError": result.is_error}
 
-        if call:
-            if tool_matches(call.name, server=RUNTIME_SERVER_NAME, tool=RUNTIME_EXEC_TOOL_NAME):
-                return self._render_docker_exec(
-                    call.name or build_mcp_function(RUNTIME_SERVER_NAME, RUNTIME_EXEC_TOOL_NAME),
-                    call,
-                    data,
-                )
+        if call and tool_matches(call.name, server=RUNTIME_SERVER_NAME, tool=RUNTIME_EXEC_TOOL_NAME):
+            return self._render_docker_exec(
+                call.name or build_mcp_function(RUNTIME_SERVER_NAME, RUNTIME_EXEC_TOOL_NAME), call, data
+            )
 
         label = call.name if call is not None else "tool_output"
         return f"◀ {label}:\n{self._pp_json(data)}"

@@ -21,10 +21,7 @@ async def _assert_exec_echo(sess) -> None:
     from adgn.mcp.testing.typed_stubs import call_tool_typed
 
     res: BaseExecResult = await call_tool_typed(
-        sess,
-        build_mcp_function(SERVER_NAME, "exec"),
-        ExecInput(cmd=ECHO_CMD, timeout_ms=10_000),
-        BaseExecResult,
+        sess, build_mcp_function(SERVER_NAME, "exec"), ExecInput(cmd=ECHO_CMD, timeout_ms=10_000), BaseExecResult
     )
     assert isinstance(res.exit, Exited)
     assert res.exit.exit_code == 0
@@ -41,10 +38,7 @@ async def test_exec_roundtrip_echo(make_pg_compositor_box) -> None:
 
 
 @pytest.mark.live_llm
-@pytest.mark.skipif(
-    os.environ.get("OPENAI_API_KEY") is None,
-    reason="Requires OpenAI API key",
-)
+@pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Requires OpenAI API key")
 @pytest.mark.asyncio
 async def test_live_llm_exec_echo(make_pg_compositor_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
@@ -64,8 +58,6 @@ async def test_live_llm_exec_echo(make_pg_compositor_box) -> None:
             client=client,
             handlers=[AutoHandler()],
         )
-        res: AgentResult = await agent.run(
-            "Run the command now and output exactly the stdout value.",
-        )
+        res: AgentResult = await agent.run("Run the command now and output exactly the stdout value.")
         text = (res.text or "").strip()
         assert text == "hello"

@@ -64,7 +64,7 @@
       ansible.builtin.get_url:
         url: https://api.github.com/repos/ankitects/anki/releases/latest
         dest: "{{ tmp_path }}/latest-release.json"
-        mode: 0644
+        mode: "0644"
       changed_when: false
 
     - name: Get latest Anki release version

@@ -8,21 +8,13 @@ from adgn.agent.loggers import RecordingHandler
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.resources.server import ResourcesReadArgs
-from adgn.openai_utils.model import (
-    FakeOpenAIModel,
-    FunctionCallItem,
-    FunctionCallOutputItem,
-)
+from adgn.openai_utils.model import FakeOpenAIModel, FunctionCallItem, FunctionCallOutputItem
 
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_model_reads_container_info_with_stubbed_openai(
-    reasoning_model,
-    responses_factory,
-    docker_inproc_spec_alpine,
-    make_pg_compositor,
-    approval_policy_reader_allow_all,
+    reasoning_model, responses_factory, docker_inproc_spec_alpine, make_pg_compositor, approval_policy_reader_allow_all
 ) -> None:
     async with make_pg_compositor(
         {"runtime": docker_inproc_spec_alpine, "approval_policy": approval_policy_reader_allow_all}
@@ -32,12 +24,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
         seq = [
             responses_factory.make_tool_call(
                 build_mcp_function("resources", "read"),
-                {
-                    "server": "docker",
-                    "uri": "resource://container.info",
-                    "start_offset": 0,
-                    "max_bytes": 1024,
-                },
+                {"server": "docker", "uri": "resource://container.info", "start_offset": 0, "max_bytes": 1024},
             ),
             responses_factory.make_assistant_message("ok"),
         ]

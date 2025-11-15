@@ -92,11 +92,7 @@ class AppConfig:
         else:
             model_name = model_str.strip()
 
-        return AppConfig(
-            model_name=model_name,
-            model_str=model_str,
-            timeout=timeout,
-        )
+        return AppConfig(model_name=model_name, model_str=model_str, timeout=timeout)
 
 
 def _truncate_hunks(raw: str) -> str:
@@ -151,11 +147,7 @@ def _build_amend_diff(repo: pygit2.Repository, passthru: list[str]) -> str:
     return "\n".join(parts)
 
 
-def get_commit_diff(
-    repo: pygit2.Repository,
-    passthru: list[str],
-    previous_message: str | None = None,
-) -> str:
+def get_commit_diff(repo: pygit2.Repository, passthru: list[str], previous_message: str | None = None) -> str:
     """Get the diff that would be committed with the given flags."""
     # Determine if there is anything to commit using pygit2 status/diff
     include_all = include_all_from_passthru(passthru)
@@ -342,10 +334,7 @@ class ParallelTaskRunner:
 
     @classmethod
     async def create_and_run(
-        cls,
-        repo: pygit2.Repository,
-        ai_task: asyncio.Task[str],
-        run_precommit: bool = True,
+        cls, repo: pygit2.Repository, ai_task: asyncio.Task[str], run_precommit: bool = True
     ) -> str:
         """Factory method that creates runner and manages task lifecycle."""
         precommit_path = Path(repo.path) / "hooks" / "pre-commit"
@@ -361,17 +350,11 @@ class ParallelTaskRunner:
                         return  # No pre-commit hook, nothing to do
                     # Run pre-commit hook with given slave end of PTY.
                     proc = await asyncio.create_subprocess_exec(
-                        precommit_path,
-                        stdout=slave_fd,
-                        stderr=slave_fd,
-                        stdin=slave_fd,
+                        precommit_path, stdout=slave_fd, stderr=slave_fd, stdin=slave_fd
                     )
                     returncode = await proc.wait()
                     if returncode != 0:
-                        raise subprocess.CalledProcessError(
-                            returncode,
-                            str(precommit_path),
-                        )
+                        raise subprocess.CalledProcessError(returncode, str(precommit_path))
                 finally:
                     os.close(slave_fd)
 
@@ -388,7 +371,7 @@ class ParallelTaskRunner:
             # Both tasks will raise exceptions on failure
             msg, _ = await asyncio.gather(ai_task, precommit_task)
         except subprocess.CalledProcessError as e:
-            # Pre-commit hook failed – surface as exit code for top-level handler
+            # Pre-commit hook failed - surface as exit code for top-level handler
             raise ExitWithCode(e.returncode)
         except TimeoutError:
             # Provider timed out; exit with a standard timeout code
@@ -437,13 +420,10 @@ class ParallelTaskRunner:
         # Build status with fixed widths
         parts = [
             # Status character and elapsed time (fixed width)
-            f"{self._status_char()} {self.elapsed_s:5.1f}s",
+            f"{self._status_char()} {self.elapsed_s:5.1f}s"
         ]
         # Task statuses with fixed alignment
-        for state, label in [
-            (self.precommit_state, "pre-commit"),
-            (self.ai_state, "message"),
-        ]:
+        for state, label in [(self.precommit_state, "pre-commit"), (self.ai_state, "message")]:
             duration_str = f"{state.final_duration_s:.1f}s" if state.completed else ""
             # Fixed width for duration
             parts.append(f"{duration_str:<5} {_STATUS_ICONS[state.status]} {label}")
@@ -497,9 +477,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-secs", type=int, help="AI timeout seconds (<=0 disables)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument(
-        "--accept-ai",
-        action="store_true",
-        help="Commit immediately with the AI-drafted message (skip editor)",
+        "--accept-ai", action="store_true", help="Commit immediately with the AI-drafted message (skip editor)"
     )
     return parser
 
@@ -557,10 +535,7 @@ def _get_previous_message_if_amend(repo: pygit2.Repository, is_amend: bool) -> s
         commit = repo.revparse_single("HEAD").peel(pygit2.Commit)
         return (commit.message or "").strip()
     except (KeyError, pygit2.GitError) as e:
-        print(
-            f"Error: Cannot amend - failed to retrieve previous commit message: {e}",
-            file=sys.stderr,
-        )
+        print(f"Error: Cannot amend - failed to retrieve previous commit message: {e}", file=sys.stderr)
         raise ExitWithCode(1)
 
 
@@ -574,7 +549,8 @@ def _make_stats_comment(cached: bool, diff: str, msg: str, elapsed_s: float) -> 
     )
 
 
-class ExitWithCode(Exception):
+class ExitWithCode(Exception):  # noqa: N818
+    # TODO: Reconsider whether signalling exit codes via exceptions is the best approach
     def __init__(self, code: int):
         super().__init__(str(code))
         self.code = code
@@ -585,23 +561,12 @@ async def _commit_immediately(msg: str, passthru: list[str]) -> int:
         print("Aborting commit due to empty AI commit message.", file=sys.stderr)
         raise ExitWithCode(1)
     commit_passthru = filter_commit_passthru(passthru)
-    commit_proc = await asyncio.create_subprocess_exec(
-        "git",
-        "commit",
-        "-m",
-        msg,
-        "--no-verify",
-        *commit_passthru,
-    )
+    commit_proc = await asyncio.create_subprocess_exec("git", "commit", "-m", msg, "--no-verify", *commit_passthru)
     return await commit_proc.wait()
 
 
 async def _run_editor_flow(
-    repo: pygit2.Repository,
-    msg: str,
-    previous_message: str | None,
-    stats_comment: str,
-    passthru: list[str],
+    repo: pygit2.Repository, msg: str, previous_message: str | None, stats_comment: str, passthru: list[str]
 ) -> int:
     final_text = msg
     if previous_message:
@@ -619,10 +584,7 @@ async def _run_editor_flow(
     editor = await _get_editor()
     editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
     if (rc := await editor_proc.wait()) != 0:
-        print(
-            f"Aborting commit: editor exited with code {rc} (e.g., :cq)",
-            file=sys.stderr,
-        )
+        print(f"Aborting commit: editor exited with code {rc} (e.g., :cq)", file=sys.stderr)
         raise ExitWithCode(1)
 
     try:
@@ -631,10 +593,7 @@ async def _run_editor_flow(
         saved = mtime_after != mtime_before
         changed = final_content.rstrip("\n") != content_before
         if not saved and not changed:
-            print(
-                "Aborting commit: editor closed without saving (unchanged commit message).",
-                file=sys.stderr,
-            )
+            print("Aborting commit: editor closed without saving (unchanged commit message).", file=sys.stderr)
             raise ExitWithCode(1)
     except FileNotFoundError:
         print("Aborting commit.", file=sys.stderr)
@@ -652,13 +611,7 @@ async def _run_editor_flow(
 
     commit_passthru = filter_commit_passthru(passthru)
     commit_proc = await asyncio.create_subprocess_exec(
-        "git",
-        "commit",
-        "-F",
-        commit_msg_path,
-        "--cleanup=strip",
-        "--no-verify",
-        *commit_passthru,
+        "git", "commit", "-F", commit_msg_path, "--cleanup=strip", "--no-verify", *commit_passthru
     )
     return await commit_proc.wait()
 
@@ -682,10 +635,7 @@ async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
         return msg, True
 
     ai_task: asyncio.Task[str] = asyncio.create_task(
-        generate_commit_message_minicodex(
-            model=inp.model_name,
-            debug=inp.debug,
-        ),
+        generate_commit_message_minicodex(model=inp.model_name, debug=inp.debug)
     )
 
     run_precommit = "--no-verify" not in inp.passthru
@@ -700,11 +650,7 @@ async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
 async def _get_editor() -> str:
     # Get git's editor
     proc = await asyncio.create_subprocess_exec(
-        "git",
-        "var",
-        "GIT_EDITOR",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        "git", "var", "GIT_EDITOR", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     stdout, _stderr = await proc.communicate()
     result_stdout = stdout.decode() if stdout else ""
@@ -716,10 +662,7 @@ async def async_main(argv: list[str] | None = None):
         start_monotonic_s = time.monotonic()
         gitdir = pygit2.discover_repository(str(Path.cwd()))
         if not gitdir:
-            print(
-                "fatal: not a git repository (or any of the parent directories)",
-                file=sys.stderr,
-            )
+            print("fatal: not a git repository (or any of the parent directories)", file=sys.stderr)
             raise ExitWithCode(128)
         repo = pygit2.Repository(gitdir)
 
@@ -733,10 +676,7 @@ async def async_main(argv: list[str] | None = None):
         _init_logging(repo, args.debug)
         config = AppConfig.resolve(args)
         if args.debug:
-            print(
-                f"# Resolved model={config.model_str}, timeout={config.timeout}",
-                file=sys.stderr,
-            )
+            print(f"# Resolved model={config.model_str}, timeout={config.timeout}", file=sys.stderr)
 
         # Stage if requested (-a/--all)
         _stage_all_if_requested(repo, passthru)
@@ -751,10 +691,7 @@ async def async_main(argv: list[str] | None = None):
                 print("nothing to commit, working tree clean", file=sys.stderr)
             else:
                 # There are changes but -a wasn't passed
-                print(
-                    'no changes added to commit (use "git add" and/or "git commit -a")',
-                    file=sys.stderr,
-                )
+                print('no changes added to commit (use "git add" and/or "git commit -a")', file=sys.stderr)
             raise ExitWithCode(1)
 
         # Model parsing handled by AppConfig.resolve
@@ -768,11 +705,7 @@ async def async_main(argv: list[str] | None = None):
         # Cache key by model, scope, HEAD, diff, and amend status
         commitish = get_short_commitish(repo)
         key = build_cache_key(
-            model_name,
-            include_all=include_all,
-            previous_message=previous_message,
-            commitish=commitish,
-            diff=diff,
+            model_name, include_all=include_all, previous_message=previous_message, commitish=commitish, diff=diff
         )
 
         msg, cached = await _produce_message(

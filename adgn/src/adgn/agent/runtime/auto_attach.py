@@ -9,17 +9,14 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp.approval_policy.server import (
-    attach_approval_policy_proposer,
-    attach_approval_policy_readonly,
-)
+from adgn.mcp.approval_policy.server import attach_approval_policy_proposer, attach_approval_policy_readonly
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.runtime.server import attach_runtime
 from adgn.mcp.ui.server import attach_ui
 
 from .images import resolve_runtime_image
 
-# Names of servers that are auto‑attached by the runtime container and should not be
+# Names of servers that are auto-attached by the runtime container and should not be
 # persisted in the agent's MCPConfig. Centralize here for both persistence filtering and
 # runtime attach logic.
 DEFAULT_AUTO_SERVER_NAMES: tuple[str, ...] = (
@@ -31,26 +28,16 @@ DEFAULT_AUTO_SERVER_NAMES: tuple[str, ...] = (
 
 
 def filter_persistable_servers(cfg: MCPConfig) -> MCPConfig:
-    """Return a shallow copy of cfg without the default auto‑attached servers.
+    """Return a shallow copy of cfg without the default auto-attached servers.
 
-    Only user‑configured servers remain. This avoids persisting ephemeral/runtime
+    Only user-configured servers remain. This avoids persisting ephemeral/runtime
     infrastructure servers like UI, approval policy, runtime exec, or resources.
     """
-    return MCPConfig(
-        mcpServers={
-            k: v for k, v in (cfg.mcpServers or {}).items() if k not in DEFAULT_AUTO_SERVER_NAMES
-        }
-    )
+    return MCPConfig(mcpServers={k: v for k, v in (cfg.mcpServers or {}).items() if k not in DEFAULT_AUTO_SERVER_NAMES})
 
 
 async def attach_default_servers(
-    comp: Compositor,
-    *,
-    agent_id: str,
-    persistence,
-    docker_client,
-    ui_bus,
-    approval_engine,
+    comp: Compositor, *, agent_id: str, persistence, docker_client, ui_bus, approval_engine
 ) -> None:
     """Attach the standard UI + approval policy + runtime exec servers.
 

@@ -56,30 +56,19 @@ def log_assistant_message(logger: Any, message: AssistantMessage) -> None:
             text_content = block.text
         elif isinstance(block, ToolUseBlock):
             # Store complete tool usage data (no truncation for structured logs)
-            tool_uses_full.append(
-                {
-                    "name": block.name,
-                    "args": dict(block.input),
-                },
-            )
+            tool_uses_full.append({"name": block.name, "args": dict(block.input)})
         elif isinstance(block, ToolResultBlock):
             content_str = MessageFormatter.safe_str(block.content)
             logger.info(
                 "Tool result",
                 tool_use_id=block.tool_use_id[:8],
-                content_preview=MessageFormatter.format_preview(
-                    content_str,
-                    MessageFormatter.CONTENT_TRUNCATE,
-                ),
+                content_preview=MessageFormatter.format_preview(content_str, MessageFormatter.CONTENT_TRUNCATE),
             )
 
     if tool_uses_full:
         logger.info("Tool usage", tools=tool_uses_full)
     elif text_content:
-        logger.info(
-            "Assistant message",
-            content_preview=MessageFormatter.format_preview(text_content),
-        )
+        logger.info("Assistant message", content_preview=MessageFormatter.format_preview(text_content))
 
 
 def log_user_message(logger: Any, message: UserMessage) -> None:
@@ -93,20 +82,14 @@ def log_user_message(logger: Any, message: UserMessage) -> None:
             logger.info(
                 "Tool result",
                 tool_use_id=tool_id,
-                content_preview=MessageFormatter.format_preview(
-                    content,
-                    MessageFormatter.CONTENT_TRUNCATE,
-                ),
+                content_preview=MessageFormatter.format_preview(content, MessageFormatter.CONTENT_TRUNCATE),
             )
             return
 
     # Handle string content or fallback
     content_str = MessageFormatter.safe_str(message.content)
     if content_str and content_str != "[]":  # Don't log empty lists
-        logger.info(
-            "User message",
-            content_preview=MessageFormatter.format_preview(content_str),
-        )
+        logger.info("User message", content_preview=MessageFormatter.format_preview(content_str))
     else:
         logger.info("User message", content="empty")
 
@@ -114,17 +97,12 @@ def log_user_message(logger: Any, message: UserMessage) -> None:
 def log_result_message(logger: Any, message: ResultMessage) -> None:
     """Log result message with execution details."""
     logger.info(
-        "Result message",
-        duration_ms=message.duration_ms,
-        cost_usd=message.total_cost_usd,
-        is_error=message.is_error,
+        "Result message", duration_ms=message.duration_ms, cost_usd=message.total_cost_usd, is_error=message.is_error
     )
 
 
 def log_message_summary(
-    message: SystemMessage | AssistantMessage | UserMessage | ResultMessage,
-    logger: Any,
-    agent_id: int | None = None,
+    message: SystemMessage | AssistantMessage | UserMessage | ResultMessage, logger: Any, agent_id: int | None = None
 ) -> None:
     """Log a structured summary of a coding agent SDK message."""
     message_logger = logger.bind(agent_id=agent_id, message_type=type(message).__name__)
@@ -160,8 +138,6 @@ class MessageLogger:
         log_result_message(self.logger, message)
 
     def log_summary(
-        self,
-        message: SystemMessage | AssistantMessage | UserMessage | ResultMessage,
-        agent_id: int,
+        self, message: SystemMessage | AssistantMessage | UserMessage | ResultMessage, agent_id: int
     ) -> None:
         log_message_summary(message, self.logger, agent_id)

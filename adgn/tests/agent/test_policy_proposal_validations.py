@@ -15,14 +15,10 @@ def _collect_until(ws, pred, limit=200):
     raise AssertionError("condition not met")
 
 
-def test_proposal_approve_rejects_on_failing_tests(
-    responses_factory, agent_ws_box, policy_failing_tests: str
-):
+def test_proposal_approve_rejects_on_failing_tests(responses_factory, agent_ws_box, policy_failing_tests: str):
     # Model proposes a policy with a failing TEST_CASES; approval should be rejected
     async def responses_create(_req):
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     client = make_mock(responses_create)
 

@@ -5,15 +5,10 @@ from pathlib import Path
 import shutil
 
 import pytest
-
 from tests._markers import REQUIRES_SANDBOX_EXEC
 
 # Run these stdio-handshake tests in a dedicated xdist group to avoid flakiness
-pytestmark = [
-    *REQUIRES_SANDBOX_EXEC,
-    pytest.mark.shell,
-    pytest.mark.xdist_group("sj_stdio"),
-]
+pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell, pytest.mark.xdist_group("sj_stdio")]
 
 # Mark xfail if external tooling is not available
 if not shutil.which("jupyter-mcp-server"):
@@ -21,34 +16,29 @@ if not shutil.which("jupyter-mcp-server"):
 # Allow opt-in to actually run these heavy integration tests.
 if os.environ.get("ADGN_RUN_SJ_STDIO") != "1":
     pytestmark.append(
-        pytest.mark.skip(
-            reason="SJ stdio integration requires external tooling; set ADGN_RUN_SJ_STDIO=1 to run"
-        )
+        pytest.mark.skip(reason="SJ stdio integration requires external tooling; set ADGN_RUN_SJ_STDIO=1 to run")
     )
 
 # Ensure required jupyter kernel/server packages are present — with pyproject deps these should be installed
 
 
 @pytest.mark.asyncio
-async def test_kernel_runs_minimal(
-    tmp_path: Path, launch_proc, mcp_stdio_protocol, pkg_src_env_update
-):
+async def test_kernel_runs_minimal(tmp_path: Path, mcp_client_from_cmd):
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
     (ws / "workspace").mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        "sandbox-jupyter",
+    cmd_args = [
         "seatbelt",
-        ws,
+        str(ws),
         "--run-root",
-        tmp_path / ".mcp",
+        str(tmp_path / ".mcp"),
         "--policy",
-        tmp_path / "policy.yaml",
+        str(tmp_path / "policy.yaml"),
         "--kernel-python",
         os.environ.get("PYTHON", "python3"),
         "--jupyter-port",
-        0,
+        "0",
     ]
     # Write a minimal policy.yaml
     (tmp_path / "policy.yaml").write_text(
@@ -64,12 +54,7 @@ net: {{ mode: loopback }}
         encoding="utf-8",
     )
 
-    with launch_proc(cmd, env_update=pkg_src_env_update) as proc:
-        res = mcp_stdio_protocol(
-            proc.stdin,
-            proc.stdout,
-            "append_execute_code_cell",
-            {"cell_source": "print('OK')"},
-            timeout=45.0,
-        )
-        assert "result" in (res or {})
+    async with mcp_client_from_cmd("sandbox-jupyter", cmd_args, init_timeout=45.0) as client:
+        result = await client.call_tool("append_execute_code_cell", {"cell_source": "print('OK')"})
+        assert result is not None
+        assert "OK" in str(result)

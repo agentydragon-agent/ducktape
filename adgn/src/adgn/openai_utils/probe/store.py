@@ -52,16 +52,10 @@ _db_pool: asyncpg.Pool | None = None
 
 
 async def get_db_pool() -> asyncpg.Pool:
-    global _db_pool
+    global _db_pool  # noqa: PLW0603
     if _db_pool is None:
         _db_pool = await asyncpg.create_pool(
-            host=DB_HOST,
-            port=DB_PORT,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            min_size=1,
-            max_size=10,
+            host=DB_HOST, port=DB_PORT, database=DB_NAME, user=DB_USER, password=DB_PASSWORD, min_size=1, max_size=10
         )
     return _db_pool
 

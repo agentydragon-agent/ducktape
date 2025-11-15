@@ -5,13 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import (
-    BaseModel,
-    Field,
-    field_serializer,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 # Removed claude_code_sdk dependency - using provider-independent types
 
@@ -126,9 +120,7 @@ class GitCloneConfig(BaseModel):
     def validate_commit_hash(cls, v: str) -> str:
         """Validate that commit is a full 40-character SHA hash."""
         if len(v) != COMMIT_SHA_LEN:
-            raise ValueError(
-                f"Commit must be a full {COMMIT_SHA_LEN}-character SHA hash, got {len(v)} characters: {v}",
-            )
+            raise ValueError(f"Commit must be a full {COMMIT_SHA_LEN}-character SHA hash, got {len(v)} characters: {v}")
         if not all(c in "0123456789abcdefABCDEF" for c in v):
             raise ValueError(f"Commit must be a valid hex SHA hash: {v}")
         return v.lower()  # Normalize to lowercase
@@ -167,7 +159,7 @@ class TaskSetup(BaseModel):
         """Validate that Docker and sandbox are mutually exclusive."""
         if self.docker and self.sandbox and self.sandbox.enabled:
             raise ValueError(
-                "Docker and sandbox cannot both be configured - they are mutually exclusive isolation methods",
+                "Docker and sandbox cannot both be configured - they are mutually exclusive isolation methods"
             )
         return self
 
@@ -237,10 +229,7 @@ class TaskDefinition(BaseModel):
     allowed_tools: list[str] | None = None
     pre_task_commands: str | None = None
 
-    def resolve_config(
-        self,
-        task_types: dict[str, TaskType],
-    ) -> tuple[TaskSetup | None, GradingConfig | None]:
+    def resolve_config(self, task_types: dict[str, TaskType]) -> tuple[TaskSetup | None, GradingConfig | None]:
         """Resolve final setup and grading config.
 
         Setup comes from task's setup_overrides only (no default).

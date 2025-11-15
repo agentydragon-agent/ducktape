@@ -19,20 +19,18 @@ class DetachServerArgs(BaseModel):
 
 
 def make_compositor_admin_server(
-    *,
-    compositor: Compositor,
-    name: str = COMPOSITOR_ADMIN_SERVER_NAME,
+    *, compositor: Compositor, name: str = COMPOSITOR_ADMIN_SERVER_NAME
 ) -> NotifyingFastMCP:
     """Create an admin MCP server for mounting/unmounting/listing servers.
 
     Notes
-    - Attaches external transports only (stdio/http). In‑proc mounts are wired by the host runtime.
+    - Attaches external transports only (stdio/http). In-proc mounts are wired by the host runtime.
     - All tool calls go through the Compositor and policy middleware (when mounted under it).
     """
     mcp = NotifyingFastMCP(
         name,
         instructions=(
-            "Compositor mount lifecycle admin (attach/detach/list). In‑proc servers are managed by the runtime."
+            "Compositor mount lifecycle admin (attach/detach/list). In-proc servers are managed by the runtime."
         ),
     )
 

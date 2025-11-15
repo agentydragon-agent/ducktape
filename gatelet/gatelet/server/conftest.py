@@ -2,33 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 import logging
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
-from pathlib import Path
 from uuid import uuid4
 
+from httpx import AsyncClient
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-os.environ.setdefault(
-    "GATELET_CONFIG",
-    str(Path(__file__).resolve().parent.parent.parent / "gatelet.toml"),
-)
+os.environ.setdefault("GATELET_CONFIG", str(Path(__file__).resolve().parent.parent.parent / "gatelet.toml"))
 # pylint: disable=wrong-import-position
 
 from gatelet.server.app import app  # type: ignore[import]
@@ -37,10 +29,7 @@ from gatelet.server.database import get_db_session  # type: ignore[import]
 from gatelet.server.models import AuthCRSession, AuthKey, Base  # type: ignore[import]
 from gatelet.server.tests.utils import persist  # type: ignore[import]
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -58,51 +47,17 @@ def _postgres():
     pg_ctl = bin_dir / "pg_ctl"
     createdb = bin_dir / "createdb"
     port = "55432"
-    subprocess.check_call(
-        ["sudo", "-u", "postgres", str(initdb), "-D", datadir, "-A", "trust"],
-    )
-    subprocess.check_call(
-        [
-            "sudo",
-            "-u",
-            "postgres",
-            str(pg_ctl),
-            "-D",
-            datadir,
-            "-w",
-            "-o",
-            f"-p {port}",
-            "start",
-        ],
-    )
-    subprocess.check_call(
-        ["sudo", "-u", "postgres", str(createdb), "-p", port, "gatelet"],
-    )
-    os.environ["DATABASE_URL"] = (
-        f"postgresql+asyncpg://postgres@localhost:{port}/gatelet"
-    )
+    subprocess.check_call(["sudo", "-u", "postgres", str(initdb), "-D", datadir, "-A", "trust"])
+    subprocess.check_call(["sudo", "-u", "postgres", str(pg_ctl), "-D", datadir, "-w", "-o", f"-p {port}", "start"])
+    subprocess.check_call(["sudo", "-u", "postgres", str(createdb), "-p", port, "gatelet"])
+    os.environ["DATABASE_URL"] = f"postgresql+asyncpg://postgres@localhost:{port}/gatelet"
     settings.database.dsn = os.environ["DATABASE_URL"]
-    os.environ.setdefault(
-        "GATELET_CONFIG",
-        str(Path(__file__).resolve().parent.parent / "gatelet.toml"),
-    )
+    os.environ.setdefault("GATELET_CONFIG", str(Path(__file__).resolve().parent.parent / "gatelet.toml"))
     time.sleep(0.5)
     try:
         yield
     finally:
-        subprocess.check_call(
-            [
-                "sudo",
-                "-u",
-                "postgres",
-                str(pg_ctl),
-                "-D",
-                datadir,
-                "-m",
-                "fast",
-                "stop",
-            ],
-        )
+        subprocess.check_call(["sudo", "-u", "postgres", str(pg_ctl), "-D", datadir, "-m", "fast", "stop"])
         shutil.rmtree(datadir)
 
 
@@ -110,10 +65,7 @@ def _postgres():
 async def db_engine(_postgres) -> AsyncGenerator[AsyncEngine, None]:
     """Create a database engine and initialize the schema."""
 
-    database_url = os.environ.get(
-        "DATABASE_URL",
-        "postgresql+asyncpg://postgres@localhost/postgres",
-    )
+    database_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres@localhost/postgres")
     engine = create_async_engine(database_url, future=True)
 
     async with engine.begin() as conn:
@@ -128,11 +80,7 @@ async def db_engine(_postgres) -> AsyncGenerator[AsyncEngine, None]:
 async def db_session(db_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
     """Provide a database session wrapped in a transaction."""
 
-    session_factory = async_sessionmaker(
-        db_engine,
-        expire_on_commit=False,
-        autoflush=False,
-    )
+    session_factory = async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False)
 
     async with session_factory() as session:
         trans = await session.begin()
@@ -178,18 +126,13 @@ async def test_auth_key(db_session: AsyncSession) -> AuthKey:
 
     unique_id = uuid4().hex[:8]
     key = AuthKey(
-        key_value=f"test-key-{unique_id}",
-        description=f"Test auth key {unique_id}",
-        created_at=datetime.now(),
+        key_value=f"test-key-{unique_id}", description=f"Test auth key {unique_id}", created_at=datetime.now()
     )
     return await persist(db_session, key)
 
 
 @pytest_asyncio.fixture
-async def test_auth_session(
-    db_session: AsyncSession,
-    test_auth_key: AuthKey,
-) -> AuthCRSession:
+async def test_auth_session(db_session: AsyncSession, test_auth_key: AuthKey) -> AuthCRSession:
     """Create a temporary session bound to ``test_auth_key``."""
 
     unique_id = uuid4().hex[:8]

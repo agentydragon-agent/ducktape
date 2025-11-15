@@ -15,9 +15,7 @@ def to_reasoning_effort(value: ReasoningEffort | str | None) -> str | None:
         effort = ReasoningEffort(value)
     except ValueError as exc:
         allowed = ", ".join(item.value for item in ReasoningEffort)
-        raise ValueError(
-            f"Invalid reasoning effort {value!r}; expected one of: {allowed}",
-        ) from exc
+        raise ValueError(f"Invalid reasoning effort {value!r}; expected one of: {allowed}") from exc
     return effort.value
 
 
@@ -36,8 +34,7 @@ class ReasoningParams(TypedDict, total=False):
 
 
 def build_reasoning_params(
-    effort: ReasoningEffort | str | None,
-    summary: ReasoningSummary | str | None = None,
+    effort: ReasoningEffort | str | None, summary: ReasoningSummary | str | None = None
 ) -> ReasoningParams | None:
     """Convert optional reasoning knobs into adapter ReasoningParams."""
 

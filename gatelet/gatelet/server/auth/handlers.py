@@ -1,9 +1,9 @@
 """Authentication handlers for Gatelet endpoints."""
 
-import logging
-from datetime import datetime
-from typing import Protocol
 from collections.abc import Callable
+from datetime import datetime
+import logging
+from typing import Protocol
 from urllib.parse import urlencode
 
 from fastapi import Depends
@@ -133,10 +133,7 @@ class AdminAuthContext:
         return f"{base_url}?{urlencode(query_params)}"
 
 
-async def key_path_auth(
-    key: str,
-    db_session: AsyncSession = Depends(get_db_session),
-) -> KeyPathAuthContext:
+async def key_path_auth(key: str, db_session: AsyncSession = Depends(get_db_session)) -> KeyPathAuthContext:
     """Authenticate using key in path."""
     logger.debug("key_path_auth called with key: %s...", key[:4])
 
@@ -150,10 +147,7 @@ async def key_path_auth(
         raise AuthHandlerError
 
 
-async def session_auth(
-    session_token: str,
-    db_session: AsyncSession = Depends(get_db_session),
-) -> SessionAuthContext:
+async def session_auth(session_token: str, db_session: AsyncSession = Depends(get_db_session)) -> SessionAuthContext:
     """Authenticate using challenge-response session token."""
     # Find session
     query = select(AuthCRSession).where(AuthCRSession.session_token == session_token)
@@ -179,10 +173,7 @@ async def session_auth(
     return SessionAuthContext(session)
 
 
-async def admin_auth(
-    session_token: str,
-    db_session: AsyncSession = Depends(get_db_session),
-) -> AdminAuthContext:
+async def admin_auth(session_token: str, db_session: AsyncSession = Depends(get_db_session)) -> AdminAuthContext:
     """Authenticate using admin session token."""
     query = select(AdminSession).where(AdminSession.session_token == session_token)
     admin_session = (await db_session.execute(query)).scalar_one_or_none()

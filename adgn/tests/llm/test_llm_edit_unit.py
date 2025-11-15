@@ -51,19 +51,13 @@ def _extract_result(res):
 
 
 @pytest.mark.asyncio
-async def test_done_for_non_python_no_syntax_check(
-    tmp_path: Path,
-    editor_session,
-) -> None:
+async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "note.md"
     p.write_text("hello\n", encoding="utf-8")
 
     async with editor_session(p) as (client, sess):
         # Append a line after the first line (1-based after = insert at index 1)
-        await sess.call_tool(
-            name="add_line_after",
-            arguments={"line_number": 1, "content": "world"},
-        )
+        await sess.call_tool(name="add_line_after", arguments={"line_number": 1, "content": "world"})
         # Finish successfully; should not run python syntax checks
         out = await client.done(DoneInput(outcome="success", summary="ok"))
         assert out.kind == "Success"
@@ -74,19 +68,13 @@ async def test_done_for_non_python_no_syntax_check(
 
 
 @pytest.mark.asyncio
-async def test_done_python_syntax_failure_returns_structured_failure(
-    tmp_path: Path,
-    editor_session,
-) -> None:
+async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "bad.py"
     p.write_text("def f():\n    return 1\n", encoding="utf-8")  # start valid
 
     async with editor_session(p) as (client, sess):
         # Introduce a syntax error by replacing the function header
-        await sess.call_tool(
-            name="replace_text",
-            arguments={"old_text": "def f():", "new_text": "def f(:"},
-        )
+        await sess.call_tool(name="replace_text", arguments={"old_text": "def f():", "new_text": "def f(:"})
         out = await client.done(DoneInput(outcome="success", summary="finish"))
         assert out.kind == "Failure"
         assert "Cannot complete" in (out.summary or "")
@@ -96,28 +84,19 @@ async def test_done_python_syntax_failure_returns_structured_failure(
 
 
 @pytest.mark.asyncio
-async def test_done_explicit_failure_reverts_in_memory(
-    tmp_path: Path,
-    editor_session,
-) -> None:
+async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "file.txt"
     p.write_text("A\n", encoding="utf-8")
 
     async with editor_session(p) as (client, sess):
         # Stage change to "B" in-memory: delete line 1 and insert B at start
         await sess.call_tool(name="delete_line", arguments={"line_number": 1})
-        await sess.call_tool(
-            name="add_line_after",
-            arguments={"line_number": 0, "content": "B"},
-        )
+        await sess.call_tool(name="add_line_after", arguments={"line_number": 0, "content": "B"})
         out = await client.done(DoneInput(outcome="failure", summary="abort"))
         assert out.kind == "Failure"
         assert out.summary == "abort"
         # Ensure in-memory state reverted by reading current first line
-        rr = await sess.call_tool(
-            name="read_line_range",
-            arguments={"start": 1, "end": 1},
-        )
+        rr = await sess.call_tool(name="read_line_range", arguments={"start": 1, "end": 1})
         body = (rr.structured_content or {}).get("body", "")
         assert "A" in body
 

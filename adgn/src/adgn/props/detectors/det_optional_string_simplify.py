@@ -38,11 +38,11 @@ def _collect_optional_str(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[s
                 isinstance(ann, ast.Subscript)
                 and isinstance(ann.value, ast.Name)
                 and ann.value.id in {"Optional", "Union"}
+                and "str" in (unparsed := ast.unparse(ann.slice))  # type: ignore[attr-defined]
+                and "None" in unparsed
             ):
                 # Optional[str] or Union[str, None]
-                # Simplify: add when 'str' and 'None' appear in slice repr
-                if "str" in ast.unparse(ann.slice) and "None" in ast.unparse(ann.slice):  # type: ignore[attr-defined]
-                    names.add(st.target.id)
+                names.add(st.target.id)
     return names
 
 
@@ -103,12 +103,9 @@ def _find_in_file(path: Path) -> list[Detection]:
                                 ranges=[LineRange(start_line=int(sl), end_line=int(sl))],
                                 detector=DET_NAME,
                                 confidence=0.8,
-                                message=(
-                                    "Optional[str] check 'x is None or x == "
-                                    "' → prefer 'if not {nm}' (safe-only)"
-                                ),
+                                message=("Optional[str] check 'x is None or x == ' → prefer 'if not {nm}' (safe-only)"),
                                 snippet=read_snippet(path, sl, sl, context=0),
-                            ),
+                            )
                         )
     return out
 

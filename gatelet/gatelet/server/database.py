@@ -8,20 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from .config import settings
 
 # Create async engine
-engine = create_async_engine(
-    str(settings.database.dsn),
-    echo=False,
-    future=True,
-    pool_pre_ping=True,
-)
+engine = create_async_engine(str(settings.database.dsn), echo=False, future=True, pool_pre_ping=True)
 
 # Create async session factory
-async_session_factory = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-)
+async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 
 
 @asynccontextmanager

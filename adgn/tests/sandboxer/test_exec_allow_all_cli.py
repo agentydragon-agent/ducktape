@@ -10,22 +10,12 @@ def test_sandboxer_cli_allow_all_runs_echo(tmp_path: Path, require_sandbox_exec)
     policy = tmp_path / "policy_allow_all.yaml"
     policy_dict = {
         "env": {
-            "set": {
-                "TMPDIR": (tmp_path / "tmp").as_posix(),
-                "HOME": tmp_path.as_posix(),
-                "PYTHONUNBUFFERED": "1",
-            },
+            "set": {"TMPDIR": (tmp_path / "tmp").as_posix(), "HOME": tmp_path.as_posix(), "PYTHONUNBUFFERED": "1"},
             "passthrough": [],
         },
-        "fs": {
-            "read_paths": ["/"],
-            "write_paths": [tmp_path.as_posix()],
-        },
+        "fs": {"read_paths": ["/"], "write_paths": [tmp_path.as_posix()]},
         "net": {"mode": "open"},
-        "platform": {
-            "trace": False,
-            "seatbelt": {"extra_allow": {"sysctl_read": True, "file_read_extra": []}},
-        },
+        "platform": {"trace": False, "seatbelt": {"extra_allow": {"sysctl_read": True, "file_read_extra": []}}},
     }
     policy.write_text(yaml.safe_dump(policy_dict, sort_keys=False))
 

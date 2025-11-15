@@ -10,10 +10,7 @@ import uvicorn
 
 from adgn.rspcache.admin_app import APIKeyListModel, CreateKeyResponse
 
-DEFAULT_PORTS = {
-    "proxy": 8000,
-    "admin": 8100,
-}
+DEFAULT_PORTS = {"proxy": 8000, "admin": 8100}
 
 DEFAULT_ADMIN_URL = "http://127.0.0.1:8100"
 
@@ -50,9 +47,7 @@ def mint_key(
     name: str = typer.Argument(..., help="Display name for the client API key"),
     alias: str = typer.Option("default", "--alias", help="Upstream OpenAI key alias to use"),
     admin_url: str = typer.Option(DEFAULT_ADMIN_URL, "--admin-url", help="rspcache admin base URL"),
-    bearer_token: str = typer.Option(
-        "", "--bearer-token", help="Bearer token for admin auth (if required)"
-    ),
+    bearer_token: str = typer.Option("", "--bearer-token", help="Bearer token for admin auth (if required)"),
 ) -> None:
     """Mint a new client API key via the admin API."""
     payload = {"name": name, "alias": alias}
@@ -97,18 +92,14 @@ def revoke_key(
     key_id: str = typer.Option("", "--id", help="Key UUID to revoke"),
     name: str = typer.Option("", "--name", help="Key name to revoke"),
     admin_url: str = typer.Option(DEFAULT_ADMIN_URL, "--admin-url", help="rspcache admin base URL"),
-    bearer_token: str = typer.Option(
-        "", "--bearer-token", help="Bearer token for admin auth (if required)"
-    ),
+    bearer_token: str = typer.Option("", "--bearer-token", help="Bearer token for admin auth (if required)"),
 ) -> None:
     """Revoke an existing client API key."""
     with _admin_client(admin_url, bearer_token or None) as client:
         resolved_id = _resolve_key_id(client, name or None, key_id or None)
         resp = client.post(f"/api/keys/{resolved_id}/revoke")
         if resp.status_code != 200:
-            typer.secho(
-                f"Failed to revoke key: {resp.status_code} {resp.text}", fg=typer.colors.RED
-            )
+            typer.secho(f"Failed to revoke key: {resp.status_code} {resp.text}", fg=typer.colors.RED)
             raise typer.Exit(code=1)
     typer.secho(f"Key {resolved_id} revoked.", fg=typer.colors.GREEN)
 
@@ -116,9 +107,7 @@ def revoke_key(
 @keys_app.command("list")
 def list_keys(
     admin_url: str = typer.Option(DEFAULT_ADMIN_URL, "--admin-url", help="rspcache admin base URL"),
-    bearer_token: str = typer.Option(
-        "", "--bearer-token", help="Bearer token for admin auth (if required)"
-    ),
+    bearer_token: str = typer.Option("", "--bearer-token", help="Bearer token for admin auth (if required)"),
 ) -> None:
     """List client API keys."""
     with _admin_client(admin_url, bearer_token or None) as client:

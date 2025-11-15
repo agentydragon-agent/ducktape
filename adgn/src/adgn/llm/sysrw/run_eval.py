@@ -20,10 +20,7 @@ from pydantic import BaseModel, TypeAdapter
 import tiktoken
 
 from adgn.openai_utils.client_factory import get_async_openai
-from adgn.openai_utils.retry import (
-    chat_create_with_retries,
-    responses_create_with_retries,
-)
+from adgn.openai_utils.retry import chat_create_with_retries, responses_create_with_retries
 
 from .constants import TOOLS_HEADER
 from .openai_typing import (
@@ -48,14 +45,7 @@ from .openai_typing import (
     response_message_content_as_text,
     response_message_role,
 )
-from .schemas import (
-    CCRRequest,
-    CCRSample,
-    CrushSample,
-    EvalGradeRecord,
-    EvalSampleRecord,
-    Sample,
-)
+from .schemas import CCRRequest, CCRSample, CrushSample, EvalGradeRecord, EvalSampleRecord, Sample
 from .templates import validate_template_file
 
 
@@ -113,18 +103,8 @@ def parse_args():
             "If omitted, writes to runs/<ts> or runs/baseline-<ts> (for current_effective_template.txt)."
         ),
     )
-    ap.add_argument(
-        "--n",
-        type=int,
-        default=None,
-        help="Limit number of samples to process",
-    )
-    ap.add_argument(
-        "--concurrency",
-        type=int,
-        default=32,
-        help="Number of samples to run in parallel",
-    )
+    ap.add_argument("--n", type=int, default=None, help="Limit number of samples to process")
+    ap.add_argument("--concurrency", type=int, default=32, help="Number of samples to run in parallel")
     return ap.parse_args()
 
 
@@ -139,9 +119,7 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
                 ccr = CCRSample(
                     correlation_id=rec.get("correlation_id"),
                     timestamp=rec.get("timestamp"),
-                    anthropic_request=CCRRequest.model_validate(
-                        rec["anthropic_request"],
-                    ),  # type: ignore[arg-type]
+                    anthropic_request=CCRRequest.model_validate(rec["anthropic_request"]),  # type: ignore[arg-type]
                 )
                 items.append(ccr)
                 continue
@@ -210,7 +188,7 @@ def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
         )
     except FileNotFoundError as e:
         raise RuntimeError(
-            "Node.js ('node') not found in PATH; install Node or adjust PATH to use system rewrite",
+            "Node.js ('node') not found in PATH; install Node or adjust PATH to use system rewrite"
         ) from e
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr.decode("utf-8", errors="ignore"))
@@ -237,18 +215,12 @@ def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, 
         return None
     normalized: list[dict[str, Any]] = []
     for tool in tools:
-        if isinstance(tool, BaseModel):
-            payload = tool.model_dump(mode="json", exclude_none=True)
-        else:
-            payload = dict(tool)
+        payload = tool.model_dump(mode="json", exclude_none=True) if isinstance(tool, BaseModel) else dict(tool)
         normalized.append(payload)
     return normalized
 
 
-def anthro_to_openai_messages(
-    body: dict[str, Any],
-    new_system_text: str | None,
-) -> list[ChatCompletionMessageParam]:
+def anthro_to_openai_messages(body: dict[str, Any], new_system_text: str | None) -> list[ChatCompletionMessageParam]:
     """Translate Anthropics-style messages into OpenAI Chat format, returning SDK models."""
 
     def _join_text_parts(parts: Iterable[dict[str, Any]]) -> str:
@@ -306,16 +278,11 @@ def anthro_to_openai_messages(
                             args_str = args
                         else:
                             args_str = json.dumps(
-                                args if args is not None else {},
-                                ensure_ascii=False,
-                                separators=(",", ":"),
+                                args if args is not None else {}, ensure_ascii=False, separators=(",", ":")
                             )
                         tool_call: dict[str, Any] = {
                             "type": "function",
-                            "function": {
-                                "name": name or "unknown",
-                                "arguments": args_str,
-                            },
+                            "function": {"name": name or "unknown", "arguments": args_str},
                         }
                         if tcid:
                             tool_call["id"] = str(tcid)
@@ -342,19 +309,11 @@ def anthro_to_openai_messages(
                         if isinstance(tcontent, str):
                             tool_text = tcontent
                         elif isinstance(tcontent, list):
-                            tool_text = _join_text_parts(
-                                [item if isinstance(item, dict) else {} for item in tcontent],
-                            )
+                            tool_text = _join_text_parts([item if isinstance(item, dict) else {} for item in tcontent])
                         else:
                             tool_text = json.dumps(tcontent, ensure_ascii=False, sort_keys=True)
                         if tcid:
-                            tool_msgs.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": str(tcid),
-                                    "content": tool_text or "",
-                                },
-                            )
+                            tool_msgs.append({"role": "tool", "tool_call_id": str(tcid), "content": tool_text or ""})
                 raw_messages.extend(tool_msgs)
                 txt = _join_text_parts(text_parts)
                 if txt.strip():
@@ -362,9 +321,7 @@ def anthro_to_openai_messages(
                 continue
 
             if role == "tool":
-                tcid = (
-                    message.get("tool_call_id") or message.get("tool_use_id") or message.get("id")
-                )
+                tcid = message.get("tool_call_id") or message.get("tool_use_id") or message.get("id")
                 if not tcid:
                     continue
                 content_val = ""
@@ -372,22 +329,13 @@ def anthro_to_openai_messages(
                     content_val = content
                 elif part_dicts:
                     content_val = _join_text_parts(part_dicts)
-                raw_messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": str(tcid),
-                        "content": content_val,
-                    },
-                )
+                raw_messages.append({"role": "tool", "tool_call_id": str(tcid), "content": content_val})
 
     parsed = parse_chat_messages(raw_messages)
     return parsed or []
 
 
-def anthro_to_responses_input(
-    body: dict[str, Any],
-    new_system_text: str | None,
-) -> list[dict[str, Any]]:
+def anthro_to_responses_input(body: dict[str, Any], new_system_text: str | None) -> list[dict[str, Any]]:
     """Translate Anthropic-style messages into OpenAI Responses API input array."""
 
     def _join_text_parts(parts: list[dict[str, Any]]) -> str:
@@ -399,12 +347,7 @@ def anthro_to_responses_input(
 
     out: list[dict[str, Any]] = []
     if new_system_text:
-        out.append(
-            {
-                "role": "system",
-                "content": [{"type": "input_text", "text": new_system_text}],
-            },
-        )
+        out.append({"role": "system", "content": [{"type": "input_text", "text": new_system_text}]})
     for m in body.get("messages", []):
         role = m.get("role")
         content = m.get("content")
@@ -417,12 +360,7 @@ def anthro_to_responses_input(
         else:
             text = ""
         if text.strip():
-            out.append(
-                {
-                    "role": role,
-                    "content": [{"type": "input_text", "text": text}],
-                },
-            )
+            out.append({"role": role, "content": [{"type": "input_text", "text": text}]})
     validated = parse_response_messages(out)
     if validated is None:
         return []
@@ -430,9 +368,7 @@ def anthro_to_responses_input(
 
 
 def build_grader_prompt(
-    prefix_messages: list[StandardMessage],
-    raw_bad_branch: list[StandardMessage],
-    raw_new_asst_obj: dict[str, Any],
+    prefix_messages: list[StandardMessage], raw_bad_branch: list[StandardMessage], raw_new_asst_obj: dict[str, Any]
 ) -> list[dict[str, Any]]:
     sys = {
         "role": "system",
@@ -465,8 +401,7 @@ def build_grader_prompt(
             + "\n\n"
             + "BAD_BRANCH_JSON (from bad assistant turn through the user's complaint, inclusive):\n"
             + json.dumps(
-                [msg.model_dump() for msg in raw_bad_branch] if raw_bad_branch is not None else [],
-                ensure_ascii=False,
+                [msg.model_dump() for msg in raw_bad_branch] if raw_bad_branch is not None else [], ensure_ascii=False
             )
             + "\n\n"
             + "NEW_ASSISTANT_REPLY_JSON:\n"
@@ -482,10 +417,7 @@ GRADE_TOOL = {
     "description": "Return a 1-5 score and a short rationale.",
     "parameters": {
         "type": "object",
-        "properties": {
-            "score": {"type": "integer", "minimum": 1, "maximum": 5},
-            "rationale": {"type": "string"},
-        },
+        "properties": {"score": {"type": "integer", "minimum": 1, "maximum": 5}, "rationale": {"type": "string"}},
         "required": ["score", "rationale"],
         "additionalProperties": False,
     },
@@ -574,12 +506,13 @@ async def run_eval(
             return msgs
         for it in parsed:
             role = response_message_role(it)
-            if role in (MessageRole.USER, MessageRole.ASSISTANT):
-                if txt := response_message_content_as_text(it).strip():
-                    if role == MessageRole.USER:
-                        msgs.append(StandardUserMessage(content=txt))
-                    else:  # MessageRole.ASSISTANT
-                        msgs.append(StandardAssistantMessage(content=txt))
+            if role in (MessageRole.USER, MessageRole.ASSISTANT) and (
+                txt := response_message_content_as_text(it).strip()
+            ):
+                if role == MessageRole.USER:
+                    msgs.append(StandardUserMessage(content=txt))
+                else:  # MessageRole.ASSISTANT
+                    msgs.append(StandardAssistantMessage(content=txt))
         return msgs
 
     validate_template_file(template_path)
@@ -591,11 +524,7 @@ async def run_eval(
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         base = DEFAULT_BASE
         # Default layout: runs/<ts> for variants; runs/baseline-<ts> for baseline
-        out_dir = (
-            base / f"baseline-{ts}"
-            if template_path.name == "current_effective_template.txt"
-            else base / f"{ts}"
-        )
+        out_dir = base / f"baseline-{ts}" if template_path.name == "current_effective_template.txt" else base / f"{ts}"
     samples_out = out_dir / "samples.jsonl"
     grades_out = out_dir / "grades.jsonl"
     summary_out = out_dir / "summary.json"
@@ -621,8 +550,8 @@ async def run_eval(
                 "selected": selected,
                 "sampler_model": SAMPLER_MODEL,
                 "grader_model": GRADER_MODEL,
-            },
-        ),
+            }
+        )
     )
 
     progress_path = out_dir / "progress.jsonl"
@@ -632,18 +561,11 @@ async def run_eval(
         with progress_path.open("a", encoding="utf-8") as pg:
             pg.write(json.dumps(event) + "\n")
 
-    counters = {
-        "processed": 0,
-        "skipped_input_tokens": 0,
-        "sampler_errors": 0,
-        "grader_errors": 0,
-    }
+    counters = {"processed": 0, "skipped_input_tokens": 0, "sampler_errors": 0, "grader_errors": 0}
 
     # client is injected by caller (no implicit AsyncOpenAI() here)
     if client is None:
-        raise ValueError(
-            "run_eval requires a non-None AsyncOpenAI client injected by caller",
-        )
+        raise ValueError("run_eval requires a non-None AsyncOpenAI client injected by caller")
     sem = asyncio.Semaphore(max(1, int(concurrency)))
 
     async def process(item: Sample) -> tuple[dict | None, dict | None]:
@@ -657,32 +579,18 @@ async def run_eval(
                     ar.system
                     if isinstance(ar.system, str)
                     else "\n\n".join(
-                        [
-                            p.get("text", "")
-                            for p in (ar.system if ar.system is not None else [])
-                            if isinstance(p, dict)
-                        ],
+                        [p.get("text", "") for p in (ar.system if ar.system is not None else []) if isinstance(p, dict)]
                     )
                 )
                 new_sys = rewrite_system_with_template(sys_val, template_path)
                 # 2) Build OpenAI sampling request BEFORE the bad assistant turn
                 if (chat_params := parse_chat_messages(ar.messages)) is None:
-                    log_event(
-                        {
-                            "correlation_id": item.correlation_id,
-                            "status": "parse_messages_failed",
-                        },
-                    )
+                    log_event({"correlation_id": item.correlation_id, "status": "parse_messages_failed"})
                     return None, None
                 msgs = [chat_param_to_standard_message(msg) for msg in chat_params]
                 prev_asst_idx = index_of_last_assistant_before_final(msgs)
                 if prev_asst_idx is None:
-                    log_event(
-                        {
-                            "correlation_id": item.correlation_id,
-                            "status": "no_prev_assistant",
-                        },
-                    )
+                    log_event({"correlation_id": item.correlation_id, "status": "no_prev_assistant"})
                     return None, None
                 context_body = {"messages": msgs[:prev_asst_idx]}
                 oai_messages = anthro_to_openai_messages(context_body, new_sys)
@@ -693,7 +601,7 @@ async def run_eval(
                         "cid": item.correlation_id,
                         "in_tokens": in_tokens,
                         "model": SAMPLER_MODEL,
-                    },
+                    }
                 )
                 if in_tokens > MAX_INPUT_TOKENS:
                     counters["skipped_input_tokens"] += 1
@@ -702,13 +610,10 @@ async def run_eval(
                             "correlation_id": item.correlation_id,
                             "status": "skipped_input_too_large",
                             "input_tokens": in_tokens,
-                        },
+                        }
                     )
                     return None, None
-                samp_max = max(
-                    1,
-                    min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS),
-                )
+                samp_max = max(1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS))
                 tools_param = ar.tools
                 chat_tools = convert_responses_tools_to_chat_functions(tools_param)
                 samp_req = {
@@ -721,16 +626,11 @@ async def run_eval(
                 }
                 try:
                     samp = await chat_create_with_retries(
-                        client,
-                        **{k: v for k, v in samp_req.items() if v is not None},
+                        client, **{k: v for k, v in samp_req.items() if v is not None}
                     )
                 except Exception as e:
                     counters["sampler_errors"] += 1
-                    msg = {
-                        "correlation_id": item.correlation_id,
-                        "status": "sampler_error",
-                        "error": str(e),
-                    }
+                    msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
                     log_event(msg)
                     return None, None
                 new_asst_obj = samp.choices[0].message.model_dump()
@@ -747,22 +647,11 @@ async def run_eval(
                 # Find boundary and build context input (drop original system items)
                 prev_idx = responses_prev_assistant_index(inp)
                 if prev_idx is None:
-                    log_event(
-                        {
-                            "correlation_id": item.correlation_id,
-                            "status": "no_prev_assistant",
-                        },
-                    )
+                    log_event({"correlation_id": item.correlation_id, "status": "no_prev_assistant"})
                     return None, None
                 input_prefix = responses_slice_prefix(inp, prev_idx)
                 # Prepend rewritten system entry
-                resp_input = [
-                    {
-                        "role": "system",
-                        "content": [{"type": "input_text", "text": new_sys}],
-                    },
-                    *input_prefix,
-                ]
+                resp_input = [{"role": "system", "content": [{"type": "input_text", "text": new_sys}]}, *input_prefix]
                 base_req: dict[str, Any] = dict(payload) if isinstance(payload, dict) else {}
                 base_req["input"] = resp_input
                 if not base_req.get("model"):
@@ -772,28 +661,17 @@ async def run_eval(
                     samp = await responses_create_with_retries(client, **samp_req)
                 except Exception as e:
                     counters["sampler_errors"] += 1
-                    msg = {
-                        "correlation_id": item.correlation_id,
-                        "status": "sampler_error",
-                        "error": str(e),
-                    }
+                    msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
                     log_event(msg)
                     return None, None
-                new_asst_obj = {
-                    "responses_input": resp_input,
-                    "responses_output": samp.model_dump(),
-                }
+                new_asst_obj = {"responses_input": resp_input, "responses_output": samp.model_dump()}
                 # For grader context later, build ephemeral CCR-like messages
                 msgs_for_grader = responses_to_ccr_messages(inp)
-                prev_asst_idx_for_grader = (
-                    index_of_last_assistant_before_final(msgs_for_grader) or 0
-                )
+                prev_asst_idx_for_grader = index_of_last_assistant_before_final(msgs_for_grader) or 0
 
             # 4) Build grading inputs
             msgs = msgs_for_grader
-            raw_new_asst_obj = (
-                new_asst_obj if isinstance(new_asst_obj, dict) else new_asst_obj.model_dump()
-            )
+            raw_new_asst_obj = new_asst_obj if isinstance(new_asst_obj, dict) else new_asst_obj.model_dump()
             base_prefix = msgs[:-2] if len(msgs) >= 2 else []
             base_prefix = [m for m in base_prefix if m.role != MessageRole.SYSTEM]
             # Compute bad branch (inclusive of complaint)
@@ -805,18 +683,9 @@ async def run_eval(
             middle = base_prefix[5 : len(base_prefix) - len(tail)] if len(base_prefix) > 10 else []
 
             # Build a provisional grader input to compute tokens; start from minimal
-            def mk_grader_input(
-                prefix_subset: list[StandardMessage],
-            ) -> list[dict[str, Any]]:
-                gm = build_grader_prompt(
-                    prefix_subset,
-                    raw_bad_branch,
-                    raw_new_asst_obj,
-                )
-                return [
-                    {"role": "system", "content": gm[0]["content"]},
-                    {"role": "user", "content": gm[1]["content"]},
-                ]
+            def mk_grader_input(prefix_subset: list[StandardMessage]) -> list[dict[str, Any]]:
+                gm = build_grader_prompt(prefix_subset, raw_bad_branch, raw_new_asst_obj)
+                return [{"role": "system", "content": gm[0]["content"]}, {"role": "user", "content": gm[1]["content"]}]
 
             prefix_msgs = [*first]  # start with first only
             gi = mk_grader_input(prefix_msgs + tail)
@@ -847,13 +716,9 @@ async def run_eval(
                         "added_middle": added,
                     },
                     "token_estimate": tok,
-                },
+                }
             )
-            grader_messages = build_grader_prompt(
-                prefix_msgs,
-                raw_bad_branch,
-                raw_new_asst_obj,
-            )
+            grader_messages = build_grader_prompt(prefix_msgs, raw_bad_branch, raw_new_asst_obj)
             grader_input = [
                 {"role": m["role"], "content": m["content"]}
                 for m in [
@@ -869,13 +734,10 @@ async def run_eval(
                         "correlation_id": item.correlation_id,
                         "status": "grader_skipped_input_too_large",
                         "input_tokens": in_tokens_g,
-                    },
+                    }
                 )
                 return None, None
-            grade_max = max(
-                1,
-                min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens_g - SAFETY_TOKENS),
-            )
+            grade_max = max(1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens_g - SAFETY_TOKENS))
             grade_req = {
                 "model": GRADER_MODEL,
                 "input": grader_input,
@@ -888,11 +750,7 @@ async def run_eval(
                 grade = await responses_create_with_retries(client, **grade_req)
             except Exception as e:
                 counters["grader_errors"] += 1
-                msg = {
-                    "correlation_id": item.correlation_id,
-                    "status": "grader_error",
-                    "error": str(e),
-                }
+                msg = {"correlation_id": item.correlation_id, "status": "grader_error", "error": str(e)}
                 log_event(msg)
                 return None, None
             # Validate grade parse
@@ -900,11 +758,7 @@ async def run_eval(
                 _ = parse_grade_from_responses(grade)
             except Exception as e:
                 counters["grader_errors"] += 1
-                msg = {
-                    "correlation_id": item.correlation_id,
-                    "status": "grader_parse_error",
-                    "error": str(e),
-                }
+                msg = {"correlation_id": item.correlation_id, "status": "grader_parse_error", "error": str(e)}
                 log_event(msg)
                 return None, None
 
@@ -943,18 +797,8 @@ async def run_eval(
     # Per-source accumulators
     scores_by_source: dict[str, list[float]] = {"ccr": [], "crush": []}
     tool_stats_by_source: dict[str, dict[str, Any]] = {
-        "ccr": {
-            "total_samples": 0,
-            "text_only": 0,
-            "with_tools": 0,
-            "function_counts": {},
-        },
-        "crush": {
-            "total_samples": 0,
-            "text_only": 0,
-            "with_tools": 0,
-            "function_counts": {},
-        },
+        "ccr": {"total_samples": 0, "text_only": 0, "with_tools": 0, "function_counts": {}},
+        "crush": {"total_samples": 0, "text_only": 0, "with_tools": 0, "function_counts": {}},
     }
 
     def compute_and_write_summary(_final: bool = False) -> dict[str, Any]:
@@ -974,20 +818,14 @@ async def run_eval(
         with_tools = _as_int(tool_stats.get("with_tools"))
         fc = cast(dict[str, int], tool_stats.get("function_counts", {}))
         total_tool_calls = sum(fc.values()) if fc else 0
-        function_pct = {
-            k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in fc.items()
-        }
+        function_pct = {k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in fc.items()}
 
         # CI helpers (normal approx, 95%)
         def _mk_basic(scores_list: list[float]) -> tuple[float, float, float, float]:
             if not scores_list:
                 return 0.0, 0.0, 0.0, 0.0
             m = sum(scores_list) / len(scores_list)
-            v = (
-                (sum((x - m) ** 2 for x in scores_list) / (len(scores_list) - 1))
-                if len(scores_list) > 1
-                else 0.0
-            )
+            v = (sum((x - m) ** 2 for x in scores_list) / (len(scores_list) - 1)) if len(scores_list) > 1 else 0.0
             se_ = math.sqrt(v / len(scores_list)) if len(scores_list) > 0 else 0.0
             ci_ = 1.96 * se_
             return m, ci_, m - ci_, m + ci_
@@ -1002,10 +840,7 @@ async def run_eval(
             total_s = ts_s["total_samples"] or 0
             fc_s = cast(dict[str, int], ts_s.get("function_counts", {}))
             total_tool_calls_s = sum(fc_s.values()) if fc_s else 0
-            func_pct_s = {
-                k: (v / total_tool_calls_s) if total_tool_calls_s > 0 else 0.0
-                for k, v in fc_s.items()
-            }
+            func_pct_s = {k: (v / total_tool_calls_s) if total_tool_calls_s > 0 else 0.0 for k, v in fc_s.items()}
             by_source[sname] = {
                 "n": len(scores_by_source[sname]),
                 "mean": m_s,
@@ -1037,10 +872,7 @@ async def run_eval(
             json.dump(summary, f, sort_keys=True)
         return summary
 
-    with (
-        samples_out.open("w", encoding="utf-8") as s_out,
-        grades_out.open("w", encoding="utf-8") as g_out,
-    ):
+    with samples_out.open("w", encoding="utf-8") as s_out, grades_out.open("w", encoding="utf-8") as g_out:
         log_event({"event": "as_completed_start", "count": len(tasks)})
         for fut in asyncio.as_completed(tasks):
             samp_rec, grade_rec = await fut
@@ -1099,8 +931,8 @@ async def run_eval(
                                 "mean": summary_data["mean"],
                                 "ci95": summary_data["ci95"],
                                 "models": summary_data["models"],
-                            },
-                        ),
+                            }
+                        )
                     )
                 except Exception as e:
                     counters["grader_errors"] += 1
@@ -1115,7 +947,7 @@ async def run_eval(
             "mean": s_final["mean"],
             "ci95": s_final["ci95"],
             "models": s_final["models"],
-        },
+        }
     )
 
     # Generate HTML report summarizing sequences per sample
@@ -1158,28 +990,20 @@ async def run_eval(
                     _rin = alt.get("responses_input")
                     rin = _rin if _rin is not None else []
                     orig_sys = responses_extract_system_text(rin)
-                    rewritten_sys = rewrite_system_with_template(
-                        orig_sys or "",
-                        template_file,
-                    )
+                    rewritten_sys = rewrite_system_with_template(orig_sys or "", template_file)
                     msgs_disp = responses_to_ccr_messages(rin)
                     idx = index_of_last_assistant_before_final(msgs_disp)
                     if idx is None:
                         shared_prefix = msgs_disp
                         bad_branch = []
                     else:
-                        shared_prefix = [
-                            m for m in (msgs_disp[:idx]) if m.role != MessageRole.SYSTEM
-                        ]
+                        shared_prefix = [m for m in (msgs_disp[:idx]) if m.role != MessageRole.SYSTEM]
                         bad_branch = msgs_disp[idx:]
                 else:
                     # CCR item
                     # Flatten original system
                     orig_sys = flatten_system_string(ar.get("system"))
-                    rewritten_sys = rewrite_system_with_template(
-                        orig_sys,
-                        template_file,
-                    )
+                    rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
                     _msgs = ar.get("messages")
                     raw_msgs = _msgs if _msgs is not None else []
                     if (chat_params := parse_chat_messages(raw_msgs)) is None:
@@ -1204,7 +1028,7 @@ async def run_eval(
                         "bad_branch": bad_branch,
                         "alternative": alt,
                         "grade": grade,
-                    },
+                    }
                 )
 
         # Jinja2 template
@@ -1226,19 +1050,10 @@ async def run_eval(
 def main():
     args = parse_args()
     # Allow mixing multiple datasets in one run via repeated --dataset
-    dataset_paths: list[Path] = [
-        Path(p) for p in (args.dataset if args.dataset is not None else [])
-    ]
+    dataset_paths: list[Path] = [Path(p) for p in (args.dataset if args.dataset is not None else [])]
     if not dataset_paths:
         dataset_paths = [DEFAULT_DATASET_PATH]
     base_out = Path(args.out_dir) if args.out_dir else None
     asyncio.run(
-        run_eval(
-            Path(args.template),
-            dataset_paths,
-            base_out,
-            args.n,
-            args.concurrency,
-            client=get_async_openai(),
-        ),
+        run_eval(Path(args.template), dataset_paths, base_out, args.n, args.concurrency, client=get_async_openai())
     )

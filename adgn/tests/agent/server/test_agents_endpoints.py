@@ -3,17 +3,14 @@ from __future__ import annotations
 from concurrent.futures import CancelledError
 
 import pytest
-
-from adgn.openai_utils.model import FakeOpenAIModel
 from tests.agent.ui_asserts import assert_ui_items_have, item_user_message
 from tests.agent.ws_helpers import assert_finished, drain_until_match, is_ui_state_event
 
+from adgn.openai_utils.model import FakeOpenAIModel
+
 
 @pytest.mark.timeout(5)
-def test_agents_list_status_and_history(
-    responses_factory,
-    agent_ws_box,
-):
+def test_agents_list_status_and_history(responses_factory, agent_ws_box):
     """Create an agent via API, check listing/status, run one turn, then verify run history and UI-state projection."""
 
     model_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
@@ -30,19 +27,15 @@ def test_agents_list_status_and_history(
             res = box.client.get(f"/api/agents/{box.agent_id}/status")
             assert res.status_code == 200
             body = res.json()
-            assert body["id"] == box.agent_id and body["live"] is True
+            assert body["id"] == box.agent_id
+            assert body["live"] is True
             assert body.get("active_run_id") in (None,)
 
             # Send one prompt over REST to create a run; WS receives events
             res = box.http.prompt("hi")
             assert res.status_code == 200
             # First, wait for a UiStateUpdated (or UiStateSnapshot) to assert UI reflects the user message
-            payloads = drain_until_match(
-                box.ws,
-                is_ui_state_event(),
-                limit=100,
-                mapper=lambda e: e.payload,
-            )
+            payloads = drain_until_match(box.ws, is_ui_state_event(), limit=100, mapper=lambda e: e.payload)
             last = payloads[-1]
             items = last.state.items  # UiStateSnapshot or UiStateUpdated have .state
             assert_ui_items_have(items, item_user_message())

@@ -102,7 +102,7 @@ class LLMAnalyzer:
             )
 
         # For MultiEdit tool
-        elif "edits" in tool_input:
+        if "edits" in tool_input:
             edits = tool_input["edits"]
             edits_summary = "\n\n".join(
                 [

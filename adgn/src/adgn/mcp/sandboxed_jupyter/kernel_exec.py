@@ -54,10 +54,7 @@ def main() -> int:
         os.execv(sys.executable, argv)
     except Exception:
         # In case redirect succeeded, this goes to the file
-        print(
-            "kernel_exec: unhandled exception:\n" + traceback.format_exc(),
-            file=sys.stderr,
-        )
+        print("kernel_exec: unhandled exception:\n" + traceback.format_exc(), file=sys.stderr)
         raise
 
 

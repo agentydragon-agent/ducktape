@@ -4,8 +4,8 @@ This module provides advanced features for prompt management including
 discovery, validation, template support, and error handling.
 """
 
-import re
 from pathlib import Path
+import re
 from string import Template
 from typing import Any
 
@@ -13,25 +13,17 @@ from typing import Any
 class PromptError(Exception):
     """Base exception for prompt-related errors."""
 
-    pass
-
 
 class PromptNotFoundError(PromptError):
     """Raised when a requested prompt cannot be found."""
-
-    pass
 
 
 class PromptValidationError(PromptError):
     """Raised when a prompt fails validation."""
 
-    pass
-
 
 class PromptVariableError(PromptError):
     """Raised when there are issues with prompt variables."""
-
-    pass
 
 
 class PromptLoader:
@@ -103,8 +95,7 @@ class PromptLoader:
 
         if include_paths:
             return [(name, str(path)) for name, path in sorted(prompts.items())]
-        else:
-            return sorted(prompts.keys())
+        return sorted(prompts.keys())
 
     def load_prompt(
         self,
@@ -156,13 +147,7 @@ class PromptLoader:
 
         return content
 
-    def _process_variables(
-        self,
-        content: str,
-        variables: dict[str, Any],
-        allow_missing: bool,
-        prompt_name: str,
-    ) -> str:
+    def _process_variables(self, content: str, variables: dict[str, Any], allow_missing: bool, prompt_name: str) -> str:
         """Process template variables in prompt content.
 
         Supports multiple template formats:
@@ -184,8 +169,7 @@ class PromptLoader:
             if allow_missing:
                 # Use safe_substitute to leave missing variables as-is
                 return template.safe_substitute(**variables)
-            else:
-                return template.substitute(**variables)
+            return template.substitute(**variables)
         except KeyError as e:
             missing_var = str(e).strip("'")
             raise PromptVariableError(f"Missing required variable '{missing_var}' in prompt '{prompt_name}'") from e
@@ -301,9 +285,7 @@ def discover_prompts(force_refresh: bool = False) -> dict[str, Path]:
     return _default_loader.discover_prompts(force_refresh)
 
 
-def list_prompts(
-    include_paths: bool = False,
-) -> list[str] | list[tuple[str, str]]:
+def list_prompts(include_paths: bool = False) -> list[str] | list[tuple[str, str]]:
     """List all available prompts.
 
     Args:
@@ -316,10 +298,7 @@ def list_prompts(
 
 
 def load_prompt(
-    prompt_name: str,
-    variables: dict[str, Any] | None = None,
-    allow_missing_vars: bool = False,
-    use_cache: bool = True,
+    prompt_name: str, variables: dict[str, Any] | None = None, allow_missing_vars: bool = False, use_cache: bool = True
 ) -> str:
     """Load a prompt by name with variable substitution.
 

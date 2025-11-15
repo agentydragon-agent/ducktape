@@ -11,11 +11,11 @@
   remote_user: "{{ my_user }}"
 
   roles:
-    #- role: docker
-    #- role: cli
-    #- role: gui
-    #- role: laptop
-    #- role: scanbox
+    # - role: docker
+    # - role: cli
+    # - role: gui
+    # - role: laptop
+    # - role: scanbox
     - role: tailscale_client
     - role: k3s_client
 

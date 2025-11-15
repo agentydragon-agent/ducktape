@@ -10,20 +10,17 @@ requiring a full Claude Desktop installation.
 
 import argparse
 import logging
-import os
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
 
 # Add the parent directory to the path so we can import the server
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from habitify_mcp_server.config import load_api_key
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("habitify-mcp-dev")
 
 
@@ -31,20 +28,9 @@ logger = logging.getLogger("habitify-mcp-dev")
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run the Habitify MCP server in dev mode")
-    parser.add_argument(
-        "--api-key",
-        help="Habitify API key (overrides HABITIFY_API_KEY environment variable)",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging",
-    )
-    parser.add_argument(
-        "--debug-tools",
-        action="store_true",
-        help="Enable MCP debugging for tools",
-    )
+    parser.add_argument("--api-key", help="Habitify API key (overrides HABITIFY_API_KEY environment variable)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--debug-tools", action="store_true", help="Enable MCP debugging for tools")
     return parser.parse_args()
 
 
@@ -80,9 +66,7 @@ def main() -> int:
         logger.setLevel(logging.DEBUG)
 
     # Load API key using our common utility
-    api_key = load_api_key(
-        api_key_override=args.api_key, exit_on_missing=False, logger_func=logger.error
-    )
+    api_key = load_api_key(api_key_override=args.api_key, exit_on_missing=False, logger_func=logger.error)
     if not api_key:
         return 1
 
@@ -106,10 +90,7 @@ def main() -> int:
         logger.info("Example: run_tool get_habits")
         logger.info("Press Ctrl+C to exit")
 
-        subprocess.run(
-            cmd,
-            check=True,
-        )
+        subprocess.run(cmd, check=True)
         return 0
     except subprocess.CalledProcessError as e:
         logger.error(f"Error running MCP dev: {e}")
@@ -124,7 +105,7 @@ def main() -> int:
     finally:
         # Clean up the temporary file
         try:
-            os.unlink(temp_filename)
+            Path(temp_filename).unlink()
             logger.info(f"Removed temporary server file: {temp_filename}")
         except Exception as e:
             logger.warning(f"Failed to remove temporary file: {e}")

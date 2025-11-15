@@ -11,12 +11,7 @@ import traceback
 
 
 def _runtime_dir() -> Path:
-    rd = (
-        os.environ.get("JUPYTER_RUNTIME_DIR")
-        or os.environ.get("TMPDIR")
-        or os.environ.get("HOME")
-        or "."
-    )
+    rd = os.environ.get("JUPYTER_RUNTIME_DIR") or os.environ.get("TMPDIR") or os.environ.get("HOME") or "."
     p = Path(rd)
     p.mkdir(parents=True, exist_ok=True)
     return p
@@ -43,14 +38,7 @@ def main() -> int:
             "argv": sys.argv,
             "env_subset": {
                 k: os.environ.get(k)
-                for k in [
-                    "PATH",
-                    "PYTHONPATH",
-                    "VIRTUAL_ENV",
-                    "JUPYTER_RUNTIME_DIR",
-                    "HOME",
-                    "TMPDIR",
-                ]
+                for k in ["PATH", "PYTHONPATH", "VIRTUAL_ENV", "JUPYTER_RUNTIME_DIR", "HOME", "TMPDIR"]
             },
         }
         log("shim: info=" + json.dumps(info, indent=2, default=str))

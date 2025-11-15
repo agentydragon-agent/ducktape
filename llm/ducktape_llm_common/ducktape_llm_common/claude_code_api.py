@@ -77,12 +77,14 @@ class BaseResponse(BaseModel):
     """
 
     continue_: bool = Field(True, alias="continue")
-    stopReason: str | None = Field(None, description="Message shown to USER when continue is false")
-    suppressOutput: bool | None = Field(None)
+    stop_reason: str | None = Field(
+        None, alias="stopReason", description="Message shown to USER when continue is false"
+    )
+    suppress_output: bool | None = Field(None, alias="suppressOutput")
 
     model_config = {"populate_by_name": True}
 
-    @field_validator("stopReason")
+    @field_validator("stop_reason")
     @classmethod
     def validate_stop_reason(cls, v: str | None, info) -> str | None:
         if v and info.data.get("continue_", True):

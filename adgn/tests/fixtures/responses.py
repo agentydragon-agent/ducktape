@@ -6,6 +6,7 @@ from typing import Any
 from fastmcp.client.client import CallToolResult
 from pydantic import TypeAdapter
 import pytest
+from tests.llm.support.openai_mock import LIVE, make_mock
 
 from adgn.openai_utils import builders
 from adgn.openai_utils.model import (
@@ -16,7 +17,6 @@ from adgn.openai_utils.model import (
     ResponsesResult,
     Usage,
 )
-from tests.llm.support.openai_mock import LIVE, make_mock
 
 
 @pytest.fixture(scope="session")
@@ -47,9 +47,7 @@ class ResponsesFactory(builders.ItemFactory):
             output=[self.assistant_text(text)],
         )
 
-    def make_tool_call(
-        self, name: str, arguments: dict | str, call_id: str | None = None
-    ) -> ResponsesResult:
+    def make_tool_call(self, name: str, arguments: dict | str, call_id: str | None = None) -> ResponsesResult:
         return self.make(self.tool_call(name, arguments, call_id))
 
     # ---- Low-level item builders (compose with make(...items)) ----
@@ -68,11 +66,7 @@ class ResponsesFactory(builders.ItemFactory):
         for it in items:
             if isinstance(it, AssistantMessageOut):
                 out_tokens += max(1, len(it.text))
-        usage = Usage(
-            input_tokens=0,
-            output_tokens=(1 if out_tokens else 0),
-            total_tokens=(1 if out_tokens else 0),
-        )
+        usage = Usage(input_tokens=0, output_tokens=(1 if out_tokens else 0), total_tokens=(1 if out_tokens else 0))
         # Coerce any plain dicts to proper models if needed (not expected here)
         return ResponsesResult(id="resp_generic", usage=usage, output=list(items))
 
@@ -83,26 +77,17 @@ class ResponsesFactory(builders.ItemFactory):
         return self.make(self.assistant_text(text))
 
     def make_reasoning_then_assistant(self, text: str) -> ResponsesResult:
-        return self.make(
-            self.make_item_reasoning(),
-            self.assistant_text(text),
-        )
+        return self.make(self.make_item_reasoning(), self.assistant_text(text))
 
     def make_reasoning_tool_then_assistant(
         self, *, call_id: str, name: str, arguments: dict | str, text: str
     ) -> ResponsesResult:
         return self.make(
-            self.make_item_reasoning(),
-            self.tool_call(name, arguments, call_id),
-            self.assistant_text(text),
+            self.make_item_reasoning(), self.tool_call(name, arguments, call_id), self.assistant_text(text)
         )
 
     def make_tool_call_with_output(
-        self,
-        name: str,
-        arguments: dict | str,
-        output: Any,
-        call_id: str | None = None,
+        self, name: str, arguments: dict | str, output: Any, call_id: str | None = None
     ) -> ResponsesResult:
         call = self.tool_call(name, arguments, call_id)
         result = CallToolResult(content=[], structured_content=output, data=None, is_error=False)

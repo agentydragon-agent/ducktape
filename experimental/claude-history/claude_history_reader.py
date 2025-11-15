@@ -2,11 +2,11 @@
 """Read and analyze Claude Code history files from ~/.claude/projects/"""
 
 import argparse
-import json
-import re
 from collections import Counter
 from datetime import datetime
+import json
 from pathlib import Path
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -52,21 +52,21 @@ class SummaryEntry(BaseModel):
 
     type: str = "summary"
     summary: str
-    leafUuid: str
+    leaf_uuid: str = Field(alias="leafUuid")
 
 
 class MessageEntry(BaseModel):
     """Entry in the JSONL file"""
 
-    parentUuid: str | None = None
-    isSidechain: bool = False
-    userType: str | None = None
+    parent_uuid: str | None = Field(None, alias="parentUuid")
+    is_sidechain: bool = Field(False, alias="isSidechain")
+    user_type: str | None = Field(None, alias="userType")
     cwd: str | None = None
-    sessionId: str | None = None
+    session_id: str | None = Field(None, alias="sessionId")
     version: str | None = None
     type: str
     message: MessageContent | None = None
-    requestId: str | None = None
+    request_id: str | None = Field(None, alias="requestId")
     uuid: str
     timestamp: str
 
@@ -195,7 +195,7 @@ class ClaudeHistoryReader:
                     if entry_data["type"] == "summary":
                         summary = SummaryEntry(**entry_data)
                         metadata["summary"] = summary.summary
-                        metadata["leafUuid"] = summary.leafUuid
+                        metadata["leafUuid"] = summary.leaf_uuid
                     elif entry_data["type"] in ["user", "assistant"]:
                         try:
                             entry = MessageEntry(**entry_data)
@@ -209,7 +209,7 @@ class ClaudeHistoryReader:
                                     timestamp=entry.timestamp,
                                     content=self._extract_content(entry.message),
                                     uuid=entry.uuid,
-                                    parent_uuid=entry.parentUuid,
+                                    parent_uuid=entry.parent_uuid,
                                     cwd=entry.cwd,
                                     model=entry.message.model,
                                     usage=usage,
@@ -267,12 +267,8 @@ class ClaudeHistoryReader:
 
         # Aggregate statistics
         total_messages = sum(s.message_count for s in sessions)
-        user_messages = sum(
-            sum(1 for m in s.messages if m.type == "user") for s in sessions
-        )
-        assistant_messages = sum(
-            sum(1 for m in s.messages if m.type == "assistant") for s in sessions
-        )
+        user_messages = sum(sum(1 for m in s.messages if m.type == "user") for s in sessions)
+        assistant_messages = sum(sum(1 for m in s.messages if m.type == "assistant") for s in sessions)
 
         # Token usage
         total_input_tokens = 0
@@ -312,11 +308,7 @@ class ClaudeHistoryReader:
             models_used=dict(models_used),
         )
 
-    def search_content(
-        self,
-        pattern: str,
-        project_path: Path | None = None,
-    ) -> list[SearchResult]:
+    def search_content(self, pattern: str, project_path: Path | None = None) -> list[SearchResult]:
         """Search for pattern in message content"""
         results = []
         regex = re.compile(pattern, re.IGNORECASE)
@@ -334,9 +326,7 @@ class ClaudeHistoryReader:
                                 session=session_file.stem,
                                 timestamp=msg.timestamp,
                                 type=msg.type,
-                                snippet=msg.content[:200] + "..."
-                                if len(msg.content) > 200
-                                else msg.content,
+                                snippet=msg.content[:200] + "..." if len(msg.content) > 200 else msg.content,
                             )
                             results.append(result)
                 except Exception:
@@ -355,28 +345,13 @@ def format_tokens(tokens: int) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Read and analyze Claude Code history files",
-    )
+    parser = argparse.ArgumentParser(description="Read and analyze Claude Code history files")
     parser.add_argument("--list", action="store_true", help="List all projects")
-    parser.add_argument(
-        "--project",
-        "-p",
-        help="Analyze specific project (name or absolute path)",
-    )
+    parser.add_argument("--project", "-p", help="Analyze specific project (name or absolute path)")
     parser.add_argument("--session", "-s", help="Show specific session details")
     parser.add_argument("--search", help="Search for pattern in messages")
-    parser.add_argument(
-        "--stats",
-        action="store_true",
-        help="Show token usage statistics",
-    )
-    parser.add_argument(
-        "--current",
-        "-c",
-        action="store_true",
-        help="Analyze current directory as project",
-    )
+    parser.add_argument("--stats", action="store_true", help="Show token usage statistics")
+    parser.add_argument("--current", "-c", action="store_true", help="Analyze current directory as project")
 
     args = parser.parse_args()
     reader = ClaudeHistoryReader()
@@ -416,19 +391,15 @@ def main():
         print(f"Project: {analysis.project_name}")
         print(f"Sessions: {analysis.session_count}")
         print(
-            f"Messages: {analysis.total_messages} (User: {analysis.user_messages}, Assistant: {analysis.assistant_messages})",
+            f"Messages: {analysis.total_messages} (User: {analysis.user_messages}, Assistant: {analysis.assistant_messages})"
         )
 
         if args.stats and analysis.token_usage.total > 0:
             print("\nToken Usage:")
             print(f"  Input: {format_tokens(analysis.token_usage.total_input)}")
             print(f"  Output: {format_tokens(analysis.token_usage.total_output)}")
-            print(
-                f"  Cache Creation: {format_tokens(analysis.token_usage.total_cache_creation)}",
-            )
-            print(
-                f"  Cache Read: {format_tokens(analysis.token_usage.total_cache_read)}",
-            )
+            print(f"  Cache Creation: {format_tokens(analysis.token_usage.total_cache_creation)}")
+            print(f"  Cache Read: {format_tokens(analysis.token_usage.total_cache_read)}")
             print(f"  Total: {format_tokens(analysis.token_usage.total)}")
 
         if analysis.models_used:
@@ -444,12 +415,8 @@ def main():
                     print(f"Summary: {session.metadata.get('summary', 'N/A')}")
                     print(f"Messages: {session.message_count}")
                     if session.start_time:
-                        start = datetime.fromisoformat(
-                            session.start_time.replace("Z", "+00:00"),
-                        )
-                        end = datetime.fromisoformat(
-                            session.end_time.replace("Z", "+00:00"),
-                        )
+                        start = datetime.fromisoformat(session.start_time.replace("Z", "+00:00"))
+                        end = datetime.fromisoformat(session.end_time.replace("Z", "+00:00"))
                         print(f"Duration: {end - start}")
                     break
         else:
@@ -457,9 +424,7 @@ def main():
             print("\nRecent Sessions:")
             for session in analysis.sessions[-5:]:
                 if session.start_time:
-                    timestamp = datetime.fromisoformat(
-                        session.start_time.replace("Z", "+00:00"),
-                    )
+                    timestamp = datetime.fromisoformat(session.start_time.replace("Z", "+00:00"))
                     summary = session.metadata.get("summary", "No summary")[:60]
                     print(f"  [{timestamp.strftime('%Y-%m-%d %H:%M')}] {summary}...")
     else:

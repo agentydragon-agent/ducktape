@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from aw_client import ActivityWatchClient
 
@@ -24,22 +24,17 @@ def pick_buckets(client: ActivityWatchClient) -> tuple[list[str], list[str], lis
     return window_bk, web_bk, afk_bk
 
 
-def iter_events(
-    client: ActivityWatchClient,
-    bucket_ids: list[str],
-    start: datetime,
-    end: datetime,
-):
+def iter_events(client: ActivityWatchClient, bucket_ids: list[str], start: datetime, end: datetime):
     """Yield events from all buckets in [start, end)."""
     for bid in bucket_ids:
         yield from client.get_events(bid, start=start, end=end)
 
 
 def summarize(minutes: int | None = 30, *, day: date | None = None) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if day:
-        start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc)
+        start = datetime.combine(day, datetime.min.time(), tzinfo=UTC)
         end = start + timedelta(days=1)
         label = day.isoformat()
     else:
@@ -82,9 +77,7 @@ def summarize(minutes: int | None = 30, *, day: date | None = None) -> None:
         else:
             active_secs += dur
 
-    print(
-        f"\nActivityWatch summary for {label} ({start.isoformat()} → {end.isoformat()})\n",
-    )
+    print(f"\nActivityWatch summary for {label} ({start.isoformat()} → {end.isoformat()})\n")
 
     tot_secs = active_secs + afk_secs
 
@@ -108,17 +101,8 @@ def summarize(minutes: int | None = 30, *, day: date | None = None) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="ActivityWatch quick summary")
-    ap.add_argument(
-        "--day",
-        metavar="YYYY-MM-DD",
-        help="daily summary for given date (UTC)",
-    )
-    ap.add_argument(
-        "--mins",
-        type=int,
-        default=15,
-        help="rolling window length in minutes (ignored if --day)",
-    )
+    ap.add_argument("--day", metavar="YYYY-MM-DD", help="daily summary for given date (UTC)")
+    ap.add_argument("--mins", type=int, default=15, help="rolling window length in minutes (ignored if --day)")
     args = ap.parse_args()
 
     chosen_day = date.fromisoformat(args.day) if args.day else None

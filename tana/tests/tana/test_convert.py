@@ -19,10 +19,7 @@ def check_content_match(actual: str, expected: str, test_name: str) -> None:
     """Check if actual matches expected, print diff if not."""
     if actual != expected:
         # Use ndiff for word-level changes with color-like output
-        diff = difflib.ndiff(
-            expected.splitlines(keepends=True),
-            actual.splitlines(keepends=True),
-        )
+        diff = difflib.ndiff(expected.splitlines(keepends=True), actual.splitlines(keepends=True))
         print("".join(diff))
         pytest.fail(f"Content does not match for {test_name}")
 

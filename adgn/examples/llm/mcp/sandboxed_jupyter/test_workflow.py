@@ -6,9 +6,10 @@ import subprocess
 import sys
 import time
 
-from mcp_helpers import read_line_json, send_line_json
 import pytest
 import yaml
+
+from adgn.mcp._shared.json_helpers import read_line_json_dict, send_line_json
 
 # Constants for readability in comparisons and timing
 STARTUP_DRAIN_SECS = 5.0
@@ -62,15 +63,8 @@ def test_example_bundle_and_launch(tmp_path):
             },
             "fs": {
                 # Limit read to python binary dir and stdlib site-packages only
-                "read_paths": [
-                    venv_root.as_posix(),
-                    (venv_root / "lib").as_posix(),
-                    bundle_dir.as_posix(),
-                ],
-                "write_paths": [
-                    runtime_dir.as_posix(),
-                    (runtime_dir / "workspace").as_posix(),
-                ],
+                "read_paths": [venv_root.as_posix(), (venv_root / "lib").as_posix(), bundle_dir.as_posix()],
+                "write_paths": [runtime_dir.as_posix(), (runtime_dir / "workspace").as_posix()],
             },
             "net": {"mode": "loopback"},
             "platform": {"seatbelt": {"trace": False}},
@@ -80,13 +74,7 @@ def test_example_bundle_and_launch(tmp_path):
 
     # Run composer via stdin
     subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "adgn.mcp.sandboxed_jupyter.jupyter_sandbox_compose",
-            "--config",
-            "-",
-        ],
+        [sys.executable, "-m", "adgn.mcp.sandboxed_jupyter.jupyter_sandbox_compose", "--config", "-"],
         input=composer_yaml.encode(),
         check=True,
         env=env,
@@ -120,13 +108,7 @@ def test_example_bundle_and_launch(tmp_path):
         runtime_dir,
     ]
 
-    p = subprocess.Popen(
-        launch_cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-    )
+    p = subprocess.Popen(launch_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
 
     # Allow some startup logs to flow, helps MCP readiness
     start = time.time()
@@ -154,22 +136,19 @@ def test_example_bundle_and_launch(tmp_path):
         init_resp = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not init_resp:
-            m = read_line_json(p.stdout, 1.0)
+            m = read_line_json_dict(p.stdout, 1.0)
             if m and m.get("id") == INIT_ID and ("result" in m or "error" in m):
                 init_resp = m
         assert init_resp is not None, f"initialize failed: {init_resp}"
         assert "result" in init_resp, f"initialize failed: {init_resp}"
-        send_line_json(
-            p.stdin,
-            {"jsonrpc": "2.0", "method": "notifications/initialized"},
-        )
+        send_line_json(p.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
         time.sleep(0.3)
         # List available tools (sanity)
         send_line_json(p.stdin, {"jsonrpc": "2.0", "id": TOOLS_LIST_ID, "method": "tools/list"})
         tools_resp = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not tools_resp:
-            m = read_line_json(p.stdout, 1.0)
+            m = read_line_json_dict(p.stdout, 1.0)
             if m and m.get("id") == TOOLS_LIST_ID and ("result" in m or "error" in m):
                 tools_resp = m
         assert tools_resp is not None, f"tools/list failed: {tools_resp}"
@@ -183,16 +162,13 @@ def test_example_bundle_and_launch(tmp_path):
                 "jsonrpc": "2.0",
                 "id": EXEC_OK_ID,
                 "method": "tools/call",
-                "params": {
-                    "name": "append_execute_code_cell",
-                    "arguments": {"cell_source": code_ok},
-                },
+                "params": {"name": "append_execute_code_cell", "arguments": {"cell_source": code_ok}},
             },
         )
         exec_ok = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not exec_ok:
-            m = read_line_json(p.stdout, 1.0)
+            m = read_line_json_dict(p.stdout, 1.0)
             if m and m.get("id") == EXEC_OK_ID and ("result" in m or "error" in m):
                 exec_ok = m
         assert exec_ok is not None, f"code exec failed: {exec_ok}"

@@ -22,11 +22,7 @@ class WebhookAuthHandler(ABC):
     """Base class for webhook authentication handlers."""
 
     @abstractmethod
-    async def validate(
-        self,
-        request: Request,
-        credentials: HTTPAuthorizationCredentials | None,
-    ) -> None:
+    async def validate(self, request: Request, credentials: HTTPAuthorizationCredentials | None) -> None:
         """Validate authentication for a webhook."""
 
 
@@ -36,11 +32,7 @@ class NoAuthHandler(WebhookAuthHandler):
     def __init__(self, config: NoAuth):
         self.config = config
 
-    async def validate(
-        self,
-        request: Request,
-        credentials: HTTPAuthorizationCredentials | None,
-    ) -> None:
+    async def validate(self, request: Request, credentials: HTTPAuthorizationCredentials | None) -> None:
         """Always approve - no authentication required."""
 
 
@@ -50,11 +42,7 @@ class BearerAuthHandler(WebhookAuthHandler):
     def __init__(self, config: BearerAuth):
         self.config = config
 
-    async def validate(
-        self,
-        request: Request,
-        credentials: HTTPAuthorizationCredentials | None,
-    ) -> None:
+    async def validate(self, request: Request, credentials: HTTPAuthorizationCredentials | None) -> None:
         """Validate Bearer token authentication."""
         bearer_headers = {"WWW-Authenticate": "Bearer"}
 
@@ -68,9 +56,7 @@ class BearerAuthHandler(WebhookAuthHandler):
             raise AuthError("Invalid token", headers=bearer_headers)
 
 
-def create_auth_handler(
-    config: WebhookAuthConfig | dict[str, Any],
-) -> WebhookAuthHandler:
+def create_auth_handler(config: WebhookAuthConfig | dict[str, Any]) -> WebhookAuthHandler:
     """Factory function to create appropriate authentication handler."""
     if isinstance(config, dict):
         auth_type = config.get("type")

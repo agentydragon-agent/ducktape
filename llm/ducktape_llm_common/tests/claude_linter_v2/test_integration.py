@@ -32,6 +32,7 @@ except:
             input=json.dumps(request_data),
             capture_output=True,
             text=True,
+            check=False,
         )
 
         assert result.returncode == 0  # CLI always exits 0, check JSON response
@@ -61,6 +62,7 @@ if hasattr(obj, 'foo'):
             input=json.dumps(request_data),
             capture_output=True,
             text=True,
+            check=False,
         )
 
         assert result.returncode == 0
@@ -92,6 +94,7 @@ def hello():
             input=json.dumps(request_data),
             capture_output=True,
             text=True,
+            check=False,
         )
 
         assert result.returncode == 0
@@ -101,7 +104,8 @@ def hello():
         assert "decision" not in response or response.get("decision") != "block"
 
     @pytest.mark.skipif(
-        subprocess.run(["ruff", "--version"], capture_output=True).returncode != 0, reason="ruff not available"
+        subprocess.run(["ruff", "--version"], capture_output=True, check=False).returncode != 0,
+        reason="ruff not available",
     )
     def test_pre_hook_ruff_violation(self):
         """Test that pre-hook blocks ruff violations."""
@@ -128,6 +132,7 @@ def get_data():
             input=json.dumps(request_data),
             capture_output=True,
             text=True,
+            check=False,
         )
 
         assert result.returncode == 0
@@ -158,6 +163,7 @@ __all__ = ['Class1', 'Class2']
             input=json.dumps(request_data),
             capture_output=True,
             text=True,
+            check=False,
         )
 
         assert result.returncode == 0
@@ -172,6 +178,7 @@ __all__ = ['Class1', 'Class2']
             input="not valid json",
             capture_output=True,
             text=True,
+            check=False,
         )
 
         # Invalid JSON should crash the CLI
@@ -196,6 +203,7 @@ __all__ = ['Class1', 'Class2']
             input=json.dumps(request_data),
             capture_output=True,
             text=True,
+            check=False,
         )
 
         assert result.returncode == 0
@@ -217,6 +225,7 @@ __all__ = ['Class1', 'Class2']
             input=json.dumps(request_data),
             capture_output=True,
             text=True,
+            check=False,
         )
 
         # CLI always exits 0
@@ -237,7 +246,8 @@ class TestSessionCommands:
             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "session", "list"],
             capture_output=True,
             text=True,
-            cwd="/tmp",  # Use a specific directory
+            cwd="/tmp",
+            check=False,  # Use a specific directory
         )
 
         assert result.returncode == 0
@@ -251,6 +261,7 @@ class TestSessionCommands:
             capture_output=True,
             text=True,
             cwd="/tmp",
+            check=False,
         )
 
         assert result.returncode == 0

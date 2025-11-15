@@ -1,11 +1,7 @@
 import pytest
 
 from adgn.agent.loop_control import Auto, Continue, RequireAny
-from adgn.agent.reducer import (
-    BaseHandler,
-    NoLoopDecision,
-    Reducer,
-)
+from adgn.agent.reducer import BaseHandler, NoLoopDecision, Reducer
 
 
 class DeferringHandler(BaseHandler):

@@ -60,11 +60,7 @@ async def test_run_sandboxed_async_echo(tmp_path: Path):
     )
 
     res = await run_sandboxed_async(
-        policy,
-        ["/bin/echo", "OK"],
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        trace=True,
+        policy, ["/bin/echo", "OK"], stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, trace=True
     )
     assert res.exit_code == 0
     assert res.stdout == b"OK\n"

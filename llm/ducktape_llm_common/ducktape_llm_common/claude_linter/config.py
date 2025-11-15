@@ -24,7 +24,7 @@ def load_user_config():
 def load_local_precommit(path: Path) -> dict:
     local = path / ".pre-commit-config.yaml"
     if local.exists():
-        with open(local) as f:
+        with local.open() as f:
             return yaml.safe_load(f)
     return {}
 
@@ -45,9 +45,9 @@ def merge_configs(user_cfg: dict, local_cfg: dict, fix: bool) -> dict:
         merged["repos"].append(repo)
 
     # Copy any other top-level pre-commit config keys
-    for key in local_cfg:
+    for key, value in local_cfg.items():
         if key != "repos":
-            merged[key] = local_cfg[key]
+            merged[key] = value
 
     return merged
 

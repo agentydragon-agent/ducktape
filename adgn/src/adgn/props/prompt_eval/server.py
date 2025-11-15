@@ -32,24 +32,13 @@ from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.props.critic import (
-    CriticSubmitPayload,
-    CriticSubmitState,
-    attach_critic_submit,
-)
+from adgn.props.critic import CriticSubmitPayload, CriticSubmitState, attach_critic_submit
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grade_runner import _metrics_row, grade_critic_output
-from adgn.props.lint_issue import (
-    make_container_info_call,
-    make_ls_workspace_call,
-)
+from adgn.props.lint_issue import make_container_info_call, make_ls_workspace_call
 from adgn.props.prompts.util import build_scope_text, render_prompt_template
 from adgn.props.prop_utils import pkg_dir
-from adgn.props.specimens.registry import (
-    SpecimenRegistry,
-    find_specimens_base,
-    list_specimen_names,
-)
+from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names
 
 logger = logging.getLogger(__name__)
 
@@ -86,26 +75,15 @@ class PromptEvalOutput(BaseModel):
 
 
 async def _run_critic_for_specimen(
-    specimen: str,
-    system_prompt: str,
-    client: OpenAIModelProto,
-    run_dir: Path,
-    *,
-    agent_model: str = "gpt-5",
+    specimen: str, system_prompt: str, client: OpenAIModelProto, run_dir: Path, *, agent_model: str = "gpt-5"
 ) -> CriticSubmitPayload:
     """Run critic with a custom system prompt (no properties mount); return CriticSubmitPayload model and persist."""
     rec = SpecimenRegistry.load_strict(specimen)
     critic_state = CriticSubmitState()
 
     # Render user prompt with explicit scope (no property definitions mounted)
-    scope_text = build_scope_text(
-        rec.manifest.scope.include,
-        rec.manifest.scope.exclude,
-    )
-    user_prompt = render_prompt_template(
-        "critic_user_prompt.j2.md",
-        scope_text=scope_text,
-    )
+    scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
+    user_prompt = render_prompt_template("critic_user_prompt.j2.md", scope_text=scope_text)
 
     async with rec.hydrated_copy(gitconfig=None) as content_root:
         wiring = properties_docker_spec(content_root, mount_properties=False)
@@ -166,18 +144,12 @@ async def _run_critic_for_specimen(
     out_dir = run_dir / specimen
     out_dir.mkdir(parents=True, exist_ok=True)
     if critic_state.error is not None:
-        (out_dir / "critic_error.json").write_text(
-            critic_state.error.model_dump_json(indent=2),
-            encoding="utf-8",
-        )  # type: ignore[attr-defined]
+        (out_dir / "critic_error.json").write_text(critic_state.error.model_dump_json(indent=2), encoding="utf-8")  # type: ignore[attr-defined]
         raise RuntimeError(
-            f"critic error: {critic_state.error.message}",
+            f"critic error: {critic_state.error.message}"
         )  # surfaced to caller; per-round errors.json aggregates
     assert critic_state.result is not None
-    (out_dir / "critic.json").write_text(
-        critic_state.result.model_dump_json(indent=2),
-        encoding="utf-8",
-    )  # type: ignore[attr-defined]
+    (out_dir / "critic.json").write_text(critic_state.result.model_dump_json(indent=2), encoding="utf-8")  # type: ignore[attr-defined]
     return critic_state.result
 
 
@@ -187,11 +159,7 @@ class PromptEvalState:
 
 
 def build_server(
-    *,
-    client: OpenAIModelProto,
-    name: str = "prompt_eval",
-    agent_model: str = "gpt-5",
-    run_dir_base: Path | None = None,
+    *, client: OpenAIModelProto, name: str = "prompt_eval", agent_model: str = "gpt-5", run_dir_base: Path | None = None
 ) -> tuple[NotifyingFastMCP, PromptEvalState]:
     """Build a prompt_eval server that tracks rounds and writes under a fixed run dir.
 
@@ -209,16 +177,11 @@ def build_server(
 
     state = PromptEvalState()
 
-    mcp = NotifyingFastMCP(
-        name,
-        instructions="Prompt Evaluation server — evaluate candidate critic prompts",
-    )
+    mcp = NotifyingFastMCP(name, instructions="Prompt Evaluation server — evaluate candidate critic prompts")
     # TODO(mpokorny): FastMCP wraps tool Exceptions into ToolError, so this tool cannot crash the server;
     # failures propagate as tool errors. We log at ERROR and surface per-specimen/round summaries.
 
-    @mcp.tool(
-        flat=True,
-    )
+    @mcp.tool(flat=True)
     async def test_prompt(payload: PromptEvalArgs) -> PromptEvalOutput:
         """Evaluate a critic system prompt across all specimens and return metrics.
 
@@ -237,32 +200,18 @@ def build_server(
         specimens = list_specimen_names(base)
         # client is required and injected by the caller to avoid implicit network clients
         if client is None:
-            raise ValueError(
-                "build_server requires a non-None client to be passed; tests must opt-in via fixtures",
-            )
+            raise ValueError("build_server requires a non-None client to be passed; tests must opt-in via fixtures")
 
         async def one(specimen: str) -> MetricsRow:
             out_dir = round_dir / specimen
             out_dir.mkdir(parents=True, exist_ok=True)
             try:
                 critic_obj = await _run_critic_for_specimen(
-                    specimen,
-                    payload.prompt,
-                    client,
-                    round_dir,
-                    agent_model=agent_model,
+                    specimen, payload.prompt, client, round_dir, agent_model=agent_model
                 )
                 # Persist grade JSON and transcript under round/specimen
-                grade_obj = await grade_critic_output(
-                    specimen,
-                    critic_obj,
-                    client,
-                    transcript_out_dir=out_dir,
-                )
-                (out_dir / "grade.json").write_text(
-                    grade_obj.model_dump_json(indent=2),
-                    encoding="utf-8",
-                )
+                grade_obj = await grade_critic_output(specimen, critic_obj, client, transcript_out_dir=out_dir)
+                (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
                 critic_log = out_dir / "critic" / "events.jsonl"
                 grader_log = out_dir / "grader" / "events.jsonl"
                 logger.debug("critic transcript: %s", critic_log)
@@ -274,21 +223,12 @@ def build_server(
                 return row_model
             except Exception as e:
                 # Persist detailed traceback per specimen; then re-raise original
-                (out_dir / "error.txt").write_text(
-                    "".join(traceback.format_exception(e)),
-                    encoding="utf-8",
-                )
-                logger.exception(
-                    "Unhandled error during specimen run",
-                    extra={"specimen": specimen},
-                )
+                (out_dir / "error.txt").write_text("".join(traceback.format_exception(e)), encoding="utf-8")
+                logger.exception("Unhandled error during specimen run", extra={"specimen": specimen})
                 raise
 
         # Run all specimens concurrently and return structured success/failure to the caller.
-        results = await asyncio.gather(
-            *[one(s) for s in specimens],
-            return_exceptions=True,
-        )
+        results = await asyncio.gather(*[one(s) for s in specimens], return_exceptions=True)
 
         metrics_list: list[MetricsRow] = []
         # Keep lightweight summary of errors to include in raised message and persist
@@ -296,28 +236,18 @@ def build_server(
         for spec, res in zip(specimens, results, strict=False):
             if isinstance(res, BaseException):
                 # per-specimen error.txt is already written inside `one`; summarize here
-                errors_serial.append(
-                    {
-                        "specimen": spec,
-                        "type": type(res).__name__,
-                        "message": str(res),
-                    }
-                )
+                errors_serial.append({"specimen": spec, "type": type(res).__name__, "message": str(res)})
             else:
                 metrics_list.append(res)
 
         # Persist results and/or errors
         if metrics_list:
             (round_dir / "results.json").write_text(
-                json.dumps([m.model_dump() for m in metrics_list], indent=2),
-                encoding="utf-8",
+                json.dumps([m.model_dump() for m in metrics_list], indent=2), encoding="utf-8"
             )
         if errors_serial:
             # write a lightweight serialized errors list for human consumption
-            (round_dir / "errors.json").write_text(
-                json.dumps(errors_serial, indent=2),
-                encoding="utf-8",
-            )
+            (round_dir / "errors.json").write_text(json.dumps(errors_serial, indent=2), encoding="utf-8")
             logger.error(
                 "Round completed with specimen errors; see %s/errors.json (first error: %s)",
                 round_dir,
@@ -346,11 +276,6 @@ async def attach_prompt_eval(
     run_dir_base: Path | None = None,
 ):
     """Attach prompt_eval in-proc; return (server, state)."""
-    server, state = build_server(
-        client=client,
-        name=name,
-        agent_model=agent_model,
-        run_dir_base=run_dir_base,
-    )
+    server, state = build_server(client=client, name=name, agent_model=agent_model, run_dir_base=run_dir_base)
     await comp.mount_inproc(name, server)
     return server, state

@@ -13,12 +13,12 @@ import socket
 import subprocess
 import sys
 
+import docker
 import yaml
 
 from adgn.llm.sandboxer import Policy
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.util.net import wait_for_port
-import docker
 
 StrPath = str | PathLike[str]
 
@@ -40,16 +40,7 @@ def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
         raise FileExistsError(f"Notebook already exists: {target_path}")
     kernelspec = {"name": "python3", "display_name": "Python 3", "language": "python"}
     target_path.write_text(
-        json.dumps(
-            {
-                "cells": [],
-                "metadata": {
-                    "kernelspec": kernelspec,
-                },
-                "nbformat": 4,
-                "nbformat_minor": 5,
-            },
-        ),
+        json.dumps({"cells": [], "metadata": {"kernelspec": kernelspec}, "nbformat": 4, "nbformat_minor": 5})
     )
     return resolved_id
 
@@ -57,12 +48,7 @@ def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
 # Docker mode helper (unchanged behavior aside from workspace/run_root coming from CLI)
 
 
-def _build_bash_script(
-    workspace: Path,
-    document_id: str,
-    token: str,
-    start_new_runtime: bool,
-) -> str:
+def _build_bash_script(workspace: Path, document_id: str, token: str, start_new_runtime: bool) -> str:
     wq = shlex.quote(str(workspace))
     dq = shlex.quote(document_id)
     tq = shlex.quote(token)
@@ -107,20 +93,9 @@ exec jupyter-mcp-server start \
 """.strip()
 
 
-def _docker(
-    workspace: Path,
-    document_id: str,
-    docker_image: str,
-    start_new_runtime: bool,
-    jupyter_port: int,
-) -> int:
+def _docker(workspace: Path, document_id: str, docker_image: str, start_new_runtime: bool, jupyter_port: int) -> int:
     token = secrets.token_urlsafe(24)
-    bash_script = _build_bash_script(
-        Path("/workspace"),
-        document_id,
-        token,
-        start_new_runtime,
-    )
+    bash_script = _build_bash_script(Path("/workspace"), document_id, token, start_new_runtime)
 
     run_root = f"/tmp/sjmcp-{secrets.token_hex(6)}"
 
@@ -164,15 +139,7 @@ def _docker(
             return 2
 
         # Run the jupyter+mcp startup script inside the container attached to our stdio
-        exec_cmd = [
-            "docker",
-            "exec",
-            "-i",
-            name,
-            "bash",
-            "-lc",
-            bash_script,
-        ]
+        exec_cmd = ["docker", "exec", "-i", name, "bash", "-lc", bash_script]
         return subprocess.Popen(exec_cmd).wait()
     finally:
         try:
@@ -190,23 +157,12 @@ def _kernels_dir(run_root: Path) -> Path:
 
 
 def _write_sandboxed_kernelspec(
-    run_root: Path,
-    workspace: Path,
-    policy_yaml: Path,
-    kernel_python: str,
-    *,
-    trace: bool,
+    run_root: Path, workspace: Path, policy_yaml: Path, kernel_python: str, *, trace: bool
 ) -> None:
     # Override the default 'python3' kernel to ensure the sandbox is used.
     ks_dir = _kernels_dir(run_root) / "python3"
     ks_dir.mkdir(parents=True, exist_ok=True)
-    argv: list[str] = [
-        sys.executable,
-        "-m",
-        "adgn.llm.sandboxer",
-        "--policy",
-        str(policy_yaml),
-    ]
+    argv: list[str] = [sys.executable, "-m", "adgn.llm.sandboxer", "--policy", str(policy_yaml)]
     if trace:
         argv.append("--trace")
     # Enable sandboxer debug when SJ_DEBUG_DIAG is set to surface policy path and -D params
@@ -228,18 +184,8 @@ def _write_sandboxed_kernelspec(
     kernel_env = {"SJ_KERNEL_SANDBOXED": "1", "SJ_POLICY_PATH": str(policy_yaml)}
     # If diagnostics are enabled, increase kernel-side verbosity to aid debugging
     if os.environ.get("SJ_DEBUG_DIAG"):
-        kernel_env.update(
-            {
-                "PYTHONFAULTHANDLER": "1",
-                "PYTHONVERBOSE": "1",
-            },
-        )
-    kernel_json = {
-        "argv": argv,
-        "display_name": "Python 3",
-        "language": "python",
-        "env": kernel_env,
-    }
+        kernel_env.update({"PYTHONFAULTHANDLER": "1", "PYTHONVERBOSE": "1"})
+    kernel_json = {"argv": argv, "display_name": "Python 3", "language": "python", "env": kernel_env}
     (ks_dir / "kernel.json").write_text(json.dumps(kernel_json))
 
 
@@ -344,22 +290,14 @@ def _seatbelt(
     _ensure_document_id(workspace, document_id)
 
     # Write the sandboxed kernelspec and start server
-    _write_sandboxed_kernelspec(
-        run_root,
-        workspace,
-        policy_yaml_path,
-        kernel_python,
-        trace=trace,
-    )
+    _write_sandboxed_kernelspec(run_root, workspace, policy_yaml_path, kernel_python, trace=trace)
 
     # Inherit env, but override for Jupyter-specific locations
     env = dict(os.environ)
     env.update(env_set)
     # Start Jupyter and keep the auth token for MCP connections
     jpy_token = secrets.token_urlsafe(24)
-    proc, actual_port = _start_jupyter_server(
-        workspace, jpy_token, jupyter_port, run_root, env, kernel_default_name
-    )
+    proc, actual_port = _start_jupyter_server(workspace, jpy_token, jupyter_port, run_root, env, kernel_default_name)
 
     # Launch stdio MCP server bound to our stdio to drive the Jupyter server
     from urllib.parse import urlunparse
@@ -415,67 +353,40 @@ def main(argv: list[str] | None = None) -> int:
     # Seatbelt mode: local process, sandboxed kernel
     p_loc = sub.add_parser("seatbelt", help="Run locally with SBPL sandboxed kernel (stdio)")
     # Support both positional and legacy --workspace flag (tests may use either)
+    p_loc.add_argument("workspace", nargs="?", type=Path, help="Workspace directory for notebooks and runtime state")
+    p_loc.add_argument("--workspace", dest="workspace_opt", type=Path, help="Workspace directory (legacy flag)")
     p_loc.add_argument(
-        "workspace",
-        nargs="?",
-        type=Path,
-        help="Workspace directory for notebooks and runtime state",
-    )
-    p_loc.add_argument(
-        "--workspace", dest="workspace_opt", type=Path, help="Workspace directory (legacy flag)"
-    )
-    p_loc.add_argument(
-        "--document-id",
-        help="Notebook path relative to workspace; if missing, a new timestamped notebook is created",
+        "--document-id", help="Notebook path relative to workspace; if missing, a new timestamped notebook is created"
     )
     p_loc.add_argument("--policy", required=True, type=Path, help="Path to SBPL policy YAML")
+    p_loc.add_argument("--kernel-python", default=sys.executable, help="Python interpreter to run the kernel with")
     p_loc.add_argument(
-        "--kernel-python", default=sys.executable, help="Python interpreter to run the kernel with"
+        "--kernel-default-name", default=None, help="Default kernel name for new notebooks (e.g., python3)"
     )
-    p_loc.add_argument(
-        "--kernel-default-name",
-        default=None,
-        help="Default kernel name for new notebooks (e.g., python3)",
-    )
-    p_loc.add_argument(
-        "--jupyter-port", type=int, default=8899, help="Local port for Jupyter server"
-    )
-    p_loc.add_argument(
-        "--trace", action="store_true", help="Enable sandboxer debug and kernel diag shim"
-    )
+    p_loc.add_argument("--jupyter-port", type=int, default=8899, help="Local port for Jupyter server")
+    p_loc.add_argument("--trace", action="store_true", help="Enable sandboxer debug and kernel diag shim")
 
     # Docker mode: background container with Jupyter + stdio MCP
     p_dock = sub.add_parser("docker", help="Run inside Docker and exec jupyter-mcp-server (stdio)")
+    p_dock.add_argument("workspace", type=Path, help="Workspace directory mounted into container at /workspace")
     p_dock.add_argument(
-        "workspace", type=Path, help="Workspace directory mounted into container at /workspace"
+        "--document-id", help="Notebook path relative to workspace; if missing, a new timestamped notebook is created"
     )
     p_dock.add_argument(
-        "--document-id",
-        help="Notebook path relative to workspace; if missing, a new timestamped notebook is created",
-    )
-    p_dock.add_argument(
-        "--docker-image",
-        required=True,
-        help="Docker image with jupyter + jupyter-mcp-server available",
+        "--docker-image", required=True, help="Docker image with jupyter + jupyter-mcp-server available"
     )
     p_dock.add_argument(
         "--start-new-runtime",
         action="store_true",
         help="Start a fresh runtime for the document (cold start) vs reusing one if present",
     )
-    p_dock.add_argument(
-        "--jupyter-port", type=int, default=8899, help="TCP port to expose inside the container"
-    )
+    p_dock.add_argument("--jupyter-port", type=int, default=8899, help="TCP port to expose inside the container")
 
     # Common options
     parser.add_argument(
-        "--run-root",
-        default=str(Path.cwd() / ".mcp"),
-        help="Root directory for runtime logs/config/state",
+        "--run-root", default=str(Path.cwd() / ".mcp"), help="Root directory for runtime logs/config/state"
     )
-    parser.add_argument(
-        "--trace", action="store_true", help="Enable sandboxer debug output (SJ_DEBUG_DIAG)"
-    )
+    parser.add_argument("--trace", action="store_true", help="Enable sandboxer debug output (SJ_DEBUG_DIAG)")
 
     args = parser.parse_args(argv)
 

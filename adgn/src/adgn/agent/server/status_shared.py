@@ -37,9 +37,7 @@ def derive_run_phase(*, active_run_id: UUID | None, pending_approvals: int) -> R
     return RunPhase.SAMPLING
 
 
-def determine_run_phase(
-    *, active_run_id: UUID | None, pending_approvals: int, mcp_has_inflight: bool
-) -> RunPhase:
+def determine_run_phase(*, active_run_id: UUID | None, pending_approvals: int, mcp_has_inflight: bool) -> RunPhase:
     """Precise run phase from live signals.
 
     - IDLE: no active run
@@ -142,9 +140,7 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     else:
         lifecycle = AgentLifecycle.STARTING
         # READY when UI ready and all running (or no entries yet)
-        if ui_ready and (
-            not entries or all(isinstance(e, RunningServerEntry) for e in entries.values())
-        ):
+        if ui_ready and (not entries or all(isinstance(e, RunningServerEntry) for e in entries.values())):
             lifecycle = AgentLifecycle.READY
 
     # Last activity timestamp (persisted)
@@ -154,20 +150,14 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     # Container id via runtime container.info (only when not ephemeral)
     container_id: str | None = None
     if c and present and (c.runtime_ephemeral is False) and c.mcp_client is not None:
-        info = await read_text_json_typed(
-            c.mcp_client.session, RUNTIME_CONTAINER_INFO_URI, ContainerInfo
-        )
+        info = await read_text_json_typed(c.mcp_client.session, RUNTIME_CONTAINER_INFO_URI, ContainerInfo)
         container_id = info.container_id
-    container = ContainerState(
-        present=present, id=container_id, ephemeral=(c.runtime_ephemeral if c else False)
-    )
+    container = ContainerState(present=present, id=container_id, ephemeral=(c.runtime_ephemeral if c else False))
 
     # Run phase from live signals; no exceptions expected in this path
     # Tool inflight detection is not exposed here; default to False
     has_inflight = False
-    run_phase = determine_run_phase(
-        active_run_id=active_run, pending_approvals=pending, mcp_has_inflight=has_inflight
-    )
+    run_phase = determine_run_phase(active_run_id=active_run, pending_approvals=pending, mcp_has_inflight=has_inflight)
 
     return AgentStatusCore(
         id=agent_id,

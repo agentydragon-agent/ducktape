@@ -1,9 +1,8 @@
 from adgn.agent.approvals import WellKnownTools
 from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from adgn.agent.policies.scaffold import run_with_tests
-from adgn.mcp._shared.constants import UI_SERVER_NAME, SEATBELT_EXEC_SERVER_NAME
+from adgn.mcp._shared.constants import SEATBELT_EXEC_SERVER_NAME, UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function, tool_matches
-
 
 TEST_CASES = [
     (PolicyRequest(name=build_mcp_function(UI_SERVER_NAME, WellKnownTools.SEND_MESSAGE), arguments={}), ApprovalDecision.ASK)

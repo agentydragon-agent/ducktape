@@ -93,11 +93,7 @@ def compile_sbpl(policy: SBPLPolicy) -> str:
         lines.append("(allow ipc-posix-sem)")
     # sysctl-read: allow unrestricted if sysctl_read is True and no filters.
     # Otherwise, when names/prefixes provided, emit a filtered clause.
-    if (
-        policy.system.sysctl_read
-        and not policy.system.sysctl_names
-        and not policy.system.sysctl_prefixes
-    ):
+    if policy.system.sysctl_read and not policy.system.sysctl_names and not policy.system.sysctl_prefixes:
         lines.append("(allow sysctl-read)")
     elif policy.system.sysctl_names or policy.system.sysctl_prefixes:
         lines.append("(allow sysctl-read")
@@ -117,9 +113,7 @@ def compile_sbpl(policy: SBPLPolicy) -> str:
             lines.append(f"({io.action.value} iokit-open)")
         else:
             for cls in io.registry_entry_classes:
-                lines.append(
-                    f'({io.action.value} iokit-open (iokit-registry-entry-class "{_q(cls)}"))'
-                )
+                lines.append(f'({io.action.value} iokit-open (iokit-registry-entry-class "{_q(cls)}"))')
 
     lines.append("")
     return "\n".join(lines)

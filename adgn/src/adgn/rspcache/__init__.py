@@ -65,17 +65,11 @@ def _resolve_openai_api_key(alias: str | None) -> str:
     mapping = _load_openai_keys()
     api_key = mapping.get(alias)
     if not api_key:
-        raise HTTPException(
-            status_code=500, detail=f"OPENAI API key not configured for alias '{alias}'"
-        )
+        raise HTTPException(status_code=500, detail=f"OPENAI API key not configured for alias '{alias}'")
     return api_key
 
 
-def _extract_client_token(
-    request: Request,
-    authorization: str | None,
-    x_api_key: str | None,
-) -> str | None:
+def _extract_client_token(request: Request, authorization: str | None, x_api_key: str | None) -> str | None:
     if x_api_key:
         token = x_api_key.strip()
         if token:
@@ -101,9 +95,7 @@ def canonical_json(obj: Any) -> str:
 
 def make_key_from_body(body: dict[str, Any]) -> str:
     keyed = {
-        k: body[k]
-        for k in sorted(body.keys())
-        if k not in {"request_id", "request_timestamp", "nonce", "__meta__"}
+        k: body[k] for k in sorted(body.keys()) if k not in {"request_id", "request_timestamp", "nonce", "__meta__"}
     }
     digest = hashlib.sha256()
     digest.update(canonical_json(keyed).encode("utf-8"))
@@ -126,10 +118,7 @@ def _extract_frames(buffer: str) -> tuple[str, list[dict[str, Any]]]:
         try:
             frames.append(json.loads(content))
         except json.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Non-JSON NDJSON frame: {content[:200]!r}",
-            ) from exc
+            raise HTTPException(status_code=502, detail=f"Non-JSON NDJSON frame: {content[:200]!r}") from exc
     return remainder, frames
 
 
@@ -141,10 +130,7 @@ def _extract_remaining(buffer: str) -> list[dict[str, Any]]:
     try:
         return [json.loads(buffer)]
     except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Non-JSON trailing NDJSON partial: {buffer[:200]!r}",
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"Non-JSON trailing NDJSON partial: {buffer[:200]!r}") from exc
 
 
 proxy_app = FastAPI(title="adgn-llm OpenAI Responses proxy")
@@ -167,12 +153,7 @@ async def health() -> dict[str, str]:
 
 
 async def _proxy_stream(
-    resp: httpx.Response,
-    *,
-    db: ResponsesDB,
-    key: str,
-    response_id: str | None,
-    start_time: float,
+    resp: httpx.Response, *, db: ResponsesDB, key: str, response_id: str | None, start_time: float
 ) -> AsyncIterator[bytes]:
     text_buffer = ""
     ordinal = 0
@@ -204,12 +185,7 @@ async def _proxy_stream(
                 response_candidate = stream_event_final_response(frame_payload)
                 if response_candidate is not None:
                     latest_response = response_candidate
-                await db.append_frame(
-                    key,
-                    frame_payload,
-                    ordinal=ordinal,
-                    response_id=response_id,
-                )
+                await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
         trailing_frames = _extract_remaining(text_buffer)
         for frame in trailing_frames:
             frame_payload = FRAME_ADAPTER.validate_python(frame)
@@ -224,31 +200,19 @@ async def _proxy_stream(
             response_candidate = stream_event_final_response(frame_payload)
             if response_candidate is not None:
                 latest_response = response_candidate
-            await db.append_frame(
-                key,
-                frame_payload,
-                ordinal=ordinal,
-                response_id=response_id,
-            )
+            await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
         latency_ms = int((time.perf_counter() - start_time) * 1000)
         if latest_response is not None and latest_response.usage is not None:
             token_usage = latest_response.usage
         await db.finalize_response(
-            key,
-            response_id=response_id,
-            response_obj=latest_response,
-            latency_ms=latency_ms,
-            token_usage=token_usage,
+            key, response_id=response_id, response_obj=latest_response, latency_ms=latency_ms, token_usage=token_usage
         )
     except asyncio.CancelledError:
         raise
     except Exception:
         status_reason = "Streaming proxy failure"
         await db.record_error(
-            key,
-            status_reason=status_reason,
-            response_id=response_id,
-            error=ErrorPayload(message=status_reason),
+            key, status_reason=status_reason, response_id=response_id, error=ErrorPayload(message=status_reason)
         )
         raise
     finally:
@@ -266,11 +230,11 @@ async def responses_endpoint(
     request: Request,
     authorization: str | None = Header(None),
     x_api_key: str | None = Header(None, convert_underscores=False),
-    db: ResponsesDB = Depends(get_db),
+    db: ResponsesDB = Depends(get_db),  # noqa: B008
 ) -> Response:
     try:
         body = await request.json()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid JSON body: {exc}") from exc
     model = body.get("model")
     if not isinstance(model, str):
@@ -292,7 +256,7 @@ async def responses_endpoint(
     cache_skip = body.get("cache_skip") in (True, "true", "True", 1)
     try:
         key = make_key_from_body(body)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     is_stream = bool(body.get("stream"))
@@ -307,9 +271,7 @@ async def responses_endpoint(
     await db.claim_key(key, model, body, api_key_record)
     await db.mark_in_progress(key, None)
 
-    upstream_url = (
-        os.environ.get("OPENAI_API_BASE", "https://api.openai.com").rstrip("/") + "/v1/responses"
-    )
+    upstream_url = os.environ.get("OPENAI_API_BASE", "https://api.openai.com").rstrip("/") + "/v1/responses"
     headers = {"Authorization": f"Bearer {upstream_key}", "Content-Type": "application/json"}
 
     start_time = time.perf_counter()
@@ -319,14 +281,9 @@ async def responses_endpoint(
         request_obj = client.build_request("POST", upstream_url, json=body, headers=headers)
         try:
             resp = await client.send(request_obj, stream=True)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             await client.aclose()
-            await db.record_error(
-                key,
-                status_reason=str(exc),
-                response_id=None,
-                error=ErrorPayload(message=str(exc)),
-            )
+            await db.record_error(key, status_reason=str(exc), response_id=None, error=ErrorPayload(message=str(exc)))
             raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
         if resp.status_code >= HTTP_ERROR_MIN:
             payload = await resp.aread()
@@ -341,38 +298,25 @@ async def responses_endpoint(
             )
             await resp.aclose()
             await client.aclose()
-            upstream_error = httpx.Response(
-                status_code=resp.status_code,
-                content=payload,
-                headers=resp.headers,
-            )
+            upstream_error = httpx.Response(status_code=resp.status_code, content=payload, headers=resp.headers)
             return _relay_error_response(upstream_error)
 
         async def event_stream() -> AsyncIterator[bytes]:
             try:
-                async for chunk in _proxy_stream(
-                    resp, db=db, key=key, response_id=None, start_time=start_time
-                ):
+                async for chunk in _proxy_stream(resp, db=db, key=key, response_id=None, start_time=start_time):
                     yield chunk
             finally:
                 await client.aclose()
 
         return StreamingResponse(
-            event_stream(),
-            media_type="text/event-stream",
-            headers={"X-Cache-Hit": "0", "X-Cache-Key": key},
+            event_stream(), media_type="text/event-stream", headers={"X-Cache-Hit": "0", "X-Cache-Key": key}
         )
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         try:
             resp = await client.post(upstream_url, json=body, headers=headers)
-        except Exception as exc:  # noqa: BLE001
-            await db.record_error(
-                key,
-                status_reason=str(exc),
-                response_id=None,
-                error=ErrorPayload(message=str(exc)),
-            )
+        except Exception as exc:
+            await db.record_error(key, status_reason=str(exc), response_id=None, error=ErrorPayload(message=str(exc)))
             raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
 
     if resp.status_code >= HTTP_ERROR_MIN:
@@ -381,22 +325,18 @@ async def responses_endpoint(
             key,
             status_reason=f"Upstream status {resp.status_code}",
             response_id=None,
-            error=ErrorPayload(
-                message="Upstream error", detail={"status": resp.status_code, "body": detail}
-            ),
+            error=ErrorPayload(message="Upstream error", detail={"status": resp.status_code, "body": detail}),
         )
         return _relay_error_response(resp)
 
     try:
         resp_json = resp.json()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await db.record_error(
             key,
             status_reason="Upstream returned non-JSON response",
             response_id=None,
-            error=ErrorPayload(
-                message="Upstream returned non-JSON response", detail={"body": resp.text}
-            ),
+            error=ErrorPayload(message="Upstream returned non-JSON response", detail={"body": resp.text}),
         )
         raise HTTPException(status_code=502, detail="Upstream returned non-JSON response") from exc
 
@@ -407,11 +347,7 @@ async def responses_endpoint(
     token_usage = response_model.usage
 
     await db.finalize_response(
-        key,
-        response_id=response_id,
-        response_obj=response_model,
-        latency_ms=latency_ms,
-        token_usage=token_usage,
+        key, response_id=response_id, response_obj=response_model, latency_ms=latency_ms, token_usage=token_usage
     )
 
     headers = {"X-Cache-Hit": "0", "X-Cache-Key": key}

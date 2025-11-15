@@ -2,26 +2,19 @@ from __future__ import annotations
 
 import asyncio
 
+import docker
 from fastmcp.mcp_config import MCPConfig
 import pytest
+from tests.fixtures.responses import ResponsesFactory
+from tests.llm.support.openai_mock import make_mock
 
 from adgn.agent.runtime.container import build_container
-from adgn.openai_utils.model import (
-    InputTextPart,
-    ResponsesRequest,
-    ResponsesResult,
-)
-import docker
-from tests.llm.support.openai_mock import make_mock
+from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult
 
 
 def _policy_source_allow() -> str:
     """Minimal allow-all policy program for container evaluator (no imports)."""
-    return (
-        "import sys, json\n"
-        "_ = json.load(sys.stdin)\n"
-        "print(json.dumps({'decision': 'allow', 'rationale': 'ok'}))\n"
-    )
+    return "import sys, json\n_ = json.load(sys.stdin)\nprint(json.dumps({'decision': 'allow', 'rationale': 'ok'}))\n"
 
 
 @pytest.mark.asyncio
@@ -36,8 +29,6 @@ async def test_notifications_handler_in_container_inserts_system_message(
     async def _create(req: ResponsesRequest) -> ResponsesResult:
         captured.append(req)
         # Always return a simple assistant message; notifications come from admin set_policy
-        from tests.fixtures.responses import ResponsesFactory
-
         return ResponsesFactory("test-model").make_assistant_message("done")
 
     client = make_mock(_create)
@@ -68,10 +59,13 @@ async def test_notifications_handler_in_container_inserts_system_message(
             for msg in inp:
                 # UserMessage with inserted system notification block
                 for c in getattr(msg, "content", []) or []:
-                    if isinstance(c, InputTextPart) and "<system notification>" in c.text:
-                        if "approval-policy" in c.text or "policy.py" in c.text:
-                            found = True
-                            break
+                    if (
+                        isinstance(c, InputTextPart)
+                        and "<system notification>" in c.text
+                        and ("approval-policy" in c.text or "policy.py" in c.text)
+                    ):
+                        found = True
+                        break
                 if found:
                     break
             if found:

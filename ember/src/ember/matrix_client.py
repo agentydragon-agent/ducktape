@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import logging
 import os
 from pathlib import Path
@@ -143,20 +143,17 @@ class MatrixClient:
         await self.close()
 
     @asynccontextmanager
-    async def session(self) -> AsyncIterator[MatrixSession]:
+    async def session(self) -> AsyncIterator[MatrixClient]:
+        """Context manager for Matrix client session. Returns self for direct usage."""
         await self.start()
         try:
-            yield MatrixSession(self)
+            yield self
         finally:
             await self.close()
 
-    async def get_events(self, timeout: float = 60.0) -> list[RoomMessageText]:
-        """Wait for a batch of new events (debounced)."""
-
-        try:
-            first = await asyncio.wait_for(self._queue.get(), timeout=timeout)
-        except asyncio.TimeoutError:
-            return []
+    async def get_events(self) -> list[RoomMessageText]:
+        """Wait for a batch of new events (debounced). Use asyncio.timeout() around this call to add a timeout."""
+        first = await self._queue.get()
 
         events = [first]
         # Debounce to accumulate events that land together
@@ -164,6 +161,23 @@ class MatrixClient:
         while not self._queue.empty():
             events.append(self._queue.get_nowait())
         return events
+
+    async def send_text_message(self, room_id: str, body: str, *, msgtype: str = "m.notice") -> None:
+        """Send a text message to a Matrix room."""
+        if self._client is None:  # pragma: no cover - defensive
+            raise RuntimeError("Matrix client is not running; call start() first")
+
+        await self._client.room_send(
+            room_id=room_id, message_type="m.room.message", content={"msgtype": msgtype, "body": body}
+        )
+        logger.info("Sent Matrix message to %s", room_id)
+
+    @property
+    def client(self) -> AsyncClient:
+        """Access the underlying nio AsyncClient. For advanced usage only."""
+        if self._client is None:  # pragma: no cover - defensive
+            raise RuntimeError("Matrix client not initialised")
+        return self._client
 
     async def _initialise_control_rooms(self) -> set[str]:
         assert self._client is not None
@@ -472,32 +486,11 @@ class MatrixClient:
             logger.debug("Matrix crypto maintenance skipped: %s", exc)
 
 
-class MatrixSession:
-    def __init__(self, manager: MatrixClient) -> None:
-        self._manager = manager
-
-    @property
-    def client(self) -> AsyncClient:
-        if self._manager._client is None:  # pragma: no cover - defensive
-            raise RuntimeError("Matrix client not initialised")
-        return self._manager._client
-
-    async def send_text_message(self, room_id: str, body: str, *, msgtype: str = "m.notice") -> None:
-        client = self._manager._client
-        if client is None:  # pragma: no cover - defensive
-            raise RuntimeError("Matrix client is not running; call session() first")
-
-        await client.room_send(
-            room_id=room_id, message_type="m.room.message", content={"msgtype": msgtype, "body": body}
-        )
-        logger.info("Sent Matrix message to %s", room_id)
-
-    async def get_events(self, timeout: float = 60.0) -> list[RoomMessageText]:
-        return await self._manager.get_events(timeout=timeout)
+# MatrixSession removed - MatrixClient now serves this role directly
 
 
 def _event_timestamp(event: RoomMessageText) -> datetime:
-    return datetime.fromtimestamp(event.server_timestamp / 1000.0, tz=timezone.utc)
+    return datetime.fromtimestamp(event.server_timestamp / 1000.0, tz=UTC)
 
 
 def _latest_timestamp(values: Iterable[datetime | None]) -> datetime | None:

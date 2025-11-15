@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$"
+exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|adgn/src/adgn/props/specimens/.*|.*/examples/.*\\.py$"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -60,9 +60,10 @@ repos:
     rev: v0.11.10
     hooks:
       - id: ruff-check
-        args: [--fix]
+        args: [--fix, --config, ruff.toml]
         files: "\\.py$"
       - id: ruff-format
+        args: [--config, ruff.toml]
         files: "\\.py$"
 
   # Static type checking
@@ -70,14 +71,17 @@ repos:
     rev: v1.18.2
     hooks:
       - id: mypy
-        name: mypy (generic)
-        files: "^$"
+        name: mypy (adgn)
+        files: "^adgn/.*\\.py$"
+        exclude: "(/props/specimens/|/third_party/|/testdata/|/fixtures/|/vendor/)"
         language_version: python3.12
+        args: ["--config-file=mypy.ini"]
         additional_dependencies:
-          # deps of gatelet that still lack bundled typings
-          - types-psycopg2    # stubs for psycopg2-binary
-          - types-python-dateutil  # indirect via httpx / fastapi
-          - homeassistant-stubs
+          # Core dependencies
+          - pydantic>=2
+          # Type stubs
+          - types-psycopg2
+          - types-python-dateutil
           - types-Markdown
           - types-PyYAML
           - types-requests
@@ -85,23 +89,9 @@ repos:
           - types-docker
           - types-toml
           - types-aiofiles
-      - id: mypy
-        name: mypy (adgn)
-        files: "^adgn/src/(adgn|wt)/"
-        language_version: python3.12
-        args:
-          - "--config-file=adgn/pyproject.toml"
-        additional_dependencies:
-          - pydantic>=2
-          - types-PyYAML
-          - types-requests
-          - types-toml
-          - types-aiofiles
-          - types-Markdown
           - types-colorama
           - types-psutil
-          - types-tabulate
-          - types-docker
+          - homeassistant-stubs
 
   - repo: https://github.com/keith/pre-commit-buildifier
     rev: 6.4.0

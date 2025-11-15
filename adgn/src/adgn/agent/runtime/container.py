@@ -7,18 +7,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
 import os
-from typing import TypeAlias, cast
+from typing import cast
 
+from docker import DockerClient
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import (
-    ApprovalHub,
-    ApprovalPolicyEngine,
-    load_default_policy_source,
-    make_policy_engine,
-)
+from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, load_default_policy_source, make_policy_engine
 from adgn.agent.persist import ApprovalOutcome
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -60,7 +56,6 @@ from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
 from adgn.mcp.ui.server import make_ui_server
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
-from docker import DockerClient
 
 from .handlers import build_handlers
 
@@ -73,7 +68,7 @@ class CloseResult:
     error: str | None = None
 
 
-ActorResult: TypeAlias = SamplingSnapshot | CloseResult | None
+type ActorResult = SamplingSnapshot | CloseResult | None
 
 
 class _ActorMsg:
@@ -104,19 +99,13 @@ class _ReconfigureMsg(_ActorMsg):
 class _SamplingSnapshotMsg(_ActorMsg):
     """Request a one-shot sampling snapshot for UI/model consumption."""
 
-    pass
-
 
 class _SamplingSnapshotIncrementalMsg(_ActorMsg):
     """Request an incremental sampling snapshot stream as servers initialize."""
 
-    pass
-
 
 class _CloseMsg(_ActorMsg):
     """Request container shutdown; drains, closes agent and mcp manager."""
-
-    pass
 
 
 @dataclass
@@ -234,9 +223,7 @@ class AgentContainer:
                 preset_name: str | None = None
                 if row and row.metadata is not None:
                     preset_name = row.metadata.preset
-                presets = (
-                    discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR")) if preset_name else {}
-                )
+                presets = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR")) if preset_name else {}
                 preset = presets.get(preset_name) if preset_name else None
                 chosen = (
                     self.initial_policy
@@ -257,11 +244,7 @@ class AgentContainer:
 
                 # Session & manager
                 self._cm = ConnectionManager()
-                sess = AgentSession(
-                    self._cm,
-                    approval_hub=self.approval_hub,
-                    persistence=self.persistence,
-                )
+                sess = AgentSession(self._cm, approval_hub=self.approval_hub, persistence=self.persistence)
                 sess.agent_id = self.agent_id
                 if self.with_ui and self._ui_bus is not None:
                     sess.ui_bus = self._ui_bus
@@ -335,14 +318,10 @@ class AgentContainer:
                     raise RuntimeError("policy reader not initialized")
                 assert self.approval_hub is not None
 
-                async def _pending_notifier(
-                    call_id: str, tool_key: str, args_json: str | None
-                ) -> None:
+                async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
                     if self._cm is not None and self.session is not None:
                         await self._cm.send_payload(
-                            ApprovalPendingEvt(
-                                call_id=call_id, tool_key=tool_key, args_json=args_json
-                            )
+                            ApprovalPendingEvt(call_id=call_id, tool_key=tool_key, args_json=args_json)
                         )
 
                 install_policy_gateway(
@@ -399,14 +378,10 @@ class AgentContainer:
                     attach_args: list[tuple[str, MCPServerTypes]] = []
                     for name, spec in desired.items():
                         prev = current_specs.get(name)
-                        if prev is None or prev.model_dump(mode="json") != spec.model_dump(
-                            mode="json"
-                        ):
+                        if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
                             attach_args.append((name, spec))
                     if attach_args:
-                        await asyncio.gather(
-                            *(admin.attach_server(name=n, spec=s) for (n, s) in attach_args)
-                        )
+                        await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args))
                 # Incremental detach
                 if detach:
                     await asyncio.gather(*(admin.detach_server(name=n) for n in detach))
@@ -416,14 +391,10 @@ class AgentContainer:
                     attach_args2: list[tuple[str, MCPServerTypes]] = []
                     for name, spec in (cfg.mcpServers or {}).items():
                         prev = latest_specs.get(name)
-                        if prev is None or prev.model_dump(mode="json") != spec.model_dump(
-                            mode="json"
-                        ):
+                        if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
                             attach_args2.append((name, spec))
                     if attach_args2:
-                        await asyncio.gather(
-                            *(admin.attach_server(name=n, spec=s) for (n, s) in attach_args2)
-                        )
+                        await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args2))
                 await self._push_snapshot_and_status()
                 return None
             case _SamplingSnapshotMsg():
@@ -488,13 +459,7 @@ class AgentContainer:
     ) -> None:
         attach_payload = attach if attach is not None else {}
         detach_payload = detach if detach is not None else []
-        await self._post_msg(
-            _ReconfigureMsg(
-                mcp_config=mcp_config,
-                attach=attach_payload,
-                detach=detach_payload,
-            )
-        )
+        await self._post_msg(_ReconfigureMsg(mcp_config=mcp_config, attach=attach_payload, detach=detach_payload))
 
     async def attach_mcp(self, name: str, spec: MCPServerTypes) -> None:
         """Attach a single server live via the actor."""
@@ -513,9 +478,7 @@ class AgentContainer:
         """Start streaming sampling snapshots as MCP servers initialize."""
         await self._post_msg(_SamplingSnapshotIncrementalMsg())
 
-    async def record_policy_outcome(
-        self, call_id: str, tool_key: str, outcome: ApprovalOutcome
-    ) -> None:
+    async def record_policy_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
         if self.session is None:
             return
         run_id = self.session.active_run.run_id if self.session.active_run else None
@@ -540,22 +503,13 @@ class AgentContainer:
 
         # Mount approval policy servers: reader + proposer (agent container)
         assert self._compositor is not None
-        reader_server = ApprovalPolicyServer(
-            engine,
-            name=APPROVAL_POLICY_SERVER_NAME_READER,
-        )
+        reader_server = ApprovalPolicyServer(engine, name=APPROVAL_POLICY_SERVER_NAME_READER)
         await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_READER, reader_server)
-        proposer_server = ApprovalPolicyProposerServer(
-            engine=engine,
-            name=APPROVAL_POLICY_SERVER_NAME_PROPOSER,
-        )
+        proposer_server = ApprovalPolicyProposerServer(engine=engine, name=APPROVAL_POLICY_SERVER_NAME_PROPOSER)
         await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_PROPOSER, proposer_server)
         # Admin (approver) server is NOT mounted into the compositor. It is exposed only
         # via a private client held by the container for user/admin HTTP flows.
-        approver_server = ApprovalPolicyAdminServer(
-            engine=engine,
-            name=APPROVAL_POLICY_SERVER_NAME_APPROVER,
-        )
+        approver_server = ApprovalPolicyAdminServer(engine=engine, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
         # Create in-proc client to the reader for policy gateway middleware
         _policy_reader_client = Client(reader_server)
         await self._stack.enter_async_context(_policy_reader_client)
@@ -571,11 +525,7 @@ class AgentContainer:
             ui_server = make_ui_server("UI", ui_bus)
             await self._compositor.mount_inproc(UI_SERVER_NAME, ui_server)
             # Chat servers (human/assistant) with persisted store bound to agent
-            await attach_persisted_chat_servers(
-                self._compositor,
-                persistence=self.persistence,
-                agent_id=self.agent_id,
-            )
+            await attach_persisted_chat_servers(self._compositor, persistence=self.persistence, agent_id=self.agent_id)
 
             # Runtime exec server (no host mounts)
             runtime_image = resolve_runtime_image()
@@ -634,9 +584,7 @@ class AgentContainer:
                 self._closed.set()
         return CloseResult(
             drained=drained_ok,
-            error=type(drain_error).__name__
-            if (not drained_ok and drain_error is not None)
-            else None,
+            error=type(drain_error).__name__ if (not drained_ok and drain_error is not None) else None,
         )
 
     async def _actor_loop(self) -> None:

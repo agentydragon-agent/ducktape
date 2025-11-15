@@ -17,9 +17,7 @@ def _is_swallow_body(stmts: list[ast.stmt]) -> bool:
         return True
     if all(isinstance(s, ast.Pass) for s in stmts):
         return True
-    if len(stmts) == 1 and isinstance(stmts[0], ast.Return) and stmts[0].value is None:
-        return True
-    return False
+    return bool(len(stmts) == 1 and isinstance(stmts[0], ast.Return) and stmts[0].value is None)
 
 
 def _find_in_file(path: Path) -> list[Detection]:
@@ -43,7 +41,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                             confidence=0.95,
                             message="Blanket except swallows errors (pass/return None); catch specific errors or let them propagate.",
                             snippet=read_snippet(path, sl, el, context=0),
-                        ),
+                        )
                     )
     return out
 

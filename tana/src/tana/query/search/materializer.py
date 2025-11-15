@@ -41,10 +41,7 @@ def materialize_search(store: TanaGraph, search_node: BaseNode) -> list[NodeId]:
     return [node.id for node in results]
 
 
-def compare_search_results(
-    store: TanaGraph,
-    search_node: BaseNode,
-) -> dict[str, list[NodeId]]:
+def compare_search_results(store: TanaGraph, search_node: BaseNode) -> dict[str, list[NodeId]]:
     """
     Compare stored search results with re-executed results.
 

@@ -97,16 +97,10 @@ def run_jupyter_mcp(
     log_dir_path = Path(log_dir).resolve() if log_dir else None
 
     if not (config_dir / "jupyter_server_config.py").exists():
-        print(
-            f"jupyter-mcp-launch: config file not found: {config_dir / 'jupyter_server_config.py'}",
-            file=sys.stderr,
-        )
+        print(f"jupyter-mcp-launch: config file not found: {config_dir / 'jupyter_server_config.py'}", file=sys.stderr)
         return 2
     if not kernels_dir.exists():
-        print(
-            f"jupyter-mcp-launch: kernels dir not found: {kernels_dir}",
-            file=sys.stderr,
-        )
+        print(f"jupyter-mcp-launch: kernels dir not found: {kernels_dir}", file=sys.stderr)
         return 2
     if not workspace.exists():
         print(f"jupyter-mcp-launch: workspace not found: {workspace}", file=sys.stderr)
@@ -129,10 +123,7 @@ def run_jupyter_mcp(
 
     # Ensure we have jupyter and jupyter-mcp-server on PATH
     if not (shutil.which("jupyter") and shutil.which("jupyter-mcp-server")):
-        print(
-            "jupyter-mcp-launch: 'jupyter' and/or 'jupyter-mcp-server' not found on PATH",
-            file=sys.stderr,
-        )
+        print("jupyter-mcp-launch: 'jupyter' and/or 'jupyter-mcp-server' not found on PATH", file=sys.stderr)
         return 3
 
     from urllib.parse import urlunparse
@@ -188,45 +179,15 @@ def main() -> int:
         ),
     )
     ap.add_argument(
-        "--config",
-        required=True,
-        type=Path,
-        help="Path to Jupyter config dir (contains jupyter_server_config.py)",
+        "--config", required=True, type=Path, help="Path to Jupyter config dir (contains jupyter_server_config.py)"
     )
-    ap.add_argument(
-        "--kernels",
-        required=True,
-        type=Path,
-        help="Path to kernels dir (kernelspecs)",
-    )
-    ap.add_argument(
-        "--workspace",
-        required=True,
-        type=Path,
-        help="Absolute path to workspace (ServerApp.root_dir)",
-    )
-    ap.add_argument(
-        "--kernel-name",
-        default="python3",
-        help="Default kernel name for new notebooks (hint)",
-    )
+    ap.add_argument("--kernels", required=True, type=Path, help="Path to kernels dir (kernelspecs)")
+    ap.add_argument("--workspace", required=True, type=Path, help="Absolute path to workspace (ServerApp.root_dir)")
+    ap.add_argument("--kernel-name", default="python3", help="Default kernel name for new notebooks (hint)")
     ap.add_argument("--port", type=int, default=0, help="0 = auto-pick free port")
-    ap.add_argument(
-        "--token",
-        default="auto",
-        help="'auto' to generate a token; or provide explicit token string",
-    )
-    ap.add_argument(
-        "--start-new-runtime",
-        action="store_true",
-        help="Pass through to jupyter-mcp-server",
-    )
-    ap.add_argument(
-        "--log-dir",
-        default=None,
-        type=Path,
-        help="Optional directory for Jupyter/MCP logs",
-    )
+    ap.add_argument("--token", default="auto", help="'auto' to generate a token; or provide explicit token string")
+    ap.add_argument("--start-new-runtime", action="store_true", help="Pass through to jupyter-mcp-server")
+    ap.add_argument("--log-dir", default=None, type=Path, help="Optional directory for Jupyter/MCP logs")
     args = ap.parse_args()
     return run_jupyter_mcp(
         config_dir=args.config,

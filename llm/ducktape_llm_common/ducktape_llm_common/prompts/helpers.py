@@ -9,11 +9,7 @@ from .loader import PromptVariableError, load_prompt
 
 
 def load_work_tracking_prompt(
-    agent_name: str,
-    task_id: str,
-    project_name: str,
-    context: str | None = None,
-    **extra_vars,
+    agent_name: str, task_id: str, project_name: str, context: str | None = None, **extra_vars
 ) -> str:
     """Load the work tracking prompt with standard variables.
 
@@ -40,11 +36,7 @@ def load_work_tracking_prompt(
 
 
 def load_task_management_prompt(
-    task_id: str,
-    goal: str,
-    deliverables: list[str],
-    constraints: list[str] | None = None,
-    **extra_vars,
+    task_id: str, goal: str, deliverables: list[str], constraints: list[str] | None = None, **extra_vars
 ) -> str:
     """Load the task management prompt with required information.
 
@@ -102,11 +94,7 @@ def load_debugging_protocol_prompt(
 
 
 def load_spawn_coordination_prompt(
-    team_id: str,
-    agents: list[str],
-    task_graph: str,
-    coordination_strategy: str | None = None,
-    **extra_vars,
+    team_id: str, agents: list[str], task_graph: str, coordination_strategy: str | None = None, **extra_vars
 ) -> str:
     """Load the spawn coordination prompt for multi-agent teams.
 
@@ -167,10 +155,7 @@ def load_investigation_setup_prompt(
 
 
 def load_metadata_validation_prompt(
-    file_path: str,
-    expected_version: int,
-    validation_rules: list[str] | None = None,
-    **extra_vars,
+    file_path: str, expected_version: int, validation_rules: list[str] | None = None, **extra_vars
 ) -> str:
     """Load the metadata validation prompt.
 
@@ -195,9 +180,7 @@ def load_metadata_validation_prompt(
 
 
 def create_prompt_with_defaults(
-    prompt_name: PromptName,
-    required_vars: dict[str, Any],
-    optional_vars: dict[str, Any] | None = None,
+    prompt_name: PromptName, required_vars: dict[str, Any], optional_vars: dict[str, Any] | None = None
 ) -> str:
     """Create a prompt with default values for common variables.
 

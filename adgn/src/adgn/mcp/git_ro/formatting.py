@@ -41,18 +41,13 @@ def _calc_window(total: int, start: int, size: int) -> tuple[int, int, bool, int
 
     Returns (start, end, truncated, next_offset)."""
     s = max(0, start)
-    if size and size > 0:
-        e = min(total, s + size)
-    else:
-        e = total
+    e = min(total, s + size) if size and size > 0 else total
     truncated = e < total
     next_offset = e if truncated else None
     return s, e, truncated, next_offset
 
 
-def apply_list_slice(
-    items: Sequence[T], slicer: ListSlice
-) -> tuple[list[T], bool, int | None, int]:
+def apply_list_slice(items: Sequence[T], slicer: ListSlice) -> tuple[list[T], bool, int | None, int]:
     total = len(items)
     s, e, truncated, next_offset = _calc_window(total, slicer.offset, slicer.limit)
     return list(items[s:e]), truncated, next_offset, total
@@ -83,9 +78,7 @@ class StatusPage(BaseModel):
 
 def build_status_page(entries: list[StatusEntry], slicer: ListSlice) -> StatusPage:
     window, truncated, next_offset, total = apply_list_slice(entries, slicer)
-    return StatusPage(
-        entries=window, truncated=truncated, next_offset=next_offset, total_entries=total
-    )
+    return StatusPage(entries=window, truncated=truncated, next_offset=next_offset, total_entries=total)
 
 
 # -------------------------- diff list (name-status) -------------------------
@@ -128,9 +121,7 @@ def diff_to_changed_files(diff: pygit2.Diff) -> list[ChangedFileItem]:
 
 def build_changed_files_page(items: list[ChangedFileItem], slicer: ListSlice) -> ChangedFilesPage:
     window, truncated, next_offset, total = apply_list_slice(items, slicer)
-    return ChangedFilesPage(
-        items=window, truncated=truncated, next_offset=next_offset, total_items=total
-    )
+    return ChangedFilesPage(items=window, truncated=truncated, next_offset=next_offset, total_items=total)
 
 
 # -------------------------- diff stat (additions/deletions) -----------------
@@ -165,9 +156,7 @@ def diff_to_file_stats(diff: pygit2.Diff) -> list[StatItem]:
     out: list[StatItem] = []
     for patch in diff:  # type: ignore[assignment]
         delta = patch.delta
-        path = (
-            (delta.new_file.path or delta.old_file.path) if delta.new_file else delta.old_file.path
-        )
+        path = (delta.new_file.path or delta.old_file.path) if delta.new_file else delta.old_file.path
         additions, deletions = _count_patch_lines(patch)
         out.append(StatItem(path=path, additions=additions, deletions=deletions))
     return out
@@ -175,6 +164,4 @@ def diff_to_file_stats(diff: pygit2.Diff) -> list[StatItem]:
 
 def build_diff_stat_page(items: list[StatItem], slicer: ListSlice) -> DiffStatPage:
     window, truncated, next_offset, total = apply_list_slice(items, slicer)
-    return DiffStatPage(
-        items=window, truncated=truncated, next_offset=next_offset, total_items=total
-    )
+    return DiffStatPage(items=window, truncated=truncated, next_offset=next_offset, total_items=total)

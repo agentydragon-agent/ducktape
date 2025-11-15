@@ -9,7 +9,7 @@ string derived from the concrete type.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, TypeAlias, TypedDict
+from typing import Any, Literal, TypedDict
 
 from fastmcp.client.client import CallToolResult
 from pydantic import BaseModel
@@ -86,22 +86,12 @@ class Response(BaseModel):
 
 
 # Union of all current event types (as a typing alias)
-EventType: TypeAlias = (
-    UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem
-)
+type EventType = UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem
 
 
 # ---- Transcript JSONL serialization ----
 KIND_MAP: dict[
-    type,
-    Literal[
-        "user_text",
-        "assistant_text",
-        "tool_call",
-        "function_call_output",
-        "response",
-        "reasoning",
-    ],
+    type, Literal["user_text", "assistant_text", "tool_call", "function_call_output", "response", "reasoning"]
 ] = {
     UserText: "user_text",
     AssistantText: "assistant_text",
@@ -113,13 +103,7 @@ KIND_MAP: dict[
 
 
 class JsonlRecord(TypedDict, total=False):
-    kind: Literal[
-        "user_text",
-        "assistant_text",
-        "tool_call",
-        "function_call_output",
-        "response",
-    ]
+    kind: Literal["user_text", "assistant_text", "tool_call", "function_call_output", "response"]
     # All remaining keys are event fields (model_dump output)
 
 

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+import docker
 from fastapi.testclient import TestClient
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
@@ -15,11 +16,10 @@ import pytest
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.server.app import create_app
-from adgn.agent.server.protocol import Envelope, RunStatus, RunStatusEvt
+from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt
 from adgn.mcp.editor_server import make_editor_server
-from adgn.mcp.testing.typed_stubs import TypedClient
 from adgn.openai_utils.model import FakeOpenAIModel, ResponsesResult
-import docker
+from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.agent.ws_helpers import (
     _short_payload,
     collect_payloads_until_finished,
@@ -40,9 +40,7 @@ def policy_evaluator(approval_engine: ApprovalPolicyEngine) -> ContainerPolicyEv
     Deduplicates setup across tests that need to call policy.decide(...).
     Requires Docker (tests should mark with @pytest.mark.requires_docker).
     """
-    return ContainerPolicyEvaluator(
-        agent_id="tests", docker_client=docker.from_env(), engine=approval_engine
-    )
+    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker.from_env(), engine=approval_engine)
 
 
 @pytest.fixture
@@ -51,9 +49,7 @@ def make_policy_evaluator(make_policy_engine):
 
     def _make(policy_source: str, *, agent_id: str = "tests") -> ContainerPolicyEvaluator:
         engine = make_policy_engine(policy_source, agent_id=agent_id)
-        return ContainerPolicyEvaluator(
-            agent_id=agent_id, docker_client=docker.from_env(), engine=engine
-        )
+        return ContainerPolicyEvaluator(agent_id=agent_id, docker_client=docker.from_env(), engine=engine)
 
     return _make
 
@@ -71,8 +67,6 @@ def policy_allow_all() -> str:
 
 @pytest.fixture
 def policy_ui_send_message_allow() -> str:
-    from tests.agent.testdata.approval_policy import make_policy
-
     return make_policy(
         decision_expr="PolicyDecision.ALLOW",
         server="ui",
@@ -84,8 +78,6 @@ def policy_ui_send_message_allow() -> str:
 
 @pytest.fixture
 def policy_failing_tests() -> str:
-    from tests.agent.testdata.approval_policy import fetch_policy
-
     return fetch_policy("failing_tests")
 
 
@@ -94,8 +86,6 @@ def policy_failing_tests() -> str:
 
 @pytest.fixture
 def policy_version_test() -> str:
-    from tests.agent.testdata.approval_policy import make_policy
-
     return make_policy(
         decision_expr="PolicyDecision.ALLOW",
         server="ui",
@@ -113,15 +103,11 @@ def policy_invalid_syntax() -> str:
 
 @pytest.fixture
 def policy_context_checking() -> str:
-    from tests.agent.testdata.approval_policy import fetch_policy
-
     return fetch_policy("context_checking")
 
 
 @pytest.fixture
 def policy_const() -> str:
-    from tests.agent.testdata.approval_policy import fetch_policy
-
     return fetch_policy("const")
 
 
@@ -134,9 +120,6 @@ def policy_fetch_factory() -> Callable[[str], str]:
 
     Usage: policy_fetch("allow_all") → returns policy source text.
     """
-
-    from tests.agent.testdata.approval_policy import fetch_policy
-
     return fetch_policy
 
 
@@ -151,9 +134,6 @@ def policy_make_factory() -> Callable[..., str]:
       default: "ask" (default) or "allow"
       doc: optional docstring
     """
-
-    from tests.agent.testdata.approval_policy import make_policy
-
     return make_policy
 
 
@@ -185,19 +165,21 @@ def fake_openai_client_factory() -> Callable[[Iterable[ResponsesResult]], FakeOp
 
 
 @pytest.fixture
-def typed_editor_factory(tmp_path: Path, make_typed_mcp):
-    """Factory that yields (TypedClient, target_path) for an in-proc editor server."""
+def typed_editor_factory(tmp_path: Path):
+    """Factory that yields (EditorServerStub, target_path) for an in-proc editor server."""
+    from fastmcp.client import Client
+
+    from adgn.mcp.testing.editor_stubs import EditorServerStub
 
     @asynccontextmanager
-    async def _open(
-        initial_text: str = "x = 1\n",
-    ) -> AsyncIterator[tuple[TypedClient, Path]]:
+    async def _open(initial_text: str = "x = 1\n") -> AsyncIterator[tuple[EditorServerStub, Path]]:
         target = tmp_path / "sample.py"
         target.write_text(initial_text, encoding="utf-8")
 
         srv = make_editor_server(target)
-        async with make_typed_mcp(srv, "editor") as (client, _session):
-            yield client, target
+        async with Client(srv) as session:
+            stub = EditorServerStub.from_server(srv, session)
+            yield stub, target
 
     return _open
 
@@ -257,7 +239,7 @@ def create_live_agent():
 
 
 @pytest.fixture
-def patch_agent_build_client(monkeypatch: pytest.MonkeyPatch):
+def patch_agent_build_client(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], None]:
     """Return a function to patch container.build_client to a provided fake client.
 
     Keeps model patching independent from agent creation, so tests can opt-in.
@@ -441,12 +423,12 @@ def agent_ws_box(ws_session, make_agent_http):
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):
-        with ws_session(
-            model_client,
-            specs=specs,
-            wait_accepted=wait_accepted,
-            auto_approve=auto_approve,
-        ) as (client, ws, _collect_orig, agent_id):
+        with ws_session(model_client, specs=specs, wait_accepted=wait_accepted, auto_approve=auto_approve) as (
+            client,
+            ws,
+            _collect_orig,
+            agent_id,
+        ):
             http = make_agent_http(client, agent_id)
 
             def _collect(limit: int = 200):
@@ -461,14 +443,14 @@ def agent_ws_box(ws_session, make_agent_http):
                         if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
                             from datetime import datetime
 
-                            print(
-                                f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}"
-                            )
+                            print(f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}")
                     except Exception:
                         pass
                     # Auto-approve via REST when requested
                     if getattr(p, "type", None) == "approval_pending" and auto_approve:
-                        http.approve(p.call_id)
+                        # Type narrow to ApprovalPendingEvt
+                        if isinstance(p, ApprovalPendingEvt):
+                            http.approve(p.call_id)
                         out.append(p)
                         continue
                     out.append(p)

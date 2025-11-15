@@ -2,10 +2,10 @@
 Utility functions for the Habitify MCP server.
 """
 
+from collections.abc import Callable
 import functools
 import os
 from typing import Any, TypeVar, cast
-from collections.abc import Callable
 
 # Import API key getter from our config module
 from ..config import load_api_key
@@ -27,12 +27,7 @@ from .error_utils import (
 )
 
 # Define status colors mapping
-STATUS_COLORS = {
-    "completed": "green",
-    "skipped": "yellow",
-    "failed": "red",
-    "none": "blue",
-}
+STATUS_COLORS = {"completed": "green", "skipped": "yellow", "failed": "red", "none": "blue"}
 
 # Define type variables for function annotations
 T = TypeVar("T")
@@ -102,10 +97,7 @@ def validate_required_params(*param_names: str, **params: Any) -> dict[str, Any]
         None if validation passed, or dict with error info if failed
     """
     # Filter to only include the specified parameters
-    if param_names:
-        filtered_params = {name: params.get(name) for name in param_names if name in params}
-    else:
-        filtered_params = params
+    filtered_params = {name: params.get(name) for name in param_names if name in params} if param_names else params
 
     # Check if at least one parameter is not None
     if not any(value is not None for value in filtered_params.values()):
@@ -180,32 +172,32 @@ def with_client(func: F) -> F:
 
 
 __all__ = [
-    # Date utilities
-    "parse_date",
-    "format_date_yyyy_mm_dd",
-    "format_date_for_api",
-    "format_date_human",
-    "create_date_range",
-    "validate_date_format",
-    # Error handling utilities
-    "create_error_response",
-    "create_validation_error",
-    "create_not_found_error",
-    "create_auth_error",
-    "classify_error",
     # Status formatting
     "STATUS_COLORS",
-    "get_status_color",
+    "F",
+    # Type variables
+    "T",
+    "classify_error",
+    "create_auth_error",
+    "create_date_range",
+    # Error handling utilities
+    "create_error_response",
+    "create_not_found_error",
+    "create_validation_error",
+    "format_date_for_api",
+    "format_date_human",
+    "format_date_yyyy_mm_dd",
     "format_rich_status",
     # API key helpers
     "get_api_key_from_param_or_env",
     "get_server_api_key",
+    "get_status_color",
+    # Date utilities
+    "parse_date",
+    "validate_date_format",
     # Parameter validation
     "validate_required_params",
     # Function decorators
     "with_api_key",
     "with_client",
-    # Type variables
-    "T",
-    "F",
 ]

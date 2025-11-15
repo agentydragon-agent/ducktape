@@ -13,9 +13,7 @@ try:
 except json.JSONDecodeError:
     PER_REPO_LIMITS = {}
 
-EXEMPT_USERS = {
-    u.strip().lower() for u in os.environ.get("PRQ_EXEMPT_USERS", "").split(",") if u.strip()
-}
+EXEMPT_USERS = {u.strip().lower() for u in os.environ.get("PRQ_EXEMPT_USERS", "").split(",") if u.strip()}
 
 API_TIMEOUT = float(os.environ.get("PRQ_API_TIMEOUT_SECS", "5"))
 CACHE_TTL = float(os.environ.get("PRQ_CACHE_TTL_SECS", "2"))
@@ -50,7 +48,11 @@ def parse_owner_repo_from_uri(uri: str) -> tuple[str | None, str | None]:
 def parse_reopen_targets(uri: str) -> tuple[str, str, int] | None:
     if m := RE_PULL_INDEX_OPTIONAL_STATUS.match(uri):
         g = m.groupdict()
-        return g.get("owner"), g.get("repo"), int(g.get("index"))
+        owner = g.get("owner")
+        repo = g.get("repo")
+        index = g.get("index")
+        if owner and repo and index:
+            return owner, repo, int(index)
     return None
 
 

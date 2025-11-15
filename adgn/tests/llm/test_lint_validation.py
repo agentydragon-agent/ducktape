@@ -14,27 +14,19 @@ from adgn.props.models.lint import (
 
 def test_validation_accepts_single_false_positive():
     payload = LintSubmitPayload(
-        message_md="OK",
-        suggested_rationale=None,
-        findings=[IssueLintFindingRecord(finding=FalsePositive())],
+        message_md="OK", suggested_rationale=None, findings=[IssueLintFindingRecord(finding=FalsePositive())]
     )
     assert isinstance(payload, LintSubmitPayload)
 
 
 def test_validation_accepts_single_true_positive():
-    payload = LintSubmitPayload(
-        message_md="OK",
-        findings=[IssueLintFindingRecord(finding=TruePositive())],
-    )
+    payload = LintSubmitPayload(message_md="OK", findings=[IssueLintFindingRecord(finding=TruePositive())])
     assert isinstance(payload, LintSubmitPayload)
 
 
 def test_validation_accepts_other_error_without_tp_fp():
     payload = LintSubmitPayload(
-        message_md="OK",
-        findings=[
-            IssueLintFindingRecord(finding=OtherError(description="parser failed")),
-        ],
+        message_md="OK", findings=[IssueLintFindingRecord(finding=OtherError(description="parser failed"))]
     )
     assert isinstance(payload, LintSubmitPayload)
 
@@ -49,10 +41,7 @@ def test_validation_rejects_both_tp_and_fp_without_other_error():
     ):
         LintSubmitPayload(
             message_md="Bad mix",
-            findings=[
-                IssueLintFindingRecord(finding=TruePositive()),
-                IssueLintFindingRecord(finding=FalsePositive()),
-            ],
+            findings=[IssueLintFindingRecord(finding=TruePositive()), IssueLintFindingRecord(finding=FalsePositive())],
         )
 
 
@@ -70,12 +59,9 @@ def test_validation_rejects_no_tp_fp_and_no_other_error():
             findings=[
                 IssueLintFindingRecord(
                     finding=AnchorIncorrect(
-                        correction=Correction(
-                            file="wt/wt/cli.py",
-                            range=LineRange(start_line=143, end_line=152),
-                        ),
-                    ),
-                ),
+                        correction=Correction(file="wt/wt/cli.py", range=LineRange(start_line=143, end_line=152))
+                    )
+                )
             ],
         )
 
@@ -88,11 +74,8 @@ def test_validation_allows_fp_with_additional_non_tp_fp_findings():
             IssueLintFindingRecord(finding=FalsePositive()),
             IssueLintFindingRecord(
                 finding=AnchorIncorrect(
-                    correction=Correction(
-                        file="wt/wt/cli.py",
-                        range=LineRange(start_line=143, end_line=152),
-                    ),
-                ),
+                    correction=Correction(file="wt/wt/cli.py", range=LineRange(start_line=143, end_line=152))
+                )
             ),
         ],
     )
@@ -109,8 +92,5 @@ def test_validation_rejects_multiple_false_positives():
     ):
         LintSubmitPayload(
             message_md="too many FPs",
-            findings=[
-                IssueLintFindingRecord(finding=FalsePositive()),
-                IssueLintFindingRecord(finding=FalsePositive()),
-            ],
+            findings=[IssueLintFindingRecord(finding=FalsePositive()), IssueLintFindingRecord(finding=FalsePositive())],
         )

@@ -1,10 +1,7 @@
 """Tests for diff intelligence module."""
 
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
-from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
-    CategorizedViolation,
-    ViolationCategorizer,
-)
+from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedViolation, ViolationCategorizer
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
 from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser, ParsedDiff
 
@@ -16,21 +13,11 @@ class TestDiffParser:
         """Test parsing Edit tool response."""
         parser = DiffParser()
 
-        tool_input = {
-            "file_path": "/test.py",
-            "old_string": "def foo():",
-            "new_string": "def bar():",
-        }
+        tool_input = {"file_path": "/test.py", "old_string": "def foo():", "new_string": "def bar():"}
 
         tool_response = {
             "structuredPatch": [
-                {
-                    "oldStart": 10,
-                    "oldLines": 1,
-                    "newStart": 10,
-                    "newLines": 1,
-                    "lines": ["-def foo():", "+def bar():"],
-                }
+                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-def foo():", "+def bar():"]}
             ]
         }
 
@@ -47,28 +34,13 @@ class TestDiffParser:
 
         tool_input = {
             "file_path": "/test.py",
-            "edits": [
-                {"old_string": "foo", "new_string": "bar"},
-                {"old_string": "baz", "new_string": "qux"},
-            ],
+            "edits": [{"old_string": "foo", "new_string": "bar"}, {"old_string": "baz", "new_string": "qux"}],
         }
 
         tool_response = {
             "structuredPatch": [
-                {
-                    "oldStart": 10,
-                    "oldLines": 1,
-                    "newStart": 10,
-                    "newLines": 1,
-                    "lines": ["-foo", "+bar"],
-                },
-                {
-                    "oldStart": 20,
-                    "oldLines": 1,
-                    "newStart": 20,
-                    "newLines": 1,
-                    "lines": ["-baz", "+qux"],
-                },
+                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-foo", "+bar"]},
+                {"oldStart": 20, "oldLines": 1, "newStart": 20, "newLines": 1, "lines": ["-baz", "+qux"]},
             ]
         }
 
@@ -108,11 +80,7 @@ class TestViolationCategorizer:
         ]
 
         parsed_diff = ParsedDiff(
-            file_path="/test.py",
-            hunks=[],
-            added_lines={10},
-            removed_lines=set(),
-            context_lines=set(),
+            file_path="/test.py", hunks=[], added_lines={10}, removed_lines=set(), context_lines=set()
         )
 
         categorized = categorizer.categorize_violations(violations, parsed_diff)
@@ -134,11 +102,7 @@ class TestViolationCategorizer:
         ]
 
         parsed_diff = ParsedDiff(
-            file_path="/test.py",
-            hunks=[],
-            added_lines={10},
-            removed_lines=set(),
-            context_lines=set(),
+            file_path="/test.py", hunks=[], added_lines={10}, removed_lines=set(), context_lines=set()
         )
 
         categorized = categorizer.categorize_violations(violations, parsed_diff)

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from adgn.agent.loop_control import Auto, Continue
-from adgn.agent.notifications.types import (
-    NotificationsBatch,
-    ResourceUpdateEvent,
-)
+from adgn.agent.notifications.types import NotificationsBatch, ResourceUpdateEvent
 from adgn.agent.reducer import NotificationsHandler
+from tests.agent.helpers import extract_input_text_content, strip_system_notification_wrapper
 
 
 class _FakeBuffer:
@@ -33,19 +31,12 @@ def test_notifications_handler_batches_single_message():
     assert isinstance(dec.tool_policy, Auto)
     assert len(dec.inserts_input) == 1
     msg = dec.inserts_input[0]
-    # Normalize to dict (some SDK items are Pydantic models)
-    msgd = msg.model_dump(exclude_none=True) if hasattr(msg, "model_dump") else msg
-    # Extract input_text content and parse payload (ignore role/type; we only care about content)
-    contents = (msgd.get("content") or []) if isinstance(msgd, dict) else []
-    texts = [
-        c.get("text")
-        for c in contents
-        if isinstance(c, dict) and c.get("type") == "input_text" and isinstance(c.get("text"), str)
-    ]
+    # Extract input_text content from the message
+    texts = extract_input_text_content([msg])
     assert texts, "expected an input_text content part"
     text = texts[0]
-    if text.startswith("<system notification>\n") and text.endswith("\n</system notification>"):
-        text = text[len("<system notification>\n") : -len("\n</system notification>")]
+    # Strip system notification wrapper if present
+    text = strip_system_notification_wrapper(text)
     # Simple repr-snippet assertion: ensure server names are present
     assert "git-ro" in text
     assert "editor" in text

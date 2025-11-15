@@ -8,8 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 class LineRange(BaseModel):
     start_line: int = Field(..., ge=1, description="1-based start line number")
     end_line: int | None = Field(
-        default=None,
-        description="1-based end line number (inclusive); omit for single-line anchor",
+        default=None, description="1-based end line number (inclusive); omit for single-line anchor"
     )
 
     @model_validator(mode="after")
@@ -34,12 +33,10 @@ class Occurrence(BaseModel):
       Issue.rationale for the global explanation and acceptance criteria.
     """
 
-    files: dict[Annotated[str, StringConstraints(pattern=r"^[^\n]+$")], list[LineRange] | None] = (
-        Field(
-            description=(
-                "Maps file paths -> list of LineRanges within that file or `None` to indicate an unspecified anchor in the file. "
-                + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
-            ),
+    files: dict[Annotated[str, StringConstraints(pattern=r"^[^\n]+$")], list[LineRange] | None] = Field(
+        description=(
+            "Maps file paths -> list of LineRanges within that file or `None` to indicate an unspecified anchor in the file. "
+            + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
         )
     )
     note: str | None = Field(
@@ -57,9 +54,7 @@ class Occurrence(BaseModel):
         # TODO(mpokorny): During grading/runs, validate that each path resolves within the hydrated specimen root.
         for k in self.files or {}:
             if k in {"paths", ""}:
-                raise ValueError(
-                    f"Invalid files key: {k!r} — expected a real file path",
-                )
+                raise ValueError(f"Invalid files key: {k!r} — expected a real file path")
         return self
 
 

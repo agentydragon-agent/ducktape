@@ -24,7 +24,7 @@ dependencies:
     tags: [anki]
   # Fonts managed by Nix home-manager (legacy: nerd_fonts -> legacy_nerd_fonts)
   - role: legacy_nerd_fonts
-    become: yes  # needed to write fonts system-wide
+    become: true  # needed to write fonts system-wide
   - role: gnome_terminal_solarized
     tags: [solarized]
   - role: timekpr

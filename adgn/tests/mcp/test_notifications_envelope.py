@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import pytest
+from tests.util.notifications import parse_system_notification_payload
 
 from adgn.agent.reducer import format_notifications_message
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from tests.util.notifications import parse_system_notification_payload
 
 
 def _make_notifier(name: str = "child") -> NotifyingFastMCP:
@@ -60,4 +60,5 @@ async def test_notifications_envelope_after_remount(make_buffered_client):
         payload = parse_system_notification_payload(msg)
         resources = payload.get("resources")
         assert isinstance(resources, dict)
-        assert "child" in resources and resources["child"].get("list_changed") is True
+        assert "child" in resources
+        assert resources["child"].get("list_changed") is True

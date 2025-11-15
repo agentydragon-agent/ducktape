@@ -47,21 +47,12 @@ from fastmcp.client import Client
 from adgn.agent.agent import MiniCodex
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.inop.config import OptimizerConfig
-from adgn.inop.engine.models import (
-    AgentTaskType,
-    Criterion,
-    GradedRollout,
-    TaskDefinition,
-)
+from adgn.inop.engine.models import AgentTaskType, Criterion, GradedRollout, TaskDefinition
 import adgn.inop.engine.runner_factory
 from adgn.inop.grading.grader import grade_rollout
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.io.logging_utils import DualOutputLogging
-from adgn.inop.io.task_loader import (
-    load_runner_configs,
-    load_task_definitions,
-    load_task_types,
-)
+from adgn.inop.io.task_loader import load_runner_configs, load_task_definitions, load_task_types
 from adgn.inop.io.yaml_loader import load_yaml_files
 from adgn.inop.mcp.prompt_feedback_server import make_prompt_feedback_server_with_state
 from adgn.inop.model_factory import create_optimizer_models
@@ -134,10 +125,7 @@ def setup_signal_handlers():
     """Setup signal handlers for graceful cost reporting on interruption."""
 
     def signal_handler(signum, _frame):
-        logger.info(
-            "Interrupt received, reporting costs before exit",
-            extra={"signal": signum},
-        )
+        logger.info("Interrupt received, reporting costs before exit", extra={"signal": signum})
         cost_tracker.report_final_cost()
         sys.exit(1)
 
@@ -200,11 +188,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         async def select_seed_tasks(self) -> list[TaskDefinition]:
             return args.seed_tasks
 
-        async def run_rollouts_with_prompt(
-            self,
-            prompt: str,
-            tasks: list[TaskDefinition],
-        ) -> list[GradedRollout]:
+        async def run_rollouts_with_prompt(self, prompt: str, tasks: list[TaskDefinition]) -> list[GradedRollout]:
             print(f"[_Deps.run_rollouts_with_prompt] start, tasks={len(tasks)} prompt={prompt}")
             # Minimal serial implementation (can parallelize later)
             results: list[GradedRollout] = []
@@ -213,9 +197,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 # Create runner with the configured OpenAI model
                 runner_model = args.runner_model
                 runner = adgn.inop.engine.runner_factory.create_runner(
-                    args.runner_name,
-                    args.runner_configs,
-                    openai_model=runner_model,
+                    args.runner_name, args.runner_configs, openai_model=runner_model
                 )
                 # Prepare task-type specific setup
                 if t.type not in args.task_types:
@@ -246,14 +228,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 print(f"[_Deps.run_rollouts_with_prompt] cleaned up runner for task {t.id}")
             return results
 
-        def persist_all(
-            self,
-            *,
-            iteration: int,
-            prompt: str,
-            rollouts: list[GradedRollout],
-            feedback: str,
-        ) -> None:
+        def persist_all(self, *, iteration: int, prompt: str, rollouts: list[GradedRollout], feedback: str) -> None:
             print(f"[persist_all] iter={iteration} base_dir={args.base_dir}")
             it_dir = args.base_dir / f"iter_{iteration:03d}"
             it_dir.mkdir(parents=True, exist_ok=True)
@@ -265,9 +240,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             with prompts_log.open("a") as f:
                 f.write(json.dumps({"iteration": iteration, "prompt": prompt}) + "\n")
             with feedback_log.open("a") as f:
-                f.write(
-                    json.dumps({"iteration": iteration, "feedback": feedback}) + "\n",
-                )
+                f.write(json.dumps({"iteration": iteration, "feedback": feedback}) + "\n")
 
             # Update prompts.json as a list built in-memory (no file read)
             self._prompts.append(prompt)
@@ -292,16 +265,10 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                     "files": gr.rollout.files,
                     "metadata": gr.rollout.metadata,
                 }
-                (rollout_dir / "rollout.json").write_text(
-                    json.dumps(rollout_data, indent=2),
-                )
+                (rollout_dir / "rollout.json").write_text(json.dumps(rollout_data, indent=2))
                 # grading.json
-                grading_data = {
-                    "overall_score": gr.grade.overall_score,
-                }
-                (rollout_dir / "grading.json").write_text(
-                    json.dumps(grading_data, indent=2),
-                )
+                grading_data = {"overall_score": gr.grade.overall_score}
+                (rollout_dir / "grading.json").write_text(json.dumps(grading_data, indent=2))
 
     deps = _Deps()
 
@@ -347,10 +314,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             mcp_client=mcp_client,
             client=model,
             system=system_message,
-            handlers=[
-                ProposePromptNTimes(args.iterations),
-                TranscriptHandler(dest_dir=run_dir),
-            ],
+            handlers=[ProposePromptNTimes(args.iterations), TranscriptHandler(dest_dir=run_dir)],
         )
 
         # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)
@@ -467,24 +431,15 @@ Examples:
     )
 
     parser.add_argument(
-        "--iterations",
-        type=int,
-        default=10,
-        help="Number of optimization iterations (default: %(default)s)",
+        "--iterations", type=int, default=10, help="Number of optimization iterations (default: %(default)s)"
     )
 
     parser.add_argument(
-        "--rollouts-per-task",
-        type=int,
-        default=1,
-        help="Number of agent rollouts per seed task (default: %(default)s)",
+        "--rollouts-per-task", type=int, default=1, help="Number of agent rollouts per seed task (default: %(default)s)"
     )
 
     parser.add_argument(
-        "--max-parallel",
-        type=int,
-        default=None,
-        help="Maximum parallel rollouts (default: from config file)",
+        "--max-parallel", type=int, default=None, help="Maximum parallel rollouts (default: from config file)"
     )
 
     parser.add_argument(
@@ -497,16 +452,11 @@ Examples:
     )
 
     parser.add_argument(
-        "--runner",
-        type=str,
-        default="claude",
-        help="Runner to use for task execution (default: %(default)s)",
+        "--runner", type=str, default="claude", help="Runner to use for task execution (default: %(default)s)"
     )
 
     parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose logging for agent actions (mini_codex only)",
+        "--verbose", action="store_true", help="Enable verbose logging for agent actions (mini_codex only)"
     )
 
     parser.add_argument(
@@ -560,14 +510,10 @@ Examples:
     seed_tasks = [t for t in all_tasks if t.type == task_type_enum.value]
 
     if not seed_tasks:
-        logger.error(
-            f"No tasks found with type '{task_type_enum.value}' in {seeds_path}",
-        )
+        logger.error(f"No tasks found with type '{task_type_enum.value}' in {seeds_path}")
         sys.exit(1)
 
-    logger.info(
-        f"Loaded {len(seed_tasks)} {task_type_enum.value} tasks from {len(all_tasks)} total tasks",
-    )
+    logger.info(f"Loaded {len(seed_tasks)} {task_type_enum.value} tasks from {len(all_tasks)} total tasks")
 
     # Load grading criteria from YAML
     logger.info("Loading grading criteria")
@@ -576,12 +522,7 @@ Examples:
     # Load grading criteria
     criteria = []
     for grader_data in yaml_loader.graders_data:
-        criteria.append(
-            Criterion(
-                name=grader_data.id,
-                description=grader_data.description,
-            ),
-        )
+        criteria.append(Criterion(name=grader_data.id, description=grader_data.description))
 
     run_prefix = datetime.now(UTC).strftime("%Y-%m-%d-%H%M%S")
     base_dir = (Path("./agent_output") / run_prefix).resolve()
@@ -612,7 +553,7 @@ Examples:
                 tasks_per_iteration=args.tasks_per_iteration,
                 base_dir=base_dir,
             )
-        ),
+        )
     )
 
     # Generate final score evolution report
@@ -625,11 +566,7 @@ Examples:
     print("=" * 60)
 
     logger.info(
-        "Score evolution report generated",
-        extra={
-            "report_path": str(final_report_path),
-            "run_directory": str(run_dir),
-        },
+        "Score evolution report generated", extra={"report_path": str(final_report_path), "run_directory": str(run_dir)}
     )
     cost_tracker.report_final_cost()
 

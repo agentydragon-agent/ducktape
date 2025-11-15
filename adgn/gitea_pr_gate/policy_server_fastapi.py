@@ -56,25 +56,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Gitea PR Quota Policy", version="1.0.0", lifespan=lifespan)
-TRUST_PROXY_USER = os.environ.get("PRQ_TRUST_PROXY_USER", "false").lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
+TRUST_PROXY_USER = os.environ.get("PRQ_TRUST_PROXY_USER", "false").lower() in {"1", "true", "yes", "on"}
 
 
 # Prometheus metrics
-REQUESTS = Counter(
-    "pr_quota_requests_total",
-    "Total PR quota checks",
-    labelnames=("action", "outcome"),
-)
-DURATION = Histogram(
-    "pr_quota_request_seconds",
-    "PR quota check latency in seconds",
-    labelnames=("action", "outcome"),
-)
+REQUESTS = Counter("pr_quota_requests_total", "Total PR quota checks", labelnames=("action", "outcome"))
+DURATION = Histogram("pr_quota_request_seconds", "PR quota check latency in seconds", labelnames=("action", "outcome"))
 
 # cache provided by policy_common.CACHE
 
@@ -88,28 +75,18 @@ def get_resources(request: Request) -> AppResources:
 
 async def get_doer_login(client: httpx.AsyncClient, cookie: str, authz: str) -> str:
     try:
-        resp = await client.get(
-            f"{GITEA_BASE}api/v1/user",
-            headers=user_headers(cookie, authz),
-            timeout=API_TIMEOUT,
-        )
+        resp = await client.get(f"{GITEA_BASE}api/v1/user", headers=user_headers(cookie, authz), timeout=API_TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
         return data.get("login", "")
     except httpx.HTTPStatusError as e:
         # Authentication/authorization failure
-        raise HTTPException(
-            status_code=HTTPStatus.UNAUTHORIZED, detail=f"auth error: {e.response.status_code}"
-        )
+        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail=f"auth error: {e.response.status_code}")
     except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=f"upstream error: {e}"
-        )
+        raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=f"upstream error: {e}")
 
 
-async def count_open_prs_by_author(
-    client: httpx.AsyncClient, owner: str, repo: str, author_login: str
-) -> int:
+async def count_open_prs_by_author(client: httpx.AsyncClient, owner: str, repo: str, author_login: str) -> int:
     # normalize + cache
     author_login = normalize_login(author_login)
     if (cached := CACHE.get(owner, repo, author_login)) is not None:
@@ -119,13 +96,7 @@ async def count_open_prs_by_author(
         # Prefer Issues API with filter + X-Total-Count
         resp = await client.get(
             f"{GITEA_BASE}api/v1/repos/{owner}/{repo}/issues",
-            params={
-                "state": "open",
-                "type": "pulls",
-                "created_by": author_login,
-                "page": 1,
-                "limit": 1,
-            },
+            params={"state": "open", "type": "pulls", "created_by": author_login, "page": 1, "limit": 1},
             headers=headers,
             timeout=API_TIMEOUT,
         )
@@ -135,18 +106,12 @@ async def count_open_prs_by_author(
         CACHE.set(owner, repo, author_login, count)
         return count
     except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_GATEWAY, detail=f"count error: {e.response.status_code}"
-        )
+        raise HTTPException(status_code=HTTPStatus.BAD_GATEWAY, detail=f"count error: {e.response.status_code}")
     except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=f"upstream error: {e}"
-        )
+        raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=f"upstream error: {e}")
 
 
-async def enforce_quota(
-    client: httpx.AsyncClient, owner: str, repo: str, doer: str
-) -> tuple[HTTPStatus, str]:
+async def enforce_quota(client: httpx.AsyncClient, owner: str, repo: str, doer: str) -> tuple[HTTPStatus, str]:
     if not doer:
         return HTTPStatus.UNAUTHORIZED, "no user"
     doer_l = doer.lower()
@@ -175,26 +140,18 @@ def log_decision(
     DURATION.labels(action, outcome).observe(max(time.monotonic() - started_at, 0))
     REQUESTS.labels(action, outcome).inc()
     bound = log.bind(action=action, owner=owner, repo=repo, user=user)
-    bound.info(
-        "decision",
-        status=int(status),
-        reason=reason,
-        pr=pr_index,
-    )
+    bound.info("decision", status=int(status), reason=reason, pr=pr_index)
 
 
 @app.get("/validate")
-async def validate(request: Request, resources: AppResources = Depends(get_resources)) -> Response:
+async def validate(request: Request, resources: AppResources = Depends(get_resources)) -> Response:  # noqa: B008
     # Headers forwarded by nginx internal location
     orig_uri = request.headers.get("X-Original-URI", "")
     cookie = request.headers.get("Cookie", "")
     authz = request.headers.get("Authorization", "")
 
     # Optional: trust reverse-proxy user header for identity (if enabled)
-    if TRUST_PROXY_USER:
-        proxy_user = request.headers.get("X-Original-User")
-    else:
-        proxy_user = None
+    proxy_user = request.headers.get("X-Original-User") if TRUST_PROXY_USER else None
 
     client = resources.http
     log = resources.log
@@ -205,18 +162,9 @@ async def validate(request: Request, resources: AppResources = Depends(get_resou
         started = time.monotonic()
         status, msg = await enforce_quota(client, owner, repo, doer)
         log_decision(
-            log,
-            action="create",
-            owner=owner,
-            repo=repo,
-            user=doer,
-            status=status,
-            reason=msg,
-            started_at=started,
+            log, action="create", owner=owner, repo=repo, user=doer, status=status, reason=msg, started_at=started
         )
-        return Response(
-            status_code=status, content=("" if status == HTTPStatus.NO_CONTENT else msg)
-        )
+        return Response(status_code=status, content=("" if status == HTTPStatus.NO_CONTENT else msg))
 
     # 2) Reopen/close endpoints — if currently closed, treat as reopen
     if ro := parse_reopen_targets(orig_uri):
@@ -230,13 +178,9 @@ async def validate(request: Request, resources: AppResources = Depends(get_resou
             pr_resp.raise_for_status()
             pr = pr_resp.json()
         except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_GATEWAY, detail=f"get pr error: {e.response.status_code}"
-            )
+            raise HTTPException(status_code=HTTPStatus.BAD_GATEWAY, detail=f"get pr error: {e.response.status_code}")
         except httpx.HTTPError as e:
-            raise HTTPException(
-                status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=f"upstream error: {e}"
-            )
+            raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=f"upstream error: {e}")
 
         if (pr.get("state") or "").lower() != "closed":
             return Response(status_code=HTTPStatus.NO_CONTENT)
@@ -255,9 +199,7 @@ async def validate(request: Request, resources: AppResources = Depends(get_resou
             started_at=started,
             pr_index=pr_index,
         )
-        return Response(
-            status_code=status, content=("" if status == HTTPStatus.NO_CONTENT else msg)
-        )
+        return Response(status_code=status, content=("" if status == HTTPStatus.NO_CONTENT else msg))
 
     # Not a path we validate -> allow
     return Response(status_code=HTTPStatus.NO_CONTENT)

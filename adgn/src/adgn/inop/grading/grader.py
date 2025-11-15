@@ -17,11 +17,7 @@ from adgn.inop.engine.models import (
     ScoreWithRationale,
     TaskDefinition,
 )
-from adgn.inop.grading.strategies import (
-    ComparisonGradingStrategy,
-    GradingStrategy,
-    create_grading_strategy,
-)
+from adgn.inop.grading.strategies import ComparisonGradingStrategy, GradingStrategy, create_grading_strategy
 from adgn.inop.io.logging_utils import DualOutputLogging
 from adgn.openai_utils.model import (
     FunctionCallItem,
@@ -57,11 +53,7 @@ async def grade_rollout(
         Grade with scores and rationales
     """
     # Create grading context
-    context = GradingContext(
-        rollout=rollout,
-        task=task,
-        environment=environment,
-    )
+    context = GradingContext(rollout=rollout, task=task, environment=environment)
 
     # Create the appropriate grading strategy
     # Note: We don't pass config_path since criteria are already resolved in grading_config
@@ -76,32 +68,16 @@ async def grade_rollout(
     # Handle different grading types
     if isinstance(strategy, ComparisonGradingStrategy):
         # Special handling for code review comparison
-        return await _grade_comparison(
-            task=task,
-            prepared=prepared,
-            model=model,
-            cfg=cfg,
-            rollout=rollout,
-        )
+        return await _grade_comparison(task=task, prepared=prepared, model=model, cfg=cfg, rollout=rollout)
     # File-based or message-based grading
     criteria = prepared.get("criteria", [])
     return await _grade_with_criteria(
-        task=task,
-        prepared=prepared,
-        criteria=criteria,
-        model=model,
-        cfg=cfg,
-        rollout=rollout,
-        strategy=strategy,
+        task=task, prepared=prepared, criteria=criteria, model=model, cfg=cfg, rollout=rollout, strategy=strategy
     )
 
 
 async def _grade_comparison(
-    task: TaskDefinition,
-    prepared: dict[str, Any],
-    model: OpenAIModelProto,
-    cfg: OptimizerConfig,
-    rollout: Rollout,
+    task: TaskDefinition, prepared: dict[str, Any], model: OpenAIModelProto, cfg: OptimizerConfig, rollout: Rollout
 ) -> Grade:
     """Grade by comparing agent output to reference (for code reviews).
 
@@ -145,10 +121,7 @@ Return a JSON object with:
                     "minimum": 0,
                     "maximum": 100,
                 },
-                "rationale": {
-                    "type": "string",
-                    "description": "Explanation of what was caught and missed",
-                },
+                "rationale": {"type": "string", "description": "Explanation of what was caught and missed"},
             },
             "required": ["covered_percent", "rationale"],
             "additionalProperties": False,
@@ -173,21 +146,14 @@ Return a JSON object with:
             break
 
     if not call or call.name != "submit_comparison_grade":
-        logger.error(
-            "Grader did not return expected comparison function call",
-            task_id=task.id,
-        )
+        logger.error("Grader did not return expected comparison function call", task_id=task.id)
         raise RuntimeError("Grader did not return expected comparison function call")
 
     # Parse the grading result
     try:
         parsed = json.loads(call.arguments or "{}")
     except json.JSONDecodeError as e:
-        logger.error(
-            "Failed to parse comparison grading",
-            task_id=task.id,
-            error=str(e),
-        )
+        logger.error("Failed to parse comparison grading", task_id=task.id, error=str(e))
         raise RuntimeError("Failed to parse comparison grading") from e
 
     # Convert percentage to 0-10 scale for consistency with other grades
@@ -198,12 +164,7 @@ Return a JSON object with:
         task=task.prompt,
         task_id=task.id,
         agent_id=rollout.agent_id,
-        axes={
-            "overall": ScoreWithRationale(
-                score=score,
-                rationale=parsed["rationale"],
-            ),
-        },
+        axes={"overall": ScoreWithRationale(score=score, rationale=parsed["rationale"])},
         timestamp=datetime.now(UTC),
     )
 
@@ -229,10 +190,7 @@ async def _grade_with_criteria(
         properties[crit.name] = {
             "type": "object",
             "description": crit.description,
-            "properties": {
-                "score": {"type": "number", "minimum": 0, "maximum": 10},
-                "rationale": {"type": "string"},
-            },
+            "properties": {"score": {"type": "number", "minimum": 0, "maximum": 10}, "rationale": {"type": "string"}},
             "required": ["score", "rationale"],
             "additionalProperties": False,
         }
@@ -242,10 +200,7 @@ async def _grade_with_criteria(
     properties["overall"] = {
         "type": "object",
         "description": "Overall assessment of the solution, score from 0 to 10",
-        "properties": {
-            "score": {"type": "number", "minimum": 0, "maximum": 10},
-            "rationale": {"type": "string"},
-        },
+        "properties": {"score": {"type": "number", "minimum": 0, "maximum": 10}, "rationale": {"type": "string"}},
         "required": ["score", "rationale"],
         "additionalProperties": False,
     }
@@ -267,9 +222,7 @@ async def _grade_with_criteria(
     prompt = strategy.get_grading_prompt(prepared, task)
 
     # Add criteria descriptions
-    criteria_text = "\n\n".join(
-        [f"- {crit.name}: {crit.description}" for crit in criteria],
-    )
+    criteria_text = "\n\n".join([f"- {crit.name}: {crit.description}" for crit in criteria])
 
     full_prompt = f"{prompt}\n\nGrade the solution on these criteria:\n{criteria_text}"
 
@@ -290,10 +243,7 @@ async def _grade_with_criteria(
             break
 
     if not call or call.name != "submit_grades":
-        logger.error(
-            "Grader did not return expected grades function call",
-            task_id=task.id,
-        )
+        logger.error("Grader did not return expected grades function call", task_id=task.id)
         raise RuntimeError("Grader did not return expected grades function call")
 
     # Parse the grades
@@ -312,15 +262,6 @@ async def _grade_with_criteria(
     # Build Grade object
     axes = {}
     for facet, data in parsed.items():
-        axes[facet] = ScoreWithRationale(
-            score=data["score"],
-            rationale=data["rationale"],
-        )
+        axes[facet] = ScoreWithRationale(score=data["score"], rationale=data["rationale"])
 
-    return Grade(
-        task=task.prompt,
-        task_id=task.id,
-        agent_id=rollout.agent_id,
-        axes=axes,
-        timestamp=datetime.now(UTC),
-    )
+    return Grade(task=task.prompt, task_id=task.id, agent_id=rollout.agent_id, axes=axes, timestamp=datetime.now(UTC))

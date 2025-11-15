@@ -5,19 +5,12 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import (
-    FakeOpenAIModel,
-    FunctionCallItem,
-    FunctionCallOutputItem,
-    ReasoningItem,
-)
+from adgn.openai_utils.model import FakeOpenAIModel, FunctionCallItem, FunctionCallOutputItem, ReasoningItem
 
 
 @pytest.mark.asyncio
 async def test_reasoning_threading_filters_reasoning_from_next_input(
-    reasoning_model: str,
-    responses_factory,
-    make_pg_compositor_echo,
+    reasoning_model: str, responses_factory, make_pg_compositor_echo
 ) -> None:
     """Test that reasoning items are properly threaded with their function calls across turns."""
 
@@ -43,15 +36,9 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     # Turn 3: final assistant message (should include both previous sequences)
     seq = [
         # Turn 1: reasoning + tool call
-        responses_factory.make(
-            responses_factory.make_item_reasoning(id="rs_turn1"),
-            fc1,
-        ),
+        responses_factory.make(responses_factory.make_item_reasoning(id="rs_turn1"), fc1),
         # Turn 2: another reasoning + tool call
-        responses_factory.make(
-            responses_factory.make_item_reasoning(id="rs_turn2"),
-            fc2,
-        ),
+        responses_factory.make(responses_factory.make_item_reasoning(id="rs_turn2"), fc2),
         # Turn 3: final message
         responses_factory.make_assistant_message("done"),
     ]
@@ -59,11 +46,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
 
     async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
-            model=responses_factory.model,
-            mcp_client=mcp_client,
-            system="test",
-            client=client,
-            handlers=[AutoHandler()],
+            model=responses_factory.model, mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
         )
 
         res = await agent.run("say hi")
@@ -90,9 +73,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     turn1_input = list(client.captured[0].input or [])
     turn1_types = get_sequence_summary(turn1_input)
     assert "UserMessage" in turn1_types, f"Turn 1 missing UserMessage: {turn1_types}"
-    assert "ReasoningItem" not in [type(i).__name__ for i in turn1_input], (
-        "Turn 1 shouldn't have reasoning"
-    )
+    assert "ReasoningItem" not in [type(i).__name__ for i in turn1_input], "Turn 1 shouldn't have reasoning"
 
     # Turn 2: [UserMessage, SystemMessage, ReasoningItem(rs_turn1), FunctionCallItem(call_1), FunctionCallOutputItem(call_1)]
     turn2_input = list(client.captured[1].input or [])
@@ -100,27 +81,25 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
 
     # Find and verify Turn 1's sequence
     ri1_idx = next(
-        (
-            i
-            for i, item in enumerate(turn2_input)
-            if isinstance(item, ReasoningItem) and item.id == "rs_turn1"
-        ),
-        None,
+        (i for i, item in enumerate(turn2_input) if isinstance(item, ReasoningItem) and item.id == "rs_turn1"), None
     )
     assert ri1_idx is not None, f"Turn 2 missing ReasoningItem(rs_turn1): {turn2_types}"
 
-    fc1 = turn2_input[ri1_idx + 1]
-    assert isinstance(fc1, FunctionCallItem) and fc1.call_id == "call_1", (
-        f"Turn 2: ReasoningItem not followed by FunctionCallItem(call_1): {turn2_types}"
+    fc1_item = turn2_input[ri1_idx + 1]
+    assert isinstance(fc1_item, FunctionCallItem), (
+        f"Turn 2: ReasoningItem not followed by FunctionCallItem: {turn2_types}"
     )
+    fc1 = fc1_item
+    assert fc1.call_id == "call_1", f"Turn 2: Expected call_1, got {fc1.call_id}: {turn2_types}"
     # Verify id and status preserved
     assert fc1.id == "fc_id_1", f"FC1 id not preserved: {fc1.id}"
     assert fc1.status == "completed", f"FC1 status not preserved: {fc1.status}"
 
     fco1 = turn2_input[ri1_idx + 2]
-    assert isinstance(fco1, FunctionCallOutputItem) and fco1.call_id == "call_1", (
-        f"Turn 2: FunctionCallItem not followed by FunctionCallOutputItem(call_1): {turn2_types}"
+    assert isinstance(fco1, FunctionCallOutputItem), (
+        f"Turn 2: FunctionCallItem not followed by FunctionCallOutputItem: {turn2_types}"
     )
+    assert fco1.call_id == "call_1", f"Turn 2: Expected call_1, got {fco1.call_id}: {turn2_types}"
 
     # Turn 3: [UserMessage, SystemMessage, RI1, FC1, function_call_output1, RI2, FC2, function_call_output2]
     turn3_input = list(client.captured[2].input or [])
@@ -128,38 +107,33 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
 
     # Verify Turn 1's sequence still intact
     ri1_idx = next(
-        (
-            i
-            for i, item in enumerate(turn3_input)
-            if isinstance(item, ReasoningItem) and item.id == "rs_turn1"
-        ),
-        None,
+        (i for i, item in enumerate(turn3_input) if isinstance(item, ReasoningItem) and item.id == "rs_turn1"), None
     )
     assert ri1_idx is not None, f"Turn 3 missing ReasoningItem(rs_turn1): {turn3_types}"
 
-    fc1 = turn3_input[ri1_idx + 1]
-    assert isinstance(fc1, FunctionCallItem) and fc1.call_id == "call_1" and fc1.id == "fc_id_1"
+    fc1_item = turn3_input[ri1_idx + 1]
+    assert isinstance(fc1_item, FunctionCallItem)
+    fc1 = fc1_item
+    assert fc1.call_id == "call_1"
+    assert fc1.id == "fc_id_1"
     fco1 = turn3_input[ri1_idx + 2]
-    assert isinstance(fco1, FunctionCallOutputItem) and fco1.call_id == "call_1"
+    assert isinstance(fco1, FunctionCallOutputItem)
+    assert fco1.call_id == "call_1"
 
     # Verify Turn 2's sequence
     ri2_idx = next(
-        (
-            i
-            for i, item in enumerate(turn3_input)
-            if isinstance(item, ReasoningItem) and item.id == "rs_turn2"
-        ),
-        None,
+        (i for i, item in enumerate(turn3_input) if isinstance(item, ReasoningItem) and item.id == "rs_turn2"), None
     )
     assert ri2_idx is not None, f"Turn 3 missing ReasoningItem(rs_turn2): {turn3_types}"
 
-    fc2 = turn3_input[ri2_idx + 1]
-    assert isinstance(fc2, FunctionCallItem) and fc2.call_id == "call_2", (
-        f"Turn 3: RI2 not followed by FC2: {turn3_types}"
-    )
+    fc2_item = turn3_input[ri2_idx + 1]
+    assert isinstance(fc2_item, FunctionCallItem), f"Turn 3: RI2 not followed by FunctionCallItem: {turn3_types}"
+    fc2 = fc2_item
+    assert fc2.call_id == "call_2", f"Turn 3: Expected call_2, got {fc2.call_id}: {turn3_types}"
     # Verify id and status preserved
     assert fc2.id == "fc_id_2", f"FC2 id not preserved: {fc2.id}"
     assert fc2.status == "in_progress", f"FC2 status not preserved: {fc2.status}"
 
     fco2 = turn3_input[ri2_idx + 2]
-    assert isinstance(fco2, FunctionCallOutputItem) and fco2.call_id == "call_2"
+    assert isinstance(fco2, FunctionCallOutputItem)
+    assert fco2.call_id == "call_2"

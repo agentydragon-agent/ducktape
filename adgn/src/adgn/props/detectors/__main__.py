@@ -29,17 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--root", required=True, type=Path, help="Repo root or path to scan")
     ap.add_argument("--out", type=Path, help="Write JSON to this file (default: stdout)")
     # Vulture adapter removed: prefer running Vulture directly when needed
-    ap.add_argument(
-        "--workers",
-        type=int,
-        default=None,
-        help="Detector worker threads (None=auto; 1=sequential)",
-    )
-    ap.add_argument(
-        "--only",
-        action="append",
-        help="Detector name(s) to run (repeatable); default is all",
-    )
+    ap.add_argument("--workers", type=int, default=None, help="Detector worker threads (None=auto; 1=sequential)")
+    ap.add_argument("--only", action="append", help="Detector name(s) to run (repeatable); default is all")
     args = ap.parse_args(argv)
 
     root = args.root.resolve()

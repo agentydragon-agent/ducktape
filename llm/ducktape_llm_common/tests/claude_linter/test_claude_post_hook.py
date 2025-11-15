@@ -5,11 +5,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from click.testing import CliRunner
+from ducktape_llm_common.claude_linter.cli import cli
 import pytest
 import yaml
-from click.testing import CliRunner
-
-from ducktape_llm_common.claude_linter.cli import cli
 
 
 def run_post_hook(test_input: dict[str, Any]):
@@ -135,11 +134,7 @@ def foo(x):
 
         test_input = {
             "tool_name": "Edit",
-            "tool_input": {
-                "file_path": str(test_file),
-                "old_string": "foo",
-                "new_string": "bar",
-            },
+            "tool_input": {"file_path": str(test_file), "old_string": "foo", "new_string": "bar"},
         }
         result = run_post_hook(test_input)
 

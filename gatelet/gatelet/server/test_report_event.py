@@ -1,5 +1,5 @@
-import pytest
 from httpx import AsyncClient
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,12 +22,7 @@ async def test_send_event_works(client: AsyncClient, db_session: AsyncSession):
     )
 
     payload = {"foo": "bar"}
-    result = await send_event(
-        "http://testserver",
-        integration.name,
-        payload,
-        client=client,
-    )
+    result = await send_event("http://testserver", integration.name, payload, client=client)
 
     assert result["status"] == "ok"
 

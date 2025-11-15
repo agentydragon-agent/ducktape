@@ -96,9 +96,7 @@ class HabitStatusResponse(BaseModel):
     note: str | None = None
 
     @classmethod
-    def from_api_model(
-        cls, api_model: HabitStatus, date: str | datetime.date | None = None
-    ) -> "HabitStatusResponse":
+    def from_api_model(cls, api_model: HabitStatus, date: str | datetime.date | None = None) -> "HabitStatusResponse":
         """Convert API model to client response model with Python date object."""
         # If we already have a date object, use it directly
         if isinstance(date, datetime.date):
@@ -113,12 +111,7 @@ class HabitStatusResponse(BaseModel):
         else:
             raise ValueError("No date available in API model or parameters")
 
-        return cls(
-            status=api_model.status,
-            date=result_date,
-            value=api_model.value,
-            note=api_model.note,
-        )
+        return cls(status=api_model.status, date=result_date, value=api_model.value, note=api_model.note)
 
 
 class Habit(BaseModel):
@@ -186,9 +179,7 @@ class ErrorResponse(BaseModel):
     """Model for structured error responses."""
 
     error: str
-    category: str | None = (
-        None  # Error category (auth, not_found, validation, api, network, unknown)
-    )
+    category: str | None = None  # Error category (auth, not_found, validation, api, network, unknown)
     matches: list[dict[str, str]] | None = None
     total_matches: int | None = None
 

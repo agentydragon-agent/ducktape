@@ -21,23 +21,23 @@ from .types import (
 )
 
 __all__ = [
-    # Server factory
-    "create_habitify_mcp_server",
+    "DeleteResult",
+    "ErrorResponse",
+    # Types
+    "Habit",
+    "HabitResult",
+    "HabitStatus",
     # Client
     "HabitifyClient",
     "HabitifyError",
-    # Types
-    "Habit",
-    "HabitStatus",
-    "Status",
-    "UnitType",
-    "ErrorResponse",
-    "ResolvedHabit",
     "HabitsResult",
-    "HabitResult",
-    "StatusResult",
     "LogResult",
-    "UpdateResult",
-    "DeleteResult",
+    "ResolvedHabit",
     "ResultType",
+    "Status",
+    "StatusResult",
+    "UnitType",
+    "UpdateResult",
+    # Server factory
+    "create_habitify_mcp_server",
 ]

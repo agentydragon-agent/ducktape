@@ -17,12 +17,7 @@ BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
 
 
-async def _run_in_bwrap(
-    cmd: list[str],
-    timeout_s: float,
-    cwd: Path | None,
-    stdin_text: str | None,
-) -> ExecOutcome:
+async def _run_in_bwrap(cmd: list[str], timeout_s: float, cwd: Path | None, stdin_text: str | None) -> ExecOutcome:
     if sys.platform != "linux":
         raise ToolError("NOT_LINUX: bubblewrap sandbox available only on Linux")
     if which(BWRAP) is None:
@@ -30,11 +25,7 @@ async def _run_in_bwrap(
 
     cwd_val = str(cwd or Path.cwd())
 
-    argv: list[str] = [
-        BWRAP,
-        "--unshare-all",
-        "--die-with-parent",
-    ]
+    argv: list[str] = [BWRAP, "--unshare-all", "--die-with-parent"]
     if ALLOW_UNSHARE_NET:
         argv.append("--unshare-net")
 
@@ -74,11 +65,7 @@ class BwrapExecArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def make_bwrap_exec_server(
-    name: str = "bwrap",
-    *,
-    default_cwd: Path | None = None,
-) -> NotifyingFastMCP:
+def make_bwrap_exec_server(name: str = "bwrap", *, default_cwd: Path | None = None) -> NotifyingFastMCP:
     """FastMCP server exposing a bubblewrap-sandboxed exec tool (Linux only).
 
     - Tool name: exec(cmd, max_bytes, cwd?, timeout_ms, stdin_text?)
@@ -101,12 +88,7 @@ def make_bwrap_exec_server(
     return mcp
 
 
-async def attach_bwrap_exec(
-    mcp: Compositor,
-    *,
-    name: str = "bwrap",
-    default_cwd: Path | None = None,
-):
+async def attach_bwrap_exec(mcp: Compositor, *, name: str = "bwrap", default_cwd: Path | None = None):
     """Attach a bubblewrap exec server in-proc (Linux only)."""
     server = make_bwrap_exec_server(name=name, default_cwd=default_cwd)
     await mcp.mount_inproc(name, server)

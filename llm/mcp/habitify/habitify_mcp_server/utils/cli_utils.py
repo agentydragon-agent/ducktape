@@ -2,17 +2,15 @@
 CLI-specific utility functions.
 """
 
-import typer
 from rich.console import Console
+import typer
 
 from ..habitify_client import HabitifyClient, HabitifyError
 
 # Import asyncio for async functions
 
 
-async def resolve_habit_for_cli(
-    habit: str, client: HabitifyClient, err_console: Console
-) -> tuple[str, str]:
+async def resolve_habit_for_cli(habit: str, client: HabitifyClient, err_console: Console) -> tuple[str, str]:
     """
     Resolve a habit by ID or name for CLI commands.
 
@@ -28,7 +26,7 @@ async def resolve_habit_for_cli(
         typer.Exit: If habit can't be resolved
     """
     # Check if habit is an ID
-    is_id = habit.startswith("-") or habit.isalnum() and len(habit) > 8
+    is_id = habit.startswith("-") or (habit.isalnum() and len(habit) > 8)
 
     # Either get by ID or search for name
     if is_id:
@@ -36,7 +34,7 @@ async def resolve_habit_for_cli(
             habit_obj = await client.get_habit(habit)
             return habit_obj.id, habit_obj.name
         except HabitifyError as e:
-            err_console.print(f"[bold red]Error:[/] {str(e)}")
+            err_console.print(f"[bold red]Error:[/] {e!s}")
             raise typer.Exit(code=1)
     else:
         # Get all habits and filter by name
@@ -59,5 +57,5 @@ async def resolve_habit_for_cli(
             habit_data = matching_habits[0]
             return habit_data.id, habit_data.name
         except HabitifyError as e:
-            err_console.print(f"[bold red]Error:[/] {str(e)}")
+            err_console.print(f"[bold red]Error:[/] {e!s}")
             raise typer.Exit(code=1)

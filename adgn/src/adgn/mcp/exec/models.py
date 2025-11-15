@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from signal import SIGKILL, SIGTERM
 import time
-from typing import Annotated, AsyncGenerator, Callable, Final, Literal
+from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,12 +26,12 @@ def perf_timer() -> float:
 
 def duration_ms_from_start(start_time: float) -> int:
     """Calculate duration in milliseconds from start time."""
-    return int(round((time.perf_counter() - start_time) * 1000))
+    return round((time.perf_counter() - start_time) * 1000)
 
 
 def duration_ms_from_loop_start(start_time: float, loop: asyncio.AbstractEventLoop) -> int:
     """Calculate duration in milliseconds from asyncio loop start time."""
-    return int(round((loop.time() - start_time) * 1000))
+    return round((loop.time() - start_time) * 1000)
 
 
 @asynccontextmanager
@@ -46,7 +47,7 @@ async def async_timer() -> AsyncGenerator[Callable[[], int], None]:
     start_time = loop.time()
 
     def get_duration_ms() -> int:
-        return int(round((loop.time() - start_time) * 1000))
+        return round((loop.time() - start_time) * 1000)
 
     yield get_duration_ms
 
@@ -139,19 +140,12 @@ class ExecInput(BaseModel):
     Note: TTY is not allocated for processes to ensure stdout/stderr separation.
     """
 
-    cmd: list[str] = Field(
-        description="Command to run; pass list to avoid shell quoting issues",
-    )
+    cmd: list[str] = Field(description="Command to run; pass list to avoid shell quoting issues")
     cwd: Path | None = Field(default=None, description="Working directory inside container")
-    env: dict[str, str] | None = Field(
-        default=None,
-        description="Environment variables for the process",
-    )
+    env: dict[str, str] | None = Field(default=None, description="Environment variables for the process")
     user: str | None = Field(default=None, description="Username inside container")
     shell: bool = Field(default=False, description="Run via sh -lc <cmd>")
-    timeout_ms: TimeoutMs = Field(
-        description="Timeout in milliseconds; sends TERM (exit_code becomes None)",
-    )
+    timeout_ms: TimeoutMs = Field(description="Timeout in milliseconds; sends TERM (exit_code becomes None)")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -171,17 +165,10 @@ class BaseExecResult(BaseModel):
 
     @classmethod
     def from_rendered_streams(
-        cls,
-        exit_status: ExitStatus,
-        stdout: ExecStream,
-        stderr: ExecStream,
-        duration_ms: int,
-        **extras,
+        cls, exit_status: ExitStatus, stdout: ExecStream, stderr: ExecStream, duration_ms: int, **extras
     ) -> BaseExecResult:
         """Create from already-rendered streams (no None handling needed)."""
-        return cls(
-            exit=exit_status, stdout=stdout, stderr=stderr, duration_ms=duration_ms, **extras
-        )
+        return cls(exit=exit_status, stdout=stdout, stderr=stderr, duration_ms=duration_ms, **extras)
 
 
 # Stream processing functions (moved from io_limits.py to avoid circular imports)
@@ -224,10 +211,7 @@ def render_stream(data: bytes, limit: int) -> ExecStream:
         return ""
     if len(data) <= limit:
         return data.decode("utf-8", errors="replace")
-    return TruncatedStream(
-        truncated_text=data[:limit].decode("utf-8", errors="replace"),
-        total_bytes=len(data),
-    )
+    return TruncatedStream(truncated_text=data[:limit].decode("utf-8", errors="replace"), total_bytes=len(data))
 
 
 def render_outcome_to_result(outcome: ExecOutcome, max_bytes: int) -> BaseExecResult:
@@ -238,33 +222,20 @@ def render_outcome_to_result(outcome: ExecOutcome, max_bytes: int) -> BaseExecRe
     # Pass through exit status directly - all subprocess types are valid MCP types
     exit_status = outcome.exit
 
-    return BaseExecResult.from_rendered_streams(
-        exit_status, stdout_render, stderr_render, outcome.duration_ms
-    )
+    return BaseExecResult.from_rendered_streams(exit_status, stdout_render, stderr_render, outcome.duration_ms)
 
 
 def render_raw_to_result(
-    stdout: bytes,
-    stderr: bytes,
-    exit_code: int | None,
-    timed_out: bool,
-    max_bytes: int,
-    duration_ms: int,
+    stdout: bytes, stderr: bytes, exit_code: int | None, timed_out: bool, max_bytes: int, duration_ms: int
 ) -> BaseExecResult:
     """Render raw streams directly to BaseExecResult (preserves types)."""
     stdout_render = render_stream(stdout, max_bytes)
     stderr_render = render_stream(stderr, max_bytes)
 
-    exit_status: ExitStatus
-    if timed_out:
-        exit_status = TimedOut()
-    else:
-        # exit_code should be int when not timed out, but handle None defensively
-        exit_status = Exited(exit_code=exit_code if exit_code is not None else 0)
+    # exit_code should be int when not timed out, but handle None defensively
+    exit_status = TimedOut() if timed_out else Exited(exit_code=exit_code if exit_code is not None else 0)
 
-    return BaseExecResult.from_rendered_streams(
-        exit_status, stdout_render, stderr_render, duration_ms
-    )
+    return BaseExecResult.from_rendered_streams(exit_status, stdout_render, stderr_render, duration_ms)
 
 
 def read_stream_limited_sync(fh, store_limit: int, chunk_size: int = 8192) -> StreamReadResult:

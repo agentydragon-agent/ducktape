@@ -12,9 +12,7 @@ from adgn.agent.models.policy_error import PolicyTestsSummary
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.server.bus import MimeType
 from adgn.agent.server.state import UiState
-from adgn.mcp.snapshots import (
-    SamplingSnapshot,  # structured snapshot model (module-level)
-)
+from adgn.mcp.snapshots import SamplingSnapshot  # structured snapshot model (module-level)
 
 # --------------------------
 # Envelope and core state
@@ -161,13 +159,7 @@ class UiEndTurnEvt(BaseModel):
 
 
 TranscriptItem = Annotated[
-    UserText
-    | AssistantText
-    | ToolCall
-    | FunctionCallOutput
-    | ReasoningChunk
-    | UiMessageEvt
-    | UiEndTurnEvt,
+    UserText | AssistantText | ToolCall | FunctionCallOutput | ReasoningChunk | UiMessageEvt | UiEndTurnEvt,
     Field(discriminator="type"),
 ]
 
@@ -260,10 +252,7 @@ class ApprovalDenyAbort(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-ApprovalDecision = Annotated[
-    ApprovalApprove | ApprovalDenyContinue | ApprovalDenyAbort,
-    Field(discriminator="kind"),
-]
+ApprovalDecision = Annotated[ApprovalApprove | ApprovalDenyContinue | ApprovalDenyAbort, Field(discriminator="kind")]
 
 
 class ApprovalDecisionEvt(BaseModel):

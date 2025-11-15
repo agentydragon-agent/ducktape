@@ -1,5 +1,6 @@
 """Session state management for Claude Code hooks."""
 
+import contextlib
 from pathlib import Path
 from typing import TypeVar
 
@@ -99,7 +100,5 @@ class StatefulHookMixin:
 
     def __del__(self):
         """Auto-save state on destruction."""
-        try:
+        with contextlib.suppress(Exception):
             self._save_state()
-        except Exception:
-            pass

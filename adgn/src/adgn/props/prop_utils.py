@@ -39,6 +39,4 @@ def validate_property_ids(props: list[PropertyID]) -> None:
     if not unknown:
         return
     sample = ", ".join(sorted(str(k) for k in list(known)[:20]))
-    raise ValueError(
-        f"No such property: {', '.join(unknown)}. Known properties: {sample} ...",
-    )
+    raise ValueError(f"No such property: {', '.join(unknown)}. Known properties: {sample} ...")

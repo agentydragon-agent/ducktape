@@ -10,10 +10,7 @@ from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaCli
 @pytest.mark.asyncio
 async def test_admin_cannot_detach_pinned_server(make_pg_compositor, approval_policy_reader_stub):
     # make_pg_compositor mounts compositor_meta and compositor_admin pinned by default
-    async with make_pg_compositor({"approval_policy": approval_policy_reader_stub}) as (
-        sess,
-        _comp,
-    ):
+    async with make_pg_compositor({"approval_policy": approval_policy_reader_stub}) as (sess, _comp):
         admin = CompositorAdminClient(sess)
         meta = CompositorMetaClient(sess)
 

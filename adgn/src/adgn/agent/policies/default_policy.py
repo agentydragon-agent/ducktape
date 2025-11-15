@@ -14,9 +14,7 @@ def decide(req: PolicyRequest) -> PolicyResponse:
     if req.name in (UI_SEND, UI_END):
         return PolicyResponse(decision=ApprovalDecision.ALLOW, rationale="UI communication")
     if server_matches(req.name, server="resources"):
-        return PolicyResponse(
-            decision=ApprovalDecision.ALLOW, rationale="resource operations allowed"
-        )
+        return PolicyResponse(decision=ApprovalDecision.ALLOW, rationale="resource operations allowed")
     return PolicyResponse(decision=ApprovalDecision.ASK, rationale="default: ask")
 
 

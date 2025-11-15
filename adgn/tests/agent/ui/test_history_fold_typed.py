@@ -5,12 +5,7 @@ from datetime import UTC, datetime
 from fastmcp.client.client import CallToolResult
 
 from adgn.agent.persist import EventType
-from adgn.agent.persist.events import (
-    EventRecord,
-    FunctionCallOutputPayload,
-    ToolCallPayload,
-    UserTextPayload,
-)
+from adgn.agent.persist.events import EventRecord, FunctionCallOutputPayload, ToolCallPayload, UserTextPayload
 from adgn.agent.server.history import fold_events_to_ui_state
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp._shared.naming import build_mcp_function
@@ -23,11 +18,7 @@ def test_fold_events_typed_ui_message() -> None:
         CallToolResult(
             content=[],
             is_error=False,
-            structured_content={
-                "kind": "UiMessage",
-                "mime": "text/markdown",
-                "content": "**hello**",
-            },
+            structured_content={"kind": "UiMessage", "mime": "text/markdown", "content": "**hello**"},
         )
     )
 
@@ -37,9 +28,7 @@ def test_fold_events_typed_ui_message() -> None:
             seq=2,
             ts=now,
             type=EventType.TOOL_CALL,
-            payload=ToolCallPayload(
-                name=build_mcp_function("ui", "send_message"), args_json=None, call_id="c1"
-            ),
+            payload=ToolCallPayload(name=build_mcp_function("ui", "send_message"), args_json=None, call_id="c1"),
             call_id="c1",
         ),
         EventRecord(

@@ -70,7 +70,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                                     f"Trivial alias '{lhs} = {rhs}' used once; consider inlining '{rhs}' at use site."
                                 ),
                                 snippet=read_snippet(path, sl, sl, context=0),
-                            ),
+                            )
                         )
     return out
 

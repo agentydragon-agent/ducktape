@@ -39,9 +39,7 @@ class YamlLoader:
         if self._seeds_models is None:
             data = self._load_yaml_file(self.seeds_yaml_path)
             if not isinstance(data, list):
-                raise ValueError(
-                    f"Seeds YAML must contain a list of tasks, got {type(data)}",
-                )
+                raise ValueError(f"Seeds YAML must contain a list of tasks, got {type(data)}")
             models: list[SeedTask] = []
             for item in data:
                 if not isinstance(item, dict):
@@ -56,9 +54,7 @@ class YamlLoader:
         if self._graders_models is None:
             data = self._load_yaml_file(self.graders_yaml_path)
             if not isinstance(data, dict) or "graders" not in data:
-                raise ValueError(
-                    f"Graders YAML must be a dict with 'graders' key, got {type(data)}",
-                )
+                raise ValueError(f"Graders YAML must be a dict with 'graders' key, got {type(data)}")
             models: list[GraderDataModel] = []
             for grader_data in data["graders"]:
                 if not isinstance(grader_data, dict):
@@ -77,7 +73,4 @@ class YamlLoader:
 
 def load_yaml_files(seeds_yaml_path: Path | str, graders_yaml_path: Path | str) -> YamlLoader:
     """Create and return a configured YAML loader."""
-    return YamlLoader(
-        seeds_yaml_path=Path(seeds_yaml_path),
-        graders_yaml_path=Path(graders_yaml_path),
-    )
+    return YamlLoader(seeds_yaml_path=Path(seeds_yaml_path), graders_yaml_path=Path(graders_yaml_path))

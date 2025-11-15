@@ -6,34 +6,26 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import BoundOpenAIModel, FakeOpenAIModel
+from adgn.openai_utils.model import BoundOpenAIModel, FakeOpenAIModel, OpenAIModelProto
 from tests.agent.ws_helpers import assert_function_call_output_structured
 from tests.llm.support.openai_mock import LIVE
 
 
 @pytest.mark.parametrize(
-    "client_mode",
-    [
-        pytest.param("mock", id="mock"),
-        pytest.param(LIVE, id="live", marks=pytest.mark.live_llm),
-    ],
+    "client_mode", [pytest.param("mock", id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_llm)]
 )
 @pytest.mark.asyncio
 async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
-    responses_factory,
-    live_openai,
-    client_mode,
-    make_pg_compositor_echo,
+    responses_factory, live_openai, client_mode, make_pg_compositor_echo
 ) -> None:
     # Responses sequence:
     # 1) Model asks to call echo.echo with {"text": "hi"}
     # 2) Model returns a final assistant message "done"
+    client: OpenAIModelProto
     if client_mode is not LIVE:
         client = FakeOpenAIModel(
             [
-                responses_factory.make_tool_call(
-                    build_mcp_function("echo", "echo"), {"text": "hi"}
-                ),
+                responses_factory.make_tool_call(build_mcp_function("echo", "echo"), {"text": "hi"}),
                 responses_factory.make_assistant_message("done"),
             ]
         )

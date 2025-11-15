@@ -25,23 +25,17 @@ class _Recorder(MessageHandler):
         self.updated.append(uri)
         self._evt_updated.set()
 
-    async def on_resource_list_changed(
-        self, message: types.ResourceListChangedNotification
-    ) -> None:  # type: ignore[override]
+    async def on_resource_list_changed(self, message: types.ResourceListChangedNotification) -> None:  # type: ignore[override]
         self.list_changed += 1
         self._evt_list.set()
 
-    async def wait_updated(self, *, timeout: float = 2.0) -> None:
-        with anyio.move_on_after(timeout) as cancel_scope:
+    async def wait_updated(self) -> None:
+        with anyio.fail_after(2.0):
             await self._evt_updated.wait()
-        if cancel_scope.cancel_called:
-            raise TimeoutError("timed out waiting for resource_updated")
 
-    async def wait_list_changed(self, *, timeout: float = 2.0) -> None:
-        with anyio.move_on_after(timeout) as cancel_scope:
+    async def wait_list_changed(self) -> None:
+        with anyio.fail_after(2.0):
             await self._evt_list.wait()
-        if cancel_scope.cancel_called:
-            raise TimeoutError("timed out waiting for resource_list_changed")
 
 
 @pytest.mark.asyncio
@@ -71,10 +65,7 @@ async def test_notifying_fastmcp_multisession_broadcast() -> None:
     rec1 = _Recorder()
     rec2 = _Recorder()
 
-    async with (
-        Client(server, message_handler=rec1) as _c1,
-        Client(server, message_handler=rec2) as _c2,
-    ):
+    async with Client(server, message_handler=rec1) as _c1, Client(server, message_handler=rec2) as _c2:
         # Broadcast to all connected sessions
         await server.broadcast_resource_updated("resource://multi/test")
         await server.broadcast_resource_list_changed()

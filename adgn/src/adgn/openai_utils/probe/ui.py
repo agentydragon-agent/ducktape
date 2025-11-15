@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 from rich import box
 from rich.console import Group
@@ -13,16 +13,7 @@ from textual.reactive import reactive
 from textual.widgets import Footer, Header, Static
 
 from . import store as probe_store
-from .core import (
-    FAMILY_PRIORITY,
-    FATAL_CODES,
-    ErrorCode,
-    Family,
-    ModelProbe,
-    ProbeRun,
-    build_cell,
-    family_of,
-)
+from .core import FAMILY_PRIORITY, FATAL_CODES, ErrorCode, Family, ModelProbe, ProbeRun, build_cell, family_of
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +26,7 @@ class ProbeTUI(App):
     #body { width: 100%; height: auto; }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar = [
         ("f", "toggle_fatal", "Toggle fatal models"),
         ("tab", "next_family", "Next family"),
         ("q", "quit", "Quit"),
@@ -59,23 +50,19 @@ class ProbeTUI(App):
         self.filtered = filtered
         self.repeats = repeats
         self.show_fatal = initial_show_fatal
-        present = set(family_of(mid) for mid in filtered)
+        present = {family_of(mid) for mid in filtered}
         ordered: list[Family] = [fam for fam in FAMILY_PRIORITY if fam in present]
         if Family.OTHER in present and Family.OTHER not in ordered:
             ordered.append(Family.OTHER)
         self.family_choices: list[Family | None] = [None, *ordered]  # None = ALL
         self.family_idx = 0
-        self.acc: dict[str, dict[str, list[Any]]] = {
-            mid: {"responses": [], "chat": []} for mid in filtered
-        }
-        self.done_flags: dict[str, dict[str, bool]] = {
-            mid: {"responses": False, "chat": False} for mid in filtered
-        }
+        self.acc: dict[str, dict[str, list[Any]]] = {mid: {"responses": [], "chat": []} for mid in filtered}
+        self.done_flags: dict[str, dict[str, bool]] = {mid: {"responses": False, "chat": False} for mid in filtered}
         self.finalized: set[str] = set()
         self.completed_models = 0
         self.finished = 0
         self.used_codes: dict[str, str] = {}
-        self.fatal_by_mid: dict[str, bool] = {mid: False for mid in filtered}
+        self.fatal_by_mid: dict[str, bool] = dict.fromkeys(filtered, False)
         self.oks: list[ModelProbe] = []
         self.fails: list[ModelProbe] = []
 
@@ -154,16 +141,8 @@ class ProbeTUI(App):
             self._render_view()
 
     def _make_results_table(self, *, title: str, header_style: str, model_ratio: int) -> Table:
-        table = Table(
-            show_header=True,
-            header_style=header_style,
-            title=title,
-            expand=True,
-            box=box.SIMPLE,
-        )
-        table.add_column(
-            "Model", overflow="ellipsis", no_wrap=True, ratio=model_ratio, header_style="bold"
-        )
+        table = Table(show_header=True, header_style=header_style, title=title, expand=True, box=box.SIMPLE)
+        table.add_column("Model", overflow="ellipsis", no_wrap=True, ratio=model_ratio, header_style="bold")
         table.add_column("Responses", overflow="ellipsis", no_wrap=True, ratio=2)
         table.add_column("Chat", overflow="ellipsis", no_wrap=True, ratio=2)
         return table
@@ -178,12 +157,7 @@ class ProbeTUI(App):
 
     def _partials_sort_key(self, kind: str):
         def _inner(item: tuple[str, str, str]) -> tuple[int, str]:
-            return (
-                FAMILY_PRIORITY.index(Family(item[0]))
-                if Family(item[0]) in FAMILY_PRIORITY
-                else 999,
-                item[0],
-            )
+            return (FAMILY_PRIORITY.index(Family(item[0])) if Family(item[0]) in FAMILY_PRIORITY else 999, item[0])
 
         return _inner
 
@@ -199,24 +173,14 @@ class ProbeTUI(App):
             rcell, rcode, rdesc = build_cell(r.responses.calls)
             ccell, ccode, cdesc = build_cell(r.chat.calls)
             if rcode and rdesc:
-                self.used_codes.setdefault(
-                    rcode.value if isinstance(rcode, ErrorCode) else str(rcode), rdesc
-                )
+                self.used_codes.setdefault(rcode.value if isinstance(rcode, ErrorCode) else str(rcode), rdesc)
             if ccode and cdesc:
-                self.used_codes.setdefault(
-                    ccode.value if isinstance(ccode, ErrorCode) else str(ccode), cdesc
-                )
+                self.used_codes.setdefault(ccode.value if isinstance(ccode, ErrorCode) else str(ccode), cdesc)
             table.add_row(r.model_id, rcell, ccell, end_section=end_section)
 
-        finalized_sorted: list[Any] = sorted(
-            self.oks, key=lambda r: (family_of(r.model_id).value, r.model_id)
-        )
+        finalized_sorted: list[Any] = sorted(self.oks, key=lambda r: (family_of(r.model_id).value, r.model_id))
         for i, r in enumerate(finalized_sorted):
-            nxt = (
-                family_of(finalized_sorted[i + 1].model_id).value
-                if i + 1 < len(finalized_sorted)
-                else None
-            )
+            nxt = family_of(finalized_sorted[i + 1].model_id).value if i + 1 < len(finalized_sorted) else None
             curr = family_of(r.model_id).value
             end_section = nxt is not None and nxt != curr
             if self._filter_mid(r.model_id):
@@ -225,9 +189,7 @@ class ProbeTUI(App):
         resp_table = self._make_results_table(
             title="Responses (in-progress)", header_style="bold yellow", model_ratio=3
         )
-        chat_table = self._make_results_table(
-            title="Chat (in-progress)", header_style="bold yellow", model_ratio=3
-        )
+        chat_table = self._make_results_table(title="Chat (in-progress)", header_style="bold yellow", model_ratio=3)
 
         partials_resp: list[tuple[str, str, str]] = []
         partials_chat: list[tuple[str, str, str]] = []
@@ -242,28 +204,18 @@ class ProbeTUI(App):
 
         partials_resp.sort(key=self._partials_sort_key("responses"))
         partials_chat.sort(key=self._partials_sort_key("chat"))
-        for (mid4, rc, cc), end_section in self._iter_with_break(
-            partials_resp, lambda x: family_of(x[0]).value
-        ):
+        for (mid4, rc, cc), end_section in self._iter_with_break(partials_resp, lambda x: family_of(x[0]).value):
             resp_table.add_row(mid4, rc, cc, end_section=end_section)
-        for (mid5, rc, cc), end_section in self._iter_with_break(
-            partials_chat, lambda x: family_of(x[0]).value
-        ):
+        for (mid5, rc, cc), end_section in self._iter_with_break(partials_chat, lambda x: family_of(x[0]).value):
             chat_table.add_row(mid5, rc, cc, end_section=end_section)
 
         renderables = [new_table, resp_table, chat_table]
         if self.current_family is None or self.current_family == Family.OTHER:
             others_all = sorted(
-                [
-                    mid6
-                    for mid6 in self.filtered
-                    if family_of(mid6) == Family.OTHER and self._filter_mid(mid6)
-                ]
+                [mid6 for mid6 in self.filtered if family_of(mid6) == Family.OTHER and self._filter_mid(mid6)]
             )
             others_table = self._make_results_table(
-                title="Other models (unclassified)",
-                header_style="bold magenta",
-                model_ratio=3,
+                title="Other models (unclassified)", header_style="bold magenta", model_ratio=3
             )
             for mid7 in others_all:
                 rc, _, _ = build_cell(self.acc[mid7]["responses"])  # type: ignore[index]
@@ -275,15 +227,9 @@ class ProbeTUI(App):
             if self.fails:
                 self.fails.sort(key=lambda r: (family_of(r.model_id).value, r.model_id))
                 fail_table = Table(
-                    show_header=True,
-                    header_style="bold red",
-                    title="Failures",
-                    expand=True,
-                    box=box.SIMPLE,
+                    show_header=True, header_style="bold red", title="Failures", expand=True, box=box.SIMPLE
                 )
-                fail_table.add_column(
-                    "Model", overflow="ellipsis", no_wrap=True, ratio=3, header_style="bold"
-                )
+                fail_table.add_column("Model", overflow="ellipsis", no_wrap=True, ratio=3, header_style="bold")
                 fail_table.add_column("Responses", overflow="ellipsis", no_wrap=True, ratio=2)
                 fail_table.add_column("Chat", overflow="ellipsis", no_wrap=True, ratio=2)
                 for i, r in enumerate(self.fails):
@@ -292,18 +238,10 @@ class ProbeTUI(App):
                     rcell, rcode, rdesc = build_cell(r.responses.calls)
                     ccell, ccode, cdesc = build_cell(r.chat.calls)
                     if rcode and rdesc:
-                        self.used_codes.setdefault(
-                            rcode.value if isinstance(rcode, ErrorCode) else str(rcode), rdesc
-                        )
+                        self.used_codes.setdefault(rcode.value if isinstance(rcode, ErrorCode) else str(rcode), rdesc)
                     if ccode and cdesc:
-                        self.used_codes.setdefault(
-                            ccode.value if isinstance(ccode, ErrorCode) else str(ccode), cdesc
-                        )
-                    nxt = (
-                        family_of(self.fails[i + 1].model_id).value
-                        if i + 1 < len(self.fails)
-                        else None
-                    )
+                        self.used_codes.setdefault(ccode.value if isinstance(ccode, ErrorCode) else str(ccode), cdesc)
+                    nxt = family_of(self.fails[i + 1].model_id).value if i + 1 < len(self.fails) else None
                     curr = family_of(r.model_id).value
                     end_section = nxt is not None and nxt != curr
                     fail_table.add_row(r.model_id, rcell, ccell, end_section=end_section)
@@ -326,18 +264,9 @@ class ProbeTUI(App):
 
 
 async def consume_stream_textual(
-    out_q: asyncio.Queue[Any],
-    total_runners: int,
-    filtered: list[str],
-    repeats: int,
-    *,
-    show_fatal: bool = False,
+    out_q: asyncio.Queue[Any], total_runners: int, filtered: list[str], repeats: int, *, show_fatal: bool = False
 ) -> None:
     app = ProbeTUI(
-        out_q=out_q,
-        total_runners=total_runners,
-        filtered=filtered,
-        repeats=repeats,
-        initial_show_fatal=show_fatal,
+        out_q=out_q, total_runners=total_runners, filtered=filtered, repeats=repeats, initial_show_fatal=show_fatal
     )
     await app.run_async()

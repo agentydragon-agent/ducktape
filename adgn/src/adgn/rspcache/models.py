@@ -4,12 +4,7 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any, cast
 
-from openai.types.responses import (
-    Response as OpenAIResponse,
-    ResponseError,
-    ResponseStreamEvent,
-    ResponseUsage,
-)
+from openai.types.responses import Response as OpenAIResponse, ResponseError, ResponseStreamEvent, ResponseUsage
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
@@ -45,12 +40,7 @@ class FinalResponseSnapshot(BaseModel):
 
     @classmethod
     def from_db(
-        cls,
-        *,
-        status: str,
-        response_json: Any,
-        error_json: Any,
-        token_usage_json: Any,
+        cls, *, status: str, response_json: Any, error_json: Any, token_usage_json: Any
     ) -> FinalResponseSnapshot:
         return cls(
             status=ResponseStatus(status),

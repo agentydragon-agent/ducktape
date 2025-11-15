@@ -140,12 +140,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
             spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
             await db.execute(
                 "INSERT INTO agents (id, created_at, specs, metadata) VALUES (?, ?, ?, ?)",
-                (
-                    agent_id,
-                    _now().isoformat(),
-                    json.dumps(spec_json),
-                    json.dumps(metadata.model_dump()),
-                ),
+                (agent_id, _now().isoformat(), json.dumps(spec_json), json.dumps(metadata.model_dump())),
             )
             await db.commit()
         return agent_id
@@ -153,18 +148,11 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
     async def update_agent_specs(self, agent_id: str, *, mcp_config: MCPConfig) -> None:
         async with self._open() as db:
             spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
-            await db.execute(
-                "UPDATE agents SET specs = ? WHERE id = ?",
-                (json.dumps(spec_json), agent_id),
-            )
+            await db.execute("UPDATE agents SET specs = ? WHERE id = ?", (json.dumps(spec_json), agent_id))
             await db.commit()
 
     async def patch_agent_specs(
-        self,
-        agent_id: str,
-        *,
-        attach: dict[str, MCPConfig] | None = None,
-        detach: list[str] | None = None,
+        self, agent_id: str, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
     ) -> MCPConfig:
         attach = attach or {}
         detach = detach if detach is not None else []
@@ -179,7 +167,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
             for name in detach:
                 cfg.mcpServers.pop(name, None)
             # Apply attach: when given a whole config per name, merge servers
-            for name, subcfg in attach.items():
+            for _name, subcfg in attach.items():
                 # Runtime assertion: values must be MCPConfig per typed API
                 assert isinstance(subcfg, MCPConfig), "attach values must be MCPConfig instances"
                 # Merge all entries from the provided config
@@ -192,18 +180,14 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
         out: list[AgentRow] = []
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT id, created_at, specs, metadata FROM agents ORDER BY created_at DESC"
-            ) as cur:
+            async with db.execute("SELECT id, created_at, specs, metadata FROM agents ORDER BY created_at DESC") as cur:
                 async for r in cur:
                     meta_val = AgentMetadata.model_validate_json(cast(str, r["metadata"]))
                     out.append(
                         AgentRow(
                             id=r["id"],
                             created_at=datetime.fromisoformat(r["created_at"]),
-                            mcp_config=MCPConfig.model_validate(json.loads(r["specs"]))
-                            if r["specs"]
-                            else MCPConfig(),
+                            mcp_config=MCPConfig.model_validate(json.loads(r["specs"])) if r["specs"] else MCPConfig(),
                             metadata=meta_val,
                         )
                     )
@@ -212,10 +196,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
     async def get_agent(self, agent_id: str) -> AgentRow | None:
         async with self._open_row() as db:
             db.row_factory = aiosqlite.Row
-            cur = await db.execute(
-                "SELECT id, created_at, specs, metadata FROM agents WHERE id = ?",
-                (agent_id,),
-            )
+            cur = await db.execute("SELECT id, created_at, specs, metadata FROM agents WHERE id = ?", (agent_id,))
             r = await cur.fetchone()
             if not r:
                 return None
@@ -223,9 +204,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
             return AgentRow(
                 id=r["id"],
                 created_at=datetime.fromisoformat(r["created_at"]),
-                mcp_config=MCPConfig.model_validate(json.loads(r["specs"]))
-                if r["specs"]
-                else MCPConfig(),
+                mcp_config=MCPConfig.model_validate(json.loads(r["specs"])) if r["specs"] else MCPConfig(),
                 metadata=meta_val,
             )
 
@@ -236,8 +215,9 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
         agent created_at as a fallback, taking the maximum.
         """
         out: dict[str, datetime | None] = {}
-        async with self._open_row() as db:
-            async with db.execute(
+        async with (
+            self._open_row() as db,
+            db.execute(
                 """
 SELECT a.id as agent_id,
        MAX(
@@ -248,10 +228,11 @@ LEFT JOIN runs r ON r.agent_id = a.id
 LEFT JOIN events e ON e.run_id = r.id
 GROUP BY a.id
                     """
-            ) as cur:
-                async for r in cur:
-                    ts = r["last_ts"]
-                    out[r["agent_id"]] = datetime.fromisoformat(ts) if ts is not None else None
+            ) as cur,
+        ):
+            async for r in cur:
+                ts = r["last_ts"]
+                out[r["agent_id"]] = datetime.fromisoformat(ts) if ts is not None else None
         return out
 
     async def delete_agent(self, agent_id: str) -> None:
@@ -272,8 +253,9 @@ GROUP BY a.id
     # ---- Approval policy (per-agent) ---------------------------------------
     async def get_latest_policy(self, agent_id: str) -> tuple[str, int] | None:
         """Return (content, version) of the latest approval policy for the agent, or None."""
-        async with self._open_row() as db:
-            async with db.execute(
+        async with (
+            self._open_row() as db,
+            db.execute(
                 """
 SELECT content, version
 FROM approval_policies
@@ -282,11 +264,12 @@ ORDER BY version DESC
 LIMIT 1
                 """,
                 (agent_id,),
-            ) as cur:
-                row = await cur.fetchone()
-                if not row:
-                    return None
-                return (cast(str, row["content"]), int(row["version"]))
+            ) as cur,
+        ):
+            row = await cur.fetchone()
+            if not row:
+                return None
+            return (cast(str, row["content"]), int(row["version"]))
 
     async def set_policy(self, agent_id: str, *, content: str) -> int:
         """Persist a new policy version for agent; returns assigned version."""
@@ -302,13 +285,7 @@ LIMIT 1
             return int(row[0]) if row and row[0] is not None else 0
 
     # ---- Policy proposals (single-store: SQLite) ----------------------------
-    async def create_policy_proposal(
-        self,
-        agent_id: str,
-        *,
-        proposal_id: str,
-        content: str,
-    ) -> None:
+    async def create_policy_proposal(self, agent_id: str, *, proposal_id: str, content: str) -> None:
         async with self._open() as db:
             await db.execute(
                 """
@@ -338,9 +315,7 @@ ORDER BY created_at DESC
                             status=str(row["status"]),
                             created_at=datetime.fromisoformat(cast(str, row["created_at"])),
                             decided_at=(
-                                datetime.fromisoformat(cast(str, row["decided_at"]))
-                                if row["decided_at"]
-                                else None
+                                datetime.fromisoformat(cast(str, row["decided_at"])) if row["decided_at"] else None
                             ),
                             content="",  # content not selected in list; leave empty
                         )
@@ -348,29 +323,27 @@ ORDER BY created_at DESC
         return out
 
     async def get_policy_proposal(self, agent_id: str, proposal_id: str) -> PolicyProposal | None:
-        async with self._open_row() as db:
-            async with db.execute(
+        async with (
+            self._open_row() as db,
+            db.execute(
                 """
 SELECT id, status, created_at, decided_at, content
 FROM policy_proposals
 WHERE agent_id = ? AND id = ?
                 """,
                 (agent_id, proposal_id),
-            ) as cur:
-                row = await cur.fetchone()
-                if not row:
-                    return None
-                return PolicyProposal(
-                    id=str(row["id"]),
-                    status=str(row["status"]),
-                    created_at=datetime.fromisoformat(cast(str, row["created_at"])),
-                    decided_at=(
-                        datetime.fromisoformat(cast(str, row["decided_at"]))
-                        if row["decided_at"]
-                        else None
-                    ),
-                    content=cast(str, row["content"]),
-                )
+            ) as cur,
+        ):
+            row = await cur.fetchone()
+            if not row:
+                return None
+            return PolicyProposal(
+                id=str(row["id"]),
+                status=str(row["status"]),
+                created_at=datetime.fromisoformat(cast(str, row["created_at"])),
+                decided_at=(datetime.fromisoformat(cast(str, row["decided_at"])) if row["decided_at"] else None),
+                content=cast(str, row["content"]),
+            )
 
     async def approve_policy_proposal(self, agent_id: str, proposal_id: str) -> int:
         """Mark proposal approved and persist content as new active policy version.
@@ -378,15 +351,16 @@ WHERE agent_id = ? AND id = ?
         Returns the new active policy version.
         """
         # Read proposal content
-        async with self._open_row() as db:
-            async with db.execute(
-                "SELECT content FROM policy_proposals WHERE agent_id = ? AND id = ?",
-                (agent_id, proposal_id),
-            ) as cur:
-                row = await cur.fetchone()
-                if not row:
-                    raise KeyError("proposal_not_found")
-                content = cast(str, row["content"])
+        async with (
+            self._open_row() as db,
+            db.execute(
+                "SELECT content FROM policy_proposals WHERE agent_id = ? AND id = ?", (agent_id, proposal_id)
+            ) as cur,
+        ):
+            row = await cur.fetchone()
+            if not row:
+                raise KeyError("proposal_not_found")
+            content = cast(str, row["content"])
         # Persist as active policy and mark proposal approved in one transaction
         async with self._open() as db:
             await db.execute(
@@ -412,10 +386,7 @@ WHERE agent_id = ? AND id = ?
 
     async def delete_policy_proposal(self, agent_id: str, proposal_id: str) -> None:
         async with self._open() as db:
-            await db.execute(
-                "DELETE FROM policy_proposals WHERE agent_id = ? AND id = ?",
-                (agent_id, proposal_id),
-            )
+            await db.execute("DELETE FROM policy_proposals WHERE agent_id = ? AND id = ?", (agent_id, proposal_id))
             await db.commit()
 
     # Seatbelt templates are volume-backed via Docker; no DB APIs in final shape
@@ -476,10 +447,7 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
                 "INSERT INTO events (run_id, seq, ts, type, payload, call_id, tool_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (str(run_id), seq, ts.isoformat(), type.value, s, call_id, tool_key),
             )
-            await db.execute(
-                "UPDATE runs SET event_count = event_count + 1 WHERE id = ?",
-                (str(run_id),),
-            )
+            await db.execute("UPDATE runs SET event_count = event_count + 1 WHERE id = ?", (str(run_id),))
             await db.commit()
 
     async def record_approval(
@@ -529,15 +497,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                             id=UUID(r["id"]),
                             agent_id=r["agent_id"],
                             started_at=datetime.fromisoformat(r["started_at"]),
-                            finished_at=datetime.fromisoformat(r["finished_at"])
-                            if r["finished_at"]
-                            else None,
+                            finished_at=datetime.fromisoformat(r["finished_at"]) if r["finished_at"] else None,
                             status=RunStatus(r["status"]),
                             system_message=r["system_message"],
                             model=r["model"],
-                            model_params=json.loads(r["model_params"])
-                            if r["model_params"]
-                            else None,
+                            model_params=json.loads(r["model_params"]) if r["model_params"] else None,
                             event_count=int(r["event_count"] or 0),
                         )
                     )

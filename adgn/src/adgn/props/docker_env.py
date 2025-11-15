@@ -4,6 +4,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+import docker
+from docker.errors import ImageNotFound
 from fastmcp.server import FastMCP
 
 from adgn.mcp._shared.constants import DOCKER_SERVER_NAME
@@ -11,8 +13,6 @@ from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.props.prop_utils import props_definitions_root
-import docker
-from docker.errors import ImageNotFound
 
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 WORKING_DIR: Path = Path("/workspace")
@@ -52,9 +52,7 @@ class PropertiesDockerWiring:
 def build_critic_build_hint() -> str:
     # Build hint uses repository docker path (not package resources):
     #   docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .
-    return (
-        f"docker build -f 'docker/llm/properties-critic/Dockerfile' -t {PROPERTIES_DOCKER_IMAGE} ."
-    )
+    return f"docker build -f 'docker/llm/properties-critic/Dockerfile' -t {PROPERTIES_DOCKER_IMAGE} ."
 
 
 def ensure_critic_image() -> None:
@@ -65,9 +63,7 @@ def ensure_critic_image() -> None:
         dclient.images.get(PROPERTIES_DOCKER_IMAGE)
     except ImageNotFound as e:
         hint = build_critic_build_hint()
-        raise ImageNotFound(
-            f"Docker image not found: {PROPERTIES_DOCKER_IMAGE}.\nBuild it first:\n{hint}",
-        ) from e
+        raise ImageNotFound(f"Docker image not found: {PROPERTIES_DOCKER_IMAGE}.\nBuild it first:\n{hint}") from e
 
 
 def build_critic_volumes(
@@ -85,10 +81,7 @@ def build_critic_volumes(
     Returns (volumes, definitions_container_dir|None)
     """
     volumes: dict[str, dict[str, str]] = {
-        str(workspace_root.resolve()): {
-            "bind": str(WORKING_DIR),
-            "mode": str(workspace_mode),
-        },
+        str(workspace_root.resolve()): {"bind": str(WORKING_DIR), "mode": str(workspace_mode)}
     }
     if extra_volumes:
         volumes.update(extra_volumes)
@@ -116,10 +109,7 @@ def properties_docker_spec(
     ensure_critic_image()
 
     volumes, defs_container = build_critic_volumes(
-        workspace_root,
-        mount_properties=mount_properties,
-        workspace_mode="ro",
-        extra_volumes=extra_volumes,
+        workspace_root, mount_properties=mount_properties, workspace_mode="ro", extra_volumes=extra_volumes
     )
 
     # Provide sane defaults for tool caches and tmp dirs inside the container
@@ -142,7 +132,7 @@ def properties_docker_spec(
                 environment=env,
                 describe=True,
                 ephemeral=ephemeral,
-            ),
+            )
         )
 
     return PropertiesDockerWiring(

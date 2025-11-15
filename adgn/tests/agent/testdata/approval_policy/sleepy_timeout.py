@@ -1,9 +1,8 @@
 from time import sleep
 
-from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse, ApprovalDecision
+from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from adgn.mcp._shared.constants import UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
-
 
 TEST_CASES = [
     (PolicyRequest(name=build_mcp_function(UI_SERVER_NAME, "send_message"), arguments={}), ApprovalDecision.ASK)

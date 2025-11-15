@@ -26,7 +26,7 @@
 
   roles:
     - role: common
-    #- cli    # <- TODO:  needs ducktape, etc
+    # - cli    # <- TODO:  needs ducktape, etc
     - role: wireguard_uninstall
       tags: [wireguard, wireguard_uninstall]
     - role: powerdns
@@ -38,7 +38,7 @@
       ansible.builtin.systemd:
         name: systemd-resolved
         state: started
-        enabled: yes
+        enabled: true
       become: true
       tags: [dns, powerdns]
 
@@ -106,7 +106,7 @@
         src: /run/systemd/resolve/stub-resolv.conf
         dest: /etc/resolv.conf
         state: link
-        force: yes
+        force: true
       become: true
       tags: [dns, powerdns]
     # Needs to run before Docker, which tries to install gnupg2
@@ -197,7 +197,7 @@
       ansible.builtin.systemd:
         name: headscale
         state: restarted
-        enabled: yes
+        enabled: true
       tags: [headscale]
 
     - name: Wait for headscale health endpoint
@@ -411,7 +411,7 @@
       ansible.builtin.systemd:
         name: systemd-resolved
         state: restarted
-        daemon_reload: yes
+        daemon_reload: true
       become: true
       tags: [dns, powerdns]
 
@@ -419,7 +419,7 @@
       ansible.builtin.systemd:
         name: systemd-networkd
         state: restarted
-        daemon_reload: yes
+        daemon_reload: true
       become: true
       tags: [dns, powerdns]
 

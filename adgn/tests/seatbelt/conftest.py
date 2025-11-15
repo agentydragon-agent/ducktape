@@ -4,15 +4,7 @@ import asyncio
 
 import pytest
 
-from adgn.seatbelt.model import (
-    Action,
-    DefaultBehavior,
-    FileOp,
-    FileRule,
-    ProcessRule,
-    SBPLPolicy,
-    Subpath,
-)
+from adgn.seatbelt.model import Action, DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from adgn.seatbelt.runner import apopen, run_sandboxed_async
 from tests._markers import REQUIRES_SANDBOX_EXEC
 
@@ -58,16 +50,8 @@ def restrictive_echo_policy() -> SBPLPolicy:
 def policy_deny_users(allow_all_policy: SBPLPolicy) -> SBPLPolicy:
     p = allow_all_policy.model_copy(deep=True)
     p.files += [
-        FileRule(
-            op=FileOp.FILE_READ_STAR,
-            action=Action.DENY,
-            filters=[Subpath(subpath="/Users")],
-        ),
-        FileRule(
-            op=FileOp.FILE_READ_METADATA,
-            action=Action.DENY,
-            filters=[Subpath(subpath="/Users")],
-        ),
+        FileRule(op=FileOp.FILE_READ_STAR, action=Action.DENY, filters=[Subpath(subpath="/Users")]),
+        FileRule(op=FileOp.FILE_READ_METADATA, action=Action.DENY, filters=[Subpath(subpath="/Users")]),
     ]
     return p
 
@@ -92,11 +76,7 @@ async def cat_process(require_sandbox_exec, allow_all_policy: SBPLPolicy):
 def run_async(require_sandbox_exec):
     async def _run(policy: SBPLPolicy, argv: list[str], *, trace: bool = False):
         rr = await run_sandboxed_async(
-            policy,
-            argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            trace=trace,
+            policy, argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, trace=trace
         )
         if rr.exit_code != 0:
             print("\n=== seatbelt diagnostics (async) ===")
@@ -106,10 +86,7 @@ def run_async(require_sandbox_exec):
                 tail = "\n".join((rr.unified_sandbox_denies_text or "").splitlines()[-120:])
                 print("-- unified sandbox denies (tail) --\n" + tail)
             if rr.trace_text:
-                print(
-                    "-- seatbelt trace (tail) --\n"
-                    + "\n".join((rr.trace_text or "").splitlines()[-120:])
-                )
+                print("-- seatbelt trace (tail) --\n" + "\n".join((rr.trace_text or "").splitlines()[-120:]))
         return rr
 
     return _run

@@ -30,9 +30,7 @@ def render_compositor_instructions(states: dict[str, ServerEntry]) -> str:
 
     # Load template from package resources and render
     template_name = "compositor_instructions.md.j2"
-    template_text = (
-        resources.files(_templates_pkg_name()).joinpath(template_name).read_text("utf-8")
-    )
+    template_text = resources.files(_templates_pkg_name()).joinpath(template_name).read_text("utf-8")
     env = Environment(autoescape=False)
 
     # Filter: emit JSON using Pydantic's model_dump_json if available

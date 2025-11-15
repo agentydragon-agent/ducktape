@@ -12,17 +12,10 @@ Reasoning items originate from the model and should never be synthesized in prod
 import json
 from typing import Any
 
-from .model import (
-    AssistantMessageOut,
-    FunctionCallItem,
-    FunctionCallOutputItem,
-    OutputText,
-)
+from .model import AssistantMessageOut, FunctionCallItem, FunctionCallOutputItem, OutputText
 
 
-def make_item_tool_call(
-    *, call_id: str, name: str, arguments: dict[str, Any] | str
-) -> FunctionCallItem:
+def make_item_tool_call(*, call_id: str, name: str, arguments: dict[str, Any] | str) -> FunctionCallItem:
     args_json = json.dumps(arguments) if isinstance(arguments, dict) else str(arguments)
     return FunctionCallItem(call_id=call_id, name=name, arguments=args_json)
 
@@ -46,12 +39,7 @@ class ItemFactory:
         self._i += 1
         return f"{self._prefix}:{self._i}"
 
-    def tool_call(
-        self,
-        name: str,
-        arguments: dict[str, Any] | str,
-        call_id: str | None = None,
-    ) -> FunctionCallItem:
+    def tool_call(self, name: str, arguments: dict[str, Any] | str, call_id: str | None = None) -> FunctionCallItem:
         cid = call_id or self.next_call_id()
         return make_item_tool_call(call_id=cid, name=name, arguments=arguments)
 
@@ -59,11 +47,7 @@ class ItemFactory:
         return make_item_assistant_text(text)
 
     def tool_call_with_output(
-        self,
-        name: str,
-        arguments: dict[str, Any] | str,
-        output: Any,
-        call_id: str | None = None,
+        self, name: str, arguments: dict[str, Any] | str, output: Any, call_id: str | None = None
     ) -> tuple[FunctionCallItem, FunctionCallOutputItem]:
         call = self.tool_call(name, arguments, call_id)
         if isinstance(output, FunctionCallOutputItem):

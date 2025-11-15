@@ -3,5 +3,4 @@ import subprocess
 
 
 def ok():
-    subprocess.run(["echo", Path("/etc/hosts")])
-
+    subprocess.run(["echo", Path("/etc/hosts")], check=False)

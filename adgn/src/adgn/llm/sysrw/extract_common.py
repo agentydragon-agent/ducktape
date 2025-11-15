@@ -109,12 +109,7 @@ def maybe_extract_payload(obj: dict[str, Any]) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 
 
-def write_jsonl_batches(
-    results: list[list[dict]],
-    output_path: Path,
-    *,
-    event: str,
-) -> None:
+def write_jsonl_batches(results: list[list[dict]], output_path: Path, *, event: str) -> None:
     """Write a 2D list of JSON-serializable dicts to a JSONL file and emit a summary.
 
     - results: list of batches (each batch is a list of dict records)

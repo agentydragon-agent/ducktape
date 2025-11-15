@@ -4,12 +4,7 @@ from abc import ABC, abstractmethod
 import asyncio
 from pathlib import Path
 
-from adgn.inop.engine.models import (
-    GitCloneConfig,
-    Rollout,
-    RunnerEnvironment,
-    TaskDefinition,
-)
+from adgn.inop.engine.models import GitCloneConfig, Rollout, RunnerEnvironment, TaskDefinition
 from adgn.inop.io.logging_utils import DualOutputLogging
 
 
@@ -65,12 +60,7 @@ class AgentRunner(ABC):
             RunnerEnvironment with type and data, or None if no environment.
         """
 
-    async def _clone_repository(
-        self,
-        git_setup: GitCloneConfig,
-        target_dir: str,
-        is_docker: bool = False,
-    ) -> None:
+    async def _clone_repository(self, git_setup: GitCloneConfig, target_dir: str, is_docker: bool = False) -> None:
         """Clone a git repository using shallow clone to specific commit.
 
         This method clones directly into the target directory (workspace root),
@@ -109,18 +99,11 @@ class AgentRunner(ABC):
         for cmd in commands:
             if is_docker:
                 # Run in Docker container - subclasses must implement this
-                exit_code, _stdout, stderr = await self._run_docker_command(
-                    cmd,
-                    target_dir,
-                    timeout_s=60,
-                )
+                exit_code, _stdout, stderr = await self._run_docker_command(cmd, target_dir, timeout_s=60)
             else:
                 # Run locally (asyncio subprocess)
                 proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    cwd=target_dir,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                    *cmd, cwd=target_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
                 _stdout_b, _stderr_b = await proc.communicate()
                 rc = proc.returncode
@@ -129,12 +112,7 @@ class AgentRunner(ABC):
                 stderr = _stderr_b.decode() if _stderr_b else ""
 
             if exit_code != 0:
-                self.logger.error(
-                    "Git command failed",
-                    command=" ".join(cmd),
-                    exit_code=exit_code,
-                    stderr=stderr,
-                )
+                self.logger.error("Git command failed", command=" ".join(cmd), exit_code=exit_code, stderr=stderr)
                 raise RuntimeError(f"Failed to run {' '.join(cmd)}: {stderr}")
 
         self.logger.info("Repository cloned successfully")
@@ -142,12 +120,7 @@ class AgentRunner(ABC):
         # Note: We don't handle git_setup.subdir - the agent can navigate
         # to any subdirectory as needed using shell commands
 
-    async def _run_docker_command(
-        self,
-        cmd: list[str],
-        cwd: str,
-        timeout_s: int,
-    ) -> tuple[int, str, str]:
+    async def _run_docker_command(self, cmd: list[str], cwd: str, timeout_s: int) -> tuple[int, str, str]:
         """Run a command in Docker container. Subclasses must implement if using Docker.
 
         Args:
@@ -158,6 +131,4 @@ class AgentRunner(ABC):
         Returns:
             Tuple of (exit_code, stdout, stderr)
         """
-        raise NotImplementedError(
-            "Subclass must implement _run_docker_command if using Docker",
-        )
+        raise NotImplementedError("Subclass must implement _run_docker_command if using Docker")

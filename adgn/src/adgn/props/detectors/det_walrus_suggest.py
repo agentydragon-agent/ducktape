@@ -25,15 +25,9 @@ def _is_simple_guard(test: ast.AST, name: str) -> str | None:
     if isinstance(test, ast.Compare) and len(test.ops) == 1 and len(test.comparators) == 1:
         left, op, right = test.left, test.ops[0], test.comparators[0]
         if isinstance(left, ast.Name) and left.id == name:
-            if (
-                isinstance(op, ast.Is | ast.IsNot)
-                and isinstance(right, ast.Constant)
-                and right.value is None
-            ):
+            if isinstance(op, ast.Is | ast.IsNot) and isinstance(right, ast.Constant) and right.value is None:
                 return "is None" if isinstance(op, ast.Is) else "is not None"
-            if isinstance(op, ast.Eq | ast.NotEq) and isinstance(
-                right, ast.Constant | ast.Str | ast.Num
-            ):
+            if isinstance(op, ast.Eq | ast.NotEq) and isinstance(right, ast.Constant | ast.Str | ast.Num):
                 return "== literal" if isinstance(op, ast.Eq) else "!= literal"
     return None
 
@@ -51,11 +45,7 @@ def _find_in_file(path: Path) -> list[Detection]:
         if isinstance(parent, ast.FunctionDef | ast.AsyncFunctionDef):
             body = parent.body
             for i, stmt in enumerate(body[:-1]):
-                if (
-                    isinstance(stmt, ast.Assign)
-                    and len(stmt.targets) == 1
-                    and isinstance(stmt.targets[0], ast.Name)
-                ):
+                if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
                     name = stmt.targets[0].id
                     # Next non-empty/non-docstring statement
                     j = i + 1
@@ -82,7 +72,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                                         f"Assign then immediate guard on '{name}' — consider walrus in guard (assign L{sl}, guard L{gl}, test={desc})."
                                     ),
                                     snippet=read_snippet(path, sl, gl, context=0),
-                                ),
+                                )
                             )
     return out
 

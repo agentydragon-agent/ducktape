@@ -10,11 +10,7 @@ import logging
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
-from fastmcp.client.transports import (
-    ClientTransport,
-    StdioTransport,
-    StreamableHttpTransport,
-)
+from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from fastmcp.mcp_config import (
     MCPConfig,
     MCPServerTypes,
@@ -71,13 +67,7 @@ class Compositor(FastMCP):
       separate compositor_meta server resources
     """
 
-    def __init__(
-        self,
-        name: str = "compositor",
-        *,
-        instructions: str | None = None,
-        eager_open: bool = True,
-    ) -> None:
+    def __init__(self, name: str = "compositor", *, instructions: str | None = None, eager_open: bool = True) -> None:
         super().__init__(name=name, instructions=instructions)
         # Internal behavior flags
         self._eager = eager_open
@@ -129,9 +119,7 @@ class Compositor(FastMCP):
             if asyncio.iscoroutine(res):
                 await res
 
-    def add_resource_updated_listener(
-        self, cb: Callable[[str, str], Awaitable[None] | None]
-    ) -> None:
+    def add_resource_updated_listener(self, cb: Callable[[str, str], Awaitable[None] | None]) -> None:
         """Register a callback invoked when a child reports resources/updated.
 
         Callback signature: (name: str, uri: str) where name is the origin
@@ -151,9 +139,7 @@ class Compositor(FastMCP):
             self._o = owner
             self._name = name
 
-        async def on_resource_list_changed(
-            self, message: mcp_types.ResourceListChangedNotification
-        ) -> None:  # type: ignore[override]
+        async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:  # type: ignore[override]
             self._o._pending_list_changed.add(self._name)
             # No forwarding here; child client handles forwarding via proxy
             await self._o._notify_list_changed(self._name)
@@ -200,9 +186,7 @@ class Compositor(FastMCP):
                         async with cli:
                             return await cli.list_tools()
 
-                    tool_tasks[name] = asyncio.create_task(
-                        _list_tools_via_client(mount.proxy.client_factory)
-                    )
+                    tool_tasks[name] = asyncio.create_task(_list_tools_via_client(mount.proxy.client_factory))
                     state = McpServerState.RUNNING
                 except Exception as e:
                     error = f"{type(e).__name__}: {e}"
@@ -213,7 +197,7 @@ class Compositor(FastMCP):
         if tool_tasks:
             order = list(tool_tasks.keys())
             results = await asyncio.gather(*(tool_tasks[n] for n in order), return_exceptions=True)
-            for nm, res in zip(order, results):
+            for nm, res in zip(order, results, strict=False):
                 rec = per_name.get(nm)
                 if rec is None:
                     continue
@@ -241,7 +225,7 @@ class Compositor(FastMCP):
         return entries
 
     async def sampling_snapshot(self) -> SamplingSnapshot:
-        """Return a SamplingSnapshot mirroring the manager’s shape, aggregated over children."""
+        """Return a SamplingSnapshot mirroring the manager's shape, aggregated over children."""
         entries_map = await self.server_entries()
         # Preserve stable ordering by name for UI consistency
         entries_list = [entries_map[k] for k in sorted(entries_map.keys())]
@@ -276,9 +260,7 @@ class Compositor(FastMCP):
 
     # ---- Management API (Python-only) --------------------------------------
 
-    async def mount_server(
-        self, name: str, spec: MCPServerTypes, prefix: str | None = None
-    ) -> None:
+    async def mount_server(self, name: str, spec: MCPServerTypes, prefix: str | None = None) -> None:
         if not name or "__" in name:
             raise ValueError("invalid mount name; must be non-empty and not contain '__'")
         # Prefix equals server name (semantic only); actual namespacing applied per tool mount
@@ -307,9 +289,7 @@ class Compositor(FastMCP):
         self.mount(proxy, prefix=name)
         await self._notify_mount_listeners(name, MountEvent.MOUNTED)
 
-    async def mount_inproc(
-        self, name: str, app: FastMCP, prefix: str | None = None, *, pinned: bool = False
-    ) -> None:
+    async def mount_inproc(self, name: str, app: FastMCP, prefix: str | None = None, *, pinned: bool = False) -> None:
         """Mount a local FastMCP server directly (no HTTP/stdio), keeping a client for status."""
         if not name or "__" in name:
             raise ValueError("invalid mount name; must be non-empty and not contain '__'")
@@ -380,9 +360,7 @@ class Compositor(FastMCP):
                 headers.setdefault("Authorization", f"Bearer {spec.auth}")
             return StreamableHttpTransport(spec.url, headers=headers or None)
         if isinstance(spec, StdioMCPServer | TransformingStdioMCPServer):
-            return StdioTransport(
-                spec.command, args=list(spec.args or []), env=spec.env, cwd=spec.cwd
-            )
+            return StdioTransport(spec.command, args=list(spec.args or []), env=spec.env, cwd=spec.cwd)
         raise ValueError("unsupported transport for fastmcp client")
 
     # No URI decoding helpers needed; rely on FastMCP mount semantics
@@ -401,11 +379,7 @@ class Compositor(FastMCP):
 
 
 async def build_compositor(
-    cfg: MCPConfig,
-    *,
-    name: str = "compositor",
-    instructions: str | None = None,
-    eager_open: bool = True,
+    cfg: MCPConfig, *, name: str = "compositor", instructions: str | None = None, eager_open: bool = True
 ) -> Compositor:
     """Create a Compositor and attach mounts from typed specs.
 

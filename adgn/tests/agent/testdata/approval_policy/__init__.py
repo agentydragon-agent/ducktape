@@ -34,7 +34,7 @@ def make_policy(
         raise ValueError("default must be 'ask' or 'allow'")
     default_expr = "PolicyDecision.ASK" if default == "ask" else "PolicyDecision.ALLOW"
     doc = doc or f"policy for {server}.{tool} returns explicit decision; default {default}"
-    tool_name = build_mcp_function(server, tool)
+    build_mcp_function(server, tool)
     header = (
         "from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse, ApprovalDecision\n"
         "from adgn.agent.approvals import WellKnownTools\n"

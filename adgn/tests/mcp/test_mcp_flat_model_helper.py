@@ -23,13 +23,7 @@ class EchoOutput(BaseModel):
 def make_echo_server():
     mcp = FlatModelFastMCP("echo")
 
-    @mcp.tool(
-        name="echo",
-        title="Echo",
-        description="Echo a message",
-        structured_output=True,
-        flat=True,
-    )
+    @mcp.tool(name="echo", title="Echo", description="Echo a message", structured_output=True, flat=True)
     def echo(input: EchoInput) -> EchoOutput:
         text = input.msg.upper() if input.upper else input.msg
         return EchoOutput(text=text)
@@ -43,8 +37,8 @@ async def test_flat_schema_and_typed_invocation(make_typed_mcp):
 
     async with make_typed_mcp(server, "echo") as (client, sess):
         # Fast path: typed client can call tool like client.echo(EchoInput(...)) -> EchoOutput
-        EchoIn = client.models["echo"].Input
-        assert EchoIn is EchoInput
+        echo_input_class = client.models["echo"].Input
+        assert echo_input_class is EchoInput
 
         out = await client.echo(EchoInput(msg="hi", upper=True))
         assert isinstance(out, EchoOutput)

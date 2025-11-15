@@ -41,9 +41,7 @@ async def get_session_auth_with_context(session_token: str) -> AuthContext:
         return auth_context
 
 
-async def get_admin_auth_with_context(
-    session_token: str | None = Cookie(None),
-) -> AuthContext:
+async def get_admin_auth_with_context(session_token: str | None = Cookie(None)) -> AuthContext:
     if session_token is None:
         raise RuntimeError("No admin session")
     async with database.get_db_session() as session:

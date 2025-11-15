@@ -51,26 +51,11 @@ class EnsureMirrorAndSyncResponse(BaseModel):
 
 
 def _headers(token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"token {token}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+    return {"Authorization": f"token {token}", "Accept": "application/json", "Content-Type": "application/json"}
 
 
-def _post_json(
-    url: str,
-    token: str,
-    payload: dict[str, Any] | None = None,
-    *,
-    timeout: int = 15,
-) -> requests.Response:
-    return requests.post(
-        url,
-        headers=_headers(token),
-        json=payload or {},
-        timeout=timeout,
-    )
+def _post_json(url: str, token: str, payload: dict[str, Any] | None = None, *, timeout: int = 15) -> requests.Response:
+    return requests.post(url, headers=_headers(token), json=payload or {}, timeout=timeout)
 
 
 def _get_json(url: str, token: str, *, timeout: int = 15) -> dict[str, Any]:
@@ -102,9 +87,7 @@ class _RepositoryInfo(BaseModel):
 T_Model = TypeVar("T_Model", bound=BaseModel)
 
 
-def _get_typed_json(
-    url: str, token: str, model_type: type[T_Model], *, timeout: int = 15
-) -> T_Model:
+def _get_typed_json(url: str, token: str, model_type: type[T_Model], *, timeout: int = 15) -> T_Model:
     payload = _get_json(url, token, timeout=timeout)
     try:
         return model_type.model_validate(payload)
@@ -129,13 +112,7 @@ def _derive_repo_name(url: str) -> str:
 
 def _ensure_mirror(cfg: MirrorConfig, upstream: str, owner: str, repo: str) -> None:
     migrate_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/migrate"
-    payload = {
-        "clone_addr": upstream,
-        "repo_name": repo,
-        "repo_owner": owner,
-        "mirror": True,
-        "private": False,
-    }
+    payload = {"clone_addr": upstream, "repo_name": repo, "repo_owner": owner, "mirror": True, "private": False}
     resp = _post_json(migrate_url, cfg.token, payload)
     if resp.status_code not in (200, 201, 409):
         resp.raise_for_status()
@@ -146,9 +123,7 @@ def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
     sync_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}/mirror-sync"
     resp = _post_json(sync_url, cfg.token, {})
     if resp.status_code // 100 != 2:
-        raise MirrorError(
-            f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}",
-        )
+        raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}")
 
 
 def _wait_for_update(cfg: MirrorConfig, owner: str, repo: str) -> _RepositoryInfo:
@@ -192,9 +167,7 @@ def make_gitea_mirror_server(
             else poll_interval_secs
         ),
         poll_timeout_secs=(
-            float(os.environ.get("GITEA_POLL_TIMEOUT_SECS", "60.0"))
-            if poll_timeout_secs is None
-            else poll_timeout_secs
+            float(os.environ.get("GITEA_POLL_TIMEOUT_SECS", "60.0")) if poll_timeout_secs is None else poll_timeout_secs
         ),
     )
     if not cfg.base_url or not cfg.token:
@@ -209,9 +182,7 @@ def make_gitea_mirror_server(
     )
 
     @server.flat_model()
-    def ensure_mirror_and_sync(
-        input: EnsureMirrorAndSyncArgs,
-    ) -> EnsureMirrorAndSyncResponse:
+    def ensure_mirror_and_sync(input: EnsureMirrorAndSyncArgs) -> EnsureMirrorAndSyncResponse:
         """Ensure a Gitea pull mirror exists and syncs before returning."""
         owner = _resolve_owner(cfg.base_url, cfg.token)
         repo = _derive_repo_name(input.url)
@@ -219,10 +190,7 @@ def make_gitea_mirror_server(
         _trigger_sync(cfg, owner, repo)
         repo_data = _wait_for_update(cfg, owner, repo)
         return EnsureMirrorAndSyncResponse(
-            owner=owner,
-            repo=repo,
-            mirror_path=f"{owner}/{repo}.git",
-            mirror_updated=repo_data.mirror_updated,
+            owner=owner, repo=repo, mirror_path=f"{owner}/{repo}.git", mirror_updated=repo_data.mirror_updated
         )
 
     return server

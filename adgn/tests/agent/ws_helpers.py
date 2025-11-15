@@ -21,14 +21,7 @@ from hamcrest import (
 )
 from hamcrest.core.matcher import Matcher
 
-from adgn.agent.server.protocol import (
-    Accepted,
-    Envelope,
-    RunStatus,
-    RunStatusEvt,
-    UiStateSnapshot,
-    UiStateUpdated,
-)
+from adgn.agent.server.protocol import Accepted, Envelope, RunStatus, RunStatusEvt, UiStateSnapshot, UiStateUpdated
 
 # ---- Tracing utilities -------------------------------------------------------
 
@@ -255,8 +248,7 @@ def collect_payloads_until_finished(ws, *, limit: int = 200):
     """Collect payloads until finished (thin wrapper over drain_until)."""
     return drain_until(
         ws,
-        lambda e: isinstance(e.payload, RunStatusEvt)
-        and e.payload.run_state.status == RunStatus.FINISHED,
+        lambda e: isinstance(e.payload, RunStatusEvt) and e.payload.run_state.status == RunStatus.FINISHED,
         limit=limit,
         mapper=None,  # default mapper returns payloads
     )
@@ -271,12 +263,7 @@ def wait_for_accepted(ws, *, limit: int = 20) -> Envelope:
     raise AssertionError("accepted not received")
 
 
-def collect_payloads_until(
-    ws,
-    predicate: Callable[[Envelope], bool],
-    *,
-    limit: int = 200,
-):
+def collect_payloads_until(ws, predicate: Callable[[Envelope], bool], *, limit: int = 200):
     """Collect payloads until predicate is True (thin wrapper over drain_until)."""
     return drain_until(ws, predicate, limit=limit, mapper=None)
 
@@ -285,8 +272,7 @@ def collect_envelopes_until_finished(ws, *, limit: int = 200):
     """Collect envelopes until finished (delegates to drain_until)."""
     return drain_until(
         ws,
-        lambda e: isinstance(e.payload, RunStatusEvt)
-        and e.payload.run_state.status == RunStatus.FINISHED,
+        lambda e: isinstance(e.payload, RunStatusEvt) and e.payload.run_state.status == RunStatus.FINISHED,
         limit=limit,
         mapper=lambda e: e,
     )
@@ -355,10 +341,7 @@ def is_ui_message(content: str | None = None, mime: str | None = None):
 
 def has_function_call_output_structured(**kvs):
     """Matcher: function_call_output with structured_content containing kvs."""
-    return has_entries(
-        kind="function_call_output",
-        result=has_entries(structured_content=has_entries(**kvs)),
-    )
+    return has_entries(kind="function_call_output", result=has_entries(structured_content=has_entries(**kvs)))
 
 
 def assert_payloads_have(payloads: list[object], *matchers):
@@ -405,12 +388,7 @@ def assert_function_call_output_structured(records: list[dict], **kvs):
     """
     assert_that(
         records,
-        has_item(
-            has_entries(
-                kind="function_call_output",
-                result=has_entries(structured_content=has_entries(**kvs)),
-            )
-        ),
+        has_item(has_entries(kind="function_call_output", result=has_entries(structured_content=has_entries(**kvs)))),
     )
 
 

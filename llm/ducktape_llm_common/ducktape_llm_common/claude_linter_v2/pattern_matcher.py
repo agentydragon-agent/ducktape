@@ -83,11 +83,7 @@ class PatternMatcher:
         """
         applicable_rules = self.get_applicable_rules(file_path)
 
-        context: dict[str, list[str]] = {
-            "relaxed_checks": [],
-            "enforced_checks": [],
-            "rule_names": [],
-        }
+        context: dict[str, list[str]] = {"relaxed_checks": [], "enforced_checks": [], "rule_names": []}
 
         for rule in applicable_rules:
             context["relaxed_checks"].extend(rule.relaxed_checks)

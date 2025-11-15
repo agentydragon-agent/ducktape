@@ -2,22 +2,22 @@
 - name: Install samba
   ansible.builtin.apt:
     name:
-    - samba
+      - samba
     state: present
-  become: yes
+  become: true
 
 - name: Create loop-back sparse file
   ansible.builtin.command: fallocate -l {{ scanbox_size }} {{ scanbox_img }}
   args:
     creates: "{{ scanbox_img }}"
-  become: yes
+  become: true
 
 - name: Make ext4 FS on loop-file
   community.general.filesystem:
     fstype: ext4
     dev: "{{ scanbox_img }}"
     opts: "-m0 -L SCANBOX"
-  become: yes
+  become: true
 
 - name: Create mount point
   ansible.builtin.file:
@@ -26,7 +26,7 @@
     owner: root
     group: root
     mode: "0755"
-  become: yes
+  become: true
 
 - name: Mount loop-file
   ansible.posix.mount:
@@ -35,14 +35,14 @@
     fstype: ext4
     opts: loop,noexec,nosuid,nodev
     state: mounted
-  become: yes
+  become: true
 
 - name: Ensure scanbox system account
   ansible.builtin.user:
     name: "{{ scanbox_user }}"
-    system: yes
-    create_home: no
-  become: yes
+    system: true
+    create_home: false
+  become: true
 
 - name: Own mount point
   ansible.builtin.file:
@@ -50,7 +50,7 @@
     owner: "{{ scanbox_user }}"
     group: "{{ scanbox_user }}"
     mode: "0750"
-  become: yes
+  become: true
 
 - name: Append ScanBox share to smb.conf
   ansible.builtin.blockinfile:
@@ -69,17 +69,17 @@
          hosts allow = 127. {{ scanbox_printer_ip }}
          veto files = /*.exe/*.bat/*.cmd/
   notify: restart smbd
-  become: yes
+  become: true
 
 - name: Add current user to scanbox group
   ansible.builtin.user:
     name: "{{ ansible_user_id }}"
     groups: "{{ scanbox_user }}"
-    append: yes
-  become: yes
+    append: true
+  become: true
 
 - name: Widen dir perms for group write
   ansible.builtin.file:
     path: "{{ scanbox_mount }}"
     mode: "0770"
-  become: yes
+  become: true

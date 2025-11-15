@@ -77,5 +77,5 @@ def test_context_mismatch_raises() -> None:
         "-a\n"
         "+A\n"
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="context.*mismatch|patch.*failed|apply.*failed"):
         apply_unified_diff(bad_patch, fs.open_fn, fs.write_fn, fs.remove_fn)

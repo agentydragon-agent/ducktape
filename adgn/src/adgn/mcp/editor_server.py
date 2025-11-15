@@ -155,11 +155,7 @@ def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
     @mcp.flat_model()
     def read_info(input: ReadInfoArgs) -> ReadInfoResult:
         """Return basic info about the current file."""
-        return ReadInfoResult(
-            ok=True,
-            path=state.file_path,
-            lines=len(state.content.splitlines()),
-        )
+        return ReadInfoResult(ok=True, path=state.file_path, lines=len(state.content.splitlines()))
 
     @mcp.flat_model()
     def read_line_range(input: ReadLineRangeArgs) -> ReadLineRangeResult:
@@ -169,16 +165,11 @@ def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
         start_idx = max(1, input.start) - 1
         end_idx = min(len(lines), end) - 1
         if start_idx < 0 or end_idx >= len(lines) or start_idx > end_idx:
-            return ReadLineRangeResult(
-                ok=False,
-                error=f"out of bounds: {input.start}-{end} (len={len(lines)})",
-            )
+            return ReadLineRangeResult(ok=False, error=f"out of bounds: {input.start}-{end} (len={len(lines)})")
         body = "\n".join(f"{i + 1:4d}: {lines[i]}" for i in range(start_idx, end_idx + 1))
         return ReadLineRangeResult(ok=True, body=body)
 
-    def _do_replace(
-        old_text: str, new_text: str, replace_all: bool
-    ) -> tuple[bool, int, str | None]:
+    def _do_replace(old_text: str, new_text: str, replace_all: bool) -> tuple[bool, int, str | None]:
         if not old_text:
             return False, 0, "old_text required"
         if old_text not in state.content:
@@ -187,9 +178,7 @@ def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
         if not replace_all and count > 1:
             return False, 0, "old_text appears multiple times; be more specific"
         state.content = (
-            state.content.replace(old_text, new_text)
-            if replace_all
-            else state.content.replace(old_text, new_text, 1)
+            state.content.replace(old_text, new_text) if replace_all else state.content.replace(old_text, new_text, 1)
         )
         return True, (count if replace_all else 1), None
 
@@ -210,10 +199,7 @@ def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
         """Delete a specific line (1-based)."""
         lines = state.content.splitlines()
         if input.line_number < 1 or input.line_number > len(lines):
-            return DeleteLineResult(
-                ok=False,
-                error=f"line {input.line_number} out of bounds (len={len(lines)})",
-            )
+            return DeleteLineResult(ok=False, error=f"line {input.line_number} out of bounds (len={len(lines)})")
         deleted = lines.pop(input.line_number - 1)
         state.content = "\n".join(lines)
         return DeleteLineResult(ok=True, deleted=deleted)
@@ -223,10 +209,7 @@ def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
         """Insert a line after the given line (0 inserts at start)."""
         lines = state.content.splitlines()
         if input.line_number < 0 or input.line_number > len(lines):
-            return AddLineAfterResult(
-                ok=False,
-                error=f"line {input.line_number} out of bounds (len={len(lines)})",
-            )
+            return AddLineAfterResult(ok=False, error=f"line {input.line_number} out of bounds (len={len(lines)})")
         if input.line_number == 0:
             lines.insert(0, input.content)
         else:
@@ -264,12 +247,7 @@ def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
         return Success(summary=input.summary)
 
 
-async def attach_editor(
-    comp: Compositor,
-    file_path: Path,
-    *,
-    name: str = "editor",
-):
+async def attach_editor(comp: Compositor, file_path: Path, *, name: str = "editor"):
     """Attach the editor MCP in-proc (encapsulated)."""
     server = make_editor_server(file_path, name=name)
     await comp.mount_inproc(name, server)

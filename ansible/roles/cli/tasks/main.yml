@@ -31,7 +31,7 @@
 - name: Install CLI packages
   become: true
   ansible.builtin.apt:
-    update_cache: yes  # deb822_repository doesn't reliably trigger apt cache update
+    update_cache: true  # deb822_repository doesn't reliably trigger apt cache update
     pkg:
       # removed 2024-04-13, defaults in pop os:
       #   diffutils

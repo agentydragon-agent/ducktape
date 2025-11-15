@@ -1,8 +1,8 @@
 """Session management for tracking Claude Code sessions and their permissions."""
 
+from datetime import datetime
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,23 +35,19 @@ class SessionManager:
         session_file = self._session_file(session_id)
         if session_file.exists():
             try:
-                with open(session_file) as f:
+                with session_file.open() as f:
                     return json.load(f)
             except (json.JSONDecodeError, OSError) as e:
                 logger.error(f"Failed to load session {session_id}: {e}")
 
         # Return default session data
-        return {
-            "id": session_id,
-            "created": datetime.now().isoformat(),
-            "rules": [],
-        }
+        return {"id": session_id, "created": datetime.now().isoformat(), "rules": []}
 
     def _save_session(self, session_id: SessionID, session_data: dict[str, Any]) -> None:
         """Save a single session to disk."""
         session_file = self._session_file(session_id)
         try:
-            with open(session_file, "w") as f:
+            with session_file.open("w") as f:
                 json.dump(session_data, f, indent=2, default=str)
         except (OSError, TypeError) as e:
             logger.error(f"Failed to save session {session_id}: {e}")
@@ -66,12 +62,7 @@ class SessionManager:
         """
         session_data = self._load_session(session_id)
 
-        session_data.update(
-            {
-                "last_seen": datetime.now().isoformat(),
-                "directory": str(working_dir.resolve()),
-            }
-        )
+        session_data.update({"last_seen": datetime.now().isoformat(), "directory": str(working_dir.resolve())})
 
         self._save_session(session_id, session_data)
 
@@ -117,11 +108,7 @@ class SessionManager:
         directory = directory or Path.cwd()
         directory_str = str(directory.resolve())
 
-        rule = {
-            "predicate": predicate,
-            "action": action,
-            "created": datetime.now().isoformat(),
-        }
+        rule = {"predicate": predicate, "action": action, "created": datetime.now().isoformat()}
 
         if expires:
             rule["expires"] = expires.isoformat()
@@ -225,4 +212,3 @@ class SessionManager:
         This is called when Claude ends a turn, not when a session ends.
         """
         # Currently a no-op but available for future turn-specific cleanup
-        pass

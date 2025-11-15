@@ -28,10 +28,7 @@ class FailedServerEntry(BaseModel):
     error: str | None
 
 
-ServerEntry = Annotated[
-    InitializingServerEntry | RunningServerEntry | FailedServerEntry,
-    Field(discriminator="state"),
-]
+ServerEntry = Annotated[InitializingServerEntry | RunningServerEntry | FailedServerEntry, Field(discriminator="state")]
 
 
 class SamplingSnapshot(BaseModel):

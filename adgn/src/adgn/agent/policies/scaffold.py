@@ -14,7 +14,7 @@ def run(
 
     - When `tests` are provided, evaluate each (PolicyRequest, expected ApprovalDecision)
       pair before reading stdin. On the first mismatch, raise RuntimeError. This keeps
-      failures explicit and the policy container exits non‑zero.
+      failures explicit and the policy container exits non-zero.
     - Reads a single PolicyRequest JSON from stdin, calls decide, and prints a
       PolicyResponse JSON to stdout.
     """
@@ -24,9 +24,7 @@ def run(
             if not isinstance(resp, PolicyResponse):
                 raise TypeError("decide() must return a PolicyResponse during preflight")
             if resp.decision is not expected:
-                raise RuntimeError(
-                    f"preflight_failed: index={idx} expected={expected} got={resp.decision}"
-                )
+                raise RuntimeError(f"preflight_failed: index={idx} expected={expected} got={resp.decision}")
 
     text = sys.stdin.read()
     req = PolicyRequest.model_validate_json(text)
@@ -38,10 +36,9 @@ def run(
 
 
 def run_with_tests(
-    decide: Callable[[PolicyRequest], PolicyResponse],
-    tests: Sequence[tuple[PolicyRequest, ApprovalDecision]],
+    decide: Callable[[PolicyRequest], PolicyResponse], tests: Sequence[tuple[PolicyRequest, ApprovalDecision]]
 ) -> int:
-    """Backward‑compatible alias: run with required preflight tests."""
+    """Backward-compatible alias: run with required preflight tests."""
     return run(decide, tests)
 
 

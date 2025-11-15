@@ -181,8 +181,6 @@ asyncio_default_fixture_loop_scope = "function"
 # Discover tests under the top-level tests/ directory
 testpaths = ["tests"]
 
-[tool.ruff.lint.per-file-ignores]
-"src/adgn/third_party/**" = ["ALL"]
 
 [tool.adgn.trivial-patterns]
 skip-globs = ["tests/detectors/fixtures/**"]
@@ -207,64 +205,9 @@ adgn-matrix-bot = "adgn.agent.matrix_bot:main"
 adgn-detectors-custom = "adgn.props.detectors.cli_custom:main"
 adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
 
-[tool.mypy]
-python_version = "3.12"
-ignore_missing_imports = true
-warn_return_any = true
-# Run from within adgn/ directory: mypy --config-file pyproject.toml src/adgn
-# Source root for the adgn package is "src" from adgn/ directory
-mypy_path = ["src"]
-packages = ["adgn"]
-namespace_packages = true
-explicit_package_bases = true
-warn_unused_configs = true
-disallow_untyped_defs = false
-check_untyped_defs = true
-# Exclude specimen code from type-checking (authoring data; not production code)
-# Paths relative to adgn/ directory
-exclude = "^src/adgn/(props/specimens|third_party)/.*|^tests/detectors/fixtures/.*|^vendor/.*"
-[[tool.mypy.overrides]]
-module = ["tests.agent.testdata.approval_policy.*"]
-ignore_errors = true
-
-# Per-module overrides
-[[tool.mypy.overrides]]
-module = ["adgn.third_party.*"]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = ["adgn.src.adgn.third_party.*"]
-ignore_errors = true
+# Mypy configuration moved to central /mypy.ini at repo root
 
 [[tool.mypy.overrides]]
 module = ["tests.detectors.fixtures.*"]
 ignore_errors = true
 
-# Ruff configuration
-[tool.ruff]
-# Extend default excludes; add specimen paths
-extend-exclude = [
-  "src/adgn/props/specimens/**",
-  "adgn/src/adgn/props/specimens/**",
-  "src/adgn/third_party/**",
-  "adgn/src/adgn/third_party/**",
-  "vendor/**",
-  "tests/detectors/fixtures/**",
-  "tests/agent/testdata/approval_policy/**",
-]
-line-length = 100
-
-[tool.ruff.lint]
-select = [
-  "E",  # pycodestyle
-  "F",  # pyflakes
-  "I",  # isort (import sorting)
-]
-ignore = [
-  "E501",  # allow long lines; many docstrings/URLs exceed 100
-]
-
-[tool.ruff.lint.isort]
-known-first-party = ["adgn"]
-combine-as-imports = true
-force-sort-within-sections = true

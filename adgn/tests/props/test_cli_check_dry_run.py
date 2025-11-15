@@ -19,15 +19,7 @@ def _extract_saved_prompt_path(stdout: str) -> Path:
 def test_cli_check_dry_run_tmp_workdir(tmp_path):
     # Minimal run: check --dry-run on a temp dir
     runner = CliRunner()
-    result = runner.invoke(
-        app,
-        [
-            "check",
-            str(tmp_path),
-            "all files under src/**",
-            "--dry-run",
-        ],
-    )
+    result = runner.invoke(app, ["check", str(tmp_path), "all files under src/**", "--dry-run"])
     assert result.exit_code == 0, result.output
     out = result.output
     saved = _extract_saved_prompt_path(out)

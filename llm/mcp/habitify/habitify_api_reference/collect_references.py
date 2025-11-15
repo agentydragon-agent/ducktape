@@ -7,21 +7,18 @@ and saves the requests and responses as reference examples in YAML format.
 """
 
 import dataclasses
+from functools import cached_property
 import logging
 import os
-import sys
-from functools import cached_property
 from pathlib import Path
+import sys
 from typing import Any
 
 import httpx
 import yaml
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("habitify_api_reference")
 
 # Directory to save reference files
@@ -79,9 +76,7 @@ class ApiReferenceCollector:
             "x-served-by",
             "x-timer",
         ]
-        return {
-            name: value for name, value in headers.items() if name.lower() not in headers_to_exclude
-        }
+        return {name: value for name, value in headers.items() if name.lower() not in headers_to_exclude}
 
     def _mask_name(self, name: str) -> str:
         """
@@ -100,8 +95,7 @@ class ApiReferenceCollector:
         # but keep the last character if the string is long enough
         if len(name) <= 4:
             return name[0] + "*" * (len(name) - 1)
-        else:
-            return name[0] + "*" * (len(name) - 2) + name[-1]
+        return name[0] + "*" * (len(name) - 2) + name[-1]
 
     def _mask_sensitive_data(self, data: Any) -> Any:
         """
@@ -131,12 +125,11 @@ class ApiReferenceCollector:
                     # Recursively process the value
                     result[key] = self._mask_sensitive_data(value)
             return result
-        elif isinstance(data, list):
+        if isinstance(data, list):
             # Process lists recursively
             return [self._mask_sensitive_data(item) for item in data]
-        else:
-            # Return primitive values unchanged
-            return data
+        # Return primitive values unchanged
+        return data
 
     def _make_request_and_save(
         self,
@@ -176,11 +169,7 @@ class ApiReferenceCollector:
         # Create reference data structure
         reference = {
             "name": name,
-            "request": {
-                "method": method,
-                "url": f"{self.base_url}{endpoint}",
-                "headers": self.masked_headers,
-            },
+            "request": {"method": method, "url": f"{self.base_url}{endpoint}", "headers": self.masked_headers},
             "response": {
                 "status_code": response.status_code,
                 # Filter headers to only include useful ones
@@ -200,7 +189,7 @@ class ApiReferenceCollector:
         if path.exists():
             logger.warning(f"Overwriting existing file: {path}")
 
-        with open(path, "w") as f:
+        with path.open("w") as f:
             yaml.dump(reference, f, sort_keys=False, indent=2, default_flow_style=False)
 
         logger.info(f"Saved reference example to {path}")
@@ -235,16 +224,11 @@ class ApiReferenceCollector:
         # Use the first habit for further API calls
         habit = habits[0]
         habit_id = habit["id"]
-        logger.info(
-            f"Using habit with ID: {habit_id} and masked name: {self._mask_name(habit['name'])}"
-        )
+        logger.info(f"Using habit with ID: {habit_id} and masked name: {self._mask_name(habit['name'])}")
 
         # Get details for a specific habit by ID
         self._make_request_and_save(
-            name="Get Habit by ID",
-            method="GET",
-            endpoint=f"/habits/{habit_id}",
-            expected_status=200,
+            name="Get Habit by ID", method="GET", endpoint=f"/habits/{habit_id}", expected_status=200
         )
 
         # Correct format - ISO-8601 with +00:00 (YYYY-MM-DDT00:00:00+00:00)
@@ -276,11 +260,7 @@ class ApiReferenceCollector:
             name="Set Habit Status (Skipped)",
             method="PUT",
             endpoint=f"/status/{habit_id}",
-            json_data={
-                "status": "skipped",
-                "target_date": valid_date,
-                "note": "Skipped via API reference collector",
-            },
+            json_data={"status": "skipped", "target_date": valid_date, "note": "Skipped via API reference collector"},
             expected_status=200,
         )
 
@@ -289,11 +269,7 @@ class ApiReferenceCollector:
             name="Set Habit Status (Failed)",
             method="PUT",
             endpoint=f"/status/{habit_id}",
-            json_data={
-                "status": "failed",
-                "target_date": valid_date,
-                "note": "Failed via API reference collector",
-            },
+            json_data={"status": "failed", "target_date": valid_date, "note": "Failed via API reference collector"},
             expected_status=200,
         )
 
@@ -312,9 +288,7 @@ class ApiReferenceCollector:
         )
 
         # Get all areas (categories)
-        self._make_request_and_save(
-            name="Get Areas", method="GET", endpoint="/areas", expected_status=200
-        )
+        self._make_request_and_save(name="Get Areas", method="GET", endpoint="/areas", expected_status=200)
 
         # Get journal with proper date format and filtering options
         # According to docs, the journal endpoint supports: target_date, order_by, status, area_id, time_of_day

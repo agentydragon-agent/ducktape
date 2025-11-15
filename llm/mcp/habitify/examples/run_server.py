@@ -7,19 +7,16 @@ This script creates and starts the Habitify MCP server with either stdio transpo
 
 import argparse
 import logging
-import os
+from pathlib import Path
 import sys
 
 # Add the parent directory to the path so we can import the server
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from habitify_mcp_server import create_habitify_mcp_server
 from habitify_mcp_server.config import load_api_key
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("habitify-mcp-example")
 
 
@@ -28,26 +25,11 @@ def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run the Habitify MCP server")
     parser.add_argument(
-        "--transport",
-        choices=["stdio", "sse"],
-        default="stdio",
-        help="Transport type (stdio or sse, default: stdio)",
+        "--transport", choices=["stdio", "sse"], default="stdio", help="Transport type (stdio or sse, default: stdio)"
     )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=3000,
-        help="Port to use for SSE transport (default: 3000)",
-    )
-    parser.add_argument(
-        "--api-key",
-        help="Habitify API key (overrides HABITIFY_API_KEY environment variable)",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging",
-    )
+    parser.add_argument("--port", type=int, default=3000, help="Port to use for SSE transport (default: 3000)")
+    parser.add_argument("--api-key", help="Habitify API key (overrides HABITIFY_API_KEY environment variable)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser.parse_args()
 
 
@@ -62,9 +44,7 @@ def main() -> int:
         logger.setLevel(logging.DEBUG)
 
     # Load API key using our common utility
-    api_key = load_api_key(
-        api_key_override=args.api_key, exit_on_missing=False, logger_func=logger.error
-    )
+    api_key = load_api_key(api_key_override=args.api_key, exit_on_missing=False, logger_func=logger.error)
     if not api_key:
         return 1
 

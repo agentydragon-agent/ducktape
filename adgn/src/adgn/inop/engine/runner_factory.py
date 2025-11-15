@@ -9,9 +9,7 @@ from adgn.openai_utils.model import OpenAIModelProto
 
 
 def create_runner(
-    runner_name: str,
-    runner_configs: dict[str, dict[str, Any]],
-    openai_model: OpenAIModelProto | None = None,
+    runner_name: str, runner_configs: dict[str, dict[str, Any]], openai_model: OpenAIModelProto | None = None
 ) -> AgentRunner:
     """Create an agent runner based on configuration.
 
@@ -39,9 +37,5 @@ def create_runner(
     if runner_type == "minicodex_runner":
         if openai_model is None:
             raise ValueError("MiniCodexRunner requires openai_model")
-        return MiniCodexRunner(
-            runner_id=runner_name,
-            config=config,
-            openai_model=openai_model,
-        )
+        return MiniCodexRunner(runner_id=runner_name, config=config, openai_model=openai_model)
     raise ValueError(f"Unknown runner type: {runner_type}")

@@ -35,17 +35,9 @@ class PolicyGatewayError(BaseModel):
 
 # Central registry for reserved gateway errors → kinds
 _KINDS: tuple[tuple[int, str, PolicyGatewayErrorKind], ...] = (
-    (
-        POLICY_EVALUATOR_ERROR_CODE,
-        POLICY_EVALUATOR_ERROR_MSG,
-        PolicyGatewayErrorKind.POLICY_EVALUATOR_ERROR,
-    ),
+    (POLICY_EVALUATOR_ERROR_CODE, POLICY_EVALUATOR_ERROR_MSG, PolicyGatewayErrorKind.POLICY_EVALUATOR_ERROR),
     (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_ABORT_MSG, PolicyGatewayErrorKind.POLICY_DENIED),
-    (
-        POLICY_DENIED_CONTINUE_CODE,
-        POLICY_DENIED_CONTINUE_MSG,
-        PolicyGatewayErrorKind.POLICY_DENIED_CONTINUE,
-    ),
+    (POLICY_DENIED_CONTINUE_CODE, POLICY_DENIED_CONTINUE_MSG, PolicyGatewayErrorKind.POLICY_DENIED_CONTINUE),
     (
         POLICY_BACKEND_RESERVED_MISUSE_CODE,
         POLICY_BACKEND_RESERVED_MISUSE_MSG,
@@ -108,7 +100,7 @@ def detect_policy_gateway_error(err: Any) -> PolicyGatewayError | None:
     if hasattr(err, "is_error") and bool(getattr(err, "is_error", False)):
         error_data = _coerce_error_data(getattr(err, "error", None))
     if error_data is None and hasattr(err, "error"):
-        error_data = _coerce_error_data(getattr(err, "error"))
+        error_data = _coerce_error_data(err.error)
     if error_data is None and isinstance(err, dict | mtypes.ErrorData):
         error_data = _coerce_error_data(err)
 

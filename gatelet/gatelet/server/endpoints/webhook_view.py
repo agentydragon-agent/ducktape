@@ -19,20 +19,13 @@ router = APIRouter(tags=["webhook_view"])
 DB_SESSION = Depends(get_db_session)
 
 # JSON formatter for consistent output
-json_formatter = Formatter(
-    indent_spaces=2,
-    max_inline_length=70,
-    max_inline_complexity=10,
-)
+json_formatter = Formatter(indent_spaces=2, max_inline_length=70, max_inline_complexity=10)
 
 # Default page size from config
 DEFAULT_PAGE_SIZE = settings.webhook.default_page_size
 
 
-async def get_webhook_integration(
-    integration_name: str,
-    db_session: AsyncSession,
-) -> WebhookIntegration:
+async def get_webhook_integration(integration_name: str, db_session: AsyncSession) -> WebhookIntegration:
     """Get webhook integration by name.
 
     Args:
@@ -45,32 +38,23 @@ async def get_webhook_integration(
     Raises:
         HTTPException: If integration not found or disabled
     """
-    query = select(WebhookIntegration).where(
-        WebhookIntegration.name == integration_name,
-    )
+    query = select(WebhookIntegration).where(WebhookIntegration.name == integration_name)
     result = await db_session.execute(query)
     integration = result.scalar_one_or_none()
 
     if not integration:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Integration '{integration_name}' not found",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Integration '{integration_name}' not found")
 
     if not integration.is_enabled:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Integration '{integration_name}' is disabled",
+            status_code=status.HTTP_403_FORBIDDEN, detail=f"Integration '{integration_name}' is disabled"
         )
 
     return integration
 
 
 async def get_webhook_payloads(
-    db_session: AsyncSession,
-    integration_name: str | None = None,
-    page: int = 1,
-    page_size: int = DEFAULT_PAGE_SIZE,
+    db_session: AsyncSession, integration_name: str | None = None, page: int = 1, page_size: int = DEFAULT_PAGE_SIZE
 ) -> dict[str, Any]:
     """Get webhook payloads with pagination.
 
@@ -85,22 +69,13 @@ async def get_webhook_payloads(
     """
     # Build base query
     join_condition = WebhookPayload.integration_id == WebhookIntegration.id
-    count_query = (
-        select(func.count())
-        .select_from(WebhookPayload)
-        .join(WebhookIntegration, join_condition)
-    )
+    count_query = select(func.count()).select_from(WebhookPayload).join(WebhookIntegration, join_condition)
     payloads_query = (
-        select(WebhookPayload)
-        .join(WebhookIntegration, join_condition)
-        .order_by(WebhookPayload.received_at.desc())
+        select(WebhookPayload).join(WebhookIntegration, join_condition).order_by(WebhookPayload.received_at.desc())
     )
 
     # Apply filter if integration name provided
-    if integration_name:
-        condition = WebhookIntegration.name == integration_name
-    else:
-        condition = WebhookIntegration.is_enabled
+    condition = WebhookIntegration.name == integration_name if integration_name else WebhookIntegration.is_enabled
 
     count_query = count_query.where(condition)
     payloads_query = payloads_query.where(condition)
@@ -138,28 +113,18 @@ async def get_webhook_payloads(
     }
 
 
-async def get_latest_payloads(
-    db_session: AsyncSession,
-    limit: int = 5,
-) -> list[dict[str, Any]]:
+async def get_latest_payloads(db_session: AsyncSession, limit: int = 5) -> list[dict[str, Any]]:
     """Get latest webhook payloads across all integrations."""
     query = (
         select(WebhookPayload)
-        .join(
-            WebhookIntegration,
-            WebhookPayload.integration_id == WebhookIntegration.id,
-        )
+        .join(WebhookIntegration, WebhookPayload.integration_id == WebhookIntegration.id)
         .where(WebhookIntegration.is_enabled)
         .order_by(WebhookPayload.received_at.desc())
         .limit(limit)
     )
     result = await db_session.execute(query)
     return [
-        {
-            "id": payload.id,
-            "integration_name": payload.integration_name,
-            "received_at": payload.received_at,
-        }
+        {"id": payload.id, "integration_name": payload.integration_name, "received_at": payload.received_at}
         for payload in result.scalars().all()
     ]
 
@@ -176,9 +141,7 @@ async def list_all_payloads(
     if auth.auth_type == "admin":
         integrations_query = select(WebhookIntegration)
     else:
-        integrations_query = select(WebhookIntegration).where(
-            WebhookIntegration.is_enabled,
-        )
+        integrations_query = select(WebhookIntegration).where(WebhookIntegration.is_enabled)
     integrations_result = await db_session.execute(integrations_query)
     integrations = [
         {
@@ -232,11 +195,7 @@ async def list_integration_payloads(
             "header": f"{integration_name} Webhook Payloads",
             "integration_name": integration_name,
             "show_all_link": True,  # Flag to show link back to all integrations
-            "integration": {
-                "id": integration.id,
-                "name": integration.name,
-                "description": integration.description,
-            },
+            "integration": {"id": integration.id, "name": integration.name, "description": integration.description},
         },
     )
 

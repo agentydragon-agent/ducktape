@@ -1,5 +1,5 @@
-from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse, ApprovalDecision
 from adgn.agent.approvals import WellKnownTools
+from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from adgn.mcp._shared.constants import UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 

@@ -50,12 +50,11 @@ def filter_violations(
                 blocks = rule_config.blocks_pre_hook
             else:
                 blocks = rule_def.default_blocks_pre
-        else:  # hook_type == "stop"
-            # Check blocks_stop_hook: user override or default
-            if rule_config and rule_config.blocks_stop_hook is not None:
-                blocks = rule_config.blocks_stop_hook
-            else:
-                blocks = rule_def.default_blocks_stop
+        # Check blocks_stop_hook: user override or default
+        elif rule_config and rule_config.blocks_stop_hook is not None:
+            blocks = rule_config.blocks_stop_hook
+        else:
+            blocks = rule_def.default_blocks_stop
 
         if blocks:
             result.append(violation)

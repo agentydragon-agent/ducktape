@@ -3,10 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from uuid import UUID
 
-from adgn.agent.approvals import (
-    ApprovalHub,
-    ApprovalPolicyEngine,
-)
+from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
 from adgn.agent.notifications.types import NotificationsBatch
@@ -36,12 +33,7 @@ def build_handlers(
     persist_handler = RunPersistenceHandler(persistence=persistence, get_run_id=get_run_id)
     handlers: list[BaseHandler] = [manager, persist_handler]
     if ui_bus is not None:
-        handlers.extend(
-            [
-                ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications),
-                DisplayEventsHandler(),
-            ]
-        )
+        handlers.extend([ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications), DisplayEventsHandler()])
     else:
         # Production/non-UI path: flush MCP notifications via NotificationsHandler
         handlers.append(NotificationsHandler(poll_notifications))

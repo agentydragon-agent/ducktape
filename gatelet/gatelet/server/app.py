@@ -1,8 +1,8 @@
 """FastAPI application for Gatelet server."""
 
-import logging
-from datetime import datetime
 from collections.abc import Callable
+from datetime import datetime
+import logging
 
 from fastapi import Cookie, Depends, FastAPI, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -20,14 +20,7 @@ from .auth.handlers import AuthHandlerError
 from .auth.webhook_auth import AuthError
 from .config import settings
 from .database import get_db_session
-from .endpoints import (
-    activitywatch,
-    admin,
-    challenge,
-    homeassistant,
-    webhook_receive,
-    webhook_view,
-)
+from .endpoints import activitywatch, admin, challenge, homeassistant, webhook_receive, webhook_view
 from .endpoints.homeassistant import fetch_states
 from .endpoints.webhook_view import get_latest_payloads
 from .models import AdminSession
@@ -35,15 +28,8 @@ from .shared import BASE_DIR, templates
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="Gatelet",
-    description="LLM-friendly API for Home Assistant and webhooks",
-)
-app.mount(
-    "/static",
-    StaticFiles(directory=BASE_DIR / "static"),
-    name="static",
-)
+app = FastAPI(title="Gatelet", description="LLM-friendly API for Home Assistant and webhooks")
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 # Include routers
 app.include_router(webhook_receive.router)
@@ -59,11 +45,7 @@ async def auth_error_handler(request: Request, exc: AuthHandlerError):
     """Handle all auth errors in HTML-friendly way."""
     return templates.TemplateResponse(
         "error.html",
-        {
-            "request": request,
-            "status_code": status.HTTP_401_UNAUTHORIZED,
-            "detail": "Authentication failed",
-        },
+        {"request": request, "status_code": status.HTTP_401_UNAUTHORIZED, "detail": "Authentication failed"},
         status_code=status.HTTP_401_UNAUTHORIZED,
     )
 
@@ -79,11 +61,7 @@ async def webhook_auth_error(request: Request, exc: AuthError):
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root(
-    request: Request,
-    session: str | None = Cookie(None),
-    csrf_protect: CsrfProtect = Depends(),
-):
+async def root(request: Request, session: str | None = Cookie(None), csrf_protect: CsrfProtect = Depends()):
     """Root endpoint with service information and authentication options."""
     # Check if already authenticated via cookie
     if session:
@@ -108,11 +86,7 @@ async def root(
     return response
 
 
-def register_with_all_auth_methods(
-    path: str,
-    handler: Callable,
-    register_admin: bool = True,
-):
+def register_with_all_auth_methods(path: str, handler: Callable, register_admin: bool = True):
     """Register a handler with all available auth methods.
 
     Args:
@@ -175,10 +149,7 @@ register_with_all_auth_methods("/", authenticated_root_handler, register_admin=F
 
 # Register webhook routes with all auth methods
 register_with_all_auth_methods("/webhooks/", webhook_view.list_all_payloads)
-register_with_all_auth_methods(
-    "/webhooks/{integration_name}",
-    webhook_view.list_integration_payloads,
-)
+register_with_all_auth_methods("/webhooks/{integration_name}", webhook_view.list_integration_payloads)
 
 # Register Home Assistant routes with all auth methods
 register_with_all_auth_methods("/ha/", homeassistant.list_entities)

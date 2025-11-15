@@ -13,13 +13,7 @@ from starlette.websockets import WebSocketState
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
-from adgn.agent.handler import (
-    AssistantText,
-    BaseHandler,
-    ToolCall,
-    ToolCallOutput,
-    UserText,
-)
+from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import RunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
@@ -96,9 +90,7 @@ class ConnectionManager(BaseHandler):
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
-    async def _sender_loop(
-        self, client_id: int, ws: WebSocket, queue: asyncio.Queue[Any | None]
-    ) -> None:
+    async def _sender_loop(self, client_id: int, ws: WebSocket, queue: asyncio.Queue[Any | None]) -> None:
         while True:
             payload = await queue.get()
             if payload is None:
@@ -109,16 +101,12 @@ class ConnectionManager(BaseHandler):
             try:
                 logger.info(
                     "manager: sending to client",
-                    extra={
-                        "client_id": client_id,
-                        "kind": payload.get("type") or payload.get("kind"),
-                    },
+                    extra={"client_id": client_id, "kind": payload.get("type") or payload.get("kind")},
                 )
                 await ws.send_json(payload)
             except Exception as e:
                 logger.warning(
-                    "ws send_json failed; disconnecting client",
-                    extra={"client_id": client_id, "error": str(e)},
+                    "ws send_json failed; disconnecting client", extra={"client_id": client_id, "error": str(e)}
                 )
                 break
 
@@ -157,10 +145,7 @@ class ConnectionManager(BaseHandler):
     async def send_payload(self, payload: ServerMessage) -> None:
         await self.send_json(
             Envelope(
-                session_id=self._session_id,
-                event_id=self._next_event_id(),
-                event_ts=datetime.now(UTC),
-                payload=payload,
+                session_id=self._session_id, event_id=self._next_event_id(), event_ts=datetime.now(UTC), payload=payload
             ).model_dump(mode="json")
         )
         # Mirror run status events to agents hub
@@ -196,9 +181,7 @@ class ConnectionManager(BaseHandler):
             await ws.send_json(payload)
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        raise RuntimeError(
-            "assistant_text not allowed in UI mode; use ui.send_message tool instead"
-        )
+        raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
         tc = UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
@@ -235,11 +218,7 @@ class ConnectionManager(BaseHandler):
 
 class AgentSession:
     def __init__(
-        self,
-        manager: ConnectionManager,
-        approval_hub: ApprovalHub | None = None,
-        *,
-        persistence=None,
+        self, manager: ConnectionManager, approval_hub: ApprovalHub | None = None, *, persistence=None
     ) -> None:
         self._task: asyncio.Task | None = None
         self.approval_hub = approval_hub or ApprovalHub()
@@ -280,11 +259,7 @@ class AgentSession:
                 ApprovalBrief(
                     call_id=req.tool_call.call_id,
                     tool_key=req.tool_key,
-                    args=(
-                        json.loads(req.tool_call.args_json or "{}")
-                        if req.tool_call.args_json
-                        else {}
-                    ),
+                    args=(json.loads(req.tool_call.args_json or "{}") if req.tool_call.args_json else {}),
                 )
                 for req in self.approval_hub._requests.values()
             ]
@@ -308,16 +283,8 @@ class AgentSession:
 
         # Build preferred details bundle when all components are present
         details = None
-        if (
-            (self.active_run is not None)
-            and (sampling is not None)
-            and (approval_policy is not None)
-        ):
-            details = SnapshotDetails(
-                run_state=self.active_run,
-                sampling=sampling,
-                approval_policy=approval_policy,
-            )
+        if (self.active_run is not None) and (sampling is not None) and (approval_policy is not None):
+            details = SnapshotDetails(run_state=self.active_run, sampling=sampling, approval_policy=approval_policy)
 
         return Snapshot(
             v="1.0.0",
@@ -333,9 +300,7 @@ class AgentSession:
             details=details,
         )
 
-    def attach_agent(
-        self, agent: MiniCodex, *, model: str | None = None, system: str | None = None
-    ) -> None:
+    def attach_agent(self, agent: MiniCodex, *, model: str | None = None, system: str | None = None) -> None:
         self._agent = agent
         self._model = model
         self._system_text = system
@@ -346,16 +311,12 @@ class AgentSession:
 
     async def _apply_ui_event(self, evt: Any) -> None:
         self.ui_state = reduce_ui_state(self.ui_state, evt)
-        await self._manager.send_payload(
-            UiStateUpdated(v="ui_state_v1", seq=self.ui_state.seq, state=self.ui_state)
-        )
+        await self._manager.send_payload(UiStateUpdated(v="ui_state_v1", seq=self.ui_state.seq, state=self.ui_state))
 
     async def run(self, prompt: str) -> None:
         async with self._lock:
             if self._task is not None and not self._task.done():
-                await self._manager.send_payload(
-                    ErrorEvt(code=ErrorCode.BUSY, message="agent_busy")
-                )
+                await self._manager.send_payload(ErrorEvt(code=ErrorCode.BUSY, message="agent_busy"))
                 return
             self._task = asyncio.create_task(self._run_impl(prompt))
 
@@ -377,10 +338,8 @@ class AgentSession:
         if t is None or t.done():
             return
         t.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await t
-        except asyncio.CancelledError:
-            pass
 
     async def _run_impl(self, prompt: str) -> None:
         if self._agent is not None:
@@ -407,7 +366,7 @@ class AgentSession:
                         finished_at=None,
                         pending_approvals=[],
                         last_event_id=None,
-                    ),
+                    )
                 )
             )
             # Mirror live status immediately to agents hub if configured
@@ -418,11 +377,7 @@ class AgentSession:
             # deterministically even if they don't consume run_status events.
             await self._manager.send_payload(await self.build_snapshot())
             self.active_run = RunState(
-                run_id=run_id,
-                status=UiRunStatus.RUNNING,
-                started_at=started,
-                pending_approvals=[],
-                last_event_id=None,
+                run_id=run_id, status=UiRunStatus.RUNNING, started_at=started, pending_approvals=[], last_event_id=None
             )
             self._run_counter += 1
             finish_status = RunStatus.FINISHED
@@ -445,9 +400,7 @@ class AgentSession:
                 if self._persist_handler is not None:
                     # Ensure all transcript events have been persisted before finishing the run
                     await self._persist_handler.drain()
-                await self._persistence.finish_run(
-                    run_id=run_id, status=finish_status, finished_at=datetime.now(UTC)
-                )
+                await self._persistence.finish_run(run_id=run_id, status=finish_status, finished_at=datetime.now(UTC))
                 await self._manager.send_payload(
                     RunStatusEvt(
                         run_state=RunState(
@@ -457,14 +410,12 @@ class AgentSession:
                             finished_at=datetime.now(UTC),
                             pending_approvals=[],
                             last_event_id=None,
-                        ),
-                    ),
+                        )
+                    )
                 )
                 # Keep snapshot run_state in sync with finished status
                 await self._manager.send_payload(await self.build_snapshot())
                 await self._manager.broadcast_status(True, None)
             return
-        await self._manager.send_payload(
-            ErrorEvt(code=ErrorCode.NO_AGENT, message="no_agent_attached")
-        )
+        await self._manager.send_payload(ErrorEvt(code=ErrorCode.NO_AGENT, message="no_agent_attached"))
         return

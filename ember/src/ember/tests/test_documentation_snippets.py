@@ -56,7 +56,7 @@ def test_python_session_demo_scripts_are_embedded_and_work(
         async def send_text_message(self, room_id: str, body: str, *, msgtype: str = "m.notice") -> None:
             fake_session_state["sent"].append(f"{room_id}:{body}:{msgtype}")
 
-        async def get_events(self, timeout: float = 60.0):
+        async def get_events(self):
             return [SimpleNamespace(sender="@demo:example.org", body="hello world")]
 
     class FakeMatrixClient:

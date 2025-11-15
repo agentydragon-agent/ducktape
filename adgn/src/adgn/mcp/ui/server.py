@@ -65,12 +65,7 @@ def make_ui_server(name: str, bus: ServerBus) -> NotifyingFastMCP:
     return mcp
 
 
-async def attach_ui(
-    comp: Compositor,
-    bus: ServerBus,
-    *,
-    name: str = UI_SERVER_NAME,
-) -> NotifyingFastMCP:
+async def attach_ui(comp: Compositor, bus: ServerBus, *, name: str = UI_SERVER_NAME) -> NotifyingFastMCP:
     """Attach the UI MCP server in-proc to a Compositor (preferred path)."""
     server = make_ui_server(name, bus)
     await comp.mount_inproc(name, server)

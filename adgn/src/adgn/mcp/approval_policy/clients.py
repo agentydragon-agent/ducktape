@@ -6,15 +6,8 @@ from fastmcp.client import Client
 
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.mcp._shared.client_helpers import call_simple_ok
-from adgn.mcp._shared.constants import (
-    APPROVAL_POLICY_SERVER_NAME_APPROVER,
-    APPROVAL_POLICY_SERVER_NAME_READER,
-)
-from adgn.mcp.approval_policy.server import (
-    ApproveProposalArgs,
-    RejectProposalArgs,
-    SetPolicyTextArgs,
-)
+from adgn.mcp._shared.constants import APPROVAL_POLICY_SERVER_NAME_APPROVER, APPROVAL_POLICY_SERVER_NAME_READER
+from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.testing.typed_stubs import call_tool_typed
 
 READER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME_READER
@@ -59,9 +52,7 @@ class PolicyApproverClient:
         Accepts raw policy source; constructs the server's typed input.
         """
         await call_simple_ok(
-            self._client,
-            name="set_policy_text",
-            arguments=SetPolicyTextArgs(source=source).model_dump(),
+            self._client, name="set_policy_text", arguments=SetPolicyTextArgs(source=source).model_dump()
         )
 
     async def approve_proposal(self, args: ApproveProposalArgs) -> None:

@@ -7,7 +7,7 @@ import sys
 from typing import Any
 
 from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
-from tana.domain.nodes import BaseNode, DOC_CLASS, TupleNode, UnknownNode
+from tana.domain.nodes import DOC_CLASS, BaseNode, TupleNode, UnknownNode
 from tana.domain.types import NodeId
 from tana.export.convert import RenderContext
 from tana.graph.workspace import TanaGraph
@@ -102,10 +102,7 @@ class TrackingRenderContext(RenderContext):
         yield from super().render_node(n)
 
 
-def export_node_with_tracking(
-    store: TrackingGraph,
-    node_id: NodeId,
-) -> tuple[str, set[NodeId]]:
+def export_node_with_tracking(store: TrackingGraph, node_id: NodeId) -> tuple[str, set[NodeId]]:
     """
     Export a single node as TanaPaste and return the export along with touched node IDs.
 
@@ -143,23 +140,15 @@ def export_node_with_tracking(
     return tanapaste, all_accessed
 
 
-def create_subset_json(
-    original_data: dict[str, Any],
-    touched_nodes: set[NodeId],
-) -> dict[str, Any]:
-    filtered_docs = [
-        doc for doc in original_data["docs"] if NodeId(str(doc["id"])) in touched_nodes
-    ]
+def create_subset_json(original_data: dict[str, Any], touched_nodes: set[NodeId]) -> dict[str, Any]:
+    filtered_docs = [doc for doc in original_data["docs"] if NodeId(str(doc["id"])) in touched_nodes]
 
-    return {
-        "formatVersion": original_data.get("formatVersion", 1),
-        "docs": filtered_docs,
-    }
+    return {"formatVersion": original_data.get("formatVersion", 1), "docs": filtered_docs}
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export a single Tana node and create a subset JSON with only touched nodes",
+        description="Export a single Tana node and create a subset JSON with only touched nodes"
     )
     parser.add_argument("json_file", type=Path, help="Path to Tana JSON export file")
     parser.add_argument("node_id", help="ID of the node to export")
@@ -170,16 +159,8 @@ def main():
         type=Path,
         default=None,
     )
-    parser.add_argument(
-        "--no-tanapaste",
-        action="store_true",
-        help="Skip creating the TanaPaste export file",
-    )
-    parser.add_argument(
-        "--no-subset",
-        action="store_true",
-        help="Skip creating the subset JSON file",
-    )
+    parser.add_argument("--no-tanapaste", action="store_true", help="Skip creating the TanaPaste export file")
+    parser.add_argument("--no-subset", action="store_true", help="Skip creating the subset JSON file")
 
     args = parser.parse_args()
 
@@ -194,17 +175,12 @@ def main():
         node_model = DOC_CLASS.get(raw["props"].get("_docType"), UnknownNode)
         return node_model.model_validate(raw)  # type: ignore[return-value]
 
-    tracking_store = TrackingGraph(
-        {NodeId(str(doc["id"])): _make_node(doc) for doc in original_data["docs"]},
-    )
+    tracking_store = TrackingGraph({NodeId(str(doc["id"])): _make_node(doc) for doc in original_data["docs"]})
 
     # Export the node with tracking; supertags are resolved via TanaGraph indexes
     try:
         target_id = NodeId(args.node_id)
-        tanapaste_output, touched_nodes = export_node_with_tracking(
-            tracking_store,
-            target_id,
-        )
+        tanapaste_output, touched_nodes = export_node_with_tracking(tracking_store, target_id)
     except ValueError as e:
         print(f"Error: {e}")
         return 1

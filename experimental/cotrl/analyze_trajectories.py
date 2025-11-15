@@ -4,10 +4,10 @@
 Can delete after: Trajectory analysis complete
 """
 
-import json
-import sys
 from collections import defaultdict
+import json
 from pathlib import Path
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,11 +40,7 @@ def plot_action_heatmap(action_counts):
     models = sorted(action_counts.keys())
     envs = sorted(next(iter(action_counts.values())).keys())
 
-    fig, axes = plt.subplots(
-        len(models),
-        len(envs),
-        figsize=(2.5 * len(envs), 2.5 * len(models)),
-    )
+    fig, axes = plt.subplots(len(models), len(envs), figsize=(2.5 * len(envs), 2.5 * len(models)))
     if len(models) == 1:
         axes = axes.reshape(1, -1)
     if len(envs) == 1:
@@ -102,9 +98,7 @@ def analyze_state_visits(trajectories):
 def main():
     """Analyze trajectory data."""
     if len(sys.argv) < 2:
-        print(
-            "Usage: python analyze_trajectories.py llm_rl_trajectories_TIMESTAMP.jsonl",
-        )
+        print("Usage: python analyze_trajectories.py llm_rl_trajectories_TIMESTAMP.jsonl")
         sys.exit(1)
 
     filename = sys.argv[1]
@@ -135,9 +129,7 @@ def main():
             actions = action_counts[model][env]
             total = sum(actions.values())
             most_common = max(actions.items(), key=lambda x: x[1])
-            print(
-                f"  {env}: Action {most_common[0]} ({most_common[1] / total:.1%} of {total} total)",
-            )
+            print(f"  {env}: Action {most_common[0]} ({most_common[1] / total:.1%} of {total} total)")
 
     # Plot action distributions
     fig = plot_action_heatmap(action_counts)
@@ -155,7 +147,7 @@ def main():
             most_visited = max(visits.items(), key=lambda x: x[1])
             print(
                 f"{model} on {env}: Visited {n_states} unique states, "
-                f"most common: state {most_visited[0]} ({most_visited[1]} times)",
+                f"most common: state {most_visited[0]} ({most_visited[1]} times)"
             )
 
 

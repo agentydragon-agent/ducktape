@@ -3,4 +3,3 @@ def f(a, b):
         if b:
             return 1
     return 0
-

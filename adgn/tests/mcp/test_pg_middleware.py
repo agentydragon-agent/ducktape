@@ -20,9 +20,7 @@ def _policy_source(decision: ApprovalDecision) -> str:
     # Reads a JSON object from stdin and prints a PolicyResponse-shaped JSON.
     d = str(decision.value)
     return (
-        "import sys, json\n"
-        "_ = json.load(sys.stdin)\n"
-        f"print(json.dumps({{'decision': '{d}', 'rationale': 'test'}}))\n"
+        f"import sys, json\n_ = json.load(sys.stdin)\nprint(json.dumps({{'decision': '{d}', 'rationale': 'test'}}))\n"
     )
 
 
@@ -31,10 +29,7 @@ def _policy_source(decision: ApprovalDecision) -> str:
 async def test_pg_middleware_allow(make_pg_compositor, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.ALLOW))
     reader = ApprovalPolicyServer(eng)
-    async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (
-        sess,
-        _comp,
-    ):
+    async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (sess, _comp):
         res = await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "7"})
         # fastmcp Client returns a wrapper with is_error
         assert not getattr(res, "is_error", False)
@@ -46,10 +41,7 @@ async def test_pg_middleware_allow(make_pg_compositor, make_policy_engine, backe
 async def test_pg_middleware_deny_abort(make_pg_compositor, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.DENY_ABORT))
     reader = ApprovalPolicyServer(eng)
-    async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (
-        sess,
-        _,
-    ):
+    async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (sess, _):
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
         assert POLICY_DENIED_ABORT_MSG in str(ei.value)
@@ -60,10 +52,7 @@ async def test_pg_middleware_deny_abort(make_pg_compositor, make_policy_engine, 
 async def test_pg_middleware_deny_continue(make_pg_compositor, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.DENY_CONTINUE))
     reader = ApprovalPolicyServer(eng)
-    async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (
-        sess,
-        _,
-    ):
+    async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (sess, _):
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
         assert POLICY_DENIED_CONTINUE_MSG in str(ei.value)
@@ -75,9 +64,10 @@ async def test_pg_middleware_reserved_backend_code_remap(
     make_pg_compositor, approval_policy_reader_allow_all, backend_server
 ):
     # Ensure middleware is installed (requires approval_policy server); policy allows all
-    async with make_pg_compositor(
-        {"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as (sess, _):
+    async with make_pg_compositor({"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}) as (
+        sess,
+        _,
+    ):
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "raise_reserved"), {})
         # Backend used reserved policy code/message; middleware remaps to explicit misuse error
@@ -89,15 +79,12 @@ async def test_pg_middleware_reserved_backend_code_remap(
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-@pytest.mark.xfail(
-    reason="In-proc raises drop ErrorData; stamp not inspectable at middleware layer"
-)
-async def test_pg_middleware_backend_stamp_misuse(
-    make_pg_compositor, approval_policy_reader_allow_all, backend_server
-):
-    async with make_pg_compositor(
-        {"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as (sess, _):
+@pytest.mark.xfail(reason="In-proc raises drop ErrorData; stamp not inspectable at middleware layer")
+async def test_pg_middleware_backend_stamp_misuse(make_pg_compositor, approval_policy_reader_allow_all, backend_server):
+    async with make_pg_compositor({"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}) as (
+        sess,
+        _,
+    ):
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "raise_with_gateway_stamp"), {})
         s = str(ei.value)
@@ -116,9 +103,7 @@ async def test_pg_middleware_backend_stamp_misuse_via_proxy(
 
     proxy = FastMCP.as_proxy(backend_server)
 
-    async with make_pg_compositor(
-        {"proxy": proxy, "approval_policy": approval_policy_reader_allow_all}
-    ) as (sess, _):
+    async with make_pg_compositor({"proxy": proxy, "approval_policy": approval_policy_reader_allow_all}) as (sess, _):
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("proxy", "raise_with_gateway_stamp"), {})
         s = str(ei.value)
@@ -127,9 +112,7 @@ async def test_pg_middleware_backend_stamp_misuse_via_proxy(
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-async def test_pg_middleware_ask_then_allow(
-    make_pg_compositor, approval_hub, make_policy_engine, backend_server
-):
+async def test_pg_middleware_ask_then_allow(make_pg_compositor, approval_hub, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.ASK))
     reader = ApprovalPolicyServer(eng)
 
@@ -142,9 +125,10 @@ async def test_pg_middleware_ask_then_allow(
 
         asyncio.get_running_loop().call_soon(approval_hub.resolve, call_id, ContinueDecision())
 
-    async with make_pg_compositor(
-        {"backend": backend_server, "approval_policy": reader}, notifier=notifier
-    ) as (sess, _):
+    async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}, notifier=notifier) as (
+        sess,
+        _,
+    ):
         res = await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "3"})
         assert not res.is_error
         assert call_ids, "pending notifier should have been called"

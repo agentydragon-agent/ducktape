@@ -1,8 +1,8 @@
-import re
 from http import HTTPStatus
+import re
 
-import pytest
 from httpx import AsyncClient
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,20 +18,13 @@ def _extract_csrf(page_text: str) -> str:
 async def _login(client: AsyncClient) -> str:
     home = await client.get("/")
     token = _extract_csrf(home.text)
-    response = await client.post(
-        "/admin/login",
-        data={"password": "gatelet", "csrf_token": token},
-    )
+    response = await client.post("/admin/login", data={"password": "gatelet", "csrf_token": token})
     assert response.status_code == HTTPStatus.FOUND
     return response.cookies["admin_session"]
 
 
 @pytest.mark.asyncio
-async def test_list_keys(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    test_auth_key: AuthKey,
-):
+async def test_list_keys(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
     session = await _login(client)
     response = await client.get("/admin/keys/", cookies={"admin_session": session})
     assert response.status_code == HTTPStatus.OK
@@ -48,9 +41,7 @@ async def test_create_key(client: AsyncClient, db_session: AsyncSession):
     count_before = await db_session.scalar(select(func.count()).select_from(AuthKey))
 
     response = await client.post(
-        "/admin/keys/new",
-        data={"description": "test key", "csrf_token": token},
-        cookies={"admin_session": session},
+        "/admin/keys/new", data={"description": "test key", "csrf_token": token}, cookies={"admin_session": session}
     )
     assert response.status_code == HTTPStatus.OK
 
@@ -59,19 +50,13 @@ async def test_create_key(client: AsyncClient, db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_revoke_key(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    test_auth_key: AuthKey,
-):
+async def test_revoke_key(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
     session = await _login(client)
     response = await client.get("/admin/keys/", cookies={"admin_session": session})
     token = _extract_csrf(response.text)
 
     response = await client.post(
-        f"/admin/keys/{test_auth_key.id}/revoke",
-        data={"csrf_token": token},
-        cookies={"admin_session": session},
+        f"/admin/keys/{test_auth_key.id}/revoke", data={"csrf_token": token}, cookies={"admin_session": session}
     )
     assert response.status_code == HTTPStatus.FOUND
 

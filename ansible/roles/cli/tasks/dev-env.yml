@@ -6,9 +6,9 @@
     pkg:
       # TODO: - python-is-python3
       # broken: google-cloud-sdk
-      #- asciidoc
-      #- bison
-      #- cabal-install
+      # - asciidoc
+      # - bison
+      # - cabal-install
       - clang
       - ninja-build
       - clang-format
@@ -30,8 +30,8 @@
       # so does not provide latex higlihting
       # - libtree-sitter0  # tree-sitter for neovim syntax stuff
 
-      #- protobuf-compiler
-      #- pyqt5-dev-tools
+      # - protobuf-compiler
+      # - pyqt-dev-tools
 
 # Include heavy/optional dev packages (controlled by include_heavy_dev_packages variable)
 - name: Install heavy development packages

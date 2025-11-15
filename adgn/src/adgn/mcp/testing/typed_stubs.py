@@ -28,24 +28,18 @@ _CALL_RESULT_TYPE_ERR = "expected fastmcp.client CallToolResult, got {typename}"
 def _normalize_result(raw: object, *, tool_name: str) -> CallToolResult:
     """Normalize FastMCP client results to the canonical Pydantic CallToolResult."""
     if not isinstance(raw, FMCallToolResult):
-        raise TypeError(
-            f"{tool_name!r}: {_CALL_RESULT_TYPE_ERR.format(typename=type(raw).__name__)}"
-        )
+        raise TypeError(f"{tool_name!r}: {_CALL_RESULT_TYPE_ERR.format(typename=type(raw).__name__)}")
     return to_pydantic(raw)
 
 
 def _structured_content(result: CallToolResult, *, tool_name: str) -> StructuredContent:
     sc = cast(StructuredContent | None, result.structuredContent)
     if sc is None:
-        raise RuntimeError(
-            f"{tool_name!r} did not return structuredContent; tests require structured outputs"
-        )
+        raise RuntimeError(f"{tool_name!r} did not return structuredContent; tests require structured outputs")
     return sc
 
 
-async def _call_normalized(
-    session: Client, tool_name: str, arguments: dict[str, object] | None
-) -> CallToolResult:
+async def _call_normalized(session: Client, tool_name: str, arguments: dict[str, object] | None) -> CallToolResult:
     """Call a FastMCP tool and normalize the result to the Pydantic CallToolResult."""
     raw = await session.call_tool(name=tool_name, arguments=arguments)
     return _normalize_result(raw, tool_name=tool_name)
@@ -93,11 +87,7 @@ async def call_tool_typed(
     Requires structuredContent from the server; raises otherwise.
     """
     args = _build_arguments(
-        payload,
-        input_model=input_model,
-        wrapper_field=wrapper_field,
-        exclude_none=exclude_none,
-        tool_name=name,
+        payload, input_model=input_model, wrapper_field=wrapper_field, exclude_none=exclude_none, tool_name=name
     )
     _result, structured = await _call_structured(session, name, args)
     adapter: TypeAdapter[T_Out] = TypeAdapter(out_type)
@@ -171,9 +161,7 @@ def _extract_error_message(resp: CallToolResult) -> str:
     if detail:
         return cast(str, detail)
     nontext: list[str] = [
-        type(block).__name__
-        for block in resp.content or []
-        if not isinstance(block, mcp_types.TextContent)
+        type(block).__name__ for block in resp.content or [] if not isinstance(block, mcp_types.TextContent)
     ]
     if nontext:
         raise NotImplementedError(f"Unsupported tool error content types: {', '.join(nontext)}")
@@ -218,13 +206,7 @@ class TypedClient:
         return self._models
 
     @classmethod
-    def from_server(
-        cls,
-        server: FastMCP,
-        session: Client,
-        *,
-        exclude_none: bool = True,
-    ) -> TypedClient:
+    def from_server(cls, server: FastMCP, session: Client, *, exclude_none: bool = True) -> TypedClient:
         """Create a TypedClient introspecting FastMCP's tool registry.
 
         Requires a server created via FastMCP. Uses server._tool_manager.list_tools()
@@ -294,10 +276,7 @@ class TypedClient:
                 continue
             output_type = _resolve_output_type(hinted_output, out_model)
             client._models[tool_key] = ToolModels(
-                Input=input_type,
-                Output=output_type,
-                _arg_model=arg_model,
-                _wrapper_field=wrapper_field,
+                Input=input_type, Output=output_type, _arg_model=arg_model, _wrapper_field=wrapper_field
             )
         return client
 

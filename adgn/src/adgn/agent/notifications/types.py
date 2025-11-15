@@ -21,18 +21,12 @@ class NotificationsBatch(BaseModel):
     """
 
     resources_updated: list[ResourceUpdateEvent] = Field(
-        default_factory=list,
-        description="Derived resource update events (server, uri, version)",
+        default_factory=list, description="Derived resource update events (server, uri, version)"
     )
-    resource_list_changed: list[str] = Field(
-        default_factory=list, description="Servers with resources/list changed"
-    )
+    resource_list_changed: list[str] = Field(default_factory=list, description="Servers with resources/list changed")
     # Raw MCP server notifications captured (only resources notifications are buffered here)
-    raw: list[mcp_types.ResourceUpdatedNotification | mcp_types.ResourceListChangedNotification] = (
-        Field(
-            default_factory=list,
-            description="Full MCP resources notifications captured for display/debugging",
-        )
+    raw: list[mcp_types.ResourceUpdatedNotification | mcp_types.ResourceListChangedNotification] = Field(
+        default_factory=list, description="Full MCP resources notifications captured for display/debugging"
     )
 
 
@@ -51,6 +45,5 @@ class NotificationsForModel(BaseModel):
     """Top-level structured notification envelope used for message injection."""
 
     resources: dict[str, ResourcesServerNotice] = Field(
-        default_factory=dict,
-        description="Per-server resources notice: {server -> {updated, list_changed}}",
+        default_factory=dict, description="Per-server resources notice: {server -> {updated, list_changed}}"
     )

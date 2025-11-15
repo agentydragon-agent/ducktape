@@ -1,5 +1,5 @@
 - name: Set to generate only English locale
-  become: yes
+  become: true
   ansible.builtin.copy:
     dest: /etc/locale.gen
     mode: '0644'
@@ -13,7 +13,7 @@
 
 # See .pam_environment dotfile
 - name: Set system-wide locale
-  become: yes
+  become: true
   ansible.builtin.copy:
     dest: /etc/default/locale
     mode: '0644'

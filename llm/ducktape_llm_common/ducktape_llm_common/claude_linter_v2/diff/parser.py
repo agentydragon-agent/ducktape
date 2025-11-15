@@ -51,12 +51,11 @@ class DiffParser:
             if tool_response is None:
                 return None  # PreToolUse has no response
             return self._parse_edit_tool(file_path, tool_response)
-        elif tool_name == "MultiEdit":
+        if tool_name == "MultiEdit":
             if tool_response is None:
                 return None  # PreToolUse has no response
             return self._parse_multiedit_tool(file_path, tool_response)
-        else:
-            return None
+        return None
 
     def _parse_edit_tool(self, file_path: str, tool_response: dict) -> ParsedDiff | None:
         """Parse Edit tool response."""
@@ -142,7 +141,7 @@ class DiffParser:
             else:
                 # Context line (may start with space or nothing)
                 change_type = "context"
-                content = raw_line[1:] if raw_line.startswith(" ") else raw_line
+                content = raw_line.removeprefix(" ")
                 line_number = current_new_line
                 current_new_line += 1
 

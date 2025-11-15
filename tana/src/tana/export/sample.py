@@ -32,7 +32,7 @@ print()
 print()
 print(
     "The 'supertags for node' supertag - want to have values associated with this key "
-    "for a tagged node exposed for easy access:",
+    "for a tagged node exposed for easy access:"
 )
 show(by_id("SYS_A13"), 1)
 show(by_id("SYS_TA05_02"))
@@ -40,9 +40,7 @@ show(by_id("SYS_TA05_03"))
 show(by_id("SYS_T04"))
 
 # 'Eecrise', has a bunchas checkboxes
-print(
-    "Checkboxes rendergin - please appropriately expose for convenience of spoecial rendering:",
-)
+print("Checkboxes rendergin - please appropriately expose for convenience of spoecial rendering:")
 show(by_id("9dCT4NlSzKqw"))
 show(by_id("aAYRhJM5eKJI"))
 show(by_id("br8KnsKD2KLW"))
@@ -55,9 +53,7 @@ print("And Markdown:")
 print(indent(Path("references/empty-checkboxes.markdown").read_text(), "  "))
 
 print()
-print(
-    "nodes with owner like uA_iLd0SUk_TRASH => is in trash, mark with some marker bool.",
-)
+print("nodes with owner like uA_iLd0SUk_TRASH => is in trash, mark with some marker bool.")
 
 # SYS_V118 = external calendar
 # SYS_A202 = "Node source"

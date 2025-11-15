@@ -7,6 +7,8 @@ from pathlib import Path
 import sys
 
 import anyio
+import docker
+from docker import DockerClient
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
@@ -22,8 +24,6 @@ from adgn.mcp.exec.models import (
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.seatbelt.model import EnvPassthroughMode, SBPLPolicy
 from adgn.seatbelt.runner import apopen, collect_unified_sandbox_denies
-import docker
-from docker import DockerClient
 
 SERVER_NAME = "seatbelt_exec"
 
@@ -49,9 +49,7 @@ class SandboxExecArgs(BaseModel):
     # Stateless: require a full policy on every call
     policy: SBPLPolicy
     argv: list[str] = Field(min_length=1)
-    max_bytes: int = Field(
-        ..., ge=0, le=100_000, description="0..100_000; applies to stdin and captures"
-    )
+    max_bytes: int = Field(..., ge=0, le=100_000, description="0..100_000; applies to stdin and captures")
     cwd: Path | None = None
     # Explicit env to set/override in the child (applied after policy.env passthrough base)
     env: dict[str, str] | None = None
@@ -74,21 +72,14 @@ class SandboxExecResult(BaseExecResult):
 
 class SeatbeltExecMCP(NotifyingFastMCP):
     def __init__(
-        self,
-        name: str = SERVER_NAME,
-        *,
-        agent_id: str | None = None,
-        persistence=None,
-        docker_client: DockerClient,
+        self, name: str = SERVER_NAME, *, agent_id: str | None = None, persistence=None, docker_client: DockerClient
     ) -> None:
         # Refuse to instantiate on non-darwin
         if sys.platform != "darwin":
             raise RuntimeError("seatbelt_exec is macOS-only (requires sandbox-exec)")
         super().__init__(
             name,
-            instructions=(
-                "Execute commands via macOS seatbelt (sandbox-exec). Provide a full SBPL policy per call."
-            ),
+            instructions=("Execute commands via macOS seatbelt (sandbox-exec). Provide a full SBPL policy per call."),
         )
         if not agent_id:
             raise ValueError("SeatbeltExecMCP requires agent_id")
@@ -113,9 +104,7 @@ class SeatbeltExecMCP(NotifyingFastMCP):
             policy = input.policy
 
             # Prepare stdin bytes (clamped to max_bytes); no metadata returned for stdin
-            stdin_b = (
-                input.stdin_text.encode("utf-8", errors="replace") if input.stdin_text else b""
-            )
+            stdin_b = input.stdin_text.encode("utf-8", errors="replace") if input.stdin_text else b""
 
             # Compute child environment based on policy.env (default: whitelist with safe defaults),
             # then overlay any explicit env values provided in the request.
@@ -152,12 +141,8 @@ class SeatbeltExecMCP(NotifyingFastMCP):
                             return max(0.0, deadline - loop.time())
 
                         # Kick off reads first; then write stdin; this avoids fill/lock
-                        stdout_task = asyncio.create_task(
-                            read_stream_limited_async(proc.stdout, store_limit=max_b)
-                        )
-                        stderr_task = asyncio.create_task(
-                            read_stream_limited_async(proc.stderr, store_limit=max_b)
-                        )
+                        stdout_task = asyncio.create_task(read_stream_limited_async(proc.stdout, store_limit=max_b))
+                        stderr_task = asyncio.create_task(read_stream_limited_async(proc.stderr, store_limit=max_b))
 
                         # Write stdin (if any), then close to signal EOF
                         try:
@@ -175,15 +160,9 @@ class SeatbeltExecMCP(NotifyingFastMCP):
                             # Wait for stream drains and process exit with timeout
                             # Enforce a single overall timeout budget across both awaits
                             t1 = _remaining()
-                            await asyncio.wait_for(
-                                asyncio.gather(stdout_task, stderr_task),
-                                timeout=t1,
-                            )
+                            await asyncio.wait_for(asyncio.gather(stdout_task, stderr_task), timeout=t1)
                             t2 = _remaining()
-                            await asyncio.wait_for(
-                                proc.wait(),
-                                timeout=t2,
-                            )
+                            await asyncio.wait_for(proc.wait(), timeout=t2)
                         except TimeoutError:
                             # Best-effort termination; __aexit__ will also ensure cleanup
                             timed_out = True
@@ -227,9 +206,7 @@ class SeatbeltExecMCP(NotifyingFastMCP):
 
                 # Disabled for now: unified sandbox denies are noisy/unscoped.
                 unified_text: str | None = None
-                if False and (
-                    not timed_out and (proc.returncode if proc.returncode is not None else 0) != 0
-                ):
+                if False:
                     try:
                         _p, unified_text = collect_unified_sandbox_denies(proc.artifacts_dir)
                     except Exception as e:
@@ -255,19 +232,9 @@ class SeatbeltExecMCP(NotifyingFastMCP):
 
 
 async def attach_seatbelt_exec(
-    comp: Compositor,
-    *,
-    agent_id: str,
-    persistence,
-    docker_client: DockerClient,
-    name: str = SERVER_NAME,
+    comp: Compositor, *, agent_id: str, persistence, docker_client: DockerClient, name: str = SERVER_NAME
 ):
-    server = SeatbeltExecMCP(
-        name,
-        agent_id=agent_id,
-        persistence=persistence,
-        docker_client=docker_client,
-    )
+    server = SeatbeltExecMCP(name, agent_id=agent_id, persistence=persistence, docker_client=docker_client)
     await comp.mount_inproc(name, server)
     return server
 

@@ -16,10 +16,7 @@ GRADE_TOOL: dict[str, object] = {
     "description": "Return a 1-5 score and a short rationale.",
     "parameters": {
         "type": "object",
-        "properties": {
-            "score": {"type": "integer", "minimum": 1, "maximum": 5},
-            "rationale": {"type": "string"},
-        },
+        "properties": {"score": {"type": "integer", "minimum": 1, "maximum": 5}, "rationale": {"type": "string"}},
         "required": ["score", "rationale"],
         "additionalProperties": False,
     },

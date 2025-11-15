@@ -21,7 +21,7 @@
     rule: allow
     port: "{{ item }}"
     proto: "{{ 'tcp' if item == powerdns_webserver_port else 'any' }}"
-    delete: yes
+    delete: true
   become: true
   failed_when: false
   loop:

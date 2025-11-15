@@ -192,14 +192,8 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fa
     async def _fake_generate(*args, **kwargs) -> str:  # match production signature leniently
         return new_message
 
-    monkeypatch.setattr(
-        "adgn.git_commit_ai.minicodex_backend.generate_commit_message_minicodex",
-        _fake_generate,
-    )
-    monkeypatch.setattr(
-        "adgn.git_commit_ai.cli.Cache.get",
-        lambda self, key: new_message,
-    )
+    monkeypatch.setattr("adgn.git_commit_ai.minicodex_backend.generate_commit_message_minicodex", _fake_generate)
+    monkeypatch.setattr("adgn.git_commit_ai.cli.Cache.get", lambda self, key: new_message)
 
     # Run the tool; patch argv to avoid pytest args leaking
     with patch("sys.exit") as mock_exit:
@@ -209,7 +203,7 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fa
     # Verify the committed message contains only the AI message
     fresh = pygit2.Repository(str(tmpdir))
     committed = fresh.revparse_single("HEAD").peel(pygit2.Commit).message.strip()
-    assert committed.startswith("Subject line") or committed.startswith("Updated:")
+    assert committed.startswith(("Subject line", "Updated:"))
     assert "editor-added comment" not in committed
     assert ">8" not in committed
     assert "diff line (commented)" not in committed

@@ -70,9 +70,9 @@
   tags: [k3s, installation]
 
 # TODO: Fix kubectl configuration - copy task expects local file but k3s.yaml is remote
-#- name: Configure kubectl access on Proxmox host
-#  include_tasks: configure_kubectl.yml
-#  tags: [k3s, kubectl]
+# - name: Configure kubectl access on Proxmox host
+#   include_tasks: configure_kubectl.yml
+#   tags: [k3s, kubectl]
 
 - name: Configure insecure registry for k3s nodes
   ansible.builtin.include_tasks: configure_registry.yml

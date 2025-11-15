@@ -24,27 +24,17 @@ async def test_chat_head_notifications_other_participant() -> None:
 
     # Connect directly to assistant server to capture its notifications
     cap_assist = _Capture()
-    async with (
-        Client(assistant, message_handler=cap_assist) as assist_sess,
-        Client(human) as human_sess,
-    ):
+    async with Client(assistant, message_handler=cap_assist) as assist_sess, Client(human) as human_sess:
         # Human posts; assistant should receive a chat://head update
-        out = await human_sess.call_tool(
-            name="post", arguments={"mime": "text/markdown", "content": "hello"}
-        )
+        out = await human_sess.call_tool(name="post", arguments={"mime": "text/markdown", "content": "hello"})
         assert hasattr(out, "structured_content")
         await asyncio.sleep(0.05)
         assert any(uri.endswith("chat://head") for uri in cap_assist.updated), cap_assist.updated
 
     # Connect directly to human server to capture its notifications
     cap_human = _Capture()
-    async with (
-        Client(human, message_handler=cap_human) as human_sess,
-        Client(assistant) as assist_sess,
-    ):
-        out2 = await assist_sess.call_tool(
-            name="post", arguments={"mime": "text/markdown", "content": "roger"}
-        )
+    async with Client(human, message_handler=cap_human) as human_sess, Client(assistant) as assist_sess:
+        out2 = await assist_sess.call_tool(name="post", arguments={"mime": "text/markdown", "content": "roger"})
         assert hasattr(out2, "structured_content")
         await asyncio.sleep(0.05)
         assert any(uri.endswith("chat://head") for uri in cap_human.updated), cap_human.updated

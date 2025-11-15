@@ -50,10 +50,7 @@ class BaseNode(BaseModel):
     children: list[NodeId] = Field(default_factory=list)
     modified_ts: list[int] | None = Field(alias="modifiedTs", default=None)
     touch_counts: list[int] | None = Field(alias="touchCounts", default=None)
-    association_map: Mapping[NodeId, NodeId] | None = Field(
-        alias="associationMap",
-        default=None,
-    )
+    association_map: Mapping[NodeId, NodeId] | None = Field(alias="associationMap", default=None)
     _graph: Any | None = None  # Populated by TanaGraph
 
     model_config = ConfigDict(extra="allow", frozen=True, arbitrary_types_allowed=True)

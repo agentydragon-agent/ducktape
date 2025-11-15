@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import homeassistant_api
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
+import homeassistant_api
 
 from ..auth.dependencies import Auth
 from ..config import settings
@@ -20,10 +20,7 @@ async def fetch_states() -> list[dict[str, Any]]:
     """Fetch states for configured entities."""
     entities: list[dict[str, Any]] = []
     async with homeassistant_api.Client(
-        settings.home_assistant.api_url,
-        settings.home_assistant.api_token,
-        use_async=True,
-        verify_ssl=False,
+        settings.home_assistant.api_url, settings.home_assistant.api_token, use_async=True, verify_ssl=False
     ) as client:
         for entity_id in settings.home_assistant.entities:
             try:
@@ -33,11 +30,8 @@ async def fetch_states() -> list[dict[str, Any]]:
                         "entity_id": entity_id,
                         "state": state.state,
                         "last_changed": state.last_changed,
-                        "friendly_name": state.attributes.get(
-                            "friendly_name",
-                            entity_id,
-                        ),
-                    },
+                        "friendly_name": state.attributes.get("friendly_name", entity_id),
+                    }
                 )
             except Exception as exc:  # pragma: no cover - network errors
                 logger.error("Failed fetching %s: %s", entity_id, exc)
@@ -51,14 +45,7 @@ async def list_entities(request: Request, auth: Auth) -> HTMLResponse:
     is_human = auth.auth_type == "admin"
     return templates.TemplateResponse(
         "ha_entities.html",
-        {
-            "request": request,
-            "auth": auth,
-            "states": states,
-            "header": "Entities",
-            "is_human": is_human,
-            "history": [],
-        },
+        {"request": request, "auth": auth, "states": states, "header": "Entities", "is_human": is_human, "history": []},
     )
 
 

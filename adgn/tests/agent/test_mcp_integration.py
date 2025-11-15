@@ -39,10 +39,7 @@ async def test_stdio_server_list_tools(make_compositor) -> None:
     if proc.returncode != 0:
         pytest.skip(f"server-everything stdio help failed (rc={proc.returncode})")
 
-    spec = StdioMCPServer(
-        command="npx",
-        args=["@modelcontextprotocol/server-everything", "stdio"],
-    )
+    spec = StdioMCPServer(command="npx", args=["@modelcontextprotocol/server-everything", "stdio"])
 
     async with make_compositor({"everything": spec}) as (sess, comp):
         tools = await sess.list_tools()
@@ -61,11 +58,7 @@ async def test_direct_inprocess_server(make_compositor) -> None:
         tool_name = build_mcp_function("local", "exec")
         assert any(t.name == tool_name for t in tools)
         # Sanity-call exec via the namespaced tool using the typed helper
-        payload = DirectExecArgs(
-            cmd=["/bin/echo", "hello"],
-            max_bytes=100_000,
-            timeout_ms=5000,
-        )
+        payload = DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100_000, timeout_ms=5000)
         result = await call_tool_typed(sess, tool_name, payload, BaseExecResult)
         assert isinstance(result.exit, Exited)
         assert result.exit.exit_code == 0
@@ -73,9 +66,7 @@ async def test_direct_inprocess_server(make_compositor) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.requires_docker
-async def test_inproc_container_exec_exposes_container_info_resource(
-    docker_inproc_spec_py312: object,
-) -> None:
+async def test_inproc_container_exec_exposes_container_info_resource(docker_inproc_spec_py312: object) -> None:
     """in-proc container exec exposes a container.info resource."""
 
     # Call the server directly to read the resource; no manager needed here

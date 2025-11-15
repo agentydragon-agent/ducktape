@@ -3,17 +3,7 @@
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    Column,
-    DateTime,
-    ForeignKey,
-    Integer,
-    String,
-    create_engine,
-    func,
-)
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, create_engine, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, relationship, sessionmaker
 
@@ -26,26 +16,12 @@ class WebhookIntegration(Base):
     __tablename__ = "webhook_integrations"
 
     id = Column(Integer, primary_key=True)
-    name = Column(
-        String,
-        unique=True,
-        nullable=False,
-        comment="Integration identifier (e.g., 'home-assistant')",
-    )
+    name = Column(String, unique=True, nullable=False, comment="Integration identifier (e.g., 'home-assistant')")
     description = Column(String, nullable=True)
-    auth_type = Column(
-        String,
-        nullable=False,
-        comment="Authentication type (e.g., 'none', 'token', 'basic')",
-    )
+    auth_type = Column(String, nullable=False, comment="Authentication type (e.g., 'none', 'token', 'basic')")
     auth_config = Column(JSON, nullable=True, comment="Authentication configuration")
     created_at = Column(DateTime, nullable=False, default=func.now())  # pylint: disable=not-callable
-    updated_at = Column(
-        DateTime,
-        nullable=False,
-        default=func.now(),
-        onupdate=func.now(),
-    )
+    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
     is_enabled = Column(Boolean, nullable=False, default=True)
 
     # Relationship to webhook payloads
@@ -61,16 +37,10 @@ class WebhookPayload(Base):
     received_at = Column(DateTime, nullable=False, default=func.now())
     # Direct storage of integration name as it was when received
     integration_name = Column(
-        String,
-        nullable=False,
-        comment="Source integration name when received (e.g., 'home-assistant')",
+        String, nullable=False, comment="Source integration name when received (e.g., 'home-assistant')"
     )
     # Link to integration configuration
-    integration_id = Column(
-        Integer,
-        ForeignKey("webhook_integrations.id"),
-        nullable=True,
-    )
+    integration_id = Column(Integer, ForeignKey("webhook_integrations.id"), nullable=True)
     payload = Column(JSON, nullable=False)
 
     # Relationship to integration configuration

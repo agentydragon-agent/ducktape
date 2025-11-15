@@ -1,11 +1,10 @@
 import json
 from pathlib import Path
 
+from click.testing import CliRunner
+from ducktape_llm_common.claude_linter.cli import cli
 import pytest
 import yaml
-from click.testing import CliRunner
-
-from ducktape_llm_common.claude_linter.cli import cli
 
 
 @pytest.fixture
@@ -51,7 +50,7 @@ sys.exit(0)
         ]
     }
     config_path = tmp_path / ".pre-commit-config.yaml"
-    with open(config_path, "w") as f:
+    with config_path.open("w") as f:
         yaml.dump(config, f)
     return config_path
 
@@ -97,7 +96,7 @@ sys.exit(0)
         ]
     }
     config_path = tmp_path / ".pre-commit-config.yaml"
-    with open(config_path, "w") as f:
+    with config_path.open("w") as f:
         yaml.dump(config, f)
     return config_path
 
@@ -117,10 +116,7 @@ class TestHooks:
         test_file.write_text("print('hello')")
 
         payload = json.dumps(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(test_file), "content": test_file.read_text()},
-            }
+            {"tool_name": "Write", "tool_input": {"file_path": str(test_file), "content": test_file.read_text()}}
         )
 
         result = runner.invoke(cli, ["hook", "pre"], input=payload, catch_exceptions=False)
@@ -143,10 +139,7 @@ class TestHooks:
         test_file.write_text("non-fixable-error")
 
         payload = json.dumps(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(test_file), "content": test_file.read_text()},
-            }
+            {"tool_name": "Write", "tool_input": {"file_path": str(test_file), "content": test_file.read_text()}}
         )
 
         result = runner.invoke(cli, ["hook", "pre"], input=payload, catch_exceptions=False)
@@ -199,7 +192,7 @@ class TestRemoteHooks:
                 "types": ["python"],
             }
         ]
-        with open(hooks_dir, "w") as f:
+        with hooks_dir.open("w") as f:
             yaml.dump(hooks_config, f)
 
         # Create the hook script
@@ -239,16 +232,10 @@ sys.exit(0)
 
         # Create config pointing to remote repo
         config = {
-            "repos": [
-                {
-                    "repo": f"file://{remote_hook_repo}",
-                    "rev": "HEAD",
-                    "hooks": [{"id": "dummy-remote-hook"}],
-                }
-            ]
+            "repos": [{"repo": f"file://{remote_hook_repo}", "rev": "HEAD", "hooks": [{"id": "dummy-remote-hook"}]}]
         }
         config_path = tmp_path / ".pre-commit-config.yaml"
-        with open(config_path, "w") as f:
+        with config_path.open("w") as f:
             yaml.dump(config, f)
 
         test_file = tmp_path / "test.py"

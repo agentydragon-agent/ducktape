@@ -64,24 +64,11 @@ def print_search_info(store: TanaGraph, search_id: NodeId) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Materialize search nodes from Tana JSON exports",
-    )
+    parser = argparse.ArgumentParser(description="Materialize search nodes from Tana JSON exports")
     parser.add_argument("input", type=Path, help="Tana JSON export file")
-    parser.add_argument(
-        "--search-id",
-        help="Specific search node ID to materialize",
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Process all search nodes",
-    )
-    parser.add_argument(
-        "--list",
-        action="store_true",
-        help="List all search nodes",
-    )
+    parser.add_argument("--search-id", help="Specific search node ID to materialize")
+    parser.add_argument("--all", action="store_true", help="Process all search nodes")
+    parser.add_argument("--list", action="store_true", help="List all search nodes")
 
     args = parser.parse_args()
 

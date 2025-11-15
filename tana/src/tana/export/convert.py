@@ -15,18 +15,13 @@ from tana.domain.constants import (
     SUPERTAG_KEY_ID,
     URL_KEY_ID,
 )
-from tana.render.html import (
-    DATE_SPAN_PATTERN,
-    NODE_SPAN_PATTERN,
-    find_inline_node_refs,
-    html_to_markdown,
-)
-from tana.render.inline_refs import parse_inline_date
 from tana.domain.nodes import BaseNode, CodeBlockNode, TupleNode, VisualNode
 from tana.domain.types import NodeId
 from tana.graph.workspace import TanaGraph
 from tana.graph.wrappers import is_wrapper
 from tana.query.core import get_tuple_value
+from tana.render.html import DATE_SPAN_PATTERN, NODE_SPAN_PATTERN, find_inline_node_refs, html_to_markdown
+from tana.render.inline_refs import parse_inline_date
 
 # ──────────────────────────  Headline  ────────────────────────── #
 
@@ -137,10 +132,7 @@ class RenderContext:
                 raw = "Today, " + head
 
         # If no name and no children, render an empty headline (matches golden)
-        if not node.name and not node.children:
-            base = ""
-        else:
-            base = self._inline_to_text(raw)
+        base = "" if not node.name and not node.children else self._inline_to_text(raw)
 
         # Description suffix
         if node.props.description:
@@ -240,14 +232,13 @@ class RenderContext:
             # Prefer explicit _done flag when present
             if n.props.done is not None:
                 marker = "[X] " if bool(n.props.done) else "[ ] "
-            else:
-                # If node (or its meta) carries a checkbox tuple, default to unchecked marker
-                if get_tuple_value(n, CHECKBOX_KEY_ID) is not None:
+            # If node (or its meta) carries a checkbox tuple, default to unchecked marker
+            elif get_tuple_value(n, CHECKBOX_KEY_ID) is not None:
+                marker = "[ ] "
+            elif n.props.meta_node_id:
+                meta = self.store.get(n.props.meta_node_id)
+                if meta and get_tuple_value(meta, CHECKBOX_KEY_ID) is not None:
                     marker = "[ ] "
-                elif n.props.meta_node_id:
-                    meta = self.store.get(n.props.meta_node_id)
-                    if meta and get_tuple_value(meta, CHECKBOX_KEY_ID) is not None:
-                        marker = "[ ] "
         head = self._headline(n)
         if head:
             yield f"{self.indent}- {marker}{head}"
@@ -265,9 +256,7 @@ class RenderContext:
         with self.add_indent():
             emitted: set[NodeId] = set()
             for c in n.child_nodes:
-                if (self.style == "tana") and (
-                    n.props.doc_type == "search" or (n.association_map is not None)
-                ):
+                if (self.style == "tana") and (n.props.doc_type == "search" or (n.association_map is not None)):
                     # Render children as plain references; if association_map is provided,
                     # include associated data tuples for that child.
                     if isinstance(c, TupleNode):
@@ -313,9 +302,7 @@ class RenderContext:
                             if isinstance(gc, TupleNode):
                                 continue
                             if gc.id not in emitted:
-                                name = self._strip_md_formatting(
-                                    self._inline_to_text(gc.name or gc.id)
-                                )
+                                name = self._strip_md_formatting(self._inline_to_text(gc.name or gc.id))
                                 yield f"{self.indent}- [[{name}^{gc.id}]]"
                                 emitted.add(gc.id)
 
@@ -393,12 +380,7 @@ def _export(store: TanaGraph, style: str) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dump", help="Tana JSON dump")
-    ap.add_argument(
-        "-o",
-        "--out-base",
-        help="basename for outputs (default <dump>.converted)",
-        default=None,
-    )
+    ap.add_argument("-o", "--out-base", help="basename for outputs (default <dump>.converted)", default=None)
     args = ap.parse_args()
 
     src = Path(args.dump)

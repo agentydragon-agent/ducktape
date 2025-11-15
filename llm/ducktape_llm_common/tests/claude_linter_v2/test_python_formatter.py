@@ -3,9 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from ducktape_llm_common.claude_linter_v2.config.models import AutofixCategory
-from ducktape_llm_common.claude_linter_v2.linters.python_formatter import (
-    PythonFormatter,
-)
+from ducktape_llm_common.claude_linter_v2.linters.python_formatter import PythonFormatter
 
 
 class TestPythonFormatter:
@@ -19,8 +17,7 @@ class TestPythonFormatter:
         def side_effect(cmd, **kwargs):
             if cmd[0] == "ruff":
                 return MagicMock(returncode=0, stdout="ruff 0.1.0\n")
-            else:
-                raise FileNotFoundError()
+            raise FileNotFoundError
 
         mock_run.side_effect = side_effect
 

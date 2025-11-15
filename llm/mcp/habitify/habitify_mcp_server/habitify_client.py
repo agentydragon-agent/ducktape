@@ -10,15 +10,11 @@ import logging
 import os
 from typing import Any, Literal
 
-import httpx
 from dotenv import load_dotenv
+import httpx
 
 from .types import Area, Habit, HabitStatus, HabitStatusResponse
-from .utils.date_utils import (
-    create_date_range,
-    format_date_for_api,
-    format_date_yyyy_mm_dd,
-)
+from .utils.date_utils import create_date_range, format_date_for_api, format_date_yyyy_mm_dd
 
 logger = logging.getLogger("habitify.client")
 
@@ -68,11 +64,7 @@ class HabitifyClient:
         # Store timeout for creating clients
         self.timeout = timeout
 
-        self.client = httpx.AsyncClient(
-            base_url=self.base_url,
-            headers=headers,
-            timeout=self.timeout,
-        )
+        self.client = httpx.AsyncClient(base_url=self.base_url, headers=headers, timeout=self.timeout)
 
     async def __aenter__(self) -> "HabitifyClient":
         """Support async context manager protocol."""
@@ -99,14 +91,12 @@ class HabitifyClient:
         if model_class:
             if isinstance(result, list):
                 return [model_class(**item) for item in result]
-            elif result is None:
+            if result is None:
                 # For some endpoints that return null data but success
                 if "status" in data and data["status"] is True:
-                    status_obj = HabitStatus(status="success")
-                    return status_obj
+                    return HabitStatus(status="success")
                 return None
-            else:
-                return model_class(**result)
+            return model_class(**result)
 
         return result
 
@@ -231,9 +221,7 @@ class HabitifyClient:
 
     # All methods are async-only now
 
-    async def check_habit_status(
-        self, habit_id: str, date: str | datetime.date | None = None
-    ) -> HabitStatusResponse:
+    async def check_habit_status(self, habit_id: str, date: str | datetime.date | None = None) -> HabitStatusResponse:
         """
         Check a habit's status for a date.
 
@@ -250,20 +238,13 @@ class HabitifyClient:
         check_date = format_date_for_api(date)
 
         try:
-            response = await self.client.get(
-                f"/status/{habit_id}",
-                params={
-                    "target_date": check_date,
-                },
-            )
+            response = await self.client.get(f"/status/{habit_id}", params={"target_date": check_date})
             response.raise_for_status()
             api_result = self._process_response(response, HabitStatus)
 
             # If API didn't return a date, add the request date to the API model
             if not api_result.date:
-                api_result.date = (
-                    format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()
-                )
+                api_result.date = format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()
 
             # Convert the API model to a client response model with Python date object
             return HabitStatusResponse.from_api_model(api_result, date)
@@ -295,9 +276,7 @@ class HabitifyClient:
         habit_id = self._validate_habit_id(habit_id)
 
         # Create the date range
-        start_dt, end_dt, date_range = create_date_range(
-            start_date=start_date, end_date=end_date, days=days
-        )
+        start_dt, end_dt, date_range = create_date_range(start_date=start_date, end_date=end_date, days=days)
 
         # Prepare coroutines for each date
         tasks = []
@@ -319,7 +298,7 @@ class HabitifyClient:
             for task in tasks:
                 if not task.done():
                     task.cancel()
-            logger.error(f"Error fetching habit status: {str(e)}")
+            logger.error(f"Error fetching habit status: {e!s}")
             raise
 
         # Sort results by date to maintain chronological order
@@ -360,10 +339,7 @@ class HabitifyClient:
         target_date = format_date_for_api(date)
 
         # Build the request body based on examples
-        request_body: dict[str, Any] = {
-            "status": status,
-            "target_date": target_date,
-        }
+        request_body: dict[str, Any] = {"status": status, "target_date": target_date}
 
         # Add optional parameters if provided
         if note is not None:
@@ -415,33 +391,26 @@ class HabitifyClient:
 
             # Check for common errors with helpful messages
             if status == 401:
-                return HabitifyError(
-                    "Authentication failed. Please check your Habitify API key.", status
-                )
-            elif status == 404:
-                return HabitifyError(
-                    "Resource not found. This endpoint may not be supported by the API.",
-                    status,
-                )
-            elif status == 500 and data and "message" in data:
+                return HabitifyError("Authentication failed. Please check your Habitify API key.", status)
+            if status == 404:
+                return HabitifyError("Resource not found. This endpoint may not be supported by the API.", status)
+            if status == 500 and data and "message" in data:
                 if "habit does not exist" in data["message"].lower():
                     return HabitifyError(f"Habit ID not found: {data['message']}", status)
-                elif "target_date" in data["message"].lower():
+                if "target_date" in data["message"].lower():
                     return HabitifyError(
-                        "Invalid date format. The API requires ISO 8601 format (YYYY-MM-DDThh:mm:ss±hh:mm).",
-                        status,
+                        "Invalid date format. The API requires ISO 8601 format (YYYY-MM-DDThh:mm:ss±hh:mm).", status
                     )
-                else:
-                    return HabitifyError(f"API Error: {data['message']}", status)
+                return HabitifyError(f"API Error: {data['message']}", status)
 
             # Create a readable error message with available details
             error_prefix = f"HTTP {status}:"
             if data and "message" in data:
                 return HabitifyError(f"{error_prefix} {data['message']}", status)
-            elif data:
+            if data:
                 return HabitifyError(f"{error_prefix} {data}", status)
 
             return HabitifyError(f"{error_prefix} Request failed", status)
 
         # For network errors or other non-API errors
-        return HabitifyError(f"Connection error: {str(error)}")
+        return HabitifyError(f"Connection error: {error!s}")

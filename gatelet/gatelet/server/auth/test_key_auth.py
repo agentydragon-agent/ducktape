@@ -1,7 +1,7 @@
 """Tests for key-in-path authentication."""
 
-import uuid
 from datetime import datetime, timedelta
+import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,9 +18,7 @@ async def test_validate_valid_key(db_session: AsyncSession):
     # Create a valid key with unique value
     unique_id = uuid.uuid4().hex[:8]
     key = AuthKey(
-        key_value=f"valid-test-key-{unique_id}",
-        description=f"Valid test key {unique_id}",
-        created_at=datetime.now(),
+        key_value=f"valid-test-key-{unique_id}", description=f"Valid test key {unique_id}", created_at=datetime.now()
     )
     key = await persist(db_session, key)
 
@@ -64,9 +62,7 @@ async def test_validate_expired_key(db_session: AsyncSession):
     created_at = datetime.now() - expiry_period - timedelta(days=1)
 
     key = AuthKey(
-        key_value=f"expired-test-key-{unique_id}",
-        description=f"Expired test key {unique_id}",
-        created_at=created_at,
+        key_value=f"expired-test-key-{unique_id}", description=f"Expired test key {unique_id}", created_at=created_at
     )
     key = await persist(db_session, key)
 

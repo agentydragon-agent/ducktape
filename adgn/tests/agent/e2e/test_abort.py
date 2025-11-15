@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 import pytest
-
 from tests.agent.helpers import api_create_agent
 
 pytestmark = pytest.mark.usefixtures()
 
-# Skip if Playwright is not installed; bind Page from returned module
+# Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
-Page = playwright.Page  # type: ignore[attr-defined]
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
+else:
+    Page = playwright.Page
 
 
 """E2E Abort test. Shared fixtures are provided in tests/agent/e2e/conftest.py."""

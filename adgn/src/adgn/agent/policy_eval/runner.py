@@ -4,10 +4,11 @@ import json
 import logging
 import os
 
-from adgn.agent.policies.policy_types import PolicyResponse
-from adgn.agent.runtime.images import resolve_runtime_image
 import docker
 from docker import DockerClient
+
+from adgn.agent.policies.policy_types import PolicyResponse
+from adgn.agent.runtime.images import resolve_runtime_image
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,7 @@ def run_policy_source(
     """
     # Resolve image to a concrete string (no Optional)
     img: str = image if image else resolve_runtime_image()
-    tmo = (
-        timeout_secs
-        if timeout_secs is not None
-        else float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
-    )
+    tmo = timeout_secs if timeout_secs is not None else float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
     client = docker_client
     try:
         client.images.get(img)
@@ -43,11 +40,7 @@ def run_policy_source(
     ctx_json = json.dumps(input_payload, ensure_ascii=False)
     # Execute the packaged shim module that reads POLICY_INPUT/POLICY_SRC
     cmd = ["python", "-m", "adgn.agent.policy_eval.shim"]
-    env = {
-        "PYTHONUNBUFFERED": "1",
-        "POLICY_SRC": source,
-        "POLICY_INPUT": ctx_json,
-    }
+    env = {"PYTHONUNBUFFERED": "1", "POLICY_SRC": source, "POLICY_INPUT": ctx_json}
     container = client.containers.create(
         image=img,
         command=cmd,

@@ -74,15 +74,10 @@ class ChatStore:
         self._seq: int = 0
         self._messages: list[tuple[int, ChatMessage]] = []
         # Per-server last-read sequence (None when nothing read yet)
-        self._last_read: dict[str, int | None] = {
-            CHAT_HUMAN_SERVER_NAME: None,
-            CHAT_ASSISTANT_SERVER_NAME: None,
-        }
+        self._last_read: dict[str, int | None] = {CHAT_HUMAN_SERVER_NAME: None, CHAT_ASSISTANT_SERVER_NAME: None}
         self._servers = _ServerRefs()
 
-    def register_servers(
-        self, *, human: NotifyingFastMCP | None, assistant: NotifyingFastMCP | None
-    ) -> None:
+    def register_servers(self, *, human: NotifyingFastMCP | None, assistant: NotifyingFastMCP | None) -> None:
         self._servers = _ServerRefs(human=human, assistant=assistant)
 
     @property
@@ -111,20 +106,14 @@ class ChatStore:
             await self._servers.human.broadcast_resource_updated(head_uri)
 
     async def _notify_last_read(self, *, server_name: str) -> None:
-        srv = (
-            self._servers.human
-            if server_name == CHAT_HUMAN_SERVER_NAME
-            else self._servers.assistant
-        )
+        srv = self._servers.human if server_name == CHAT_HUMAN_SERVER_NAME else self._servers.assistant
         if srv is not None:
             await srv.broadcast_resource_updated("chat://last-read")
 
     async def append(self, *, author: ChatAuthor, mime: str, content: str) -> str:
         self._seq += 1
         seq = self._seq
-        msg = ChatMessage(
-            id=str(seq), ts=self._now_iso(), author=author, mime=mime, content=content
-        )
+        msg = ChatMessage(id=str(seq), ts=self._now_iso(), author=author, mime=mime, content=content)
         self._messages.append((seq, msg))
 
         # Notify the other participant's head resource
@@ -152,11 +141,7 @@ class ChatStore:
         return None
 
     def _read_since_seq(
-        self,
-        *,
-        other_author: ChatAuthor,
-        after_seq: int | None,
-        limit: int | None,
+        self, *, other_author: ChatAuthor, after_seq: int | None, limit: int | None
     ) -> list[ChatMessage]:
         out: list[ChatMessage] = []
         cap = limit if isinstance(limit, int) and limit > 0 else None
@@ -171,11 +156,7 @@ class ChatStore:
         return out
 
     async def read_pending_and_advance(
-        self,
-        *,
-        server_name: str,
-        server_author: ChatAuthor,
-        limit: int | None,
+        self, *, server_name: str, server_author: ChatAuthor, limit: int | None
     ) -> tuple[list[ChatMessage], str | None]:
         other = ChatAuthor.ASSISTANT if server_author is ChatAuthor.USER else ChatAuthor.USER
         after_seq = self._last_read.get(server_name)
@@ -189,7 +170,7 @@ class ChatStore:
 
 
 class ChatStorePersisted(ChatStore):
-    """SQLite‑backed ChatStore bound to an agent_id.
+    """SQLite-backed ChatStore bound to an agent_id.
 
     Uses SQLitePersistence directly; tables are created via ensure_schema().
     """
@@ -200,24 +181,24 @@ class ChatStorePersisted(ChatStore):
         self._agent = agent_id
 
     async def last_id_async(self) -> str | None:
-        async with self._p._open_row() as db:  # type: ignore[attr-defined]
-            async with db.execute(
-                "SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?",
-                (self._agent,),
-            ) as cur:
-                if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
-                    return str(val)
-                return None
+        async with (
+            self._p._open_row() as db,  # type: ignore[attr-defined]
+            db.execute("SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?", (self._agent,)) as cur,
+        ):
+            if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
+                return str(val)
+            return None
 
     async def get_last_read_async(self, server_name: str) -> str | None:
-        async with self._p._open_row() as db:  # type: ignore[attr-defined]
-            async with db.execute(
-                "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?",
-                (self._agent, server_name),
-            ) as cur:
-                if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
-                    return str(val)
-                return None
+        async with (
+            self._p._open_row() as db,  # type: ignore[attr-defined]
+            db.execute(
+                "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
+            ) as cur,
+        ):
+            if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
+                return str(val)
+            return None
 
     async def append(self, *, author: ChatAuthor, mime: str, content: str) -> str:
         ts = datetime.now(UTC).isoformat()
@@ -237,14 +218,16 @@ class ChatStorePersisted(ChatStore):
             seq = int(msg_id)
         except (TypeError, ValueError):
             return None
-        async with self._p._open_row() as db:  # type: ignore[attr-defined]
-            async with db.execute(
+        async with (
+            self._p._open_row() as db,  # type: ignore[attr-defined]
+            db.execute(
                 "SELECT id, ts, author, mime, content FROM chat_messages WHERE agent_id = ? AND id = ?",
                 (self._agent, seq),
-            ) as cur:
-                if not (row := await cur.fetchone()):
-                    return None
-                return _row_to_message(row)
+            ) as cur,
+        ):
+            if not (row := await cur.fetchone()):
+                return None
+            return _row_to_message(row)
 
     def _read_since_seq(
         self, *, other_author: ChatAuthor, after_seq: int | None, limit: int | None
@@ -253,21 +236,18 @@ class ChatStorePersisted(ChatStore):
         raise NotImplementedError
 
     async def read_pending_and_advance(
-        self,
-        *,
-        server_name: str,
-        server_author: ChatAuthor,
-        limit: int | None,
+        self, *, server_name: str, server_author: ChatAuthor, limit: int | None
     ) -> tuple[list[ChatMessage], str | None]:
         other = ChatAuthor.ASSISTANT if server_author is ChatAuthor.USER else ChatAuthor.USER
         cap = limit if isinstance(limit, int) and limit > 0 else None
-        async with self._p._open_row() as db:  # type: ignore[attr-defined]
-            async with db.execute(
-                "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?",
-                (self._agent, server_name),
-            ) as cur:
-                r = await cur.fetchone()
-                after_seq = r["last_id"] if r else None
+        async with (
+            self._p._open_row() as db,  # type: ignore[attr-defined]
+            db.execute(
+                "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
+            ) as cur,
+        ):
+            r = await cur.fetchone()
+            after_seq = r["last_id"] if r else None
 
         # Fetch messages after HWM
         async with self._p._open_row() as db:  # type: ignore[attr-defined]
@@ -295,22 +275,16 @@ class ChatStorePersisted(ChatStore):
                 await db.commit()
             await self._notify_last_read(server_name=server_name)
         # last_id: query MAX(id)
-        async with self._p._open_row() as db:  # type: ignore[attr-defined]
-            async with db.execute(
-                "SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?",
-                (self._agent,),
-            ) as cur:
-                r = await cur.fetchone()
-                global_last = r["last_id"] if r else None
+        async with (
+            self._p._open_row() as db,  # type: ignore[attr-defined]
+            db.execute("SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?", (self._agent,)) as cur,
+        ):
+            r = await cur.fetchone()
+            global_last = r["last_id"] if r else None
         return msgs, (str(global_last) if global_last is not None else None)
 
 
-def make_chat_server(
-    *,
-    name: str,
-    author: ChatAuthor,
-    store: ChatStore,
-) -> NotifyingFastMCP:
+def make_chat_server(*, name: str, author: ChatAuthor, store: ChatStore) -> NotifyingFastMCP:
     """Build a chat server bound to a fixed author and a shared store."""
 
     m = NotifyingFastMCP(name=name, instructions=None)
@@ -341,19 +315,14 @@ def make_chat_server(
 
     @m.flat_model()
     async def read_pending_messages(input: ReadPendingInput) -> ReadPendingResult:  # type: ignore[unused-ignore]
-        msgs, last_id = await store.read_pending_and_advance(
-            server_name=name, server_author=author, limit=input.limit
-        )
+        msgs, last_id = await store.read_pending_and_advance(server_name=name, server_author=author, limit=input.limit)
         return ReadPendingResult(messages=msgs, last_id=last_id)
 
     return m
 
 
 async def attach_chat_servers(
-    comp,
-    *,
-    human_name: str = CHAT_HUMAN_SERVER_NAME,
-    assistant_name: str = CHAT_ASSISTANT_SERVER_NAME,
+    comp, *, human_name: str = CHAT_HUMAN_SERVER_NAME, assistant_name: str = CHAT_ASSISTANT_SERVER_NAME
 ):
     """Attach chat.human and chat.assistant in-proc backed by a shared store.
 

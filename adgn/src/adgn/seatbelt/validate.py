@@ -25,17 +25,14 @@ class ValidationContext:
 
 def make_runtime_context() -> ValidationContext:
     ver, _, _ = platform.mac_ver()
-    return ValidationContext(
-        macos_version=ver or None,
-        sandbox_exec_present=bool(shutil.which("sandbox-exec")),
-    )
+    return ValidationContext(macos_version=ver or None, sandbox_exec_present=bool(shutil.which("sandbox-exec")))
 
 
 def _file_read_subpaths(policy: SBPLPolicy) -> Iterable[str]:
     """Yield only directory roots allowed via (subpath "...") for file-read*.
 
     LiteralFilter entries allow the exact path only and do not confer recursive
-    read access. For purposes of the default‑deny sanity check below, only
+    read access. For purposes of the default-deny sanity check below, only
     Subpath roots contribute coverage.
     """
     for fr in policy.files:
@@ -59,9 +56,7 @@ def validate(policy: SBPLPolicy, ctx: ValidationContext | None = None) -> list[s
     if ctx.macos_version is None:
         msgs.append("warning: non-macOS platform detected; seatbelt SBPL may be unsupported here")
     if not ctx.sandbox_exec_present:
-        msgs.append(
-            "warning: sandbox-exec not found; cannot run SBPL via the deprecated CLI on this system"
-        )
+        msgs.append("warning: sandbox-exec not found; cannot run SBPL via the deprecated CLI on this system")
 
     # Default-deny sanity for Python/dyld basics (heuristic, message-only)
     if policy.default_behavior == DefaultBehavior.DENY:
@@ -76,9 +71,7 @@ def validate(policy: SBPLPolicy, ctx: ValidationContext | None = None) -> list[s
         ]
         # Coverage: a subpath root rp covers p when p == rp or p startswith rp
         # (i.e., p is inside rp). Do not treat rp being inside p as coverage.
-        missing = [
-            p for p in required_roots if not any(p == rp or p.startswith(rp) for rp in read_paths)
-        ]
+        missing = [p for p in required_roots if not any(p == rp or p.startswith(rp) for rp in read_paths)]
         if missing:
             mv = ctx.macos_version or "unknown macOS"
             msgs.append(
@@ -98,8 +91,6 @@ def validate(policy: SBPLPolicy, ctx: ValidationContext | None = None) -> list[s
     if policy.mach.global_names:
         names = ", ".join(policy.mach.global_names[:5])
         extra = "" if len(policy.mach.global_names) <= 5 else " (and more)"
-        msgs.append(
-            f"note: mach-lookup allows global services: {names}{extra}; verify necessity per service"
-        )
+        msgs.append(f"note: mach-lookup allows global services: {names}{extra}; verify necessity per service")
 
     return msgs

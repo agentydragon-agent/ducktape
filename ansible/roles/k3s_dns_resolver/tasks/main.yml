@@ -25,8 +25,8 @@
   ansible.builtin.systemd:
     name: systemd-resolved
     state: restarted
-    enabled: yes
-    daemon_reload: yes
+    enabled: true
+    daemon_reload: true
   tags: [k3s, dns]
 
 - name: Wait for systemd-resolved to be ready

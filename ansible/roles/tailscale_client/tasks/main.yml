@@ -6,7 +6,7 @@
     url: https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg
     keyring: /usr/share/keyrings/tailscale-archive-keyring.gpg
     state: present
-  become: yes
+  become: true
   tags: [tailscale, install]
 
 - name: Add tailscale repository
@@ -16,23 +16,23 @@
       https://pkgs.tailscale.com/stable/ubuntu jammy main
     state: present
     filename: tailscale
-  become: yes
+  become: true
   tags: [tailscale, install]
 
 - name: Install tailscale
   ansible.builtin.apt:
     name: tailscale
     state: present
-    update_cache: yes
-  become: yes
+    update_cache: true
+  become: true
   tags: [tailscale, install]
 
 - name: Start and enable tailscaled service
   ansible.builtin.systemd:
     name: tailscaled
     state: started
-    enabled: yes
-  become: yes
+    enabled: true
+  become: true
   tags: [tailscale, install]
 
 - name: Check current tailscale status
@@ -85,7 +85,7 @@
           --accept-routes --dry-run 2>&1 \
         || tailscale status 2>&1
       '
-  become: yes
+  become: true
   register: tailscale_info
   failed_when: false
   when: tailscale_registration_required | default(true)
@@ -119,7 +119,7 @@
 - name: Stop existing wireguard if running
   ansible.builtin.command: >-
     timeout {{ tailscale_wg_stop_timeout | default(30) }} systemctl stop wg-quick@wg0
-  become: yes
+  become: true
   register: wg_stop_cmd
   changed_when: wg_stop_cmd.rc == 0
   failed_when: wg_stop_cmd.rc not in [0]
@@ -130,8 +130,8 @@
   ansible.builtin.systemd:
     name: "wg-quick@wg0"
     state: stopped
-    enabled: no
-  become: yes
+    enabled: false
+  become: true
   failed_when: false
   when: tailscale_registration_required | default(true)
   tags: [tailscale, migrate]
@@ -144,7 +144,7 @@
         --hostname={{ inventory_hostname }} \
         --accept-routes{% if tailscale_authkey | default('') | trim %}
         --authkey {{ tailscale_authkey | trim }}{% endif %}
-  become: yes
+  become: true
   register: tailscale_up
   changed_when: tailscale_up.rc == 0
   failed_when: false
@@ -177,7 +177,7 @@
         --login-server={{ tailscale_client_headscale_server_url }} \
         --hostname={{ inventory_hostname }} \
         --accept-routes
-  become: yes
+  become: true
   register: tailscale_up_retry
   when:
     - headscale_register_result is defined

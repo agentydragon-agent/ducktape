@@ -19,7 +19,7 @@
   ansible.builtin.systemd:
     name: "{{ item }}"
     state: restarted
-    enabled: yes
+    enabled: true
   loop:
     - k3s
     - k3s-agent

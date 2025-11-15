@@ -58,10 +58,7 @@ class ServerSlotSpec:
 
     async def open(self, stack: AsyncExitStack) -> ServerSlot:
         async with self.lock:
-            logger.info(
-                "[SlotSpec] open: about to enter open_uninitialized; timeout=%s",
-                self.init_timeout_secs,
-            )
+            logger.info("[SlotSpec] open: about to enter open_uninitialized; timeout=%s", self.init_timeout_secs)
             # open_uninitialized follows the canonical protocol and returns an
             # async context manager that yields an UNINITIALIZED ClientSession when
             # entered. Enter it via the provided AsyncExitStack so the same lifetime
@@ -73,13 +70,8 @@ class ServerSlotSpec:
                     logger.info("[SlotSpec] calling initialize (no timeout)")
                     init = await sess.initialize()
                 else:
-                    logger.info(
-                        "[SlotSpec] calling initialize with timeout=%s",
-                        self.init_timeout_secs,
-                    )
-                    init = await asyncio.wait_for(
-                        sess.initialize(), timeout=float(self.init_timeout_secs)
-                    )
+                    logger.info("[SlotSpec] calling initialize with timeout=%s", self.init_timeout_secs)
+                    init = await asyncio.wait_for(sess.initialize(), timeout=float(self.init_timeout_secs))
                 logger.info("[SlotSpec] initialize ok")
             except Exception as e:
                 logger.exception("[SlotSpec] initialize failed: %s", e)

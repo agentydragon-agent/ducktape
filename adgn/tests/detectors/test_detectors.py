@@ -52,14 +52,14 @@ def _run_case(tmp_path: Path, pkg_base: str, fixture_file: str, detector: str):
     return run_all(root, detector_names=[detector])
 
 
-@pytest.mark.parametrize("fixture_file,detector,expected_property", BAD_CASES)
+@pytest.mark.parametrize(("fixture_file", "detector", "expected_property"), BAD_CASES)
 def test_detectors_bad(tmp_path: Path, fixture_file: str, detector: str, expected_property: str):
     detections = _run_case(tmp_path, "tests.detectors.fixtures.bad", fixture_file, detector)
     assert detections, f"no detections for {detector}"
     assert any(d.property == expected_property for d in detections)
 
 
-@pytest.mark.parametrize("fixture_file,detector", OK_CASES)
+@pytest.mark.parametrize(("fixture_file", "detector"), OK_CASES)
 def test_detectors_ok(tmp_path: Path, fixture_file: str, detector: str):
     detections = _run_case(tmp_path, "tests.detectors.fixtures.ok", fixture_file, detector)
     assert not detections, f"unexpected detections for {detector}: {detections}"

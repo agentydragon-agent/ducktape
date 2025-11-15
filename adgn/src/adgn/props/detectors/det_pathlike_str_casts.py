@@ -52,11 +52,7 @@ def _find_in_file(path: Path) -> list[Detection]:
             # Any arg subtree contains str(...)? Handle lists/tuples/dicts/kwargs recursively.
             def has_str_call(node: ast.AST) -> bool:
                 for sub in ast.walk(node):
-                    if (
-                        isinstance(sub, ast.Call)
-                        and isinstance(sub.func, ast.Name)
-                        and sub.func.id == "str"
-                    ):
+                    if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id == "str":
                         return True
                 return False
 
@@ -71,9 +67,9 @@ def _find_in_file(path: Path) -> list[Detection]:
                         ranges=[LineRange(start_line=int(sl), end_line=int(el))],
                         detector=DET_NAME,
                         confidence=0.9,
-                        message="Casting PathLike to str for a PathLike‑accepting API; pass Path directly.",
+                        message="Casting PathLike to str for a PathLike-accepting API; pass Path directly.",
                         snippet=read_snippet(path, sl, el, context=0),
-                    ),
+                    )
                 )
     return out
 

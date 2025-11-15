@@ -96,9 +96,7 @@ async def _on_response(resp: httpx.Response, *, path: Path) -> None:  # pragma: 
     )
 
 
-async def _log_request_to_logger(
-    req: httpx.Request, *, logger: logging.Logger
-) -> None:  # pragma: no cover - HTTP hook
+async def _log_request_to_logger(req: httpx.Request, *, logger: logging.Logger) -> None:  # pragma: no cover - HTTP hook
     headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in req.headers.items()}
     try:
         body = req.content or b""
@@ -157,10 +155,7 @@ def make_logged_async_openai(log_path: Path | str) -> AsyncOpenAI:
     """
     p = Path(log_path)
     http = httpx.AsyncClient(
-        event_hooks={
-            "request": [partial(_on_request, path=p)],
-            "response": [partial(_on_response, path=p)],
-        }
+        event_hooks={"request": [partial(_on_request, path=p)], "response": [partial(_on_response, path=p)]}
     )
     return AsyncOpenAI(http_client=http)
 

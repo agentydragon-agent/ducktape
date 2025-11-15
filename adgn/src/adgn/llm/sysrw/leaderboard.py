@@ -152,9 +152,7 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     ci95_val, lcb, ucb = _derive_ci_from_summary(summ)
 
     tooling = summ.tooling
-    with_tools = (
-        float(tooling.with_tools_pct) if tooling and tooling.with_tools_pct is not None else 0.0
-    )
+    with_tools = float(tooling.with_tools_pct) if tooling and tooling.with_tools_pct is not None else 0.0
 
     # Extract models (sampler/evaluator) for display; do not persist/modify files here
     sampler_model: str | None = None
@@ -188,7 +186,7 @@ def format_text(rows: list[Row]) -> str:
     for r in rows:
         tools_pct = f"{r.with_tools_pct * 100:.1f}%"
         out_lines.append(
-            f"{r.mean:.2f} ± {r.ci95:.2f} (n={r.n:>3}, tools={tools_pct:>6})  run={r.run}  prompt={r.template_label}",
+            f"{r.mean:.2f} ± {r.ci95:.2f} (n={r.n:>3}, tools={tools_pct:>6})  run={r.run}  prompt={r.template_label}"
         )
     return "\n".join(out_lines)
 
@@ -198,7 +196,7 @@ def format_md(rows: list[Row]) -> str:
     lines = [header]
     for r in rows:
         lines.append(
-            f"| {r.mean:.2f} | {r.ci95:.2f} | {r.n} | {r.with_tools_pct * 100:.1f}% | {r.run} | {r.template_label} |",
+            f"| {r.mean:.2f} | {r.ci95:.2f} | {r.n} | {r.with_tools_pct * 100:.1f}% | {r.run} | {r.template_label} |"
         )
     return "\n".join(lines)
 
@@ -275,10 +273,7 @@ def format_rich_table(rows: list[Row]) -> Table:
 
 
 def generate(
-    runs_dir: Path,
-    sort_key: str = "mean",
-    asc: bool = False,
-    limit: int | None = None,
+    runs_dir: Path, sort_key: str = "mean", asc: bool = False, limit: int | None = None
 ) -> tuple[Table, list[str], list[str]]:
     # Build mapping from packaged templates/ only (stable names)
     known = load_known_templates()
@@ -295,9 +290,7 @@ def generate(
 
     # Determine which packaged templates have no eval runs
     known_hash_to_name: dict[str, str] = {sha1_text(text): name for text, name in known.items()}
-    missing_templates: list[str] = [
-        name for h, name in known_hash_to_name.items() if h not in by_hash
-    ]
+    missing_templates: list[str] = [name for h, name in known_hash_to_name.items() if h not in by_hash]
 
     # Row sort key
     def _row_key(r: Row) -> float:
@@ -326,30 +319,21 @@ def generate(
     errors: list[str] = []
     for r in flat_rows:
         if r.template_error:
-            errors.append(
-                f"{r.run}: {_relpath(r.template_label)} — {r.template_error_exc}",
-            )
+            errors.append(f"{r.run}: {_relpath(r.template_label)} — {r.template_error_exc}")
 
     return table, errors, missing_templates
 
 
 def parse_args() -> argparse.Namespace:
     # Note: retained for direct CLI use via adgn-sysrw leaderboard; not used as module API.
-    ap = argparse.ArgumentParser(
-        description="Report leaderboard for eval runs (runs/<ts> → summary).",
-    )
+    ap = argparse.ArgumentParser(description="Report leaderboard for eval runs (runs/<ts> → summary).")
     ap.add_argument(
         "--runs-dir",
         type=Path,
         default=Path(__file__).parent / "runs",
         help="Directory containing run folders (default: ./runs)",
     )
-    ap.add_argument(
-        "--sort",
-        choices=["mean", "lcb", "ucb"],
-        default="mean",
-        help="Sort key (default: mean)",
-    )
+    ap.add_argument("--sort", choices=["mean", "lcb", "ucb"], default="mean", help="Sort key (default: mean)")
     ap.add_argument("--asc", action="store_true", default=False, help="Sort ascending")
     ap.add_argument("--limit", type=int, default=None)
     return ap.parse_args()
@@ -359,10 +343,7 @@ def main() -> int:
     args = parse_args()
     try:
         table, errors, missing = generate(
-            runs_dir=args.runs_dir,
-            sort_key=args.sort,
-            asc=bool(args.asc),
-            limit=args.limit,
+            runs_dir=args.runs_dir, sort_key=args.sort, asc=bool(args.asc), limit=args.limit
         )
     except Exception as e:
         print(str(e), file=sys.stderr)
@@ -370,9 +351,7 @@ def main() -> int:
     console = Console()
     console.print(table)
     if missing:
-        console.print(
-            "Templates not yet evaluated:\n" + "\n".join(f"- {name}" for name in sorted(missing)),
-        )
+        console.print("Templates not yet evaluated:\n" + "\n".join(f"- {name}" for name in sorted(missing)))
     for err in errors:
         console.print(f"[red]{err}[/]")
     return 0
@@ -408,15 +387,11 @@ def _derive_ci_from_summary(summary: EvalSummary) -> tuple[float, float | None, 
         ucb = float(summary.ucb)
 
     if ci95_half is None:
-        ci95_half = (
-            max(abs(mean - lcb), abs(ucb - mean)) if lcb is not None and ucb is not None else 0.0
-        )
+        ci95_half = max(abs(mean - lcb), abs(ucb - mean)) if lcb is not None and ucb is not None else 0.0
     return ci95_half, lcb, ucb
 
 
-def _bounds_or_fallback(
-    mean: float, ci95: float, lcb: float | None, ucb: float | None
-) -> tuple[float, float]:
+def _bounds_or_fallback(mean: float, ci95: float, lcb: float | None, ucb: float | None) -> tuple[float, float]:
     """Return concrete (lcb, ucb), using mean±ci95 if bounds are missing."""
     lcb_val = lcb if lcb is not None else (mean - ci95)
     ucb_val = ucb if ucb is not None else (mean + ci95)

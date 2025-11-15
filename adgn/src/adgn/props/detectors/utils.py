@@ -27,9 +27,7 @@ def run_file_detector(root: Path, finder: Callable[[Path], list[Detection]]) -> 
     return detections
 
 
-def make_root_detector(
-    finder: Callable[[Path], list[Detection]],
-) -> Callable[[Path], list[Detection]]:
+def make_root_detector(finder: Callable[[Path], list[Detection]]) -> Callable[[Path], list[Detection]]:
     """Wrap a per-file finder into a repository-level detector."""
 
     def _run(root: Path) -> list[Detection]:

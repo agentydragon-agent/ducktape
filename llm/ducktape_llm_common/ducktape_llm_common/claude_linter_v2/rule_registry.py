@@ -5,6 +5,7 @@ No string parsing or field name manipulation should be used to determine rule pr
 """
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 
 @dataclass(frozen=True)
@@ -188,8 +189,8 @@ class RuleRegistry:
     )
 
     # Create lookup tables
-    _BY_KEY: dict[str, RuleDefinition] = {}
-    _BY_CODE: dict[tuple[str, str], RuleDefinition] = {}
+    _BY_KEY: ClassVar[dict[str, RuleDefinition]] = {}
+    _BY_CODE: ClassVar[dict[tuple[str, str], RuleDefinition]] = {}
     _INITIALIZED = False
 
     @classmethod
@@ -284,9 +285,9 @@ def map_violation_to_rule_key(violation) -> str | None:
         # Check the message to determine which specific rule
         if "hasattr" in violation.message:
             return "python.hasattr"
-        elif "getattr" in violation.message:
+        if "getattr" in violation.message:
             return "python.getattr"
-        elif "setattr" in violation.message:
+        if "setattr" in violation.message:
             return "python.setattr"
 
     return None

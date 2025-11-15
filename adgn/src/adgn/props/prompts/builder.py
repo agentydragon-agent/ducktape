@@ -27,22 +27,10 @@ def build_role_prompt(
     """
     # Compute the schemas map once here; templates pick header_schema_names
     schemas_json = build_input_schemas_json(
-        [
-            Occurrence,
-            LineRange,
-            IssueCore,
-            ReportedIssue,
-            CriticSubmitPayload,
-            GradeMetrics,
-            GradeSubmitPayload,
-        ],
+        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload]
     )
 
-    template = (
-        "discover.j2.md"
-        if mode == "discover"
-        else ("open.j2.md" if mode == "open" else "find.j2.md")
-    )
+    template = "discover.j2.md" if mode == "discover" else ("open.j2.md" if mode == "open" else "find.j2.md")
     return render_prompt_template(
         template,
         scope_text=scope_text,
@@ -68,21 +56,11 @@ def build_check_prompt(
     - Pure compose (no agent run)
     """
     mode: Literal["open", "find"] = "open" if allow_general_findings else "find"
-    return build_role_prompt(
-        mode,
-        scope_text,
-        wiring=wiring,
-        supplemental_text=None,
-        available_tools=available_tools,
-    )
+    return build_role_prompt(mode, scope_text, wiring=wiring, supplemental_text=None, available_tools=available_tools)
 
 
 def build_grade_prompt(
-    scope_text: str,
-    canonical_text: str,
-    critique_text: str,
-    *,
-    wiring: PropertiesDockerWiring,
+    scope_text: str, canonical_text: str, critique_text: str, *, wiring: PropertiesDockerWiring
 ) -> str:
     """Compose the grade prompt (pure).
 
@@ -90,15 +68,7 @@ def build_grade_prompt(
     - Returns the composed Markdown string
     """
     schemas_json = build_input_schemas_json(
-        [
-            Occurrence,
-            LineRange,
-            IssueCore,
-            ReportedIssue,
-            CriticSubmitPayload,
-            GradeMetrics,
-            GradeSubmitPayload,
-        ],
+        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload]
     )
     return render_prompt_template(
         "grade.j2.md",
@@ -196,7 +166,7 @@ def build_grade_from_json_prompt(
             GradeMetrics,
             GradeSubmitInput,
             CoverageCredit,
-        ],
+        ]
     )
     # Pass shared ID prefix constants into the template to avoid drift
 

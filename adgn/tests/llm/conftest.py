@@ -23,17 +23,13 @@ def temp_repo(author_name: str, author_email: str, tmp_path: Path):
     """Temporary git repository for LLM tests (separate from WT helpers)."""
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir(parents=True, exist_ok=True)
-    repo = git_repo_utils._init_repo(str(repo_dir), name=author_name, email=author_email)
-    yield repo
+    return git_repo_utils._init_repo(str(repo_dir), name=author_name, email=author_email)
 
 
 @pytest.fixture
 def repo_helpers() -> dict[str, Callable]:
     """Provide stage/commit helpers to tests without re-defining them inline."""
-    return {
-        "stage": git_repo_utils._stage,
-        "commit": git_repo_utils._commit,
-    }
+    return {"stage": git_repo_utils._stage, "commit": git_repo_utils._commit}
 
 
 @pytest.fixture
@@ -67,4 +63,3 @@ def patch_fake_editor(monkeypatch):
 
     monkeypatch.setattr("adgn.git_commit_ai.cli._get_editor", _fake_get_editor)
     monkeypatch.setattr("asyncio.create_subprocess_shell", _fake_shell)
-    return None

@@ -1,8 +1,8 @@
 """Test for key_path_auth that doesn't depend on complex fixtures."""
 
+from datetime import datetime
 import logging
 import uuid
-from datetime import datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,11 +22,7 @@ async def test_key_path_auth_success(db_session: AsyncSession):
     unique_id = uuid.uuid4().hex[:8]
     key_value = f"test-key-{unique_id}"
 
-    key = AuthKey(
-        key_value=key_value,
-        description=f"Test key {unique_id}",
-        created_at=datetime.now(),
-    )
+    key = AuthKey(key_value=key_value, description=f"Test key {unique_id}", created_at=datetime.now())
 
     # Add and commit
     db_session.add(key)

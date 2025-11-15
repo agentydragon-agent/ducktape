@@ -3,4 +3,3 @@ def f():
     if x is None or x == "":
         return True
     return False
-

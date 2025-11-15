@@ -21,11 +21,7 @@ class DirectExecArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def make_direct_exec_server(
-    name: str = "exec",
-    *,
-    default_cwd: Path | None = None,
-) -> NotifyingFastMCP:
+def make_direct_exec_server(name: str = "exec", *, default_cwd: Path | None = None) -> NotifyingFastMCP:
     """FastMCP server exposing a direct (unsandboxed) exec tool.
 
     - Tool name: exec(cmd, max_bytes, cwd?, timeout_ms, stdin_text?)
@@ -42,23 +38,13 @@ def make_direct_exec_server(
             cwd_val = default_cwd
 
         timeout_s = max(0.001, input.timeout_ms / 1000.0)
-        outcome = await run_proc(
-            input.cmd,
-            timeout_s,
-            cwd=cwd_val,
-            stdin=input.stdin_text,
-        )
+        outcome = await run_proc(input.cmd, timeout_s, cwd=cwd_val, stdin=input.stdin_text)
         return render_outcome_to_result(outcome, input.max_bytes)
 
     return mcp
 
 
-async def attach_direct_exec(
-    comp: Compositor,
-    *,
-    name: str = "exec",
-    default_cwd: Path | None = None,
-):
+async def attach_direct_exec(comp: Compositor, *, name: str = "exec", default_cwd: Path | None = None):
     """Attach a direct (unsandboxed) exec server in-proc."""
     server = make_direct_exec_server(name=name, default_cwd=default_cwd)
     await comp.mount_inproc(name, server)

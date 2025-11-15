@@ -10,9 +10,7 @@ from adgn.openai_utils.model import FakeOpenAIModel
 
 
 def test_typer_cli_invokes_execute_without_sys(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    responses_factory,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, responses_factory
 ) -> None:
     # Prepare a file path and a prompt
     p = tmp_path / "file.txt"

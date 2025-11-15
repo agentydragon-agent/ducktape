@@ -1,14 +1,6 @@
 import pytest
 
-from adgn.seatbelt.model import (
-    Action,
-    DefaultBehavior,
-    FileOp,
-    FileRule,
-    ProcessRule,
-    SBPLPolicy,
-    Subpath,
-)
+from adgn.seatbelt.model import Action, DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from adgn.seatbelt.runner import run_sandboxed_async
 from tests._markers import REQUIRES_SANDBOX_EXEC
 
@@ -28,16 +20,8 @@ def policy_deny_users() -> SBPLPolicy:
     )
     # Carve-out deny /Users
     base.files += [
-        FileRule(
-            op=FileOp.FILE_READ_STAR,
-            action=Action.DENY,
-            filters=[Subpath(subpath="/Users")],
-        ),
-        FileRule(
-            op=FileOp.FILE_READ_METADATA,
-            action=Action.DENY,
-            filters=[Subpath(subpath="/Users")],
-        ),
+        FileRule(op=FileOp.FILE_READ_STAR, action=Action.DENY, filters=[Subpath(subpath="/Users")]),
+        FileRule(op=FileOp.FILE_READ_METADATA, action=Action.DENY, filters=[Subpath(subpath="/Users")]),
     ]
     return base
 

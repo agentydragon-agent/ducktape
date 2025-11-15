@@ -13,16 +13,8 @@ from .server import make_gitea_mirror_server
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run gitea_mirror MCP over stdio")
-    parser.add_argument(
-        "--base-url",
-        default=os.environ.get("GITEA_BASE_URL"),
-        help="Gitea base URL",
-    )
-    parser.add_argument(
-        "--token",
-        default=os.environ.get("GITEA_TOKEN"),
-        help="Gitea API token",
-    )
+    parser.add_argument("--base-url", default=os.environ.get("GITEA_BASE_URL"), help="Gitea base URL")
+    parser.add_argument("--token", default=os.environ.get("GITEA_TOKEN"), help="Gitea API token")
     parser.add_argument(
         "--token-file",
         default=os.environ.get("GITEA_TOKEN_FILE"),
@@ -65,16 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         else float(os.environ.get("GITEA_POLL_INTERVAL_SECS", "2.0"))
     )
     poll_timeout = (
-        args.poll_timeout
-        if args.poll_timeout is not None
-        else float(os.environ.get("GITEA_POLL_TIMEOUT_SECS", "60.0"))
+        args.poll_timeout if args.poll_timeout is not None else float(os.environ.get("GITEA_POLL_TIMEOUT_SECS", "60.0"))
     )
 
     server = make_gitea_mirror_server(
-        base_url=args.base_url,
-        token=token,
-        poll_interval_secs=poll_interval,
-        poll_timeout_secs=poll_timeout,
+        base_url=args.base_url, token=token, poll_interval_secs=poll_interval, poll_timeout_secs=poll_timeout
     )
 
     server.run("stdio")

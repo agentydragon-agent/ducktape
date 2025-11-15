@@ -3,12 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from .claude_code_api import (
-    BaseResponse,
-    PostToolResponse,
-    PreToolResponse,
-    StopResponse,
-)
+from .claude_code_api import BaseResponse, PostToolResponse, PreToolResponse, StopResponse
 
 
 # Outcome types - more user-friendly representations
@@ -19,7 +14,6 @@ class HookOutcome(ABC):
     @abstractmethod
     def to_claude_response(self) -> BaseResponse:
         """Convert to Claude's expected response model."""
-        pass
 
 
 # PreToolUse Outcomes

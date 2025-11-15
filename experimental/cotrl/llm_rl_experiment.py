@@ -2,11 +2,11 @@
 """Test language models as RL agents with raw numerical data."""
 
 import asyncio
-import json
-import os
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
+import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -114,14 +114,7 @@ class ExperimentLogger:
         # Track experiment start time
         self.start_time = datetime.now()
 
-    async def log_episode(
-        self,
-        model: str,
-        env_name: str,
-        run_num: int,
-        episode_num: int,
-        episode: Episode,
-    ):
+    async def log_episode(self, model: str, env_name: str, run_num: int, episode_num: int, episode: Episode):
         """Log episode data as it completes."""
         episode_data = {
             "timestamp": datetime.now().isoformat(),
@@ -132,10 +125,7 @@ class ExperimentLogger:
             "total_reward": episode.total_reward,
             "num_steps": len(episode.steps),
             "states": [
-                step.state.tolist()
-                if isinstance(step.state, np.ndarray)
-                else step.state
-                for step in episode.steps
+                step.state.tolist() if isinstance(step.state, np.ndarray) else step.state for step in episode.steps
             ],
             "actions": [step.action for step in episode.steps],
             "rewards": [step.reward for step in episode.steps],
@@ -144,15 +134,7 @@ class ExperimentLogger:
         async with aiofiles.open(self.episode_log, "a") as f:
             await f.write(json.dumps(episode_data) + "\n")
 
-    async def log_step(
-        self,
-        model: str,
-        env_name: str,
-        run_num: int,
-        episode_num: int,
-        step_num: int,
-        step: Step,
-    ):
+    async def log_step(self, model: str, env_name: str, run_num: int, episode_num: int, step_num: int, step: Step):
         """Log individual step data (optional, for detailed analysis)."""
         step_data = {
             "timestamp": datetime.now().isoformat(),
@@ -161,9 +143,7 @@ class ExperimentLogger:
             "run_num": run_num,
             "episode_num": episode_num,
             "step_num": step_num,
-            "state": step.state.tolist()
-            if isinstance(step.state, np.ndarray)
-            else step.state,
+            "state": step.state.tolist() if isinstance(step.state, np.ndarray) else step.state,
             "action": step.action,
             "reward": step.reward,
             "done": step.done,
@@ -219,11 +199,7 @@ Respond with ONLY a single integer representing your chosen action.
 Let's begin."""
 
     def _create_step_prompt(
-        self,
-        state: np.ndarray,
-        reward: float,
-        action_space_size: int,
-        first_step: bool = False,
+        self, state: np.ndarray, reward: float, action_space_size: int, first_step: bool = False
     ) -> str:
         state_str = np.array2string(state, precision=4, suppress_small=True)
 
@@ -237,20 +213,11 @@ Available actions: {", ".join(str(i) for i in range(action_space_size))}
 Choose action:"""
 
     async def get_action(
-        self,
-        state: np.ndarray,
-        reward: float,
-        action_space_size: int,
-        first_step: bool = False,
+        self, state: np.ndarray, reward: float, action_space_size: int, first_step: bool = False
     ) -> int:
         """Get action from LLM based on raw state data."""
         if not self.conversation_history:
-            self.conversation_history.append(
-                {
-                    "role": "system",
-                    "content": self._create_initial_prompt(),
-                },
-            )
+            self.conversation_history.append({"role": "system", "content": self._create_initial_prompt()})
 
         prompt = self._create_step_prompt(state, reward, action_space_size, first_step)
         self.conversation_history.append({"role": "user", "content": prompt})
@@ -258,16 +225,11 @@ Choose action:"""
         if self.model == "o1-mini":
             # o1 models don't support temperature parameter
             response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=self.conversation_history,
-                max_tokens=10,
+                model=self.model, messages=self.conversation_history, max_tokens=10
             )
         else:
             response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=self.conversation_history,
-                temperature=1.0,
-                max_tokens=10,
+                model=self.model, messages=self.conversation_history, temperature=1.0, max_tokens=10
             )
 
         action_str = response.choices[0].message.content.strip()
@@ -275,17 +237,10 @@ Choose action:"""
 
         # Validate action
         if 0 <= action < action_space_size:
-            self.conversation_history.append(
-                {
-                    "role": "assistant",
-                    "content": action_str,
-                },
-            )
+            self.conversation_history.append({"role": "assistant", "content": action_str})
             return action
 
-        raise ValueError(
-            f"LLM returned invalid action {action} (must be 0-{action_space_size - 1})",
-        )
+        raise ValueError(f"LLM returned invalid action {action} (must be 0-{action_space_size - 1})")
 
     def reset(self):
         """Reset conversation history for new episode."""
@@ -303,9 +258,7 @@ async def run_episode(
 ) -> Episode:
     """Run a single episode with the agent."""
     prefix = f"[{exp_id}]" if exp_id > 0 else ""
-    print(
-        f"{prefix} {model} - {env.env_name} - Episode {episode_num + 1}/{EPISODES_PER_RUN}",
-    )
+    print(f"{prefix} {model} - {env.env_name} - Episode {episode_num + 1}/{EPISODES_PER_RUN}")
 
     agent.reset()
     state = env.reset()
@@ -333,7 +286,7 @@ async def run_episode(
         action = await agent.get_action(state, reward, env.action_space_size)
 
     print(
-        f"{prefix} {model} - {env.env_name} - Episode {episode_num + 1} complete: {len(steps)} steps, reward={total_reward:.2f}",
+        f"{prefix} {model} - {env.env_name} - Episode {episode_num + 1} complete: {len(steps)} steps, reward={total_reward:.2f}"
     )
 
     episode = Episode(steps, total_reward)
@@ -362,22 +315,11 @@ async def run_experiment(
         try:
             # Add 120 second timeout per episode
             episode = await asyncio.wait_for(
-                run_episode(
-                    agent,
-                    env,
-                    episode_num,
-                    model,
-                    experiment_id,
-                    logger,
-                    run_num,
-                ),
-                timeout=120.0,
+                run_episode(agent, env, episode_num, model, experiment_id, logger, run_num), timeout=120.0
             )
             episodes.append(episode)
         except TimeoutError:
-            print(
-                f"[{experiment_id}] {model} - {env_name} - Episode {episode_num + 1} TIMEOUT after 120s",
-            )
+            print(f"[{experiment_id}] {model} - {env_name} - Episode {episode_num + 1} TIMEOUT after 120s")
             # Re-raise to fail the whole run
             raise
 
@@ -397,9 +339,7 @@ def plot_results(all_runs: list[Run]):
         axes = axes.reshape(-1, 1)
 
     # Organize data by model and environment
-    results: dict[str, dict[str, list[list[float]]]] = defaultdict(
-        lambda: defaultdict(list),
-    )
+    results: dict[str, dict[str, list[list[float]]]] = defaultdict(lambda: defaultdict(list))
 
     for run in all_runs:
         # Extract cumulative rewards over time
@@ -435,9 +375,7 @@ def plot_results(all_runs: list[Run]):
                 for reward_list in runs_data:
                     if len(reward_list) < max_len:
                         # Pad with last value
-                        padded = reward_list + [reward_list[-1]] * (
-                            max_len - len(reward_list)
-                        )
+                        padded = reward_list + [reward_list[-1]] * (max_len - len(reward_list))
                     else:
                         padded = reward_list
                     padded_runs.append(padded)
@@ -458,13 +396,7 @@ def plot_results(all_runs: list[Run]):
                     ax.plot(timesteps, run, alpha=0.2, color="gray")
 
                 # Plot mean with confidence interval
-                ax.plot(
-                    timesteps,
-                    mean_rewards,
-                    color="blue",
-                    linewidth=2,
-                    label="Mean",
-                )
+                ax.plot(timesteps, mean_rewards, color="blue", linewidth=2, label="Mean")
                 ax.fill_between(timesteps, ci_lower, ci_upper, alpha=0.3, color="blue")
 
             # Set labels and title
@@ -517,18 +449,10 @@ async def main():
 
     async def run_with_semaphore(model, env_name, run_num, exp_id):
         async with semaphore:
-            return await run_experiment(
-                model,
-                env_name,
-                run_num,
-                exp_id,
-                len(experiments),
-                logger,
-            )
+            return await run_experiment(model, env_name, run_num, exp_id, len(experiments), logger)
 
     tasks = [
-        run_with_semaphore(model, env_name, run_num, i + 1)
-        for i, (model, env_name, run_num) in enumerate(experiments)
+        run_with_semaphore(model, env_name, run_num, i + 1) for i, (model, env_name, run_num) in enumerate(experiments)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -539,9 +463,7 @@ async def main():
             model_idx = i // (len(ENVIRONMENTS) * RUNS_PER_EXPERIMENT)
             env_idx = (i // RUNS_PER_EXPERIMENT) % len(ENVIRONMENTS)
             run_idx = i % RUNS_PER_EXPERIMENT
-            print(
-                f"Error in {MODELS[model_idx]} on {ENVIRONMENTS[env_idx]} run {run_idx}: {result}",
-            )
+            print(f"Error in {MODELS[model_idx]} on {ENVIRONMENTS[env_idx]} run {run_idx}: {result}")
         else:
             all_runs.append(result)
 
@@ -555,17 +477,9 @@ async def main():
     all_trajectories = []
 
     for run in all_runs:
-        run_data = {
-            "model": run.model,
-            "environment": run.environment,
-            "episodes": [],
-        }
+        run_data = {"model": run.model, "environment": run.environment, "episodes": []}
         for episode_idx, episode in enumerate(run.episodes):
-            ep_data = {
-                "total_reward": episode.total_reward,
-                "num_steps": len(episode.steps),
-                "steps": [],
-            }
+            ep_data = {"total_reward": episode.total_reward, "num_steps": len(episode.steps), "steps": []}
 
             # Create trajectory record for detailed analysis
             trajectory = {
@@ -582,22 +496,16 @@ async def main():
                 # Full step data for main results
                 ep_data["steps"].append(
                     {
-                        "state": step.state.tolist()
-                        if isinstance(step.state, np.ndarray)
-                        else step.state,
+                        "state": step.state.tolist() if isinstance(step.state, np.ndarray) else step.state,
                         "action": step.action,
                         "reward": step.reward,
                         "done": step.done,
                         "truncated": step.truncated,
-                    },
+                    }
                 )
 
                 # Trajectory data for analysis
-                trajectory["states"].append(
-                    step.state.tolist()
-                    if isinstance(step.state, np.ndarray)
-                    else step.state,
-                )
+                trajectory["states"].append(step.state.tolist() if isinstance(step.state, np.ndarray) else step.state)
                 trajectory["actions"].append(step.action)
                 trajectory["rewards"].append(step.reward)
 
@@ -625,15 +533,8 @@ async def main():
 
     # Save plots to log directory too
     plot_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    plt.savefig(
-        logger.log_dir / f"llm_rl_results_{plot_timestamp}.png",
-        dpi=300,
-        bbox_inches="tight",
-    )
-    plt.savefig(
-        logger.log_dir / f"llm_rl_results_{plot_timestamp}.pdf",
-        bbox_inches="tight",
-    )
+    plt.savefig(logger.log_dir / f"llm_rl_results_{plot_timestamp}.png", dpi=300, bbox_inches="tight")
+    plt.savefig(logger.log_dir / f"llm_rl_results_{plot_timestamp}.pdf", bbox_inches="tight")
 
     print(f"\nExperiment complete! Logs saved to: {logger.get_log_directory()}")
 

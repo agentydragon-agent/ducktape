@@ -19,7 +19,7 @@
     name: aw-tunnel.service
     scope: user
     state: started
-    enabled: yes
+    enabled: true
   tags: activitywatch
 
 # aw-watcher-ask --interval 45m --jitter 15m --question "How focused are you? (1-5)"

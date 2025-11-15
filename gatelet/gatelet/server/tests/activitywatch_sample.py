@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 # Sample buckets used for ActivityWatch tests. Titles were redacted.
 SAMPLE_BUCKETS: dict[str, dict[str, object]] = {
@@ -39,13 +39,13 @@ SAMPLE_BUCKETS: dict[str, dict[str, object]] = {
 SAMPLE_WINDOW_EVENTS = [
     {
         "id": 1,
-        "timestamp": datetime(2025, 5, 22, 9, 50, 0, tzinfo=timezone.utc),
+        "timestamp": datetime(2025, 5, 22, 9, 50, 0, tzinfo=UTC),
         "duration": timedelta(seconds=120),
         "data": {"app": "ExampleBrowser", "title": "Example Domain"},
     },
     {
         "id": 2,
-        "timestamp": datetime(2025, 5, 22, 9, 52, 0, tzinfo=timezone.utc),
+        "timestamp": datetime(2025, 5, 22, 9, 52, 0, tzinfo=UTC),
         "duration": timedelta(seconds=60),
         "data": {"app": "Editor", "title": "README.md"},
     },
@@ -54,13 +54,13 @@ SAMPLE_WINDOW_EVENTS = [
 SAMPLE_WEB_EVENTS = [
     {
         "id": 10,
-        "timestamp": datetime(2025, 5, 22, 9, 50, 0, tzinfo=timezone.utc),
+        "timestamp": datetime(2025, 5, 22, 9, 50, 0, tzinfo=UTC),
         "duration": timedelta(seconds=90),
         "data": {"url": "https://example.com", "title": "Example"},
     },
     {
         "id": 11,
-        "timestamp": datetime(2025, 5, 22, 9, 51, 30, tzinfo=timezone.utc),
+        "timestamp": datetime(2025, 5, 22, 9, 51, 30, tzinfo=UTC),
         "duration": timedelta(seconds=30),
         "data": {"url": "https://wikipedia.org", "title": "Wikipedia"},
     },
@@ -69,13 +69,13 @@ SAMPLE_WEB_EVENTS = [
 SAMPLE_AFK_EVENTS = [
     {
         "id": 20,
-        "timestamp": datetime(2025, 5, 22, 9, 50, 0, tzinfo=timezone.utc),
+        "timestamp": datetime(2025, 5, 22, 9, 50, 0, tzinfo=UTC),
         "duration": timedelta(seconds=180),
         "data": {"status": "not-afk"},
     },
     {
         "id": 21,
-        "timestamp": datetime(2025, 5, 22, 9, 53, 0, tzinfo=timezone.utc),
+        "timestamp": datetime(2025, 5, 22, 9, 53, 0, tzinfo=UTC),
         "duration": timedelta(seconds=30),
         "data": {"status": "afk"},
     },

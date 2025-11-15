@@ -69,11 +69,7 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
                     # shell-join with conservative quoting
                     parts: list[str] = []
                     for a in argv:
-                        if (
-                            isinstance(a, str)
-                            and a
-                            and all(ch.isalnum() or ch in "_./-" for ch in a)
-                        ):
+                        if isinstance(a, str) and a and all(ch.isalnum() or ch in "_./-" for ch in a):
                             parts.append(a)
                         else:
                             s = str(a).replace("'", "'\\''")
@@ -98,9 +94,7 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
     if isinstance(evt, FunctionCallOutput):
         res = evt.result
         if not isinstance(res, mcp_types.CallToolResult):
-            raise TypeError(
-                f"FunctionCallOutput.result must be mcp.types.CallToolResult, got {type(res).__name__}"
-            )
+            raise TypeError(f"FunctionCallOutput.result must be mcp.types.CallToolResult, got {type(res).__name__}")
         structured = res.structuredContent
         stdout = stderr = None
         exit_code = None
@@ -118,14 +112,11 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
         is_error = bool(res.isError)
         # If tool reported an error without structured streams, surface a message via stderr
         error_message: str | None = None
-        if is_error and not stderr:
-            if isinstance(structured, dict):
-                # Best-effort message discovery for common fields
-                msg = (
-                    structured.get("error") or structured.get("message") or structured.get("detail")
-                )
-                if isinstance(msg, str):
-                    error_message = msg
+        if is_error and not stderr and isinstance(structured, dict):
+            # Best-effort message discovery for common fields
+            msg = structured.get("error") or structured.get("message") or structured.get("detail")
+            if isinstance(msg, str):
+                error_message = msg
 
         next_state = update_tool_exec_stream(
             state,
@@ -151,12 +142,7 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
 
         # Serialize typed result once at the boundary for JSON display
         result_payload = as_minimal_json(res)
-        return update_tool_json_output(
-            state,
-            evt.call_id,
-            result=result_payload,
-            is_error=is_error,
-        )
+        return update_tool_json_output(state, evt.call_id, result=result_payload, is_error=is_error)
 
     # Unknown event → no-op
     return state

@@ -3,9 +3,6 @@ from __future__ import annotations
 from concurrent.futures import CancelledError
 
 import pytest
-
-from adgn.agent.server import protocol
-from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ws_helpers import (
     assert_payloads_have,
     has_finished_run,
@@ -14,6 +11,9 @@ from tests.agent.ws_helpers import (
     is_ui_message,
 )
 from tests.llm.support.openai_mock import make_mock
+
+from adgn.agent.server import protocol
+from adgn.mcp._shared.naming import build_mcp_function
 
 Envelope = protocol.Envelope
 
@@ -25,11 +25,7 @@ class DummyClient:
 
 
 @pytest.mark.timeout(15)
-def test_ws_tool_multiturn(
-    responses_factory,
-    make_echo_spec,
-    agent_ws_box,
-) -> None:
+def test_ws_tool_multiturn(responses_factory, make_echo_spec, agent_ws_box) -> None:
     """WS multi-turn: user -> echo tool -> typed MCP result -> UI message."""
 
     state = {"step": 0}
@@ -47,9 +43,7 @@ def test_ws_tool_multiturn(
                 {"mime": "text/markdown", "content": "**hello**"},
                 call_id="call_ui_msg",
             )
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     client = make_mock(responses_create)
 
@@ -65,9 +59,7 @@ def test_ws_tool_multiturn(
             assert_payloads_have(
                 payloads,
                 is_function_call_output(call_id="call_echo", ok=True, echo="hello"),
-                is_function_call_output(
-                    call_id="call_ui_msg", mime="text/markdown", content="**hello**"
-                ),
+                is_function_call_output(call_id="call_ui_msg", mime="text/markdown", content="**hello**"),
                 is_function_call_output_end_turn(call_id="call_ui_end"),
                 is_ui_message(content="**hello**", mime="text/markdown"),
                 has_finished_run(),

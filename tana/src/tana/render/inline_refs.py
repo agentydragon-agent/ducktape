@@ -39,9 +39,7 @@ def parse_inline_date(date_ref_data: str) -> str:
 
 
 def replace_inline_refs(
-    text: str,
-    node_replacer: Callable[[str], str] | None = None,
-    date_replacer: Callable[[str], str] | None = None,
+    text: str, node_replacer: Callable[[str], str] | None = None, date_replacer: Callable[[str], str] | None = None
 ) -> str:
     """
     Replace inline references in text with custom formatting.

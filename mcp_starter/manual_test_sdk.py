@@ -222,7 +222,7 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
             server_process.terminate()
             try:
                 await asyncio.wait_for(server_process.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 server_process.kill()
                 await server_process.wait()
 

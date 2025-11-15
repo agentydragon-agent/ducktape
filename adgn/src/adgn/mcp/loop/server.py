@@ -15,10 +15,7 @@ def make_loop_server(name: str = "loop") -> NotifyingFastMCP:
 
     Tools are self-describing via MCP; avoid duplicating per-tool instructions here.
     """
-    mcp = NotifyingFastMCP(
-        name,
-        instructions=("Loop control tools for orchestrator/agent turn coordination."),
-    )
+    mcp = NotifyingFastMCP(name, instructions=("Loop control tools for orchestrator/agent turn coordination."))
 
     @mcp.flat_model()
     async def yield_turn(_: YieldTurnArgs) -> SimpleOk:

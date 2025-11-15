@@ -21,8 +21,6 @@ except SystemExit as e:
     log(f"bootstrap: SystemExit code={e.code}")
     raise
 except Exception:
-    log(
-        "bootstrap: unhandled exception during kernel startup:\n" + traceback.format_exc(),
-    )
+    log("bootstrap: unhandled exception during kernel startup:\n" + traceback.format_exc())
     # Re-raise to preserve behavior; Jupyter will observe kernel crash and restart/log
     raise

@@ -17,19 +17,8 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic import CriticSubmitPayload, ReportedIssue
 from adgn.props.docker_env import properties_docker_spec
-from adgn.props.grader import (
-    GradeInputs,
-    GradeSubmitPayload,
-    GradeSubmitState,
-    build_grader_submit_tools,
-)
-from adgn.props.ids import (
-    CANON_FP_PREFIX,
-    CANON_TP_PREFIX,
-    ensure_crit_id,
-    ensure_with_prefix,
-    strip_crit_prefix,
-)
+from adgn.props.grader import GradeInputs, GradeSubmitPayload, GradeSubmitState, build_grader_submit_tools
+from adgn.props.ids import CANON_FP_PREFIX, CANON_TP_PREFIX, ensure_crit_id, ensure_with_prefix, strip_crit_prefix
 from adgn.props.prompts.builder import build_grade_from_json_prompt
 from adgn.props.specimens.registry import SpecimenRegistry
 
@@ -45,11 +34,7 @@ def _metrics_row(grade: GradeSubmitPayload, *, specimen: str | None = None) -> d
 
 
 async def grade_critic_output(
-    specimen: str,
-    critic_obj: CriticSubmitPayload,
-    client: OpenAIModelProto,
-    *,
-    transcript_out_dir: Path,
+    specimen: str, critic_obj: CriticSubmitPayload, client: OpenAIModelProto, *, transcript_out_dir: Path
 ):
     """Grade a critic output JSON for a specimen; return GradeSubmitPayload model.
 
@@ -61,19 +46,11 @@ async def grade_critic_output(
 
     # Build ReportedIssue objects to match the grader schema exactly
     canonical_ri = [
-        ReportedIssue(
-            id=it.core.id,
-            rationale=it.core.rationale,
-            occurrences=list(it.instances),
-        )
+        ReportedIssue(id=it.core.id, rationale=it.core.rationale, occurrences=list(it.instances))
         for it in rec.issues.values()
     ]
     known_fp_ri = [
-        ReportedIssue(
-            id=it.core.id,
-            rationale=it.core.rationale,
-            occurrences=list(it.instances),
-        )
+        ReportedIssue(id=it.core.id, rationale=it.core.rationale, occurrences=list(it.instances))
         for it in rec.false_positives.values()
     ]
 
@@ -115,19 +92,11 @@ async def grade_critic_output(
         prompt = build_grade_from_json_prompt(
             scope_text=f"Specimen: {specimen}",
             canonical_json=json.dumps(
-                [ri.model_dump(exclude_none=True) for ri in canonical_prefixed],
-                ensure_ascii=False,
-                indent=2,
+                [ri.model_dump(exclude_none=True) for ri in canonical_prefixed], ensure_ascii=False, indent=2
             ),
-            critique_json=json.dumps(
-                critique_prefixed.model_dump(exclude_none=True),
-                ensure_ascii=False,
-                indent=2,
-            ),
+            critique_json=json.dumps(critique_prefixed.model_dump(exclude_none=True), ensure_ascii=False, indent=2),
             known_fp_json=json.dumps(
-                [ri.model_dump(exclude_none=True) for ri in known_fp_prefixed],
-                ensure_ascii=False,
-                indent=2,
+                [ri.model_dump(exclude_none=True) for ri in known_fp_prefixed], ensure_ascii=False, indent=2
             ),
             submit_tool_name=submit_tool_name,
             wiring=wiring,
@@ -136,8 +105,7 @@ async def grade_critic_output(
     comp = Compositor("compositor")
     # Build a small in-proc server and mount directly
     server = NotifyingFastMCP(
-        GRADER_SUBMIT_SERVER_NAME,
-        instructions="Final grader submission for specimen critique evaluation",
+        GRADER_SUBMIT_SERVER_NAME, instructions="Final grader submission for specimen critique evaluation"
     )
     build_grader_submit_tools(server, grader_state, inputs=inputs)
     await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, server)
@@ -175,10 +143,7 @@ async def grade_critic_output(
             orig_id = strip_crit_prefix(str(pr_it.id or ""))
             for i, occ in enumerate(pr_it.occurrences):
                 core_dump = {"id": orig_id, "rationale": pr_it.rationale}
-                data = {
-                    "core": core_dump,
-                    "occurrence": occ.model_dump(exclude_none=True),
-                }
+                data = {"core": core_dump, "occurrence": occ.model_dump(exclude_none=True)}
                 out = unk_dir / f"{orig_id}__occ{i}.yaml"
                 out.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 

@@ -12,7 +12,4 @@ This package provides:
 
 __version__ = "2.0.0a1"  # Alpha version
 
-__all__ = [
-    "__version__",
-    "cli",
-]
+__all__ = ["__version__", "cli"]

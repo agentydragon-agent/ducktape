@@ -40,11 +40,7 @@ class RunResult:
 
 
 def _prepare_policy(
-    policy: SBPLPolicy,
-    *,
-    artifacts_dir: Path,
-    trace: bool,
-    trace_dir: Path | None,
+    policy: SBPLPolicy, *, artifacts_dir: Path, trace: bool, trace_dir: Path | None
 ) -> tuple[SBPLPolicy, Path, Path | None, str]:
     """Write policy.sb and return (policy_copy_or_original, policy_file, trace_file, policy_text)."""
     policy_file = artifacts_dir / "policy.sb"
@@ -63,9 +59,7 @@ def _prepare_policy(
     return sp, policy_file, trace_file, policy_text
 
 
-def collect_unified_sandbox_denies(
-    artifacts_dir: Path, window: str = "5m"
-) -> tuple[Path | None, str | None]:
+def collect_unified_sandbox_denies(artifacts_dir: Path, window: str = "5m") -> tuple[Path | None, str | None]:
     """Collect recent unified log deny messages from the macOS sandbox.
 
     Returns (path, text) where path is the written file under artifacts_dir and
@@ -94,9 +88,7 @@ def collect_unified_sandbox_denies(
     return dest, text
 
 
-def _collect_unified_if_failed(
-    artifacts_dir: Path, returncode: int | None
-) -> tuple[Path | None, str | None]:
+def _collect_unified_if_failed(artifacts_dir: Path, returncode: int | None) -> tuple[Path | None, str | None]:
     """Collect unified sandbox denies only when exit code is non-zero."""
     if returncode not in (None, 0):
         return collect_unified_sandbox_denies(artifacts_dir)
@@ -182,12 +174,7 @@ async def run_sandboxed_async(
     cmd = [sx, "-f", str(policy_file), *argv]
     started = datetime.now(UTC)
     proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        stdin=stdin,
-        stdout=stdout,
-        stderr=stderr,
+        *cmd, cwd=str(cwd) if cwd else None, env=env, stdin=stdin, stdout=stdout, stderr=stderr
     )
     if asyncio.subprocess.PIPE in {stdout, stderr}:
         out_b, err_b = await proc.communicate()
@@ -282,10 +269,9 @@ class AsyncSeatbeltPopen:
     async def wait(self) -> int:
         return await self._proc.wait()
 
-    async def communicate(self, input: bytes | None = None, timeout: float | None = None):
-        if timeout is None:
-            return await self._proc.communicate(input)
-        return await asyncio.wait_for(self._proc.communicate(input), timeout)
+    async def communicate(self, input: bytes | None = None):
+        """Communicate with process. Use asyncio.timeout() around this call to add a timeout."""
+        return await self._proc.communicate(input)
 
     def send_signal(self, sig: int) -> None:
         self._proc.send_signal(sig)
@@ -347,12 +333,7 @@ async def apopen(
 
     cmd = [sx, "-f", str(policy_file), *list(args)]
     proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        stdin=stdin,
-        stdout=stdout,
-        stderr=stderr,
+        *cmd, cwd=str(cwd) if cwd else None, env=env, stdin=stdin, stdout=stdout, stderr=stderr
     )
     return AsyncSeatbeltPopen(
         proc,

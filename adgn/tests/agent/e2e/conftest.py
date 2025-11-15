@@ -5,9 +5,9 @@ import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from tests.agent.helpers import start_uvicorn_app
 
 from adgn.agent.server.app import create_app
-from tests.agent.helpers import start_uvicorn_app
 
 # Auto-apply e2e marker to all tests in this directory
 pytestmark = [pytest.mark.e2e]
@@ -37,9 +37,7 @@ def playwright_sync() -> Iterator[Playwright]:
 
 
 @pytest.fixture
-def browser(
-    playwright_sync: Playwright, browser_name: str, e2e_headless: bool
-) -> Iterator[Browser]:
+def browser(playwright_sync: Playwright, browser_name: str, e2e_headless: bool) -> Iterator[Browser]:
     browser_type = getattr(playwright_sync, browser_name, None)
     if browser_type is None:
         raise RuntimeError(f"Unsupported Playwright browser: {browser_name}")
@@ -74,7 +72,7 @@ def run_server(tmp_path, monkeypatch: pytest.MonkeyPatch):
     def _start(client_factory: Callable[[str], Any] | None = None) -> dict[str, Any]:
         db_path = tmp_path / "agent.sqlite"
         monkeypatch.setenv("ADGN_AGENT_DB_PATH", str(db_path))
-        app = create_app(require_static_assets=True, client_factory=client_factory)
+        app = create_app(require_static_assets=True)
         return start_uvicorn_app(app)
 
     return _start

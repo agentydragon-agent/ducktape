@@ -2,22 +2,15 @@ from __future__ import annotations
 
 from concurrent.futures import CancelledError
 
-from hamcrest import (
-    assert_that,
-    has_items,
-    has_properties,
-)
+from hamcrest import assert_that, has_items, has_properties
 import pytest
+from tests.agent.ui_asserts import assert_ui_items_have, item_assistant_markdown
+from tests.agent.ws_helpers import drain_until_match, has_finished_run
+from tests.llm.support.openai_mock import make_mock
 
 from adgn.agent.server import protocol
 from adgn.agent.server.protocol import RunStatus, RunStatusEvt, UiStateSnapshot
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.ui_asserts import (
-    assert_ui_items_have,
-    item_assistant_markdown,
-)
-from tests.agent.ws_helpers import drain_until_match, has_finished_run
-from tests.llm.support.openai_mock import make_mock
 
 Envelope = protocol.Envelope
 
@@ -27,19 +20,13 @@ def _collect_payloads_until_finished(ws, *, limit: int = 200):
     for _ in range(limit):
         env = Envelope.model_validate(ws.receive_json())
         payloads.append(env.payload)
-        if (
-            isinstance(env.payload, RunStatusEvt)
-            and env.payload.run_state.status == RunStatus.FINISHED
-        ):
+        if isinstance(env.payload, RunStatusEvt) and env.payload.run_state.status == RunStatus.FINISHED:
             break
     return payloads
 
 
 @pytest.mark.timeout(15)
-def test_persist_revive_continue_ui_flow(
-    responses_factory,
-    agent_ws_box,
-):
+def test_persist_revive_continue_ui_flow(responses_factory, agent_ws_box):
     """
     End-to-end:
       1) Run a turn that emits ui.send_message + end_turn and persists events
@@ -63,18 +50,14 @@ def test_persist_revive_continue_ui_flow(
                 call_id="call_ui_msg_1",
             )
         if step == 1:
-            return responses_factory.make_tool_call(
-                build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_1"
-            )
+            return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_1")
         if step == 2:
             return responses_factory.make_tool_call(
                 build_mcp_function("ui", "send_message"),
                 {"mime": "text/markdown", "content": "**world**"},
                 call_id="call_ui_msg_2",
             )
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_2"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_2")
 
     client = make_mock(responses_create)
 
@@ -87,8 +70,7 @@ def test_persist_revive_continue_ui_flow(
                 payloads_1,
                 has_items(
                     has_properties(
-                        type="ui_message",
-                        message=has_properties(mime="text/markdown", content="**hello**"),
+                        type="ui_message", message=has_properties(mime="text/markdown", content="**hello**")
                     ),
                     has_finished_run(),
                 ),
@@ -97,8 +79,7 @@ def test_persist_revive_continue_ui_flow(
             # Request a snapshot over WS; should include the assistant message
             payloads = drain_until_match(
                 box.ws,
-                lambda p: getattr(p.payload, "type", None)
-                in ("ui_state_snapshot", "ui_state_updated"),
+                lambda p: getattr(p.payload, "type", None) in ("ui_state_snapshot", "ui_state_updated"),
                 limit=50,
                 mapper=lambda e: e.payload,
             )
@@ -111,11 +92,7 @@ def test_persist_revive_continue_ui_flow(
             assert_that(
                 payloads_2,
                 has_items(
-                    has_properties(
-                        type="ui_message",
-                        message=has_properties(content="**world**"),
-                    ),
-                    has_finished_run(),
+                    has_properties(type="ui_message", message=has_properties(content="**world**")), has_finished_run()
                 ),
             )
 

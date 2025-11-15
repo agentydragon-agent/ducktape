@@ -52,15 +52,11 @@ class ModularConfig(BaseModel):
     repo_rules: list[PredicateRule] = Field(default_factory=list, description="Repository-wide predicate rules")
 
     # Python tools
-    python_tools: list[str] = Field(
-        default_factory=lambda: ["ruff", "mypy"],
-        description="Python linting tools to use",
-    )
+    python_tools: list[str] = Field(default_factory=lambda: ["ruff", "mypy"], description="Python linting tools to use")
 
     # Hook configurations
     hooks: dict[
-        str,
-        PreToolHookConfig | PostToolHookConfig | StopHookConfig | NotificationHookConfig | SubagentStopHookConfig,
+        str, PreToolHookConfig | PostToolHookConfig | StopHookConfig | NotificationHookConfig | SubagentStopHookConfig
     ] = Field(
         default_factory=lambda: {
             "pre": PreToolHookConfig(),
@@ -87,8 +83,7 @@ class ModularConfig(BaseModel):
 
     # LLM analysis
     llm_analysis: LLMAnalysisConfig = Field(
-        default_factory=lambda: LLMAnalysisConfig(),
-        description="LLM analysis configuration",
+        default_factory=lambda: LLMAnalysisConfig(), description="LLM analysis configuration"
     )
 
     # Task profiles
@@ -103,7 +98,7 @@ class ModularConfig(BaseModel):
         """Load configuration from TOML file - let Pydantic handle parsing."""
         import tomli
 
-        with open(path, "rb") as f:
+        with path.open("rb") as f:
             data = tomli.load(f)
 
         # Transform flat dotted keys to nested structure for rules
@@ -164,9 +159,8 @@ class ModularConfig(BaseModel):
                             codes.append(rule_def.code)
                     elif rule_config.enabled:
                         codes.append(rule_def.code)
-                else:
-                    # Use default from registry
-                    if rule_def.default_blocks_pre or rule_def.default_blocks_stop:
-                        codes.append(rule_def.code)
+                # Use default from registry
+                elif rule_def.default_blocks_pre or rule_def.default_blocks_stop:
+                    codes.append(rule_def.code)
 
         return codes

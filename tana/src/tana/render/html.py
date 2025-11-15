@@ -6,8 +6,8 @@ from html.parser import HTMLParser
 from io import StringIO
 import re
 
-from tana.render.inline_refs import parse_inline_date
 from tana.domain.types import NodeId
+from tana.render.inline_refs import parse_inline_date
 
 # Regex patterns for Tana-specific HTML elements
 NODE_SPAN_PATTERN = re.compile(r'<span data-inlineref-node="([^"]+)"></span>')
@@ -28,10 +28,9 @@ class HTMLToMarkdownParser(HTMLParser):
         self.tag_stack.append(tag)
         prev = self.output.getvalue()
         # If a formatting tag follows a comma without a space, insert one (",**" -> ", **")
-        if prev.endswith(","):
+        if prev.endswith(",") and not prev.endswith(", "):
             # Only add a space if not already present
-            if not prev.endswith(", "):
-                self.output.write(" ")
+            self.output.write(" ")
         if tag in ("b", "strong"):
             self.output.write("**")
         elif tag in ("i", "em"):
@@ -67,9 +66,7 @@ class HTMLToMarkdownParser(HTMLParser):
     def handle_data(self, data):
         # If a data chunk begins with a space immediately after opening a formatting marker,
         # drop that single space to avoid sequences like "** _italic_**".
-        if data.startswith(" ") and self.output.getvalue().endswith(
-            ("**", "_", "__", "<mark>", "<strike>", "<code>")
-        ):
+        if data.startswith(" ") and self.output.getvalue().endswith(("**", "_", "__", "<mark>", "<strike>", "<code>")):
             data = data[1:]
         self._suppress_next_leading_space = False
         self.output.write(data)

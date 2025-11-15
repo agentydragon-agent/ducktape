@@ -70,11 +70,7 @@ def write_policy(
     # Default: strict. Only broaden to '/' when explicitly requested.
     if allow_read_all is True:
         read_paths.append("/")
-    write_paths = [
-        str(ws),
-        str(run_root),
-        *(add_write_paths or []),
-    ]
+    write_paths = [str(ws), str(run_root), *(add_write_paths or [])]
 
     control_bin = os.environ.get("SJ_TEST_CONTROL_BIN", "")
     path_prefix = control_bin + (":" if control_bin else "")
@@ -98,13 +94,8 @@ def write_policy(
             },
             "passthrough": ["PYTHONPATH", "SJ_DEBUG_DIAG", *(env_passthrough or [])],
         },
-        "fs": {
-            "read_paths": read_paths,
-            "write_paths": write_paths,
-        },
-        "net": {
-            "mode": (net or "loopback"),
-        },
+        "fs": {"read_paths": read_paths, "write_paths": write_paths},
+        "net": {"mode": (net or "loopback")},
         "platform": {
             "trace": False,
             "seatbelt": {
@@ -114,7 +105,7 @@ def write_policy(
                     # Start with minimal services (add more if denies show specifics)
                     "mach_lookup": ["com.apple.cfprefsd.agent"],
                     "file_read_extra": [],
-                },
+                }
             },
         },
     }

@@ -1,15 +1,10 @@
 """Tests for webhook authentication handlers."""
 
-import pytest
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
+import pytest
 
-from gatelet.server.auth.webhook_auth import (
-    AuthError,
-    BearerAuthHandler,
-    NoAuthHandler,
-    create_auth_handler,
-)
+from gatelet.server.auth.webhook_auth import AuthError, BearerAuthHandler, NoAuthHandler, create_auth_handler
 from gatelet.server.config import BearerAuth, NoAuth
 
 
@@ -79,27 +74,18 @@ async def test_no_auth_handler_validate_no_credentials(no_auth_handler, mock_req
 async def test_no_auth_handler_validate_with_credentials(no_auth_handler, mock_request):
     """Test NoAuthHandler validation with credentials."""
     # Should pass with any credentials
-    await no_auth_handler.validate(
-        mock_request,
-        HTTPAuthorizationCredentials(scheme="any", credentials="any"),
-    )
+    await no_auth_handler.validate(mock_request, HTTPAuthorizationCredentials(scheme="any", credentials="any"))
 
 
 @pytest.mark.asyncio
 async def test_bearer_auth_handler_validate_success(bearer_auth_handler, mock_request):
     """Test BearerAuthHandler validation with valid credentials."""
-    credentials = HTTPAuthorizationCredentials(
-        scheme="bearer",
-        credentials="test-token",
-    )
+    credentials = HTTPAuthorizationCredentials(scheme="bearer", credentials="test-token")
     await bearer_auth_handler.validate(mock_request, credentials)
 
 
 @pytest.mark.asyncio
-async def test_bearer_auth_handler_missing_credentials(
-    bearer_auth_handler,
-    mock_request,
-):
+async def test_bearer_auth_handler_missing_credentials(bearer_auth_handler, mock_request):
     """Test BearerAuthHandler validation with missing credentials."""
     with pytest.raises(AuthError, match="Missing Authorization header"):
         await bearer_auth_handler.validate(mock_request, None)
@@ -116,9 +102,6 @@ async def test_bearer_auth_handler_wrong_scheme(bearer_auth_handler, mock_reques
 @pytest.mark.asyncio
 async def test_bearer_auth_handler_invalid_token(bearer_auth_handler, mock_request):
     """Test BearerAuthHandler validation with invalid token."""
-    credentials = HTTPAuthorizationCredentials(
-        scheme="bearer",
-        credentials="wrong-token",
-    )
+    credentials = HTTPAuthorizationCredentials(scheme="bearer", credentials="wrong-token")
     with pytest.raises(AuthError, match="Invalid token"):
         await bearer_auth_handler.validate(mock_request, credentials)

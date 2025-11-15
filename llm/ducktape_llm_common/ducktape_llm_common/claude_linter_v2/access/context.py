@@ -1,6 +1,6 @@
 """Context object for predicate evaluation."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -18,4 +18,4 @@ class PredicateContext:
     tool: str  # Tool name: Write, Edit, MultiEdit, Read, Bash, etc.
     args: dict[str, Any]  # Tool arguments as key-value pairs
     session_id: SessionID
-    timestamp: datetime = datetime.now()
+    timestamp: datetime = field(default_factory=datetime.now)

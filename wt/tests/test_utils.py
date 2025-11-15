@@ -1,10 +1,10 @@
 """Shared test utilities to avoid duplication across test files."""
 
+from collections.abc import Callable
 from datetime import timedelta
 import os
 import subprocess
 import time
-from typing import Callable
 
 
 def add_project_root_to_env(env: dict) -> None:

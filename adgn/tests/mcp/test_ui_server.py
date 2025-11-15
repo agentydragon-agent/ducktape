@@ -4,7 +4,7 @@ import pytest
 
 from adgn.agent.loop_control import Abort, Continue, RequireAny
 from adgn.agent.notifications.types import NotificationsBatch
-from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
+from adgn.agent.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.mcp.ui.server import EndTurnInput, SendMessageInput, make_ui_server
 
@@ -20,12 +20,14 @@ async def test_ui_send_message_and_end_turn_bus(bus, make_typed_mcp) -> None:
 
     async with make_typed_mcp(server, "ui") as (client, _sess):
         # Send a markdown message directly via typed client
-        msg = SendMessageInput(mime="text/markdown", content="**hello**")
+        msg = SendMessageInput(mime=MimeType.MARKDOWN, content="**hello**")
         out: UiMessage = await client.send_message(msg)
-        assert out.mime == "text/markdown" and out.content == "**hello**"
+        assert out.mime == "text/markdown"
+        assert out.content == "**hello**"
 
         drained = bus.drain_messages()
-        assert drained and isinstance(drained[0], UiMessage)
+        assert drained
+        assert isinstance(drained[0], UiMessage)
         assert drained[0].content == "**hello**"
 
         # Request end_turn

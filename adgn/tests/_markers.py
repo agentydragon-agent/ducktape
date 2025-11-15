@@ -6,8 +6,4 @@ import pytest
 
 MACOS_ONLY = pytest.mark.skipif(platform.system() != "Darwin", reason="macOS-only test")
 
-REQUIRES_SANDBOX_EXEC = (
-    pytest.mark.requires_sandbox_exec,
-    MACOS_ONLY,
-    pytest.mark.macos,
-)
+REQUIRES_SANDBOX_EXEC = (pytest.mark.requires_sandbox_exec, MACOS_ONLY, pytest.mark.macos)

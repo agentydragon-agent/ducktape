@@ -15,19 +15,12 @@ Use make_container_exec_server(...) to construct a server instance.
 
 from __future__ import annotations
 
-from adgn.mcp._shared.container_session import (
-    ContainerOptions,
-    make_container_lifespan,
-    register_container,
-)
+from adgn.mcp._shared.container_session import ContainerOptions, make_container_lifespan, register_container
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 
 def make_container_exec_server(
-    opts: ContainerOptions,
-    *,
-    name: str = "docker",
-    tool_exec_name: str = "exec",
+    opts: ContainerOptions, *, name: str = "docker", tool_exec_name: str = "exec"
 ) -> NotifyingFastMCP:
     """Create a generic per-session container exec FastMCP server.
 
@@ -35,9 +28,7 @@ def make_container_exec_server(
     """
     lifespan = make_container_lifespan(opts)
     server = NotifyingFastMCP(
-        name,
-        instructions="Per-session container exec. See resource container.info for details.",
-        lifespan=lifespan,
+        name, instructions="Per-session container exec. See resource container.info for details.", lifespan=lifespan
     )
     register_container(server, opts, tool_name=tool_exec_name)
     return server
@@ -52,10 +43,6 @@ async def attach_container_exec(
     init_timeout_secs: float | None = None,
 ):
     """Attach a per-session container exec server (no auth, in-proc)."""
-    server = make_container_exec_server(
-        opts,
-        name=server_name,
-        tool_exec_name=tool_exec_name,
-    )
+    server = make_container_exec_server(opts, name=server_name, tool_exec_name=tool_exec_name)
     # Compositor mount path (preferred)
     await comp.mount_inproc(server_name, server)

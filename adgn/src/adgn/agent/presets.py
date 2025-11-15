@@ -74,7 +74,5 @@ def discover_presets(env_dir: str | None = None) -> dict[str, AgentPreset]:
                 out[name] = preset
     # Always include a built-in default if none present
     if "default" not in out:
-        out["default"] = AgentPreset(
-            name="default", description="Default UI agent", system=None, specs={}
-        )
+        out["default"] = AgentPreset(name="default", description="Default UI agent", system=None, specs={})
     return out

@@ -31,17 +31,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--root", required=True, type=Path, help="Path to scan (workspace root)")
     ap.add_argument("--out", type=Path, help="Write JSON to this file (default: stdout)")
-    ap.add_argument(
-        "--only",
-        action="append",
-        help="Detector name(s) to run (repeatable); default is all",
-    )
-    ap.add_argument(
-        "--workers",
-        type=int,
-        default=None,
-        help="Detector worker threads (None=auto; 1=sequential)",
-    )
+    ap.add_argument("--only", action="append", help="Detector name(s) to run (repeatable); default is all")
+    ap.add_argument("--workers", type=int, default=None, help="Detector worker threads (None=auto; 1=sequential)")
     args = ap.parse_args(argv)
 
     root = args.root.resolve()

@@ -26,7 +26,7 @@ class PythonFormatter:
         available = []
         for tool in self.tools:
             try:
-                result = subprocess.run([tool, "--version"], capture_output=True, text=True, timeout=5)
+                result = subprocess.run([tool, "--version"], capture_output=True, text=True, timeout=5, check=False)
                 if result.returncode == 0:
                     available.append(tool)
                     logger.debug(f"Found {tool}: {result.stdout.strip()}")
@@ -109,15 +109,15 @@ class PythonFormatter:
                 capture_output=True,
                 text=True,
                 timeout=30,
+                check=False,
             )
 
             if result.returncode == 0:
                 if result.stdout != code:
                     return result.stdout, ["Applied ruff formatting"]
                 return code, []
-            else:
-                logger.warning(f"Ruff formatting failed: {result.stderr}")
-                return code, []
+            logger.warning(f"Ruff formatting failed: {result.stderr}")
+            return code, []
 
         except subprocess.SubprocessError as e:
             logger.error(f"Ruff error: {e}")
@@ -127,15 +127,16 @@ class PythonFormatter:
         """Format code with black."""
         try:
             # Use stdin/stdout to avoid file operations
-            result = subprocess.run(["black", "-", "--quiet"], input=code, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(
+                ["black", "-", "--quiet"], input=code, capture_output=True, text=True, timeout=30, check=False
+            )
 
             if result.returncode == 0:
                 if result.stdout != code:
                     return result.stdout, ["Applied black formatting"]
                 return code, []
-            else:
-                logger.warning(f"Black formatting failed: {result.stderr}")
-                return code, []
+            logger.warning(f"Black formatting failed: {result.stderr}")
+            return code, []
 
         except subprocess.SubprocessError as e:
             logger.error(f"Black error: {e}")
@@ -164,13 +165,15 @@ class PythonFormatter:
                     capture_output=True,
                     text=True,
                     timeout=30,
+                    check=False,
                 )
 
                 # Ruff outputs the fixed code to stdout when using stdin
-                if result.returncode in (0, 1) and result.stdout:  # 1 = had issues but fixed them
-                    if result.stdout != formatted:
-                        formatted = result.stdout
-                        changes.append("Fixed import ordering and removed unused imports")
+                if (
+                    result.returncode in (0, 1) and result.stdout and result.stdout != formatted
+                ):  # 1 = had issues but fixed them
+                    formatted = result.stdout
+                    changes.append("Fixed import ordering and removed unused imports")
 
             except subprocess.SubprocessError as e:
                 logger.error(f"Ruff import fix error: {e}")

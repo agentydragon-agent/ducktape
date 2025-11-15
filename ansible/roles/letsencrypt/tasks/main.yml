@@ -36,7 +36,7 @@
       - certbot
       - python3-certbot-nginx
     state: present
-    update_cache: yes
+    update_cache: true
 
 # ---------------------------------------------------------------------------
 # Build command-line arguments

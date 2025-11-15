@@ -30,7 +30,7 @@
       - certbot
       - "python3-certbot-dns-{{ _letsencrypt_dns_plugin }}"
     state: present
-    update_cache: yes
+    update_cache: true
   become: true
 
 - name: Create certbot configuration directory

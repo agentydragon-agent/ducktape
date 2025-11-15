@@ -9,10 +9,7 @@ from tana.query.nodes import get_field_values, is_in_deleted_nodes
 
 
 def filter_nodes(
-    store: TanaGraph,
-    predicate: Callable[[BaseNode], bool],
-    skip_trash: bool = True,
-    skip_deleted: bool = True,
+    store: TanaGraph, predicate: Callable[[BaseNode], bool], skip_trash: bool = True, skip_deleted: bool = True
 ) -> Iterator[BaseNode]:
     """
     Filter nodes in a TanaGraph based on a predicate function.
@@ -41,10 +38,7 @@ def filter_nodes(
 
 
 def filter_by_tag(
-    store: TanaGraph,
-    tag_name: str,
-    skip_trash: bool = True,
-    skip_deleted: bool = True,
+    store: TanaGraph, tag_name: str, skip_trash: bool = True, skip_deleted: bool = True
 ) -> Iterator[BaseNode]:
     """
     Filter nodes by supertag.
@@ -128,11 +122,7 @@ def filter_open_issues(store: TanaGraph) -> Iterator[NodeId]:
             continue
 
         # Check if Status is Done, Cancelled, or Shelved
-        if {status.lower() for status in status_values} & {
-            "done",
-            "cancelled",
-            "shelved",
-        }:
+        if {status.lower() for status in status_values} & {"done", "cancelled", "shelved"}:
             continue
 
         yield node.id

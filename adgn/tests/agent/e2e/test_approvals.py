@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import requests
-
-from adgn.agent.server.app import create_app
-from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.helpers import api_create_agent, start_uvicorn_app
 from tests.llm.support.openai_mock import make_mock
 
-# Skip if Playwright is not installed; bind Page from returned module
+from adgn.agent.server.app import create_app
+from adgn.mcp._shared.naming import build_mcp_function
+
+# Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
-Page = playwright.Page  # type: ignore[attr-defined]
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
+else:
+    Page = playwright.Page
 
 
 @pytest.fixture
@@ -21,17 +25,14 @@ def run_server(tmp_path, monkeypatch: pytest.MonkeyPatch):
     def _start(client_factory=None) -> dict[str, Any]:
         db_path = tmp_path / "agent.sqlite"
         monkeypatch.setenv("ADGN_AGENT_DB_PATH", str(db_path))
-        app = create_app(require_static_assets=True, client_factory=client_factory)
+        app = create_app(require_static_assets=True)
         return start_uvicorn_app(app)
 
     return _start
 
 
 def _patch_model(monkeypatch: pytest.MonkeyPatch, create_fn: Callable[[Any], Any]) -> None:
-    monkeypatch.setattr(
-        "adgn.agent.runtime.container.build_client",
-        lambda *a, **k: make_mock(create_fn),
-    )
+    monkeypatch.setattr("adgn.agent.runtime.container.build_client", lambda *a, **k: make_mock(create_fn))
 
 
 def test_approvals_delivery_and_user_approve(page: Page, run_server, responses_factory):
@@ -53,9 +54,7 @@ def test_approvals_delivery_and_user_approve(page: Page, run_server, responses_f
             return responses_factory.make_tool_call(
                 build_mcp_function("echo", "echo"), {"text": "hello"}, call_id="call_echo"
             )
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -64,12 +63,7 @@ def test_approvals_delivery_and_user_approve(page: Page, run_server, responses_f
     agent_id = api_create_agent(base)
 
     # Attach echo server via HTTP (in-proc factory spec)
-    spec = {
-        "echo": {
-            "transport": "inproc",
-            "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp",
-        }
-    }
+    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
     patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
     assert patch.ok, patch.text
 

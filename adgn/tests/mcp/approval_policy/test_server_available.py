@@ -41,11 +41,7 @@ async def test_approval_policy_server_is_available(
         assert expected <= tool_names
 
         agent = await MiniCodex.create(
-            model=responses_factory.model,
-            mcp_client=mcp_client,
-            system="test",
-            client=client,
-            handlers=[AutoHandler()],
+            model=responses_factory.model, mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
         )
 
         # Run should complete without issues

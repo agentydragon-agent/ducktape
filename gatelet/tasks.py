@@ -1,7 +1,7 @@
 """Development tasks using invoke."""
 
-import time
 from pathlib import Path
+import time
 
 from invoke import task
 
@@ -86,11 +86,7 @@ def migration(c, name):
 @task
 def lint(c):
     """Run linting and formatting checks."""
-    docker_compose_exec(
-        c,
-        "gatelet",
-        'bash -c "isort --check-only . && black --check ."',
-    )
+    docker_compose_exec(c, "gatelet", 'bash -c "isort --check-only . && black --check ."')
 
 
 @task

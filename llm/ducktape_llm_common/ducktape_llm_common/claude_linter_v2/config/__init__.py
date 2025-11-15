@@ -16,20 +16,20 @@ from .models import (
 )
 
 __all__ = [
-    # Loader
-    "ConfigLoader",
     # Common Models
     "AccessControlRule",
     "AutofixCategory",
+    # Loader
+    "ConfigLoader",
     "HookType",
     "LLMAnalysisConfig",
     "LLMPromptTemplates",
+    # Clean Models
+    "ModularConfig",
     "PatternBasedRule",
     "PredicateRule",
     "RuleAction",
+    "RuleConfig",
     "TaskProfile",
     "Violation",
-    # Clean Models
-    "ModularConfig",
-    "RuleConfig",
 ]

@@ -22,10 +22,7 @@ from adgn.props.prop_utils import pkg_dir
 class UnknownIssue(BaseModel):
     """Structured view of a single 'unknown' YAML emitted by prompt_optimize runs."""
 
-    uid: str = Field(
-        ...,
-        description="Unique id, prefixed with run/specimen to avoid collisions",
-    )
+    uid: str = Field(..., description="Unique id, prefixed with run/specimen to avoid collisions")
     specimen: str
     id: str
     should_flag: bool | None = None
@@ -84,17 +81,13 @@ def load_unknowns(paths: Iterable[Path]) -> list[UnknownIssue]:
                 rationale=str(core.get("rationale") or ""),
                 files=files,
                 yaml_path=str(yp),
-            ),
+            )
         )
     return issues
 
 
 async def cluster_unknowns_async(
-    issues: list[UnknownIssue],
-    *,
-    model: str,
-    out_root: Path,
-    client: OpenAIModelProto,
+    issues: list[UnknownIssue], *, model: str, out_root: Path, client: OpenAIModelProto
 ) -> Path:
     """Run the in-proc MCP clustering agent and write clusters.json under out_root.
 
@@ -114,9 +107,7 @@ async def cluster_unknowns_async(
             all_uids = {u.uid for u in issues}
             missing = sorted(all_uids - seen)
             if missing:
-                raise ValueError(
-                    f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}",
-                )
+                raise ValueError(f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}")
             state.result = payload.clusters
             return "ok"
 
@@ -129,11 +120,7 @@ async def cluster_unknowns_async(
         "[{name:string, issues:[string,...]}]."
     )
     input_lines = "\n".join(
-        json.dumps(
-            i.model_dump(exclude={"yaml_path", "specimen"}),
-            ensure_ascii=False,
-        )
-        for i in issues
+        json.dumps(i.model_dump(exclude={"yaml_path", "specimen"}), ensure_ascii=False) for i in issues
     )
     async with Client(comp) as mcp_client:
 
@@ -148,25 +135,17 @@ async def cluster_unknowns_async(
             handlers=[TranscriptHandler(dest_dir=out_root), GateUntil(_ready_state)],
             parallel_tool_calls=True,
         )
-        user = (
-            "Cluster the following issues. Every uid must appear in >=1 cluster.\n\n" + input_lines
-        )
+        user = "Cluster the following issues. Every uid must appear in >=1 cluster.\n\n" + input_lines
         await agent.run(user)
     if state.result is None:
         raise RuntimeError("cluster_submit.submit_result not called")
     (out_root / "clusters.json").write_text(
-        json.dumps([c.model_dump() for c in state.result], indent=2),
-        encoding="utf-8",
+        json.dumps([c.model_dump() for c in state.result], indent=2), encoding="utf-8"
     )
     return out_root
 
 
-def cluster_unknowns(
-    *,
-    model: str = "gpt-5",
-    out_dir: Path | None = None,
-    runs_root: Path | None = None,
-) -> Path:
+def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, runs_root: Path | None = None) -> Path:
     """Cluster unknowns per specimen in parallel using an LLM (one run per specimen).
 
     - Partitions unknowns by specimen and launches an in-proc MCP clustering agent per specimen concurrently
@@ -177,9 +156,7 @@ def cluster_unknowns(
     paths = discover_unknown_yaml_paths(runs_root)
     issues = load_unknowns(paths)
     if not issues:
-        raise RuntimeError(
-            "no unknown YAMLs found under runs/prompt_optimize/**/unknowns/",
-        )
+        raise RuntimeError("no unknown YAMLs found under runs/prompt_optimize/**/unknowns/")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if out_dir is not None:
         root: Path = Path(out_dir).expanduser().resolve()
@@ -198,9 +175,7 @@ def cluster_unknowns(
         for spec, items in by_spec.items():
             out_spec = root / spec
             out_spec.mkdir(parents=True, exist_ok=True)
-            tasks.append(
-                cluster_unknowns_async(items, model=model, out_root=out_spec, client=typed_client)
-            )
+            tasks.append(cluster_unknowns_async(items, model=model, out_root=out_spec, client=typed_client))
         # Run in parallel; await all
         await asyncio.gather(*tasks)
         return root

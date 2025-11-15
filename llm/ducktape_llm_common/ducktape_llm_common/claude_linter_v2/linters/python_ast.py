@@ -12,12 +12,7 @@ logger = logging.getLogger(__name__)
 class PythonASTAnalyzer:
     """Analyzes Python AST for hard-blocked patterns."""
 
-    def __init__(
-        self,
-        bare_except: bool = True,
-        getattr_setattr: bool = True,
-        barrel_init: bool = True,
-    ) -> None:
+    def __init__(self, bare_except: bool = True, getattr_setattr: bool = True, barrel_init: bool = True) -> None:
         """
         Initialize the analyzer.
 
@@ -43,7 +38,7 @@ class PythonASTAnalyzer:
         file_path = Path(file_path)
 
         try:
-            with open(file_path, encoding="utf-8") as f:
+            with file_path.open(encoding="utf-8") as f:
                 content = f.read()
         except (OSError, UnicodeDecodeError) as e:
             logger.error(f"Failed to read {file_path}: {e}")
@@ -69,12 +64,7 @@ class PythonASTAnalyzer:
         except SyntaxError as e:
             # Syntax errors prevent other checks
             return [
-                Violation(
-                    line=e.lineno or 1,
-                    column=e.offset or 0,
-                    message=f"Syntax error: {e.msg}",
-                    rule="syntax",
-                )
+                Violation(line=e.lineno or 1, column=e.offset or 0, message=f"Syntax error: {e.msg}", rule="syntax")
             ]
 
         # Check for various patterns
@@ -94,16 +84,15 @@ class PythonASTAnalyzer:
         violations = []
 
         for node in ast.walk(tree):
-            if isinstance(node, ast.ExceptHandler):
-                if node.type is None:
-                    violations.append(
-                        Violation(
-                            line=node.lineno,
-                            column=node.col_offset,
-                            message="Bare except clause is not allowed. Use specific exception types.",
-                            rule="bare_except",
-                        )
+            if isinstance(node, ast.ExceptHandler) and node.type is None:
+                violations.append(
+                    Violation(
+                        line=node.lineno,
+                        column=node.col_offset,
+                        message="Bare except clause is not allowed. Use specific exception types.",
+                        rule="bare_except",
                     )
+                )
 
         return violations
 
@@ -113,16 +102,15 @@ class PythonASTAnalyzer:
         banned_functions = {"hasattr", "getattr", "setattr"}
 
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id in banned_functions:
-                    violations.append(
-                        Violation(
-                            line=node.lineno,
-                            column=node.col_offset,
-                            message=f"Use of {node.func.id} is not allowed. Use proper type checking instead.",
-                            rule="getattr_setattr",
-                        )
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in banned_functions:
+                violations.append(
+                    Violation(
+                        line=node.lineno,
+                        column=node.col_offset,
+                        message=f"Use of {node.func.id} is not allowed. Use proper type checking instead.",
+                        rule="getattr_setattr",
                     )
+                )
 
         return violations
 
@@ -140,16 +128,15 @@ class PythonASTAnalyzer:
 
         # Check for star imports
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                if any(alias.name == "*" for alias in node.names):
-                    violations.append(
-                        Violation(
-                            line=node.lineno,
-                            column=node.col_offset,
-                            message="Barrel __init__.py with star imports is not allowed. Keep __init__.py minimal.",
-                            rule="barrel_init",
-                        )
+            if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
+                violations.append(
+                    Violation(
+                        line=node.lineno,
+                        column=node.col_offset,
+                        message="Barrel __init__.py with star imports is not allowed. Keep __init__.py minimal.",
+                        rule="barrel_init",
                     )
+                )
 
         # Check for re-export pattern
         imports: set[str] = set()
@@ -165,14 +152,13 @@ class PythonASTAnalyzer:
             # Check for __all__ assignment
             if isinstance(node, ast.Assign):
                 for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "__all__":
+                    if isinstance(target, ast.Name) and target.id == "__all__" and isinstance(node.value, ast.List):
                         # Extract names from __all__
-                        if isinstance(node.value, ast.List):
-                            for elt in node.value.elts:
-                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                                    exports.add(elt.value)
-                                elif isinstance(elt, ast.Str):  # Python 3.7 compatibility
-                                    exports.add(elt.s)
+                        for elt in node.value.elts:
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                exports.add(elt.value)
+                            elif isinstance(elt, ast.Str):  # Python 3.7 compatibility
+                                exports.add(elt.s)
 
         # If we have imports and they're all in __all__, it's a barrel
         if imports and exports and imports.issubset(exports):

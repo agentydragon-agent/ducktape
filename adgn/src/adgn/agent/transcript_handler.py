@@ -6,14 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from adgn.agent.handler import (
-    AssistantText,
-    BaseHandler,
-    ToolCall,
-    ToolCallOutput,
-    UserText,
-    to_jsonl_record,
-)
+from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText, to_jsonl_record
 from adgn.agent.loop_control import NoLoopDecision
 from adgn.openai_utils.model import ReasoningItem
 
@@ -49,8 +42,7 @@ class TranscriptHandler(BaseHandler):
             raise FileExistsError(f"Transcript already exists: {self._events_path}")
         # Write a small metadata file once
         (self._root / "metadata.json").write_text(
-            json.dumps({"started": datetime.utcnow().isoformat() + "Z"}, indent=2),
-            encoding="utf-8",
+            json.dumps({"started": datetime.utcnow().isoformat() + "Z"}, indent=2), encoding="utf-8"
         )
 
     # ---- Event helpers ----

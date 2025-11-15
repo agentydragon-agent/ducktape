@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 import shlex
@@ -12,23 +12,9 @@ import aiodocker
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
 
-from adgn.mcp._shared.constants import (
-    EXIT_CODE_SIGTERM,
-    SLEEP_FOREVER_CMD,
-)
-from adgn.mcp._shared.types import (
-    ContainerImageHistoryEntry,
-    ContainerImageInfo,
-    ContainerInfo,
-    NetworkMode,
-)
-from adgn.mcp.exec.models import (
-    MAX_BYTES_CAP,
-    BaseExecResult,
-    ExecInput,
-    async_timer,
-    render_raw_to_result,
-)
+from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM, SLEEP_FOREVER_CMD
+from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo, NetworkMode
+from adgn.mcp.exec.models import MAX_BYTES_CAP, BaseExecResult, ExecInput, async_timer, render_raw_to_result
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 # Exit code returned by SIGTERM; standardized for host-side timeouts
@@ -152,11 +138,7 @@ def make_container_lifespan(opts: ContainerOptions):
 
 
 def _render_container_result(
-    stdout_buf: bytearray,
-    stderr_buf: bytearray,
-    exit_code: int | None,
-    timed_out: bool,
-    duration_ms: int,
+    stdout_buf: bytearray, stderr_buf: bytearray, exit_code: int | None, timed_out: bool, duration_ms: int
 ) -> BaseExecResult:
     """Render container execution output to BaseExecResult."""
     return render_raw_to_result(
@@ -223,17 +205,13 @@ async def _run_ephemeral_container(
     timeout_task = asyncio.create_task(asyncio.sleep(input.timeout_ms / 1000.0))
     wait_task = asyncio.create_task(wait_for_completion())
 
-    done, pending = await asyncio.wait(
-        {timeout_task, wait_task}, return_when=asyncio.FIRST_COMPLETED
-    )
+    done, pending = await asyncio.wait({timeout_task, wait_task}, return_when=asyncio.FIRST_COMPLETED)
 
     # Cancel pending tasks
     for task in pending:
         task.cancel()
-        try:
+        with suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
 
     if timeout_task in done:
         # External timeout - we control this
@@ -277,19 +255,14 @@ async def _run_ephemeral_container(
         pass
 
     # Remove container
-    try:
+    with suppress(Exception):
         await container.delete(force=True)
-    except Exception:
-        pass
 
     return stdout_buf, stderr_buf, exit_code, timed_out
 
 
 async def _run_session_container(
-    s: ContainerSessionState,
-    prepared_cmd: list[str] | str,
-    input: ExecInput,
-    opts: ContainerOptions,
+    s: ContainerSessionState, prepared_cmd: list[str] | str, input: ExecInput, opts: ContainerOptions
 ) -> tuple[bytearray, bytearray, int | None, bool]:
     """Run command in per-session container using aiodocker exec."""
     container = s.container
@@ -347,17 +320,13 @@ async def _run_session_container(
         timeout_task = asyncio.create_task(asyncio.sleep(input.timeout_ms / 1000.0))
         collect_task = asyncio.create_task(collect_output())
 
-        done, pending = await asyncio.wait(
-            {timeout_task, collect_task}, return_when=asyncio.FIRST_COMPLETED
-        )
+        done, pending = await asyncio.wait({timeout_task, collect_task}, return_when=asyncio.FIRST_COMPLETED)
 
         # Cancel pending tasks
         for task in pending:
             task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
 
         if timeout_task in done:
             # External timeout - we killed it
@@ -384,9 +353,7 @@ async def _run_session_container(
 # ---- Register exec tool and resources on a FastMCP server -------------------
 
 
-def register_container(
-    mcp: NotifyingFastMCP, opts: ContainerOptions, *, tool_name: str = "exec"
-) -> None:
+def register_container(mcp: NotifyingFastMCP, opts: ContainerOptions, *, tool_name: str = "exec") -> None:
     """Register both container.info resource and exec tool on a FastMCP server.
 
     This folds resource and tool registration into a single call to avoid double registration.
@@ -398,16 +365,12 @@ def register_container(
         img_info = await s.docker_client.images.inspect(s.image)
         img_history_raw = await s.docker_client.images.history(s.image)
         img_history = (
-            [ContainerImageHistoryEntry.model_validate(entry) for entry in img_history_raw]
-            if img_history_raw
-            else None
+            [ContainerImageHistoryEntry.model_validate(entry) for entry in img_history_raw] if img_history_raw else None
         )
 
         ci = ContainerInfo(
             image=ContainerImageInfo(
-                name=s.image,
-                id=img_info.get("Id", "unknown"),
-                tags=img_info.get("RepoTags", [s.image]),
+                name=s.image, id=img_info.get("Id", "unknown"), tags=img_info.get("RepoTags", [s.image])
             ),
             container_id=(s.container["Id"] if s.container is not None else None),
             volumes=s.volumes,
@@ -438,21 +401,14 @@ def register_container(
 
             # Build command; for non-shell, run under sh -lc
             prepared_cmd: list[str] | str
-            if input.shell:
-                prepared_cmd = _shell_join(input.cmd)
-            else:
-                prepared_cmd = ["sh", "-lc", _shell_join(input.cmd)]
+            prepared_cmd = _shell_join(input.cmd) if input.shell else ["sh", "-lc", _shell_join(input.cmd)]
 
             if s.ephemeral or opts.ephemeral:
-                stdout_buf, stderr_buf, exit_code, timed_out = await _run_ephemeral_container(
-                    s, prepared_cmd, input
-                )
+                stdout_buf, stderr_buf, exit_code, timed_out = await _run_ephemeral_container(s, prepared_cmd, input)
             else:
                 stdout_buf, stderr_buf, exit_code, timed_out = await _run_session_container(
                     s, prepared_cmd, input, opts
                 )
 
             duration_ms = get_duration_ms()
-            return _render_container_result(
-                stdout_buf, stderr_buf, exit_code, timed_out, duration_ms
-            )
+            return _render_container_result(stdout_buf, stderr_buf, exit_code, timed_out, duration_ms)

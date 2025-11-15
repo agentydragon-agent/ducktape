@@ -12,10 +12,7 @@ from .types import Status
 
 
 def create_habitify_mcp_server(
-    debug: bool = False,
-    log_level: str = "INFO",
-    api_key: str | None = None,
-    port: int = 3000,
+    debug: bool = False, log_level: str = "INFO", api_key: str | None = None, port: int = 3000
 ) -> FastMCP:
     """
     Create and configure a Habitify MCP server.
@@ -104,12 +101,7 @@ def create_habitify_mcp_server(
             Dictionary with habit status(es) or error information
         """
         return await tools.get_habit_status(  # type: ignore[call-arg]
-            id=id,
-            name=name,
-            date=date,
-            start_date=start_date,
-            end_date=end_date,
-            days=days,
+            id=id, name=name, date=date, start_date=start_date, end_date=end_date, days=days
         )
 
     @server.tool()

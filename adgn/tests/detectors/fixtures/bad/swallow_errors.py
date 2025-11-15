@@ -1,5 +1,4 @@
 try:
-    1/0
+    1 / 0
 except Exception:
     pass
-

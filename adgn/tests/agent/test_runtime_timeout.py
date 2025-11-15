@@ -10,7 +10,7 @@ from adgn.mcp.testing.typed_stubs import call_tool_typed
 
 
 def _runtime_spec_persession(image: str = "alpine:3.19"):
-    server = make_container_exec_server(
+    return make_container_exec_server(
         ContainerOptions(
             image=image,
             working_dir="/workspace",
@@ -19,7 +19,6 @@ def _runtime_spec_persession(image: str = "alpine:3.19"):
             ephemeral=False,  # per-session container
         )
     )
-    return server
 
 
 async def _run_exec(sess, cmd, timeout_ms: int, shell: bool = True) -> BaseExecResult:

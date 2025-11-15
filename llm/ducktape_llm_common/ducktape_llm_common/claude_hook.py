@@ -119,7 +119,7 @@ class ClaudeCodeHookBase:
                 request = HookRequest.model_validate(input_data)
             except Exception as e:
                 # Invalid request format
-                outcome = HookError(f"Invalid request format: {str(e)}")
+                outcome = HookError(f"Invalid request format: {e!s}")
                 response = outcome.to_claude_response()
                 print(response.model_dump_json(by_alias=True))
                 sys.exit(0)
@@ -168,7 +168,7 @@ class ClaudeCodeHookBase:
 
         except Exception as e:
             # On any error, return error outcome
-            error_outcome = HookError(f"Hook execution failed: {str(e)}")
+            error_outcome = HookError(f"Hook execution failed: {e!s}")
             response = error_outcome.to_claude_response()
             print(response.model_dump_json(by_alias=True))
             sys.exit(0)

@@ -22,9 +22,7 @@ class _Handler(MessageHandler):
         # Do not swallow errors; let them propagate for visibility
         await self._o._on_updated(message)
 
-    async def on_resource_list_changed(
-        self, message: mcp_types.ResourceListChangedNotification
-    ) -> None:  # type: ignore[override]
+    async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:  # type: ignore[override]
         # Do not swallow errors; let them propagate for visibility
         await self._o._on_list_changed(message)
 
@@ -43,9 +41,7 @@ class NotificationsBuffer:
         self._compositor = compositor
         self._updates: list[ResourceUpdateEvent] = []
         self._list_changed: set[str] = set()
-        self._raw: list[
-            mcp_types.ResourceUpdatedNotification | mcp_types.ResourceListChangedNotification
-        ] = []
+        self._raw: list[mcp_types.ResourceUpdatedNotification | mcp_types.ResourceListChangedNotification] = []
         self._hooks: list[Callable[[], Awaitable[None]]] = []
         self.handler: MessageHandler = _Handler(self)
         # Subscribe to compositor-level notifications when available so we don't
@@ -64,9 +60,7 @@ class NotificationsBuffer:
 
     def poll(self) -> NotificationsBatch:
         batch = NotificationsBatch(
-            resources_updated=list(self._updates),
-            resource_list_changed=sorted(self._list_changed),
-            raw=list(self._raw),
+            resources_updated=list(self._updates), resource_list_changed=sorted(self._list_changed), raw=list(self._raw)
         )
         self._updates.clear()
         self._list_changed.clear()
@@ -75,9 +69,7 @@ class NotificationsBuffer:
 
     def peek(self) -> NotificationsBatch:
         return NotificationsBatch(
-            resources_updated=list(self._updates),
-            resource_list_changed=sorted(self._list_changed),
-            raw=list(self._raw),
+            resources_updated=list(self._updates), resource_list_changed=sorted(self._list_changed), raw=list(self._raw)
         )
 
     async def _on_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:

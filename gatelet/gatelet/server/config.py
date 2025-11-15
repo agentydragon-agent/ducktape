@@ -1,10 +1,10 @@
 """Configuration management for Gatelet server."""
 
+from datetime import timedelta
 import logging
 import os
-import re
-from datetime import timedelta
 from pathlib import Path
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, validator
@@ -26,7 +26,7 @@ class BearerAuth(BaseModel):
     token: str
 
     @validator("token")
-    def token_not_empty(cls, v):
+    def token_not_empty(self, v):
         if not v:
             raise ValueError("Token must not be empty")
         return v
@@ -40,12 +40,7 @@ class DatabaseSettings(BaseModel):
     # The DATABASE_URL environment variable overrides the value from the
     # configuration file. This makes it easy to point tests at a temporary
     # database.
-    dsn: str = Field(
-        default=os.getenv(
-            "DATABASE_URL",
-            "postgresql://postgres:postgres@localhost:5432/gatelet",
-        ),
-    )
+    dsn: str = Field(default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/gatelet"))
 
 
 class ServerSettings(BaseModel):
@@ -90,9 +85,7 @@ class ChallengeResponseAuthSettings(BaseModel):
 
 class AuthSettings(BaseModel):
     key_in_url: KeyInUrlAuthSettings = Field(default=KeyInUrlAuthSettings())
-    challenge_response: ChallengeResponseAuthSettings = Field(
-        default=ChallengeResponseAuthSettings(),
-    )
+    challenge_response: ChallengeResponseAuthSettings = Field(default=ChallengeResponseAuthSettings())
 
 
 class HomeAssistantSettings(BaseModel):
@@ -122,21 +115,17 @@ class WebhookSettings(BaseModel):
     default_page_size: int = Field(default=10)
 
     @validator("integrations")
-    def validate_integration_names(cls, v):
-        for name in v.keys():
+    def validate_integration_names(self, v):
+        for name in v:
             # Check for URL-safe names
             if not re.match(r"^[a-zA-Z0-9_-]+$", name):
-                raise ValueError(
-                    f"Integration name '{name}' not only letters, numbers, underscores, and hyphens.",
-                )
+                raise ValueError(f"Integration name '{name}' not only letters, numbers, underscores, and hyphens.")
             if len(name) > MAX_INTEGRATION_NAME_LEN:
-                raise ValueError(
-                    f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)",
-                )
+                raise ValueError(f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)")
         return v
 
     @validator("default_page_size")
-    def validate_page_size(cls, v):
+    def validate_page_size(self, v):
         if v < 1 or v > MAX_PAGE_SIZE:
             raise ValueError(f"default_page_size must be between 1 and {MAX_PAGE_SIZE}")
         return v
@@ -168,7 +157,7 @@ class Settings(BaseModel):
     def from_file(cls, path: Path):
         """Load settings from file at path."""
         logger.info(f"Loading settings from {path.absolute()}")
-        with open(path) as f:
+        with path.open() as f:
             config_dict = toml.load(f)
         return cls.parse_obj(config_dict)
 

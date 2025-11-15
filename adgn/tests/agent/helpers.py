@@ -10,6 +10,48 @@ from hamcrest import all_of, assert_that, contains_string, has_item, has_propert
 from uvicorn import Config, Server
 
 from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
+from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.types import ResponsesRequest, ResponsesResult
+
+# System notification tag constants
+SYSTEM_NOTIFICATION_START_TAG = "<system notification>"
+SYSTEM_NOTIFICATION_END_TAG = "</system notification>"
+
+
+class NoopOpenAIClient(OpenAIModelProto):
+    """No-op OpenAI client for tests that bypass sampling via SyntheticAction."""
+
+    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+        # This should never be called when using SyntheticAction path
+        raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")
+
+
+def extract_input_text_content(messages: Sequence[Any]) -> list[str]:
+    """Extract input_text content from messages, returning list of text strings.
+
+    Handles both Pydantic models and dict messages.
+    """
+    texts: list[str] = []
+    for item in messages:
+        # Normalize to dict (some SDK items are Pydantic models)
+        msgd = item.model_dump(exclude_none=True) if hasattr(item, "model_dump") else item
+        # Extract input_text content
+        contents = (msgd.get("content") or []) if isinstance(msgd, dict) else []
+        for c in contents:
+            if isinstance(c, dict) and c.get("type") == "input_text":
+                text = c.get("text")
+                if isinstance(text, str):
+                    texts.append(text)
+    return texts
+
+
+def strip_system_notification_wrapper(text: str) -> str:
+    """Strip system notification wrapper tags if present, returning inner content."""
+    start_tag = SYSTEM_NOTIFICATION_START_TAG + "\n"
+    end_tag = "\n" + SYSTEM_NOTIFICATION_END_TAG
+    if text.startswith(start_tag) and text.endswith(end_tag):
+        return text[len(start_tag) : -len(end_tag)]
+    return text
 
 
 def pick_free_port(host: str = "127.0.0.1") -> int:
@@ -56,12 +98,7 @@ def start_uvicorn_app(
 # ------------------------------
 
 
-def api_create_agent(
-    base_url: str,
-    *,
-    preset: str = "default",
-    system: str | None = None,
-) -> str:
+def api_create_agent(base_url: str, *, preset: str = "default", system: str | None = None) -> str:
     """Create an agent via HTTP POST /api/agents and return its id.
 
     Keeps E2E tests concise and consistent.
@@ -136,8 +173,5 @@ def expect_error(
 def expect_run_finished(payloads: Sequence[ServerMessage]) -> None:
     """Assert that a finished run_status is present in payloads (typed, hamcrest)."""
     assert_that(
-        payloads,
-        has_item(
-            has_properties(type="run_status", run_state=has_properties(status=RunStatus.FINISHED))
-        ),
+        payloads, has_item(has_properties(type="run_status", run_state=has_properties(status=RunStatus.FINISHED)))
     )

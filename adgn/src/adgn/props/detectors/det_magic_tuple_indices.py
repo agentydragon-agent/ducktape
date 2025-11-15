@@ -37,11 +37,7 @@ def _find_in_file(path: Path) -> list[Detection]:
         if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
             body = fn.body if fn.body is not None else []
             for st in body:
-                if (
-                    isinstance(st, ast.Assign)
-                    and len(st.targets) == 1
-                    and isinstance(st.targets[0], ast.Name)
-                ):
+                if isinstance(st, ast.Assign) and len(st.targets) == 1 and isinstance(st.targets[0], ast.Name):
                     nm = st.targets[0].id
                     if isinstance(st.value, ast.Call):
                         # Gather indices used for this binding within function body
@@ -59,7 +55,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                                         f"Multiple magic tuple indices on '{nm}': {sorted(indices)} — prefer a named model or fewer positional fields."
                                     ),
                                     snippet=read_snippet(path, sl, sl, context=0),
-                                ),
+                                )
                             )
     return out
 

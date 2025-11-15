@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
-from collections.abc import Iterator
 
 from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
-from tana.domain.nodes import BaseNode, DOC_CLASS, TupleNode, UnknownNode
+from tana.domain.nodes import DOC_CLASS, BaseNode, TupleNode, UnknownNode
 from tana.domain.types import NodeId
 from tana.graph.wrappers import is_wrapper
 

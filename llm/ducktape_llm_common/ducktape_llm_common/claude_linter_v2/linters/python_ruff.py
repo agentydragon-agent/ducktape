@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+from typing import ClassVar
 
 from ..config.models import Violation
 
@@ -13,22 +14,24 @@ class PythonRuffLinter:
     """Runs ruff checks for Python code quality."""
 
     # Critical rules that should block in pre-hook
-    CRITICAL_RULES = {
-        # From v1 config - these are the most important ones
-        "E722",  # bare-except
-        "BLE001",  # blind-except
-        "B009",  # getattr-with-constant
-        "B010",  # setattr-with-constant
-        "S113",  # request-without-timeout
-        "B008",  # function-call-in-default-argument
-        "E402",  # module-import-not-at-top-of-file
-        "PLC0415",  # import-outside-top-level
-        "S608",  # hardcoded-sql-expression
-        "S611",  # django-raw-sql
-        "B904",  # raise-without-from-inside-except
-        "B006",  # mutable-argument-default
-        "PGH003",  # blanket-type-ignore
-    }
+    CRITICAL_RULES: ClassVar[frozenset[str]] = frozenset(
+        {
+            # From v1 config - these are the most important ones
+            "E722",  # bare-except
+            "BLE001",  # blind-except
+            "B009",  # getattr-with-constant
+            "B010",  # setattr-with-constant
+            "S113",  # request-without-timeout
+            "B008",  # function-call-in-default-argument
+            "E402",  # module-import-not-at-top-of-file
+            "PLC0415",  # import-outside-top-level
+            "S608",  # hardcoded-sql-expression
+            "S611",  # django-raw-sql
+            "B904",  # raise-without-from-inside-except
+            "B006",  # mutable-argument-default
+            "PGH003",  # blanket-type-ignore
+        }
+    )
 
     def __init__(self, force_select: list[str] | None = None) -> None:
         """
@@ -43,7 +46,7 @@ class PythonRuffLinter:
     def _check_ruff_available(self) -> bool:
         """Check if ruff is available."""
         try:
-            result = subprocess.run(["ruff", "--version"], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(["ruff", "--version"], capture_output=True, text=True, timeout=5, check=False)
             if result.returncode == 0:
                 logger.debug(f"Found ruff: {result.stdout.strip()}")
                 return True
@@ -70,14 +73,7 @@ class PythonRuffLinter:
         violations = []
 
         # Build ruff command
-        cmd = [
-            "ruff",
-            "check",
-            "--output-format",
-            "json",
-            "--stdin-filename",
-            file_path or "temp.py",
-        ]
+        cmd = ["ruff", "check", "--output-format", "json", "--stdin-filename", file_path or "temp.py"]
 
         # Add force-select rules if provided
         if self.force_select:
@@ -90,7 +86,7 @@ class PythonRuffLinter:
         cmd.append("-")
 
         try:
-            result = subprocess.run(cmd, input=code, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(cmd, input=code, capture_output=True, text=True, timeout=30, check=False)
 
             # Ruff returns 1 if violations found, 0 if clean
             if result.returncode in (0, 1):

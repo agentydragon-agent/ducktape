@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from docker import DockerClient
 from fastmcp.mcp_config import MCPConfig
 
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.openai_utils.model import OpenAIModelProto
-from docker import DockerClient
 
 from .container import AgentContainer, build_container
 
@@ -27,12 +27,7 @@ class AgentRegistry:
         return list(self._items.values())
 
     async def create(
-        self,
-        agent_id: str,
-        mcp_config: MCPConfig,
-        *,
-        with_ui: bool = True,
-        system: str | None = None,
+        self, agent_id: str, mcp_config: MCPConfig, *, with_ui: bool = True, system: str | None = None
     ) -> AgentContainer:
         c = await build_container(
             agent_id=agent_id,

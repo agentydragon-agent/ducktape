@@ -5,9 +5,7 @@ from fastmcp.client import Client
 from adgn.mcp._shared.client_helpers import call_simple_ok
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp._shared.uris import subscriptions_index_uri
-from adgn.mcp.resources.types import (
-    SubscriptionsIndex,
-)
+from adgn.mcp.resources.types import SubscriptionsIndex
 
 
 class ResourcesClient:
@@ -29,22 +27,14 @@ class ResourcesClient:
 
     async def subscribe(self, *, server: str, uri: str) -> None:
         """Subscribe to updates for a resource via the resources server."""
-        await call_simple_ok(
-            self.client, name="subscribe", arguments={"server": server, "uri": uri}
-        )
+        await call_simple_ok(self.client, name="subscribe", arguments={"server": server, "uri": uri})
 
     async def unsubscribe(self, *, server: str, uri: str) -> None:
         """Unsubscribe from updates for a resource via the resources server."""
-        await call_simple_ok(
-            self.client, name="unsubscribe", arguments={"server": server, "uri": uri}
-        )
+        await call_simple_ok(self.client, name="unsubscribe", arguments={"server": server, "uri": uri})
 
     async def subscribe_list_changes(self, *, server: str) -> None:
-        await call_simple_ok(
-            self.client, name="subscribe_list_changes", arguments={"server": server}
-        )
+        await call_simple_ok(self.client, name="subscribe_list_changes", arguments={"server": server})
 
     async def unsubscribe_list_changes(self, *, server: str) -> None:
-        await call_simple_ok(
-            self.client, name="unsubscribe_list_changes", arguments={"server": server}
-        )
+        await call_simple_ok(self.client, name="unsubscribe_list_changes", arguments={"server": server})

@@ -26,17 +26,14 @@ async def test_container_timeout_causes_deny_abort(
     # Force short timeout to trigger evaluator timeout
     monkeypatch.setenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "0.1")
     # Policy that sleeps (exceeds timeout)
-    SLEEPY = policy_fetch("sleepy_timeout")
-    engine = make_policy_engine(SLEEPY)
+    sleepy_policy = policy_fetch("sleepy_timeout")
+    engine = make_policy_engine(sleepy_policy)
 
     # Reader server
     reader = ApprovalPolicyServer(engine)
 
-    async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (
-        sess,
-        _,
-    ):
+    async with make_pg_compositor({"backend": backend_server, "approval_policy": reader}) as (sess, _):
         # High-level client surfaces ToolError with message only; assert the canonical message
-        with pytest.raises(Exception) as ei:
+        with pytest.raises(Exception, match=POLICY_EVALUATOR_ERROR_MSG) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "timeout"})
         assert POLICY_EVALUATOR_ERROR_MSG in str(ei.value)

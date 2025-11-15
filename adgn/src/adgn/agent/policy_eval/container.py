@@ -3,11 +3,12 @@ from __future__ import annotations
 import logging
 import os
 
+from docker import DockerClient
+
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.agent.policy_eval.runner import run_policy_source
 from adgn.agent.runtime.images import resolve_runtime_image
-from docker import DockerClient
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,7 @@ class ContainerPolicyEvaluator:
         self.agent_id = agent_id
         self.image: str = image or resolve_runtime_image()  # type: ignore[assignment]
         self.timeout_secs = (
-            timeout_secs
-            if timeout_secs is not None
-            else float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
+            timeout_secs if timeout_secs is not None else float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
         )
         self._docker = docker_client
         self._engine = engine

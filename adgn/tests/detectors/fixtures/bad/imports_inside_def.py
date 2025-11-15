@@ -1,4 +1,4 @@
 def bad():
     import json
-    return json.loads("{}")
 
+    return json.loads("{}")

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 import inspect
-from typing import Any, Callable, Union, get_type_hints
+from typing import Any, get_type_hints
 
 from openai.types.responses import FunctionToolParam, ResponseFunctionToolCall
 from pydantic import BaseModel
 
-ToolPayload = Union[BaseModel, str]
+ToolPayload = BaseModel | str
 ToolHandler = Callable[[BaseModel], Awaitable[ToolPayload]]
 
 

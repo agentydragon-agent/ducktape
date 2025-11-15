@@ -53,11 +53,7 @@ async def run_prompt_async(
             mcp_client=mcp_client,
             system=system_prompt,
             client=client,
-            handlers=[
-                AutoHandler(),
-                OneLineProgressHandler(),
-                TranscriptHandler(dest_dir=run_dir),
-            ],
+            handlers=[AutoHandler(), OneLineProgressHandler(), TranscriptHandler(dest_dir=run_dir)],
         )
         res_any = await agent.run(prompt)
 

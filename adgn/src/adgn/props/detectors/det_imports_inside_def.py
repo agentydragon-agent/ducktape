@@ -3,12 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from .import_graph import (
-    _resolve_from_module,
-    build_import_graph,
-    module_name_for_path,
-    would_introduce_cycle,
-)
+from .import_graph import _resolve_from_module, build_import_graph, module_name_for_path, would_introduce_cycle
 from .models import Detection, LineRange
 from .registry import DetectorSpec, register
 from .utils import iter_py_files, read_snippet
@@ -60,11 +55,7 @@ def _find_in_file(path: Path, *, graph: dict[str, set[str]], root: Path) -> list
                     if n.names:
                         target_mod = n.names[0].name
                 elif isinstance(n, ast.ImportFrom):
-                    base_mod = _resolve_from_module(
-                        cur_mod,
-                        n.module,
-                        int(getattr(n, "level", 0) or 0),
-                    )
+                    base_mod = _resolve_from_module(cur_mod, n.module, int(getattr(n, "level", 0) or 0))
                     if base_mod:
                         if n.names:
                             name0 = n.names[0].name  # may include dotted submodule
@@ -86,7 +77,7 @@ def _find_in_file(path: Path, *, graph: dict[str, set[str]], root: Path) -> list
                                 + f"[{ev}]"
                             ),
                             snippet=read_snippet(path, sl, el, context=0),
-                        ),
+                        )
                     )
                 elif not target_mod:
                     # If we failed to resolve, conservatively report
@@ -103,7 +94,7 @@ def _find_in_file(path: Path, *, graph: dict[str, set[str]], root: Path) -> list
                                 + f"[{ev}]"
                             ),
                             snippet=read_snippet(path, sl, el, context=0),
-                        ),
+                        )
                     )
 
     V().visit(node)

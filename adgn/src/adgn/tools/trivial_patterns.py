@@ -83,10 +83,7 @@ class FileAnalyzer(ast.NodeVisitor):
                     param = value.id
                     if param in ctx.params and alias != param and alias not in ctx.alias_assigns:
                         ctx.alias_assigns[alias] = AliasAssign(
-                            alias=alias,
-                            param=param,
-                            line=node.lineno,
-                            col=node.col_offset,
+                            alias=alias, param=param, line=node.lineno, col=node.col_offset
                         )
         self.generic_visit(node)
 
@@ -261,10 +258,7 @@ class FileAnalyzer(ast.NodeVisitor):
         try:
             func_expr = ast.unparse(call.func)  # type: ignore[attr-defined]
         except Exception:  # pragma: no cover
-            if isinstance(call.func, ast.Name):
-                func_expr = call.func.id
-            else:
-                func_expr = "<call>"
+            func_expr = call.func.id if isinstance(call.func, ast.Name) else "<call>"
 
         name = node.name if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) else "<lambda>"
         self.findings.append(
@@ -408,9 +402,9 @@ def _parse_scope(raw: list[str] | None) -> tuple[str, ...]:
     specs: list[str] = []
     for item in raw:
         for fragment in item.split(","):
-            fragment = fragment.strip()
-            if fragment:
-                specs.append(fragment)
+            stripped_fragment = fragment.strip()
+            if stripped_fragment:
+                specs.append(stripped_fragment)
     if not specs:
         return ()
     return tuple(specs)
@@ -425,8 +419,7 @@ def _in_scope(path: Path, scope: tuple[str, ...], project_root: Path) -> bool:
         normalized = spec.strip()
         if not normalized:
             continue
-        if normalized.startswith("./"):
-            normalized = normalized[2:]
+        normalized = normalized.removeprefix("./")
         normalized = normalized.rstrip("/")
         if not normalized:
             continue

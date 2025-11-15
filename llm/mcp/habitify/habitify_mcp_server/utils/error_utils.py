@@ -2,8 +2,8 @@
 Error handling utilities for Habitify MCP.
 """
 
-from typing import Any
 from collections.abc import Callable
+from typing import Any
 
 import httpx
 
@@ -35,25 +35,22 @@ def classify_error(error: Exception) -> str:
     """
     if isinstance(error, httpx.HTTPStatusError):
         status_code = error.response.status_code
-        if status_code == 401 or status_code == 403:
+        if status_code in {401, 403}:
             return "auth"
-        elif status_code == 404:
+        if status_code == 404:
             return "not_found"
-        elif status_code == 400 or status_code == 422:
+        if status_code in {400, 422}:
             return "validation"
-        else:
-            return "api"
-    elif isinstance(error, httpx.ConnectError | httpx.TimeoutException):
+        return "api"
+    if isinstance(error, httpx.ConnectError | httpx.TimeoutException):
         return "network"
-    elif isinstance(error, ValueError):
+    if isinstance(error, ValueError):
         return "validation"
     return "unknown"
 
 
 def _create_error_base(
-    error_message: str | Exception,
-    context: dict[str, Any] | None = None,
-    category: str | None = None,
+    error_message: str | Exception, context: dict[str, Any] | None = None, category: str | None = None
 ) -> ErrorResponse:
     """
     Internal function to create an error response with common handling.
@@ -84,10 +81,7 @@ def _create_error_base(
     return ErrorResponse(**error_data)
 
 
-def create_error_response(
-    error: Exception,
-    context: dict[str, Any] | None = None,
-) -> ErrorResponse:
+def create_error_response(error: Exception, context: dict[str, Any] | None = None) -> ErrorResponse:
     """
     Create a simple error response that forwards the original error message.
 

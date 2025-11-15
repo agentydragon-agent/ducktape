@@ -40,11 +40,7 @@ class GradingStrategy(ABC):
         """
 
     @abstractmethod
-    def prepare_for_grader(
-        self,
-        artifacts: dict[str, Any],
-        config: OptimizerConfig,
-    ) -> dict[str, Any]:
+    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> dict[str, Any]:
         """Prepare artifacts for the grading model.
 
         Args:
@@ -56,11 +52,7 @@ class GradingStrategy(ABC):
         """
 
     @abstractmethod
-    def get_grading_prompt(
-        self,
-        prepared_artifacts: dict[str, Any],
-        task: TaskDefinition,
-    ) -> str:
+    def get_grading_prompt(self, prepared_artifacts: dict[str, Any], task: TaskDefinition) -> str:
         """Generate the grading prompt for this strategy.
 
         Args:
@@ -120,18 +112,11 @@ class FileBasedGradingStrategy(GradingStrategy):
                     continue
         return files
 
-    def _extract_files_from_trajectory(
-        self,
-        trajectory: list[TrajectoryItem],
-    ) -> dict[str, str]:
+    def _extract_files_from_trajectory(self, trajectory: list[TrajectoryItem]) -> dict[str, str]:
         """Extract files from Write/Edit tool calls in trajectory."""
         files = {}
         for item in trajectory:
-            if isinstance(item, ToolCall) and item.tool_name in (
-                "Write",
-                "Edit",
-                "MultiEdit",
-            ):
+            if isinstance(item, ToolCall) and item.tool_name in ("Write", "Edit", "MultiEdit"):
                 # Extract file content from tool call
                 args = item.arguments
                 if "file_path" in args:
@@ -145,11 +130,7 @@ class FileBasedGradingStrategy(GradingStrategy):
                     files[path] = content
         return files
 
-    def prepare_for_grader(
-        self,
-        artifacts: dict[str, Any],
-        config: OptimizerConfig,
-    ) -> dict[str, Any]:
+    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> dict[str, Any]:
         """Truncate files for grading."""
         files = artifacts.get("files", {})
         t_mgr = TruncationManager(config)
@@ -161,43 +142,23 @@ class FileBasedGradingStrategy(GradingStrategy):
         truncated_files = []
         for file_info in file_list:
             truncated_content = t_mgr.truncate_text(
-                file_info["content"],
-                config.truncation.max_file_size_grading,
-                "... [truncated for grading]",
+                file_info["content"], config.truncation.max_file_size_grading, "... [truncated for grading]"
             )
-            truncated_files.append(
-                {
-                    "path": file_info["path"],
-                    "content": truncated_content,
-                },
-            )
+            truncated_files.append({"path": file_info["path"], "content": truncated_content})
 
         # Further truncate by total token count
-        truncated_union = t_mgr.truncate_files_by_tokens(
-            truncated_files,
-            config.tokens.max_files_tokens,
-        )
+        truncated_union = t_mgr.truncate_files_by_tokens(truncated_files, config.tokens.max_files_tokens)
         # Normalize to list[dict[str, Any]] for downstream JSON
         if truncated_union and isinstance(truncated_union[0], FileInfo):
             tu = cast(list[FileInfo], truncated_union)
-            normalized_files: list[dict[str, Any]] = [
-                {"path": fi.path, "content": fi.content} for fi in tu
-            ]
+            normalized_files: list[dict[str, Any]] = [{"path": fi.path, "content": fi.content} for fi in tu]
         else:
             td = cast(list[dict[str, str]], truncated_union)
             normalized_files = [{"path": d["path"], "content": d["content"]} for d in td]
 
-        return {
-            "type": "file_based",
-            "files": normalized_files,
-            "criteria": self.criteria,
-        }
+        return {"type": "file_based", "files": normalized_files, "criteria": self.criteria}
 
-    def get_grading_prompt(
-        self,
-        prepared_artifacts: dict[str, Any],
-        task: TaskDefinition,
-    ) -> str:
+    def get_grading_prompt(self, prepared_artifacts: dict[str, Any], task: TaskDefinition) -> str:
         """Generate file-based grading prompt."""
         files = prepared_artifacts["files"]
         return f"Task: {task.prompt}\n\nFiles:\n{json.dumps(files, indent=2)}"
@@ -228,11 +189,7 @@ class MessageBasedGradingStrategy(GradingStrategy):
 
         return {"final_message": final_message}
 
-    def prepare_for_grader(
-        self,
-        artifacts: dict[str, Any],
-        config: OptimizerConfig,
-    ) -> dict[str, Any]:
+    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> dict[str, Any]:
         """Truncate message if needed."""
         message = artifacts.get("final_message", "")
         t_mgr = TruncationManager(config)
@@ -244,17 +201,9 @@ class MessageBasedGradingStrategy(GradingStrategy):
             "... [truncated]",
         )
 
-        return {
-            "type": "message_based",
-            "message": truncated,
-            "criteria": self.criteria,
-        }
+        return {"type": "message_based", "message": truncated, "criteria": self.criteria}
 
-    def get_grading_prompt(
-        self,
-        prepared_artifacts: dict[str, Any],
-        task: TaskDefinition,
-    ) -> str:
+    def get_grading_prompt(self, prepared_artifacts: dict[str, Any], task: TaskDefinition) -> str:
         """Generate message-based grading prompt."""
         message = prepared_artifacts["message"]
         return f"Task: {task.prompt}\n\nAgent's Response:\n{message}"
@@ -289,49 +238,27 @@ class ComparisonGradingStrategy(GradingStrategy):
         else:
             agent_output = context.rollout.final_output
 
-        return {
-            "agent_output": agent_output,
-            "reference": self.reference,
-        }
+        return {"agent_output": agent_output, "reference": self.reference}
 
-    def prepare_for_grader(
-        self,
-        artifacts: dict[str, Any],
-        config: OptimizerConfig,
-    ) -> dict[str, Any]:
+    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> dict[str, Any]:
         """Prepare comparison artifacts."""
         t_mgr = TruncationManager(config)
 
         agent_output = t_mgr.truncate_text(
-            artifacts.get("agent_output", ""),
-            config.truncation.max_file_size_grading,
-            "... [truncated]",
+            artifacts.get("agent_output", ""), config.truncation.max_file_size_grading, "... [truncated]"
         )
 
         reference = t_mgr.truncate_text(
-            artifacts.get("reference", ""),
-            config.truncation.max_file_size_grading,
-            "... [truncated]",
+            artifacts.get("reference", ""), config.truncation.max_file_size_grading, "... [truncated]"
         )
 
-        return {
-            "type": "comparison",
-            "agent_output": agent_output,
-            "reference": reference,
-            "criteria": self.criteria,
-        }
+        return {"type": "comparison", "agent_output": agent_output, "reference": reference, "criteria": self.criteria}
 
-    def get_grading_prompt(
-        self,
-        prepared_artifacts: dict[str, Any],
-        task: TaskDefinition,
-    ) -> str:
+    def get_grading_prompt(self, prepared_artifacts: dict[str, Any], task: TaskDefinition) -> str:
         """Generate comparison grading prompt."""
         agent_output = prepared_artifacts["agent_output"]
         reference = prepared_artifacts["reference"]
-        criteria_desc = "\n".join(
-            [f"- {c['name']}: {c['description']}" for c in prepared_artifacts["criteria"]],
-        )
+        criteria_desc = "\n".join([f"- {c['name']}: {c['description']}" for c in prepared_artifacts["criteria"]])
 
         return (
             f"Task: {task.prompt}\n\n"
@@ -342,10 +269,7 @@ class ComparisonGradingStrategy(GradingStrategy):
         )
 
 
-def create_grading_strategy(
-    grading_config: GradingConfig,
-    config_path: Path | None = None,
-) -> GradingStrategy:
+def create_grading_strategy(grading_config: GradingConfig, config_path: Path | None = None) -> GradingStrategy:
     """Factory to create grading strategy from configuration.
 
     Args:
@@ -366,13 +290,8 @@ def create_grading_strategy(
 
             if criteria_file.exists():
                 # Load graders YAML via YamlLoader and map to Criterion list
-                gl_file: YamlLoader = load_yaml_files(
-                    str(criteria_file),
-                    str(criteria_file),
-                )
-                criteria = [
-                    Criterion(name=g.id, description=g.description) for g in gl_file.graders_data
-                ]
+                gl_file: YamlLoader = load_yaml_files(str(criteria_file), str(criteria_file))
+                criteria = [Criterion(name=g.id, description=g.description) for g in gl_file.graders_data]
         return FileBasedGradingStrategy(criteria)
 
     if isinstance(grading_config, MessageBasedGrading):
@@ -384,19 +303,11 @@ def create_grading_strategy(
                 criteria_file = Path(grading_config.criteria_file)
 
             if criteria_file.exists():
-                gl2: YamlLoader = load_yaml_files(
-                    str(criteria_file),
-                    str(criteria_file),
-                )
-                criteria = [
-                    Criterion(name=g.id, description=g.description) for g in gl2.graders_data
-                ]
+                gl2: YamlLoader = load_yaml_files(str(criteria_file), str(criteria_file))
+                criteria = [Criterion(name=g.id, description=g.description) for g in gl2.graders_data]
         return MessageBasedGradingStrategy(criteria)
 
     if isinstance(grading_config, ComparisonGrading):
-        return ComparisonGradingStrategy(
-            reference=grading_config.reference,
-            criteria=grading_config.criteria,
-        )
+        return ComparisonGradingStrategy(reference=grading_config.reference, criteria=grading_config.criteria)
 
     raise ValueError(f"Unknown grading config type: {type(grading_config)}")

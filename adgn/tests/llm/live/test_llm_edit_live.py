@@ -33,21 +33,16 @@ def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
                 )
             )
         if i == 1:
-            return responses_factory.make(
-                responses_factory.tool_call(build_mcp_function("editor", "save"), {})
-            )
+            return responses_factory.make(responses_factory.tool_call(build_mcp_function("editor", "save"), {}))
         if i == 2:
             # Inspect buffer to verify content before done
             return responses_factory.make(
-                responses_factory.tool_call(
-                    build_mcp_function("editor", "read_line_range"), {"start": 1, "end": 1}
-                )
+                responses_factory.tool_call(build_mcp_function("editor", "read_line_range"), {"start": 1, "end": 1})
             )
         if i == 3:
             return responses_factory.make(
                 responses_factory.tool_call(
-                    build_mcp_function("editor", "done"),
-                    {"outcome": "success", "summary": "ok"},
+                    build_mcp_function("editor", "done"), {"outcome": "success", "summary": "ok"}
                 )
             )
         return responses_factory.make_assistant_message("done")
@@ -59,10 +54,7 @@ def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "openai_client_param",
-    [
-        pytest.param(make_edit_behavior(), id="mock"),
-        pytest.param(LIVE, id="live", marks=pytest.mark.live_llm),
-    ],
+    [pytest.param(make_edit_behavior(), id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_llm)],
     indirect=True,
 )
 async def test_llm_edit_obvious_replace(openai_client_param, tmp_path: Path) -> None:

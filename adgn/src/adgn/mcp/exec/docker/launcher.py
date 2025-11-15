@@ -25,9 +25,7 @@ def _parse_volumes(values: list[str] | None) -> dict[str, dict[str, str]] | None
             continue
         parts = entry.split(":")
         if len(parts) < 2:
-            raise argparse.ArgumentTypeError(
-                f"Invalid volume spec '{entry}'. Use host:container[:mode].",
-            )
+            raise argparse.ArgumentTypeError(f"Invalid volume spec '{entry}'. Use host:container[:mode].")
         host, container, *mode = parts
         spec: dict[str, str] = {"bind": container}
         if mode:
@@ -38,15 +36,9 @@ def _parse_volumes(values: list[str] | None) -> dict[str, dict[str, str]] | None
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run docker_exec MCP over stdio")
+    parser.add_argument("--image", required=True, help="Docker image for session containers")
     parser.add_argument(
-        "--image",
-        required=True,
-        help="Docker image for session containers",
-    )
-    parser.add_argument(
-        "--working-dir",
-        default="/workspace",
-        help="Working directory inside the container (default: /workspace)",
+        "--working-dir", default="/workspace", help="Working directory inside the container (default: /workspace)"
     )
     parser.add_argument(
         "--network-mode",
@@ -68,11 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Docker label to apply to the container (key=value). May be repeated.",
     )
-    parser.add_argument(
-        "--describe",
-        action="store_true",
-        help="Include Docker image history in server description",
-    )
+    parser.add_argument("--describe", action="store_true", help="Include Docker image history in server description")
     parser.add_argument(
         "--ephemeral",
         action="store_true",

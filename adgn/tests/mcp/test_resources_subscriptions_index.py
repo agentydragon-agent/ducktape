@@ -4,16 +4,12 @@ from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, empty, has_item, has_properties
 import pytest
+from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
-from tests.util.notifications import (
-    SubscriptionRecorder,
-    enable_resources_caps,
-    install_subscription_recorder,
-)
 
 
 class _StubGatewaySession:
@@ -37,12 +33,7 @@ def _make_origin() -> tuple[FastMCP, SubscriptionRecorder]:
     m = NotifyingFastMCP("origin")
     recorder = install_subscription_recorder(m)
 
-    @m.resource(
-        "resource://foo/bar",
-        name="dummy",
-        mime_type="text/plain",
-        description="dummy",
-    )
+    @m.resource("resource://foo/bar", name="dummy", mime_type="text/plain", description="dummy")
     async def foo_bar() -> str:
         return "ok"
 
@@ -69,10 +60,7 @@ async def test_subscriptions_index_updates_on_unmount():
             assert hooks.subscribed, "expected origin to receive subscribe"
             # Index reflects the subscription
             idx = await rc.list_subscriptions()
-            assert_that(
-                idx.subscriptions,
-                has_item(has_properties(server="origin", uri="resource://foo/bar")),
-            )
+            assert_that(idx.subscriptions, has_item(has_properties(server="origin", uri="resource://foo/bar")))
 
             # Unmount the origin server; subscription should be dropped from index
             await comp.unmount_server("origin")

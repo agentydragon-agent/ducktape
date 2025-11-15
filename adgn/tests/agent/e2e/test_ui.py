@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from tests.agent.helpers import api_create_agent
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent
 
 pytestmark = pytest.mark.usefixtures()
 
-# Skip if Playwright is not installed; bind Page from returned module
+# Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
-Page = playwright.Page  # type: ignore[attr-defined]
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
+else:
+    Page = playwright.Page
 
 
 """E2E UI tests. Shared fixtures are provided in tests/agent/e2e/conftest.py."""
@@ -44,18 +49,14 @@ def test_ui_create_chat_and_restore(page: Page, run_server, responses_factory):
                 call_id="call_ui_msg_r1",
             )
         if i == 1:
-            return responses_factory.make_tool_call(
-                build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r1"
-            )
+            return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r1")
         if i == 2:
             return responses_factory.make_tool_call(
                 build_mcp_function("ui", "send_message"),
                 {"mime": "text/markdown", "content": "**r2**"},
                 call_id="call_ui_msg_r2",
             )
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r2"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r2")
 
     # Inject deterministic OpenAI model via DI
     from tests.llm.support.openai_mock import make_mock

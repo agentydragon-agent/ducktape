@@ -5,9 +5,7 @@ from .models import AuthKey
 
 
 def generate_access_prompt(
-    base_url: str,
-    config: KeyInUrlAuthSettings | ChallengeResponseAuthSettings,
-    auth_key: AuthKey,
+    base_url: str, config: KeyInUrlAuthSettings | ChallengeResponseAuthSettings, auth_key: AuthKey
 ) -> str:
     """Generate a prompt for LLMs on how to access Gatelet.
 

@@ -58,18 +58,11 @@ def _write_default_jupyter_config(config_dir: Path, extra_py: str | None) -> Non
     ]
     content = "\n".join(default_lines) + "\n"
     if extra_py:
-        content += (
-            "\n# --- composer appended config (verbatim) ---\n" + extra_py.rstrip("\n") + "\n"
-        )
+        content += "\n# --- composer appended config (verbatim) ---\n" + extra_py.rstrip("\n") + "\n"
     (config_dir / "jupyter_server_config.py").write_text(content)
 
 
-def _ensure_policy_minimums(
-    policy: dict,
-    *,
-    runtime_dir: Path,
-    kernel_exec: str,
-) -> dict:
+def _ensure_policy_minimums(policy: dict, *, runtime_dir: Path, kernel_exec: str) -> dict:
     env_map = policy.setdefault("env", {})
     env_set = env_map.setdefault("set", {})
     env_map.setdefault("passthrough", [])
@@ -180,11 +173,7 @@ def compose_from_config_raw(raw_text: str) -> None:
 
     # Build policy: start from provided model and apply minimal inserts
     policy_node: dict = cfg.policy.model_dump()
-    policy_node = _ensure_policy_minimums(
-        policy_node,
-        runtime_dir=runtime_dir,
-        kernel_exec=kernel_exec,
-    )
+    policy_node = _ensure_policy_minimums(policy_node, runtime_dir=runtime_dir, kernel_exec=kernel_exec)
 
     # Write policy
     policy_path = policy_dir / "policy.yaml"
@@ -194,26 +183,11 @@ def compose_from_config_raw(raw_text: str) -> None:
     # Kernelspec
     kdir = kernels_dir / kernel.name
     kdir.mkdir(parents=True, exist_ok=True)
-    argv = [
-        sys.executable,
-        "-m",
-        "adgn.llm.sandboxer",
-    ]
+    argv = [sys.executable, "-m", "adgn.llm.sandboxer"]
     if cfg.policy.platform.trace or cfg.policy.platform.seatbelt.trace:
         argv.append("--trace")
-    argv += [
-        "--policy",
-        policy_path.as_posix(),
-        "--",
-        *kernel.argv_base,
-        "-f",
-        "{connection_file}",
-    ]
-    kernel_json = {
-        "argv": argv,
-        "display_name": kernel.display_name,
-        "language": kernel.language,
-    }
+    argv += ["--policy", policy_path.as_posix(), "--", *kernel.argv_base, "-f", "{connection_file}"]
+    kernel_json = {"argv": argv, "display_name": kernel.display_name, "language": kernel.language}
     (kdir / "kernel.json").write_text(json.dumps(kernel_json))
 
 
@@ -227,11 +201,7 @@ def main() -> int:
         prog="jupyter-sandbox-compose",
         description="Composer to build a bundle (config/kernels/policies) from a single YAML config",
     )
-    ap.add_argument(
-        "--config",
-        required=True,
-        help="Path to composer YAML config path or '-' for stdin",
-    )
+    ap.add_argument("--config", required=True, help="Path to composer YAML config path or '-' for stdin")
     args = ap.parse_args()
 
     raw_text = sys.stdin.read() if args.config == "-" else Path(args.config).read_text()

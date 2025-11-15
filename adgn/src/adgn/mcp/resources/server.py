@@ -5,11 +5,7 @@ from typing import Annotated, Literal
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.server.server import (
-    add_resource_prefix,
-    has_resource_prefix,
-    remove_resource_prefix,
-)
+from fastmcp.server.server import add_resource_prefix, has_resource_prefix, remove_resource_prefix
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,12 +15,7 @@ from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
 from adgn.mcp.compositor.server import Compositor, MountEvent
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.mcp.resources.types import (
-    ListSubscriptionSummary,
-    ResourceEntry,
-    SubscriptionsIndex,
-    SubscriptionSummary,
-)
+from adgn.mcp.resources.types import ListSubscriptionSummary, ResourceEntry, SubscriptionsIndex, SubscriptionSummary
 from adgn.mcp.snapshots import RunningServerEntry
 
 ## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
@@ -32,10 +23,7 @@ from adgn.mcp.snapshots import RunningServerEntry
 
 class ResourcesListArgs(BaseModel):
     server: str | None = Field(default=None, description="Filter by server name (optional)")
-    uri_prefix: str | None = Field(
-        default=None,
-        description="Restrict to URIs starting with this prefix (optional)",
-    )
+    uri_prefix: str | None = Field(default=None, description="Restrict to URIs starting with this prefix (optional)")
     model_config = ConfigDict(extra="forbid")
 
 
@@ -214,10 +202,7 @@ def _build_window_payload(
 
 
 def make_resources_server(
-    name: str = "resources",
-    *,
-    gateway_client: Client,
-    compositor: Compositor,
+    name: str = "resources", *, gateway_client: Client, compositor: Compositor
 ) -> NotifyingFastMCP:
     """Create a MCP server that aggregates resources across servers.
 
@@ -241,8 +226,7 @@ def make_resources_server(
     - Only servers that advertise ``initialize.capabilities.resources`` are queried.
     """
     mcp = NotifyingFastMCP(
-        name,
-        instructions=("Resources aggregator for listing/reading resources across mounted servers."),
+        name, instructions=("Resources aggregator for listing/reading resources across mounted servers.")
     )
 
     # ---- Subscriptions index (single resource) -----------------------------
@@ -336,8 +320,7 @@ def make_resources_server(
             for rec in items
         ]
         list_out: list[ListSubscriptionSummary] = [
-            ListSubscriptionSummary(server=s, present=(s in present), active=(s in present))
-            for s in sorted(lss)
+            ListSubscriptionSummary(server=s, present=(s in present), active=(s in present)) for s in sorted(lss)
         ]
         return SubscriptionsIndex(subscriptions=out, list_subscriptions=list_out)
 
@@ -382,18 +365,14 @@ def make_resources_server(
         Windowing semantics:
         - Byte-based across all parts reported by the origin server.
         - Set max_bytes to limit returned bytes (0 means unbounded).
-        - For large content, use a chunk size (e.g., 16–64 KiB) and call again with
+        - For large content, use a chunk size (e.g., 16-64 KiB) and call again with
           start_offset advanced by the bytes_returned of the previous window.
         """
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
         uri_value = ANY_URL.validate_python(prefixed)
         res = await gateway_client.read_resource_mcp(uri_value)
         contents = list(res.contents)
-        return _build_window_payload(
-            contents,
-            input.start_offset,
-            None if input.max_bytes == 0 else input.max_bytes,
-        )
+        return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
 
     @mcp.flat_model()
     async def subscribe(input: ResourcesReadArgs) -> SimpleOk:
@@ -479,11 +458,7 @@ def make_resources_server(
         # Compositor tears down underlying sessions. Update local records only.
         # Drop non-pinned entries for this server; mark pinned (future) inactive.
         async with subs_lock:
-            to_delete = [
-                (server, uri)
-                for (server, uri), rec in subs.items()
-                if server == name and not rec.pinned
-            ]
+            to_delete = [(server, uri) for (server, uri), rec in subs.items() if server == name and not rec.pinned]
             for (server, uri), rec in list(subs.items()):
                 if server == name and rec.pinned:
                     rec.active = False

@@ -28,19 +28,11 @@ import adgn.inop.engine.runner_factory
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.runners.base import AgentRunner
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import (
-    FunctionCallItem,
-    FunctionToolParam,
-    ResponsesRequest,
-)
+from adgn.openai_utils.model import FunctionCallItem, FunctionToolParam, ResponsesRequest
 
 
 def mk_func_call(*, name: str, args: dict, call_id: str) -> FunctionCallItem:
-    return FunctionCallItem(
-        name=name,
-        arguments=json.dumps(args),
-        call_id=call_id,
-    )
+    return FunctionCallItem(name=name, arguments=json.dumps(args), call_id=call_id)
 
 
 class FakeModelLayer:
@@ -71,9 +63,7 @@ class FakeModelLayer:
                 )
                 return self._rf.make(
                     self._rf.tool_call(
-                        call_id=call.call_id,
-                        name=call.name,
-                        arguments=json.loads(call.arguments or "{}"),
+                        call_id=call.call_id, name=call.name, arguments=json.loads(call.arguments or "{}")
                     )
                 )
             if name == "submit_grades":
@@ -84,18 +74,8 @@ class FakeModelLayer:
                     params = tool.parameters or {}
                     required = params.get("required", [])
                 payload = {rk: {"score": 9.0, "rationale": "ok"} for rk in required}
-                call = mk_func_call(
-                    name="submit_grades",
-                    args=payload,
-                    call_id="grade-1",
-                )
-                return self._rf.make(
-                    self._rf.tool_call(
-                        call_id=call.call_id,
-                        name=call.name,
-                        arguments=payload,
-                    )
-                )
+                call = mk_func_call(name="submit_grades", args=payload, call_id="grade-1")
+                return self._rf.make(self._rf.tool_call(call_id=call.call_id, name=call.name, arguments=payload))
         # When tool is required: emit propose_prompt in outer loop; inner (runner) returns text
         if tool_choice == "required":
             # Always propose a prompt when tool is required (outer PE agent)
@@ -107,9 +87,7 @@ class FakeModelLayer:
             )
             return self._rf.make(
                 self._rf.tool_call(
-                    call_id=call.call_id,
-                    name=call.name,
-                    arguments={"prompt": f"PROMPT_V{self._pe_counter}"},
+                    call_id=call.call_id, name=call.name, arguments={"prompt": f"PROMPT_V{self._pe_counter}"}
                 )
             )
         # Default assistant text
@@ -123,22 +101,15 @@ def cfg_two_iters() -> OptimizerConfig:
         graders_file="graders.yaml",
         rollouts=RolloutConfig(max_parallel=1, max_turns=2, bash_timeout_ms=10_000),
         prompt_engineer=PromptEngineerConfig(
-            model="gpt-4o-mini",
-            reasoning_effort="low",
-            feedback_mode="full_rollouts",
+            model="gpt-4o-mini", reasoning_effort="low", feedback_mode="full_rollouts"
         ),
         grader=GraderConfig(model="gpt-4o-mini", reasoning_effort="low"),
         summarizer=SummarizerConfig(model="gpt-4o-mini", max_tokens=512),
         tokens=TokenConfig(
-            max_response_tokens=512,
-            reasoning_buffer_tokens=256,
-            max_context_tokens=200_000,
-            max_files_tokens=4096,
+            max_response_tokens=512, reasoning_buffer_tokens=256, max_context_tokens=200_000, max_files_tokens=4096
         ),
         truncation=TruncationConfig(
-            max_file_size_grading=8192,
-            max_file_size_pattern_analysis=8192,
-            log_message_length=2048,
+            max_file_size_grading=8192, max_file_size_pattern_analysis=8192, log_message_length=2048
         ),
         debug=DebugConfig(enable_strace=False),
         exclude_patterns=["*.bin", "*.min.js"],
@@ -148,18 +119,15 @@ def cfg_two_iters() -> OptimizerConfig:
 
 @pytest.mark.asyncio
 async def test_optimize_prompts_two_iterations_async(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    cfg_two_iters: OptimizerConfig,
-    responses_factory,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cfg_two_iters: OptimizerConfig, responses_factory
 ):
     # Provide a lightweight runner that avoids Docker and writes deterministic outputs
     class FakeRunner(AgentRunner):
-        async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:  # noqa: D401
+        async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:
             self._env = RunnerEnvironment(type="workspace_dir", data={"path": str(tmp_path / "ws")})
             (tmp_path / "ws").mkdir(parents=True, exist_ok=True)
 
-        async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:  # noqa: D401
+        async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:
             traj = [AssistantMessage(text="default")]
             files = {"README.md": f"prompt: {agent_instructions}"}
             return Rollout(
@@ -172,17 +140,14 @@ async def test_optimize_prompts_two_iterations_async(
                 duration_seconds=0.01,
             )
 
-        async def cleanup(self) -> None:  # noqa: D401
+        async def cleanup(self) -> None:
             return None
 
-        def get_environment(self) -> RunnerEnvironment | None:  # noqa: D401
+        def get_environment(self) -> RunnerEnvironment | None:
             return getattr(self, "_env", None)
 
     def _fake_create_runner(runner_name: str, runner_configs: dict, openai_model=None):
-        return FakeRunner(
-            runner_id=runner_name,
-            config=runner_configs.get(runner_name, {}).get("config", {}),
-        )
+        return FakeRunner(runner_id=runner_name, config=runner_configs.get(runner_name, {}).get("config", {}))
 
     monkeypatch.setattr(adgn.inop.engine.runner_factory, "create_runner", _fake_create_runner)
     base_dir = tmp_path / "run"
@@ -194,10 +159,8 @@ async def test_optimize_prompts_two_iterations_async(
             id="t1",
             prompt="print hello",
             type="coding",
-            grading_overrides=MessageBasedGrading(
-                criteria=[Criterion(name="overall", description="overall quality")],
-            ),
-        ),
+            grading_overrides=MessageBasedGrading(criteria=[Criterion(name="overall", description="overall quality")]),
+        )
     ]
     criteria = [Criterion(name="overall", description="overall quality")]
     task_types = {"coding": TaskType(name="coding", grading=None)}
@@ -215,9 +178,7 @@ async def test_optimize_prompts_two_iterations_async(
     def _no_plot(self, run_dir, log_path):
         return "report"
 
-    monkeypatch.setattr(
-        adgn.inop.engine.optimizer.ScoreEvolutionTracker, "generate_report", _no_plot
-    )
+    monkeypatch.setattr(adgn.inop.engine.optimizer.ScoreEvolutionTracker, "generate_report", _no_plot)
     monkeypatch.setenv("DUCK_ALLOW_UNSANDBOXED", "1")
 
     out_dir = await adgn.inop.engine.optimizer.optimize_prompts(
@@ -268,6 +229,4 @@ async def test_optimize_prompts_two_iterations_async(
     assert prompts[1].strip()
 
     # Restore original method
-    monkeypatch.setattr(
-        adgn.inop.engine.optimizer.ScoreEvolutionTracker, "generate_report", orig_generate_report
-    )
+    monkeypatch.setattr(adgn.inop.engine.optimizer.ScoreEvolutionTracker, "generate_report", orig_generate_report)

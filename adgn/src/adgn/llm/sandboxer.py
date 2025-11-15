@@ -118,22 +118,13 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
             user_preference_read=True,
         ),
         mach=MachLookupRule(global_names=list(policy.platform.seatbelt.extra_allow.mach_lookup)),
-        trace=TraceConfig(
-            enabled=bool(trace_path or policy.platform.seatbelt.trace), path=trace_path
-        ),
+        trace=TraceConfig(enabled=bool(trace_path or policy.platform.seatbelt.trace), path=trace_path),
     )
 
     # Device basics
     dev_read_literals = ["/dev/null", "/dev/urandom", "/dev/random"]
-    sp.files.append(
-        FileRule(
-            op=FileOp.FILE_READ_STAR,
-            filters=[LiteralFilter(literal=p) for p in dev_read_literals],
-        )
-    )
-    sp.files.append(
-        FileRule(op=FileOp.FILE_WRITE_STAR, filters=[LiteralFilter(literal="/dev/null")])
-    )
+    sp.files.append(FileRule(op=FileOp.FILE_READ_STAR, filters=[LiteralFilter(literal=p) for p in dev_read_literals]))
+    sp.files.append(FileRule(op=FileOp.FILE_WRITE_STAR, filters=[LiteralFilter(literal="/dev/null")]))
     sp.files.append(FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/dev/tty")]))
     sp.files.append(FileRule(op=FileOp.FILE_WRITE_STAR, filters=[Subpath(subpath="/dev/tty")]))
 
@@ -151,12 +142,7 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
 
     # Extra file read allowances from platform extras
     for extra_path in policy.platform.seatbelt.extra_allow.file_read_extra:
-        sp.files.append(
-            FileRule(
-                op=FileOp.FILE_READ_STAR,
-                filters=[Subpath(subpath=_abs(extra_path).as_posix())],
-            )
-        )
+        sp.files.append(FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath=_abs(extra_path).as_posix())]))
 
     # FS read/write from policy.fs
     fs = policy.fs
@@ -191,18 +177,10 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
 
     if write_dirs:
         sp.files.append(
-            FileRule(
-                op=FileOp.FILE_WRITE_STAR,
-                filters=[Subpath(subpath=p.as_posix()) for p in write_dirs],
-            )
+            FileRule(op=FileOp.FILE_WRITE_STAR, filters=[Subpath(subpath=p.as_posix()) for p in write_dirs])
         )
     if read_dirs:
-        sp.files.append(
-            FileRule(
-                op=FileOp.FILE_READ_STAR,
-                filters=[Subpath(subpath=p.as_posix()) for p in read_dirs],
-            )
-        )
+        sp.files.append(FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath=p.as_posix()) for p in read_dirs]))
 
     # Parent directory metadata to enable traversal
     meta_parents: set[Path] = set()
@@ -225,10 +203,7 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
         sp.files.append(
             FileRule(
                 op=FileOp.FILE_READ_METADATA,
-                filters=[
-                    LiteralFilter(literal=p.as_posix())
-                    for p in sorted(meta_parents, key=lambda q: q.as_posix())
-                ],
+                filters=[LiteralFilter(literal=p.as_posix()) for p in sorted(meta_parents, key=lambda q: q.as_posix())],
             )
         )
 
@@ -264,29 +239,12 @@ def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        prog="sandboxer",
-        description="Run a command under a YAML-defined sandbox (macOS seatbelt MVP)",
+        prog="sandboxer", description="Run a command under a YAML-defined sandbox (macOS seatbelt MVP)"
     )
-    ap.add_argument(
-        "--policy",
-        required=True,
-        help="Path to policy.yaml (explicit-only schema)",
-    )
-    ap.add_argument(
-        "--trace",
-        action="store_true",
-        help="Enable seatbelt trace logging",
-    )
-    ap.add_argument(
-        "--debug",
-        action="store_true",
-        help="Verbose diagnostics (policy path, -D params)",
-    )
-    ap.add_argument(
-        "cmd",
-        nargs=argparse.REMAINDER,
-        help="Command to execute (prefix with -- to separate)",
-    )
+    ap.add_argument("--policy", required=True, help="Path to policy.yaml (explicit-only schema)")
+    ap.add_argument("--trace", action="store_true", help="Enable seatbelt trace logging")
+    ap.add_argument("--debug", action="store_true", help="Verbose diagnostics (policy path, -D params)")
+    ap.add_argument("cmd", nargs=argparse.REMAINDER, help="Command to execute (prefix with -- to separate)")
     args = ap.parse_args()
 
     if not args.cmd:
@@ -316,10 +274,7 @@ def main() -> int:
 
     # Platform gate: only macOS seatbelt for MVP
     if sys.platform != "darwin":
-        print(
-            "sandboxer: unsupported platform for MVP (only macOS supported)",
-            file=sys.stderr,
-        )
+        print("sandboxer: unsupported platform for MVP (only macOS supported)", file=sys.stderr)
         return 3
 
     # Env construction for child
@@ -382,11 +337,7 @@ def main() -> int:
     # Execute under sandbox
     sx_args = [sx, "-f", sb_path, *cmd]
     if args.debug:
-        print(
-            "sandboxer: exec:",
-            " ".join(shlex.quote(str(x)) for x in sx_args),
-            file=sys.stderr,
-        )
+        print("sandboxer: exec:", " ".join(shlex.quote(str(x)) for x in sx_args), file=sys.stderr)
     proc = subprocess.Popen(sx_args, env=child_env)
     return proc.wait()
 

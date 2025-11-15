@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator
 import os
+from pathlib import Path
 import subprocess
 import time
-from collections.abc import Generator
-from pathlib import Path
 
-import pytest
 from playwright.sync_api import Page
+import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from gatelet.manage import reset_db

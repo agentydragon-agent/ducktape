@@ -30,9 +30,7 @@ from adgn.props.models.issue import IssueCore, LineRange, Occurrence
     ],
 )
 async def test_iss014_anchor_windows(
-    initial_range: tuple[int, int],
-    allowed_window: tuple[tuple[int, int], tuple[int, int]],
-    entity: str,
+    initial_range: tuple[int, int], allowed_window: tuple[tuple[int, int], tuple[int, int]], entity: str
 ):
     """Runs the lint-issue agent for iss-014 on the wt specimen per occurrence and
     asserts the corrected anchors fall within allowed inclusive windows.
@@ -75,9 +73,7 @@ async def test_iss014_anchor_windows(
     else:
         # Assert no unrelated non-null files were returned
         non_null_paths = {p for p, rs in ca.items() if rs is not None}
-        assert non_null_paths <= {path}, (
-            f"Unexpected paths with ranges in corrected_anchors: {non_null_paths}"
-        )
+        assert non_null_paths <= {path}, f"Unexpected paths with ranges in corrected_anchors: {non_null_paths}"
         effective = [(r.start_line, r.end_line) for r in (ca.get(path) or [])]
 
     assert len(effective) == 1, f"Expected exactly one effective range for {path}, got: {effective}"
@@ -85,9 +81,5 @@ async def test_iss014_anchor_windows(
     assert eend is not None, "Expected a closed interval (start,end), not a single-line anchor"
 
     (smin, smax), (emin, emax) = allowed_window
-    assert smin <= estart <= smax, (
-        f"start_line {estart} outside allowed [{smin}..{smax}] for entity {entity}"
-    )
-    assert emin <= eend <= emax, (
-        f"end_line {eend} outside allowed [{emin}..{emax}] for entity {entity}"
-    )
+    assert smin <= estart <= smax, f"start_line {estart} outside allowed [{smin}..{smax}] for entity {entity}"
+    assert emin <= eend <= emax, f"end_line {eend} outside allowed [{emin}..{emax}] for entity {entity}"

@@ -1,18 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 import functools
 import inspect
 import logging
-from typing import (
-    Annotated,
-    Any,
-    TypeVar,
-    cast,
-    get_args,
-    get_origin,
-    get_type_hints,
-)
+from typing import Annotated, Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
 from fastmcp.server import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +14,71 @@ logger = logging.getLogger(__name__)
 
 InputModelT = TypeVar("InputModelT", bound=BaseModel)
 RegisterTool = Callable[[Callable[..., Any], dict[str, Any]], Callable[..., Any]]
+
+
+class FlatWrapper:
+    """Wrapper that holds MCP metadata and flattens Pydantic model parameters."""
+
+    def __init__(
+        self,
+        fn: Callable[..., Any],
+        model_in: type[BaseModel],
+        model_out: Any,
+        context_param: inspect.Parameter | None = None,
+        is_async: bool = False,
+    ):
+        self._fn = fn
+        self._mcp_flat_input_model = model_in
+        self._mcp_flat_output_model = model_out if model_out is not inspect.Signature.empty else None
+        self._context_param = context_param
+        self._context_name = context_param.name if context_param else None
+        self._is_async = is_async
+
+        # Build signature for the flattened function
+        self.__signature__ = _make_flat_signature_from_model(
+            model_in, return_type=model_out, context_param=context_param
+        )
+
+        # Copy function metadata
+        functools.update_wrapper(self, fn)
+
+    def _prepare_call(self, kwargs: dict[str, Any]) -> tuple[BaseModel, Any | None]:
+        """Prepare arguments for function call."""
+        # Extract payload kwargs (exclude context parameter)
+        payload_kwargs = {k: v for k, v in kwargs.items() if k != self._context_name}
+
+        # Create the model instance
+        payload = self._mcp_flat_input_model(**payload_kwargs)
+
+        # Get context value if needed
+        ctx_value = kwargs.get(self._context_name) if self._context_name else None
+
+        return payload, ctx_value
+
+    def __call__(self, **kwargs: Any) -> Any:
+        """Execute the wrapped function with flattened parameters (sync version)."""
+        if self._is_async:
+            raise RuntimeError("Cannot call async function synchronously. Use await or async context.")
+
+        payload, ctx_value = self._prepare_call(kwargs)
+
+        # Call with or without context
+        if self._context_param is None or ctx_value is None:
+            return self._fn(payload)
+        return self._fn(payload, ctx_value)
+
+    async def __acall__(self, **kwargs: Any) -> Any:
+        """Execute the wrapped async function with flattened parameters."""
+        if not self._is_async:
+            # For sync functions, just call them normally
+            return self.__call__(**kwargs)
+
+        payload, ctx_value = self._prepare_call(kwargs)
+
+        # Call with or without context
+        if self._context_param is None or ctx_value is None:
+            return await self._fn(payload)
+        return await self._fn(payload, ctx_value)
 
 
 def _make_flat_signature_from_model(
@@ -35,21 +92,18 @@ def _make_flat_signature_from_model(
             field_kwargs["alias"] = fld.alias
         if fld.default is not PydanticUndefined:
             field_kwargs["default"] = fld.default
-        df = fld.default_factory
-        if df is not None and df is not PydanticUndefined:
-            field_kwargs["default_factory"] = df
+        default_factory = fld.default_factory
+        if default_factory is not None and default_factory is not PydanticUndefined:
+            field_kwargs["default_factory"] = default_factory
         annotated_type: Any = Any if ann in (inspect._empty, None) else ann
         annotated = Annotated[annotated_type, Field(**field_kwargs)]
-        if df is not None or fld.default is not PydanticUndefined:
+        if default_factory is not None or fld.default is not PydanticUndefined:
             param_default = fld.default if fld.default is not PydanticUndefined else inspect._empty
         else:
             param_default = inspect._empty
         params.append(
             inspect.Parameter(
-                name=name,
-                kind=inspect.Parameter.KEYWORD_ONLY,
-                default=param_default,
-                annotation=annotated,
+                name=name, kind=inspect.Parameter.KEYWORD_ONLY, default=param_default, annotation=annotated
             )
         )
     if context_param is not None:
@@ -77,12 +131,7 @@ def _collect_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
 
 
 def _resolve_base_model(
-    *,
-    name: str,
-    annotation: Any,
-    hints: dict[str, Any],
-    globals_ns: dict[str, Any],
-    error_prefix: str,
+    *, name: str, annotation: Any, hints: dict[str, Any], globals_ns: dict[str, Any], error_prefix: str
 ) -> type[BaseModel]:
     cand = hints.get(name, annotation)
     if isinstance(cand, str):
@@ -107,9 +156,7 @@ def _ensure_model_rebuild(model: type[BaseModel], *, kind: str) -> None:
         logger.debug("model_rebuild() on %s failed: %s", kind, exc)
 
 
-def _extract_signature_params(
-    fn: Callable[..., Any],
-) -> tuple[inspect.Parameter, inspect.Parameter | None, str | None]:
+def _extract_signature_params(fn: Callable[..., Any]) -> tuple[inspect.Parameter, inspect.Parameter | None, str | None]:
     sig = inspect.signature(fn)
     params = list(sig.parameters.values())
     if len(params) not in (1, 2):
@@ -118,13 +165,8 @@ def _extract_signature_params(
     context_param: inspect.Parameter | None = None
     if len(params) == 2:
         context_param = params[1]
-        if context_param.kind not in (
-            inspect.Parameter.KEYWORD_ONLY,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        ):
-            raise TypeError(
-                "@mcp_flat_model context parameter must be positional-or-keyword or keyword-only"
-            )
+        if context_param.kind not in (inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
+            raise TypeError("@mcp_flat_model context parameter must be positional-or-keyword or keyword-only")
     context_name = context_param.name if context_param is not None else None
     return payload_param, context_param, context_name
 
@@ -136,62 +178,33 @@ def _build_flat_wrapper(
     model_out: Any,
     context_param: inspect.Parameter | None,
     context_name: str | None,
-) -> Callable[..., Any]:
-    def _payload_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-        if context_name is None or context_name not in kwargs:
-            return kwargs
-        return {k: v for k, v in kwargs.items() if k != context_name}
+) -> FlatWrapper:
+    """Build a FlatWrapper instance that flattens the model parameters."""
+    is_async = inspect.iscoroutinefunction(fn)
+    wrapper = FlatWrapper(fn=fn, model_in=model_in, model_out=model_out, context_param=context_param, is_async=is_async)
 
-    def _coerce_payload(kwargs: dict[str, Any]) -> BaseModel:
-        return model_in(**_payload_kwargs(kwargs))
-
-    missing = object()
-
-    if inspect.iscoroutinefunction(fn):
-        typed_async: Callable[..., Awaitable[Any]] = cast(Callable[..., Awaitable[Any]], fn)
+    # For async functions, create a proper async wrapper
+    if is_async:
 
         @functools.wraps(fn)
-        async def _flat_wrapper(**kwargs: Any) -> Any:
-            payload: BaseModel = _coerce_payload(kwargs)
-            if context_param is None:
-                return await typed_async(payload)
-            assert context_name is not None
-            ctx_value = kwargs.get(context_name, missing)
-            if ctx_value is missing:
-                return await typed_async(payload)
-            return await typed_async(payload, ctx_value)
+        async def async_wrapper(**kwargs: Any) -> Any:
+            return await wrapper.__acall__(**kwargs)
 
-    else:
-        typed_sync: Callable[..., Any] = cast(Callable[..., Any], fn)
+        # Transfer MCP metadata to the async wrapper
+        async_wrapper._mcp_flat_input_model = wrapper._mcp_flat_input_model  # type: ignore[attr-defined]
+        async_wrapper._mcp_flat_output_model = wrapper._mcp_flat_output_model  # type: ignore[attr-defined]
+        async_wrapper.__signature__ = wrapper.__signature__  # type: ignore[attr-defined]
+        return async_wrapper  # type: ignore[return-value]
 
-        @functools.wraps(fn)
-        def _flat_wrapper(**kwargs: Any) -> Any:
-            payload: BaseModel = _coerce_payload(kwargs)
-            if context_param is None:
-                return typed_sync(payload)
-            assert context_name is not None
-            ctx_value = kwargs.get(context_name, missing)
-            if ctx_value is missing:
-                return typed_sync(payload)
-            return typed_sync(payload, ctx_value)
-
-    setattr(_flat_wrapper, "_mcp_flat_input_model", model_in)
-    if model_out is not inspect.Signature.empty:
-        setattr(_flat_wrapper, "_mcp_flat_output_model", model_out)
-    return _flat_wrapper
+    # For sync functions, the wrapper itself is callable
+    return wrapper
 
 
 def _apply_wrapper_metadata(
-    wrapper: Callable[..., Any],
-    *,
-    model_in: type[BaseModel],
-    model_out: Any,
-    context_param: inspect.Parameter | None,
+    wrapper: Callable[..., Any], *, model_in: type[BaseModel], model_out: Any, context_param: inspect.Parameter | None
 ) -> None:
-    signature = _make_flat_signature_from_model(
-        model_in, return_type=model_out, context_param=context_param
-    )
-    setattr(wrapper, "__signature__", signature)
+    signature = _make_flat_signature_from_model(model_in, return_type=model_out, context_param=context_param)
+    wrapper.__signature__ = signature  # type: ignore[attr-defined]
 
     def _build_param_annotations(model: type[BaseModel], *, return_type: Any) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -251,9 +264,7 @@ def _flat_model_decorator(
                     "Move models to module scope or pass output_model=... explicitly."
                 ) from exc
         if structured_output and model_out is inspect.Signature.empty:
-            raise TypeError(
-                "Return annotation is required when structured_output=True (or pass output_model=...)"
-            )
+            raise TypeError("Return annotation is required when structured_output=True (or pass output_model=...)")
 
         _ensure_model_rebuild(model_in, kind="Input")
 
@@ -264,27 +275,18 @@ def _flat_model_decorator(
             _ensure_model_rebuild(rt, kind="Output")
 
         wrapper = _build_flat_wrapper(
-            fn,
-            model_in=model_in,
-            model_out=model_out,
-            context_param=context_param,
-            context_name=context_name,
+            fn, model_in=model_in, model_out=model_out, context_param=context_param, context_name=context_name
         )
-        _apply_wrapper_metadata(
-            wrapper,
-            model_in=model_in,
-            model_out=model_out,
-            context_param=context_param,
-        )
+        _apply_wrapper_metadata(wrapper, model_in=model_in, model_out=model_out, context_param=context_param)
 
         inferred_desc = description or inspect.getdoc(fn) or None
 
-        tool_kwargs = dict(
-            name=(name or fn.__name__ or None),
-            title=title,
-            description=inferred_desc,
-            annotations=annotations,
-        )
+        tool_kwargs = {
+            "name": (name or fn.__name__ or None),
+            "title": title,
+            "description": inferred_desc,
+            "annotations": annotations,
+        }
         registered = register_tool(wrapper, tool_kwargs)
         return cast(Callable[[InputModelT], Any], registered)
 
@@ -315,9 +317,7 @@ class FlatModelToolMixin:
 
         opts = self._ToolOpts.model_validate(kwargs or {})
 
-        def _register(
-            fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]
-        ) -> Callable[..., Any]:
+        def _register(fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]) -> Callable[..., Any]:
             # Only pass kwargs accepted by FastMCP.tool overload (drop unsupported ones)
             base_tool = super(FlatModelToolMixin, self).tool  # type: ignore[misc]
             filtered = {k: v for k, v in mcp_tool_kwargs.items() if v is not None}
@@ -369,9 +369,7 @@ def mcp_flat_model(
         )
 
     def _register(fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]) -> Callable[..., Any]:
-        decorator = cast(
-            Callable[[Callable[..., Any]], Callable[..., Any]], mcp.tool(**mcp_tool_kwargs)
-        )
+        decorator = cast(Callable[[Callable[..., Any]], Callable[..., Any]], mcp.tool(**mcp_tool_kwargs))
         decorator(fn)  # register the wrapper
         return fn
 

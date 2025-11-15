@@ -5,7 +5,7 @@
   ansible.builtin.apt:
     name: dnsmasq
     state: present
-    update_cache: yes
+    update_cache: true
   become: true
 
 - name: Get primary network interface
@@ -43,6 +43,6 @@
   ansible.builtin.systemd:
     name: dnsmasq
     state: started
-    enabled: yes
-    daemon_reload: yes
+    enabled: true
+    daemon_reload: true
   become: true

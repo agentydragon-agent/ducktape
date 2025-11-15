@@ -29,7 +29,7 @@
       ansible.builtin.deb822_repository:
         name: mjasnik-ppa
         uris: https://ppa.launchpadcontent.net/mjasnik/ppa/ubuntu
-        suites: [ "{{ ansible_distribution_release }}" ]
+        suites: ["{{ ansible_distribution_release }}"]
         components: [main]
         signed_by: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xAF91A06147FA1307
       become: true
@@ -38,7 +38,7 @@
         # TODO(agentydragon): As of 2020-09-24, mainline does not have suspend
         # option yet.
         pkg: [timekpr-next-beta]
-        update_cache: yes  # deb822_repository doesn't reliably trigger apt cache update
+        update_cache: true  # deb822_repository doesn't reliably trigger apt cache update
       become: true
     - name: Set up timekpr allowed hours
       become: true

@@ -31,17 +31,14 @@ class HookResponse(BaseModel):
     """Whether model should continue after processing hook response.
     Usually True unless you want to stop the session."""
 
-    stopReason: str | None = None
+    stop_reason: str | None = Field(None, alias="stopReason")
     """If provided with continue=False, stops the session with this message."""
 
-    suppressOutput: bool = Field(False)
+    suppress_output: bool = Field(False, alias="suppressOutput")
     """If True, suppresses the hook's own output (stdout/stderr) from being shown."""
 
     model_config = ConfigDict(
-        populate_by_name=True,
-        alias_generator=None,
-        use_enum_values=True,
-        arbitrary_types_allowed=True,
+        populate_by_name=True, alias_generator=None, use_enum_values=True, arbitrary_types_allowed=True
     )
 
 
@@ -99,16 +96,16 @@ class PatchLine(BaseModel):
     This appears in tool responses to show exactly what changed in a file.
     """
 
-    oldStart: int
+    old_start: int = Field(alias="oldStart")
     """Starting line number in the original file."""
 
-    oldLines: int
+    old_lines: int = Field(alias="oldLines")
     """Number of lines in the original file covered by this hunk."""
 
-    newStart: int
+    new_start: int = Field(alias="newStart")
     """Starting line number in the modified file."""
 
-    newLines: int
+    new_lines: int = Field(alias="newLines")
     """Number of lines in the modified file covered by this hunk."""
 
     lines: list[str]
@@ -123,27 +120,27 @@ class ToolResponse(BaseModel):
     """
 
     # Common fields
-    filePath: str | None = None
+    file_path: str | None = Field(None, alias="filePath")
     """Path to the file that was operated on."""
 
     # Edit/MultiEdit response fields
-    oldString: str | None = None
+    old_string: str | None = Field(None, alias="oldString")
     """Original text that was replaced (for Edit operations)."""
 
-    newString: str | None = None
+    new_string: str | None = Field(None, alias="newString")
     """New text that replaced the old (for Edit operations)."""
 
-    originalFile: str | None = None
+    original_file: str | None = Field(None, alias="originalFile")
     """Original file content before any modifications."""
 
-    structuredPatch: list[PatchLine] | None = None
+    structured_patch: list[PatchLine] | None = Field(None, alias="structuredPatch")
     """Detailed patch information showing all changes made."""
 
-    userModified: bool = False
+    user_modified: bool = Field(False, alias="userModified")
     """Set by Claude Code (not the hook) - always False in observed logs.
     Likely tracks if file was externally modified after tool execution."""
 
-    replaceAll: bool = False
+    replace_all: bool = Field(False, alias="replaceAll")
     """Whether all occurrences were replaced (for Edit operations)."""
 
 

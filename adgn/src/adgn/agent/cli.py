@@ -32,14 +32,10 @@ from adgn.openai_utils.client_factory import build_client
 # Defaults via environment with sensible fallbacks
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
 SYSTEM_INSTRUCTIONS = os.getenv(
-    "SYSTEM_INSTRUCTIONS",
-    "You are a code agent. Use tools to execute commands. Respond with helpful, concise text.",
+    "SYSTEM_INSTRUCTIONS", "You are a code agent. Use tools to execute commands. Respond with helpful, concise text."
 )
 
-app = typer.Typer(
-    help="Mini Codex CLI — run an agent REPL or launch the local UI server.",
-    no_args_is_help=True,
-)
+app = typer.Typer(help="Mini Codex CLI — run an agent REPL or launch the local UI server.", no_args_is_help=True)
 
 # For the HTML UI, prefer the composed UI system message when the caller
 # does not provide an override. Keep REPL behavior unchanged.
@@ -56,9 +52,7 @@ def _effective_ui_system(system: str | None) -> str:
 
 # Typer Option defaults must not be created in function signatures (ruff B008)
 MODEL_OPT = typer.Option(DEFAULT_MODEL, "--model", help="Model name (OPENAI_MODEL)")
-SYSTEM_OPT = typer.Option(
-    SYSTEM_INSTRUCTIONS, "--system", help="System instructions (SYSTEM_INSTRUCTIONS)"
-)
+SYSTEM_OPT = typer.Option(SYSTEM_INSTRUCTIONS, "--system", help="System instructions (SYSTEM_INSTRUCTIONS)")
 MCP_CONFIGS_OPT = typer.Option(
     [],
     "--mcp-config",
@@ -123,10 +117,7 @@ def _configure_logging_debug() -> None:
 def _make_handlers(*, ui_bus: ServerBus | None = None, poll_notifications=None) -> list[Any]:
     # UI mode: use ServerModeHandler with notifications poller when provided
     if ui_bus is not None and callable(poll_notifications):
-        return [
-            ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications),
-            DisplayEventsHandler(),
-        ]
+        return [ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications), DisplayEventsHandler()]
     # Headless/default: allow agent to sample normally via AutoHandler
     return [AutoHandler(), DisplayEventsHandler()]
 
@@ -153,11 +144,7 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
         await comp.mount_server(name, spec)
     async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
-            model=model,
-            mcp_client=mcp_client,
-            system=system,
-            client=client,
-            handlers=_make_handlers(),
+            model=model, mcp_client=mcp_client, system=system, client=client, handlers=_make_handlers()
         )
         async with agent:
             for line in sys.stdin:
@@ -170,22 +157,12 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
 
 
 @app.command("run")
-def run(
-    model: str = MODEL_OPT,
-    system: str = SYSTEM_OPT,
-    mcp_configs: list[Path] = MCP_CONFIGS_OPT,
-) -> None:
+def run(model: str = MODEL_OPT, system: str = SYSTEM_OPT, mcp_configs: list[Path] = MCP_CONFIGS_OPT) -> None:
     """Start a simple stdin/stdout REPL."""
     asyncio.run(_run_repl_async(model=model, system=system, mcp_configs=mcp_configs))
 
 
-async def _serve_async(
-    host: str,
-    port: int,
-    model: str,
-    system: str | None,
-    mcp_configs: list[Path],
-) -> None:
+async def _serve_async(host: str, port: int, model: str, system: str | None, mcp_configs: list[Path]) -> None:
     _configure_logging_debug()  # Enable DEBUG logging to show OpenAI traffic
 
     print("mini-codex serve: starting agent + UI server")
@@ -210,21 +187,11 @@ def serve(
     host: str = HOST_OPT,
     port: int = PORT_OPT,
     model: str = MODEL_OPT,
-    system: str | None = typer.Option(
-        None, "--system", help="Override default UI system instructions"
-    ),
+    system: str | None = typer.Option(None, "--system", help="Override default UI system instructions"),
     mcp_configs: list[Path] = MCP_CONFIGS_OPT,
 ) -> None:
     """Launch the local FastAPI UI server and keep running."""
-    asyncio.run(
-        _serve_async(
-            host=host,
-            port=port,
-            model=model,
-            system=system,
-            mcp_configs=mcp_configs,
-        )
-    )
+    asyncio.run(_serve_async(host=host, port=port, model=model, system=system, mcp_configs=mcp_configs))
 
 
 @app.command("dev")
@@ -233,9 +200,7 @@ def dev(
     port: int = PORT_OPT,
     frontend_port: int = FRONTEND_PORT_OPT,
     model: str = MODEL_OPT,
-    system: str | None = typer.Option(
-        None, "--system", help="Override default UI system instructions"
-    ),
+    system: str | None = typer.Option(None, "--system", help="Override default UI system instructions"),
     mcp_configs: list[Path] = MCP_CONFIGS_OPT,
     open_browser: bool = typer.Option(True, "--open-browser/--no-open-browser"),
 ) -> None:
@@ -266,17 +231,7 @@ def dev(
     vite_env["VITE_BACKEND_ORIGIN"] = urlunparse(("http", f"{host}:{backend_port}", "", "", "", ""))
 
     # Start Vite dev server (HMR)
-    vite_cmd = [
-        "npm",
-        "--prefix",
-        str(web_dir),
-        "run",
-        "dev",
-        "--",
-        "--port",
-        str(frontend_dev_port),
-        "--strictPort",
-    ]
+    vite_cmd = ["npm", "--prefix", str(web_dir), "run", "dev", "--", "--port", str(frontend_dev_port), "--strictPort"]
     typer.echo(f"Starting Vite dev server: {' '.join(vite_cmd)}")
     try:
         vite_proc = subprocess.Popen(vite_cmd, env=vite_env)

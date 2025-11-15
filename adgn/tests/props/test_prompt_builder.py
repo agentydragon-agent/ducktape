@@ -12,20 +12,13 @@ def _dummy_wiring(defs_dir: Path | None = Path("/props")) -> PropertiesDockerWir
     # Minimal wiring sufficient for env line; no MCP servers used in prompt-only compose
     dummy_server = FastMCP("dummy")
     return PropertiesDockerWiring(
-        server_factory=lambda: dummy_server,
-        working_dir=Path("/"),
-        definitions_container_dir=defs_dir,
-        image_name="n/a",
+        server_factory=lambda: dummy_server, working_dir=Path("/"), definitions_container_dir=defs_dir, image_name="n/a"
     )
 
 
 def test_build_check_prompt_renders_schemas():
     wiring = _dummy_wiring()
-    text = build_check_prompt(
-        "all files under src/**",
-        wiring=wiring,
-        allow_general_findings=False,
-    )
+    text = build_check_prompt("all files under src/**", wiring=wiring, allow_general_findings=False)
     lines = text.splitlines()
     assert lines[0].startswith("# "), "expected H1 header at top of prompt"
     assert "Input Schemas:" in text

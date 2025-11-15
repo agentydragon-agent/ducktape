@@ -23,9 +23,7 @@ class OptimizerModels:
     summarizer_model: OpenAIModelProto
 
 
-def create_optimizer_models(
-    cfg: OptimizerConfig, *, enable_debug_logging: bool = False
-) -> OptimizerModels:
+def create_optimizer_models(cfg: OptimizerConfig, *, enable_debug_logging: bool = False) -> OptimizerModels:
     """Build standard adapter model instances from OptimizerConfig.
 
     - pe_model, runner_model: use cfg.prompt_engineer.* fields (model + reasoning_effort)
@@ -51,14 +49,8 @@ def create_optimizer_models(
         enable_debug_logging=enable_debug_logging,
         reasoning_effort=ReasoningEffort(grader_effort) if grader_effort else None,
     )
-    summarizer_model = build_client(
-        cfg.summarizer.model,
-        enable_debug_logging=enable_debug_logging,
-    )
+    summarizer_model = build_client(cfg.summarizer.model, enable_debug_logging=enable_debug_logging)
 
     return OptimizerModels(
-        pe_model=pe_model,
-        runner_model=runner_model,
-        grader_model=grader_model,
-        summarizer_model=summarizer_model,
+        pe_model=pe_model, runner_model=runner_model, grader_model=grader_model, summarizer_model=summarizer_model
     )

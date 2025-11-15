@@ -27,9 +27,7 @@ async def quick_test():
     print(f"Environments: {main_exp.ENVIRONMENTS}")
     print(f"Episodes per run: {main_exp.EPISODES_PER_RUN}")
     print(f"Runs per experiment: {main_exp.RUNS_PER_EXPERIMENT}")
-    print(
-        f"Total experiments: {len(main_exp.MODELS) * len(main_exp.ENVIRONMENTS) * main_exp.RUNS_PER_EXPERIMENT}",
-    )
+    print(f"Total experiments: {len(main_exp.MODELS) * len(main_exp.ENVIRONMENTS) * main_exp.RUNS_PER_EXPERIMENT}")
 
     # Check API key
     if not os.getenv("OPENAI_API_KEY"):

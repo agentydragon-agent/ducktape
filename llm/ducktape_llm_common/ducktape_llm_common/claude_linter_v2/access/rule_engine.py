@@ -1,8 +1,8 @@
 """Rule evaluation engine with precedence and 'most restrictive wins' logic."""
 
-import logging
 from dataclasses import dataclass
 from enum import IntEnum
+import logging
 
 from ..config.clean_models import ModularConfig
 from ..config.models import AccessControlRule, RuleAction
@@ -47,11 +47,7 @@ class RuleEngine:
         self.session_manager = session_manager
         self.evaluator = PredicateEvaluator()
 
-    def evaluate_access(
-        self,
-        context: PredicateContext,
-        session_id: SessionID,
-    ) -> tuple[RuleAction, str | None]:
+    def evaluate_access(self, context: PredicateContext, session_id: SessionID) -> tuple[RuleAction, str | None]:
         """
         Evaluate all applicable rules for the given context.
 
@@ -117,11 +113,7 @@ class RuleEngine:
         # 2. Source precedence (SESSION > REPO > ACCESS_CONTROL)
         def rule_sort_key(match: RuleMatch) -> tuple[int, int]:
             # Action severity (lower number = more restrictive)
-            action_severity = {
-                RuleAction.DENY: 0,
-                RuleAction.WARN: 1,
-                RuleAction.ALLOW: 2,
-            }
+            action_severity = {RuleAction.DENY: 0, RuleAction.WARN: 1, RuleAction.ALLOW: 2}
             return (action_severity[match.action], -match.source.value)
 
         matches.sort(key=rule_sort_key)
@@ -133,12 +125,11 @@ class RuleEngine:
         message_parts = []
         if winner.message:
             message_parts.append(winner.message)
-        else:
-            # Default messages
-            if winner.action == RuleAction.DENY:
-                message_parts.append("Permission denied")
-            elif winner.action == RuleAction.WARN:
-                message_parts.append("Warning")
+        # Default messages
+        elif winner.action == RuleAction.DENY:
+            message_parts.append("Permission denied")
+        elif winner.action == RuleAction.WARN:
+            message_parts.append("Warning")
 
         if winner.rule_description:
             message_parts.append(f"({winner.rule_description})")
@@ -160,11 +151,7 @@ class RuleEngine:
 
         return winner.action, message
 
-    def _match_access_control_rule(
-        self,
-        rule: AccessControlRule,
-        context: PredicateContext,
-    ) -> bool:
+    def _match_access_control_rule(self, rule: AccessControlRule, context: PredicateContext) -> bool:
         """
         Check if an access control rule matches the context.
 
@@ -183,8 +170,4 @@ class RuleEngine:
         if not context.path:
             return False
 
-        for pattern in rule.paths:
-            if context.glob_match(pattern):
-                return True
-
-        return False
+        return any(context.glob_match(pattern) for pattern in rule.paths)

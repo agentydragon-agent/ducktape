@@ -19,9 +19,7 @@ def configure_logging() -> None:
     """
     log_dir_env = os.getenv("ADGN_LOG_DIR")
     file_enabled = bool(log_dir_env)
-    file_path = (
-        str((Path(log_dir_env or "./logs") / "adgn.log").resolve()) if file_enabled else None
-    )
+    file_path = str((Path(log_dir_env or "./logs") / "adgn.log").resolve()) if file_enabled else None
 
     dictConfig(
         {
@@ -46,29 +44,23 @@ def configure_logging() -> None:
                             "formatter": "file",
                             "filename": file_path,
                             "encoding": "utf-8",
-                        },
+                        }
                     }
                     if file_enabled
                     else {}
                 ),
             },
-            "root": {
-                "level": "INFO",
-                "handlers": ["console", "file"] if file_enabled else ["console"],
-            },
+            "root": {"level": "INFO", "handlers": ["console", "file"] if file_enabled else ["console"]},
             "loggers": {
                 # Ensure library loggers propagate to root (no own handlers)
                 "mcp": {"level": "INFO", "propagate": True, "handlers": []},
                 "mini_codex": {"level": "INFO", "propagate": True, "handlers": []},
             },
-        },
+        }
     )
 
     # Route structlog through stdlib, obeying the same handlers
-    procs: list[Processor] = [
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.add_log_level,
-    ]
+    procs: list[Processor] = [structlog.processors.TimeStamper(fmt="iso"), structlog.processors.add_log_level]
     if os.getenv("MINICODEX_DEBUG"):
         procs.append(structlog.processors.JSONRenderer())
     else:

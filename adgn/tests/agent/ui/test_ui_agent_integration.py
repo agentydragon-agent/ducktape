@@ -4,6 +4,9 @@ import asyncio
 import json
 
 import pytest
+from tests.agent.ui.typed_asserts import assert_typed_items_have_one, is_assistant_markdown
+from tests.fixtures.responses import ResponsesFactory
+from tests.llm.support.openai_mock import make_mock
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.handler import ContinueDecision
@@ -13,9 +16,6 @@ from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.ui.server import make_ui_server
-from tests.agent.ui.typed_asserts import assert_typed_items_have_one, is_assistant_markdown
-from tests.fixtures.responses import ResponsesFactory
-from tests.llm.support.openai_mock import make_mock
 
 
 def _make_ui_behavior(rf: ResponsesFactory):
@@ -27,28 +27,17 @@ def _make_ui_behavior(rf: ResponsesFactory):
             args_json = json.dumps({"mime": "text/markdown", "content": "**hello**"})
             return rf.make(
                 rf.tool_call(
-                    call_id="call_1",
-                    name=build_mcp_function("ui", "send_message"),
-                    arguments=json.loads(args_json),
+                    call_id="call_1", name=build_mcp_function("ui", "send_message"), arguments=json.loads(args_json)
                 )
             )
-        return rf.make(
-            rf.tool_call(
-                call_id="call_2",
-                name=build_mcp_function("ui", "end_turn"),
-                arguments={},
-            )
-        )
+        return rf.make(rf.tool_call(call_id="call_2", name=build_mcp_function("ui", "end_turn"), arguments={}))
 
     return _behavior
 
 
 @pytest.mark.asyncio
 async def test_ui_server_with_mock_agent_produces_ui_state_updates(
-    responses_factory: ResponsesFactory,
-    make_pg_compositor,
-    stub_approval_policy_engine,
-    approval_policy_reader_stub,
+    responses_factory: ResponsesFactory, make_pg_compositor, stub_approval_policy_engine, approval_policy_reader_stub
 ):
     # Per-agent bus and UI MCP server
     bus = ServerBus()
@@ -81,9 +70,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
             if isinstance(pl, dict) and pl.get("type") == "approval_pending":
                 call_id = pl.get("call_id") or ""
                 # Defer resolution slightly to avoid resolving within send pipeline
-                asyncio.get_running_loop().call_soon(
-                    sess.approval_hub.resolve, call_id, ContinueDecision()
-                )
+                asyncio.get_running_loop().call_soon(sess.approval_hub.resolve, call_id, ContinueDecision())
         except Exception:
             # Tests should fail loudly elsewhere; keep capture non-fatal
             pass
@@ -91,9 +78,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
 
     mgr.send_json = _capture  # type: ignore[assignment]
 
-    async with make_pg_compositor(
-        {"ui": ui_server, "approval_policy": approval_policy_reader_stub}
-    ) as (
+    async with make_pg_compositor({"ui": ui_server, "approval_policy": approval_policy_reader_stub}) as (
         mcp_client,
         _comp,
     ):

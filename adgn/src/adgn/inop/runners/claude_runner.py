@@ -82,21 +82,14 @@ class ClaudeRunner(AgentRunner):
             # Clone repository FIRST if needed (before Docker)
             if setup.git_clone:
                 # Clone into the workspace from host (which has SSH keys)
-                await self._clone_repository(
-                    setup.git_clone,
-                    str(self.workspace_path),
-                    is_docker=False,
-                )
+                await self._clone_repository(setup.git_clone, str(self.workspace_path), is_docker=False)
 
             # Determine Docker image
             if setup.docker:
                 self.docker_image = setup.docker.image
             else:
                 # Default image if no Docker specified but we still need a container
-                self.docker_image = self.config.get(
-                    "default_docker_image",
-                    "ubuntu:22.04",
-                )
+                self.docker_image = self.config.get("default_docker_image", "ubuntu:22.04")
         else:
             # No setup - shouldn't happen for Claude runner
             self.docker_image = self.config.get("default_docker_image", "ubuntu:22.04")
@@ -138,11 +131,7 @@ class ClaudeRunner(AgentRunner):
         try:
             # Use TaskClaude as context manager for proper container lifecycle
             async with TaskClaude(
-                task_id=task.id,
-                config=self.config,
-                output_dir=self.workspace_path,
-                seed_task=seed_task,
-                logger=logger,
+                task_id=task.id, config=self.config, output_dir=self.workspace_path, seed_task=seed_task, logger=logger
             ) as claude:
                 # Write agent instructions as CLAUDE.md
                 claude.setup_system_prompt(agent_instructions)
@@ -171,22 +160,11 @@ class ClaudeRunner(AgentRunner):
                             text = "\n".join(text_parts)
 
                         if text:
-                            trajectory.append(
-                                AssistantMessage(
-                                    text=text,
-                                    original=message,
-                                ),
-                            )
+                            trajectory.append(AssistantMessage(text=text, original=message))
 
                     elif isinstance(message, ToolUseBlock):
                         # Tool call from Claude
-                        trajectory.append(
-                            ToolCall(
-                                tool_name=message.name,
-                                arguments=message.input,
-                                original=message,
-                            ),
-                        )
+                        trajectory.append(ToolCall(tool_name=message.name, arguments=message.input, original=message))
 
                     elif isinstance(message, ToolResultBlock):
                         # Tool result
@@ -195,7 +173,7 @@ class ClaudeRunner(AgentRunner):
                                 tool_name="",  # Claude doesn't provide tool name in result
                                 result=message.content,
                                 original=message,
-                            ),
+                            )
                         )
 
                     elif isinstance(message, ResultMessage):
@@ -233,10 +211,7 @@ class ClaudeRunner(AgentRunner):
             error_message=error_message,
             cost_usd=total_cost,
             duration_seconds=duration,
-            metadata={
-                "workspace": str(self.workspace_path),
-                "docker_image": self.docker_image,
-            },
+            metadata={"workspace": str(self.workspace_path), "docker_image": self.docker_image},
         )
 
     async def cleanup(self) -> None:
@@ -257,9 +232,5 @@ class ClaudeRunner(AgentRunner):
             return None
 
         return RunnerEnvironment(
-            type="workspace_dir",
-            data={
-                "path": str(self.workspace_path),
-                "docker_image": self.docker_image,
-            },
+            type="workspace_dir", data={"path": str(self.workspace_path), "docker_image": self.docker_image}
         )

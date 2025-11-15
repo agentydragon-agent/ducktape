@@ -92,9 +92,8 @@ class PostToolHookConfig(HookConfigBase):
             return []
 
         categories = []
-        for cat in v:
-            if isinstance(cat, str):
-                cat = AutofixCategory(cat)
+        for cat_input in v:
+            cat = AutofixCategory(cat_input) if isinstance(cat_input, str) else cat_input
             if cat == AutofixCategory.ALL:
                 return list(AutofixCategory)
             categories.append(cat)

@@ -42,11 +42,7 @@ def parse_setup_config(config: dict[str, Any]) -> TaskSetup | None:
         )
 
     if (git_data := config.get("git_clone")) and git_data.get("repo") and git_data.get("commit"):
-        git_cfg = GitCloneConfig(
-            repo=git_data["repo"],
-            commit=git_data["commit"],
-            subdir=git_data.get("subdir"),
-        )
+        git_cfg = GitCloneConfig(repo=git_data["repo"], commit=git_data["commit"], subdir=git_data.get("subdir"))
 
     if sandbox_data := config.get("sandbox"):
         sandbox_cfg = SandboxConfig(
@@ -71,23 +67,14 @@ def parse_grading_config(config: dict[str, Any]) -> GradingConfig | None:
         return None
 
     if strategy == "file_based":
-        return FileBasedGrading(
-            criteria_file=config.get("criteria_file"),
-            criteria=config.get("criteria"),
-        )
+        return FileBasedGrading(criteria_file=config.get("criteria_file"), criteria=config.get("criteria"))
     if strategy == "message_based":
-        return MessageBasedGrading(
-            criteria_file=config.get("criteria_file"),
-            criteria=config.get("criteria"),
-        )
+        return MessageBasedGrading(criteria_file=config.get("criteria_file"), criteria=config.get("criteria"))
     if strategy == "comparison":
         # For comparison, we may not have reference at task type level
         reference = config.get("reference", "")
         if reference:
-            return ComparisonGrading(
-                reference=reference,
-                criteria=config.get("criteria", []),
-            )
+            return ComparisonGrading(reference=reference, criteria=config.get("criteria", []))
         return None  # Incomplete - will be filled by tasks
     raise ValueError(f"Unknown grading strategy: {strategy}")
 
@@ -114,10 +101,7 @@ def load_task_types(file_path: Path | str) -> dict[str, TaskType]:
         grading_config = config.get("grading")
         grading = parse_grading_config(grading_config) if grading_config else None
 
-        task_types[name] = TaskType(
-            name=name,
-            grading=grading,
-        )
+        task_types[name] = TaskType(name=name, grading=grading)
 
     return task_types
 
@@ -143,10 +127,7 @@ def load_runner_configs(file_path: Path | str) -> dict[str, dict[str, Any]]:
     return TypeAdapter(dict[str, dict[str, Any]]).validate_python(runners)
 
 
-def load_task_definitions(
-    file_path: Path | str,
-    task_types: dict[str, TaskType] | None = None,
-) -> list[TaskDefinition]:
+def load_task_definitions(file_path: Path | str, task_types: dict[str, TaskType] | None = None) -> list[TaskDefinition]:
     """Load task definitions from seeds YAML file.
 
     Args:

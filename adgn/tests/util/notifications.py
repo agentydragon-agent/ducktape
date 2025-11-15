@@ -53,9 +53,7 @@ def parse_system_notification_payload(message: str | UserMessage) -> dict:
     return json.loads(payload_str)
 
 
-def enable_resources_caps(
-    server, *, subscribe: bool | None = None, list_changed: bool | None = None
-) -> None:  # type: ignore[no-untyped-def]
+def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed: bool | None = None) -> None:  # type: ignore[no-untyped-def]
     """Monkeypatch a FastMCP/NotifyingFastMCP server to advertise resources capabilities.
 
     This wraps the server's low-level create_initialization_options() to inject
@@ -69,9 +67,7 @@ def enable_resources_caps(
     base_create = ll.create_initialization_options
     base_get_caps = ll.get_capabilities
 
-    def patched_create_initialization_options(
-        notification_options=None, experimental_capabilities=None, **kwargs
-    ):  # type: ignore[no-untyped-def]
+    def patched_create_initialization_options(notification_options=None, experimental_capabilities=None, **kwargs):  # type: ignore[no-untyped-def]
         caps = dict(experimental_capabilities or {})
         res = dict(caps.get("resources") or {})
         if subscribe is not None:
@@ -80,11 +76,7 @@ def enable_resources_caps(
             res["listChanged"] = list_changed
         if res:
             caps["resources"] = res
-        return base_create(
-            notification_options=notification_options,
-            experimental_capabilities=caps,
-            **kwargs,
-        )
+        return base_create(notification_options=notification_options, experimental_capabilities=caps, **kwargs)
 
     ll.create_initialization_options = patched_create_initialization_options
 
@@ -136,11 +128,9 @@ def install_subscription_recorder(server) -> SubscriptionRecorder:  # type: igno
     @ll.subscribe_resource()
     async def _record_subscribe(uri):
         recorder.subscribed.append(str(uri))
-        return None
 
     @ll.unsubscribe_resource()
     async def _record_unsubscribe(uri):
         recorder.unsubscribed.append(str(uri))
-        return None
 
     return recorder

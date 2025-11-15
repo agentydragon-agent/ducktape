@@ -37,11 +37,7 @@ from .loader import (
     load_prompt,
     validate_prompt,
 )
-from .validation import (
-    PromptValidator,
-    validate_prompt_collection,
-    validate_prompt_file,
-)
+from .validation import PromptValidator, validate_prompt_collection, validate_prompt_file
 
 # Maintain backward compatibility with original simple interface
 get_prompt = load_prompt
@@ -54,41 +50,41 @@ TASK_MANAGEMENT_PROMPT = PromptName.TASK_MANAGEMENT.value
 DEBUGGING_PROTOCOL_PROMPT = PromptName.DEBUGGING_PROTOCOL.value
 
 __all__ = [
-    # Core functionality
-    "PromptLoader",
-    "discover_prompts",
-    "list_prompts",
-    "load_prompt",
-    "validate_prompt",
-    "get_prompt_metadata",
-    "clear_prompt_cache",
-    # Helper functions
-    "load_work_tracking_prompt",
-    "load_task_management_prompt",
-    "load_debugging_protocol_prompt",
-    "load_spawn_coordination_prompt",
-    "load_investigation_setup_prompt",
-    "load_metadata_validation_prompt",
-    "create_prompt_with_defaults",
-    "validate_prompt_variables",
-    "get_prompt_variables",
-    # Validation
-    "PromptValidator",
-    "validate_prompt_file",
-    "validate_prompt_collection",
-    # Constants and enums
-    "PromptName",
     "COMMON_VARIABLES",
-    # Exceptions
-    "PromptError",
-    "PromptNotFoundError",
-    "PromptValidationError",
-    "PromptVariableError",
-    # Backward compatibility
-    "get_prompt",
-    "list_available_prompts",
-    "WORK_TRACKING_PROMPT",
+    "DEBUGGING_PROTOCOL_PROMPT",
     "EVIDENCE_GATHERING_PROMPT",
     "TASK_MANAGEMENT_PROMPT",
-    "DEBUGGING_PROTOCOL_PROMPT",
+    "WORK_TRACKING_PROMPT",
+    # Exceptions
+    "PromptError",
+    # Core functionality
+    "PromptLoader",
+    # Constants and enums
+    "PromptName",
+    "PromptNotFoundError",
+    "PromptValidationError",
+    # Validation
+    "PromptValidator",
+    "PromptVariableError",
+    "clear_prompt_cache",
+    "create_prompt_with_defaults",
+    "discover_prompts",
+    # Backward compatibility
+    "get_prompt",
+    "get_prompt_metadata",
+    "get_prompt_variables",
+    "list_available_prompts",
+    "list_prompts",
+    "load_debugging_protocol_prompt",
+    "load_investigation_setup_prompt",
+    "load_metadata_validation_prompt",
+    "load_prompt",
+    "load_spawn_coordination_prompt",
+    "load_task_management_prompt",
+    # Helper functions
+    "load_work_tracking_prompt",
+    "validate_prompt",
+    "validate_prompt_collection",
+    "validate_prompt_file",
+    "validate_prompt_variables",
 ]

@@ -30,7 +30,7 @@
     state: directory
     owner: trilium
     group: trilium
-    mode: 0700
+    mode: "0700"
   tags:
     - trilium
 
@@ -46,7 +46,7 @@
 - name: Set content of cert-post-hook.sh
   ansible.builtin.copy:
     dest: /etc/letsencrypt/renewal-hooks/deploy/trilium.sh
-    mode: 0755
+    mode: "0755"
     content: |
       #!/bin/sh
       rm -rf /srv/trilium-data/cert
@@ -61,7 +61,7 @@
   ansible.builtin.copy:
     dest: /srv/trilium-data/config.ini
     owner: trilium
-    mode: 0700
+    mode: "0700"
     content: |
       [Network]
       port=8080

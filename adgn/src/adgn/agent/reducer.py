@@ -9,22 +9,8 @@ from pydantic import BaseModel
 # TODO(mpokorny): Consider supporting ResponseFunctionWebSearch (type="function_web_search")
 # as a first-class input item so the agent can initiate web search via Responses
 # without custom tool plumbing.
-from adgn.agent.handler import (
-    AssistantText,
-    BaseHandler,
-    Response,
-    ToolCall,
-    ToolCallOutput,
-    UserText,
-)
-from adgn.agent.loop_control import (
-    Abort,
-    Auto,
-    Continue,
-    LoopDecision,
-    NoLoopDecision,
-    RequireAny,
-)
+from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.loop_control import Abort, Auto, Continue, LoopDecision, NoLoopDecision, RequireAny
 from adgn.openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
@@ -34,11 +20,7 @@ from adgn.openai_utils.model import (
     UserMessage,
 )
 
-from .notifications.types import (
-    NotificationsBatch,
-    NotificationsForModel,
-    ResourcesServerNotice,
-)
+from .notifications.types import NotificationsBatch, NotificationsForModel, ResourcesServerNotice
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +47,7 @@ class GateUntil(BaseHandler):
     conflicts with bootstrap handlers that emit Continue(skip_sampling=True).
     """
 
-    def __init__(
-        self, is_done: Callable[[], bool], defer_when: Callable[[], bool] | None = None
-    ) -> None:
+    def __init__(self, is_done: Callable[[], bool], defer_when: Callable[[], bool] | None = None) -> None:
         self._is_done = is_done
         self._defer_when = defer_when
 
@@ -97,9 +77,7 @@ class Reducer:
     def on_before_sample(self) -> LoopDecision:
         # Collect concrete decisions (non-NoLoopDecision) from handlers in order.
         decisions: list[LoopDecision] = []
-        collected_inserts: list[
-            InputItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
-        ] = []
+        collected_inserts: list[InputItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] = []
         skip_value: bool | None = None
         for h in self._handlers:
             dec = h.on_before_sample()
@@ -113,14 +91,10 @@ class Reducer:
                 if skip_value is None:
                     skip_value = dec.skip_sampling
                 elif skip_value != dec.skip_sampling:
-                    raise RuntimeError(
-                        f"Conflicting skip_sampling flags in Continue decisions: {decisions!r}"
-                    )
+                    raise RuntimeError(f"Conflicting skip_sampling flags in Continue decisions: {decisions!r}")
             # Anything that is not one of the concrete decision classes is a programming error
             if not isinstance(dec, Continue | Abort):
-                raise TypeError(
-                    f"Handler {h!r} returned invalid decision type: {type(dec).__name__} ({dec!r})",
-                )
+                raise TypeError(f"Handler {h!r} returned invalid decision type: {type(dec).__name__} ({dec!r})")
             decisions.append(dec)
 
         # Crash if no handler emitted a decision
@@ -128,7 +102,7 @@ class Reducer:
             raise RuntimeError(
                 "MiniCodex loop control misconfiguration: no handler emitted a LoopDecision (all returned NoLoopDecision()). "
                 "MiniCodex instances must have a configured loop-control handler (that can emit Continue/Abort). "
-                "Fix the MiniCodex instance to provide a loop handler.",
+                "Fix the MiniCodex instance to provide a loop handler."
             )
 
         # Reduction rules:
@@ -139,9 +113,7 @@ class Reducer:
         if all(d == first for d in decisions):
             if isinstance(first, Continue) and collected_inserts:
                 return Continue(
-                    first.tool_policy,
-                    inserts_input=tuple(collected_inserts),
-                    skip_sampling=bool(skip_value),
+                    first.tool_policy, inserts_input=tuple(collected_inserts), skip_sampling=bool(skip_value)
                 )
             return first
 
@@ -150,23 +122,15 @@ class Reducer:
             # All Continue: if tool policies are the same type/value, merge inserts additively
             policies = [d.tool_policy for d in decisions if isinstance(d, Continue)]
             if all(type(p) is type(policies[0]) and p == policies[0] for p in policies):
-                return Continue(
-                    policies[0],
-                    inserts_input=tuple(collected_inserts),
-                    skip_sampling=bool(skip_value),
-                )
+                return Continue(policies[0], inserts_input=tuple(collected_inserts), skip_sampling=bool(skip_value))
             # Otherwise conflicting Continue opinions
-            raise RuntimeError(
-                f"Conflicting Continue decisions from handlers: {decisions!r}",
-            )
+            raise RuntimeError(f"Conflicting Continue decisions from handlers: {decisions!r}")
 
         # Collect non-Continue decisions (Concrete ones other than Continue)
         non_continue = [d for d in decisions if not isinstance(d, Continue)]
         # Mixed case (at least one Continue and at least one non-Continue) is a conflict
         if non_continue and any(isinstance(d, Continue) for d in decisions):
-            raise RuntimeError(
-                f"Conflicting handler decisions: {decisions!r}; crashing per policy.",
-            )
+            raise RuntimeError(f"Conflicting handler decisions: {decisions!r}; crashing per policy.")
         if len(non_continue) == 0:
             # Fallback: return the first (attach inserts if winning decision is Continue)
             if isinstance(first, Continue) and collected_inserts:
@@ -179,9 +143,7 @@ class Reducer:
         first_nc = non_continue[0]
         for other in non_continue[1:]:
             if other != first_nc:
-                raise RuntimeError(
-                    f"Conflicting handler decisions: {decisions!r}; crashing per policy.",
-                )
+                raise RuntimeError(f"Conflicting handler decisions: {decisions!r}; crashing per policy.")
         return first_nc
 
     # ---- Event forwarding (typed, observer-only) ----
@@ -281,9 +243,7 @@ class NotificationsHandler(BaseHandler):
 
         self._msg_counter += 1
         logger.info(
-            "NotificationsHandler: delivering %d updates (msg #%d)",
-            len(batch.resources_updated),
-            self._msg_counter,
+            "NotificationsHandler: delivering %d updates (msg #%d)", len(batch.resources_updated), self._msg_counter
         )
         return Continue(Auto(), inserts_input=(msg,))
 

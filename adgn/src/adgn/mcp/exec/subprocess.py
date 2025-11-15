@@ -3,22 +3,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from adgn.mcp.exec.models import (
-    ExecOutcome,
-    ExecOutput,
-    Exited,
-    Killed,
-    TimedOut,
-    async_timer,
-)
+from adgn.mcp.exec.models import ExecOutcome, ExecOutput, Exited, Killed, TimedOut, async_timer
 
 
 async def run_proc(
-    argv: list[str],
-    timeout_s: float,
-    *,
-    cwd: Path | None = None,
-    stdin: bytes | str | None = None,
+    argv: list[str], timeout_s: float, *, cwd: Path | None = None, stdin: bytes | str | None = None
 ) -> ExecOutcome:
     if stdin is None:
         stdin_bytes: bytes | None = None
@@ -37,9 +26,7 @@ async def run_proc(
         )
 
         try:
-            out, err = await asyncio.wait_for(
-                proc.communicate(input=stdin_bytes), timeout=timeout_s
-            )
+            out, err = await asyncio.wait_for(proc.communicate(input=stdin_bytes), timeout=timeout_s)
 
             stdout_bytes = out if out is not None else b""
             stderr_bytes = err if err is not None else b""
@@ -49,19 +36,15 @@ async def run_proc(
             # Detect if process was killed by signal (negative exit code on Unix)
             if exit_code < 0:
                 signal_num = -exit_code
-                return ExecOutcome(
-                    output=output, exit=Killed(signal=signal_num), duration_ms=get_duration_ms()
-                )
+                return ExecOutcome(output=output, exit=Killed(signal=signal_num), duration_ms=get_duration_ms())
 
-            return ExecOutcome(
-                output=output, exit=Exited(exit_code=exit_code), duration_ms=get_duration_ms()
-            )
+            return ExecOutcome(output=output, exit=Exited(exit_code=exit_code), duration_ms=get_duration_ms())
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             try:
                 out, err = await asyncio.wait_for(proc.communicate(), timeout=5)
-            except (asyncio.TimeoutError, ProcessLookupError):
+            except (TimeoutError, ProcessLookupError):
                 out, err = b"", b""
             stdout_bytes = out if out is not None else b""
             stderr_bytes = err if err is not None else b""

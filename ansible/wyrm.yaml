@@ -53,7 +53,7 @@
         regexp: '^trusted-users = '
         line: 'trusted-users = root agentydragon'
         create: false
-        backup: yes
+        backup: true
       become: true
       tags: [nix]
       register: nix_config_changed

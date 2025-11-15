@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import ClassVar
 
 from .clean_models import ModularConfig
 
@@ -11,11 +12,11 @@ logger = logging.getLogger(__name__)
 class ConfigLoader:
     """Loads and manages Claude Linter v2 configuration."""
 
-    DEFAULT_CONFIG_NAMES = [
+    DEFAULT_CONFIG_NAMES: ClassVar[tuple[str, ...]] = (
         ".claude-linter.toml",
         ".claude-linter-v2.toml",
         "claude-linter.toml",
-    ]
+    )
 
     def __init__(self, config_path: Path | None = None) -> None:
         """
@@ -43,8 +44,7 @@ class ConfigLoader:
                 logger.info(f"Loading config from {self.config_path}")
                 self._config = ModularConfig.from_toml(self.config_path)
                 return self._config
-            else:
-                logger.warning(f"Config file not found: {self.config_path}")
+            logger.warning(f"Config file not found: {self.config_path}")
 
         # Search for config file
         config_file = self._find_config_file()

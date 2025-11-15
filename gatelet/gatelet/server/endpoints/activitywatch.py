@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+import logging
 from typing import Any
 from urllib.parse import urlparse
 
@@ -29,12 +29,7 @@ async def fetch_recent_activity(minutes: int = 15) -> dict[str, Any] | None:
 
     def _query() -> dict[str, Any] | None:
         try:
-            awc = ActivityWatchClient(
-                "gatelet",
-                host=parsed.hostname,
-                port=parsed.port,
-                protocol=parsed.scheme,
-            )
+            awc = ActivityWatchClient("gatelet", host=parsed.hostname, port=parsed.port, protocol=parsed.scheme)
             awc.connect()
 
             buckets = awc.get_buckets()
@@ -42,7 +37,7 @@ async def fetch_recent_activity(minutes: int = 15) -> dict[str, Any] | None:
             web_bk = [b for b in buckets if b.startswith("aw-watcher-web")]
             afk_bk = [b for b in buckets if b.startswith("aw-watcher-afk")]
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             start = now - timedelta(minutes=minutes)
 
             app_secs: dict[str, float] = defaultdict(float)
@@ -74,19 +69,11 @@ async def fetch_recent_activity(minutes: int = 15) -> dict[str, Any] | None:
                 "afk": timedelta(seconds=afk_secs),
                 "app": [
                     (app, timedelta(seconds=secs))
-                    for app, secs in sorted(
-                        app_secs.items(),
-                        key=lambda kv: kv[1],
-                        reverse=True,
-                    )
+                    for app, secs in sorted(app_secs.items(), key=lambda kv: kv[1], reverse=True)
                 ],
                 "url": [
                     (url, timedelta(seconds=secs))
-                    for url, secs in sorted(
-                        url_secs.items(),
-                        key=lambda kv: kv[1],
-                        reverse=True,
-                    )
+                    for url, secs in sorted(url_secs.items(), key=lambda kv: kv[1], reverse=True)
                 ],
             }
         except Exception as exc:  # pragma: no cover - network errors

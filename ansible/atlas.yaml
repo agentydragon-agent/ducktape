@@ -31,7 +31,7 @@
 
     - name: Update apt cache after repository changes
       ansible.builtin.apt:
-        update_cache: yes
+        update_cache: true
       tags: [repositories]
 
     - name: Ensure ducktape directory parent exists
@@ -47,7 +47,7 @@
       ansible.builtin.git:
         repo: "git@gitlab.com:agentydragon/ducktape"
         dest: "{{ ducktape_path }}"
-        accept_hostkey: yes
+        accept_hostkey: true
       become: true
       become_user: "{{ my_user }}"
       tags: [dotfiles]
@@ -70,14 +70,14 @@
           - zsh
           - spice-client-gtk  # For SPICE console connections
         state: present
-        install_recommends: no
+        install_recommends: false
       tags: [packages, desktop, virtualization]
 
     - name: Ensure libvirt service is started
       ansible.builtin.systemd:
         name: libvirtd
         state: started
-        enabled: yes
+        enabled: true
       tags: [virtualization]
 
     - name: Create primary user
@@ -86,18 +86,18 @@
         comment: Primary user account
         shell: /usr/bin/zsh
         home: "/home/{{ my_user }}"
-        create_home: yes
+        create_home: true
         groups:
           - sudo
           - libvirt  # for virt-manager access
-        append: yes
+        append: true
         state: present
       tags: [users]
 
     - name: Enable GDM display manager
       ansible.builtin.systemd:
         name: gdm3
-        enabled: yes
+        enabled: true
         state: started
       tags: [desktop]
 

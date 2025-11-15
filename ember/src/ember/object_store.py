@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import logging
 from pathlib import Path
 from typing import Literal
@@ -50,7 +50,7 @@ class ObjectStoreClient:
             raise RuntimeError(f"Failed to upload {file_path.name} to object store: {exc}") from exc
 
         expiry = timedelta(seconds=self._expiry)
-        expires_at = datetime.now(timezone.utc) + expiry
+        expires_at = datetime.now(UTC) + expiry
         try:
             url = client.presigned_get_object(self._settings.bucket, object_name, expires=expiry)
         except S3Error as exc:

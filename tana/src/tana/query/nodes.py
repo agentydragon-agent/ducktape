@@ -7,11 +7,7 @@ from tana.domain.nodes import BaseNode, TupleNode
 from tana.graph.workspace import TanaGraph
 
 
-def get_field_values(
-    node: BaseNode,
-    field_name: str,
-    store: TanaGraph,
-) -> Iterator[str]:
+def get_field_values(node: BaseNode, field_name: str, store: TanaGraph) -> Iterator[str]:
     """
     Get all values for a field as a list of strings.
 

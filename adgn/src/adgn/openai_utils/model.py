@@ -5,12 +5,7 @@ from functools import singledispatch
 from typing import Any, Literal, Protocol, Self, cast
 
 from openai import AsyncOpenAI
-from openai.types.responses import (
-    Response,
-    ResponseFunctionToolCall,
-    ResponseOutputMessage,
-    ResponseOutputText,
-)
+from openai.types.responses import Response, ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -91,20 +86,11 @@ class FunctionCallOutputItem(BaseModel):
     # Responses API prefers the payload under "output".
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
-    output: str | None = Field(
-        default=None, description="Tool output as string (JSON if structured)"
-    )
+    output: str | None = Field(default=None, description="Tool output as string (JSON if structured)")
     model_config = ConfigDict(extra="allow")
 
 
-InputItem = (
-    AssistantMessage
-    | UserMessage
-    | SystemMessage
-    | ReasoningItem
-    | FunctionCallItem
-    | FunctionCallOutputItem
-)
+InputItem = AssistantMessage | UserMessage | SystemMessage | ReasoningItem | FunctionCallItem | FunctionCallOutputItem
 
 
 class ToolChoiceFunction(BaseModel):
@@ -152,8 +138,7 @@ class ResponsesRequest(BaseModel):
 
         def norm_item(x: Any) -> Any:
             if isinstance(x, BaseModel):
-                d = x.model_dump(exclude_none=True)
-                return d
+                return x.model_dump(exclude_none=True)
             return x
 
         payload = self.model_dump(exclude_none=True)
@@ -197,14 +182,13 @@ class AssistantMessageOut(BaseModel):
     def _coerce_text(cls, data: Any) -> Any:
         if isinstance(data, str):
             return {"parts": [{"text": data}]}
-        if isinstance(data, dict):
-            if "parts" not in data:
-                text = data.get("text")
-                if isinstance(text, str):
-                    new_data = dict(data)
-                    new_data.pop("text", None)
-                    new_data["parts"] = [{"text": text}]
-                    return new_data
+        if isinstance(data, dict) and "parts" not in data:
+            text = data.get("text")
+            if isinstance(text, str):
+                new_data = dict(data)
+                new_data.pop("text", None)
+                new_data["parts"] = [{"text": text}]
+                return new_data
         return data
 
     @property
@@ -256,18 +240,13 @@ def _(item: AssistantMessageOut) -> InputItem:
     return item.to_input_item()
 
 
-def _message_output_to_assistant(
-    message: ResponseOutputMessage,
-) -> AssistantMessageOut | None:
+def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMessageOut | None:
     parts: list[OutputText] = []
     for content_item in message.content:
         if isinstance(content_item, ResponseOutputText):
             part = OutputText(
                 text=content_item.text,
-                annotations=[
-                    annotation.model_dump(exclude_none=True)
-                    for annotation in content_item.annotations
-                ]
+                annotations=[annotation.model_dump(exclude_none=True) for annotation in content_item.annotations]
                 if content_item.annotations
                 else None,
             )
@@ -301,9 +280,7 @@ def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
             # Convert SDK Summary objects to our ReasoningSummaryItem
             summary_items = []
             if item.summary:
-                summary_items = [
-                    ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary
-                ]
+                summary_items = [ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
             out_items.append(ReasoningItem(id=item.id, summary=summary_items))
         elif isinstance(item, ResponseFunctionToolCall):
             out_items.append(
@@ -325,11 +302,7 @@ def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
     if u is None:
         usage = Usage(input_tokens=0, output_tokens=0, total_tokens=0)
     else:
-        usage = Usage(
-            input_tokens=u.input_tokens,
-            output_tokens=u.output_tokens,
-            total_tokens=u.total_tokens,
-        )
+        usage = Usage(input_tokens=u.input_tokens, output_tokens=u.output_tokens, total_tokens=u.total_tokens)
     return ResponsesResult(id=sdk_resp.id, usage=usage, output=out_items)
 
 
@@ -368,9 +341,7 @@ class OpenAIModel:
                 # Convert SDK Summary objects to our ReasoningSummaryItem
                 summary_items = []
                 if item.summary:
-                    summary_items = [
-                        ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary
-                    ]
+                    summary_items = [ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
                 out_items.append(ReasoningItem(id=item.id, summary=summary_items))
             elif isinstance(item, ResponseFunctionToolCall):
                 out_items.append(
@@ -392,11 +363,7 @@ class OpenAIModel:
         if u is None:
             usage = Usage(input_tokens=0, output_tokens=0, total_tokens=0)
         else:
-            usage = Usage(
-                input_tokens=u.input_tokens,
-                output_tokens=u.output_tokens,
-                total_tokens=u.total_tokens,
-            )
+            usage = Usage(input_tokens=u.input_tokens, output_tokens=u.output_tokens, total_tokens=u.total_tokens)
         return ResponsesResult(id=sdk_resp.id, usage=usage, output=out_items)
 
 

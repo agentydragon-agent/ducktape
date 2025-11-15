@@ -43,20 +43,10 @@ from adgn.openai_utils.model import OpenAIModelProto
 class MiniCodexRunner(AgentRunner):
     """Runner that executes tasks via the MiniCodex agent."""
 
-    def __init__(
-        self,
-        runner_id: str,
-        config: dict[str, Any],
-        *,
-        openai_model: OpenAIModelProto,
-    ) -> None:
+    def __init__(self, runner_id: str, config: dict[str, Any], *, openai_model: OpenAIModelProto) -> None:
         super().__init__(runner_id, config)
         configured_model = config.get("model")
-        self.model = (
-            configured_model
-            if isinstance(configured_model, str)
-            else os.getenv("OPENAI_MODEL", "o4-mini")
-        )
+        self.model = configured_model if isinstance(configured_model, str) else os.getenv("OPENAI_MODEL", "o4-mini")
         self.reasoning_effort = config.get("reasoning_effort")
         self.workspace_path: Path | None = None
         self._exit_stack: AsyncExitStack | None = None
@@ -68,25 +58,15 @@ class MiniCodexRunner(AgentRunner):
             config.get("handlers") if isinstance(config.get("handlers"), list) else None
         )
 
-    async def setup(
-        self,
-        task: TaskDefinition,
-        task_type_config: dict[str, Any],
-    ) -> None:
+    async def setup(self, task: TaskDefinition, task_type_config: dict[str, Any]) -> None:
         # Ensure proper typing for resolve_config: expects dict[str, TaskType]
-        typed_map: dict[str, TaskType] = {
-            task.type: TaskType.model_validate(task_type_config),
-        }
+        typed_map: dict[str, TaskType] = {task.type: TaskType.model_validate(task_type_config)}
         setup, _ = task.resolve_config(typed_map)
 
         self.workspace_path = Path(tempfile.mkdtemp(prefix="minicodex_"))
 
         if setup and setup.git_clone:
-            await self._clone_repository(
-                setup.git_clone,
-                str(self.workspace_path),
-                is_docker=False,
-            )
+            await self._clone_repository(setup.git_clone, str(self.workspace_path), is_docker=False)
 
         server_factories = self._build_mcp_server_factories(setup)
 
@@ -120,9 +100,7 @@ class MiniCodexRunner(AgentRunner):
             raise RuntimeError("Workspace not initialised")
 
         if setup and setup.docker:
-            volumes: dict[str, dict[str, str]] = {
-                str(self.workspace_path): {"bind": "/workspace", "mode": "rw"},
-            }
+            volumes: dict[str, dict[str, str]] = {str(self.workspace_path): {"bind": "/workspace", "mode": "rw"}}
             for host_path, spec in (setup.docker.volumes or {}).items():
                 if isinstance(spec, dict):
                     volumes[str(host_path)] = spec
@@ -153,18 +131,10 @@ class MiniCodexRunner(AgentRunner):
             # When sandbox is required, do not fall back to unsandboxed exec; crash instead.
             if sandbox_enabled:
                 if os.name == "posix" and sys.platform == "linux":
-                    return make_bwrap_exec_server(
-                        name="local",
-                        default_cwd=self.workspace_path,
-                    )
-                raise RuntimeError(
-                    "Sandbox (bubblewrap) required but not available on this platform"
-                )
+                    return make_bwrap_exec_server(name="local", default_cwd=self.workspace_path)
+                raise RuntimeError("Sandbox (bubblewrap) required but not available on this platform")
             # Explicitly unsandboxed path allowed via config/env override
-            return make_direct_exec_server(
-                name="local",
-                default_cwd=self.workspace_path,
-            )
+            return make_direct_exec_server(name="local", default_cwd=self.workspace_path)
 
         return {"local": _factory_local}
 
@@ -175,9 +145,7 @@ class MiniCodexRunner(AgentRunner):
         self._agent.set_system_instructions(agent_instructions)
 
         start_time = time.perf_counter()
-        result = await self._agent.run(
-            user_text=task.prompt,
-        )
+        result = await self._agent.run(user_text=task.prompt)
 
         trajectory: list[TrajectoryItem] = [UserInput(text=task.prompt)]
         # MiniCodex intentionally does not expose its internal event sequence; callers requiring
@@ -199,9 +167,7 @@ class MiniCodexRunner(AgentRunner):
             error_message=None,
             cost_usd=0.0,
             duration_seconds=time.perf_counter() - start_time,
-            metadata={
-                "workspace": str(self.workspace_path) if self.workspace_path else None,
-            },
+            metadata={"workspace": str(self.workspace_path) if self.workspace_path else None},
         )
 
     async def cleanup(self) -> None:
@@ -215,7 +181,4 @@ class MiniCodexRunner(AgentRunner):
     def get_environment(self) -> RunnerEnvironment | None:
         if not self.workspace_path:
             return None
-        return RunnerEnvironment(
-            type="workspace_dir",
-            data={"path": str(self.workspace_path)},
-        )
+        return RunnerEnvironment(type="workspace_dir", data={"path": str(self.workspace_path)})

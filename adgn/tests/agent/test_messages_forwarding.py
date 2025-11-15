@@ -15,10 +15,7 @@ from adgn.openai_utils.model import (
     ReasoningItem,
     ResponsesResult,
 )
-from tests.agent.ui.typed_asserts import (
-    assert_items_exclude_instance,
-    assert_items_include_instances,
-)
+from tests.agent.ui.typed_asserts import assert_items_exclude_instance, assert_items_include_instances
 from tests.fixtures.responses import ResponsesFactory
 
 
@@ -43,22 +40,15 @@ _rf = ResponsesFactory("gpt-5-nano")
 
 def _make_reasoning_then_message(text: str):
     # Ensure unique item IDs per response to avoid duplicate-id assertions in agent transcript
-    return _rf.make(
-        _rf.make_item_reasoning(),
-        _rf.assistant_text(text),
-    )
+    return _rf.make(_rf.make_item_reasoning(), _rf.assistant_text(text))
 
 
-def _make_tool_call_resp(
-    name: str, args: dict[str, Any], *, call_id: str | None = None
-) -> ResponsesResult:
+def _make_tool_call_resp(name: str, args: dict[str, Any], *, call_id: str | None = None) -> ResponsesResult:
     return _rf.make_tool_call(name, args, call_id)
 
 
 @pytest.mark.asyncio
-async def test_stateless_reasoning_forwarding(
-    make_pg_compositor_echo,
-) -> None:
+async def test_stateless_reasoning_forwarding(make_pg_compositor_echo) -> None:
     """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
 
     seq = [_make_reasoning_then_message("ok")]
@@ -66,11 +56,7 @@ async def test_stateless_reasoning_forwarding(
 
     async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
-            model="test-model",
-            mcp_client=mcp_client,
-            system="test",
-            client=client,
-            handlers=[AutoHandler()],
+            model="test-model", mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
         )
 
         await agent.run("say hi")
@@ -83,9 +69,7 @@ async def test_stateless_reasoning_forwarding(
 
 
 @pytest.mark.asyncio
-async def test_function_call_and_function_call_output_replay(
-    make_pg_compositor_echo,
-) -> None:
+async def test_function_call_and_function_call_output_replay(make_pg_compositor_echo) -> None:
     """Request1 produces a function_call; after local execution, messages() must include function_call and function_call_output."""
 
     seq = [
@@ -96,11 +80,7 @@ async def test_function_call_and_function_call_output_replay(
 
     async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
-            model="test-model",
-            mcp_client=mcp_client,
-            system="test",
-            client=client,
-            handlers=[AutoHandler()],
+            model="test-model", mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
         )
 
         await agent.run("say hi")
@@ -114,9 +94,7 @@ async def test_function_call_and_function_call_output_replay(
 
 
 @pytest.mark.asyncio
-async def test_mixed_reasoning_fc_ordering(
-    make_pg_compositor_echo,
-) -> None:
+async def test_mixed_reasoning_fc_ordering(make_pg_compositor_echo) -> None:
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.
     """
@@ -132,11 +110,7 @@ async def test_mixed_reasoning_fc_ordering(
 
     async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
-            model="test-model",
-            mcp_client=mcp_client,
-            system="test",
-            client=client,
-            handlers=[AutoHandler()],
+            model="test-model", mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
         )
         await agent.run("start")
 
@@ -144,18 +118,12 @@ async def test_mixed_reasoning_fc_ordering(
     assert client.calls == 2
     input_items = list(client.captured[1].input or [])
     assert_items_include_instances(
-        input_items,
-        ReasoningItem,
-        FunctionCallItem,
-        FunctionCallOutputItem,
-        AssistantMessage,
+        input_items, ReasoningItem, FunctionCallItem, FunctionCallOutputItem, AssistantMessage
     )
 
 
 @pytest.mark.asyncio
-async def test_no_synthesized_reasoning_items(
-    make_pg_compositor_echo,
-) -> None:
+async def test_no_synthesized_reasoning_items(make_pg_compositor_echo) -> None:
     """Ensure agent does not fabricate reasoning rs_* items when missing."""
 
     # Response with only a function_call (no reasoning)
@@ -167,11 +135,7 @@ async def test_no_synthesized_reasoning_items(
 
     async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
-            model="test-model",
-            mcp_client=mcp_client,
-            system="test",
-            client=client,
-            handlers=[AutoHandler()],
+            model="test-model", mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
         )
         await agent.run("say hi")
 
@@ -183,27 +147,18 @@ async def test_no_synthesized_reasoning_items(
 
 @pytest.mark.asyncio
 async def test_model_provided_tool_output_records_without_execution(
-    responses_factory: ResponsesFactory,
-    make_pg_compositor_echo,
+    responses_factory: ResponsesFactory, make_pg_compositor_echo
 ) -> None:
     """If the model supplies tool output inline, agent should not run the tool again."""
 
     seq = [
-        responses_factory.make_tool_call_with_output(
-            build_mcp_function("echo", "echo"),
-            {"text": "hi"},
-            {"echo": "hi"},
-        )
+        responses_factory.make_tool_call_with_output(build_mcp_function("echo", "echo"), {"text": "hi"}, {"echo": "hi"})
     ]
     client = FakeOpenAIModel(seq)
 
     async with make_pg_compositor_echo() as (mcp_client, _comp):
         agent = await MiniCodex.create(
-            model="test-model",
-            mcp_client=mcp_client,
-            system="test",
-            client=client,
-            handlers=[AutoHandler()],
+            model="test-model", mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
         )
 
         await agent.run("say hi")

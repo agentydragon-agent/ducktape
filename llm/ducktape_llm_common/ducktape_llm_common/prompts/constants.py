@@ -134,8 +134,8 @@ class PromptName(str, Enum):
             result[category].append(prompt)
 
         # Sort prompts within each category
-        for category in result:
-            result[category].sort(key=lambda x: x.value)
+        for prompts in result.values():
+            prompts.sort(key=lambda x: x.value)
 
         return result
 

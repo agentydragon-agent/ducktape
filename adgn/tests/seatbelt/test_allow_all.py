@@ -1,13 +1,6 @@
 import pytest
 
-from adgn.seatbelt.model import (
-    DefaultBehavior,
-    FileOp,
-    FileRule,
-    ProcessRule,
-    SBPLPolicy,
-    Subpath,
-)
+from adgn.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from adgn.seatbelt.runner import run_sandboxed_async
 from tests._markers import REQUIRES_SANDBOX_EXEC
 

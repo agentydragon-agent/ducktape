@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import os
 import sys
 import time
@@ -74,7 +74,7 @@ def rotate() -> None:
         except Exception as exc:  # pragma: no cover - warn and continue
             print(f"WARNING: failed to revoke old key {old_key_id}: {exc}", file=sys.stderr)
 
-    created_ts = datetime.now(timezone.utc).isoformat()
+    created_ts = datetime.now(UTC).isoformat()
     data = {
         "openai_api_key": base64.b64encode(token_value.encode()).decode(),
         "token_prefix": base64.b64encode((token_prefix or "").encode()).decode(),

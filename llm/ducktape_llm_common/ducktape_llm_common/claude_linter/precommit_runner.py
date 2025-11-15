@@ -1,7 +1,7 @@
 import datetime
+from pathlib import Path
 import subprocess
 import tempfile
-from pathlib import Path
 
 import yaml
 
@@ -32,11 +32,7 @@ class PreCommitRunner:
         # Only create debug logs if explicitly requested via environment variable
         import os
 
-        debug_enabled = os.environ.get("CLAUDE_LINTER_DEBUG", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        debug_enabled = os.environ.get("CLAUDE_LINTER_DEBUG", "").lower() in ("1", "true", "yes")
         log_file = None
         if debug_enabled:
             # Create log file
@@ -49,22 +45,16 @@ class PreCommitRunner:
             tmpdir_path = Path(tmpdir)
 
             # Initialize a git repo
-            subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True, check=False)
             subprocess.run(
-                ["git", "config", "user.email", "test@example.com"],
-                cwd=tmpdir,
-                capture_output=True,
+                ["git", "config", "user.email", "test@example.com"], cwd=tmpdir, capture_output=True, check=False
             )
-            subprocess.run(
-                ["git", "config", "user.name", "Test User"],
-                cwd=tmpdir,
-                capture_output=True,
-            )
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmpdir, capture_output=True, check=False)
 
             # Copy files to temp repo, preserving full path structure
             temp_paths = []
-            for path in paths:
-                path = Path(path)
+            for path_str in paths:
+                path = Path(path_str)
 
                 # Get absolute path
                 abs_path = path.absolute()
@@ -101,7 +91,7 @@ class PreCommitRunner:
 
             # Write debug info to log if enabled
             if log_file:
-                with open(log_file, "w") as f:
+                with log_file.open("w") as f:
                     f.write("=== Claude Linter Debug Log ===\n")
                     f.write(f"Time: {datetime.datetime.now()}\n")
                     f.write(f"Working dir: {current_working_dir}\n")
@@ -121,7 +111,7 @@ class PreCommitRunner:
                             f.write("(file does not exist)\n")
 
             # Stage files
-            subprocess.run(["git", "add"] + temp_paths, cwd=tmpdir, capture_output=True)
+            subprocess.run(["git", "add", *temp_paths], cwd=tmpdir, capture_output=True, check=False)
 
             # Build command
             cmd = [
@@ -133,11 +123,11 @@ class PreCommitRunner:
             ]
 
             # Run as subprocess
-            result = subprocess.run(cmd, cwd=tmpdir, capture_output=True, text=True)
+            result = subprocess.run(cmd, cwd=tmpdir, capture_output=True, text=True, check=False)
 
             # Append results to log if enabled
             if log_file:
-                with open(log_file, "a") as f:
+                with log_file.open("a") as f:
                     f.write("\n--- Pre-commit command ---\n")
                     f.write(f"Command: {' '.join(cmd)}\n")
                     f.write(f"Return code: {result.returncode}\n")

@@ -21,12 +21,7 @@ from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.props.critic import CriticSubmitPayload
-from adgn.props.ids import (
-    CANON_FP_PREFIX,
-    CANON_TP_PREFIX,
-    ensure_crit_id,
-    ensure_with_prefix,
-)
+from adgn.props.ids import CANON_FP_PREFIX, CANON_TP_PREFIX, ensure_crit_id, ensure_with_prefix
 from adgn.props.specimens.registry import IssueRecord, SpecimenRecord
 
 # Shared ID prefix constants (single source of truth) live in adgn.props.ids
@@ -38,23 +33,11 @@ class GradeMetrics(BaseModel):
     expected: int = Field(..., description="Number of canonical items (ground truth)")
     reported: int = Field(..., description="Number of items reported by critique")
     true_positives: int = Field(..., description="Reported items that match canonical")
-    false_positive: int = Field(
-        ...,
-        description="Reported items known to be false positives (in known-FP list)",
-    )
-    unknown: int = Field(
-        ...,
-        description="Reported items neither in canonical positives nor in known false positives",
-    )
+    false_positive: int = Field(..., description="Reported items known to be false positives (in known-FP list)")
+    unknown: int = Field(..., description="Reported items neither in canonical positives nor in known false positives")
     false_negatives: int = Field(..., description="Canonical items missing in report")
-    precision: float = Field(
-        ...,
-        description="TP / (TP + false_positive + unknown); 0.0 if undefined",
-    )
-    recall: float = Field(
-        ...,
-        description="TP / expected (known-positives); 0.0 if undefined",
-    )
+    precision: float = Field(..., description="TP / (TP + false_positive + unknown); 0.0 if undefined")
+    recall: float = Field(..., description="TP / expected (known-positives); 0.0 if undefined")
     # Fractional coverage-based recall in [0,1], computed from coverage credits when expected>0
     coverage_recall: float | None = Field(
         default=None,
@@ -79,21 +62,10 @@ class GradeSubmitInput(BaseModel):
     true_positive_ids: list[str] = Field(default_factory=list)
     false_positive_ids: list[str] = Field(default_factory=list)
     unknown_critique_ids: list[str] = Field(default_factory=list)
-    precision: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="LLM-assessed precision in [0,1] (smart-weighted)",
-    )
-    recall: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="LLM-assessed recall in [0,1] (smart-weighted)",
-    )
+    precision: float = Field(..., ge=0.0, le=1.0, description="LLM-assessed precision in [0,1] (smart-weighted)")
+    recall: float = Field(..., ge=0.0, le=1.0, description="LLM-assessed recall in [0,1] (smart-weighted)")
     message_md: str | None = Field(
-        default=None,
-        description="Optional Markdown summary/notes; may include tables of examples",
+        default=None, description="Optional Markdown summary/notes; may include tables of examples"
     )
 
     # REQUIRED fractional coverage credits attributed per critique issue.
@@ -101,8 +73,7 @@ class GradeSubmitInput(BaseModel):
     # The grader server aggregates across critique items, clamps per-canonical totals to 1.0,
     # and computes coverage_recall accordingly.
     coverage_credits: list[CoverageCredit] = Field(
-        ...,
-        description="Per-critique fractional credits toward canonical positives",
+        ..., description="Per-critique fractional credits toward canonical positives"
     )
 
     @model_validator(mode="after")
@@ -118,9 +89,7 @@ class GradeSubmitInput(BaseModel):
         # Allow tiny FP tolerance
         bad = {k: v for k, v in totals.items() if v > 1.0 + 1e-6}
         if bad:
-            raise ValueError(
-                f"coverage_credits total exceeds 1.0 for canonical ids: {bad}",
-            )
+            raise ValueError(f"coverage_credits total exceeds 1.0 for canonical ids: {bad}")
         return self
 
     model_config = ConfigDict(extra="forbid")
@@ -134,8 +103,7 @@ class GradeSubmitPayload(BaseModel):
     false_positive_ids: list[str] = Field(default_factory=list)
     unknown_critique_ids: list[str] = Field(default_factory=list)
     message_md: str | None = Field(
-        default=None,
-        description="Optional Markdown summary/notes; may include tables of examples",
+        default=None, description="Optional Markdown summary/notes; may include tables of examples"
     )
 
     model_config = ConfigDict(extra="forbid")
@@ -156,13 +124,8 @@ class GradeInputs:
     round: int | None = None
 
 
-def build_grader_submit_tools(
-    mcp: NotifyingFastMCP,
-    state: GradeSubmitState,
-    *,
-    inputs: GradeInputs,
-) -> None:
-    """Register grader submit tool on an existing server (tools‑builder pattern)."""
+def build_grader_submit_tools(mcp: NotifyingFastMCP, state: GradeSubmitState, *, inputs: GradeInputs) -> None:
+    """Register grader submit tool on an existing server (tools-builder pattern)."""
     # Derive allowed ID sets and counts from specimen and critique
 
     def _prefixed_ids(items: Iterable[IssueRecord], prefix: str) -> set[str]:
@@ -175,21 +138,12 @@ def build_grader_submit_tools(
                     out.add(norm)
         return out
 
-    allowed_canon_ids: set[str] = _prefixed_ids(
-        inputs.specimen.issues.values(),
-        CANON_TP_PREFIX,
-    )
+    allowed_canon_ids: set[str] = _prefixed_ids(inputs.specimen.issues.values(), CANON_TP_PREFIX)
     if inputs.specimen.false_positives:
-        allowed_canon_ids |= _prefixed_ids(
-            inputs.specimen.false_positives.values(),
-            CANON_FP_PREFIX,
-        )
+        allowed_canon_ids |= _prefixed_ids(inputs.specimen.false_positives.values(), CANON_FP_PREFIX)
 
     # Only true positives are eligible for fractional coverage credit
-    allowed_tp_ids: set[str] = _prefixed_ids(
-        inputs.specimen.issues.values(),
-        CANON_TP_PREFIX,
-    )
+    allowed_tp_ids: set[str] = _prefixed_ids(inputs.specimen.issues.values(), CANON_TP_PREFIX)
 
     allowed_critique_ids: set[str] = set()
     for it in inputs.critique.issues:
@@ -208,15 +162,11 @@ def build_grader_submit_tools(
             bad_tp = [i for i in result.true_positive_ids if i not in allowed_canon_ids]
             bad_fp = [i for i in result.false_positive_ids if i not in allowed_canon_ids]
             if bad_tp or bad_fp:
-                raise ValueError(
-                    f"grader returned non-canonical IDs: tp={bad_tp} fp={bad_fp}",
-                )
+                raise ValueError(f"grader returned non-canonical IDs: tp={bad_tp} fp={bad_fp}")
         if allowed_critique_ids is not None:
             bad_unk = [i for i in result.unknown_critique_ids if i not in allowed_critique_ids]
             if bad_unk:
-                raise ValueError(
-                    f"grader returned non-critique IDs in unknown_critique_ids: {bad_unk}",
-                )
+                raise ValueError(f"grader returned non-critique IDs in unknown_critique_ids: {bad_unk}")
         # Compute deterministic counts from ID lists; use grader-provided precision/recall
         tp = len(result.true_positive_ids)
         fp = len(result.false_positive_ids)
@@ -234,14 +184,10 @@ def build_grader_submit_tools(
                 rid = credit.crit_id
                 # Validate canonical ID (must be TP set)
                 if cid not in allowed_tp_ids:
-                    raise ValueError(
-                        f"coverage_credits contains non-canonical TP id: {cid}",
-                    )
+                    raise ValueError(f"coverage_credits contains non-canonical TP id: {cid}")
                 # Validate critique ID if known
                 if allowed_critique_ids and rid not in allowed_critique_ids:
-                    raise ValueError(
-                        f"coverage_credits contains non-critique id: {rid}",
-                    )
+                    raise ValueError(f"coverage_credits contains non-critique id: {rid}")
                 # Accumulate credit; clamp later when computing recall
                 per_canon[cid] = per_canon.get(cid, 0.0) + float(credit.credit)
             # Compute recall as average of clamped per-canonical totals
@@ -272,20 +218,14 @@ def build_grader_submit_tools(
 
 
 def make_grader_submit_server(
-    state: GradeSubmitState,
-    *,
-    name: str = "grader_submit",
-    inputs: GradeInputs,
+    state: GradeSubmitState, *, name: str = "grader_submit", inputs: GradeInputs
 ) -> NotifyingFastMCP:
     """Exposes submit_result(result: GradeSubmitInput) -> {ok: True}.
 
     Validates returned IDs and computes metrics server-side using specimen + critique context.
     """
 
-    mcp = NotifyingFastMCP(
-        name,
-        instructions="Final grader submission for specimen critique evaluation",
-    )
+    mcp = NotifyingFastMCP(name, instructions="Final grader submission for specimen critique evaluation")
     build_grader_submit_tools(mcp, state, inputs=inputs)
 
     return mcp
@@ -302,18 +242,12 @@ class CoverageCredit(BaseModel):
     crit_id: str = Field(..., description="Critique item ID (crit_ prefix)")
     canon_id: str = Field(..., description="Canonical positive ID (canon_tp_ prefix)")
     credit: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Fractional credit [0,1] from this critique item toward the canonical",
+        ..., ge=0.0, le=1.0, description="Fractional credit [0,1] from this critique item toward the canonical"
     )
 
 
 def make_grader_submit_server_from_inputs(
-    state: GradeSubmitState,
-    *,
-    name: str = "grader_submit",
-    inputs: GradeInputs,
+    state: GradeSubmitState, *, name: str = "grader_submit", inputs: GradeInputs
 ) -> NotifyingFastMCP:
     """Thin wrapper: pass GradeInputs through to the primary builder.
 

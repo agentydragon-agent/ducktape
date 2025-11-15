@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 from click.testing import CliRunner
-
 from ducktape_llm_common.claude_linter.cli import cli
 from ducktape_llm_common.claude_linter.precommit_runner import PreCommitRunner
 
@@ -18,12 +17,7 @@ def run_pre_hook(test_input: str):
 
 def create_write_input(file_path: str | Path, content: str) -> str:
     """Create a standard Write tool input structure."""
-    return json.dumps(
-        {
-            "tool_name": "Write",
-            "tool_input": {"file_path": str(file_path), "content": content},
-        }
-    )
+    return json.dumps({"tool_name": "Write", "tool_input": {"file_path": str(file_path), "content": content}})
 
 
 PYTHON_MYPY_NONFIXABLE = """import requests
@@ -110,11 +104,10 @@ class TestPreHook:
                 # First call: simulate fixing the file
                 Path(paths[0]).write_text(fixed_content)
                 return (0, "Fixed violations", "")
-            else:
-                # Second call: no more changes needed (content stable)
-                # First call: simulate fixing the file
-                # Don't change the file - it's already fixed
-                return (0, "", "")
+            # Second call: no more changes needed (content stable)
+            # First call: simulate fixing the file
+            # Don't change the file - it's already fixed
+            return (0, "", "")
 
         monkeypatch.setattr(PreCommitRunner, "run", mock_run)
         result = run_pre_hook(create_write_input(tmp_path / "test.py", original_content))
@@ -129,12 +122,7 @@ class TestPreHook:
         """Test that pre-hook ignores non-Python files."""
         # simulate ignore for non-python
         monkeypatch.setattr(PreCommitRunner, "run", lambda self, paths, cwd=None: (0, "", ""))
-        result = run_pre_hook(
-            create_write_input(
-                file_path=tmp_path / "test.txt",
-                content="This is not Python code",
-            )
-        )
+        result = run_pre_hook(create_write_input(file_path=tmp_path / "test.txt", content="This is not Python code"))
         assert result.exit_code == 0
 
     def test_ignores_other_tools(self, tmp_path, monkeypatch):
@@ -145,11 +133,7 @@ class TestPreHook:
             json.dumps(
                 {
                     "tool_name": "Edit",
-                    "tool_input": {
-                        "file_path": str(tmp_path / "test.py"),
-                        "old_string": "foo",
-                        "new_string": "bar",
-                    },
+                    "tool_input": {"file_path": str(tmp_path / "test.py"), "old_string": "foo", "new_string": "bar"},
                 }
             )
         )

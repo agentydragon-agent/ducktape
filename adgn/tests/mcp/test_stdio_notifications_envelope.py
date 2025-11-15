@@ -7,12 +7,12 @@ import textwrap
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 import pytest
+from tests.util.notifications import parse_system_notification_payload
 
 from adgn.agent.reducer import format_notifications_message
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifications.buffer import NotificationsBuffer
-from tests.util.notifications import parse_system_notification_payload
 
 
 @pytest.mark.asyncio

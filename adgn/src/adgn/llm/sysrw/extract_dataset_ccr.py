@@ -68,27 +68,14 @@ async def process_file(p: Path) -> list[dict]:
                     "timestamp": rec.get("timestamp"),
                     "anthropic_request": body,
                     "log_file": str(p),
-                },
+                }
             )
             kept += 1
             now = time.monotonic()
             if now - last_tick >= interval:
-                print(
-                    json.dumps(
-                        {
-                            "event": "progress",
-                            "file": str(p),
-                            "lines": lines,
-                            "kept": kept,
-                        },
-                    ),
-                )
+                print(json.dumps({"event": "progress", "file": str(p), "lines": lines, "kept": kept}))
                 last_tick = now
-    print(
-        json.dumps(
-            {"event": "file_done", "file": str(p), "lines": lines, "kept": kept},
-        ),
-    )
+    print(json.dumps({"event": "file_done", "file": str(p), "lines": lines, "kept": kept}))
     return out
 
 

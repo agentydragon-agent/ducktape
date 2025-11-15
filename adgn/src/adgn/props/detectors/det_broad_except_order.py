@@ -43,7 +43,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                             confidence=0.95,
                             message="Broad except precedes specific handler; later handler is unreachable.",
                             snippet=read_snippet(path, sl, el, context=0),
-                        ),
+                        )
                     )
                     break
     return out

@@ -1,6 +1,6 @@
 """Tests for the Indoor AQI sensor component."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import logging
 from logging.handlers import MemoryHandler
 
@@ -63,7 +63,7 @@ def empty_log():
 
 @pytest.fixture
 def now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @pytest.fixture

@@ -23,7 +23,11 @@ async def main() -> None:
         await matrix.send_text_message(room_id, "Hello from Ember's matrix-client quickstart!")
         print(f"Sent message to {room_id}")
 
-        events = await matrix.get_events(timeout=5.0)
+        try:
+            async with asyncio.timeout(5.0):
+                events = await matrix.get_events()
+        except TimeoutError:
+            events = []
         if events:
             print("Recent events:")
             for event in events:

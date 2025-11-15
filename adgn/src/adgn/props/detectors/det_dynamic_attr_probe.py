@@ -34,7 +34,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                     confidence=0.9,
                     message=f"Use of {n.func.id} — prefer explicit types/attributes; avoid dynamic attribute probing.",
                     snippet=read_snippet(path, sl, el, context=0),
-                ),
+                )
             )
         if isinstance(n, ast.ExceptHandler):
             t = n.type
@@ -58,7 +58,7 @@ def _find_in_file(path: Path) -> list[Detection]:
                         confidence=0.95,
                         message="Catching AttributeError — avoid hiding structural/type errors; design explicit types.",
                         snippet=read_snippet(path, sl, el, context=0),
-                    ),
+                    )
                 )
     return out
 

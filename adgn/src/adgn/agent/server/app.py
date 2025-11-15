@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from contextlib import AsyncExitStack
 from datetime import datetime
 import logging
@@ -8,6 +9,8 @@ import os
 from pathlib import Path
 from uuid import UUID
 
+# (runtime container constants used only in shared status builder)
+import docker  # type: ignore
 from fastapi import Body, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -28,25 +31,19 @@ from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession
-from adgn.agent.server.status_shared import (
-    AgentStatusCore,
-    build_agent_status_core,
-)
+from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
 from adgn.agent.server.ws import register_ws
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.clients import PolicyApproverClient
-from adgn.mcp.approval_policy.server import (
-    ApproveProposalArgs,
-    RejectProposalArgs,
-)
-
-# (runtime container constants used only in shared status builder)
-import docker  # type: ignore
+from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs
 
 PROTOCOL_VERSION = "1.0.0"
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
 
 logger = logging.getLogger(__name__)
+
+# Static directory for UI assets
+STATIC_DIR = Path(__file__).with_name("static")
 
 
 # Request/Response models (module-level to avoid nested classes)
@@ -180,22 +177,15 @@ class BootAgentResult(BaseModel):
 # Factory to create an isolated app with fresh manager/session
 
 
-def create_app(
-    *,
-    require_static_assets: bool = True,
-) -> FastAPI:
+def create_app(*, require_static_assets: bool = True) -> FastAPI:
     app = FastAPI()
-    STATIC_DIR = Path(__file__).with_name("static")
 
     def _mount_static(path: str, directory: Path, name: str) -> None:
         if not directory.exists():
             if require_static_assets:
-                raise RuntimeError(
-                    f"Static directory missing: {directory}. Build MiniCodex UI assets before running."
-                )
+                raise RuntimeError(f"Static directory missing: {directory}. Build MiniCodex UI assets before running.")
             logger.warning(
-                "Skipping mount for missing static directory",
-                extra={"path": path, "directory": str(directory)},
+                "Skipping mount for missing static directory", extra={"path": path, "directory": str(directory)}
             )
             return
         app.mount(path, StaticFiles(directory=directory, check_dir=True), name=name)
@@ -207,15 +197,9 @@ def create_app(
     # Enable by setting ADGN_UI_CORS_ORIGINS to a comma-separated list or "*".
     cors_env = os.getenv("ADGN_UI_CORS_ORIGINS")
     if cors_env:
-        origins = (
-            [o.strip() for o in cors_env.split(",") if o.strip()] if cors_env != "*" else ["*"]
-        )
+        origins = [o.strip() for o in cors_env.split(",") if o.strip()] if cors_env != "*" else ["*"]
         app.add_middleware(
-            CORSMiddleware,
-            allow_origins=origins,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
         )
 
     # Readiness event so async tests can await startup deterministically
@@ -248,11 +232,7 @@ def create_app(
         index_path = STATIC_DIR / "index.html"
         logger.info(
             "server startup",
-            extra={
-                "static_dir": str(STATIC_DIR),
-                "index_exists": index_path.exists(),
-                "index_path": str(index_path),
-            },
+            extra={"static_dir": str(STATIC_DIR), "index_exists": index_path.exists(), "index_path": str(index_path)},
         )
 
         # Ensure persistence schema (generic agent store) — fail startup on error
@@ -266,11 +246,9 @@ def create_app(
     async def _on_shutdown() -> None:
         """Flush UI events and close all containers via registry actor paths."""
         # Close app-managed async resources first
-        try:
+        with contextlib.suppress(Exception):
             await app.state.stack.aclose()
-        except Exception:
             # Continue shutdown on errors; they will be logged by the caller
-            pass
         for container in app.state.registry.list():
             if container.ui:
                 await container.ui.manager.flush()
@@ -283,11 +261,7 @@ def create_app(
         if not file_path.exists():
             if require_static_assets:
                 raise RuntimeError(f"Missing UI file: {file_path}")
-            return Response(
-                content="MiniCodex UI assets not built",
-                media_type="text/plain",
-                status_code=200,
-            )
+            return Response(content="MiniCodex UI assets not built", media_type="text/plain", status_code=200)
         return FileResponse(file_path)
 
     @app.get("/vite.svg", response_model=None)
@@ -309,11 +283,7 @@ def create_app(
     async def api_list_agents() -> AgentsList:
         rows = await app.state.persistence.list_agents()
         live = {c.agent_id: c for c in app.state.registry.list()}
-        working_ids = {
-            cid
-            for cid, c in live.items()
-            if (c.session is not None and c.session.active_run is not None)
-        }
+        working_ids = {cid for cid, c in live.items() if (c.session is not None and c.session.active_run is not None)}
         last_map = await app.state.persistence.list_agents_last_activity()
         # Build enriched list and sort by last activity desc (fallback to created_at)
         items: list[tuple[str, datetime, AgentDescriptor]] = []
@@ -338,7 +308,7 @@ def create_app(
         return AgentsList(agents=[p for _, _, p in items])
 
     @app.post("/api/agents", response_model=CreateAgentResult)
-    async def api_create_agent(create: CreateAgentBody = Body(...)) -> CreateAgentResult:
+    async def api_create_agent(create: CreateAgentBody = Body(...)) -> CreateAgentResult:  # noqa: B008
         # Lookup preset; combine with optional override system
         ps = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
         p = ps.get(create.preset)
@@ -395,17 +365,13 @@ def create_app(
         return DeleteAgentResult(ok=True)
 
     @app.patch("/api/agents/{agent_id}/mcp", response_model=PatchAgentMcpResult)
-    async def api_patch_agent_mcp(
-        agent_id: str, patch: PatchAgentMcpBody = Body(...)
-    ) -> PatchAgentMcpResult:
+    async def api_patch_agent_mcp(agent_id: str, patch: PatchAgentMcpBody = Body(...)) -> PatchAgentMcpResult:  # noqa: B008
         # Validate detach does not target default auto-attached servers
         if patch.detach:
             forbidden = set(DEFAULT_AUTO_SERVER_NAMES) | {"compositor"}
             bad = [n for n in patch.detach if n in forbidden]
             if bad:
-                raise HTTPException(
-                    status_code=400, detail={"error": "cannot_detach_auto", "servers": bad}
-                )
+                raise HTTPException(status_code=400, detail={"error": "cannot_detach_auto", "servers": bad})
         # Persist desired state first
         if patch.mcp_config is not None:
             await app.state.persistence.update_agent_specs(agent_id, mcp_config=patch.mcp_config)
@@ -424,9 +390,7 @@ def create_app(
         return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
     @app.post("/api/agents/{agent_id}/mcp/attach", response_model=PatchAgentMcpResult)
-    async def api_attach_agent_mcp(
-        agent_id: str, body: AttachOneMcpBody = Body(...)
-    ) -> PatchAgentMcpResult:
+    async def api_attach_agent_mcp(agent_id: str, body: AttachOneMcpBody = Body(...)) -> PatchAgentMcpResult:  # noqa: B008
         row = await app.state.persistence.get_agent(agent_id)
         if row is None:
             raise HTTPException(status_code=404, detail="agent not found")
@@ -442,22 +406,16 @@ def create_app(
         return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
     @app.post("/api/agents/{agent_id}/mcp/detach", response_model=PatchAgentMcpResult)
-    async def api_detach_agent_mcp(
-        agent_id: str, body: DetachOneMcpBody = Body(...)
-    ) -> PatchAgentMcpResult:
+    async def api_detach_agent_mcp(agent_id: str, body: DetachOneMcpBody = Body(...)) -> PatchAgentMcpResult:  # noqa: B008
         row = await app.state.persistence.get_agent(agent_id)
         if row is None:
             raise HTTPException(status_code=404, detail="agent not found")
         # Validate requested detach names are allowed
         forbidden = set(DEFAULT_AUTO_SERVER_NAMES) | {"compositor"}
         if body.name in forbidden:
-            raise HTTPException(
-                status_code=400, detail={"error": "cannot_detach_auto", "servers": [body.name]}
-            )
+            raise HTTPException(status_code=400, detail={"error": "cannot_detach_auto", "servers": [body.name]})
         # Persist detach (single)
-        persisted_cfg = await app.state.persistence.patch_agent_specs(
-            agent_id, attach={}, detach=[body.name]
-        )
+        persisted_cfg = await app.state.persistence.patch_agent_specs(agent_id, attach={}, detach=[body.name])
         # Live apply if running
         container = app.state.registry.get(agent_id)
         if container is not None:
@@ -510,7 +468,7 @@ def create_app(
 
     # --- Policy: set active content (optionally from proposal) ---
     @app.post("/api/agents/{agent_id}/policy", response_model=SimpleOk)
-    async def api_set_policy(agent_id: str, body: SetPolicyBody = Body(...)) -> SimpleOk:
+    async def api_set_policy(agent_id: str, body: SetPolicyBody = Body(...)) -> SimpleOk:  # noqa: B008
         # Route through the agent container's policy approver client
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
@@ -534,7 +492,7 @@ def create_app(
 
     # --- Approvals (user decisions) ---
     @app.post("/api/agents/{agent_id}/approve", response_model=SimpleOk)
-    async def api_approve(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:
+    async def api_approve(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
         except KeyError as e:
@@ -550,7 +508,7 @@ def create_app(
         return SimpleOk(ok=True)
 
     @app.post("/api/agents/{agent_id}/deny_continue", response_model=SimpleOk)
-    async def api_deny_continue(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:
+    async def api_deny_continue(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
         except KeyError as e:
@@ -561,9 +519,7 @@ def create_app(
         if body.call_id not in sess.approval_hub._requests:
             raise HTTPException(status_code=404, detail="unknown_call")
         # Map deny-continue to abort semantics at the middleware boundary
-        sess.approval_hub.resolve(
-            body.call_id, AbortTurnDecision(reason=f"User denied: {body.call_id}")
-        )
+        sess.approval_hub.resolve(body.call_id, AbortTurnDecision(reason=f"User denied: {body.call_id}"))
         if container.ui is not None:
             await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
@@ -603,7 +559,7 @@ def create_app(
         return SimpleOk(ok=True)
 
     @app.post("/api/agents/{agent_id}/deny_abort", response_model=SimpleOk)
-    async def api_deny_abort(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:
+    async def api_deny_abort(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
         except KeyError as e:
@@ -620,7 +576,7 @@ def create_app(
 
     # --- Prompt/Abort ---
     @app.post("/api/agents/{agent_id}/prompt", response_model=SimpleOk)
-    async def api_prompt(agent_id: str, body: PromptBody = Body(...)) -> SimpleOk:
+    async def api_prompt(agent_id: str, body: PromptBody = Body(...)) -> SimpleOk:  # noqa: B008
         try:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
         except KeyError as e:
@@ -670,10 +626,7 @@ def create_app(
         rows = await app.state.persistence.list_policy_proposals(agent_id)
         items = [
             ProposalRow(
-                id=rec.id,
-                status=ProposalStatus(rec.status),
-                created_at=rec.created_at,
-                decided_at=rec.decided_at,
+                id=rec.id, status=ProposalStatus(rec.status), created_at=rec.created_at, decided_at=rec.decided_at
             )
             for rec in rows
         ]
@@ -722,13 +675,7 @@ def create_app(
 
 
 def run_uvicorn(host: str = "127.0.0.1", port: int = 8765) -> None:
-    uvicorn.run(
-        "adgn.agent.server.app:create_app",
-        host=host,
-        port=port,
-        log_level="info",
-        factory=True,
-    )
+    uvicorn.run("adgn.agent.server.app:create_app", host=host, port=port, log_level="info", factory=True)
 
 
 # Small helpers to dedupe snapshot send pattern

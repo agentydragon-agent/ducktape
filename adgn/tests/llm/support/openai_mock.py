@@ -5,11 +5,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from adgn.openai_utils.model import (
-    OpenAIModelProto,
-    ResponsesRequest,
-    ResponsesResult,
-)
+from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 
 # Sentinel for selecting a real AsyncOpenAI client in parameterized tests
 LIVE = object()

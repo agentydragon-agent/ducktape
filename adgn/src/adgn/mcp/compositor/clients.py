@@ -5,9 +5,7 @@ from fastmcp.mcp_config import MCPServerTypes
 from pydantic import BaseModel, Field
 
 from adgn.mcp._shared.client_helpers import call_simple_ok
-from adgn.mcp._shared.constants import (
-    COMPOSITOR_ADMIN_SERVER_NAME,
-)
+from adgn.mcp._shared.constants import COMPOSITOR_ADMIN_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.snapshots import ServerEntry

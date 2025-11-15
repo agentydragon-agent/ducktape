@@ -6,19 +6,15 @@ from enum import StrEnum
 from importlib import resources
 import logging
 
+from docker import DockerClient
 from pydantic import BaseModel
 
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.models.policy_error import PolicyError
 from adgn.agent.persist import Persistence
 from adgn.agent.policy_eval.runner import run_policy_source
-from adgn.mcp._shared.constants import (
-    APPROVAL_POLICY_PROPOSALS_INDEX_URI,
-    APPROVAL_POLICY_RESOURCE_URI,
-    UI_SERVER_NAME,
-)
+from adgn.mcp._shared.constants import APPROVAL_POLICY_PROPOSALS_INDEX_URI, APPROVAL_POLICY_RESOURCE_URI, UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
-from docker import DockerClient
 
 # build_mcp_function is used for self_check payload construction
 
@@ -47,13 +43,9 @@ class PolicyValidationError(Exception):
 #   concurrent edits/approvals (e.g., optimistic locking, better UI affordances).
 
 
-class TurnAbortRequested(Exception):
-    def __init__(
-        self,
-        call_id: str,
-        reason: str = "approval_denied",
-        context: dict | None = None,
-    ) -> None:
+class TurnAbortRequested(Exception):  # noqa: N818
+    # TODO: Reconsider whether signalling turn abort via exceptions is the best approach
+    def __init__(self, call_id: str, reason: str = "approval_denied", context: dict | None = None) -> None:
         self.call_id = call_id
         self.reason = reason
         self.context = context or {}
@@ -83,11 +75,7 @@ class ApprovalHub:
         self._requests: dict[str, ApprovalRequest] = {}
         self._lock = asyncio.Lock()
 
-    async def await_decision(
-        self,
-        call_id: str,
-        request: ApprovalRequest,
-    ) -> ContinueDecision | AbortTurnDecision:
+    async def await_decision(self, call_id: str, request: ApprovalRequest) -> ContinueDecision | AbortTurnDecision:
         async with self._lock:
             # Track the request so UIs can snapshot pending approvals
             self._requests[call_id] = request
@@ -121,11 +109,7 @@ class WellKnownTools(StrEnum):
 
 def load_default_policy_source() -> str:
     """Load the packaged default approval policy source code as text."""
-    return (
-        resources.files("adgn.agent.policies")
-        .joinpath("default_policy.py")
-        .read_text(encoding="utf-8")
-    )
+    return resources.files("adgn.agent.policies").joinpath("default_policy.py").read_text(encoding="utf-8")
 
 
 class ApprovalPolicyEngine:
@@ -190,10 +174,7 @@ class ApprovalPolicyEngine:
         run_policy_source(
             docker_client=self.docker_client,
             source=source,
-            input_payload={
-                "name": build_mcp_function(UI_SERVER_NAME, "send_message"),
-                "arguments": {},
-            },
+            input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
         )
 
     def notify_resource(self, uri: str) -> None:
@@ -220,11 +201,7 @@ def make_policy_engine(
     Centralizes creation for wiring, CLI, and tests without hiding parameters.
     """
     return ApprovalPolicyEngine(
-        notifier,
-        docker_client=docker_client,
-        agent_id=agent_id,
-        persistence=persistence,
-        policy_source=policy_source,
+        notifier, docker_client=docker_client, agent_id=agent_id, persistence=persistence, policy_source=policy_source
     )
 
     # No set_context: engine must be constructed with required context

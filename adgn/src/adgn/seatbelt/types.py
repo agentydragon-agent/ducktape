@@ -10,7 +10,4 @@ TEMPLATE_NAME_PATTERN = r"^[a-zA-Z0-9_-]{1,64}$"
 TEMPLATE_NAME_RE = re.compile(TEMPLATE_NAME_PATTERN)
 
 # Pydantic newtype (Annotated) with embedded validation
-TemplateName = Annotated[
-    str,
-    StringConstraints(pattern=TEMPLATE_NAME_PATTERN, min_length=1, max_length=64),
-]
+TemplateName = Annotated[str, StringConstraints(pattern=TEMPLATE_NAME_PATTERN, min_length=1, max_length=64)]

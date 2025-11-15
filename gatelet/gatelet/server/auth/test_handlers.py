@@ -1,8 +1,8 @@
 """Tests for authentication handlers."""
 
-import uuid
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
+import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,9 +65,7 @@ async def test_key_path_auth_valid(db_session: AsyncSession):
     unique_id = uuid.uuid4().hex[:8]
 
     key = AuthKey(
-        key_value=f"valid-test-key-{unique_id}",
-        description=f"Valid test key {unique_id}",
-        created_at=datetime.now(),
+        key_value=f"valid-test-key-{unique_id}", description=f"Valid test key {unique_id}", created_at=datetime.now()
     )
     db_session.add(key)
     await db_session.flush()
@@ -94,9 +92,7 @@ async def test_session_auth_valid(db_session: AsyncSession):
     # Use unique values for key and session
     unique_id = uuid.uuid4().hex[:8]
     key = AuthKey(
-        key_value=f"valid-test-key-{unique_id}",
-        description=f"Valid test key {unique_id}",
-        created_at=datetime.now(),
+        key_value=f"valid-test-key-{unique_id}", description=f"Valid test key {unique_id}", created_at=datetime.now()
     )
     db_session.add(key)
     await db_session.flush()
@@ -135,11 +131,7 @@ async def test_session_auth_expired(db_session: AsyncSession):
     """Test session_auth with expired session."""
     # Use unique values
     unique_id = uuid.uuid4().hex[:8]
-    key = AuthKey(
-        key_value=f"test-key-{unique_id}",
-        description=f"Test key {unique_id}",
-        created_at=datetime.now(),
-    )
+    key = AuthKey(key_value=f"test-key-{unique_id}", description=f"Test key {unique_id}", created_at=datetime.now())
     db_session.add(key)
     await db_session.flush()
 

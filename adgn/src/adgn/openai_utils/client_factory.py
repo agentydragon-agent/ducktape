@@ -16,15 +16,8 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-from adgn.openai_utils.http_logging import (
-    make_logged_async_openai,
-    make_logger_logged_async_openai,
-)
-from adgn.openai_utils.model import (
-    BoundOpenAIModel,
-    OpenAIModelProto,
-    RetryingOpenAIModel,
-)
+from adgn.openai_utils.http_logging import make_logged_async_openai, make_logger_logged_async_openai
+from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto, RetryingOpenAIModel
 from adgn.openai_utils.types import ReasoningEffort
 
 
@@ -35,11 +28,7 @@ def _get_async_openai(*, log_path: Path | str | None = None) -> AsyncOpenAI:
     constructing many clients per process while still allowing an opt-in logging
     variant when explicitly requested.
     """
-    if log_path:
-        client = make_logged_async_openai(Path(log_path))
-    else:
-        client = AsyncOpenAI()
-    return client
+    return make_logged_async_openai(Path(log_path)) if log_path else AsyncOpenAI()
 
 
 def get_async_openai(log_http_path: Path | str | None = None) -> AsyncOpenAI:
@@ -63,10 +52,7 @@ def build_client(
         inner = make_logger_logged_async_openai()
     elif log_http_path is None:
         env_path = os.environ.get("ADGN_OPENAI_HTTP_LOG")
-        if env_path:
-            inner = _get_async_openai(log_path=Path(env_path))
-        else:
-            inner = _get_async_openai()
+        inner = _get_async_openai(log_path=Path(env_path)) if env_path else _get_async_openai()
     else:
         inner = _get_async_openai(log_path=log_http_path)
     base = BoundOpenAIModel(client=inner, model=model, reasoning_effort=reasoning_effort)

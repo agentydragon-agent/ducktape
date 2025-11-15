@@ -25,10 +25,7 @@ class SearchParseError(Exception):
     """Raised when a search expression cannot be parsed."""
 
 
-def parse_search_expression(
-    store: TanaGraph,
-    search_node: BaseNode,
-) -> SearchExpression | None:
+def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchExpression | None:
     """
     Parse the search expression from a search node.
 
@@ -51,9 +48,7 @@ def parse_search_expression(
 
     metadata = store.get(search_node.props.meta_node_id)
     if not metadata:
-        raise SearchParseError(
-            f"Metadata node {search_node.props.meta_node_id} not found",
-        )
+        raise SearchParseError(f"Metadata node {search_node.props.meta_node_id} not found")
 
     # Find search expression tuple in metadata children
     for child in metadata.child_nodes:
@@ -84,10 +79,7 @@ def parse_search_expression(
     return None
 
 
-def _parse_expression_components(
-    store: TanaGraph,
-    component_ids: list[NodeId],
-) -> SearchExpression | None:
+def _parse_expression_components(store: TanaGraph, component_ids: list[NodeId]) -> SearchExpression | None:
     """
     Parse expression components into a SearchExpression.
 
@@ -101,9 +93,7 @@ def _parse_expression_components(
     if not component_ids:
         return None
 
-    expressions = [
-        expr for comp_id in component_ids if (expr := _parse_single_component(store, comp_id))
-    ]
+    expressions = [expr for comp_id in component_ids if (expr := _parse_single_component(store, comp_id))]
 
     if not expressions:
         return None
@@ -127,11 +117,7 @@ def _parse_tuple_operator(store: TanaGraph, node: TupleNode) -> SearchExpression
 
     # Check if it's a boolean operator
     if operator_id in operator_map:
-        return _parse_boolean_expression(
-            store,
-            operator_map[operator_id],
-            node.children[1:],
-        )
+        return _parse_boolean_expression(store, operator_map[operator_id], node.children[1:])
 
     # Check if it's a field search
     operator_node = store.get(operator_id)
@@ -147,15 +133,10 @@ def _parse_tuple_operator(store: TanaGraph, node: TupleNode) -> SearchExpression
         return TextSearch(text=f"<{operator_node.name}>")
 
     # Unknown operator
-    raise SearchParseError(
-        f"Unknown operator in search expression tuple: {operator_id}",
-    )
+    raise SearchParseError(f"Unknown operator in search expression tuple: {operator_id}")
 
 
-def _parse_single_component(
-    store: TanaGraph,
-    node_id: NodeId,
-) -> SearchExpression | None:
+def _parse_single_component(store: TanaGraph, node_id: NodeId) -> SearchExpression | None:
     """
     Parse a single component node into a SearchExpression.
 
@@ -191,9 +172,7 @@ def _parse_single_component(
 
 
 def _parse_boolean_expression(
-    store: TanaGraph,
-    operator: BooleanOperator,
-    operand_ids: list[NodeId],
+    store: TanaGraph, operator: BooleanOperator, operand_ids: list[NodeId]
 ) -> BooleanSearch | None:
     """
     Parse a boolean expression with the given operator and operands.

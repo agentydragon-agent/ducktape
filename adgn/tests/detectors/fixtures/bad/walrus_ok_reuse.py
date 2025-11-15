@@ -4,4 +4,3 @@ def f(db, user_id):
     if user is None:
         return None
     return user.name if user.name else user
-

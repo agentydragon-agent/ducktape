@@ -10,9 +10,7 @@ from adgn.inop.prompting.truncation_utils import TruncationManager
 
 
 def gather_agent_files(
-    work_dir: Path,
-    cfg: OptimizerConfig,
-    trunc_mgr: TruncationManager | None = None,
+    work_dir: Path, cfg: OptimizerConfig, trunc_mgr: TruncationManager | None = None
 ) -> list[FileInfo]:
     files_info: list[FileInfo] = []
     t_mgr = trunc_mgr or TruncationManager(cfg)
@@ -26,24 +24,14 @@ def gather_agent_files(
         ):
             continue
         relative = file_path.relative_to(work_dir).as_posix()
-        content = t_mgr.truncate_file_by_bytes(
-            file_path,
-            cfg.truncation.max_file_size_grading,
-        )
+        content = t_mgr.truncate_file_by_bytes(file_path, cfg.truncation.max_file_size_grading)
         files_info.append(FileInfo(path=relative, content=content))
     # Truncate directly on FileInfo objects and return models
-    truncated_models = t_mgr.truncate_files_by_tokens(
-        files_info,
-        cfg.tokens.max_files_tokens,
-    )
+    truncated_models = t_mgr.truncate_files_by_tokens(files_info, cfg.tokens.max_files_tokens)
     return cast(list[FileInfo], truncated_models)
 
 
-def should_exclude_file(
-    relative_path: str,
-    filename: str,
-    cfg: OptimizerConfig,
-) -> bool:
+def should_exclude_file(relative_path: str, filename: str, cfg: OptimizerConfig) -> bool:
     return any(
         fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(filename, pattern)
         for pattern in cfg.exclude_patterns

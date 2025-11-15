@@ -41,7 +41,7 @@ async def _run_command(command: str) -> ShellCommandResult:
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
-    except asyncio.TimeoutError:  # pragma: no cover - safety guard
+    except TimeoutError:  # pragma: no cover - safety guard
         proc.kill()
         stdout, stderr = await proc.communicate()
         stdout = stdout or b""

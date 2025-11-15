@@ -1,7 +1,7 @@
 from collections import namedtuple
 
-import pytest
 from httpx import AsyncClient
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,11 +11,7 @@ from gatelet.server.tests.utils import persist
 
 
 @pytest.mark.asyncio
-async def test_send_battery_status(
-    monkeypatch,
-    client: AsyncClient,
-    db_session: AsyncSession,
-):
+async def test_send_battery_status(monkeypatch, client: AsyncClient, db_session: AsyncSession):
     integration = await persist(
         db_session,
         WebhookIntegration(
@@ -29,16 +25,9 @@ async def test_send_battery_status(
 
     Battery = namedtuple("Battery", ["percent", "secsleft", "power_plugged"])
     percent = 80
-    monkeypatch.setattr(
-        "psutil.sensors_battery",
-        lambda: Battery(percent=percent, secsleft=3600, power_plugged=True),
-    )
+    monkeypatch.setattr("psutil.sensors_battery", lambda: Battery(percent=percent, secsleft=3600, power_plugged=True))
 
-    result = await send_battery_status(
-        "http://testserver",
-        integration.name,
-        client=client,
-    )
+    result = await send_battery_status("http://testserver", integration.name, client=client)
 
     assert result["status"] == "ok"
 

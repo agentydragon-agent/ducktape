@@ -3,16 +3,11 @@ from pathlib import Path
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import (
-    FunctionToolParam,
-    ResponsesRequest,
-)
+from adgn.openai_utils.model import FunctionToolParam, ResponsesRequest
 from adgn.props.critic import CriticSubmitPayload
 import adgn.props.prompt_eval.server
 from adgn.props.prompt_eval.server import PromptEvalArgs, PromptEvalOutput, build_server
-from tests.fixtures.responses import (
-    ResponsesFactory,
-)  # single factory for adapter responses
+from tests.fixtures.responses import ResponsesFactory  # single factory for adapter responses
 
 from .support.openai_mock import LIVE  # sentinel for live client
 
@@ -59,19 +54,14 @@ async def _behavior_ok(req):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "openai_client_param",
-    [
-        pytest.param(_behavior_ok, id="mock"),
-        pytest.param(LIVE, id="live", marks=pytest.mark.live_llm),
-    ],
+    [pytest.param(_behavior_ok, id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_llm)],
     indirect=True,
 )
 async def test_prompt_eval_signals_tool_error_on_critic_error(
     openai_client_param, tmp_path: Path, make_typed_mcp
 ) -> None:
     # Build server with provided client (mock/live)
-    mcp_server, _state = build_server(
-        client=openai_client_param, name="prompt_eval_test", run_dir_base=tmp_path
-    )
+    mcp_server, _state = build_server(client=openai_client_param, name="prompt_eval_test", run_dir_base=tmp_path)
 
     # Patch _run_critic_for_specimen to raise within the server module
     async def _fake(specimen, system_prompt, client, run_dir, *, agent_model="gpt-5", **kwargs):
@@ -92,30 +82,15 @@ async def test_prompt_eval_signals_tool_error_on_critic_error(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "openai_client_param",
-    [
-        pytest.param(_behavior_ok, id="mock"),
-        pytest.param(LIVE, id="live", marks=pytest.mark.live_llm),
-    ],
+    [pytest.param(_behavior_ok, id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_llm)],
     indirect=True,
 )
-async def test_prompt_eval_returns_metrics_on_success(
-    openai_client_param, tmp_path: Path, make_typed_mcp
-) -> None:
+async def test_prompt_eval_returns_metrics_on_success(openai_client_param, tmp_path: Path, make_typed_mcp) -> None:
     # Build server with provided client (mock/live)
-    mcp_server, _state = build_server(
-        client=openai_client_param, name="prompt_eval_test2", run_dir_base=tmp_path
-    )
+    mcp_server, _state = build_server(client=openai_client_param, name="prompt_eval_test2", run_dir_base=tmp_path)
 
     # Patch _run_critic_for_specimen to return a minimal CriticSubmitPayload instance
-    async def _fake_ok(
-        specimen,
-        system_prompt,
-        client,
-        run_dir,
-        *,
-        agent_model="gpt-5",
-        **kwargs,
-    ):
+    async def _fake_ok(specimen, system_prompt, client, run_dir, *, agent_model="gpt-5", **kwargs):
         return CriticSubmitPayload(issues=[], notes_md=None)
 
     adgn.props.prompt_eval.server._run_critic_for_specimen = _fake_ok

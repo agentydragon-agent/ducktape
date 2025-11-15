@@ -8,12 +8,7 @@ from .linters.python_ruff import PythonRuffLinter
 from .pattern_matcher import PatternMatcher
 
 
-def check_python_file(
-    file_path: str,
-    content: str,
-    config: Any,
-    critical_only: bool = False,
-) -> list[Violation]:
+def check_python_file(file_path: str, content: str, config: Any, critical_only: bool = False) -> list[Violation]:
     """Check a Python file for violations.
 
     Args:

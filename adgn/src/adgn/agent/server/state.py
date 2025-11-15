@@ -73,10 +73,7 @@ class ToolItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-DisplayItem = Annotated[
-    UserMessageItem | AssistantMarkdownItem | EndTurnItem | ToolItem,  # noqa: E721
-    Field(discriminator="kind"),
-]
+DisplayItem = Annotated[UserMessageItem | AssistantMarkdownItem | EndTurnItem | ToolItem, Field(discriminator="kind")]
 
 
 class UiState(BaseModel):
@@ -103,14 +100,8 @@ def append_item(state: UiState, item: DisplayItem) -> UiState:
     return UiState(seq=state.seq + 1, items=[*state.items, item])
 
 
-def start_tool(
-    state: UiState, *, tool: str, call_id: str, cmd: str | None, args: Any | None
-) -> UiState:
-    content: ToolContent
-    if cmd is not None:
-        content = ExecContent(cmd=cmd, args=args)
-    else:
-        content = JsonContent(args=args)
+def start_tool(state: UiState, *, tool: str, call_id: str, cmd: str | None, args: Any | None) -> UiState:
+    content: ToolContent = ExecContent(cmd=cmd, args=args) if cmd is not None else JsonContent(args=args)
     return append_item(state, ToolItem(tool=tool, call_id=call_id, content=content))
 
 
@@ -165,13 +156,7 @@ def update_tool_exec_stream(
     return state
 
 
-def update_tool_json_output(
-    state: UiState,
-    call_id: str,
-    *,
-    result: dict | None,
-    is_error: bool | None,
-) -> UiState:
+def update_tool_json_output(state: UiState, call_id: str, *, result: dict | None, is_error: bool | None) -> UiState:
     idx = _find_last_tool_index(state, call_id)
     if idx is None:
         return state

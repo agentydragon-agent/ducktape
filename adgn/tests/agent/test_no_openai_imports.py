@@ -51,12 +51,7 @@ def _assert_no_openai_imports(root: Path) -> None:
 
 @pytest.mark.parametrize(
     "rel_path",
-    [
-        "adgn/src/adgn/agent",
-        "adgn/src/adgn/git_commit_ai",
-        "adgn/src/adgn/llm/llm_edit.py",
-        "adgn/src/adgn/props",
-    ],
+    ["adgn/src/adgn/agent", "adgn/src/adgn/git_commit_ai", "adgn/src/adgn/llm/llm_edit.py", "adgn/src/adgn/props"],
 )
 def test_no_direct_openai_imports(rel_path: str) -> None:
     repo_root = Path(__file__).resolve().parents[3]

@@ -43,7 +43,8 @@ async def test_flat_model_infers_types_and_emits_schema():
     assert isinstance(schema, dict)
     assert schema.get("type") == "object"
     props = schema.get("properties") or {}
-    assert "a" in props and "b" in props
+    assert "a" in props
+    assert "b" in props
     # Required contains 'a' (since 'b' is optional)
     required = set(schema.get("required") or [])
     assert "a" in required
