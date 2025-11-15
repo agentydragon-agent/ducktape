@@ -1,5 +1,7 @@
 """Tests for tree structure building."""
 
+import os
+
 from difftree.parser import FileChange
 from difftree.tree import TreeNode, build_tree, sort_tree
 
@@ -9,7 +11,8 @@ def test_build_tree_single_file():
     changes = [FileChange(path="test.py", additions=10, deletions=5)]
     root = build_tree(changes)
 
-    assert root.name == "."
+    # Root name is the basename of current directory
+    assert root.name in (".", "difftree", os.path.basename(os.getcwd()))
     assert not root.is_file
     assert root.additions == 10
     assert root.deletions == 5

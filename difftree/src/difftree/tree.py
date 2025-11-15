@@ -1,5 +1,6 @@
 """Build tree structure from file paths with aggregated statistics."""
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,7 +35,9 @@ class TreeNode:
 
 def build_tree(changes: list[FileChange]) -> TreeNode:
     """Build a tree structure from file changes."""
-    root = TreeNode(name=".", is_file=False, path=".")
+    # Use basename of current directory as root name
+    root_name = os.path.basename(os.getcwd()) or "."
+    root = TreeNode(name=root_name, is_file=False, path=".")
 
     for change in changes:
         parts = Path(change.path).parts

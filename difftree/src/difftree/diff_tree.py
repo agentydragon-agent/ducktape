@@ -10,10 +10,6 @@ from .config import Column, RenderConfig
 from .progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
 from .tree import TreeNode
 
-# Cell padding between columns
-CELL_PADDING = "  "
-
-
 class DiffTree:
     """Renderable diff tree with progress bars and statistics."""
 
@@ -151,18 +147,15 @@ class DiffTree:
     def _make_count_cells(self, node: TreeNode) -> tuple[Text, Text]:
         """Create count cells with additions (right-aligned) and deletions (left-aligned)."""
         if node.is_binary:
-            binary_cell = Text(CELL_PADDING)
-            binary_cell.append("[Binary]", style="dim")
-            return binary_cell, Text(CELL_PADDING)
+            return Text("[Binary]", style="dim"), Text("")
 
-        additions_cell = Text(CELL_PADDING)
+        additions_cell = Text()
         if node.additions > 0:
             additions_cell.append(f"+{node.additions}", style="green")
 
-        deletions_cell = Text("")
+        deletions_cell = Text()
         if node.deletions > 0:
             deletions_cell.append(f"-{node.deletions}", style="red")
-        deletions_cell.append(CELL_PADDING)
 
         return additions_cell, deletions_cell
 
@@ -212,9 +205,7 @@ class DiffTree:
     def _make_percentage_cell(self, node: TreeNode, max_changes: int) -> Text:
         """Create percentage cell showing relative change size."""
         if node.is_binary or max_changes == 0:
-            return Text(CELL_PADDING)
+            return Text("")
 
         ratio = node.total_changes / max_changes
-        pct_text = Text(CELL_PADDING)
-        pct_text.append(f"{ratio:>6.1%}", style="cyan")
-        return pct_text
+        return Text(f"{ratio:>6.1%}", style="cyan")
