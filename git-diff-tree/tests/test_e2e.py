@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from git_diff_tree.parser import parse_unified_diff
 from git_diff_tree.tree import build_tree, sort_tree
 
 from .conftest import create_file, git_add_commit
@@ -18,11 +19,10 @@ def test_e2e_git_diff_unstaged(temp_git_repo: Path, run_git):
     create_file(temp_git_repo, "file2.py", "new file\n")
 
     # Get diff output
-    result = run_git("diff", "--numstat")
+    result = run_git("diff")
 
-    # Should have changes for file1.py and file2.py
-    lines = result.stdout.strip().split("\n")
-    assert len(lines) >= 1
+    # Should have changes
+    assert result.stdout.strip() != ""
 
 
 def test_e2e_git_diff_between_commits(temp_git_repo: Path, run_git):
@@ -37,11 +37,10 @@ def test_e2e_git_diff_between_commits(temp_git_repo: Path, run_git):
     git_add_commit(temp_git_repo, "Second commit")
 
     # Get diff between commits
-    result = run_git("diff", "--numstat", "HEAD~1", "HEAD")
+    result = run_git("diff", "HEAD~1", "HEAD")
 
-    lines = result.stdout.strip().split("\n")
-    # Should have changes for file1.py and file2.py
-    assert len(lines) >= 2
+    # Should have changes
+    assert result.stdout.strip() != ""
 
 
 def test_e2e_complete_workflow(temp_git_repo: Path, run_git):
@@ -52,25 +51,15 @@ def test_e2e_complete_workflow(temp_git_repo: Path, run_git):
     git_add_commit(temp_git_repo, "Initial commit")
 
     # Make changes
-    create_file(
-        temp_git_repo,
-        "src/main.py",
-        "def main():\n    print('hello')\n    pass\n",
-    )
-    create_file(
-        temp_git_repo,
-        "src/models/user.py",
-        "class User:\n    pass\n",
-    )
+    create_file(temp_git_repo, "src/main.py", "def main():\n    print('hello')\n    pass\n")
+    create_file(temp_git_repo, "src/models/user.py", "class User:\n    pass\n")
     create_file(temp_git_repo, "README.md", "# Project\n")
 
     # Get diff output
-    result = run_git("diff", "--numstat")
+    result = run_git("diff")
 
     # Parse the output
-    from git_diff_tree.parser import parse_numstat_output
-
-    changes = parse_numstat_output(result.stdout)
+    changes = parse_unified_diff(result.stdout)
 
     # Build tree
     root = build_tree(changes)
@@ -96,7 +85,7 @@ def test_e2e_with_deletions(temp_git_repo: Path, run_git):
     create_file(temp_git_repo, "file1.py", "line1\nline4\n")
 
     # Get diff
-    result = run_git("diff", "--numstat")
+    result = run_git("diff")
 
     # Should show deletions
     assert result.stdout.strip() != ""
@@ -113,7 +102,7 @@ def test_e2e_staged_changes(temp_git_repo: Path, run_git):
     run_git("add", "file1.py")
 
     # Get staged diff
-    result = run_git("diff", "--numstat", "--cached")
+    result = run_git("diff", "--cached")
 
     # Should show staged changes
     assert "file1.py" in result.stdout

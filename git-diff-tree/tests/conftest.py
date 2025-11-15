@@ -37,31 +37,13 @@ def temp_git_repo() -> Generator[Path, None, None]:
         repo_path = Path(tmpdir)
 
         # Initialize git repo
+        subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
         subprocess.run(
-            ["git", "init"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
+            ["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True, capture_output=True
         )
-        subprocess.run(
-            ["git", "config", "user.email", "test@example.com"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Test User"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-        )
+        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True, capture_output=True)
         # Disable commit signing for tests
-        subprocess.run(
-            ["git", "config", "commit.gpgsign", "false"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-        )
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=repo_path, check=True, capture_output=True)
 
         yield repo_path
 
@@ -88,18 +70,8 @@ def git_add_commit(repo_path: Path, message: str) -> None:
         repo_path: Path to the git repository.
         message: Commit message.
     """
-    subprocess.run(
-        ["git", "add", "."],
-        cwd=repo_path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "commit", "-m", message],
-        cwd=repo_path,
-        check=True,
-        capture_output=True,
-    )
+    subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", message], cwd=repo_path, check=True, capture_output=True)
 
 
 @pytest.fixture
@@ -117,12 +89,6 @@ def run_git(temp_git_repo: Path):
     """
 
     def _run_git(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["git", *args],
-            cwd=temp_git_repo,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        return subprocess.run(["git", *args], cwd=temp_git_repo, capture_output=True, text=True, check=True)
 
     return _run_git

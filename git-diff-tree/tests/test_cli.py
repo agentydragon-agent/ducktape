@@ -34,13 +34,7 @@ def git_repo_with_changes(temp_git_repo: Path) -> Path:
 
 def test_cli_default_columns(runner, git_repo_with_changes):
     """Test CLI with default columns (all enabled)."""
-    result = runner.invoke(
-        main,
-        [],
-        obj={},
-        catch_exceptions=False,
-        env={"PWD": str(git_repo_with_changes)},
-    )
+    result = runner.invoke(main, [], obj={}, catch_exceptions=False, env={"PWD": str(git_repo_with_changes)})
 
     # Should succeed (exit code 0)
     assert result.exit_code == 0
@@ -50,12 +44,7 @@ def test_cli_default_columns(runner, git_repo_with_changes):
 
 def test_cli_columns_flag_all(runner, git_repo_with_changes):
     """Test --columns flag with all columns."""
-    result = runner.invoke(
-        main,
-        ["--columns", "tree,counts,bars,percentages"],
-        obj={},
-        catch_exceptions=False,
-    )
+    result = runner.invoke(main, ["--columns", "tree,counts,bars,percentages"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     # Should show content
@@ -86,9 +75,7 @@ def test_cli_columns_flag_custom_order(runner, git_repo_with_changes):
 
 def test_cli_columns_flag_invalid_column(runner, git_repo_with_changes):
     """Test --columns flag with invalid column name."""
-    result = runner.invoke(
-        main, ["--columns", "tree,invalid,counts"], obj={}, catch_exceptions=False
-    )
+    result = runner.invoke(main, ["--columns", "tree,invalid,counts"], obj={}, catch_exceptions=False)
 
     # Should fail with error
     assert result.exit_code == 1
@@ -162,11 +149,7 @@ def test_cli_no_changes(temp_git_repo):
 
     # Run CLI in the temp repo directory
     result = subprocess.run(
-        [sys.executable, "-m", "git_diff_tree"],
-        cwd=temp_git_repo,
-        capture_output=True,
-        text=True,
-        check=False,
+        [sys.executable, "-m", "git_diff_tree"], cwd=temp_git_repo, capture_output=True, text=True, check=False
     )
 
     # Should exit successfully but with "No changes" message
@@ -178,16 +161,7 @@ def test_cli_combined_options(runner, git_repo_with_changes):
     """Test CLI with multiple options combined."""
     result = runner.invoke(
         main,
-        [
-            "--columns",
-            "tree,counts,bars",
-            "--sort",
-            "alpha",
-            "--bar-width",
-            "15",
-            "--max-depth",
-            "2",
-        ],
+        ["--columns", "tree,counts,bars", "--sort", "alpha", "--bar-width", "15", "--max-depth", "2"],
         obj={},
         catch_exceptions=False,
     )
@@ -208,11 +182,7 @@ def test_cli_integration_basic(temp_git_repo):
 
     # Run actual CLI command
     result = subprocess.run(
-        [sys.executable, "-m", "git_diff_tree"],
-        cwd=temp_git_repo,
-        capture_output=True,
-        text=True,
-        check=False,
+        [sys.executable, "-m", "git_diff_tree"], cwd=temp_git_repo, capture_output=True, text=True, check=False
     )
 
     assert result.returncode == 0

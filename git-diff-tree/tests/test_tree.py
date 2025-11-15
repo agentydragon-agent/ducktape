@@ -1,7 +1,7 @@
 """Tests for tree structure building."""
 
 from git_diff_tree.parser import FileChange
-from git_diff_tree.tree import build_tree, sort_tree
+from git_diff_tree.tree import TreeNode, build_tree, sort_tree
 
 
 def test_build_tree_single_file():
@@ -96,8 +96,6 @@ def test_sort_tree_alphabetically(sample_changes: list[FileChange]):
 
 def test_tree_node_total_changes():
     """Test TreeNode.total_changes property."""
-    from git_diff_tree.tree import TreeNode
-
     node = TreeNode(name="test", is_file=True, additions=10, deletions=5)
     assert node.total_changes == 15
 

@@ -1,7 +1,6 @@
 """Snapshot tests for ANSI-rendered output."""
 
 from io import StringIO
-from typing import Optional
 
 from git_diff_tree.config import Column, RenderConfig
 from git_diff_tree.diff_tree import DiffTree
@@ -27,20 +26,10 @@ def complex_changes() -> list[FileChange]:
     ]
 
 
-def render_to_string(
-    changes: list[FileChange],
-    sort_by: str = "size",
-    config: Optional[RenderConfig] = None,
-) -> str:
+def render_to_string(changes: list[FileChange], sort_by: str = "size", config: RenderConfig | None = None) -> str:
     """Helper to render tree to string."""
     output = StringIO()
-    console = Console(
-        file=output,
-        force_terminal=True,
-        width=120,
-        legacy_windows=False,
-        color_system="standard",
-    )
+    console = Console(file=output, force_terminal=True, width=120, legacy_windows=False, color_system="standard")
 
     root = build_tree(changes)
     sort_tree(root, sort_by=sort_by)

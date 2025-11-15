@@ -2,10 +2,10 @@
 
 from io import StringIO
 
-from git_diff_tree.config import RenderConfig
+from git_diff_tree.config import Column, RenderConfig
 from git_diff_tree.diff_tree import DiffTree
 from git_diff_tree.parser import FileChange
-from git_diff_tree.progress_bar import BLOCKS, ProgressBar
+from git_diff_tree.progress_bar import LEFT_BLOCKS, ProgressBar
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
@@ -36,16 +36,14 @@ def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
 
 
 def test_blocks_constant():
-    """Test that BLOCKS contains the expected Unicode characters."""
-    assert len(BLOCKS) == 9
-    assert BLOCKS[0] == " "
-    assert BLOCKS[-1] == "█"
+    """Test that LEFT_BLOCKS contains the expected Unicode characters."""
+    assert len(LEFT_BLOCKS) == 9
+    assert LEFT_BLOCKS[0] == " "
+    assert LEFT_BLOCKS[-1] == "█"
 
 
 def test_renderer_initialization():
     """Test DiffTree initialization."""
-    from git_diff_tree.config import Column
-
     root = build_tree([FileChange(path="test.py", additions=1, deletions=0)])
     diff_tree = DiffTree(root)
 
@@ -58,8 +56,6 @@ def test_renderer_initialization():
 
 def test_renderer_with_custom_options():
     """Test DiffTree with custom options."""
-    from git_diff_tree.config import Column, RenderConfig
-
     root = build_tree([FileChange(path="test.py", additions=1, deletions=0)])
     config = RenderConfig(columns=[Column.TREE], bar_width=30)
     diff_tree = DiffTree(root, config=config)
@@ -94,8 +90,6 @@ def test_render_simple_tree(sample_changes):
 
 def test_render_with_no_counts(sample_changes):
     """Test rendering without count columns."""
-    from git_diff_tree.config import Column, RenderConfig
-
     output = StringIO()
     console = Console(file=output, force_terminal=True, width=120)
 
@@ -153,9 +147,7 @@ def test_make_progress_bar_alignment():
     bar_right = ProgressBar(30, 100, 10, "right", "green").to_text()
     plain = bar_right.plain
     # Should be right-aligned (padding on left)
-    assert (
-        plain.endswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
-    )
+    assert plain.endswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
 
     # Left-aligned bar
     bar_left = ProgressBar(30, 100, 10, "left", "green").to_text()
@@ -183,7 +175,7 @@ def test_make_progress_bar_minimum_sliver(value, max_value, expected_has_sliver)
 
     if expected_has_sliver:
         # Should have at least ▏
-        assert "▏" in plain or any(block in plain for block in BLOCKS[1:])
+        assert "▏" in plain or any(block in plain for block in LEFT_BLOCKS[1:])
     else:
         # Should be all spaces
         assert plain.strip() == ""
@@ -238,14 +230,8 @@ def test_minimum_sliver_with_small_changes():
 )
 def test_console_width_handling(width, description):
     """Test rendering with different console widths."""
-    from git_diff_tree.config import RenderConfig
-
     changes = [
-        FileChange(
-            path="src/very_long_filename_that_might_wrap.py",
-            additions=100,
-            deletions=50,
-        ),
+        FileChange(path="src/very_long_filename_that_might_wrap.py", additions=100, deletions=50),
         FileChange(path="test.py", additions=10, deletions=5),
     ]
 
@@ -314,9 +300,7 @@ def _extract_progress_bars(line: Text) -> str:
 
 def test_progress_bar_format_pattern():
     """Test that progress bars match the expected format: green(RTL) + red(LTR) with no space."""
-    changes = [
-        FileChange(path="file.py", additions=100, deletions=50),
-    ]
+    changes = [FileChange(path="file.py", additions=100, deletions=50)]
 
     root = build_tree(changes)
     config = RenderConfig.default()
@@ -356,25 +340,10 @@ def test_progress_bar_format_pattern():
     # (already ensured by the alignment checks above - green ends with block, red starts with block)
 
 
-@pytest.mark.parametrize(
-    ("additions", "deletions"),
-    [
-        (100, 50),
-        (200, 10),
-        (5, 300),
-        (1000, 500),
-        (1, 1),
-    ],
-)
+@pytest.mark.parametrize(("additions", "deletions"), [(100, 50), (200, 10), (5, 300), (1000, 500), (1, 1)])
 def test_progress_bar_format_various_sizes(additions, deletions):
     """Test progress bar format with files of different sizes."""
-    changes = [
-        FileChange(
-            path=f"file_{additions}_{deletions}.py",
-            additions=additions,
-            deletions=deletions,
-        ),
-    ]
+    changes = [FileChange(path=f"file_{additions}_{deletions}.py", additions=additions, deletions=deletions)]
 
     root = build_tree(changes)
     config = RenderConfig.default()
@@ -384,35 +353,25 @@ def test_progress_bar_format_various_sizes(additions, deletions):
 
     # Render and get Text lines directly
     lines = _render_to_text_lines(diff_tree, width=150)
-    file_line = next(
-        line for line in lines if f"file_{additions}_{deletions}.py" in line.plain
-    )
+    file_line = next(line for line in lines if f"file_{additions}_{deletions}.py" in line.plain)
 
     bars = _extract_progress_bars(file_line)
 
     # Check total length
-    assert len(bars) == 40, (
-        f"Expected 40 chars for {additions}+/{deletions}-, got {len(bars)}"
-    )
+    assert len(bars) == 40, f"Expected 40 chars for {additions}+/{deletions}-, got {len(bars)}"
 
     green_part = bars[:20]
     red_part = bars[20:40]
 
     # If there are additions, green part should end with a block
     if additions > 0:
-        assert green_part.rstrip(" ") != "", (
-            f"Green part empty for {additions} additions"
-        )
-        assert green_part[-1] != " ", (
-            f"Green part ends with space for {additions} additions"
-        )
+        assert green_part.rstrip(" ") != "", f"Green part empty for {additions} additions"
+        assert green_part[-1] != " ", f"Green part ends with space for {additions} additions"
 
     # If there are deletions, red part should start with a block
     if deletions > 0:
         assert red_part.lstrip(" ") != "", f"Red part empty for {deletions} deletions"
-        assert red_part[0] != " ", (
-            f"Red part starts with space for {deletions} deletions"
-        )
+        assert red_part[0] != " ", f"Red part starts with space for {deletions} deletions"
 
 
 def test_progress_bars_align_consistently():
@@ -459,9 +418,7 @@ def test_progress_bars_align_consistently():
                     start = i
                 consecutive_blocks += 1
             else:
-                if (
-                    in_blocks and consecutive_blocks >= 10
-                ):  # Must be substantial to be the bar
+                if in_blocks and consecutive_blocks >= 10:  # Must be substantial to be the bar
                     end = i
                     break
                 in_blocks = False

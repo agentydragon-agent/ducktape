@@ -70,49 +70,6 @@ def parse_unified_diff(diff_output: str) -> list[FileChange]:
     return changes
 
 
-def parse_numstat_output(numstat_output: str) -> list[FileChange]:
-    """
-    Parse git diff --numstat output string.
-
-    Args:
-        numstat_output: Output from 'git diff --numstat' command.
-
-    Returns:
-        List of FileChange objects.
-
-    Note: This is kept for backward compatibility with tests.
-          For new code, prefer parse_unified_diff() which uses the
-          standard unidiff library.
-    """
-    changes = []
-    for line in numstat_output.strip().split("\n"):
-        if not line:
-            continue
-
-        parts = line.split("\t")
-        if len(parts) != 3:
-            continue
-
-        additions_str, deletions_str, path = parts
-
-        # Handle binary files (shown as '-' for both additions and deletions)
-        is_binary = additions_str == "-" and deletions_str == "-"
-
-        try:
-            additions = int(additions_str)
-        except ValueError:
-            additions = 0
-
-        try:
-            deletions = int(deletions_str)
-        except ValueError:
-            deletions = 0
-
-        changes.append(FileChange(path=path, additions=additions, deletions=deletions, is_binary=is_binary))
-
-    return changes
-
-
 def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
     """
     Parse git diff output using unified diff format.

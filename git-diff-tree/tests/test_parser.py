@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from git_diff_tree.parser import FileChange, parse_git_diff, parse_numstat_output
+from git_diff_tree.parser import FileChange, parse_git_diff, parse_unified_diff
 
 from .conftest import PNG_HEADER, create_file, git_add_commit
 
@@ -15,28 +15,6 @@ def test_file_change_dataclass():
     assert change.additions == 10
     assert change.deletions == 5
     assert change.total_changes == 15
-
-
-def test_parse_numstat_output():
-    """Test parsing numstat output string."""
-    numstat = "10\t5\tsrc/main.py\n3\t0\tREADME.md\n-\t-\timage.png"
-
-    changes = parse_numstat_output(numstat)
-
-    assert len(changes) == 3
-    assert changes[0].path == "src/main.py"
-    assert changes[0].additions == 10
-    assert changes[0].deletions == 5
-    assert changes[0].is_binary is False
-
-    assert changes[1].path == "README.md"
-    assert changes[1].additions == 3
-    assert changes[1].deletions == 0
-
-    assert changes[2].path == "image.png"
-    assert changes[2].is_binary is True
-    assert changes[2].additions == 0
-    assert changes[2].deletions == 0
 
 
 def test_parse_git_diff_with_changes(temp_git_repo: Path):
@@ -67,13 +45,13 @@ def test_parse_git_diff_empty(temp_git_repo: Path, run_git):
     git_add_commit(temp_git_repo, "Initial commit")
 
     # No changes, so diff should be empty
-    result = run_git("diff", "--numstat")
+    result = run_git("diff")
 
     assert result.stdout.strip() == ""
 
 
 def test_file_change_with_binary(temp_git_repo: Path, run_git):
-    """Test handling binary files (shown as '-' in numstat)."""
+    """Test handling binary files in unified diff."""
     # Create initial commit with a binary file
     binary_file = temp_git_repo / "image.png"
     binary_file.write_bytes(PNG_HEADER + b"\x00" * 100)
@@ -82,14 +60,11 @@ def test_file_change_with_binary(temp_git_repo: Path, run_git):
     # Modify the binary file
     binary_file.write_bytes(PNG_HEADER + b"\xff" * 100)  # Different content
 
-    # Get the diff output to verify binary handling
-    result = run_git("diff", "--numstat")
-
-    # Binary files should show as "-\t-\tfilename"
-    assert "-\t-\timage.png" in result.stdout
+    # Get the unified diff output
+    result = run_git("diff")
 
     # Parse and verify is_binary flag is set
-    changes = parse_numstat_output(result.stdout)
+    changes = parse_unified_diff(result.stdout)
 
     binary_change = next(c for c in changes if c.path == "image.png")
     assert binary_change.is_binary is True
