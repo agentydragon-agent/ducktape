@@ -74,15 +74,8 @@ plugins_dir = str(Path(__file__).parent.parent)
 if plugins_dir not in sys.path:
     sys.path.insert(0, plugins_dir)
 
-from module_utils.github_release import (  # noqa: E402
-    INSTALL_METHODS,
-    ActionError,
-    GitHubInstaller,
-    ReleaseSpec,
-    _fail,
-)
+from module_utils.github_release import INSTALL_METHODS, ActionError, GitHubInstaller, ReleaseSpec, _fail  # noqa: E402
 
-# Constants
 ENSURE_ABSENT = "absent"
 ENSURE_PRESENT = "present"
 

@@ -87,10 +87,10 @@ def render_template(c, api, template_pk):
     output_pdf = here / "all_parts_labels.pdf"
 
     all_parts = False
-    if all_parts:
-        part_ids = all_part_ids(api)
-    else:
-        part_ids = [
+    part_ids = (
+        all_part_ids(api)
+        if all_parts
+        else [
             109,  # 1N5819
             128,  # 1N4007
             122,  # crystal oscillator
@@ -106,6 +106,7 @@ def render_template(c, api, template_pk):
             # OK: all rendered
             123,  # CJ7809 LDO
         ]
+    )
 
     response = api.post(
         url="/label/print/", data={"plugin": "InvenTreeLabelSheet", "template": template_pk, "items": part_ids}
