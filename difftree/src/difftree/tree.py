@@ -15,6 +15,7 @@ class TreeNode:
     is_file: bool
     additions: int = 0
     deletions: int = 0
+    is_binary: bool = False
     children: dict[str, "TreeNode"] = field(default_factory=dict)
     path: str = ""
 
@@ -49,6 +50,7 @@ def build_tree(changes: list[FileChange]) -> TreeNode:
                     is_file=is_last,
                     additions=change.additions if is_last else 0,
                     deletions=change.deletions if is_last else 0,
+                    is_binary=change.is_binary if is_last else False,
                     path=path_so_far,
                 )
                 current.add_child(part, node)
@@ -58,6 +60,7 @@ def build_tree(changes: list[FileChange]) -> TreeNode:
                 if is_last:
                     current.additions = change.additions
                     current.deletions = change.deletions
+                    current.is_binary = change.is_binary
 
         _propagate_stats_upward(root)
 

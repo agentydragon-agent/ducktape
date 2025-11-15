@@ -43,6 +43,9 @@ class DiffTree:
 
         nodes_in_order = self._flatten_tree(self.root, depth=0)
 
+        # Calculate dynamic bar width if bars are included
+        bar_width = self._calculate_bar_width(tree_lines, options.max_width or 80)
+
         table = Table.grid(padding=0)
 
         for column in self.config.columns:
@@ -52,8 +55,8 @@ class DiffTree:
                 table.add_column(justify="right")  # Additions (right-aligned)
                 table.add_column(justify="left")   # Deletions (left-aligned)
             elif column == Column.BARS:
-                table.add_column(justify="right")
-                table.add_column(justify="left")
+                table.add_column(justify="right", ratio=1)
+                table.add_column(justify="left", ratio=1)
             elif column == Column.PERCENTAGES:
                 table.add_column(justify="right")
 
@@ -67,7 +70,7 @@ class DiffTree:
                     row.append(additions_cell)
                     row.append(deletions_cell)
                 elif column == Column.BARS:
-                    green_cell, red_cell = self._make_bar_cells(node, max_additions, max_deletions)
+                    green_cell, red_cell = self._make_bar_cells(node, max_additions, max_deletions, bar_width)
                     row.append(green_cell)
                     row.append(red_cell)
                 elif column == Column.PERCENTAGES:
@@ -113,6 +116,11 @@ class DiffTree:
 
     def _make_count_cells(self, node: TreeNode) -> tuple[Text, Text]:
         """Create count cells with additions (right-aligned) and deletions (left-aligned)."""
+        if node.is_binary:
+            binary_cell = Text(CELL_PADDING)
+            binary_cell.append("[Binary]", style="dim")
+            return binary_cell, Text(CELL_PADDING)
+
         additions_cell = Text(CELL_PADDING)
         if node.additions > 0:
             additions_cell.append(f"+{node.additions}", style="green")
@@ -124,22 +132,44 @@ class DiffTree:
 
         return additions_cell, deletions_cell
 
-    def _make_bar_cells(self, node: TreeNode, max_additions: int, max_deletions: int) -> tuple[Text, Text]:
+    def _calculate_bar_width(self, tree_lines: list[Text], terminal_width: int) -> int:
+        """Calculate dynamic bar width based on available space."""
+        if Column.BARS not in self.config.columns:
+            return self.config.bar_width
+
+        # Find maximum tree width
+        max_tree_width = max((len(line.plain) for line in tree_lines), default=0)
+
+        # Estimate width for other columns
+        other_width = max_tree_width
+        if Column.COUNTS in self.config.columns:
+            other_width += 18  # "+12345 -12345  "
+        if Column.PERCENTAGES in self.config.columns:
+            other_width += 10  # "  100.0%"
+
+        # Calculate remaining width for bars (2 bars total)
+        remaining = terminal_width - other_width
+        bar_width = max(remaining // 2, 10)  # Minimum 10 chars per bar
+
+        return min(bar_width, self.config.bar_width) if self.config.bar_width else bar_width
+
+    def _make_bar_cells(self, node: TreeNode, max_additions: int, max_deletions: int, bar_width: int) -> tuple[Text, Text]:
         """Create bar cells (green and red progress bars)."""
-        # Additions use right-aligned bars
+        if node.is_binary:
+            return Text(CELL_PADDING), Text("")
+
         green_bar = ProgressBar(
             value=node.additions,
             max_value=max_additions,
-            width=self.config.bar_width,
+            width=bar_width,
             blocks=self.config.bar_right_blocks or DEFAULT_RIGHT_BLOCKS,
             align="right",
             style="green",
         )
-        # Deletions use left-aligned bars
         red_bar = ProgressBar(
             value=node.deletions,
             max_value=max_deletions,
-            width=self.config.bar_width,
+            width=bar_width,
             blocks=self.config.bar_left_blocks or DEFAULT_LEFT_BLOCKS,
             align="left",
             style="red",
@@ -152,9 +182,10 @@ class DiffTree:
 
     def _make_percentage_cell(self, node: TreeNode, max_changes: int) -> Text:
         """Create percentage cell showing relative change size."""
-        if max_changes > 0:
-            ratio = node.total_changes / max_changes
-            pct_text = Text(CELL_PADDING)
-            pct_text.append(f"{ratio:>6.1%}", style="cyan")
-            return pct_text
-        return Text(CELL_PADDING)
+        if node.is_binary or max_changes == 0:
+            return Text(CELL_PADDING)
+
+        ratio = node.total_changes / max_changes
+        pct_text = Text(CELL_PADDING)
+        pct_text.append(f"{ratio:>6.1%}", style="cyan")
+        return pct_text
