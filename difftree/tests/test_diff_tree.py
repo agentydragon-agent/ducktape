@@ -1,12 +1,11 @@
 """Tests for DiffTree renderable."""
 
-from io import StringIO
-
 from difftree.config import Column, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
 from difftree.tree import build_tree
+from .conftest import render_to_string
 import pytest
 from rich.console import Console
 from rich.segment import Segment
@@ -62,16 +61,9 @@ def test_renderer_with_custom_options():
 
 def test_render_simple_tree(sample_changes):
     """Test rendering a simple tree structure."""
-    # Create a string buffer to capture output
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=120)
-
     root = build_tree(sample_changes)
     diff_tree = DiffTree(root)
-    console.print(diff_tree)
-
-    # Get the output
-    result = output.getvalue()
+    result = render_to_string(diff_tree, width=120)
 
     # Check that key elements are present
     assert "src" in result
@@ -83,15 +75,10 @@ def test_render_simple_tree(sample_changes):
 
 def test_render_with_no_counts(sample_changes):
     """Test rendering without count columns."""
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=120)
-
     root = build_tree(sample_changes)
     config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
     diff_tree = DiffTree(root, config=config)
-    console.print(diff_tree)
-
-    result = output.getvalue()
+    result = render_to_string(diff_tree, width=120)
 
     # Should still have tree structure but different formatting
     assert "src" in result
@@ -99,16 +86,11 @@ def test_render_with_no_counts(sample_changes):
 
 def test_render_with_max_depth(sample_changes):
     """Test rendering with maximum depth limit."""
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=120)
-
     root = build_tree(sample_changes)
     config = RenderConfig.default()
     config.max_depth = 1
     diff_tree = DiffTree(root, config=config)
-    console.print(diff_tree)
-
-    result = output.getvalue()
+    result = render_to_string(diff_tree, width=120)
 
     # Should show top-level items but not deeply nested ones
     assert "src" in result
@@ -127,14 +109,9 @@ def test_minimum_sliver_with_small_changes():
         FileChange(path="tiny_file.py", additions=1, deletions=0),
     ]
 
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=120)
-
     root = build_tree(changes)
     diff_tree = DiffTree(root)
-    console.print(diff_tree)
-
-    result = output.getvalue()
+    result = render_to_string(diff_tree, width=120)
 
     # Both files should be visible in the output
     assert "large_file.py" in result
@@ -161,15 +138,10 @@ def test_console_width_handling(width):
         FileChange(path="test.py", additions=10, deletions=5),
     ]
 
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=width)
-
     root = build_tree(changes)
     config = RenderConfig.default()
     diff_tree = DiffTree(root, config=config)
-    console.print(diff_tree)
-
-    result = output.getvalue()
+    result = render_to_string(diff_tree, width=width)
 
     # Basic assertions: output should contain expected elements
     assert result.strip() != ""
@@ -353,11 +325,7 @@ def test_column_ordering():
     # Test bars before tree
     config = RenderConfig(columns=[Column.BARS, Column.TREE, Column.COUNTS])
     diff_tree = DiffTree(root, config=config)
-
-    output = StringIO()
-    console = Console(file=output, width=80)
-    console.print(diff_tree)
-    result = output.getvalue()
+    result = render_to_string(diff_tree, width=80, force_terminal=False)
 
     # The output should have bars (█ characters) before the tree structure
     # Find first occurrence of tree characters (. or └ or ├) and bar characters (█)
@@ -379,11 +347,7 @@ def test_column_ordering():
     # Test tree before bars (standard order)
     config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.COUNTS])
     diff_tree = DiffTree(root, config=config)
-
-    output = StringIO()
-    console = Console(file=output, width=80)
-    console.print(diff_tree)
-    result = output.getvalue()
+    result = render_to_string(diff_tree, width=80, force_terminal=False)
 
     lines = result.split("\n")
     for line in lines:
@@ -410,11 +374,7 @@ def test_column_ordering_counts_first():
     # Counts first, then tree
     config = RenderConfig(columns=[Column.COUNTS, Column.TREE])
     diff_tree = DiffTree(root, config=config)
-
-    output = StringIO()
-    console = Console(file=output, width=80)
-    console.print(diff_tree)
-    result = output.getvalue()
+    result = render_to_string(diff_tree, width=80, force_terminal=False)
 
     lines = result.split("\n")
     for line in lines:

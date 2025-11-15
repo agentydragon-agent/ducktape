@@ -1,18 +1,14 @@
 """Tests for ProgressBar component."""
 
 import pytest
-from rich.console import Console
-from io import StringIO
 
 from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar, BlockChars
+from .conftest import LEFT_BLOCK_CHARS, RIGHT_BLOCK_CHARS, render_to_string
 
 
 def render_bar(bar: ProgressBar, width: int) -> str:
     """Test helper to render a progress bar at a specific width."""
-    output = StringIO()
-    console = Console(file=output, force_terminal=False, width=width, legacy_windows=False)
-    console.print(bar)
-    return output.getvalue().rstrip("\n")
+    return render_to_string(bar, width=width, force_terminal=False, color_system=None).rstrip("\n")
 
 
 def test_progress_bar_empty():
@@ -56,7 +52,7 @@ def test_progress_bar_right_aligned():
     rendered = render_bar(bar, 10)
     plain = rendered
     # Should be right-aligned (ends with filled blocks, padding on left)
-    assert plain.endswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
+    assert plain.endswith(RIGHT_BLOCK_CHARS) or plain.strip() == ""
     assert len(plain) == 10
 
 
@@ -67,7 +63,7 @@ def test_progress_bar_left_aligned():
     plain = rendered
     # Should be left-aligned (starts with filled blocks, padding on right)
     assert len(plain) == 10
-    assert plain.startswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
+    assert plain.startswith(LEFT_BLOCK_CHARS) or plain.strip() == ""
 
 
 @pytest.mark.parametrize(

@@ -4,34 +4,25 @@ from difftree.config import Column, RenderConfig, parse_columns
 import pytest
 
 
-def test_parse_columns_valid():
-    """Test parsing valid column names."""
-    result = parse_columns("tree,counts,bars,percentages")
-    assert result == [Column.TREE, Column.COUNTS, Column.BARS, Column.PERCENTAGES]
-
-
-def test_parse_columns_case_insensitive():
-    """Test column parsing is case-insensitive."""
-    result = parse_columns("TREE,CoUnTs,BaRs")
-    assert result == [Column.TREE, Column.COUNTS, Column.BARS]
-
-
-def test_parse_columns_with_spaces():
-    """Test column parsing handles spaces."""
-    result = parse_columns("tree, counts, bars")
-    assert result == [Column.TREE, Column.COUNTS, Column.BARS]
+@pytest.mark.parametrize(
+    ("test_id", "input_str", "expected"),
+    [
+        ("valid", "tree,counts,bars,percentages", [Column.TREE, Column.COUNTS, Column.BARS, Column.PERCENTAGES]),
+        ("case_insensitive", "TREE,CoUnTs,BaRs", [Column.TREE, Column.COUNTS, Column.BARS]),
+        ("with_spaces", "tree, counts, bars", [Column.TREE, Column.COUNTS, Column.BARS]),
+        ("single", "tree", [Column.TREE]),
+    ],
+)
+def test_parse_columns(test_id, input_str, expected):
+    """Test column parsing with various inputs."""
+    result = parse_columns(input_str)
+    assert result == expected
 
 
 def test_parse_columns_invalid():
     """Test parsing invalid column name raises ValueError."""
     with pytest.raises(ValueError, match="Unknown column 'invalid'"):
         parse_columns("tree,invalid,counts")
-
-
-def test_parse_columns_single():
-    """Test parsing single column."""
-    result = parse_columns("tree")
-    assert result == [Column.TREE]
 
 
 def test_render_config_default():

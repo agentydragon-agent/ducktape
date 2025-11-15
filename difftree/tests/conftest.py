@@ -1,15 +1,54 @@
 """Shared test fixtures for difftree tests."""
 
 from collections.abc import Generator
+from io import StringIO
 from pathlib import Path
 import subprocess
 import tempfile
 
 from difftree.parser import FileChange
+from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS
 import pytest
+from rich.console import Console
 
 # Test constants
 PNG_HEADER = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
+# Block character constants for assertions
+# Import from progress_bar to avoid hardcoding in tests
+LEFT_BLOCK_CHARS = (DEFAULT_LEFT_BLOCKS.full,) + DEFAULT_LEFT_BLOCKS.partials
+RIGHT_BLOCK_CHARS = (DEFAULT_RIGHT_BLOCKS.full,) + DEFAULT_RIGHT_BLOCKS.partials
+
+
+def render_to_string(
+    renderable,
+    width: int = 80,
+    force_terminal: bool = True,
+    legacy_windows: bool = False,
+    color_system: str | None = "standard",
+) -> str:
+    """Render a Rich renderable to a string at a specific width.
+
+    Args:
+        renderable: The Rich renderable object to render
+        width: Console width
+        force_terminal: Whether to force terminal mode
+        legacy_windows: Legacy Windows mode setting
+        color_system: Color system to use (e.g., "standard", None)
+
+    Returns:
+        The rendered string output
+    """
+    output = StringIO()
+    console = Console(
+        file=output,
+        force_terminal=force_terminal,
+        width=width,
+        legacy_windows=legacy_windows,
+        color_system=color_system,
+    )
+    console.print(renderable)
+    return output.getvalue()
 
 
 @pytest.fixture

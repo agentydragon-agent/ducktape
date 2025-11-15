@@ -1,13 +1,11 @@
 """Snapshot tests for ANSI-rendered output."""
 
-from io import StringIO
-
 from difftree.config import Column, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.tree import build_tree, sort_tree
+from .conftest import render_to_string as render_renderable
 import pytest
-from rich.console import Console
 
 
 @pytest.fixture
@@ -28,16 +26,12 @@ def complex_changes() -> list[FileChange]:
 
 def render_to_string(changes: list[FileChange], sort_by: str = "size", config: RenderConfig | None = None) -> str:
     """Helper to render tree to string."""
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=120, legacy_windows=False, color_system="standard")
-
     root = build_tree(changes)
     root = sort_tree(root, sort_by=sort_by)
 
     diff_tree = DiffTree(root, config=config)
-    console.print(diff_tree)
+    result = render_renderable(diff_tree, width=120, legacy_windows=False, color_system="standard")
 
-    result = output.getvalue()
     assert "…" not in result, f"Output contains ellipsis character (…)"
     return result
 
