@@ -53,6 +53,15 @@ repos:
         files: "^ansible/.*\\.(yml|yaml)$"
         pass_filenames: false
 
+  # Remove trailing commas to enable one-line formatting
+  - repo: local
+    hooks:
+      - id: remove-multiline-trailing-commas
+        name: remove-multiline-trailing-commas
+        entry: scripts/remove_multiline_trailing_commas.py
+        language: script
+        files: "\\.py$"
+
   # Ruff = linter + import sorter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.10

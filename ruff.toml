@@ -1,6 +1,9 @@
 # TODO(mpokorny): Once nested pyprojects are gone, move this Ruff config into
 # the single pyproject.toml at repo root and delete ruff.toml.
 
+# Prefer one-line formatting when code fits
+line-length = 120
+
 [lint]
 select = [
     # Base
@@ -45,6 +48,8 @@ ignore = [
     "E501"      # line length (formatter handles wrapping where needed)
 ]
 # Avoid conflicts between ruff-format and trailing-comma rules
+# COM812 = add trailing commas (conflicts with formatter, keep disabled)
+# COM819 = remove trailing commas from one-liners (enable for compact style)
 extend-ignore = ["COM812"]
 
 [lint.isort]
