@@ -5,7 +5,7 @@ from io import StringIO
 from git_diff_tree.config import Column, RenderConfig
 from git_diff_tree.diff_tree import DiffTree
 from git_diff_tree.parser import FileChange
-from git_diff_tree.progress_bar import LEFT_BLOCKS, RIGHT_BLOCKS, ProgressBar, BlockChars
+from git_diff_tree.progress_bar import LEFT_BLOCKS, ProgressBar, BlockChars
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
@@ -224,14 +224,14 @@ def test_minimum_sliver_with_small_changes():
 
 
 @pytest.mark.parametrize(
-    ("width", "description"),
+    "width",
     [
-        (40, "too_narrow"),  # Very narrow terminal
-        (80, "just_right"),  # Standard terminal width
-        (200, "very_wide"),  # Wide terminal
+        40,  # Very narrow terminal
+        80,  # Standard terminal width
+        200,  # Wide terminal
     ],
 )
-def test_console_width_handling(width, description):
+def test_console_width_handling(width):
     """Test rendering with different console widths."""
     changes = [
         FileChange(path="src/very_long_filename_that_might_wrap.py", additions=100, deletions=50),
