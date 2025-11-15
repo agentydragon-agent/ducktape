@@ -14,7 +14,7 @@ import pytest
 from ember.config import EnforcedSleepUntilUserMessagePolicy, OpenAISettings
 from ember.history import ConversationHistory
 from ember.matrix_client import ConversationStatus
-from ember.openai_agent import AgentResources, OpenAIAgent
+from ember.openai_agent import OpenAIAgent
 from ember.secrets import ProjectedSecret
 import ember.tools.run_shell_command as run_shell_tool
 from ember.tools.run_shell_command import ShellCommandResult
@@ -73,14 +73,14 @@ def agent_factory(settings: OpenAISettings, history: ConversationHistory, matrix
     workspace_path = history.path.parent  # type: ignore[attr-defined]
 
     def factory(client: AsyncOpenAI) -> OpenAIAgent:
-        resources = AgentResources(
+        return OpenAIAgent(
+            settings=settings,
             history=history,
             client=client,
             status_provider=matrix_client,
             workspace_path=workspace_path,
             object_store=None,
         )
-        return OpenAIAgent(settings, resources)
 
     return factory
 
