@@ -9,8 +9,9 @@ This module handles the VIEW layer - rendering TreeNode data with:
 Takes immutable TreeNode from tree.py and renders it to Rich console output.
 """
 
-from rich.console import Console, ConsoleOptions, Group, RenderResult
-from rich.segment import Segment
+from io import StringIO
+
+from rich.console import Console, ConsoleOptions, RenderResult
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
@@ -18,6 +19,7 @@ from rich.tree import Tree
 from .config import Column, RenderConfig
 from .progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
 from .tree import TreeNode
+
 
 class DiffTree:
     """Renderable diff tree with progress bars and statistics."""
@@ -37,8 +39,6 @@ class DiffTree:
 
         # Render tree to capture its visual structure
         # Use a temporary console that doesn't output to avoid double printing
-        from io import StringIO
-
         temp_output = StringIO()
         temp_console = Console(
             file=temp_output,
@@ -66,7 +66,7 @@ class DiffTree:
                 table.add_column(justify="left", overflow="ellipsis", no_wrap=True)
             elif column == Column.COUNTS:
                 table.add_column(justify="right")  # Additions (right-aligned)
-                table.add_column(justify="left")   # Deletions (left-aligned)
+                table.add_column(justify="left")  # Deletions (left-aligned)
             elif column == Column.BARS:
                 # Constrain bars to configured width so tree always has space
                 # Use ratio for proportional distribution within bar_width constraint
@@ -76,9 +76,7 @@ class DiffTree:
                     max_width=self.config.bar_width,
                 )
                 table.add_column(
-                    justify="left",
-                    ratio=total_deletions if total_deletions > 0 else 1,
-                    max_width=self.config.bar_width,
+                    justify="left", ratio=total_deletions if total_deletions > 0 else 1, max_width=self.config.bar_width
                 )
             elif column == Column.PERCENTAGES:
                 table.add_column(justify="right")
@@ -149,7 +147,11 @@ class DiffTree:
         label = Text(collapsed_path, style=name_color, overflow="ellipsis")
         tree = Tree(label, guide_style="dim")
 
-        if (self.config.max_depth is None or final_depth < self.config.max_depth) and not final_node.is_file and final_node.children:
+        if (
+            (self.config.max_depth is None or final_depth < self.config.max_depth)
+            and not final_node.is_file
+            and final_node.children
+        ):
             for child in final_node.children.values():
                 child_tree = self._build_tree_structure(child, final_depth + 1)
                 tree.add(child_tree)
@@ -163,7 +165,11 @@ class DiffTree:
 
         result = [final_node]
 
-        if (self.config.max_depth is None or final_depth < self.config.max_depth) and not final_node.is_file and final_node.children:
+        if (
+            (self.config.max_depth is None or final_depth < self.config.max_depth)
+            and not final_node.is_file
+            and final_node.children
+        ):
             for child in final_node.children.values():
                 result.extend(self._flatten_tree(child, final_depth + 1))
 

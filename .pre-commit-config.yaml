@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|adgn/src/adgn/props/specimens/.*|.*/examples/.*\\.py$"
+exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|adgn/src/adgn/props/specimens/.*|.*/examples/.*\\.py$|^ansible/\\.ansible/.*"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -15,6 +15,7 @@ repos:
 
       # Syntax checks
       - id: check-ast  # valid Python parse
+        language_version: python3.12
       - id: check-yaml
         args: ["--allow-multiple-documents"]
         # Skip Helm (contains Go templating, not valid YAML)
@@ -50,7 +51,7 @@ repos:
       - id: ansible-lint
         files: "^ansible/"
         exclude: "k8s/.*"  # Exclude k8s files that cause parsing issues
-        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/ansible" && ansible-lint --config-file ../.ansible-lint.yaml'
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/ansible" && ./run-ansible-lint.sh'
         args: []  # Clear default args since we're using custom entry
         additional_dependencies:
           - ansible-core>=2.18.0,<2.19.0  # Avoid fucking breaking module removal in 2.19.0

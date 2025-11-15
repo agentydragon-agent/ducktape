@@ -80,13 +80,11 @@ def main(diff_args: tuple[str, ...], sort: str, columns: list[Column], bar_width
             try:
                 # Use os.fstat to check if stdin is a regular file or pipe with data
                 mode = os.fstat(sys.stdin.fileno()).st_mode
-                if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
-                    # It's a pipe or file, check if it has content
-                    if select.select([sys.stdin], [], [], 0.0)[0]:
-                        # Data is available, but it might just be EOF
-                        # Try to peek at one byte
-                        peek_data = sys.stdin.buffer.peek(1)
-                        has_stdin_data = len(peek_data) > 0
+                if (stat.S_ISFIFO(mode) or stat.S_ISREG(mode)) and select.select([sys.stdin], [], [], 0.0)[0]:
+                    # Data is available, but it might just be EOF
+                    # Try to peek at one byte
+                    peek_data = sys.stdin.buffer.peek(1)
+                    has_stdin_data = len(peek_data) > 0
             except (OSError, AttributeError):
                 pass
 
