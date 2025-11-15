@@ -73,6 +73,26 @@
 
 ### Other Enhancements
 - [ ] Support for renamed files (currently shown as separate add/delete)
+  - Git provides rename detection via `git diff --find-renames` (or `-M`)
+  - With `-M`, `git diff --numstat` shows renames as: `old_path => new_path` or `{old => new}_common_path`
+  - Implementation approaches:
+    1. **Parse rename syntax from git** (recommended)
+       - Use `git diff -M --numstat` instead of plain `--numstat`
+       - Parse `=>` syntax: `file.py => renamed.py` or `src/{old => new}/file.py`
+       - Show as single entry with special indicator (e.g., `old → new`)
+       - Display combined stats (since rename often includes modifications)
+    2. **Post-process add/delete pairs**
+       - Detect matching content hashes between deleted and added files
+       - More complex, requires additional git queries
+       - Less reliable than git's built-in detection
+  - Example display:
+    ```
+    src/old.py → src/new.py     +5  -2  ████ ██
+    ```
+  - Edge cases to handle:
+    - Renamed + modified (most common)
+    - Renamed with directory change
+    - Partial renames (similarity threshold)
 - [ ] Colored diff pass-through mode (like delta)
   - Show tree summary at top
   - Then pass through syntax-highlighted diff below
