@@ -1,0 +1,10 @@
+name: 'Setup Python Environment'
+description: 'Set up Python 3.12'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
