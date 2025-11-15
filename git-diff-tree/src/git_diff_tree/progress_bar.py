@@ -1,55 +1,77 @@
 """Progress bar renderables with RTL/LTR alignment support."""
 
+from dataclasses import dataclass, field
 from typing import Literal
 
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.text import Text
 
-# Unicode block characters for progress bars
-# Left-growing blocks (for LTR bars): fills from left edge
-LEFT_BLOCKS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"]
 
-# Right-growing blocks (for RTL bars): fills from right edge
+@dataclass(frozen=True)
+class BlockChars:
+    """Configuration for progress bar block characters.
+
+    Represents the characters used to render progress bars with different fill levels:
+    - full: Completely filled block
+    - empty: Empty space
+    - partials: Progressively fuller partial blocks
+    """
+
+    full: str
+    empty: str = " "
+    partials: tuple[str, ...] = field(default_factory=lambda: ("▏", "▎", "▍", "▌", "▋", "▊", "▉"))
+
+    def __post_init__(self):
+        """Validate block character configuration."""
+        if len(self.partials) < 1:
+            raise ValueError("partials must have at least 1 element")
+
+    def to_list(self) -> list[str]:
+        """Convert to list format: [empty, partial1, ..., partialN, full]."""
+        return [self.empty] + list(self.partials) + [self.full]
+
+    @classmethod
+    def simple(cls, char: str, empty: str = " ") -> "BlockChars":
+        """Create simple block chars using the same character for all fill levels.
+
+        Args:
+            char: Character to use for all filled states
+            empty: Character to use for empty space
+
+        Returns:
+            BlockChars with single character for partials
+
+        Example:
+            >>> BlockChars.simple("-")  # All dashes
+            BlockChars(full="-", empty=" ", partials=("-",))
+        """
+        return cls(full=char, empty=empty, partials=(char,))
+
+
+# Default block character configurations
+# Note: LTR (left-to-right) and RTL (right-to-left) alignments flip which side
+# gets the filled blocks vs empty space:
+# - LTR: filled blocks on left, empty space on right (e.g., "███    ")
+# - RTL: empty space on left, filled blocks on right (e.g., "    ███")
+
+# Left-growing blocks (for LTR alignment): filled portion grows from left edge
+DEFAULT_LEFT_BLOCKS = BlockChars(
+    full="█",
+    empty=" ",
+    partials=("▏", "▎", "▍", "▌", "▋", "▊", "▉"),
+)
+
+# Right-growing blocks (for RTL alignment): filled portion grows from right edge
 # Note: Unicode has limited right-block granularity, so we approximate
-RIGHT_BLOCKS = [" ", "▕", "▕", "▐", "▐", "▐", "▉", "█", "█"]
+DEFAULT_RIGHT_BLOCKS = BlockChars(
+    full="█",
+    empty=" ",
+    partials=("▕", "▕", "▐", "▐", "▐", "▉", "█"),
+)
 
-
-def make_block_chars(
-    full: str = "█",
-    partials: str | list[str] | None = None,
-    space: str = " ",
-) -> list[str]:
-    """
-    Construct a block character sequence for progress bars.
-
-    Args:
-        full: Character to use for fully filled blocks
-        partials: Character(s) to use for partial fills. Can be:
-            - None: Use Unicode partial blocks ["▏", "▎", "▍", "▌", "▋", "▊", "▉"]
-            - str: Single character repeated for all 7 partial positions
-            - list[str]: Explicit list of 7 partial block characters
-        space: Character to use for empty space
-
-    Returns:
-        List of 9 characters: [space, partial1, ..., partial7, full]
-
-    Examples:
-        >>> make_block_chars()  # Default Unicode blocks
-        [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"]
-        >>> make_block_chars(full="-", partials="-")  # Simple dash for testing
-        [" ", "-", "-", "-", "-", "-", "-", "-", "-"]
-        >>> make_block_chars(full="X", partials="x")  # Different chars
-        [" ", "x", "x", "x", "x", "x", "x", "x", "X"]
-    """
-    if partials is None:
-        partials_list = ["▏", "▎", "▍", "▌", "▋", "▊", "▉"]
-    elif isinstance(partials, str):
-        partials_list = [partials] * 7
-    else:
-        if len(partials) != 7:
-            raise ValueError(f"partials list must have exactly 7 elements, got {len(partials)}")
-        partials_list = partials
-    return [space] + partials_list + [full]
+# Legacy list formats for backward compatibility
+LEFT_BLOCKS = DEFAULT_LEFT_BLOCKS.to_list()
+RIGHT_BLOCKS = DEFAULT_RIGHT_BLOCKS.to_list()
 
 
 class ProgressBar:
@@ -62,6 +84,8 @@ class ProgressBar:
         width: int = 20,
         align: Literal["left", "right"] = "left",
         style: str = "default",
+        blocks: BlockChars | None = None,
+        # Legacy parameters for backward compatibility
         left_blocks: list[str] | None = None,
         right_blocks: list[str] | None = None,
     ):
@@ -70,31 +94,70 @@ class ProgressBar:
         self.width = width
         self.align = align
         self.style = style
-        self.left_blocks = left_blocks if left_blocks is not None else LEFT_BLOCKS
-        self.right_blocks = right_blocks if right_blocks is not None else RIGHT_BLOCKS
+
+        # Determine which blocks to use based on alignment
+        if blocks is not None:
+            self.blocks = blocks
+        elif align == "left":
+            if left_blocks is not None:
+                # Legacy: convert list to BlockChars
+                self.blocks = self._list_to_block_chars(left_blocks)
+            else:
+                self.blocks = DEFAULT_LEFT_BLOCKS
+        else:  # align == "right"
+            if right_blocks is not None:
+                # Legacy: convert list to BlockChars
+                self.blocks = self._list_to_block_chars(right_blocks)
+            else:
+                self.blocks = DEFAULT_RIGHT_BLOCKS
+
+    @staticmethod
+    def _list_to_block_chars(blocks_list: list[str]) -> BlockChars:
+        """Convert legacy list format to BlockChars."""
+        if len(blocks_list) < 2:
+            raise ValueError("blocks list must have at least 2 elements (empty and full)")
+        empty = blocks_list[0]
+        full = blocks_list[-1]
+        partials = tuple(blocks_list[1:-1]) if len(blocks_list) > 2 else (full,)
+        return BlockChars(full=full, empty=empty, partials=partials)
 
     def to_text(self) -> Text:
         ratio = 0 if self.max_value == 0 else min(self.value / self.max_value, 1.0)
         filled_width = ratio * self.width
         full_blocks = int(filled_width)
 
+        # Calculate partial block index
+        # The fractional part (0.0-1.0) is divided into (num_partials + 1) buckets:
+        # - Bucket 0: no partial (empty)
+        # - Buckets 1 to num_partials: use partials[0] through partials[num_partials-1]
+        num_partials = len(self.blocks.partials)
+        partial_block_index = int((filled_width - full_blocks) * (num_partials + 1))
+
         if self.align == "right":
-            partial_block_index = int((filled_width - full_blocks) * (len(self.right_blocks) - 1))
+            # RTL: build from right, growing leftward
             bar_chars = ""
             if full_blocks < self.width and partial_block_index > 0:
-                bar_chars = self.right_blocks[partial_block_index]
-            bar_chars += self.right_blocks[-1] * full_blocks
+                # Map index 1..(num_partials) to partials[0..(num_partials-1)]
+                bar_chars = self.blocks.partials[min(partial_block_index - 1, num_partials - 1)]
+            # Add full blocks
+            bar_chars += self.blocks.full * full_blocks
+            # Ensure minimum sliver for non-zero values
             if self.value > 0 and not bar_chars:
-                bar_chars = self.right_blocks[1]
+                bar_chars = self.blocks.partials[0]
+            # Right-align (pad left with empty)
+            bar_chars = bar_chars.rjust(self.width, self.blocks.empty)
         else:
-            partial_block_index = int((filled_width - full_blocks) * (len(self.left_blocks) - 1))
-            bar_chars = self.left_blocks[-1] * full_blocks
+            # LTR: build from left, growing rightward
+            bar_chars = self.blocks.full * full_blocks
             if full_blocks < self.width and partial_block_index > 0:
-                bar_chars += self.left_blocks[partial_block_index]
+                # Map index 1..(num_partials) to partials[0..(num_partials-1)]
+                bar_chars += self.blocks.partials[min(partial_block_index - 1, num_partials - 1)]
+            # Ensure minimum sliver for non-zero values
             if self.value > 0 and not bar_chars:
-                bar_chars = self.left_blocks[1]
+                bar_chars = self.blocks.partials[0]
+            # Left-align (pad right with empty)
+            bar_chars = bar_chars.ljust(self.width, self.blocks.empty)
 
-        bar_chars = bar_chars.rjust(self.width) if self.align == "right" else bar_chars.ljust(self.width)
         return Text(bar_chars, style=self.style)
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:

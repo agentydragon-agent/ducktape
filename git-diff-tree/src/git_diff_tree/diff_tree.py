@@ -123,23 +123,23 @@ class DiffTree:
 
     def _make_bar_cells(self, node: TreeNode, max_additions: int, max_deletions: int) -> tuple[Text, Text]:
         """Create bar cells (green and red progress bars)."""
+        # Additions use right-aligned bars
         green_bar = ProgressBar(
             value=node.additions,
             max_value=max_additions,
             width=self.config.bar_width,
             align="right",
             style="green",
-            left_blocks=self.config.bar_left_blocks,
-            right_blocks=self.config.bar_right_blocks,
+            blocks=self.config.bar_right_blocks,  # RTL for additions
         )
+        # Deletions use left-aligned bars
         red_bar = ProgressBar(
             value=node.deletions,
             max_value=max_deletions,
             width=self.config.bar_width,
             align="left",
             style="red",
-            left_blocks=self.config.bar_left_blocks,
-            right_blocks=self.config.bar_right_blocks,
+            blocks=self.config.bar_left_blocks,  # LTR for deletions
         )
 
         green_cell = Text("  ")

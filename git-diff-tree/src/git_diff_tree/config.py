@@ -1,7 +1,11 @@
 """Configuration for git-diff-tree rendering."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import StrEnum
+
+from .progress_bar import BlockChars
 
 
 class Column(StrEnum):
@@ -41,8 +45,8 @@ class RenderConfig:
     bar_width: int = 20
     sort_by: SortMode = SortMode.SIZE
     max_depth: int | None = None
-    bar_left_blocks: list[str] | None = None
-    bar_right_blocks: list[str] | None = None
+    bar_left_blocks: BlockChars | None = None
+    bar_right_blocks: BlockChars | None = None
 
     @classmethod
     def default(cls) -> "RenderConfig":

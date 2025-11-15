@@ -5,7 +5,7 @@ from io import StringIO
 from git_diff_tree.config import Column, RenderConfig
 from git_diff_tree.diff_tree import DiffTree
 from git_diff_tree.parser import FileChange
-from git_diff_tree.progress_bar import LEFT_BLOCKS, RIGHT_BLOCKS, ProgressBar, make_block_chars
+from git_diff_tree.progress_bar import LEFT_BLOCKS, RIGHT_BLOCKS, ProgressBar, BlockChars
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
@@ -546,8 +546,8 @@ def test_bar_proportionality():
     config = RenderConfig(
         columns=[Column.TREE, Column.BARS],
         bar_width=10,
-        bar_left_blocks=make_block_chars(full="-", partials="-"),   # Deletions (LTR)
-        bar_right_blocks=make_block_chars(full="+", partials="+"),  # Additions (RTL)
+        bar_left_blocks=BlockChars.simple("-"),   # Deletions (LTR)
+        bar_right_blocks=BlockChars.simple("+"),  # Additions (RTL)
     )
     diff_tree = DiffTree(root, config=config)
 
@@ -612,8 +612,8 @@ def test_deletion_bar_alignment():
     config = RenderConfig(
         columns=[Column.TREE, Column.BARS],
         bar_width=10,
-        bar_left_blocks=make_block_chars(full="X", partials="X"),   # Deletions (LTR)
-        bar_right_blocks=make_block_chars(full="+", partials="+"),  # Additions (RTL)
+        bar_left_blocks=BlockChars.simple("X"),   # Deletions (LTR)
+        bar_right_blocks=BlockChars.simple("+"),  # Additions (RTL)
     )
     diff_tree = DiffTree(root, config=config)
 
