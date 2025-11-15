@@ -17,7 +17,7 @@ from markdownify import markdownify
 import uvicorn
 
 from .token_counter import count_tokens_for_models
-from .token_scheme import TokenScheme
+from .token_scheme import TokenScheme, VerificationError
 
 # Configure logging to output to stdout
 logging.basicConfig(
@@ -310,7 +310,7 @@ async def verify_token(request: Request, token: str = ""):
                 "message": "Token is valid ✅",
             }
             logger.info(f"Token verification succeeded for: {token[:20]}...")
-        except TokenScheme.VerificationError as exc:
+        except VerificationError as exc:
             result = {"status": "failed", "errors": exc.issues}
             issues_str = " | ".join(f"✗ {issue}" for issue in exc.issues)
             logger.error(f"Token verification FAILED: {issues_str}")
