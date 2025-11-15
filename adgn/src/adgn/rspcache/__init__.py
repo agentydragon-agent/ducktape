@@ -210,9 +210,12 @@ async def _proxy_stream(
     except asyncio.CancelledError:
         raise
     except Exception:
-        status_reason = "Streaming proxy failure"
+        error_reason = "Streaming proxy failure"
         await db.record_error(
-            key, status_reason=status_reason, response_id=response_id, error=ErrorPayload(message=status_reason)
+            key,
+            error_reason=error_reason,
+            response_id=response_id,
+            error=ErrorPayload(message=error_reason),
         )
         raise
     finally:
@@ -283,13 +286,18 @@ async def responses_endpoint(
             resp = await client.send(request_obj, stream=True)
         except Exception as exc:
             await client.aclose()
-            await db.record_error(key, status_reason=str(exc), response_id=None, error=ErrorPayload(message=str(exc)))
+            await db.record_error(
+                key,
+                error_reason=str(exc),
+                response_id=None,
+                error=ErrorPayload(message=str(exc)),
+            )
             raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
         if resp.status_code >= HTTP_ERROR_MIN:
             payload = await resp.aread()
             await db.record_error(
                 key,
-                status_reason=f"Upstream status {resp.status_code}",
+                error_reason=f"Upstream status {resp.status_code}",
                 response_id=None,
                 error=ErrorPayload(
                     message="Upstream error",
@@ -315,15 +323,20 @@ async def responses_endpoint(
     async with httpx.AsyncClient(timeout=120.0) as client:
         try:
             resp = await client.post(upstream_url, json=body, headers=headers)
-        except Exception as exc:
-            await db.record_error(key, status_reason=str(exc), response_id=None, error=ErrorPayload(message=str(exc)))
+        except Exception as exc:  # noqa: BLE001
+            await db.record_error(
+                key,
+                error_reason=str(exc),
+                response_id=None,
+                error=ErrorPayload(message=str(exc)),
+            )
             raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
 
     if resp.status_code >= HTTP_ERROR_MIN:
         detail = resp.text
         await db.record_error(
             key,
-            status_reason=f"Upstream status {resp.status_code}",
+            error_reason=f"Upstream status {resp.status_code}",
             response_id=None,
             error=ErrorPayload(message="Upstream error", detail={"status": resp.status_code, "body": detail}),
         )
@@ -334,7 +347,7 @@ async def responses_endpoint(
     except Exception as exc:
         await db.record_error(
             key,
-            status_reason="Upstream returned non-JSON response",
+            error_reason="Upstream returned non-JSON response",
             response_id=None,
             error=ErrorPayload(message="Upstream returned non-JSON response", detail={"body": resp.text}),
         )
