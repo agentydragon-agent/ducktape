@@ -159,6 +159,15 @@ class PresetInfo(BaseModel):
     preset: AgentPreset | None
 
 
+class PresetSummary(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class PresetsList(BaseModel):
+    presets: list[PresetSummary]
+
+
 # Boot outcome (explicit start of an existing agent)
 class BootAgentResult(BaseModel):
     ok: bool
@@ -690,14 +699,6 @@ def create_app(
     def _load_presets() -> dict[str, AgentPreset]:
         presets: dict[str, AgentPreset] = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
         return presets
-
-    # Typed response models for presets listing
-    class PresetSummary(BaseModel):
-        name: str
-        description: str | None = None
-
-    class PresetsList(BaseModel):
-        presets: list[PresetSummary]
 
     @app.get("/api/presets", response_model=PresetsList)
     async def api_list_presets() -> PresetsList:

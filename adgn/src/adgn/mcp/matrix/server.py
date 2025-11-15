@@ -79,6 +79,11 @@ class YieldInput(BaseModel):
     )
 
 
+class MessageSendResult(BaseModel):
+    ok: bool = True
+    event_id: str | None = None
+
+
 @dataclass
 class _Inbox:
     queue: list[IncomingMessage] = field(default_factory=list)
@@ -280,10 +285,6 @@ def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> Notifyin
     )
 
     # Tools
-    class MessageSendResult(BaseModel):
-        ok: bool = True
-        event_id: str | None = None
-
     @mcp.flat_model()
     async def send_message(input: SendMessageInput) -> MessageSendResult:
         """Send a plaintext message to the configured room."""

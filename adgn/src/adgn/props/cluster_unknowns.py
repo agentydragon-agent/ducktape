@@ -34,6 +34,20 @@ class UnknownIssue(BaseModel):
     yaml_path: str
 
 
+class ClusterSpec(BaseModel):
+    name: str
+    issues: list[str]
+
+
+class ClusterSubmitPayload(BaseModel):
+    clusters: list[ClusterSpec]
+
+
+class ClusterSubmitState:
+    def __init__(self) -> None:
+        self.result: list[ClusterSpec] | None = None
+
+
 def discover_unknown_yaml_paths(root: Path | None = None) -> list[Path]:
     """Find all runs/prompt_optimize/**/unknowns/*.yaml under package runs/.
 
@@ -86,17 +100,6 @@ async def cluster_unknowns_async(
 
     Returns the output directory path.
     """
-
-    class ClusterSpec(BaseModel):
-        name: str
-        issues: list[str]
-
-    class ClusterSubmitPayload(BaseModel):
-        clusters: list[ClusterSpec]
-
-    class ClusterSubmitState:
-        def __init__(self) -> None:
-            self.result: list[ClusterSpec] | None = None
 
     state = ClusterSubmitState()
 
