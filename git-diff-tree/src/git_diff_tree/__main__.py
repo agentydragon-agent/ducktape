@@ -5,9 +5,9 @@ import sys
 import click
 from rich.console import Console
 
-from .config import RenderConfig, parse_columns
+from .config import RenderConfig, SortMode, parse_columns
 from .diff_tree import DiffTree
-from .parser import parse_diff_from_stdin, parse_git_diff
+from .parser import parse_git_diff, parse_unified_diff
 from .tree import build_tree, sort_tree
 
 
@@ -62,6 +62,9 @@ def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, ma
             console.print(f"Error: {e}", style="bold red")
             sys.exit(1)
 
+        # Convert sort mode to enum
+        sort_mode = SortMode(sort)
+
         # Check if stdin has actual data (not just EOF from capture_output=True)
         import os
         has_stdin_data = False
@@ -83,7 +86,7 @@ def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, ma
                 pass
 
         if has_stdin_data:
-            changes = parse_diff_from_stdin()
+            changes = parse_unified_diff(sys.stdin.read())
         else:
             changes = parse_git_diff(list(diff_args) if diff_args else None)
 
@@ -93,9 +96,9 @@ def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, ma
             sys.exit(0)
 
         root = build_tree(changes)
-        sort_tree(root, sort_by=sort)
+        sort_tree(root, sort_by=sort_mode)
 
-        config = RenderConfig(columns=column_list, bar_width=bar_width, sort_by=sort, max_depth=max_depth)
+        config = RenderConfig(columns=column_list, bar_width=bar_width, sort_by=sort_mode, max_depth=max_depth)
         diff_tree = DiffTree(root, config=config)
         console = Console()
         console.print(diff_tree)

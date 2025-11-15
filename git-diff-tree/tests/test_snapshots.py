@@ -75,7 +75,7 @@ def test_snapshot_no_percentages(snapshot, complex_changes):
 
 def test_snapshot_minimal(snapshot, complex_changes):
     """Snapshot test with minimal output (tree only)."""
-    config = RenderConfig.minimal()
+    config = RenderConfig(columns=[Column.TREE])
     output = render_to_string(complex_changes, config=config)
     assert output == snapshot
 

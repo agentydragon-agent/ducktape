@@ -54,8 +54,3 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
         cmd.extend(diff_args)
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return parse_unified_diff(result.stdout)
-
-
-def parse_diff_from_stdin() -> list[FileChange]:
-    """Parse diff from stdin."""
-    return parse_unified_diff(sys.stdin.read())

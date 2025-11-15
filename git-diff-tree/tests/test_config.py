@@ -46,5 +46,5 @@ def test_render_config_default():
 
 def test_render_config_minimal():
     """Test minimal RenderConfig."""
-    config = RenderConfig.minimal()
+    config = RenderConfig(columns=[Column.TREE])
     assert config.columns == [Column.TREE]

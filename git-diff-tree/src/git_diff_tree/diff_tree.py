@@ -41,11 +41,10 @@ class DiffTree:
         nodes_in_order = self._flatten_tree(self.root, depth=0)
 
         table = Table.grid(padding=0)
-        table.add_column(justify="left")
 
         for column in self.config.columns:
             if column == Column.TREE:
-                continue
+                table.add_column(justify="left")
             elif column == Column.COUNTS:
                 table.add_column(justify="right")
             elif column == Column.BARS:
@@ -55,8 +54,18 @@ class DiffTree:
                 table.add_column(justify="right")
 
         for tree_line, node in zip(tree_lines, nodes_in_order, strict=True):
-            row = [tree_line]
-            row.extend(self._make_stat_cells(node, max_changes, max_additions, max_deletions))
+            row = []
+            for column in self.config.columns:
+                if column == Column.TREE:
+                    row.append(tree_line)
+                elif column == Column.COUNTS:
+                    row.append(self._make_counts_cell(node))
+                elif column == Column.BARS:
+                    green_cell, red_cell = self._make_bar_cells(node, max_additions, max_deletions)
+                    row.append(green_cell)
+                    row.append(red_cell)
+                elif column == Column.PERCENTAGES:
+                    row.append(self._make_percentage_cell(node, max_changes))
             table.add_row(*row)
 
         yield table
@@ -96,51 +105,42 @@ class DiffTree:
 
         return result
 
-    def _make_stat_cells(self, node: TreeNode, max_changes: int, max_additions: int, max_deletions: int) -> list[Text]:
-        """Create stat cells for a node (counts, bars, percentage)."""
-        cells = []
+    def _make_counts_cell(self, node: TreeNode) -> Text:
+        """Create counts cell showing +additions -deletions."""
+        counts = Text("  ")
+        if node.additions > 0:
+            counts.append(f"+{node.additions}", style="green")
+        counts.append(" ")
+        if node.deletions > 0:
+            counts.append(f"-{node.deletions}", style="red")
+        return counts
 
-        for column in self.config.columns:
-            if column == Column.TREE:
-                continue
+    def _make_bar_cells(self, node: TreeNode, max_additions: int, max_deletions: int) -> tuple[Text, Text]:
+        """Create bar cells (green and red progress bars)."""
+        green_bar = ProgressBar(
+            value=node.additions,
+            max_value=max_additions,
+            width=self.config.bar_width,
+            align="right",
+            style="green",
+        )
+        red_bar = ProgressBar(
+            value=node.deletions,
+            max_value=max_deletions,
+            width=self.config.bar_width,
+            align="left",
+            style="red",
+        )
 
-            if column == Column.COUNTS:
-                counts = Text("  ")
-                if node.additions > 0:
-                    counts.append(f"+{node.additions}", style="green")
-                counts.append(" ")
-                if node.deletions > 0:
-                    counts.append(f"-{node.deletions}", style="red")
-                cells.append(counts)
+        green_cell = Text("  ")
+        green_cell.append_text(green_bar.to_text())
+        return green_cell, red_bar.to_text()
 
-            if column == Column.BARS:
-                green_bar = ProgressBar(
-                    value=node.additions,
-                    max_value=max_additions,
-                    width=self.config.bar_width,
-                    align="right",
-                    style="green",
-                )
-                red_bar = ProgressBar(
-                    value=node.deletions,
-                    max_value=max_deletions,
-                    width=self.config.bar_width,
-                    align="left",
-                    style="red",
-                )
-
-                green_cell = Text("  ")
-                green_cell.append_text(green_bar.to_text())
-                cells.append(green_cell)
-                cells.append(red_bar.to_text())
-
-            if column == Column.PERCENTAGES:
-                if max_changes > 0:
-                    percentage = (node.total_changes / max_changes) * 100
-                    pct_text = Text("  ")
-                    pct_text.append(f"{percentage:5.1f}%", style="cyan")
-                    cells.append(pct_text)
-                else:
-                    cells.append(Text("  "))
-
-        return cells
+    def _make_percentage_cell(self, node: TreeNode, max_changes: int) -> Text:
+        """Create percentage cell showing relative change size."""
+        if max_changes > 0:
+            percentage = (node.total_changes / max_changes) * 100
+            pct_text = Text("  ")
+            pct_text.append(f"{percentage:5.1f}%", style="cyan")
+            return pct_text
+        return Text("  ")

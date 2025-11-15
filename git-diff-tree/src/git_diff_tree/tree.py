@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .config import SortMode
 from .parser import FileChange
 
 
@@ -87,31 +88,17 @@ def _propagate_stats_upward(node: TreeNode) -> tuple[int, int]:
     return (total_additions, total_deletions)
 
 
-def sort_tree(node: TreeNode, sort_by: str = "size", reverse: bool = True) -> None:
-    """
-    Sort tree nodes in place.
-
-    Args:
-        node: TreeNode to sort (modifies in place).
-        sort_by: "size" for total changes, "alpha" for alphabetical.
-        reverse: Sort in descending order if True.
-    """
+def sort_tree(node: TreeNode, sort_by: SortMode = SortMode.SIZE, reverse: bool = True) -> None:
+    """Sort tree nodes in place."""
     if not node.children:
         return
 
-    # Sort children first (recursively)
     for child in node.children.values():
         sort_tree(child, sort_by, reverse)
 
-    # Sort current level
-    if sort_by == "size":
+    if sort_by == SortMode.SIZE:
         sorted_children = sorted(node.children.items(), key=lambda x: x[1].total_changes, reverse=reverse)
-    else:  # alpha
-        sorted_children = sorted(
-            node.children.items(),
-            key=lambda x: x[0],
-            reverse=False,  # Always ascending for alpha
-        )
+    else:
+        sorted_children = sorted(node.children.items(), key=lambda x: x[0], reverse=False)
 
-    # Rebuild children dict in sorted order
     node.children = dict(sorted_children)
