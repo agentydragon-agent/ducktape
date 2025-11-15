@@ -1,8 +1,7 @@
 """Tests for configuration module."""
 
+from difftree.config import Column, DEFAULT_CONFIG, RenderConfig, parse_columns
 import pytest
-
-from difftree.config import Column, RenderConfig, parse_columns
 
 
 @pytest.mark.parametrize(
@@ -28,7 +27,7 @@ def test_parse_columns_invalid():
 
 def test_render_config_default():
     """Test default RenderConfig."""
-    config = RenderConfig.default()
+    config = DEFAULT_CONFIG
     assert Column.TREE in config.columns
     assert Column.COUNTS in config.columns
     assert Column.BARS in config.columns

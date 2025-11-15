@@ -48,7 +48,6 @@ class RenderConfig:
     bar_left_blocks: BlockChars | None = None
     bar_right_blocks: BlockChars | None = None
 
-    @classmethod
-    def default(cls) -> RenderConfig:
-        """Default configuration with all columns."""
-        return cls(columns=[Column.TREE, Column.COUNTS, Column.BARS, Column.PERCENTAGES])
+
+# Default configuration with all columns
+DEFAULT_CONFIG = RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.BARS, Column.PERCENTAGES])

@@ -1,13 +1,14 @@
 """Tests for DiffTree renderable."""
 
 import re
+from dataclasses import replace
 
 import pytest
 from rich.console import Console
 from rich.segment import Segment
 from rich.text import Text
 
-from difftree.config import Column, RenderConfig
+from difftree.config import Column, DEFAULT_CONFIG, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
@@ -91,8 +92,7 @@ def test_render_with_no_counts(sample_changes):
 def test_render_with_max_depth(sample_changes):
     """Test rendering with maximum depth limit."""
     root = build_tree(sample_changes)
-    config = RenderConfig.default()
-    config.max_depth = 1
+    config = replace(DEFAULT_CONFIG, max_depth=1)
     diff_tree = DiffTree(root, config=config)
     result = render_to_string(diff_tree, width=120)
 
@@ -143,8 +143,7 @@ def test_console_width_handling(width):
     ]
 
     root = build_tree(changes)
-    config = RenderConfig.default()
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = DiffTree(root, config=DEFAULT_CONFIG)
     result = render_to_string(diff_tree, width=width)
 
     # Basic assertions: output should contain expected elements
@@ -212,8 +211,7 @@ def test_progress_bars_align_consistently():
     ]
 
     root = build_tree(changes)
-    config = RenderConfig.default()
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = DiffTree(root, config=DEFAULT_CONFIG)
 
     result = render_to_string(diff_tree, width=120)
     lines = result.split("\n")
@@ -239,8 +237,7 @@ def test_tree_column_never_wraps():
     ]
 
     root = build_tree(changes)
-    config = RenderConfig.default()
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = DiffTree(root, config=DEFAULT_CONFIG)
 
     # Test at a narrow width where bars would take up space
     result = render_to_string(diff_tree, width=100)
@@ -272,8 +269,7 @@ def test_tree_styling_preserved():
     ]
 
     root = build_tree(changes)
-    config = RenderConfig.default()
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = DiffTree(root, config=DEFAULT_CONFIG)
 
     # Render with colors
     result = render_to_string(diff_tree, width=120, color_system="standard")

@@ -7,9 +7,6 @@ from rich.console import Console, ConsoleOptions, RenderResult
 from rich.measure import Measurement
 from rich.text import Text
 
-DEFAULT_PARTIALS = ("▏", "▎", "▍", "▌", "▋", "▊", "▉")
-
-
 @dataclass(frozen=True)
 class BlockChars:
     """Configuration for progress bar block characters.
@@ -22,7 +19,7 @@ class BlockChars:
 
     full: str
     empty: str = " "
-    partials: tuple[str, ...] = DEFAULT_PARTIALS
+    partials: tuple[str, ...] = ("▏", "▎", "▍", "▌", "▋", "▊", "▉")
 
     def __post_init__(self):
         """Validate block character configuration."""

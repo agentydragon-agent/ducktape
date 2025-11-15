@@ -2,7 +2,7 @@
 
 import pytest
 
-from difftree.config import Column, RenderConfig
+from difftree.config import Column, DEFAULT_CONFIG, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.tree import build_tree, sort_tree
@@ -47,7 +47,7 @@ def render_to_string(changes: list[FileChange], sort_by: str = "size", config: R
         ("no_counts", "size", RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])),
         ("no_percentages", "size", RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.BARS])),
         ("minimal", "size", RenderConfig(columns=[Column.TREE])),
-        ("custom_bar_width", "size", RenderConfig(columns=RenderConfig.default().columns, bar_width=30)),
+        ("custom_bar_width", "size", RenderConfig(columns=DEFAULT_CONFIG.columns, bar_width=30)),
     ],
 )
 def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, config):

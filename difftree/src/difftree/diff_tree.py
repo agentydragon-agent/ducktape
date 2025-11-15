@@ -16,7 +16,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from .config import Column, RenderConfig
+from .config import Column, DEFAULT_CONFIG, RenderConfig
 from .progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
 from .tree import TreeNode
 
@@ -26,7 +26,7 @@ class DiffTree:
 
     def __init__(self, root: TreeNode, config: RenderConfig | None = None):
         self.root = root
-        self.config = config or RenderConfig.default()
+        self.config = config or DEFAULT_CONFIG
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         """Render as a Table with aligned tree structure and statistics."""
@@ -110,6 +110,20 @@ class DiffTree:
 
         yield table
 
+    def _should_recurse_into_children(self, node: TreeNode, depth: int) -> bool:
+        """Check if we should recurse into a node's children.
+
+        Returns False if:
+        - Node is a file
+        - Node has no children
+        - We've exceeded max_depth
+        """
+        return (
+            (self.config.max_depth is None or depth < self.config.max_depth)
+            and not node.is_file
+            and node.children
+        )
+
     def _get_collapsed_path_and_node(self, node: TreeNode, depth: int) -> tuple[str, TreeNode, int]:
         """
         Get the collapsed path and final node for a single-child directory chain.
@@ -147,11 +161,7 @@ class DiffTree:
         label = Text(collapsed_path, style=name_color, overflow="ellipsis")
         tree = Tree(label, guide_style="dim")
 
-        if (
-            (self.config.max_depth is None or final_depth < self.config.max_depth)
-            and not final_node.is_file
-            and final_node.children
-        ):
+        if self._should_recurse_into_children(final_node, final_depth):
             for child in final_node.children.values():
                 child_tree = self._build_tree_structure(child, final_depth + 1)
                 tree.add(child_tree)
@@ -165,11 +175,7 @@ class DiffTree:
 
         result = [final_node]
 
-        if (
-            (self.config.max_depth is None or final_depth < self.config.max_depth)
-            and not final_node.is_file
-            and final_node.children
-        ):
+        if self._should_recurse_into_children(final_node, final_depth):
             for child in final_node.children.values():
                 result.extend(self._flatten_tree(child, final_depth + 1))
 
