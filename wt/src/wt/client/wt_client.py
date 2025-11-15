@@ -241,13 +241,13 @@ class WtClient:
                     obj = StartupMessage.model_validate_json(stripped)
                 except ValidationError:
                     continue
-                d = cast(dict[str, object], obj.model_dump())
+                d = obj.model_dump()  # type: ignore[no-any-return]
                 last_obj = d
                 last_ready = bool(d.get("ready", False))
                 if not obj.success:
-                    return d
+                    return d  # type: ignore[no-any-return]
                 if last_ready:
-                    return d
+                    return d  # type: ignore[no-any-return]
             # Only accept closure if we already saw ready=True
             if last_ready and last_obj is not None:
                 return last_obj

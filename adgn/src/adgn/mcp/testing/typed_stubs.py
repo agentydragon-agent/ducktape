@@ -64,12 +64,12 @@ def _build_arguments(
     if input_model is not None and not isinstance(payload, input_model):
         raise TypeError(f"{tool_name} expects {input_model.__name__}, got {type(payload).__name__}")
     if isinstance(payload, BaseModel):
-        data = cast(dict[str, object], payload.model_dump(exclude_none=exclude_none))
+        data = payload.model_dump(exclude_none=exclude_none)  # type: ignore[no-any-return]
     else:
         data = payload
     if wrapper_field:
-        return {wrapper_field: data}
-    return data
+        return {wrapper_field: data}  # type: ignore[no-any-return]
+    return data  # type: ignore[no-any-return]
 
 
 async def call_tool_typed(
