@@ -49,7 +49,10 @@ repos:
         entry: bash -c 'if git diff --cached --name-only | grep -E -q "^ansible/.*\.(yml|yaml)$"; then
           ansible-lint --config-file .ansible-lint.yaml ansible/; else
           echo "No ansible files changed, skipping ansible-lint"; fi'
-        language: system
+        language: python
+        additional_dependencies:
+          - 'ansible-core>=2.18,<2.19'
+          - ansible-lint
         files: "^ansible/.*\\.(yml|yaml)$"
         pass_filenames: false
 

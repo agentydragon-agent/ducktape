@@ -14,11 +14,30 @@
   in {
     devShells = forAllSystems (system: let
       pkgs = nixpkgs.legacyPackages.${system};
+      # Pin pre-commit to match CI (.github/workflows/ci.yml uses pre-commit==4.0.1)
+      pre-commit-pinned = pkgs.python3Packages.buildPythonApplication rec {
+        pname = "pre-commit";
+        version = "4.0.1";
+        src = pkgs.fetchFromGitHub {
+          owner = "pre-commit";
+          repo = "pre-commit";
+          rev = "v${version}";
+          hash = "sha256-xF6FPuLGTMJ0IHkDloZQ4pfN1FlZbAsvJK95fLE+Xdo=";
+        };
+        propagatedBuildInputs = with pkgs.python3Packages; [
+          cfgv
+          identify
+          nodeenv
+          pyyaml
+          virtualenv
+        ];
+        doCheck = false;
+      };
     in {
       default = pkgs.mkShell {
-        packages = with pkgs; [
-          pre-commit
-          alejandra
+        packages = [
+          pre-commit-pinned
+          pkgs.alejandra
         ];
       };
     });
