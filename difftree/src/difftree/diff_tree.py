@@ -9,7 +9,7 @@ This module handles the VIEW layer - rendering TreeNode data with:
 Takes immutable TreeNode from tree.py and renders it to Rich console output.
 """
 
-from rich.console import Console, ConsoleOptions, RenderResult
+from rich.console import Console, ConsoleOptions, Group, RenderResult
 from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
@@ -35,22 +35,23 @@ class DiffTree:
 
         tree = self._build_tree_structure(self.root, depth=0)
 
-        temp_console = Console(record=True, width=options.max_width or 80)
-        temp_console.print(tree)
-        segments = temp_console._record_buffer
-        lines = list(Segment.split_lines(segments))
+        # Render tree to capture its visual structure
+        # Use a temporary console that doesn't output to avoid double printing
+        from io import StringIO
 
+        temp_output = StringIO()
+        temp_console = Console(file=temp_output, width=options.max_width or 80, legacy_windows=False)
+        temp_console.print(tree)
+
+        # Parse the rendered output into lines
+        tree_output = temp_output.getvalue()
         tree_lines = []
-        for line_segments in lines:
-            text = Text()
-            for segment in line_segments:
-                if segment.text:
-                    text.append(segment.text, style=segment.style)
-            tree_lines.append(text)
+        for line in tree_output.rstrip("\n").split("\n"):
+            tree_lines.append(Text.from_ansi(line))
 
         nodes_in_order = self._flatten_tree(self.root, depth=0)
 
-        table = Table.grid(padding=(0, 1))
+        table = Table.grid(padding=0)  # No padding to avoid space between bars
 
         for column in self.config.columns:
             if column == Column.TREE:
@@ -69,17 +70,27 @@ class DiffTree:
             row = []
             for column in self.config.columns:
                 if column == Column.TREE:
-                    row.append(tree_line)
+                    # Add space after tree column
+                    tree_with_space = Text.assemble(tree_line, " ")
+                    row.append(tree_with_space)
                 elif column == Column.COUNTS:
                     additions_cell, deletions_cell = self._make_count_cells(node)
-                    row.append(additions_cell)
-                    row.append(deletions_cell)
+                    # Add space after additions, before deletions
+                    additions_with_space = Text.assemble(additions_cell, " ")
+                    deletions_with_space = Text.assemble(" ", deletions_cell)
+                    row.append(additions_with_space)
+                    row.append(deletions_with_space)
                 elif column == Column.BARS:
                     green_cell, red_cell = self._make_bar_cells(node, total_additions, total_deletions)
+                    # No space between bar columns (they're rendered together)
+                    # Add table columns with padding to create space before bars
                     row.append(green_cell)
                     row.append(red_cell)
                 elif column == Column.PERCENTAGES:
-                    row.append(self._make_percentage_cell(node, total_changes))
+                    # Space before percentage
+                    pct_cell = self._make_percentage_cell(node, total_changes)
+                    pct_with_space = Text.assemble(" ", pct_cell)
+                    row.append(pct_with_space)
             table.add_row(*row)
 
         yield table
@@ -116,7 +127,8 @@ class DiffTree:
         # Collect collapsed path for single-child directory chains
         collapsed_path, final_node, final_depth = self._get_collapsed_path_and_node(node, depth)
 
-        name_color = "bold blue" if not final_node.is_file else "white"
+        # Directories in bold blue, files in default color
+        name_color = "bold blue" if not final_node.is_file else None
         label = Text(collapsed_path, style=name_color, overflow="ellipsis")
         tree = Tree(label, guide_style="dim")
 
