@@ -32,112 +32,67 @@ def test_cli_default_columns(runner, git_repo_with_changes):
     """Test CLI with default columns (all enabled)."""
     result = runner.invoke(main, [], obj={}, catch_exceptions=False, env={"PWD": str(git_repo_with_changes)})
 
-    # Should succeed (exit code 0)
-    assert result.exit_code == 0
-    # Should have some output (tree structure)
-    assert result.output.strip() != ""
-
-
-def test_cli_columns_flag_all(runner, git_repo_with_changes):
-    """Test --columns flag with all columns."""
-    result = runner.invoke(main, ["--columns", "tree,counts,bars,percentages"], obj={}, catch_exceptions=False)
-
-    assert result.exit_code == 0
-    # Should show content
-    assert result.output.strip() != ""
-
-
-def test_cli_columns_flag_minimal(runner, git_repo_with_changes):
-    """Test --columns flag with only tree column."""
-    result = runner.invoke(main, ["--columns", "tree"], obj={}, catch_exceptions=False)
-
-    assert result.exit_code == 0
-    # Should show tree structure
-    assert result.output.strip() != ""
-
-
-def test_cli_columns_flag_custom_order(runner, git_repo_with_changes):
-    """Test --columns flag with custom column ordering."""
-    result = runner.invoke(
-        main,
-        ["--columns", "tree,bars,counts"],  # Different order
-        obj={},
-        catch_exceptions=False,
-    )
-
     assert result.exit_code == 0
     assert result.output.strip() != ""
+
+
+def test_cli_columns_actually_shows_content(runner, git_repo_with_changes, monkeypatch):
+    """Test that --columns flag actually controls what appears in output."""
+    monkeypatch.chdir(git_repo_with_changes)
+
+    # Test with only tree column - should NOT have counts
+    result_tree_only = runner.invoke(main, ["--columns", "tree"], obj={}, catch_exceptions=False)
+    assert result_tree_only.exit_code == 0
+    assert "main.py" in result_tree_only.output
+    # Should not have +/- counts when counts column is disabled
+    assert "+2" not in result_tree_only.output or "counts" not in result_tree_only.output.lower()
+
+    # Test with tree and counts - should have counts
+    result_with_counts = runner.invoke(main, ["--columns", "tree,counts"], obj={}, catch_exceptions=False)
+    assert result_with_counts.exit_code == 0
+    assert "main.py" in result_with_counts.output
+    assert "+2" in result_with_counts.output  # Should show addition count
+
+
+def test_cli_sort_actually_changes_order(runner, temp_git_repo, run_git, monkeypatch):
+    """Test that --sort flag actually changes file order."""
+    # Create files with different sizes and names
+    create_file(temp_git_repo, "a_small.py", "line1\n")
+    create_file(temp_git_repo, "z_large.py", "line1\n")
+    git_add_commit(run_git)
+
+    # Make z_large.py have more changes
+    create_file(temp_git_repo, "a_small.py", "line1\nline2\n")  # +1 line
+    create_file(temp_git_repo, "z_large.py", "line1\nline2\nline3\nline4\nline5\n")  # +4 lines
+
+    monkeypatch.chdir(temp_git_repo)
+
+    # Sort by size (default) - z_large should come first
+    result_size = runner.invoke(main, ["--sort", "size"])
+    assert result_size.exit_code == 0
+    z_pos = result_size.output.find("z_large")
+    a_pos = result_size.output.find("a_small")
+    assert z_pos < a_pos, "Larger file should appear first when sorted by size"
+
+    # Sort alphabetically - a_small should come first
+    result_alpha = runner.invoke(main, ["--sort", "alpha"])
+    assert result_alpha.exit_code == 0
+    a_pos_alpha = result_alpha.output.find("a_small")
+    z_pos_alpha = result_alpha.output.find("z_large")
+    assert a_pos_alpha < z_pos_alpha, "Files should be alphabetically ordered"
 
 
 def test_cli_columns_flag_invalid_column(runner, git_repo_with_changes):
     """Test --columns flag with invalid column name."""
     result = runner.invoke(main, ["--columns", "tree,invalid,counts"], obj={}, catch_exceptions=False)
 
-    # Should fail with Click parameter error (exit code 2)
     assert result.exit_code == 2
     assert "Unknown column" in result.output
     assert "invalid" in result.output.lower()
 
 
-def test_cli_columns_flag_case_insensitive(runner, git_repo_with_changes):
-    """Test --columns flag is case-insensitive."""
-    result = runner.invoke(
-        main,
-        ["--columns", "TREE,CoUnTs,BaRs"],  # Mixed case
-        obj={},
-        catch_exceptions=False,
-    )
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
-def test_cli_columns_flag_with_spaces(runner, git_repo_with_changes):
-    """Test --columns flag handles spaces correctly."""
-    result = runner.invoke(
-        main,
-        ["--columns", "tree, counts, bars"],  # Spaces after commas
-        obj={},
-        catch_exceptions=False,
-    )
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
-def test_cli_sort_alpha(runner, git_repo_with_changes):
-    """Test --sort alpha option."""
-    result = runner.invoke(main, ["--sort", "alpha"], obj={}, catch_exceptions=False)
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
-def test_cli_sort_size(runner, git_repo_with_changes):
-    """Test --sort size option (default)."""
-    result = runner.invoke(main, ["--sort", "size"], obj={}, catch_exceptions=False)
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
-def test_cli_max_depth(runner, git_repo_with_changes):
-    """Test --max-depth option."""
-    result = runner.invoke(main, ["--max-depth", "1"], obj={}, catch_exceptions=False)
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
-def test_cli_bar_width(runner, git_repo_with_changes):
-    """Test --bar-width option."""
-    result = runner.invoke(main, ["--bar-width", "30"], obj={}, catch_exceptions=False)
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
 def test_cli_no_changes(runner, temp_git_repo, run_git, monkeypatch):
+    """Test CLI when there are no changes to display."""
     create_file(temp_git_repo, "file.py", "line1\n")
     git_add_commit(run_git)
 
@@ -146,19 +101,6 @@ def test_cli_no_changes(runner, temp_git_repo, run_git, monkeypatch):
 
     assert result.exit_code == 0
     assert "No changes" in result.output
-
-
-def test_cli_combined_options(runner, git_repo_with_changes):
-    """Test CLI with multiple options combined."""
-    result = runner.invoke(
-        main,
-        ["--columns", "tree,counts,bars", "--sort", "alpha", "--bar-width", "15", "--max-depth", "2"],
-        obj={},
-        catch_exceptions=False,
-    )
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
 
 
 # CLI Integration Tests

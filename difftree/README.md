@@ -46,17 +46,8 @@ difftree COMMIT~1 COMMIT
 # Sort alphabetically
 difftree --sort alpha
 
-# Show only tree and counts (no bars or percentages)
+# Customize columns (tree, counts, bars, percentages)
 difftree --columns tree,counts
-
-# Show only tree and bars (no counts or percentages)
-difftree --columns tree,bars
-
-# Show only tree and percentages (no counts or bars)
-difftree --columns tree,percentages
-
-# Minimal output (only tree structure)
-difftree --columns tree
 
 # Adjust progress bar width
 difftree --bar-width 30

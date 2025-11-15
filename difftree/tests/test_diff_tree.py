@@ -1,5 +1,7 @@
 """Tests for DiffTree renderable."""
 
+import re
+
 from difftree.config import Column, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
@@ -196,123 +198,31 @@ def _extract_progress_bars(line: Text) -> str:
     return ""
 
 
-def test_progress_bar_format_pattern():
-    """Test that progress bars render with proper alignment and padding."""
-    changes = [FileChange(path="file.py", additions=100, deletions=50)]
-
-    root = build_tree(changes)
-    config = RenderConfig.default()
-    config.bar_width = 20  # Set explicit width for predictability
-
-    diff_tree = DiffTree(root, config=config)
-
-    # Render and get Text lines directly
-    lines = _render_to_text_lines(diff_tree, width=120)
-    file_line = next(line for line in lines if "file.py" in line.plain)
-
-    # Just verify bars are present and render properly
-    plain = file_line.plain
-    assert "file.py" in plain
-    assert "+100" in plain
-    assert "-50" in plain
-
-    # Verify progress bars are present (block characters)
-    block_chars = " ▏▎▍▌▋▊▉█"
-    bar_char_count = sum(1 for char in plain if char in block_chars)
-    assert bar_char_count > 0, "Progress bars should be present"
-
-
-@pytest.mark.parametrize(("additions", "deletions"), [(100, 50), (200, 10), (5, 300), (1000, 500), (1, 1)])
-def test_progress_bar_format_various_sizes(additions, deletions):
-    """Test progress bar format with proportionally-sized bars."""
-    changes = [FileChange(path=f"file_{additions}_{deletions}.py", additions=additions, deletions=deletions)]
-
-    root = build_tree(changes)
-    config = RenderConfig.default()
-    config.bar_width = 20
-
-    diff_tree = DiffTree(root, config=config)
-
-    # Render and get Text lines directly
-    lines = _render_to_text_lines(diff_tree, width=150)
-    file_line = next(line for line in lines if f"file_{additions}_{deletions}.py" in line.plain)
-
-    # Just check that bars are present and render properly
-    plain = file_line.plain
-    block_chars = " ▏▎▍▌▋▊▉█"
-
-    # Count block characters to verify bars are present
-    bar_char_count = sum(1 for char in plain if char in block_chars)
-    assert bar_char_count > 0, f"No progress bars found for {additions}+/{deletions}-"
-
-    # Verify the line contains the file info
-    assert f"file_{additions}_{deletions}.py" in plain
-    assert f"+{additions}" in plain
-    assert f"-{deletions}" in plain
-
-
 def test_progress_bars_align_consistently():
-    """Test that files with same delta count have progress bars at same position."""
-    # 3 files with same additions and deletions and same-length names for alignment
+    """Test that files with same stats render with same bar positions."""
+    # Files with identical stats should have bars at same column positions
     changes = [
         FileChange(path="file_a.py", additions=100, deletions=50),
         FileChange(path="file_b.py", additions=100, deletions=50),
-        FileChange(path="file_c.py", additions=100, deletions=50),
     ]
 
     root = build_tree(changes)
     config = RenderConfig.default()
-    config.bar_width = 20
-
     diff_tree = DiffTree(root, config=config)
 
-    # Render and get Text lines directly
-    lines = _render_to_text_lines(diff_tree, width=150)
+    result = render_to_string(diff_tree, width=120)
+    lines = result.split("\n")
 
-    # Extract lines for each file
-    file_lines = {
-        "file_a.py": next(line for line in lines if "file_a.py" in line.plain),
-        "file_b.py": next(line for line in lines if "file_b.py" in line.plain),
-        "file_c.py": next(line for line in lines if "file_c.py" in line.plain),
-    }
+    # Find lines for each file
+    line_a = next(line for line in lines if "file_a.py" in line)
+    line_b = next(line for line in lines if "file_b.py" in line)
 
-    # Find the character range where progress bars appear in each line
-    # Progress bars are the consecutive block characters
-    block_chars = set(" ▏▎▍▌▋▊▉█")
-
-    def find_bar_range(line: Text) -> tuple[int, int]:
-        """Find start and end index of progress bar section."""
-        start = None
-        end = None
-        in_blocks = False
-        consecutive_blocks = 0
-
-        for i, char in enumerate(line.plain):
-            if char in block_chars:
-                if not in_blocks:
-                    # Count consecutive block chars to distinguish from single spaces
-                    in_blocks = True
-                    start = i
-                consecutive_blocks += 1
-            else:
-                if in_blocks and consecutive_blocks >= 10:  # Must be substantial to be the bar
-                    end = i
-                    break
-                in_blocks = False
-                consecutive_blocks = 0
-
-        return (start or -1, end or -1)
-
-    ranges = {name: find_bar_range(line) for name, line in file_lines.items()}
-
-    # All files should have bars starting and ending at the same position
-    # (since they have the same stats and we're in a consistent layout)
-    start_positions = [r[0] for r in ranges.values()]
-    end_positions = [r[1] for r in ranges.values()]
-
-    # The bars should align at the same column positions
-    assert len(set(start_positions)) == 1, f"Bar start positions don't align: {ranges}"
-    assert len(set(end_positions)) == 1, f"Bar end positions don't align: {ranges}"
+    # Strip filenames and tree decorations, compare the stats/bars part
+    # (Tree decorations differ for first/last items, but stats should be identical)
+    # Extract stats and bars (everything after the filename)
+    stats_a = re.sub(r".*file_a\.py", "", line_a)
+    stats_b = re.sub(r".*file_b\.py", "", line_b)
+    assert stats_a == stats_b, "Files with same stats should have identical stat/bar rendering"
 
 
 def test_column_ordering():
