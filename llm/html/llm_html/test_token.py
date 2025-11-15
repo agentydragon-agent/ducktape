@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 import pytest
 
 from .server import TIMEZONE
-from .token_scheme import TokenScheme
+from .token_scheme import TokenScheme, VerificationError
 
 SECRET = b"hunter2"
 
@@ -68,7 +68,7 @@ def test_doc_hash_mismatch_is_reported(token_scheme, fresh_valid_token):
         expected_error="Document hash mismatch",
     )
 
-    with pytest.raises(TokenScheme.VerificationError) as err:
+    with pytest.raises(VerificationError) as err:
         token_scheme.verify_token(tampered_case.tampered)
 
     assert any(tampered_case.expected_error in issue for issue in err.value.issues)
@@ -81,7 +81,7 @@ def test_incomplete_token_is_reported_but_does_not_crash(
     # Strip the private hash so only doc+pub remain.
     incomplete_token = fresh_valid_token[: -token_scheme._AUTH_LEN]
 
-    with pytest.raises(TokenScheme.VerificationError) as err:
+    with pytest.raises(VerificationError) as err:
         token_scheme.verify_token(incomplete_token)
 
     assert any("Private hash incomplete" in issue for issue in err.value.issues)

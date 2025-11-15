@@ -28,6 +28,14 @@ def _digest_size(chars: int) -> int:
     return math.ceil(chars * math.log2(58) / 8)
 
 
+class VerificationError(ValueError):
+    """Aggregates all individual verification failures."""
+
+    def __init__(self, issues: list[str]):
+        super().__init__("; ".join(issues))
+        self.issues = issues
+
+
 class TokenScheme:
     """
     Token v1  (21 chars)
@@ -83,19 +91,12 @@ class TokenScheme:
         digest = hmac.new(self.secret, date.encode(), sha256).digest()[:size]
         return bytes_b58(digest, self._AUTH_LEN)
 
-    class VerificationError(ValueError):
-        """Aggregates all individual verification failures."""
-
-        def __init__(self, issues: list[str]):
-            super().__init__("; ".join(issues))
-            self.issues = issues
-
     def verify_token(self, token: str):
         """Validate *token* against the current document & secret."""
         issues: list[str] = []
 
         if ":" not in token:
-            raise self.VerificationError(
+            raise VerificationError(
                 ["Token is missing ':' separator"],
             )
 
@@ -109,7 +110,7 @@ class TokenScheme:
         parts = payload.split("-", 2)
         if len(parts) < 2:
             issues.append("Token is incomplete - expected date & digest parts")
-            raise self.VerificationError(issues)
+            raise VerificationError(issues)
 
         mmdd, hhmm = parts[0], parts[1]
         digest = parts[2] if len(parts) == 3 else ""
@@ -171,4 +172,4 @@ class TokenScheme:
                 )
 
         if issues:
-            raise self.VerificationError(issues)
+            raise VerificationError(issues)
