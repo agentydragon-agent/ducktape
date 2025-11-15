@@ -3,7 +3,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
-from mcp import types as mtypes
+from fastmcp.client.client import CallToolResult as FastMcpCallToolResult
+from mcp import McpError, types as mtypes
 from pydantic import BaseModel
 
 from adgn.mcp._shared.constants import (
@@ -85,13 +86,17 @@ def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
     return None
 
 
-def detect_policy_gateway_error(err: object) -> PolicyGatewayError | None:
+def detect_policy_gateway_error(
+    err: FastMcpCallToolResult | mtypes.CallToolResult | McpError | dict[str, Any] | mtypes.ErrorData | BaseException,
+) -> PolicyGatewayError | None:
     """Detect and classify policy-gateway errors robustly.
 
     Accepts either:
-    - A CallToolResult (FastMCP or MCP) with is_error=True
-    - An exception with .error attribute
-    - A raw error payload (dict/ErrorData)
+    - FastMCP CallToolResult with is_error=True
+    - MCP types.CallToolResult with is_error=True
+    - McpError exception (has .error attribute)
+    - Raw error payload (dict or ErrorData)
+    - Other exceptions (will return None unless they have .error attribute)
 
     Returns a typed PolicyGatewayError when recognized; otherwise None.
 
@@ -99,20 +104,15 @@ def detect_policy_gateway_error(err: object) -> PolicyGatewayError | None:
     """
     # Prefer structured error data when present (CallToolResult or exception with .error)
     error_data: mtypes.ErrorData | None = None
-    # Check for CallToolResult-like objects with is_error=True
-    if (
-        hasattr(err, "is_error")
-        and isinstance(getattr(err, "is_error"), bool)
-        and getattr(err, "is_error")
-        and hasattr(err, "error")
-    ):
-        error_data = _coerce_error_data(getattr(err, "error"))
-    # Check for exceptions with .error attribute (but not dicts)
-    if error_data is None and hasattr(err, "error") and not isinstance(err, dict):
-        error_data = _coerce_error_data(getattr(err, "error"))
+    # Check for CallToolResult with is_error=True
+    if (isinstance(err, FastMcpCallToolResult | mtypes.CallToolResult) and err.is_error) or isinstance(err, McpError):
+        error_data = _coerce_error_data(err.error)
     # Check for direct error data
-    if error_data is None and isinstance(err, dict | mtypes.ErrorData):
+    elif isinstance(err, dict | mtypes.ErrorData):
         error_data = _coerce_error_data(err)
+    # Fallback: other exceptions with .error attribute
+    elif hasattr(err, "error"):
+        error_data = _coerce_error_data(err.error)
 
     # Map structured error first
     if error_data is not None:
