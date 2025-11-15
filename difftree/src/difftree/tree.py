@@ -7,7 +7,6 @@ TreeNode is immutable (frozen dataclass) - all tree transformations return new n
 View-level rendering logic (path collapsing, tree decoration styling) lives in diff_tree.py.
 """
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,21 +41,21 @@ def build_tree(changes: list[FileChange]) -> TreeNode:
 
     Uses a mutable builder structure internally, then creates frozen TreeNodes.
     """
-    from dataclasses import dataclass, field as dc_field
 
     @dataclass
     class _MutableNode:
         """Mutable builder for TreeNode."""
+
         name: str
         is_file: bool
         additions: int = 0
         deletions: int = 0
         is_binary: bool = False
-        children: dict[str, "_MutableNode"] = dc_field(default_factory=dict)
+        children: dict[str, "_MutableNode"] = field(default_factory=dict)
         path: str = ""
 
     # Build mutable tree
-    root_name = os.path.basename(os.getcwd()) or "."
+    root_name = Path.cwd().name or "."
     root = _MutableNode(name=root_name, is_file=False, path=".")
 
     for change in changes:

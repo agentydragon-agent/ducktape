@@ -7,11 +7,12 @@ from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
 from difftree.tree import build_tree
-from .conftest import render_to_string
 import pytest
 from rich.console import Console
 from rich.segment import Segment
 from rich.text import Text
+
+from .conftest import render_to_string
 
 
 def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
@@ -258,7 +259,7 @@ def test_tree_column_never_wraps():
             # Next line should either have tree chars OR be empty/whitespace
             # It should NOT be a continuation of the current line's filename
             if next_line.strip() and not any(char in next_line for char in ["├", "└", "│", "─"]):
-                pytest.fail(f"Line {i} appears to have wrapped:\n  Line {i}: {repr(line)}\n  Line {i+1}: {repr(next_line)}")
+                pytest.fail(f"Line {i} appears to have wrapped:\n  Line {i}: {line!r}\n  Line {i + 1}: {next_line!r}")
 
 
 def test_tree_styling_preserved():
@@ -282,8 +283,9 @@ def test_tree_styling_preserved():
     # Reset: \x1b[0m
 
     # Tree decorations should be dim
-    assert "\x1b[2m├── \x1b[0m" in result or "\x1b[2m└── \x1b[0m" in result, \
+    assert "\x1b[2m├── \x1b[0m" in result or "\x1b[2m└── \x1b[0m" in result, (
         "Tree decorations (├── or └──) should have dim style"
+    )
 
     # Vertical guides should also be dim
     assert "\x1b[2m│" in result, "Tree vertical guides (│) should have dim style"
@@ -306,9 +308,7 @@ def test_tree_styling_preserved():
 
 def test_column_ordering():
     """Test that columns appear in the order specified in config."""
-    changes = [
-        FileChange(path="file.py", additions=10, deletions=5),
-    ]
+    changes = [FileChange(path="file.py", additions=10, deletions=5)]
     root = build_tree(changes)
 
     # Test bars before tree
@@ -323,9 +323,7 @@ def test_column_ordering():
         if "file.py" in line:
             # Find positions of key elements
             bar_pos = line.find("█") if "█" in line else -1
-            tree_char_positions = [
-                line.find(char) for char in [".", "└", "├", "│"] if char in line
-            ]
+            tree_char_positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
             tree_pos = min(tree_char_positions) if tree_char_positions else -1
 
             if bar_pos != -1 and tree_pos != -1:
@@ -342,9 +340,7 @@ def test_column_ordering():
     for line in lines:
         if "file.py" in line:
             bar_pos = line.find("█") if "█" in line else -1
-            tree_char_positions = [
-                line.find(char) for char in [".", "└", "├", "│"] if char in line
-            ]
+            tree_char_positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
             tree_pos = min(tree_char_positions) if tree_char_positions else -1
 
             if bar_pos != -1 and tree_pos != -1:
@@ -355,9 +351,7 @@ def test_column_ordering():
 
 def test_column_ordering_counts_first():
     """Test counts column can appear first."""
-    changes = [
-        FileChange(path="file.py", additions=10, deletions=5),
-    ]
+    changes = [FileChange(path="file.py", additions=10, deletions=5)]
     root = build_tree(changes)
 
     # Counts first, then tree
@@ -370,14 +364,14 @@ def test_column_ordering_counts_first():
         if "file.py" in line:
             # Find positions of key elements
             plus_pos = line.find("+10") if "+10" in line else -1
-            tree_char_positions = [
-                line.find(char) for char in [".", "└", "├", "│"] if char in line
-            ]
+            tree_char_positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
             tree_pos = min(tree_char_positions) if tree_char_positions else -1
 
             if plus_pos != -1 and tree_pos != -1:
                 # Counts should come before tree when COUNTS is listed first
-                assert plus_pos < tree_pos, f"Expected counts before tree, but got counts at {plus_pos}, tree at {tree_pos}"
+                assert plus_pos < tree_pos, (
+                    f"Expected counts before tree, but got counts at {plus_pos}, tree at {tree_pos}"
+                )
                 break
 
 
@@ -385,8 +379,8 @@ def test_bar_proportionality():
     """Test that progress bars render proportionally to actual changes."""
     changes = [
         FileChange(path="file1.py", additions=50, deletions=10),  # 5:1 ratio
-        FileChange(path="file2.py", additions=1, deletions=10),   # 1:10 ratio
-        FileChange(path="file3.py", additions=10, deletions=0),   # Only additions
+        FileChange(path="file2.py", additions=1, deletions=10),  # 1:10 ratio
+        FileChange(path="file3.py", additions=10, deletions=0),  # Only additions
     ]
     root = build_tree(changes)
 
@@ -397,7 +391,7 @@ def test_bar_proportionality():
     config = RenderConfig(
         columns=[Column.TREE, Column.BARS],
         bar_width=10,
-        bar_left_blocks=BlockChars.simple("-"),   # Deletions (LTR)
+        bar_left_blocks=BlockChars.simple("-"),  # Deletions (LTR)
         bar_right_blocks=BlockChars.simple("+"),  # Additions (RTL)
     )
     diff_tree = DiffTree(root, config=config)
@@ -428,14 +422,17 @@ def test_bar_proportionality():
     # File1: +50 -10
     # Expected green bar: 50/61 ≈ 82% of 10 blocks ≈ 8 blocks
     # Expected red bar: 10/20 = 50% of 10 blocks = 5 blocks
-    assert file1_plus >= 7 and file1_plus <= 9, f"file1.py should have ~8 '+', got {file1_plus}"
-    assert file1_minus >= 4 and file1_minus <= 6, f"file1.py should have ~5 '-', got {file1_minus}"
+    assert file1_plus >= 7, f"file1.py should have at least 7 '+', got {file1_plus}"
+    assert file1_plus <= 9, f"file1.py should have at most 9 '+', got {file1_plus}"
+    assert file1_minus >= 4, f"file1.py should have at least 4 '-', got {file1_minus}"
+    assert file1_minus <= 6, f"file1.py should have at most 6 '-', got {file1_minus}"
 
     # File2: +1 -10
     # Expected green bar: 1/61 ≈ 1.6% ≈ minimal sliver (1 char)
     # Expected red bar: 10/20 = 50% = 5 blocks
     assert file2_plus == 1, f"file2.py should have exactly 1 '+' (minimal sliver), got {file2_plus}"
-    assert file2_minus >= 4 and file2_minus <= 6, f"file2.py should have ~5 '-', got {file2_minus}"
+    assert file2_minus >= 4, f"file2.py should have at least 4 '-', got {file2_minus}"
+    assert file2_minus <= 6, f"file2.py should have at most 6 '-', got {file2_minus}"
 
     # File2 and file1 should have same '-' count (both have 10 deletions at same scale)
     assert abs(file2_minus - file1_minus) <= 1, (
@@ -446,16 +443,17 @@ def test_bar_proportionality():
     # File3: +10 -0
     # Expected green bar: 10/61 ≈ 16.4% ≈ 1.6 blocks
     # Expected red bar: 0/20 = 0% = 0 blocks
-    assert file3_plus >= 1 and file3_plus <= 3, f"file3.py should have ~2 '+', got {file3_plus}"
+    assert file3_plus >= 1, f"file3.py should have at least 1 '+', got {file3_plus}"
+    assert file3_plus <= 3, f"file3.py should have at most 3 '+', got {file3_plus}"
     assert file3_minus == 0, f"file3.py should have no '-', got {file3_minus}"
 
 
 def test_deletion_bar_alignment():
     """Test that deletion bars start at the same column position regardless of addition bar width."""
     changes = [
-        FileChange(path="file1.py", additions=100, deletions=1),   # Mostly additions
-        FileChange(path="file2.py", additions=1, deletions=100),   # Mostly deletions
-        FileChange(path="file3.py", additions=50, deletions=50),   # Balanced
+        FileChange(path="file1.py", additions=100, deletions=1),  # Mostly additions
+        FileChange(path="file2.py", additions=1, deletions=100),  # Mostly deletions
+        FileChange(path="file3.py", additions=50, deletions=50),  # Balanced
     ]
     root = build_tree(changes)
 
@@ -463,7 +461,7 @@ def test_deletion_bar_alignment():
     config = RenderConfig(
         columns=[Column.TREE, Column.BARS],
         bar_width=10,
-        bar_left_blocks=BlockChars.simple("X"),   # Deletions (LTR)
+        bar_left_blocks=BlockChars.simple("X"),  # Deletions (LTR)
         bar_right_blocks=BlockChars.simple("+"),  # Additions (RTL)
     )
     diff_tree = DiffTree(root, config=config)
@@ -484,7 +482,7 @@ def test_deletion_bar_alignment():
     # Find position of first 'X' (deletion bar start) in each line
     positions = []
     for i, line in enumerate(file_lines):
-        pos = line.find('X')
+        pos = line.find("X")
         assert pos != -1, f"No deletion bar found in line {i}: {line}"
         positions.append(pos)
 

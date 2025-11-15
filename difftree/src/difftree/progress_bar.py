@@ -1,14 +1,14 @@
 """Progress bar renderables with RTL/LTR alignment support."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.measure import Measurement
 from rich.text import Text
 
-
 DEFAULT_PARTIALS = ("▏", "▎", "▍", "▌", "▋", "▊", "▉")
+
 
 @dataclass(frozen=True)
 class BlockChars:
@@ -42,19 +42,12 @@ class BlockChars:
 # - RTL: empty space on left, filled blocks on right (e.g., "    ███")
 
 # Left-growing blocks (for LTR alignment): filled portion grows from left edge
-DEFAULT_LEFT_BLOCKS = BlockChars(
-    full="█",
-    empty=" ",
-    partials=("▏", "▎", "▍", "▌", "▋", "▊", "▉"),
-)
+DEFAULT_LEFT_BLOCKS = BlockChars(full="█", empty=" ", partials=("▏", "▎", "▍", "▌", "▋", "▊", "▉"))
 
 # Right-growing blocks (for RTL alignment): filled portion grows from right edge
 # Note: Unicode has limited right-block granularity, so we approximate
-DEFAULT_RIGHT_BLOCKS = BlockChars(
-    full="█",
-    empty=" ",
-    partials=("▕", "▕", "▐", "▐", "▐", "▉", "█"),
-)
+DEFAULT_RIGHT_BLOCKS = BlockChars(full="█", empty=" ", partials=("▕", "▕", "▐", "▐", "▐", "▉", "█"))
+
 
 class ProgressBar:
     """Progress bar with RTL or LTR alignment for diff statistics."""

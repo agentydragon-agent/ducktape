@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 import subprocess
-import sys
 
 from unidiff import PatchSet
 

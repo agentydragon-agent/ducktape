@@ -4,8 +4,9 @@ from difftree.config import Column, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.tree import build_tree, sort_tree
-from .conftest import render_to_string as render_renderable
 import pytest
+
+from .conftest import render_to_string as render_renderable
 
 
 @pytest.fixture
@@ -32,7 +33,7 @@ def render_to_string(changes: list[FileChange], sort_by: str = "size", config: R
     diff_tree = DiffTree(root, config=config)
     result = render_renderable(diff_tree, width=120, legacy_windows=False, color_system="standard")
 
-    assert "…" not in result, f"Output contains ellipsis character (…)"
+    assert "…" not in result, "Output contains ellipsis character (…)"
     return result
 
 

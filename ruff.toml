@@ -6,6 +6,17 @@ line-length = 120
 # Target Python 3.12+ consistently
 target-version = "py312"
 
+# Exclude specimens, testdata, fixtures, third-party and examples from all ruff operations
+exclude = [
+    "adgn/src/adgn/props/specimens",
+    "adgn/src/adgn/third_party",
+    "adgn/tests/*/testdata",
+    "adgn/tests/*/fixtures",
+    "**/testdata",
+    "**/fixtures",
+    "**/examples",
+]
+
 [format]
 # Ignore trailing commas when deciding whether to collapse to one line
 # (Google-style formatting: pack code densely when it fits)

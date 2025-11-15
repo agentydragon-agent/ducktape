@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 from difftree.parser import parse_unified_diff
@@ -44,7 +43,7 @@ def test_e2e_complete_workflow(temp_git_repo: Path, run_git):
     root = build_tree(changes)
 
     # Root name is basename of current directory
-    assert root.name in (".", "difftree", os.path.basename(os.getcwd()))
+    assert root.name in (".", "difftree", Path.cwd().name)
     assert "src" in root.children or len(changes) > 0
 
     root = sort_tree(root, sort_by="size")
