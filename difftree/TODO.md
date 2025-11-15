@@ -101,9 +101,25 @@
     lib/
     ├── bar/foo.py ← foo/foo.py     +3  -1  ██ █
     └── baz.py                       +2  -0  █
-
     # Note: bar/foo.py is collapsed since bar/ has only one child
     # Source path "foo/foo.py" is relative to lib/ (common parent)
+
+    # Without collapsing: bar/ has multiple children
+    lib/
+    ├── bar/
+    │   ├── foo.py ← foo/foo.py     +3  -1  ██ █
+    │   └── new.py                   +2  -0  █
+    └── baz.py                        +5  -2  ███ ██
+    # Note: bar/ shown as directory since it has 2 children (foo.py + new.py)
+    # Source path still relative to lib/
+
+    # Mixed: renamed file + new file in same directory
+    lib/
+    ├── bar/
+    │   ├── foo.py ← ../src/foo.py     +3  -1  ██ █
+    │   └── new.py                      +2  -0  █
+    └── baz.py                           +5  -2  ███ ██
+    # Note: Source "../src/foo.py" goes up from lib/ to reach src/
     ```
   - Edge cases to handle:
     - Renamed + modified (most common)
