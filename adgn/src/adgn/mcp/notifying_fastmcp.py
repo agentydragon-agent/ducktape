@@ -144,6 +144,7 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
             assert isinstance(sess, ServerSession)
 
         capturing_server = _CapturingServer(
+            fastmcp=self,
             name=self.name,
             instructions=self.instructions,
             on_session_created=_adapter,

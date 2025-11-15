@@ -145,3 +145,37 @@ def test_cli_integration_invalid_column(runner, temp_git_repo, run_git, monkeypa
     assert result.exit_code == 2
     assert "Unknown column" in result.output
     assert "invalid" in result.output
+
+
+def test_cli_integration_with_pathspec(runner, temp_git_repo, run_git, monkeypatch):
+    """Test CLI with multi-commit diff filtered by pathspec."""
+    # Commit 1: Create files in multiple directories
+    create_file(temp_git_repo, "src/core/engine.py", "def start():\n    pass\n")
+    create_file(temp_git_repo, "src/utils/helpers.py", "def help():\n    pass\n")
+    create_file(temp_git_repo, "tests/test_core.py", "def test_start():\n    assert True\n")
+    create_file(temp_git_repo, "docs/README.md", "# Documentation\n")
+    git_add_commit(run_git)
+
+    # Commit 2: Modify files in different directories
+    create_file(temp_git_repo, "src/core/engine.py", "def start():\n    print('starting')\n    pass\n")
+    create_file(temp_git_repo, "src/utils/helpers.py", "def help():\n    print('helping')\n    pass\n")
+    create_file(temp_git_repo, "tests/test_core.py", "def test_start():\n    assert True\n\ndef test_stop():\n    assert True\n")
+    create_file(temp_git_repo, "docs/README.md", "# Documentation\n\nDetailed docs here.\n")
+    git_add_commit(run_git)
+
+    monkeypatch.chdir(temp_git_repo)
+
+    # Filter to only show src/ changes using pathspec
+    result = runner.invoke(main, ["HEAD~1", "HEAD", "--", "src/"])
+
+    assert result.exit_code == 0
+    # Should show src/ files
+    assert "src" in result.output
+    assert "engine.py" in result.output
+    assert "helpers.py" in result.output
+    # Should NOT show tests/ or docs/ files
+    assert "test_core.py" not in result.output
+    assert "README.md" not in result.output
+
+    # Verify it shows actual changes (not just file names)
+    assert "+1" in result.output  # Added lines in src files

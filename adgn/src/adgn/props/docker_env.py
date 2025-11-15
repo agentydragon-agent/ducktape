@@ -8,15 +8,13 @@ import docker
 from docker.errors import ImageNotFound
 from fastmcp.server import FastMCP
 
-from adgn.mcp._shared.constants import DOCKER_SERVER_NAME
+from adgn.mcp._shared.constants import DOCKER_SERVER_NAME, PROPS_DIR, WORKING_DIR
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.props.prop_utils import props_definitions_root
 
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
-WORKING_DIR: Path = Path("/workspace")
-PROPS_DIR = Path("/props")
 # Shared startup command for long-lived containers
 
 

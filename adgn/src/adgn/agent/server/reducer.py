@@ -140,9 +140,8 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
         ):
             return state
 
-        # Serialize typed result once at the boundary for JSON display
-        result_payload = as_minimal_json(res)
-        return update_tool_json_output(state, evt.call_id, result=result_payload, is_error=is_error)
+        # Store the typed CallToolResult directly (Pydantic handles JSON serialization)
+        return update_tool_json_output(state, evt.call_id, result=res, is_error=is_error)
 
     # Unknown event → no-op
     return state

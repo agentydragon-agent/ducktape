@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from difftree.config import SortMode
 from difftree.parser import parse_unified_diff
 from difftree.tree import build_tree, sort_tree
 
@@ -46,7 +47,7 @@ def test_e2e_complete_workflow(temp_git_repo: Path, run_git):
     assert root.name in (".", "difftree", Path.cwd().name)
     assert "src" in root.children or len(changes) > 0
 
-    root = sort_tree(root, sort_by="size")
+    root = sort_tree(root, sort_by=SortMode.SIZE)
     assert root is not None
 
 

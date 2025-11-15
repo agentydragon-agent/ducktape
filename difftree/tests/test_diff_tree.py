@@ -1,32 +1,30 @@
 """Tests for DiffTree renderable."""
 
 import re
+from dataclasses import replace
 
 import pytest
 from rich.console import Console
 from rich.segment import Segment
 from rich.text import Text
 
-from difftree.config import Column, RenderConfig
+from difftree.config import Column, DEFAULT_CONFIG, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
 from difftree.tree import build_tree
 
-from .conftest import render_to_string
+from .conftest import make_diff_tree, render_to_string
 
 
 def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
     """Render tree and return lines as Rich Text objects."""
-    # Use recording console to capture segments
     console = Console(record=True, width=width)
     console.print(diff_tree)
 
-    # Get segments and split into lines
     segments = console._record_buffer
     lines = list(Segment.split_lines(segments))
 
-    # Convert each line to Text object
     text_lines = []
     for line_segments in lines:
         text = Text()
@@ -38,12 +36,37 @@ def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
     return text_lines
 
 
+def _find_line_with(lines: list[str], substring: str) -> str:
+    """Find first line containing substring."""
+    return next(line for line in lines if substring in line)
+
+
+def _find_tree_pos(line: str) -> int:
+    """Find position of first tree decoration character, or -1 if not found."""
+    positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
+    return min(positions) if positions else -1
+
+
+def _assert_column_before(result: str, filename: str, first: str, second: str, first_desc: str, second_desc: str):
+    """Assert that first marker appears before second marker in line containing filename."""
+    line = _find_line_with(result.split("\n"), filename)
+
+    first_pos = line.find(first) if first in line else -1
+
+    if second in ["tree_char"]:
+        second_pos = _find_tree_pos(line)
+    else:
+        second_pos = line.find(second) if second in line else -1
+
+    if first_pos != -1 and second_pos != -1:
+        assert first_pos < second_pos, f"Expected {first_desc} before {second_desc}, but got {first_desc} at {first_pos}, {second_desc} at {second_pos}"
+
+
 def test_renderer_initialization():
     """Test DiffTree initialization."""
-    root = build_tree([FileChange(path="test.py", additions=1, deletions=0)])
-    diff_tree = DiffTree(root)
+    diff_tree = make_diff_tree([FileChange(path="test.py", additions=1, deletions=0)])
 
-    assert diff_tree.root is root
+    assert diff_tree.root is not None
     assert Column.COUNTS in diff_tree.config.columns
     assert Column.BARS in diff_tree.config.columns
     assert Column.PERCENTAGES in diff_tree.config.columns
@@ -52,11 +75,10 @@ def test_renderer_initialization():
 
 def test_renderer_with_custom_options():
     """Test DiffTree with custom options."""
-    root = build_tree([FileChange(path="test.py", additions=1, deletions=0)])
     config = RenderConfig(columns=[Column.TREE], bar_width=30)
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree([FileChange(path="test.py", additions=1, deletions=0)], config=config)
 
-    assert diff_tree.root is root
+    assert diff_tree.root is not None
     assert Column.COUNTS not in diff_tree.config.columns
     assert Column.BARS not in diff_tree.config.columns
     assert Column.PERCENTAGES not in diff_tree.config.columns
@@ -65,8 +87,7 @@ def test_renderer_with_custom_options():
 
 def test_render_simple_tree(sample_changes):
     """Test rendering a simple tree structure."""
-    root = build_tree(sample_changes)
-    diff_tree = DiffTree(root)
+    diff_tree = make_diff_tree(sample_changes)
     result = render_to_string(diff_tree, width=120)
 
     # Check that key elements are present
@@ -79,9 +100,8 @@ def test_render_simple_tree(sample_changes):
 
 def test_render_with_no_counts(sample_changes):
     """Test rendering without count columns."""
-    root = build_tree(sample_changes)
     config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(sample_changes, config=config)
     result = render_to_string(diff_tree, width=120)
 
     # Should still have tree structure but different formatting
@@ -90,10 +110,8 @@ def test_render_with_no_counts(sample_changes):
 
 def test_render_with_max_depth(sample_changes):
     """Test rendering with maximum depth limit."""
-    root = build_tree(sample_changes)
-    config = RenderConfig.default()
-    config.max_depth = 1
-    diff_tree = DiffTree(root, config=config)
+    config = replace(DEFAULT_CONFIG, max_depth=1)
+    diff_tree = make_diff_tree(sample_changes, config=config)
     result = render_to_string(diff_tree, width=120)
 
     # Should show top-level items but not deeply nested ones
@@ -113,8 +131,7 @@ def test_minimum_sliver_with_small_changes():
         FileChange(path="tiny_file.py", additions=1, deletions=0),
     ]
 
-    root = build_tree(changes)
-    diff_tree = DiffTree(root)
+    diff_tree = make_diff_tree(changes)
     result = render_to_string(diff_tree, width=120)
 
     # Both files should be visible in the output
@@ -142,9 +159,7 @@ def test_console_width_handling(width):
         FileChange(path="test.py", additions=10, deletions=5),
     ]
 
-    root = build_tree(changes)
-    config = RenderConfig.default()
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=DEFAULT_CONFIG)
     result = render_to_string(diff_tree, width=width)
 
     # Basic assertions: output should contain expected elements
@@ -211,9 +226,7 @@ def test_progress_bars_align_consistently():
         FileChange(path="file_b.py", additions=100, deletions=50),
     ]
 
-    root = build_tree(changes)
-    config = RenderConfig.default()
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=DEFAULT_CONFIG)
 
     result = render_to_string(diff_tree, width=120)
     lines = result.split("\n")
@@ -238,9 +251,7 @@ def test_tree_column_never_wraps():
         FileChange(path="another/long/path/controller-deployment.yaml", additions=100, deletions=10),
     ]
 
-    root = build_tree(changes)
-    config = RenderConfig.default()
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=DEFAULT_CONFIG)
 
     # Test at a narrow width where bars would take up space
     result = render_to_string(diff_tree, width=100)
@@ -271,9 +282,7 @@ def test_tree_styling_preserved():
         FileChange(path="test.py", additions=5, deletions=2),
     ]
 
-    root = build_tree(changes)
-    config = RenderConfig.default()
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=DEFAULT_CONFIG)
 
     # Render with colors
     result = render_to_string(diff_tree, width=120, color_system="standard")
@@ -310,70 +319,30 @@ def test_tree_styling_preserved():
 def test_column_ordering():
     """Test that columns appear in the order specified in config."""
     changes = [FileChange(path="file.py", additions=10, deletions=5)]
-    root = build_tree(changes)
 
     # Test bars before tree
     config = RenderConfig(columns=[Column.BARS, Column.TREE, Column.COUNTS])
-    diff_tree = DiffTree(root, config=config)
-    result = render_to_string(diff_tree, width=80, force_terminal=False)
-
-    # The output should have bars (█ characters) before the tree structure
-    # Find first occurrence of tree characters (. or └ or ├) and bar characters (█)
-    lines = result.split("\n")
-    for line in lines:
-        if "file.py" in line:
-            # Find positions of key elements
-            bar_pos = line.find("█") if "█" in line else -1
-            tree_char_positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
-            tree_pos = min(tree_char_positions) if tree_char_positions else -1
-
-            if bar_pos != -1 and tree_pos != -1:
-                # Bars should come before tree when BARS is listed first
-                assert bar_pos < tree_pos, f"Expected bars before tree, but got bar at {bar_pos}, tree at {tree_pos}"
-                break
+    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
+    _assert_column_before(result, "file.py", "█", "tree_char", "bars", "tree")
 
     # Test tree before bars (standard order)
     config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.COUNTS])
-    diff_tree = DiffTree(root, config=config)
-    result = render_to_string(diff_tree, width=80, force_terminal=False)
+    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
 
-    lines = result.split("\n")
-    for line in lines:
-        if "file.py" in line:
-            bar_pos = line.find("█") if "█" in line else -1
-            tree_char_positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
-            tree_pos = min(tree_char_positions) if tree_char_positions else -1
-
-            if bar_pos != -1 and tree_pos != -1:
-                # Tree should come before bars when TREE is listed first
-                assert tree_pos < bar_pos, f"Expected tree before bars, but got tree at {tree_pos}, bar at {bar_pos}"
-                break
+    line = _find_line_with(result.split("\n"), "file.py")
+    tree_pos = _find_tree_pos(line)
+    bar_pos = line.find("█") if "█" in line else -1
+    if bar_pos != -1 and tree_pos != -1:
+        assert tree_pos < bar_pos, f"Expected tree before bars, but got tree at {tree_pos}, bar at {bar_pos}"
 
 
 def test_column_ordering_counts_first():
     """Test counts column can appear first."""
     changes = [FileChange(path="file.py", additions=10, deletions=5)]
-    root = build_tree(changes)
 
-    # Counts first, then tree
     config = RenderConfig(columns=[Column.COUNTS, Column.TREE])
-    diff_tree = DiffTree(root, config=config)
-    result = render_to_string(diff_tree, width=80, force_terminal=False)
-
-    lines = result.split("\n")
-    for line in lines:
-        if "file.py" in line:
-            # Find positions of key elements
-            plus_pos = line.find("+10") if "+10" in line else -1
-            tree_char_positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
-            tree_pos = min(tree_char_positions) if tree_char_positions else -1
-
-            if plus_pos != -1 and tree_pos != -1:
-                # Counts should come before tree when COUNTS is listed first
-                assert plus_pos < tree_pos, (
-                    f"Expected counts before tree, but got counts at {plus_pos}, tree at {tree_pos}"
-                )
-                break
+    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
+    _assert_column_before(result, "file.py", "+10", "tree_char", "counts", "tree")
 
 
 def test_bar_proportionality():
@@ -383,7 +352,6 @@ def test_bar_proportionality():
         FileChange(path="file2.py", additions=1, deletions=10),  # 1:10 ratio
         FileChange(path="file3.py", additions=10, deletions=0),  # Only additions
     ]
-    root = build_tree(changes)
 
     # Use simple distinct characters for testing:
     # - Additions use right-aligned bars, so they use right_blocks: '+'
@@ -395,7 +363,7 @@ def test_bar_proportionality():
         bar_left_blocks=BlockChars.simple("-"),  # Deletions (LTR)
         bar_right_blocks=BlockChars.simple("+"),  # Additions (RTL)
     )
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=config)
 
     # Render and extract plain text (no ANSI codes needed)
     lines = _render_to_text_lines(diff_tree, width=80)
@@ -449,6 +417,77 @@ def test_bar_proportionality():
     assert file3_minus == 0, f"file3.py should have no '-', got {file3_minus}"
 
 
+def test_percentage_calculation():
+    """Test that percentage column shows correct ratio of file changes to total changes."""
+    changes = [
+        FileChange(path="file1.py", additions=100, deletions=50),  # 150 total
+        FileChange(path="file2.py", additions=30, deletions=20),   # 50 total
+        FileChange(path="file3.py", additions=200, deletions=0),   # 200 total
+    ]
+
+    # Total changes across all files: 150 + 50 + 200 = 400
+    # file1: 150/400 = 37.5%
+    # file2: 50/400 = 12.5%
+    # file3: 200/400 = 50.0%
+
+    config = RenderConfig(columns=[Column.TREE, Column.PERCENTAGES])
+    diff_tree = make_diff_tree(changes, config=config)
+    result = render_to_string(diff_tree, width=120, force_terminal=False)
+
+    lines = result.split("\n")
+
+    # Find lines containing each file
+    file1_line = _find_line_with(lines, "file1.py")
+    file2_line = _find_line_with(lines, "file2.py")
+    file3_line = _find_line_with(lines, "file3.py")
+
+    # Extract percentage values
+    # Percentage should be at the end of each line
+    # Format is like " 37.5%" or "12.5%"
+    assert "37.5%" in file1_line, f"file1.py should show 37.5%, got: {file1_line}"
+    assert "12.5%" in file2_line, f"file2.py should show 12.5%, got: {file2_line}"
+    assert "50.0%" in file3_line, f"file3.py should show 50.0%, got: {file3_line}"
+
+
+def test_percentage_not_sum_of_bar_percentages():
+    """Test that percentage is NOT the sum of individual bar fill percentages.
+
+    This is a regression test to ensure percentage shows file's contribution
+    to total changes, not the combined fill percentage of both bars.
+    """
+    changes = [
+        # Create a scenario where bar fill percentages differ from total percentage
+        # Total: +100 additions, -900 deletions = 1000 total changes
+        FileChange(path="heavy_deletes.py", additions=10, deletions=890),  # 900 total = 90%
+        FileChange(path="only_adds.py", additions=90, deletions=10),       # 100 total = 10%
+    ]
+
+    # Totals: 100 additions, 900 deletions, 1000 total changes
+    # heavy_deletes.py: 900/1000 = 90.0% of total changes
+    # only_adds.py: 100/1000 = 10.0% of total changes
+
+    # Bar fill percentages would be different:
+    # heavy_deletes.py green bar: 10/100 = 10% fill
+    # heavy_deletes.py red bar: 890/900 = 98.9% fill
+    # If percentage were sum of fills, it would be ~109%! Wrong!
+
+    # only_adds.py green bar: 90/100 = 90% fill
+    # only_adds.py red bar: 10/900 = 1.1% fill
+    # If percentage were sum of fills, it would be ~91%! Wrong!
+
+    config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
+    diff_tree = make_diff_tree(changes, config=config)
+    result = render_to_string(diff_tree, width=120, force_terminal=False)
+
+    lines = result.split("\n")
+    heavy_line = _find_line_with(lines, "heavy_deletes.py")
+    light_line = _find_line_with(lines, "only_adds.py")
+
+    # Verify percentages show total contribution, NOT bar fill sums
+    assert "90.0%" in heavy_line, f"heavy_deletes.py should show 90.0% (900/1000), got: {heavy_line}"
+    assert "10.0%" in light_line, f"only_adds.py should show 10.0% (100/1000), got: {light_line}"
+
+
 def test_deletion_bar_alignment():
     """Test that deletion bars start at the same column position regardless of addition bar width."""
     changes = [
@@ -456,7 +495,6 @@ def test_deletion_bar_alignment():
         FileChange(path="file2.py", additions=1, deletions=100),  # Mostly deletions
         FileChange(path="file3.py", additions=50, deletions=50),  # Balanced
     ]
-    root = build_tree(changes)
 
     # Use distinct character 'X' for deletions to make position finding easy
     config = RenderConfig(
@@ -465,7 +503,7 @@ def test_deletion_bar_alignment():
         bar_left_blocks=BlockChars.simple("X"),  # Deletions (LTR)
         bar_right_blocks=BlockChars.simple("+"),  # Additions (RTL)
     )
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=config)
 
     # Render and extract plain text
     lines = _render_to_text_lines(diff_tree, width=120)

@@ -156,7 +156,9 @@ def update_tool_exec_stream(
     return state
 
 
-def update_tool_json_output(state: UiState, call_id: str, *, result: dict | None, is_error: bool | None) -> UiState:
+def update_tool_json_output(
+    state: UiState, call_id: str, *, result: mcp_types.CallToolResult | None, is_error: bool | None
+) -> UiState:
     idx = _find_last_tool_index(state, call_id)
     if idx is None:
         return state

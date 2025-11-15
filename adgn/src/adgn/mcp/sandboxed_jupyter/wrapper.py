@@ -17,8 +17,7 @@ import docker
 import yaml
 
 from adgn.llm.sandboxer import Policy
-from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
-from adgn.props.docker_env import WORKING_DIR
+from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD, WORKING_DIR
 from adgn.util.net import wait_for_port
 
 StrPath = str | PathLike[str]

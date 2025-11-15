@@ -8,7 +8,7 @@ import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, validator
-import toml
+import tomllib
 
 logger = logging.getLogger(__name__)
 
@@ -157,8 +157,8 @@ class Settings(BaseModel):
     def from_file(cls, path: Path):
         """Load settings from file at path."""
         logger.info(f"Loading settings from {path.absolute()}")
-        with path.open() as f:
-            config_dict = toml.load(f)
+        with path.open("rb") as f:
+            config_dict = tomllib.load(f)
         return cls.parse_obj(config_dict)
 
 

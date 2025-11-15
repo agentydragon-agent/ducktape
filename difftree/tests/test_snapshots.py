@@ -2,12 +2,9 @@
 
 import pytest
 
-from difftree.config import Column, RenderConfig
-from difftree.diff_tree import DiffTree
+from difftree.config import Column, DEFAULT_CONFIG, RenderConfig, SortMode
 from difftree.parser import FileChange
-from difftree.tree import build_tree, sort_tree
-
-from .conftest import render_to_string as render_renderable
+from .conftest import make_diff_tree, render_to_string as render_renderable
 
 
 @pytest.fixture
@@ -26,12 +23,9 @@ def complex_changes() -> list[FileChange]:
     ]
 
 
-def render_to_string(changes: list[FileChange], sort_by: str = "size", config: RenderConfig | None = None) -> str:
+def render_to_string(changes: list[FileChange], sort_by: SortMode = SortMode.SIZE, config: RenderConfig | None = None) -> str:
     """Helper to render tree to string."""
-    root = build_tree(changes)
-    root = sort_tree(root, sort_by=sort_by)
-
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=config, sort_by=sort_by)
     result = render_renderable(diff_tree, width=120, legacy_windows=False, color_system="standard")
 
     assert "…" not in result, "Output contains ellipsis character (…)"
@@ -41,13 +35,13 @@ def render_to_string(changes: list[FileChange], sort_by: str = "size", config: R
 @pytest.mark.parametrize(
     ("test_id", "sort_by", "config"),
     [
-        ("default_rendering", "size", None),
-        ("alphabetical_sort", "alpha", None),
-        ("no_bars", "size", RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.PERCENTAGES])),
-        ("no_counts", "size", RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])),
-        ("no_percentages", "size", RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.BARS])),
-        ("minimal", "size", RenderConfig(columns=[Column.TREE])),
-        ("custom_bar_width", "size", RenderConfig(columns=RenderConfig.default().columns, bar_width=30)),
+        ("default_rendering", SortMode.SIZE, None),
+        ("alphabetical_sort", SortMode.ALPHA, None),
+        ("no_bars", SortMode.SIZE, RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.PERCENTAGES])),
+        ("no_counts", SortMode.SIZE, RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])),
+        ("no_percentages", SortMode.SIZE, RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.BARS])),
+        ("minimal", SortMode.SIZE, RenderConfig(columns=[Column.TREE])),
+        ("custom_bar_width", SortMode.SIZE, RenderConfig(columns=DEFAULT_CONFIG.columns, bar_width=30)),
     ],
 )
 def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, config):
