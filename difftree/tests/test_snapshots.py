@@ -40,52 +40,23 @@ def render_to_string(changes: list[FileChange], sort_by: str = "size", config: R
     return output.getvalue()
 
 
-def test_snapshot_default_rendering(snapshot, complex_changes):
-    """Snapshot test for default rendering with all columns."""
-    output = render_to_string(complex_changes)
-    assert output == snapshot
-
-
-def test_snapshot_alphabetical_sort(snapshot, complex_changes):
-    """Snapshot test for alphabetical sorting."""
-    output = render_to_string(complex_changes, sort_by="alpha")
-    assert output == snapshot
-
-
-def test_snapshot_no_bars(snapshot, complex_changes):
-    """Snapshot test without progress bars."""
-    config = RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.PERCENTAGES])
-    output = render_to_string(complex_changes, config=config)
-    assert output == snapshot
-
-
-def test_snapshot_no_counts(snapshot, complex_changes):
-    """Snapshot test without count columns."""
-    config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
-    output = render_to_string(complex_changes, config=config)
-    assert output == snapshot
-
-
-def test_snapshot_no_percentages(snapshot, complex_changes):
-    """Snapshot test without percentage column."""
-    config = RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.BARS])
-    output = render_to_string(complex_changes, config=config)
-    assert output == snapshot
-
-
-def test_snapshot_minimal(snapshot, complex_changes):
-    """Snapshot test with minimal output (tree only)."""
-    config = RenderConfig(columns=[Column.TREE])
-    output = render_to_string(complex_changes, config=config)
-    assert output == snapshot
-
-
-def test_snapshot_custom_bar_width(snapshot, complex_changes):
-    """Snapshot test with custom progress bar width."""
-    config = RenderConfig.default()
-    config.bar_width = 30
-    output = render_to_string(complex_changes, config=config)
-    assert output == snapshot
+@pytest.mark.parametrize(
+    ("test_id", "sort_by", "config_factory"),
+    [
+        ("default_rendering", "size", lambda: None),
+        ("alphabetical_sort", "alpha", lambda: None),
+        ("no_bars", "size", lambda: RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.PERCENTAGES])),
+        ("no_counts", "size", lambda: RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])),
+        ("no_percentages", "size", lambda: RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.BARS])),
+        ("minimal", "size", lambda: RenderConfig(columns=[Column.TREE])),
+        ("custom_bar_width", "size", lambda: RenderConfig(columns=RenderConfig.default().columns, bar_width=30)),
+    ],
+)
+def test_snapshot_config_variants(snapshot, complex_changes, test_id, sort_by, config_factory):
+    """Snapshot test for different configuration variants."""
+    config = config_factory()
+    output = render_to_string(complex_changes, sort_by=sort_by, config=config)
+    assert output == snapshot(name=test_id)
 
 
 def test_snapshot_small_tree(snapshot):
