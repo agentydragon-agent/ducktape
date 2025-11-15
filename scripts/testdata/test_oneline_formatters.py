@@ -2,9 +2,14 @@
 """Demonstrate which Python formatters can collapse multi-line to one-line.
 
 This test suite shows:
-1. What doesn't work (ruff/yapf/autopep8 alone with trailing commas)
-2. What DOES work (remove trailing commas first, then format)
+1. What doesn't work (default configs respect trailing commas)
+2. What DOES work:
+   - ✅ Ruff: skip-magic-trailing-comma = true (BEST - built-in!)
+   - ✅ yapf: disable_ending_comma_heuristic = true (also works)
+   - ✅ Manual: remove trailing commas first, then format
 3. What COM819 actually does (removes commas from one-liners only)
+
+RECOMMENDED SOLUTION: Use Ruff with skip-magic-trailing-comma = true
 """
 
 import re
@@ -153,8 +158,40 @@ def test_autopep8_aggressive_with_trailing_commas():
     assert result == EXPECTED_COLLAPSED
 
 
+def test_ruff_skip_magic_trailing_comma():
+    """✅ BEST SOLUTION: Ruff with skip-magic-trailing-comma = true.
+
+    This is the built-in Google-style solution - no scripts needed!
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        tmpfile = tmpdir / "test.py"
+        tmpfile.write_text(MULTILINE_WITH_COMMAS)
+
+        # Create ruff config with skip-magic-trailing-comma
+        (tmpdir / "ruff.toml").write_text(dedent('''
+            line-length = 120
+
+            [format]
+            skip-magic-trailing-comma = true
+        '''))
+
+        subprocess.run(
+            ["ruff", "format", str(tmpfile)],
+            cwd=tmpdir,
+            check=True,
+            capture_output=True,
+        )
+
+        result = tmpfile.read_text()
+        assert result == EXPECTED_COLLAPSED
+
+
 def test_ruff_with_comma_removal():
-    """✅ Ruff DOES collapse when trailing commas removed first."""
+    """✅ Alternative: Ruff DOES collapse when trailing commas removed first.
+
+    This works but requires a separate script (less elegant than skip-magic-trailing-comma).
+    """
     without_commas = remove_trailing_commas(MULTILINE_WITH_COMMAS)
     result = run_ruff_format(without_commas)
     assert result == EXPECTED_COLLAPSED
@@ -198,22 +235,26 @@ def test_summary():
     """Summary of findings.
 
     This test documents the conclusions from all the other tests.
+
+    NOTE: Since our repo's ruff.toml now has skip-magic-trailing-comma = true,
+    run_ruff_format() now collapses by default. This test shows what different
+    formatters do with their default configs.
     """
-    # ❌ These formatters DON'T collapse multi-line WITH trailing commas:
-    assert run_ruff_format(MULTILINE_WITH_COMMAS) != EXPECTED_COLLAPSED
+    # ✅ Ruff NOW collapses (our repo has skip-magic-trailing-comma = true)
+    ruff_result = run_ruff_format(MULTILINE_WITH_COMMAS)
+    assert ruff_result == EXPECTED_COLLAPSED
+
+    # ❌ yapf default config respects trailing commas
     assert run_yapf(MULTILINE_WITH_COMMAS) != EXPECTED_COLLAPSED
+
+    # ❌ autopep8 never collapses
     assert run_autopep8(MULTILINE_WITH_COMMAS) != EXPECTED_COLLAPSED
 
-    # ✅ These formatters DO collapse WITHOUT trailing commas:
+    # ✅ Alternative: remove commas first, then format
     no_commas = remove_trailing_commas(MULTILINE_WITH_COMMAS)
-    ruff_result = run_ruff_format(no_commas)
     yapf_result = run_yapf(no_commas)
 
-    # Both should collapse to one line
-    assert "@click.option(" in ruff_result and "is_flag=True" in ruff_result
-    assert "some_function(arg1=" in ruff_result
-    assert '{"key1":' in ruff_result
-
+    # yapf collapses when trailing commas removed
     assert "@click.option(" in yapf_result and "is_flag=True" in yapf_result
     assert "some_function(arg1=" in yapf_result
     assert '{"key1":' in yapf_result
@@ -224,13 +265,17 @@ def test_summary():
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    print("\n✅ SOLUTION: Remove trailing commas BEFORE formatting")
-    print("\nWorking combinations:")
-    print("  1. remove_trailing_commas() + ruff format")
-    print("  2. remove_trailing_commas() + yapf")
+    print("\n✅ RECOMMENDED SOLUTION (no scripts needed!):")
+    print("  Ruff with skip-magic-trailing-comma = true")
+    print("\n  [format]")
+    print("  skip-magic-trailing-comma = true")
+    print("\n  This ignores trailing commas and collapses to one line!")
+    print("\n✅ Alternative working combinations:")
+    print("  1. yapf: disable_ending_comma_heuristic = true")
+    print("  2. Manual: remove_trailing_commas() + ruff/yapf")
     print("\n❌ What doesn't work:")
-    print("  - ruff/yapf/autopep8 alone (with trailing commas)")
-    print("  - autopep8 (even without trailing commas)")
+    print("  - ruff/yapf with default config (respect trailing commas)")
+    print("  - autopep8 (never collapses multi-line)")
     print("  - COM819 rule (only affects one-liners)")
     print("=" * 70 + "\n")
 
