@@ -86,14 +86,14 @@ class ProgressBar:
 
 
 class DualProgressBar:
-    """Twin progress bars: additions (LTR, green) + deletions (RTL, red).
+    """Twin progress bars: additions (RTL, green) + deletions (LTR, red).
 
-    Renders two progress bars side-by-side with no gap:
-    - Left bar: additions, left-aligned (fills LTR), green
-    - Right bar: deletions, right-aligned (fills RTL), red
+    Renders two progress bars side-by-side that meet in the middle:
+    - Left bar: additions, right-aligned (fills RTL towards center), green
+    - Right bar: deletions, left-aligned (fills LTR towards center), red
 
-    This creates a visual separation between additions (growing left-to-right)
-    and deletions (growing right-to-left).
+    This creates a visual "breakpoint" where the bars meet, showing
+    the relative proportions of additions vs deletions.
 
     Args:
         additions: Number of added lines.
@@ -112,11 +112,11 @@ class DualProgressBar:
 
     def to_text(self) -> Text:
         """Render the dual progress bar as a Text object."""
-        # Create LTR bar for additions (green, left-aligned)
-        add_bar = ProgressBar(self.additions, self.max_additions, width=self.width, align="left", style="green")
+        # Create RTL bar for additions (green, right-aligned, grows towards center)
+        add_bar = ProgressBar(self.additions, self.max_additions, width=self.width, align="right", style="green")
 
-        # Create RTL bar for deletions (red, right-aligned)
-        del_bar = ProgressBar(self.deletions, self.max_deletions, width=self.width, align="right", style="red")
+        # Create LTR bar for deletions (red, left-aligned, grows towards center)
+        del_bar = ProgressBar(self.deletions, self.max_deletions, width=self.width, align="left", style="red")
 
         # Combine the two bars
         result = Text()
