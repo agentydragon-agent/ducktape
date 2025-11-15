@@ -2,10 +2,10 @@
 
 from io import StringIO
 
-from git_diff_tree.config import Column, RenderConfig
-from git_diff_tree.diff_tree import DiffTree
-from git_diff_tree.parser import FileChange
-from git_diff_tree.tree import build_tree, sort_tree
+from difftree.config import Column, RenderConfig
+from difftree.diff_tree import DiffTree
+from difftree.parser import FileChange
+from difftree.tree import build_tree, sort_tree
 import pytest
 from rich.console import Console
 

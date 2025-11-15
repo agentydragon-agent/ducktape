@@ -1,7 +1,7 @@
 """Tests for tree structure building."""
 
-from git_diff_tree.parser import FileChange
-from git_diff_tree.tree import TreeNode, build_tree, sort_tree
+from difftree.parser import FileChange
+from difftree.tree import TreeNode, build_tree, sort_tree
 
 
 def test_build_tree_single_file():

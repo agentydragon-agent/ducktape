@@ -1,4 +1,4 @@
-"""CLI entry point for git-diff-tree."""
+"""CLI entry point for difftree."""
 
 import sys
 
@@ -26,7 +26,7 @@ from .tree import build_tree, sort_tree
 @click.option("--max-depth", type=int, default=None, help="Maximum tree depth to display")
 def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, max_depth: int | None) -> None:
     """
-    Visualize git diff as a tree with progress bars.
+    Visualize diffs as a tree with progress bars.
 
     Can read from stdin (piped input) or run git diff directly.
 
@@ -34,24 +34,24 @@ def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, ma
 
     \b
     # Show unstaged changes
-    git-diff-tree
+    difftree
 
     \b
     # Show changes between commits
-    git-diff-tree HEAD~1 HEAD
+    difftree HEAD~1 HEAD
 
     \b
     # Show staged changes
-    git-diff-tree --cached
+    difftree --cached
 
     \b
     # Use as a pager (read from stdin)
-    git diff | git-diff-tree
-    svn diff | git-diff-tree
+    git diff | difftree
+    svn diff | difftree
 
     \b
     # Sort alphabetically without progress bars
-    git-diff-tree --sort alpha --columns tree,counts
+    difftree --sort alpha --columns tree,counts
     """
     try:
         # Validate column configuration early

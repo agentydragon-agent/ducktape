@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from git_diff_tree.parser import FileChange, parse_git_diff, parse_unified_diff
+from difftree.parser import FileChange, parse_git_diff, parse_unified_diff
 
 from .conftest import PNG_HEADER, create_file, git_add_commit
 

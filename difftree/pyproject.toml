@@ -1,7 +1,7 @@
 [project]
-name = "git-diff-tree"
+name = "difftree"
 version = "0.0.1"
-description = "Tree-style visualization of git diffs with progress bars"
+description = "Tree-style visualization of diffs with progress bars"
 readme = "README.md"
 license = {text = "AGPL-3.0-or-later"}
 requires-python = ">=3.12"
@@ -24,7 +24,7 @@ dev = [
 ]
 
 [project.scripts]
-git-diff-tree = "git_diff_tree.__main__:main"
+difftree = "difftree.__main__:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -35,7 +35,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["git_diff_tree*"]
+include = ["difftree*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

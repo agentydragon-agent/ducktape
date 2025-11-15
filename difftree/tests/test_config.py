@@ -1,6 +1,6 @@
 """Tests for configuration module."""
 
-from git_diff_tree.config import Column, RenderConfig, parse_columns
+from difftree.config import Column, RenderConfig, parse_columns
 import pytest
 
 

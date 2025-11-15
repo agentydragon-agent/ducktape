@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from git_diff_tree.parser import parse_unified_diff
-from git_diff_tree.tree import build_tree, sort_tree
+from difftree.parser import parse_unified_diff
+from difftree.tree import build_tree, sort_tree
 
 from .conftest import create_file, git_add_commit
 

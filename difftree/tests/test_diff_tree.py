@@ -2,11 +2,11 @@
 
 from io import StringIO
 
-from git_diff_tree.config import Column, RenderConfig
-from git_diff_tree.diff_tree import DiffTree
-from git_diff_tree.parser import FileChange
-from git_diff_tree.progress_bar import BlockChars
-from git_diff_tree.tree import build_tree
+from difftree.config import Column, RenderConfig
+from difftree.diff_tree import DiffTree
+from difftree.parser import FileChange
+from difftree.progress_bar import BlockChars
+from difftree.tree import build_tree
 import pytest
 from rich.console import Console
 from rich.segment import Segment

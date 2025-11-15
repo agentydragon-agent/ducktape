@@ -2,7 +2,7 @@
 
 import pytest
 
-from git_diff_tree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar, BlockChars
+from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar, BlockChars
 
 
 def test_progress_bar_empty():

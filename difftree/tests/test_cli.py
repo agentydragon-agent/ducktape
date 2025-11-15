@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 from click.testing import CliRunner
-from git_diff_tree.__main__ import main
+from difftree.__main__ import main
 import pytest
 
 from .conftest import create_file, git_add_commit
@@ -149,7 +149,7 @@ def test_cli_no_changes(temp_git_repo):
 
     # Run CLI in the temp repo directory
     result = subprocess.run(
-        [sys.executable, "-m", "git_diff_tree"], cwd=temp_git_repo, capture_output=True, text=True, check=False
+        [sys.executable, "-m", "difftree"], cwd=temp_git_repo, capture_output=True, text=True, check=False
     )
 
     # Should exit successfully but with "No changes" message
@@ -182,7 +182,7 @@ def test_cli_integration_basic(temp_git_repo):
 
     # Run actual CLI command
     result = subprocess.run(
-        [sys.executable, "-m", "git_diff_tree"], cwd=temp_git_repo, capture_output=True, text=True, check=False
+        [sys.executable, "-m", "difftree"], cwd=temp_git_repo, capture_output=True, text=True, check=False
     )
 
     assert result.returncode == 0
@@ -200,7 +200,7 @@ def test_cli_integration_with_args(temp_git_repo):
 
     # Compare commits
     result = subprocess.run(
-        [sys.executable, "-m", "git_diff_tree", "HEAD~1", "HEAD"],
+        [sys.executable, "-m", "difftree", "HEAD~1", "HEAD"],
         cwd=temp_git_repo,
         capture_output=True,
         text=True,
@@ -220,7 +220,7 @@ def test_cli_integration_invalid_column(temp_git_repo):
     create_file(temp_git_repo, "file.py", "line1\nline2\n")
 
     result = subprocess.run(
-        [sys.executable, "-m", "git_diff_tree", "--columns", "tree,invalid"],
+        [sys.executable, "-m", "difftree", "--columns", "tree,invalid"],
         cwd=temp_git_repo,
         capture_output=True,
         text=True,

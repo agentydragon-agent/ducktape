@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from git_diff_tree.parser import FileChange
+from difftree.parser import FileChange
 import pytest
 
 # Test constants
