@@ -47,7 +47,7 @@ def test_e2e_complete_workflow(temp_git_repo: Path, run_git):
     assert root.name in (".", "difftree", os.path.basename(os.getcwd()))
     assert "src" in root.children or len(changes) > 0
 
-    sort_tree(root, sort_by="size")
+    root = sort_tree(root, sort_by="size")
     assert root is not None
 
 

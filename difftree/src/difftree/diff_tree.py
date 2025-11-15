@@ -1,4 +1,13 @@
-"""Render tree structure with rich formatting and progress bars."""
+"""Render tree structure with rich formatting and progress bars.
+
+This module handles the VIEW layer - rendering TreeNode data with:
+- Path collapsing for single-child directories
+- Tree decoration styling (dim guides)
+- Progress bars and statistics formatting
+- Table layout and column configuration
+
+Takes immutable TreeNode from tree.py and renders it to Rich console output.
+"""
 
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.segment import Segment
@@ -36,12 +45,7 @@ class DiffTree:
             text = Text()
             for segment in line_segments:
                 if segment.text:
-                    # Apply dim style to tree decoration characters (box-drawing Unicode)
-                    style = segment.style
-                    if self._is_tree_decoration(segment.text):
-                        # Combine existing style with dim
-                        style = f"{segment.style} dim" if segment.style else "dim"
-                    text.append(segment.text, style=style)
+                    text.append(segment.text, style=segment.style)
             tree_lines.append(text)
 
         nodes_in_order = self._flatten_tree(self.root, depth=0)
@@ -80,14 +84,6 @@ class DiffTree:
 
         yield table
 
-
-    def _is_tree_decoration(self, text: str) -> bool:
-        """Check if text consists only of tree decoration characters (box-drawing + spaces)."""
-        if not text:
-            return False
-        # Box-drawing Unicode block is U+2500 to U+257F
-        return all(c == ' ' or '\u2500' <= c <= '\u257f' for c in text)
-
     def _get_collapsed_path_and_node(self, node: TreeNode, depth: int) -> tuple[str, TreeNode, int]:
         """
         Get the collapsed path and final node for a single-child directory chain.
@@ -122,7 +118,7 @@ class DiffTree:
 
         name_color = "bold blue" if not final_node.is_file else "white"
         label = Text(collapsed_path, style=name_color, overflow="ellipsis")
-        tree = Tree(label)
+        tree = Tree(label, guide_style="dim")
 
         if (self.config.max_depth is None or final_depth < self.config.max_depth) and not final_node.is_file and final_node.children:
             for child in final_node.children.values():

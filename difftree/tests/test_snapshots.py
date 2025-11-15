@@ -32,7 +32,7 @@ def render_to_string(changes: list[FileChange], sort_by: str = "size", config: R
     console = Console(file=output, force_terminal=True, width=120, legacy_windows=False, color_system="standard")
 
     root = build_tree(changes)
-    sort_tree(root, sort_by=sort_by)
+    root = sort_tree(root, sort_by=sort_by)
 
     diff_tree = DiffTree(root, config=config)
     console.print(diff_tree)
