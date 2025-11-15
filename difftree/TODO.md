@@ -14,6 +14,22 @@
   - Dynamically adjust tree indent from +1 to +3 spaces (current: fixed at +3)
   - Reduce indent at narrow widths to save horizontal space
   - Use full +3 indent when width allows for better readability
+  - Example:
+    ```
+    # Wide terminal (indent=3):
+    root
+    ├── src/module
+    │   ├── file1.py
+    │   └── file2.py
+    └── test.py
+
+    # Narrow terminal (indent=1):
+    root
+    ├── src/module
+    │ ├── file1.py
+    │ └── file2.py
+    └── test.py
+    ```
   - Challenge: must coordinate with multiple flexible elements:
     - Path collapsing (single-child directory merging creates variable path lengths)
     - Bar width constraints (bars already have max_width flexibility)
