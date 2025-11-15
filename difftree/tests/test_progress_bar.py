@@ -1,22 +1,34 @@
 """Tests for ProgressBar component."""
 
 import pytest
+from rich.console import Console
+from io import StringIO
 
 from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar, BlockChars
 
 
+def render_bar(bar: ProgressBar, width: int) -> str:
+    """Test helper to render a progress bar at a specific width."""
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, width=width, legacy_windows=False)
+    console.print(bar)
+    return output.getvalue().rstrip("\n")
+
+
 def test_progress_bar_empty():
     """Test progress bar with 0 value maintains correct width."""
-    bar = ProgressBar(0, 100, 10, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
-    assert len(bar.plain) == 10
-    assert bar.plain.strip() == ""
+    bar = ProgressBar(0, 100, DEFAULT_LEFT_BLOCKS, "left", "green")
+    rendered = render_bar(bar, 10)
+    assert len(rendered) == 10
+    assert rendered.strip() == ""
 
 
 def test_progress_bar_full():
     """Test progress bar at 100% shows full block character."""
-    bar = ProgressBar(100, 100, 10, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
-    assert "█" in bar.plain
-    assert len(bar.plain) == 10
+    bar = ProgressBar(100, 100, DEFAULT_LEFT_BLOCKS, "left", "green")
+    rendered = render_bar(bar, 10)
+    assert "█" in rendered
+    assert len(rendered) == 10
 
 
 @pytest.mark.parametrize(
@@ -29,8 +41,9 @@ def test_progress_bar_full():
 )
 def test_progress_bar_partial(value, max_value, expected_blocks):
     """Test progress bar with partial fill shows proportional blocks."""
-    bar = ProgressBar(value, max_value, 10, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
-    plain = bar.plain.strip()
+    bar = ProgressBar(value, max_value, DEFAULT_LEFT_BLOCKS, "left", "green")
+    rendered = render_bar(bar, 10)
+    plain = rendered.strip()
     # Should have some filled blocks (allow +/- 1 for partial blocks)
     assert len(plain) >= expected_blocks - 1
     assert len(plain) <= expected_blocks + 1
@@ -39,8 +52,9 @@ def test_progress_bar_partial(value, max_value, expected_blocks):
 
 def test_progress_bar_right_aligned():
     """Test right-aligned progress bar has padding on the left."""
-    bar = ProgressBar(30, 100, 10, DEFAULT_RIGHT_BLOCKS, "right", "green").to_text()
-    plain = bar.plain
+    bar = ProgressBar(30, 100, DEFAULT_RIGHT_BLOCKS, "right", "green")
+    rendered = render_bar(bar, 10)
+    plain = rendered
     # Should be right-aligned (ends with filled blocks, padding on left)
     assert plain.endswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
     assert len(plain) == 10
@@ -48,8 +62,9 @@ def test_progress_bar_right_aligned():
 
 def test_progress_bar_left_aligned():
     """Test left-aligned progress bar has padding on the right."""
-    bar = ProgressBar(30, 100, 10, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
-    plain = bar.plain
+    bar = ProgressBar(30, 100, DEFAULT_LEFT_BLOCKS, "left", "green")
+    rendered = render_bar(bar, 10)
+    plain = rendered
     # Should be left-aligned (starts with filled blocks, padding on right)
     assert len(plain) == 10
     assert plain.startswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
@@ -66,8 +81,9 @@ def test_progress_bar_left_aligned():
 )
 def test_minimum_sliver(value, max_value, expected_has_sliver):
     """Test that any value >0 shows at least a minimal sliver."""
-    bar = ProgressBar(value, max_value, 20, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
-    plain = bar.plain
+    bar = ProgressBar(value, max_value, DEFAULT_LEFT_BLOCKS, "left", "green")
+    rendered = render_bar(bar, 20)
+    plain = rendered
 
     assert len(plain) == 20
 
@@ -83,8 +99,9 @@ def test_minimum_sliver(value, max_value, expected_has_sliver):
 def test_minimum_sliver_alignment(align):
     """Test minimum sliver works with both alignments."""
     blocks = DEFAULT_LEFT_BLOCKS if align == "left" else DEFAULT_RIGHT_BLOCKS
-    bar = ProgressBar(1, 10000, 20, blocks, align, "green").to_text()
-    plain = bar.plain
+    bar = ProgressBar(1, 10000, blocks, align, "green")
+    rendered = render_bar(bar, 20)
+    plain = rendered
 
     # Should have appropriate block character based on alignment
     if align == "left":

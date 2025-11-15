@@ -179,12 +179,12 @@ def test_console_width_handling(width):
 
     # Filename visibility depends on width
     if width >= 200:
-        # Very wide: full filename visible
+        # Very wide: full collapsed path visible without wrapping
         assert "very_long_filename" in result
         assert "test.py" in result
     elif width >= 80:
-        # Standard width: filename may be truncated
-        assert "very_long_filenam" in result
+        # Standard width: path may wrap but parts are visible
+        assert "very_long" in result
         assert "test.py" in result
     # At width=40, table columns wrap onto multiple lines, making text
     # assertions unreliable - just verify output exists

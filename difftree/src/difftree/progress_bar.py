@@ -4,8 +4,11 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from rich.console import Console, ConsoleOptions, RenderResult
+from rich.measure import Measurement
 from rich.text import Text
 
+
+DEFAULT_PARTIALS = ("▏", "▎", "▍", "▌", "▋", "▊", "▉")
 
 @dataclass(frozen=True)
 class BlockChars:
@@ -19,7 +22,7 @@ class BlockChars:
 
     full: str
     empty: str = " "
-    partials: tuple[str, ...] = field(default_factory=lambda: ("▏", "▎", "▍", "▌", "▋", "▊", "▉"))
+    partials: tuple[str, ...] = DEFAULT_PARTIALS
 
     def __post_init__(self):
         """Validate block character configuration."""
@@ -28,19 +31,7 @@ class BlockChars:
 
     @classmethod
     def simple(cls, char: str, empty: str = " ") -> "BlockChars":
-        """Create simple block chars using the same character for all fill levels.
-
-        Args:
-            char: Character to use for all filled states
-            empty: Character to use for empty space
-
-        Returns:
-            BlockChars with single character for partials
-
-        Example:
-            >>> BlockChars.simple("-")  # All dashes
-            BlockChars(full="-", empty=" ", partials=("-",))
-        """
+        """Create block chars using single character for all fill levels."""
         return cls(full=char, empty=empty, partials=(char,))
 
 
@@ -72,21 +63,24 @@ class ProgressBar:
         self,
         value: int,
         max_value: int,
-        width: int,
         blocks: BlockChars,
         align: Literal["left", "right"] = "left",
         style: str = "default",
+        max_width: int | None = None,
+        min_width: int = 5,
     ):
         self.value = value
         self.max_value = max_value
-        self.width = width
         self.align = align
         self.style = style
         self.blocks = blocks
+        self.max_width = max_width
+        self.min_width = min_width
 
-    def to_text(self) -> Text:
+    def _render_bar(self, width: int) -> Text:
+        """Render the progress bar at a specific width."""
         ratio = 0 if self.max_value == 0 else min(self.value / self.max_value, 1.0)
-        filled_width = ratio * self.width
+        filled_width = ratio * width
         full_blocks = int(filled_width)
 
         # Calculate partial block index
@@ -99,7 +93,7 @@ class ProgressBar:
         if self.align == "right":
             # RTL: build from right, growing leftward
             bar_chars = ""
-            if full_blocks < self.width and partial_block_index > 0:
+            if full_blocks < width and partial_block_index > 0:
                 # Map index 1..(num_partials) to partials[0..(num_partials-1)]
                 bar_chars = self.blocks.partials[min(partial_block_index - 1, num_partials - 1)]
             # Add full blocks
@@ -108,20 +102,28 @@ class ProgressBar:
             if self.value > 0 and not bar_chars:
                 bar_chars = self.blocks.partials[0]
             # Right-align (pad left with empty)
-            bar_chars = bar_chars.rjust(self.width, self.blocks.empty)
+            bar_chars = bar_chars.rjust(width, self.blocks.empty)
         else:
             # LTR: build from left, growing rightward
             bar_chars = self.blocks.full * full_blocks
-            if full_blocks < self.width and partial_block_index > 0:
+            if full_blocks < width and partial_block_index > 0:
                 # Map index 1..(num_partials) to partials[0..(num_partials-1)]
                 bar_chars += self.blocks.partials[min(partial_block_index - 1, num_partials - 1)]
             # Ensure minimum sliver for non-zero values
             if self.value > 0 and not bar_chars:
                 bar_chars = self.blocks.partials[0]
             # Left-align (pad right with empty)
-            bar_chars = bar_chars.ljust(self.width, self.blocks.empty)
+            bar_chars = bar_chars.ljust(width, self.blocks.empty)
 
         return Text(bar_chars, style=self.style)
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
-        yield self.to_text()
+        width = options.max_width
+        if self.max_width is not None:
+            width = min(width, self.max_width)
+        width = max(width, self.min_width)
+        yield self._render_bar(width)
+
+    def __rich_measure__(self, console: Console, options: ConsoleOptions) -> Measurement:
+        max_width = self.max_width if self.max_width is not None else options.max_width
+        return Measurement(self.min_width, max_width)
