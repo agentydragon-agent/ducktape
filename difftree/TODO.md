@@ -10,6 +10,12 @@
   - Maintain preferred minimum progress bar size
   - Ensure progress bars remain useful and visible
 
+- [ ] Add flex in tree indent offset by available width
+  - Dynamically adjust tree column width based on terminal width
+  - Allow tree to take more/less space depending on what's available after stat columns
+  - Consider making indent depth adjustable based on remaining space
+  - Coordinate with bar width constraints to optimize information density
+
 ## Features
 
 - [ ] Color scheme customization
