@@ -1,0 +1,94 @@
+"""Tests for ProgressBar component."""
+
+import pytest
+
+from git_diff_tree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar, BlockChars
+
+
+def test_progress_bar_empty():
+    """Test progress bar with 0 value maintains correct width."""
+    bar = ProgressBar(0, 100, 10, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
+    assert len(bar.plain) == 10
+    assert bar.plain.strip() == ""
+
+
+def test_progress_bar_full():
+    """Test progress bar at 100% shows full block character."""
+    bar = ProgressBar(100, 100, 10, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
+    assert "█" in bar.plain
+    assert len(bar.plain) == 10
+
+
+@pytest.mark.parametrize(
+    ("value", "max_value", "expected_blocks"),
+    [
+        (50, 100, 5),  # Exactly half
+        (25, 100, 2),  # Quarter (approx 2-3 blocks)
+        (75, 100, 7),  # Three quarters (approx 7-8 blocks)
+    ],
+)
+def test_progress_bar_partial(value, max_value, expected_blocks):
+    """Test progress bar with partial fill shows proportional blocks."""
+    bar = ProgressBar(value, max_value, 10, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
+    plain = bar.plain.strip()
+    # Should have some filled blocks (allow +/- 1 for partial blocks)
+    assert len(plain) >= expected_blocks - 1
+    assert len(plain) <= expected_blocks + 1
+    assert plain != ""
+
+
+def test_progress_bar_right_aligned():
+    """Test right-aligned progress bar has padding on the left."""
+    bar = ProgressBar(30, 100, 10, DEFAULT_RIGHT_BLOCKS, "right", "green").to_text()
+    plain = bar.plain
+    # Should be right-aligned (ends with filled blocks, padding on left)
+    assert plain.endswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
+    assert len(plain) == 10
+
+
+def test_progress_bar_left_aligned():
+    """Test left-aligned progress bar has padding on the right."""
+    bar = ProgressBar(30, 100, 10, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
+    plain = bar.plain
+    # Should be left-aligned (starts with filled blocks, padding on right)
+    assert len(plain) == 10
+    assert plain.startswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
+
+
+@pytest.mark.parametrize(
+    ("value", "max_value", "expected_has_sliver"),
+    [
+        (1, 10000, True),  # Very small ratio
+        (1, 1000000, True),  # Extremely small ratio
+        (1, 100, True),  # Small but visible ratio
+        (0, 100, False),  # Zero should show nothing
+    ],
+)
+def test_minimum_sliver(value, max_value, expected_has_sliver):
+    """Test that any value >0 shows at least a minimal sliver."""
+    bar = ProgressBar(value, max_value, 20, DEFAULT_LEFT_BLOCKS, "left", "green").to_text()
+    plain = bar.plain
+
+    assert len(plain) == 20
+
+    if expected_has_sliver:
+        # Should have at least the thinnest partial block
+        assert any(block in plain for block in DEFAULT_LEFT_BLOCKS.partials)
+    else:
+        # Should be all spaces
+        assert plain.strip() == ""
+
+
+@pytest.mark.parametrize("align", ["left", "right"])
+def test_minimum_sliver_alignment(align):
+    """Test minimum sliver works with both alignments."""
+    blocks = DEFAULT_LEFT_BLOCKS if align == "left" else DEFAULT_RIGHT_BLOCKS
+    bar = ProgressBar(1, 10000, 20, blocks, align, "green").to_text()
+    plain = bar.plain
+
+    # Should have appropriate block character based on alignment
+    if align == "left":
+        assert "▏" in plain  # Left-growing block for LTR
+    else:
+        assert "▕" in plain  # Right-growing block for RTL
+    assert len(plain) == 20
