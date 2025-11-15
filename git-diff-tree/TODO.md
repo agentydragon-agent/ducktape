@@ -16,6 +16,41 @@
 
 - [x] Minimum visible progress bar sliver
 
+- [ ] Collapse single-child directory paths
+  - When a directory has exactly one child that's rendered, collapse them into one line
+  - Should work with path separators: `a/b/c/d.txt` instead of separate tree levels
+  - Collapse as much as fits on one line, considering indent and column widths
+  - Examples:
+
+  **Current behavior:**
+  ```
+  .
+  └── a
+      └── b
+          └── c
+              └── d.txt  +10  ████████████  100.0%
+  ```
+
+  **Desired behavior (full collapse):**
+  ```
+  .
+  └── a/b/c/d.txt  +10  ████████████  100.0%
+  ```
+
+  **Desired behavior (partial collapse when full doesn't fit):**
+  ```
+  .
+  └── a
+      └── b/c/d.txt  +10  ████████████  100.0%
+  ```
+
+  **Interplay with bar width:**
+  - Bars currently fill to fixed width, but this might conflict with long collapsed paths
+  - Consider making bars have a flexible preferred range (e.g., 10-35 columns)
+  - Bars expand to fill available space within their range
+  - This allows long paths to use more horizontal space without bars becoming tiny
+  - Priority: collapsed path > bar range preference > absolute minimum bar width
+
 ## Features
 
 - [x] Integration as git pager (automatic detection) - reads from stdin
