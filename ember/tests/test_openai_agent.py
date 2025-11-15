@@ -73,7 +73,14 @@ def agent_factory(settings: OpenAISettings, history: ConversationHistory, matrix
     workspace_path = history.path.parent  # type: ignore[attr-defined]
 
     def factory(client: AsyncOpenAI) -> OpenAIAgent:
-        return OpenAIAgent(settings, history, client, matrix_client, workspace_path, None)
+        return OpenAIAgent(
+            settings=settings,
+            history=history,
+            client=client,
+            status_provider=matrix_client,
+            workspace_path=workspace_path,
+            object_store=None,
+        )
 
     return factory
 
