@@ -1,6 +1,7 @@
 """Render tree structure with rich formatting and progress bars."""
 
 from rich.console import Console, ConsoleOptions, RenderResult
+from rich.measure import Measurement
 from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
@@ -45,9 +46,16 @@ class DiffTree:
 
         nodes_in_order = self._flatten_tree(self.root, depth=0)
 
+        # Pre-compute count cells (used for both width calculation and rendering)
+        count_cells = {}
+        if Column.COUNTS in self.config.columns:
+            for node in nodes_in_order:
+                count_cells[id(node)] = self._make_count_cells(node)
+
         # Calculate proportional bar widths based on total additions/deletions
         green_width, red_width = self._calculate_proportional_bar_widths(
-            tree_lines, options.max_width or 80, total_additions, total_deletions
+            tree_lines, options.max_width or 80, total_additions, total_deletions,
+            nodes_in_order, count_cells
         )
 
         table = Table.grid(padding=(0, 1))
@@ -70,7 +78,7 @@ class DiffTree:
                 if column == Column.TREE:
                     row.append(tree_line)
                 elif column == Column.COUNTS:
-                    additions_cell, deletions_cell = self._make_count_cells(node)
+                    additions_cell, deletions_cell = count_cells[id(node)]
                     row.append(additions_cell)
                     row.append(deletions_cell)
                 elif column == Column.BARS:
@@ -129,21 +137,54 @@ class DiffTree:
 
     def _calculate_proportional_bar_widths(
         self, tree_lines: list[Text], terminal_width: int,
-        total_additions: int, total_deletions: int
+        total_additions: int, total_deletions: int, nodes: list[TreeNode],
+        count_cells: dict[int, tuple[Text, Text]]
     ) -> tuple[int, int]:
         """Calculate proportional bar widths based on total additions/deletions ratio."""
         if Column.BARS not in self.config.columns:
             return 0, 0
 
-        # Find maximum tree width
-        max_tree_width = max((len(line.plain) for line in tree_lines), default=0)
+        # Create a temporary console for measuring renderables
+        temp_console = Console()
 
-        # Estimate width for other columns
+        # Find maximum tree width
+        max_tree_width = max(
+            (Measurement.get(temp_console, temp_console.options, line).maximum for line in tree_lines),
+            default=0
+        )
+
+        # Calculate actual widths for other columns by measuring rendered content
         other_width = max_tree_width
+
         if Column.COUNTS in self.config.columns:
-            other_width += 18  # "+12345 -12345  "
+            # Find max width of additions and deletions cells
+            max_additions_width = 0
+            max_deletions_width = 0
+            for node in nodes:
+                add_cell, del_cell = count_cells[id(node)]
+                max_additions_width = max(
+                    max_additions_width,
+                    Measurement.get(temp_console, temp_console.options, add_cell).maximum
+                )
+                max_deletions_width = max(
+                    max_deletions_width,
+                    Measurement.get(temp_console, temp_console.options, del_cell).maximum
+                )
+            other_width += max_additions_width + max_deletions_width
+
         if Column.PERCENTAGES in self.config.columns:
-            other_width += 10  # "  100.0%"
+            # Percentage is always formatted as "  XXX.X%" (8 chars max)
+            other_width += 8
+
+        # Account for table padding (padding=(0, 1) adds 2 spaces per column)
+        num_columns = sum([
+            1 if Column.TREE in self.config.columns else 0,
+            2 if Column.COUNTS in self.config.columns else 0,  # 2 cells
+            2 if Column.BARS in self.config.columns else 0,    # 2 cells
+            1 if Column.PERCENTAGES in self.config.columns else 0,
+        ])
+        padding_width = num_columns * 2  # 1 space on each side of each column
+        other_width += padding_width
 
         # Calculate total available space for bars
         total_bar_space = terminal_width - other_width
@@ -151,7 +192,7 @@ class DiffTree:
 
         # Handle edge case: no changes
         if total_changes == 0:
-            half_space = total_bar_space // 2
+            half_space = max(total_bar_space // 2, 10)
             return half_space, half_space
 
         # Calculate proportional widths based on ratio of additions to deletions
