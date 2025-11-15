@@ -25,29 +25,19 @@ class TreeNode:
     def add_child(self, name: str, node: "TreeNode") -> None:
         """Add a child node and update parent statistics."""
         self.children[name] = node
-        # Aggregate stats from children
         if not self.is_file:
             self.additions += node.additions
             self.deletions += node.deletions
 
 
 def build_tree(changes: list[FileChange]) -> TreeNode:
-    """
-    Build a tree structure from a list of file changes.
-
-    Args:
-        changes: List of FileChange objects.
-
-    Returns:
-        Root TreeNode representing the tree structure.
-    """
+    """Build a tree structure from file changes."""
     root = TreeNode(name=".", is_file=False, path=".")
 
     for change in changes:
         parts = Path(change.path).parts
         current = root
 
-        # Navigate/create the tree structure
         for i, part in enumerate(parts):
             is_last = i == len(parts) - 1
             path_so_far = str(Path(*parts[: i + 1]))
@@ -64,12 +54,10 @@ def build_tree(changes: list[FileChange]) -> TreeNode:
                 current = node
             else:
                 current = current.children[part]
-                # If this is the file itself, update its stats
                 if is_last:
                     current.additions = change.additions
                     current.deletions = change.deletions
 
-        # Propagate stats upward
         _propagate_stats_upward(root)
 
     return root

@@ -54,26 +54,7 @@ def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, ma
     git-diff-tree --sort alpha --columns tree,counts
     """
     try:
-        # Determine input source
-        if not sys.stdin.isatty():
-            # Reading from stdin (piped input)
-            changes = parse_diff_from_stdin()
-        else:
-            # Interactive mode - run git diff
-            changes = parse_git_diff(list(diff_args) if diff_args else None)
-
-        if not changes:
-            console = Console(stderr=True)
-            console.print("No changes found.", style="yellow")
-            sys.exit(0)
-
-        # Build tree structure
-        root = build_tree(changes)
-
-        # Sort tree
-        sort_tree(root, sort_by=sort)
-
-        # Parse column configuration
+        # Validate column configuration early
         try:
             column_list = parse_columns(columns)
         except ValueError as e:
@@ -81,9 +62,40 @@ def main(diff_args: tuple[str, ...], sort: str, columns: str, bar_width: int, ma
             console.print(f"Error: {e}", style="bold red")
             sys.exit(1)
 
-        config = RenderConfig(columns=column_list, bar_width=bar_width, sort_by=sort, max_depth=max_depth)
+        # Check if stdin has actual data (not just EOF from capture_output=True)
+        import os
+        has_stdin_data = False
+        if not sys.stdin.isatty():
+            # Try to peek at stdin to see if there's real data
+            try:
+                # Use os.fstat to check if stdin is a regular file or pipe with data
+                mode = os.fstat(sys.stdin.fileno()).st_mode
+                import stat
+                if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
+                    # It's a pipe or file, check if it has content
+                    import select
+                    if select.select([sys.stdin], [], [], 0.0)[0]:
+                        # Data is available, but it might just be EOF
+                        # Try to peek at one byte
+                        peek_data = sys.stdin.buffer.peek(1)
+                        has_stdin_data = len(peek_data) > 0
+            except (OSError, AttributeError):
+                pass
 
-        # Render tree
+        if has_stdin_data:
+            changes = parse_diff_from_stdin()
+        else:
+            changes = parse_git_diff(list(diff_args) if diff_args else None)
+
+        if not changes:
+            console = Console(stderr=True)
+            console.print("No changes found.", style="yellow")
+            sys.exit(0)
+
+        root = build_tree(changes)
+        sort_tree(root, sort_by=sort)
+
+        config = RenderConfig(columns=column_list, bar_width=bar_width, sort_by=sort, max_depth=max_depth)
         diff_tree = DiffTree(root, config=config)
         console = Console()
         console.print(diff_tree)

@@ -28,40 +28,17 @@ def _strip_path_prefix(path: str) -> str:
 
 
 def parse_unified_diff(diff_output: str) -> list[FileChange]:
-    """
-    Parse unified diff format to extract file change statistics.
-
-    Uses the unidiff library to parse standard unified diff format.
-    Handles git diff, svn diff, and standard diff output.
-
-    Args:
-        diff_output: Unified diff output (from git diff, svn diff, etc.)
-
-    Returns:
-        List of FileChange objects.
-
-    Handles:
-        - git diff format (diff --git a/... b/...)
-        - Standard diff format (--- a/... +++ b/...)
-        - Binary files
-        - Added/deleted files
-        - Renamed files
-    """
+    """Parse unified diff format to extract file change statistics."""
     patch_set = PatchSet(diff_output)
     changes = []
 
     for patched_file in patch_set:
-        # Get the target file path (use source_file if target doesn't exist - deleted files)
         if patched_file.target_file == "/dev/null":
-            # File was deleted, use source file
             path = _strip_path_prefix(patched_file.source_file)
         else:
             path = _strip_path_prefix(patched_file.target_file)
 
-        # Check if binary
         is_binary = patched_file.is_binary_file
-
-        # Count additions and deletions
         additions = patched_file.added
         deletions = patched_file.removed
 
@@ -71,43 +48,14 @@ def parse_unified_diff(diff_output: str) -> list[FileChange]:
 
 
 def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
-    """
-    Parse git diff output using unified diff format.
-
-    Runs git diff via subprocess and parses with unidiff library.
-
-    Args:
-        diff_args: Additional arguments to pass to git diff (e.g., ['HEAD~1', 'HEAD'])
-                  If None, uses unstaged changes.
-
-    Returns:
-        List of FileChange objects.
-
-    Raises:
-        subprocess.CalledProcessError: If git command fails.
-    """
+    """Run git diff and parse the output."""
     cmd = ["git", "diff"]
     if diff_args:
         cmd.extend(diff_args)
-
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
     return parse_unified_diff(result.stdout)
 
 
 def parse_diff_from_stdin() -> list[FileChange]:
-    """
-    Parse diff from stdin using unidiff library.
-
-    Reads unified diff format from stdin and extracts file change statistics.
-    This allows the tool to work as a git pager or with piped input.
-
-    Returns:
-        List of FileChange objects.
-
-    Example:
-        git diff | git-diff-tree
-        svn diff | git-diff-tree
-    """
-    diff_output = sys.stdin.read()
-    return parse_unified_diff(diff_output)
+    """Parse diff from stdin."""
+    return parse_unified_diff(sys.stdin.read())

@@ -14,18 +14,7 @@ class Column(StrEnum):
 
 
 def parse_columns(columns_str: str) -> list[Column]:
-    """
-    Parse comma-separated column names into Column enum values.
-
-    Args:
-        columns_str: Comma-separated column names (case-insensitive).
-
-    Returns:
-        List of Column enum values.
-
-    Raises:
-        ValueError: If any column name is invalid.
-    """
+    """Parse comma-separated column names into Column enum values."""
     column_list = []
     for col in columns_str.split(","):
         col_upper = col.strip().upper()
@@ -39,7 +28,7 @@ def parse_columns(columns_str: str) -> list[Column]:
 
 @dataclass
 class RenderConfig:
-    """Configuration for rendering diff trees."""
+    """Rendering configuration for diff trees."""
 
     columns: list[Column]
     bar_width: int = 20
@@ -48,10 +37,10 @@ class RenderConfig:
 
     @classmethod
     def default(cls) -> "RenderConfig":
-        """Create default configuration with all columns."""
+        """Default configuration with all columns."""
         return cls(columns=[Column.TREE, Column.COUNTS, Column.BARS, Column.PERCENTAGES])
 
     @classmethod
     def minimal(cls) -> "RenderConfig":
-        """Create minimal configuration with only tree."""
+        """Minimal configuration with tree only."""
         return cls(columns=[Column.TREE])

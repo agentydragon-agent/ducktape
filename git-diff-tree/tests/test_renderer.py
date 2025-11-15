@@ -188,8 +188,11 @@ def test_make_progress_bar_minimum_sliver_alignment(align):
     bar = ProgressBar(1, 10000, 20, align, "green").to_text()
     plain = bar.plain
 
-    # Should have ▏ regardless of alignment
-    assert "▏" in plain
+    # Should have appropriate block character based on alignment
+    if align == "left":
+        assert "▏" in plain  # Left-growing block for LTR
+    else:
+        assert "▕" in plain  # Right-growing block for RTL
     assert len(plain) == 20
 
 
