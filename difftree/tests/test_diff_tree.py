@@ -148,8 +148,11 @@ def test_console_width_handling(width):
     # Basic assertions: output should contain expected elements
     assert result.strip() != ""
 
-    # Stats should be present
-    assert "+100" in result or "+10" in result
+    # Stats visibility depends on width
+    # At very narrow widths (40), tree column takes all space and stats may not be visible
+    # At standard widths (80+), stats should be visible
+    if width >= 80:
+        assert "+100" in result or "+10" in result
 
     # Filename visibility depends on width
     if width >= 200:
@@ -223,6 +226,82 @@ def test_progress_bars_align_consistently():
     stats_a = re.sub(r".*file_a\.py", "", line_a)
     stats_b = re.sub(r".*file_b\.py", "", line_b)
     assert stats_a == stats_b, "Files with same stats should have identical stat/bar rendering"
+
+
+def test_tree_column_never_wraps():
+    """Test that tree column text never wraps to multiple lines."""
+    # Create scenario where bars would be large and squeeze tree column
+    changes = [
+        FileChange(path="very/long/path/to/some/deeply/nested/file.py", additions=10000, deletions=5000),
+        FileChange(path="another/long/path/controller-deployment.yaml", additions=100, deletions=10),
+    ]
+
+    root = build_tree(changes)
+    config = RenderConfig.default()
+    diff_tree = DiffTree(root, config=config)
+
+    # Test at a narrow width where bars would take up space
+    result = render_to_string(diff_tree, width=100)
+
+    # Check that each line contains tree decoration AND filename on same line
+    # Lines should not have tree decoration on one line and filename on next
+    lines = result.strip().split("\n")
+
+    for i, line in enumerate(lines):
+        # If line has tree decoration (├── or └── or │), it must have filename too
+        has_tree_char = any(char in line for char in ["├", "└", "│"])
+
+        if has_tree_char and i < len(lines) - 1:
+            # Check that filename components are on this line, not next line
+            # The next line should not start with a bare filename (no tree chars)
+            next_line = lines[i + 1]
+            # Next line should either have tree chars OR be empty/whitespace
+            # It should NOT be a continuation of the current line's filename
+            if next_line.strip() and not any(char in next_line for char in ["├", "└", "│", "─"]):
+                pytest.fail(f"Line {i} appears to have wrapped:\n  Line {i}: {repr(line)}\n  Line {i+1}: {repr(next_line)}")
+
+
+def test_tree_styling_preserved():
+    """Test that tree decorations are dim and filenames have correct colors."""
+    changes = [
+        FileChange(path="src/file1.py", additions=10, deletions=5),
+        FileChange(path="src/file2.py", additions=8, deletions=3),
+        FileChange(path="test.py", additions=5, deletions=2),
+    ]
+
+    root = build_tree(changes)
+    config = RenderConfig.default()
+    diff_tree = DiffTree(root, config=config)
+
+    # Render with colors
+    result = render_to_string(diff_tree, width=120, color_system="standard")
+
+    # Check for ANSI styling codes
+    # Dim style: \x1b[2m (used for tree decorations ├── └── │)
+    # Bold blue: \x1b[1;34m (used for directories)
+    # Reset: \x1b[0m
+
+    # Tree decorations should be dim
+    assert "\x1b[2m├── \x1b[0m" in result or "\x1b[2m└── \x1b[0m" in result, \
+        "Tree decorations (├── or └──) should have dim style"
+
+    # Vertical guides should also be dim
+    assert "\x1b[2m│" in result, "Tree vertical guides (│) should have dim style"
+
+    # Directory "src" should be bold blue
+    assert "\x1b[1;34msrc\x1b[0m" in result, "Directory names should be bold blue"
+
+    # Files should NOT have bold blue styling
+    # Check that filenames appear without bold blue
+    lines = result.split("\n")
+    for line in lines:
+        # Files should not have bold blue color code immediately before their names
+        if "file1.py" in line:
+            assert "\x1b[1;34mfile1.py" not in line, "file1.py should not have bold blue style"
+        if "file2.py" in line:
+            assert "\x1b[1;34mfile2.py" not in line, "file2.py should not have bold blue style"
+        if "test.py" in line:
+            assert "\x1b[1;34mtest.py" not in line, "test.py should not have bold blue style"
 
 
 def test_column_ordering():

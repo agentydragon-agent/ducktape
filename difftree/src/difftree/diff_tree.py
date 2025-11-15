@@ -40,7 +40,13 @@ class DiffTree:
         from io import StringIO
 
         temp_output = StringIO()
-        temp_console = Console(file=temp_output, width=options.max_width or 80, legacy_windows=False)
+        temp_console = Console(
+            file=temp_output,
+            width=options.max_width or 80,
+            legacy_windows=False,
+            force_terminal=True,  # Force ANSI codes to preserve styling
+            color_system="standard" if console._color_system else None,  # Match parent console
+        )
         temp_console.print(tree)
 
         # Parse the rendered output into lines
@@ -55,14 +61,25 @@ class DiffTree:
 
         for column in self.config.columns:
             if column == Column.TREE:
-                table.add_column(justify="left", overflow="fold")
+                # Tree column takes remaining space after other columns
+                # Use no_wrap and ellipsis to prevent line wrapping
+                table.add_column(justify="left", overflow="ellipsis", no_wrap=True)
             elif column == Column.COUNTS:
                 table.add_column(justify="right")  # Additions (right-aligned)
                 table.add_column(justify="left")   # Deletions (left-aligned)
             elif column == Column.BARS:
-                # Use ratio to make bar columns proportionally sized
-                table.add_column(justify="right", ratio=total_additions if total_additions > 0 else 1)
-                table.add_column(justify="left", ratio=total_deletions if total_deletions > 0 else 1)
+                # Constrain bars to configured width so tree always has space
+                # Use ratio for proportional distribution within bar_width constraint
+                table.add_column(
+                    justify="right",
+                    ratio=total_additions if total_additions > 0 else 1,
+                    max_width=self.config.bar_width,
+                )
+                table.add_column(
+                    justify="left",
+                    ratio=total_deletions if total_deletions > 0 else 1,
+                    max_width=self.config.bar_width,
+                )
             elif column == Column.PERCENTAGES:
                 table.add_column(justify="right")
 
