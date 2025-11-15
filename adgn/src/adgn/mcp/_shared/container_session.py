@@ -12,11 +12,10 @@ import aiodocker
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
 
-from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM, SLEEP_FOREVER_CMD
+from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM, SLEEP_FOREVER_CMD, WORKING_DIR
 from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo, NetworkMode
 from adgn.mcp.exec.models import MAX_BYTES_CAP, BaseExecResult, ExecInput, async_timer, render_raw_to_result
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.props.docker_env import WORKING_DIR
 
 # Exit code returned by SIGTERM; standardized for host-side timeouts
 

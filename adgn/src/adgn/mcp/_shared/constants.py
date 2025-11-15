@@ -1,10 +1,15 @@
 # Shared constants for MCP mcp/_shared modules
 
+from pathlib import Path
 from signal import SIGKILL, SIGTERM
 from typing import Final
 from urllib.parse import urlunparse
 
 SLEEP_FOREVER_CMD: Final[list[str]] = ["/bin/sh", "-lc", "sleep infinity"]
+
+# Container working directory constants
+WORKING_DIR: Final[Path] = Path("/workspace")
+PROPS_DIR: Final[Path] = Path("/props")
 
 # Canonical server/tool names for the agent runtime Docker MCP server
 RUNTIME_SERVER_NAME: Final[str] = "runtime"
