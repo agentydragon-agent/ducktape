@@ -77,14 +77,9 @@ class MatrixClient:
         if not resolved_base_url:
             raise RuntimeError("MATRIX_BASE_URL must be set (e.g. https://matrix.example.org)")
 
-        secret = access_token_secret or ProjectedSecret(
-            name="matrix_access_token",
-            env_var="MATRIX_ACCESS_TOKEN",
-        )
+        secret = access_token_secret or ProjectedSecret(name="matrix_access_token", env_var="MATRIX_ACCESS_TOKEN")
 
-        state_path = Path(
-            state_store or "/var/lib/ember/matrix_state.json"
-        ).expanduser()
+        state_path = Path(state_store or "/var/lib/ember/matrix_state.json").expanduser()
         store_path = Path(store_dir or "/var/lib/ember/matrix_store").expanduser()
         settings = MatrixSettings(
             base_url=resolved_base_url,
