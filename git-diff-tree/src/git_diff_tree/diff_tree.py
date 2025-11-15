@@ -7,8 +7,11 @@ from rich.text import Text
 from rich.tree import Tree
 
 from .config import Column, RenderConfig
-from .progress_bar import ProgressBar
+from .progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
 from .tree import TreeNode
+
+# Cell padding between columns
+CELL_PADDING = "  "
 
 
 class DiffTree:
@@ -110,14 +113,14 @@ class DiffTree:
 
     def _make_count_cells(self, node: TreeNode) -> tuple[Text, Text]:
         """Create count cells with additions (right-aligned) and deletions (left-aligned)."""
-        additions_cell = Text("  ")
+        additions_cell = Text(CELL_PADDING)
         if node.additions > 0:
             additions_cell.append(f"+{node.additions}", style="green")
 
         deletions_cell = Text("")
         if node.deletions > 0:
             deletions_cell.append(f"-{node.deletions}", style="red")
-        deletions_cell.append("  ")
+        deletions_cell.append(CELL_PADDING)
 
         return additions_cell, deletions_cell
 
@@ -128,29 +131,30 @@ class DiffTree:
             value=node.additions,
             max_value=max_additions,
             width=self.config.bar_width,
+            blocks=self.config.bar_right_blocks or DEFAULT_RIGHT_BLOCKS,
             align="right",
             style="green",
-            blocks=self.config.bar_right_blocks,  # RTL for additions
         )
         # Deletions use left-aligned bars
         red_bar = ProgressBar(
             value=node.deletions,
             max_value=max_deletions,
             width=self.config.bar_width,
+            blocks=self.config.bar_left_blocks or DEFAULT_LEFT_BLOCKS,
             align="left",
             style="red",
-            blocks=self.config.bar_left_blocks,  # LTR for deletions
         )
 
-        green_cell = Text("  ")
+        green_cell = Text(CELL_PADDING)
         green_cell.append_text(green_bar.to_text())
-        return green_cell, red_bar.to_text()
+        red_cell = red_bar.to_text()
+        return green_cell, red_cell
 
     def _make_percentage_cell(self, node: TreeNode, max_changes: int) -> Text:
         """Create percentage cell showing relative change size."""
         if max_changes > 0:
-            percentage = (node.total_changes / max_changes) * 100
-            pct_text = Text("  ")
-            pct_text.append(f"{percentage:5.1f}%", style="cyan")
+            ratio = node.total_changes / max_changes
+            pct_text = Text(CELL_PADDING)
+            pct_text.append(f"{ratio:>6.1%}", style="cyan")
             return pct_text
-        return Text("  ")
+        return Text(CELL_PADDING)

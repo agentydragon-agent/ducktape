@@ -72,24 +72,17 @@ class ProgressBar:
         self,
         value: int,
         max_value: int,
-        width: int = 20,
+        width: int,
+        blocks: BlockChars,
         align: Literal["left", "right"] = "left",
         style: str = "default",
-        blocks: BlockChars | None = None,
     ):
         self.value = value
         self.max_value = max_value
         self.width = width
         self.align = align
         self.style = style
-
-        # Determine which blocks to use based on alignment
-        if blocks is not None:
-            self.blocks = blocks
-        elif align == "left":
-            self.blocks = DEFAULT_LEFT_BLOCKS
-        else:  # align == "right"
-            self.blocks = DEFAULT_RIGHT_BLOCKS
+        self.blocks = blocks
 
     def to_text(self) -> Text:
         ratio = 0 if self.max_value == 0 else min(self.value / self.max_value, 1.0)
