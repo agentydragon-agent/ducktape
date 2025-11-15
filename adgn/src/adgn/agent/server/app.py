@@ -650,8 +650,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # -----------------------
 
     def _load_presets() -> dict[str, AgentPreset]:
-        presets: dict[str, AgentPreset] = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
-        return presets
+        return discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
 
     @app.get("/api/presets", response_model=PresetsList)
     async def api_list_presets() -> PresetsList:
