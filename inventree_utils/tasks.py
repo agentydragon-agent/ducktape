@@ -87,10 +87,10 @@ def render_template(c, api, template_pk):
     output_pdf = here / "all_parts_labels.pdf"
 
     all_parts = False
-    part_ids = (
-        all_part_ids(api)
-        if all_parts
-        else [
+    if all_parts:  # noqa: SIM108  # Keep if-else for readability with commented part list
+        part_ids = all_part_ids(api)
+    else:
+        part_ids = [
             109,  # 1N5819
             128,  # 1N4007
             122,  # crystal oscillator
