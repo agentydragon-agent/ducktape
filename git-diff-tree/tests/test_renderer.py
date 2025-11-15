@@ -5,7 +5,7 @@ from io import StringIO
 from git_diff_tree.config import Column, RenderConfig
 from git_diff_tree.diff_tree import DiffTree
 from git_diff_tree.parser import FileChange
-from git_diff_tree.progress_bar import LEFT_BLOCKS, RIGHT_BLOCKS, ProgressBar
+from git_diff_tree.progress_bar import LEFT_BLOCKS, RIGHT_BLOCKS, ProgressBar, make_block_chars
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
@@ -539,34 +539,30 @@ def test_bar_proportionality():
     ]
     root = build_tree(changes)
 
-    # Use small bar width for easier counting
-    config = RenderConfig(columns=[Column.TREE, Column.BARS], bar_width=10)
+    # Use simple distinct characters for testing:
+    # - Additions use right-aligned bars, so they use right_blocks: '+'
+    # - Deletions use left-aligned bars, so they use left_blocks: '-'
+    # This makes counting trivial - just count '+' and '-' in plain text
+    config = RenderConfig(
+        columns=[Column.TREE, Column.BARS],
+        bar_width=10,
+        bar_left_blocks=make_block_chars(full="-", partials="-"),   # Deletions (LTR)
+        bar_right_blocks=make_block_chars(full="+", partials="+"),  # Additions (RTL)
+    )
     diff_tree = DiffTree(root, config=config)
 
-    output = StringIO()
-    console = Console(file=output, width=80, force_terminal=True)
-    console.print(diff_tree)
-    result = output.getvalue()
+    # Render and extract plain text (no ANSI codes needed)
+    lines = _render_to_text_lines(diff_tree, width=80)
 
-    # Replace block characters based on ANSI color codes
-    # Green (\x1b[32m) = additions = '+'
-    # Red (\x1b[31m) = deletions = '-'
-    # Process colored segments
-    import re
-    # Replace green segments: all blocks in green become '+'
-    result = re.sub(r'\x1b\[32m([^\x1b]+)\x1b\[0m', lambda m: '+' * len(m.group(1).strip()), result)
-    # Replace red segments: all blocks in red become '-'
-    result = re.sub(r'\x1b\[31m([^\x1b]+)\x1b\[0m', lambda m: '-' * len(m.group(1).strip()), result)
-
-    lines = result.split("\n")
     file_lines = {}
     for line in lines:
+        plain = line.plain
         for file_path in ["file1.py", "file2.py", "file3.py"]:
-            if file_path in line:
-                file_lines[file_path] = line
+            if file_path in plain:
+                file_lines[file_path] = plain
                 break
 
-    # Count '+' and '-' for each file
+    # Count '+' for additions and '-' for deletions
     file1_plus = file_lines["file1.py"].count("+")
     file1_minus = file_lines["file1.py"].count("-")
     file2_plus = file_lines["file2.py"].count("+")
@@ -581,10 +577,6 @@ def test_bar_proportionality():
     # File1: +50 -10
     # Expected green bar: 50/61 ≈ 82% of 10 blocks ≈ 8 blocks
     # Expected red bar: 10/20 = 50% of 10 blocks = 5 blocks
-    # Ratio: 8/5 = 1.6
-    expected_file1_ratio = 50.0 / 10.0  # Raw ratio
-    # But bars are scaled differently (50/61 vs 10/20), so actual visual ratio will be:
-    # (50/61) / (10/20) = (50/61) * (20/10) = 1000/610 ≈ 1.64
     assert file1_plus >= 7 and file1_plus <= 9, f"file1.py should have ~8 '+', got {file1_plus}"
     assert file1_minus >= 4 and file1_minus <= 6, f"file1.py should have ~5 '-', got {file1_minus}"
 
@@ -616,29 +608,29 @@ def test_deletion_bar_alignment():
     ]
     root = build_tree(changes)
 
-    config = RenderConfig(columns=[Column.TREE, Column.BARS], bar_width=10)
+    # Use distinct character 'X' for deletions to make position finding easy
+    config = RenderConfig(
+        columns=[Column.TREE, Column.BARS],
+        bar_width=10,
+        bar_left_blocks=make_block_chars(full="X", partials="X"),   # Deletions (LTR)
+        bar_right_blocks=make_block_chars(full="+", partials="+"),  # Additions (RTL)
+    )
     diff_tree = DiffTree(root, config=config)
 
-    output = StringIO()
-    console = Console(file=output, width=120, force_terminal=True)
-    console.print(diff_tree)
-    result = output.getvalue()
+    # Render and extract plain text
+    lines = _render_to_text_lines(diff_tree, width=120)
 
-    # Replace deletion bar blocks with unique character 'X' based on ANSI color codes
-    import re
-    result = re.sub(r'\x1b\[31m([^\x1b]+)\x1b\[0m', lambda m: 'X' * len(m.group(1).strip()), result)
+    # Get file lines (skip root which is first)
+    file_lines = []
+    for line in lines:
+        plain = line.plain
+        if any(f in plain for f in ["file1.py", "file2.py", "file3.py"]):
+            file_lines.append(plain)
 
-    lines = result.split('\n')
-    # Filter to non-empty lines
-    lines = [line for line in lines if line.strip()]
+    # Expecting 3 file lines
+    assert len(file_lines) == 3, f"Expected 3 file lines, got {len(file_lines)}"
 
-    # Expecting 4 lines: root + 3 files
-    assert len(lines) >= 4, f"Expected at least 4 lines, got {len(lines)}"
-
-    # Get the 3 file lines (skip root which is first)
-    file_lines = lines[1:4]
-
-    # Find position of first 'X' in each line
+    # Find position of first 'X' (deletion bar start) in each line
     positions = []
     for i, line in enumerate(file_lines):
         pos = line.find('X')

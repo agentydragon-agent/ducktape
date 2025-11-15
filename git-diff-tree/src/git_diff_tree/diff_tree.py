@@ -129,6 +129,8 @@ class DiffTree:
             width=self.config.bar_width,
             align="right",
             style="green",
+            left_blocks=self.config.bar_left_blocks,
+            right_blocks=self.config.bar_right_blocks,
         )
         red_bar = ProgressBar(
             value=node.deletions,
@@ -136,6 +138,8 @@ class DiffTree:
             width=self.config.bar_width,
             align="left",
             style="red",
+            left_blocks=self.config.bar_left_blocks,
+            right_blocks=self.config.bar_right_blocks,
         )
 
         green_cell = Text("  ")

@@ -41,6 +41,8 @@ class RenderConfig:
     bar_width: int = 20
     sort_by: SortMode = SortMode.SIZE
     max_depth: int | None = None
+    bar_left_blocks: list[str] | None = None
+    bar_right_blocks: list[str] | None = None
 
     @classmethod
     def default(cls) -> "RenderConfig":
