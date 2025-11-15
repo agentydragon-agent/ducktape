@@ -5,7 +5,7 @@ from io import StringIO
 from git_diff_tree.config import Column, RenderConfig
 from git_diff_tree.diff_tree import DiffTree
 from git_diff_tree.parser import FileChange
-from git_diff_tree.progress_bar import LEFT_BLOCKS, ProgressBar, BlockChars
+from git_diff_tree.progress_bar import DEFAULT_LEFT_BLOCKS, ProgressBar, BlockChars
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
@@ -36,10 +36,11 @@ def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
 
 
 def test_blocks_constant():
-    """Test that LEFT_BLOCKS contains the expected Unicode characters."""
-    assert len(LEFT_BLOCKS) == 9
-    assert LEFT_BLOCKS[0] == " "
-    assert LEFT_BLOCKS[-1] == "█"
+    """Test that DEFAULT_LEFT_BLOCKS contains the expected Unicode characters."""
+    assert DEFAULT_LEFT_BLOCKS.empty == " "
+    assert DEFAULT_LEFT_BLOCKS.full == "█"
+    assert len(DEFAULT_LEFT_BLOCKS.partials) == 7
+    assert DEFAULT_LEFT_BLOCKS.partials == ("▏", "▎", "▍", "▌", "▋", "▊", "▉")
 
 
 def test_renderer_initialization():
@@ -174,8 +175,8 @@ def test_make_progress_bar_minimum_sliver(value, max_value, expected_has_sliver)
     assert len(plain) == 20
 
     if expected_has_sliver:
-        # Should have at least ▏
-        assert "▏" in plain or any(block in plain for block in LEFT_BLOCKS[1:])
+        # Should have at least the thinnest partial block
+        assert any(block in plain for block in DEFAULT_LEFT_BLOCKS.partials)
     else:
         # Should be all spaces
         assert plain.strip() == ""

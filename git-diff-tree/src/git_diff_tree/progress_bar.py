@@ -26,10 +26,6 @@ class BlockChars:
         if len(self.partials) < 1:
             raise ValueError("partials must have at least 1 element")
 
-    def to_list(self) -> list[str]:
-        """Convert to list format: [empty, partial1, ..., partialN, full]."""
-        return [self.empty] + list(self.partials) + [self.full]
-
     @classmethod
     def simple(cls, char: str, empty: str = " ") -> "BlockChars":
         """Create simple block chars using the same character for all fill levels.
@@ -69,11 +65,6 @@ DEFAULT_RIGHT_BLOCKS = BlockChars(
     partials=("▕", "▕", "▐", "▐", "▐", "▉", "█"),
 )
 
-# Legacy list formats for backward compatibility
-LEFT_BLOCKS = DEFAULT_LEFT_BLOCKS.to_list()
-RIGHT_BLOCKS = DEFAULT_RIGHT_BLOCKS.to_list()
-
-
 class ProgressBar:
     """Progress bar with RTL or LTR alignment for diff statistics."""
 
@@ -85,9 +76,6 @@ class ProgressBar:
         align: Literal["left", "right"] = "left",
         style: str = "default",
         blocks: BlockChars | None = None,
-        # Legacy parameters for backward compatibility
-        left_blocks: list[str] | None = None,
-        right_blocks: list[str] | None = None,
     ):
         self.value = value
         self.max_value = max_value
@@ -99,27 +87,9 @@ class ProgressBar:
         if blocks is not None:
             self.blocks = blocks
         elif align == "left":
-            if left_blocks is not None:
-                # Legacy: convert list to BlockChars
-                self.blocks = self._list_to_block_chars(left_blocks)
-            else:
-                self.blocks = DEFAULT_LEFT_BLOCKS
+            self.blocks = DEFAULT_LEFT_BLOCKS
         else:  # align == "right"
-            if right_blocks is not None:
-                # Legacy: convert list to BlockChars
-                self.blocks = self._list_to_block_chars(right_blocks)
-            else:
-                self.blocks = DEFAULT_RIGHT_BLOCKS
-
-    @staticmethod
-    def _list_to_block_chars(blocks_list: list[str]) -> BlockChars:
-        """Convert legacy list format to BlockChars."""
-        if len(blocks_list) < 2:
-            raise ValueError("blocks list must have at least 2 elements (empty and full)")
-        empty = blocks_list[0]
-        full = blocks_list[-1]
-        partials = tuple(blocks_list[1:-1]) if len(blocks_list) > 2 else (full,)
-        return BlockChars(full=full, empty=empty, partials=partials)
+            self.blocks = DEFAULT_RIGHT_BLOCKS
 
     def to_text(self) -> Text:
         ratio = 0 if self.max_value == 0 else min(self.value / self.max_value, 1.0)
