@@ -12,29 +12,32 @@
 
 - [ ] Add flex in tree indent based on available width
   - Dynamically adjust tree indent from +1 to +3 spaces (current: fixed at +3)
+  - Also vary number of "──" horizontal connector chars (1-2 currently, could be 1-3)
   - Reduce indent at narrow widths to save horizontal space
   - Use full +3 indent when width allows for better readability
   - Example:
     ```
-    # Wide terminal (indent=3):
+    # Wide terminal (indent=3, connectors=2):
     root
     ├── src/module
     │   ├── file1.py
     │   └── file2.py
     └── test.py
 
-    # Narrow terminal (indent=1):
+    # Narrow terminal (indent=1, connectors=1):
     root
-    ├── src/module
-    │ ├── file1.py
-    │ └── file2.py
-    └── test.py
+    ├─ src/module
+    │ ├─ file1.py
+    │ └─ file2.py
+    └─ test.py
     ```
   - Challenge: must coordinate with multiple flexible elements:
     - Path collapsing (single-child directory merging creates variable path lengths)
     - Bar width constraints (bars already have max_width flexibility)
     - Tree column ellipsis behavior
-  - Need to balance all three flexibilities to avoid conflicts
+    - Tree decoration characters (both vertical spacing and horizontal connectors)
+  - Need to balance all flexibilities to avoid conflicts
+  - Note: Rich's Tree class controls tree decoration - may need custom rendering
 
 ## Features
 
