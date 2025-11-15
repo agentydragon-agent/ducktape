@@ -46,7 +46,8 @@ class DiffTree:
             if column == Column.TREE:
                 table.add_column(justify="left")
             elif column == Column.COUNTS:
-                table.add_column(justify="right")
+                table.add_column(justify="right")  # Additions (right-aligned)
+                table.add_column(justify="left")   # Deletions (left-aligned)
             elif column == Column.BARS:
                 table.add_column(justify="right")
                 table.add_column(justify="left")
@@ -59,7 +60,9 @@ class DiffTree:
                 if column == Column.TREE:
                     row.append(tree_line)
                 elif column == Column.COUNTS:
-                    row.append(self._make_counts_cell(node))
+                    additions_cell, deletions_cell = self._make_count_cells(node)
+                    row.append(additions_cell)
+                    row.append(deletions_cell)
                 elif column == Column.BARS:
                     green_cell, red_cell = self._make_bar_cells(node, max_additions, max_deletions)
                     row.append(green_cell)
@@ -105,15 +108,18 @@ class DiffTree:
 
         return result
 
-    def _make_counts_cell(self, node: TreeNode) -> Text:
-        """Create counts cell showing +additions -deletions."""
-        counts = Text("  ")
+    def _make_count_cells(self, node: TreeNode) -> tuple[Text, Text]:
+        """Create count cells with additions (right-aligned) and deletions (left-aligned)."""
+        additions_cell = Text("  ")
         if node.additions > 0:
-            counts.append(f"+{node.additions}", style="green")
-        counts.append(" ")
+            additions_cell.append(f"+{node.additions}", style="green")
+
+        deletions_cell = Text("")
         if node.deletions > 0:
-            counts.append(f"-{node.deletions}", style="red")
-        return counts
+            deletions_cell.append(f"-{node.deletions}", style="red")
+        deletions_cell.append("  ")
+
+        return additions_cell, deletions_cell
 
     def _make_bar_cells(self, node: TreeNode, max_additions: int, max_deletions: int) -> tuple[Text, Text]:
         """Create bar cells (green and red progress bars)."""
