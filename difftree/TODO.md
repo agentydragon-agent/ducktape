@@ -93,6 +93,16 @@
     - Renamed + modified (most common)
     - Renamed with directory change
     - Partial renames (similarity threshold)
+    - **Renames crossing diff scope boundary** (important):
+      - When running `difftree` on a subdirectory (e.g., `git diff -- src/`)
+      - File moved FROM current scope to outside: `src/old.py => lib/new.py`
+        - Only see deletion in tree, but git shows full rename
+        - Options: 1) Show as special "moved out" entry, 2) Fall back to showing as deletion
+      - File moved TO current scope from outside: `lib/old.py => src/new.py`
+        - Only see addition in tree, but git knows it's a rename
+        - Options: 1) Show as special "moved in" entry, 2) Fall back to showing as addition
+      - May need to track which paths are in scope and handle cross-boundary renames specially
+      - Could show abbreviated outside paths: `src/file.py → ../lib/file.py`
 - [ ] Colored diff pass-through mode (like delta)
   - Show tree summary at top
   - Then pass through syntax-highlighted diff below
