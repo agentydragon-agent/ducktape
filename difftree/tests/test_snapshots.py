@@ -2,12 +2,9 @@
 
 import pytest
 
-from difftree.config import Column, DEFAULT_CONFIG, RenderConfig
-from difftree.diff_tree import DiffTree
+from difftree.config import Column, DEFAULT_CONFIG, RenderConfig, SortMode
 from difftree.parser import FileChange
-from difftree.tree import build_tree, sort_tree
-
-from .conftest import render_to_string as render_renderable
+from .conftest import make_diff_tree, render_to_string as render_renderable
 
 
 @pytest.fixture
@@ -26,12 +23,9 @@ def complex_changes() -> list[FileChange]:
     ]
 
 
-def render_to_string(changes: list[FileChange], sort_by: str = "size", config: RenderConfig | None = None) -> str:
+def render_to_string(changes: list[FileChange], sort_by: SortMode | str = "size", config: RenderConfig | None = None) -> str:
     """Helper to render tree to string."""
-    root = build_tree(changes)
-    root = sort_tree(root, sort_by=sort_by)
-
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=config, sort_by=sort_by)
     result = render_renderable(diff_tree, width=120, legacy_windows=False, color_system="standard")
 
     assert "…" not in result, "Output contains ellipsis character (…)"

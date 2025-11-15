@@ -14,7 +14,7 @@ from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
 from difftree.tree import build_tree
 
-from .conftest import render_to_string
+from .conftest import make_diff_tree, render_to_string
 
 
 def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
@@ -41,10 +41,9 @@ def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
 
 def test_renderer_initialization():
     """Test DiffTree initialization."""
-    root = build_tree([FileChange(path="test.py", additions=1, deletions=0)])
-    diff_tree = DiffTree(root)
+    diff_tree = make_diff_tree([FileChange(path="test.py", additions=1, deletions=0)])
 
-    assert diff_tree.root is root
+    assert diff_tree.root is not None
     assert Column.COUNTS in diff_tree.config.columns
     assert Column.BARS in diff_tree.config.columns
     assert Column.PERCENTAGES in diff_tree.config.columns
@@ -53,11 +52,10 @@ def test_renderer_initialization():
 
 def test_renderer_with_custom_options():
     """Test DiffTree with custom options."""
-    root = build_tree([FileChange(path="test.py", additions=1, deletions=0)])
     config = RenderConfig(columns=[Column.TREE], bar_width=30)
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree([FileChange(path="test.py", additions=1, deletions=0)], config=config)
 
-    assert diff_tree.root is root
+    assert diff_tree.root is not None
     assert Column.COUNTS not in diff_tree.config.columns
     assert Column.BARS not in diff_tree.config.columns
     assert Column.PERCENTAGES not in diff_tree.config.columns
@@ -66,8 +64,7 @@ def test_renderer_with_custom_options():
 
 def test_render_simple_tree(sample_changes):
     """Test rendering a simple tree structure."""
-    root = build_tree(sample_changes)
-    diff_tree = DiffTree(root)
+    diff_tree = make_diff_tree(sample_changes)
     result = render_to_string(diff_tree, width=120)
 
     # Check that key elements are present
@@ -80,9 +77,8 @@ def test_render_simple_tree(sample_changes):
 
 def test_render_with_no_counts(sample_changes):
     """Test rendering without count columns."""
-    root = build_tree(sample_changes)
     config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(sample_changes, config=config)
     result = render_to_string(diff_tree, width=120)
 
     # Should still have tree structure but different formatting
@@ -91,9 +87,8 @@ def test_render_with_no_counts(sample_changes):
 
 def test_render_with_max_depth(sample_changes):
     """Test rendering with maximum depth limit."""
-    root = build_tree(sample_changes)
     config = replace(DEFAULT_CONFIG, max_depth=1)
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(sample_changes, config=config)
     result = render_to_string(diff_tree, width=120)
 
     # Should show top-level items but not deeply nested ones
@@ -113,8 +108,7 @@ def test_minimum_sliver_with_small_changes():
         FileChange(path="tiny_file.py", additions=1, deletions=0),
     ]
 
-    root = build_tree(changes)
-    diff_tree = DiffTree(root)
+    diff_tree = make_diff_tree(changes)
     result = render_to_string(diff_tree, width=120)
 
     # Both files should be visible in the output
@@ -142,8 +136,7 @@ def test_console_width_handling(width):
         FileChange(path="test.py", additions=10, deletions=5),
     ]
 
-    root = build_tree(changes)
-    diff_tree = DiffTree(root, config=DEFAULT_CONFIG)
+    diff_tree = make_diff_tree(changes, config=DEFAULT_CONFIG)
     result = render_to_string(diff_tree, width=width)
 
     # Basic assertions: output should contain expected elements
@@ -210,8 +203,7 @@ def test_progress_bars_align_consistently():
         FileChange(path="file_b.py", additions=100, deletions=50),
     ]
 
-    root = build_tree(changes)
-    diff_tree = DiffTree(root, config=DEFAULT_CONFIG)
+    diff_tree = make_diff_tree(changes, config=DEFAULT_CONFIG)
 
     result = render_to_string(diff_tree, width=120)
     lines = result.split("\n")
@@ -236,8 +228,7 @@ def test_tree_column_never_wraps():
         FileChange(path="another/long/path/controller-deployment.yaml", additions=100, deletions=10),
     ]
 
-    root = build_tree(changes)
-    diff_tree = DiffTree(root, config=DEFAULT_CONFIG)
+    diff_tree = make_diff_tree(changes, config=DEFAULT_CONFIG)
 
     # Test at a narrow width where bars would take up space
     result = render_to_string(diff_tree, width=100)
@@ -268,8 +259,7 @@ def test_tree_styling_preserved():
         FileChange(path="test.py", additions=5, deletions=2),
     ]
 
-    root = build_tree(changes)
-    diff_tree = DiffTree(root, config=DEFAULT_CONFIG)
+    diff_tree = make_diff_tree(changes, config=DEFAULT_CONFIG)
 
     # Render with colors
     result = render_to_string(diff_tree, width=120, color_system="standard")
@@ -306,11 +296,14 @@ def test_tree_styling_preserved():
 def test_column_ordering():
     """Test that columns appear in the order specified in config."""
     changes = [FileChange(path="file.py", additions=10, deletions=5)]
+<<<<<<< HEAD
     root = build_tree(changes)
+=======
+>>>>>>> e3ad4dd (Add make_diff_tree test helper to DRY up test code)
 
     # Test bars before tree
     config = RenderConfig(columns=[Column.BARS, Column.TREE, Column.COUNTS])
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=config)
     result = render_to_string(diff_tree, width=80, force_terminal=False)
 
     # The output should have bars (█ characters) before the tree structure
@@ -330,7 +323,7 @@ def test_column_ordering():
 
     # Test tree before bars (standard order)
     config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.COUNTS])
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=config)
     result = render_to_string(diff_tree, width=80, force_terminal=False)
 
     lines = result.split("\n")
@@ -349,11 +342,14 @@ def test_column_ordering():
 def test_column_ordering_counts_first():
     """Test counts column can appear first."""
     changes = [FileChange(path="file.py", additions=10, deletions=5)]
+<<<<<<< HEAD
     root = build_tree(changes)
+=======
+>>>>>>> e3ad4dd (Add make_diff_tree test helper to DRY up test code)
 
     # Counts first, then tree
     config = RenderConfig(columns=[Column.COUNTS, Column.TREE])
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=config)
     result = render_to_string(diff_tree, width=80, force_terminal=False)
 
     lines = result.split("\n")
@@ -379,7 +375,6 @@ def test_bar_proportionality():
         FileChange(path="file2.py", additions=1, deletions=10),  # 1:10 ratio
         FileChange(path="file3.py", additions=10, deletions=0),  # Only additions
     ]
-    root = build_tree(changes)
 
     # Use simple distinct characters for testing:
     # - Additions use right-aligned bars, so they use right_blocks: '+'
@@ -391,7 +386,7 @@ def test_bar_proportionality():
         bar_left_blocks=BlockChars.simple("-"),  # Deletions (LTR)
         bar_right_blocks=BlockChars.simple("+"),  # Additions (RTL)
     )
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=config)
 
     # Render and extract plain text (no ANSI codes needed)
     lines = _render_to_text_lines(diff_tree, width=80)
@@ -452,7 +447,6 @@ def test_deletion_bar_alignment():
         FileChange(path="file2.py", additions=1, deletions=100),  # Mostly deletions
         FileChange(path="file3.py", additions=50, deletions=50),  # Balanced
     ]
-    root = build_tree(changes)
 
     # Use distinct character 'X' for deletions to make position finding easy
     config = RenderConfig(
@@ -461,7 +455,7 @@ def test_deletion_bar_alignment():
         bar_left_blocks=BlockChars.simple("X"),  # Deletions (LTR)
         bar_right_blocks=BlockChars.simple("+"),  # Additions (RTL)
     )
-    diff_tree = DiffTree(root, config=config)
+    diff_tree = make_diff_tree(changes, config=config)
 
     # Render and extract plain text
     lines = _render_to_text_lines(diff_tree, width=120)
