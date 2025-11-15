@@ -417,6 +417,129 @@ def test_bar_proportionality():
     assert file3_minus == 0, f"file3.py should have no '-', got {file3_minus}"
 
 
+def test_percentage_calculation():
+    """Test that percentage column shows correct ratio of file changes to total changes."""
+    changes = [
+        FileChange(path="file1.py", additions=100, deletions=50),  # 150 total
+        FileChange(path="file2.py", additions=30, deletions=20),   # 50 total
+        FileChange(path="file3.py", additions=200, deletions=0),   # 200 total
+    ]
+
+    # Total changes across all files: 150 + 50 + 200 = 400
+    # file1: 150/400 = 37.5%
+    # file2: 50/400 = 12.5%
+    # file3: 200/400 = 50.0%
+
+    config = RenderConfig(columns=[Column.TREE, Column.PERCENTAGES])
+    diff_tree = make_diff_tree(changes, config=config)
+    result = render_to_string(diff_tree, width=120, force_terminal=False)
+
+    lines = result.split("\n")
+
+    # Find lines containing each file
+    file1_line = _find_line_with(lines, "file1.py")
+    file2_line = _find_line_with(lines, "file2.py")
+    file3_line = _find_line_with(lines, "file3.py")
+
+    # Extract percentage values
+    # Percentage should be at the end of each line
+    # Format is like " 37.5%" or "12.5%"
+    assert "37.5%" in file1_line, f"file1.py should show 37.5%, got: {file1_line}"
+    assert "12.5%" in file2_line, f"file2.py should show 12.5%, got: {file2_line}"
+    assert "50.0%" in file3_line, f"file3.py should show 50.0%, got: {file3_line}"
+
+
+def test_percentage_not_sum_of_bar_percentages():
+    """Test that percentage is NOT the sum of individual bar fill percentages.
+
+    This is a regression test to ensure percentage shows file's contribution
+    to total changes, not the combined fill percentage of both bars.
+    """
+    changes = [
+        # Create a scenario where bar fill percentages differ from total percentage
+        # Total: +100 additions, -900 deletions = 1000 total changes
+        FileChange(path="heavy_deletes.py", additions=10, deletions=890),  # 900 total = 90%
+        FileChange(path="only_adds.py", additions=90, deletions=10),       # 100 total = 10%
+    ]
+
+    # Totals: 100 additions, 900 deletions, 1000 total changes
+    # heavy_deletes.py: 900/1000 = 90.0% of total changes
+    # only_adds.py: 100/1000 = 10.0% of total changes
+
+    # Bar fill percentages would be different:
+    # heavy_deletes.py green bar: 10/100 = 10% fill
+    # heavy_deletes.py red bar: 890/900 = 98.9% fill
+    # If percentage were sum of fills, it would be ~109%! Wrong!
+
+    # only_adds.py green bar: 90/100 = 90% fill
+    # only_adds.py red bar: 10/900 = 1.1% fill
+    # If percentage were sum of fills, it would be ~91%! Wrong!
+
+    config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
+    diff_tree = make_diff_tree(changes, config=config)
+    result = render_to_string(diff_tree, width=120, force_terminal=False)
+
+    lines = result.split("\n")
+    heavy_line = _find_line_with(lines, "heavy_deletes.py")
+    light_line = _find_line_with(lines, "only_adds.py")
+
+    # Verify percentages show total contribution, NOT bar fill sums
+    assert "90.0%" in heavy_line, f"heavy_deletes.py should show 90.0% (900/1000), got: {heavy_line}"
+    assert "10.0%" in light_line, f"only_adds.py should show 10.0% (100/1000), got: {light_line}"
+
+
+def test_bar_columns_share_space_proportionally():
+    """Test that green and red bar columns share space proportionally.
+
+    The two bar columns should split the available bar space based on the ratio
+    of total_additions:total_deletions, and the scale should be consistent
+    (1 block = same number of lines in both columns).
+    """
+    changes = [
+        FileChange(path="balanced.py", additions=100, deletions=50),  # 150 total = 10%
+        FileChange(path="other1.py", additions=400, deletions=200),
+        FileChange(path="other2.py", additions=500, deletions=250),
+    ]
+    # Total: +1000 additions, -500 deletions = 1500 total
+    # Green column gets 1000/(1000+500) = 2/3 of bar space
+    # Red column gets 500/(1000+500) = 1/3 of bar space
+
+    # With bar_width=30:
+    # - Total bar space: 30 chars
+    # - Green column: (1000/1500) × 30 = 20 chars
+    # - Red column: (500/1500) × 30 = 10 chars
+    #
+    # For balanced.py (+100 -50):
+    # - Green bar: 100/1000 = 10% of 20 chars = 2 chars
+    # - Red bar: 50/500 = 10% of 10 chars = 1 char
+    # - Total visual: 3 chars out of 30 = 10% ✓
+    # - Percentage: 150/1500 = 10% ✓
+
+    config = RenderConfig(
+        columns=[Column.TREE, Column.BARS, Column.PERCENTAGES],
+        bar_width=30,
+        bar_left_blocks=BlockChars.simple("-"),  # Deletions
+        bar_right_blocks=BlockChars.simple("+"),  # Additions
+    )
+    diff_tree = make_diff_tree(changes, config=config)
+
+    lines = _render_to_text_lines(diff_tree, width=150)
+    balanced_line = next(line.plain for line in lines if "balanced.py" in line.plain)
+
+    # Count blocks
+    plus_count = balanced_line.count("+")
+    minus_count = balanced_line.count("-")
+
+    # Verify the blocks represent the correct ratio
+    # Green bar should have ~2 chars (100/1000 of 20)
+    # Red bar should have ~1 char (50/500 of 10)
+    assert 1 <= plus_count <= 3, f"Expected ~2 '+' blocks, got {plus_count}"
+    assert 0 <= minus_count <= 2, f"Expected ~1 '-' block, got {minus_count}"
+
+    # Verify percentage
+    assert "10.0%" in balanced_line, f"Should show 10.0% percentage, got: {balanced_line}"
+
+
 def test_deletion_bar_alignment():
     """Test that deletion bars start at the same column position regardless of addition bar width."""
     changes = [
