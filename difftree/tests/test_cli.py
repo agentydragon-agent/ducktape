@@ -1,8 +1,7 @@
 """Tests for CLI functionality."""
 
+import os
 from pathlib import Path
-import subprocess
-import sys
 
 from click.testing import CliRunner
 from difftree.__main__ import main
@@ -141,20 +140,23 @@ def test_cli_bar_width(runner, git_repo_with_changes):
     assert result.output.strip() != ""
 
 
-def test_cli_no_changes(temp_git_repo):
+def test_cli_no_changes(runner, temp_git_repo):
     """Test CLI with no changes (should exit with 0 and message)."""
     # Create initial commit with no subsequent changes
     create_file(temp_git_repo, "file.py", "line1\n")
     git_add_commit(temp_git_repo, "Initial commit")
 
     # Run CLI in the temp repo directory
-    result = subprocess.run(
-        [sys.executable, "-m", "difftree"], cwd=temp_git_repo, capture_output=True, text=True, check=False
-    )
+    original_dir = os.getcwd()
+    try:
+        os.chdir(temp_git_repo)
+        result = runner.invoke(main, [])
+    finally:
+        os.chdir(original_dir)
 
     # Should exit successfully but with "No changes" message
-    assert result.returncode == 0
-    assert "No changes" in result.stderr  # Rich prints to stderr
+    assert result.exit_code == 0
+    assert "No changes" in result.output
 
 
 def test_cli_combined_options(runner, git_repo_with_changes):
@@ -170,28 +172,31 @@ def test_cli_combined_options(runner, git_repo_with_changes):
     assert result.output.strip() != ""
 
 
-# CLI Integration Tests (actual subprocess invocation)
+# CLI Integration Tests
 
 
-def test_cli_integration_basic(temp_git_repo):
-    """Test CLI integration with actual subprocess invocation."""
+def test_cli_integration_basic(runner, temp_git_repo):
+    """Test CLI with git repository changes."""
     # Create changes
     create_file(temp_git_repo, "file.py", "line1\n")
     git_add_commit(temp_git_repo, "Initial commit")
     create_file(temp_git_repo, "file.py", "line1\nline2\n")
 
-    # Run actual CLI command
-    result = subprocess.run(
-        [sys.executable, "-m", "difftree"], cwd=temp_git_repo, capture_output=True, text=True, check=False
-    )
+    # Run CLI in the temp repo directory
+    original_dir = os.getcwd()
+    try:
+        os.chdir(temp_git_repo)
+        result = runner.invoke(main, [])
+    finally:
+        os.chdir(original_dir)
 
-    assert result.returncode == 0
-    assert "file.py" in result.stdout
-    assert "+1" in result.stdout  # Should show additions
+    assert result.exit_code == 0
+    assert "file.py" in result.output
+    assert "+1" in result.output  # Should show additions
 
 
-def test_cli_integration_with_args(temp_git_repo):
-    """Test CLI integration with diff arguments."""
+def test_cli_integration_with_args(runner, temp_git_repo):
+    """Test CLI with diff arguments."""
     # Create two commits
     create_file(temp_git_repo, "file.py", "v1\n")
     git_add_commit(temp_git_repo, "First")
@@ -199,34 +204,32 @@ def test_cli_integration_with_args(temp_git_repo):
     git_add_commit(temp_git_repo, "Second")
 
     # Compare commits
-    result = subprocess.run(
-        [sys.executable, "-m", "difftree", "HEAD~1", "HEAD"],
-        cwd=temp_git_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    original_dir = os.getcwd()
+    try:
+        os.chdir(temp_git_repo)
+        result = runner.invoke(main, ["HEAD~1", "HEAD"])
+    finally:
+        os.chdir(original_dir)
 
-    assert result.returncode == 0
-    assert "file.py" in result.stdout
-    assert "+1" in result.stdout
-    assert "-1" in result.stdout
+    assert result.exit_code == 0
+    assert "file.py" in result.output
+    assert "+1" in result.output
+    assert "-1" in result.output
 
 
-def test_cli_integration_invalid_column(temp_git_repo):
+def test_cli_integration_invalid_column(runner, temp_git_repo):
     """Test CLI with invalid column name."""
     create_file(temp_git_repo, "file.py", "line1\n")
     git_add_commit(temp_git_repo, "Initial")
     create_file(temp_git_repo, "file.py", "line1\nline2\n")
 
-    result = subprocess.run(
-        [sys.executable, "-m", "difftree", "--columns", "tree,invalid"],
-        cwd=temp_git_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    original_dir = os.getcwd()
+    try:
+        os.chdir(temp_git_repo)
+        result = runner.invoke(main, ["--columns", "tree,invalid"])
+    finally:
+        os.chdir(original_dir)
 
-    assert result.returncode == 1
-    assert "Unknown column" in result.stderr
-    assert "invalid" in result.stderr
+    assert result.exit_code == 1
+    assert "Unknown column" in result.output
+    assert "invalid" in result.output
