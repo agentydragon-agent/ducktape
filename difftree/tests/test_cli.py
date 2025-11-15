@@ -17,14 +17,11 @@ def runner():
 
 
 @pytest.fixture
-def git_repo_with_changes(temp_git_repo: Path) -> Path:
-    """Create a git repo with some changes for testing."""
-    # Create initial commit
+def git_repo_with_changes(temp_git_repo: Path, run_git) -> Path:
     create_file(temp_git_repo, "src/main.py", "line1\n")
     create_file(temp_git_repo, "src/utils.py", "line1\n")
-    git_add_commit(temp_git_repo, "Initial commit")
+    git_add_commit(run_git)
 
-    # Make changes
     create_file(temp_git_repo, "src/main.py", "line1\nline2\nline3\n")
     create_file(temp_git_repo, "README.md", "# Project\n")
 
@@ -140,13 +137,10 @@ def test_cli_bar_width(runner, git_repo_with_changes):
     assert result.output.strip() != ""
 
 
-def test_cli_no_changes(runner, temp_git_repo):
-    """Test CLI with no changes (should exit with 0 and message)."""
-    # Create initial commit with no subsequent changes
+def test_cli_no_changes(runner, temp_git_repo, run_git):
     create_file(temp_git_repo, "file.py", "line1\n")
-    git_add_commit(temp_git_repo, "Initial commit")
+    git_add_commit(run_git)
 
-    # Run CLI in the temp repo directory
     original_dir = os.getcwd()
     try:
         os.chdir(temp_git_repo)
@@ -154,7 +148,6 @@ def test_cli_no_changes(runner, temp_git_repo):
     finally:
         os.chdir(original_dir)
 
-    # Should exit successfully but with "No changes" message
     assert result.exit_code == 0
     assert "No changes" in result.output
 
@@ -175,14 +168,11 @@ def test_cli_combined_options(runner, git_repo_with_changes):
 # CLI Integration Tests
 
 
-def test_cli_integration_basic(runner, temp_git_repo):
-    """Test CLI with git repository changes."""
-    # Create changes
+def test_cli_integration_basic(runner, temp_git_repo, run_git):
     create_file(temp_git_repo, "file.py", "line1\n")
-    git_add_commit(temp_git_repo, "Initial commit")
+    git_add_commit(run_git)
     create_file(temp_git_repo, "file.py", "line1\nline2\n")
 
-    # Run CLI in the temp repo directory
     original_dir = os.getcwd()
     try:
         os.chdir(temp_git_repo)
@@ -192,18 +182,15 @@ def test_cli_integration_basic(runner, temp_git_repo):
 
     assert result.exit_code == 0
     assert "file.py" in result.output
-    assert "+1" in result.output  # Should show additions
+    assert "+1" in result.output
 
 
-def test_cli_integration_with_args(runner, temp_git_repo):
-    """Test CLI with diff arguments."""
-    # Create two commits
+def test_cli_integration_with_args(runner, temp_git_repo, run_git):
     create_file(temp_git_repo, "file.py", "v1\n")
-    git_add_commit(temp_git_repo, "First")
+    git_add_commit(run_git)
     create_file(temp_git_repo, "file.py", "v2\n")
-    git_add_commit(temp_git_repo, "Second")
+    git_add_commit(run_git)
 
-    # Compare commits
     original_dir = os.getcwd()
     try:
         os.chdir(temp_git_repo)
@@ -217,10 +204,9 @@ def test_cli_integration_with_args(runner, temp_git_repo):
     assert "-1" in result.output
 
 
-def test_cli_integration_invalid_column(runner, temp_git_repo):
-    """Test CLI with invalid column name."""
+def test_cli_integration_invalid_column(runner, temp_git_repo, run_git):
     create_file(temp_git_repo, "file.py", "line1\n")
-    git_add_commit(temp_git_repo, "Initial")
+    git_add_commit(run_git)
     create_file(temp_git_repo, "file.py", "line1\nline2\n")
 
     original_dir = os.getcwd()

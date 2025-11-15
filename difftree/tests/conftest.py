@@ -62,16 +62,15 @@ def create_file(repo_path: Path, file_path: str, content: str) -> None:
     full_path.write_text(content)
 
 
-def git_add_commit(repo_path: Path, message: str) -> None:
+def git_add_commit(run_git) -> None:
     """
-    Add all files and commit.
+    Add all files and commit with a default message.
 
     Args:
-        repo_path: Path to the git repository.
-        message: Commit message.
+        run_git: Fixture for running git commands.
     """
-    subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", message], cwd=repo_path, check=True, capture_output=True)
+    run_git("add", ".")
+    run_git("commit", "-m", "test commit")
 
 
 @pytest.fixture

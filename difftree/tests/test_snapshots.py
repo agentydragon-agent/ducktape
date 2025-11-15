@@ -100,3 +100,14 @@ def test_snapshot_only_deletions(snapshot):
     ]
     output = render_to_string(changes)
     assert output == snapshot
+
+
+def test_snapshot_binary_file(snapshot):
+    changes = [
+        FileChange(path="src/code.py", additions=10, deletions=2),
+        FileChange(path="assets/image.png", additions=0, deletions=0, is_binary=True),
+        FileChange(path="assets/data.bin", additions=0, deletions=0, is_binary=True),
+        FileChange(path="README.md", additions=5, deletions=1),
+    ]
+    output = render_to_string(changes)
+    assert output == snapshot
