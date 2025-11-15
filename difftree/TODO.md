@@ -2,6 +2,33 @@
 
 ## Rendering Improvements
 
+- [ ] Implement columns as proper Rich renderables with measurement hints
+  - **Current approach limitations**:
+    - Using Table.grid() with implicit width constraints (`no_wrap`, `max_width`, `ratio`)
+    - Working around Table's layout algorithm rather than with it
+    - Hard to implement adaptive features (like flexible indent) without knowing available width
+    - Width calculations are implicit, not explicit
+  - **Custom Renderable benefits**:
+    - Implement `__rich_measure__()` to report precise min/max width requirements
+    - Implement `__rich_console__()` for adaptive rendering based on actual available width
+    - Better guarantees: "tree needs ≥X chars, bars need ≥Y chars"
+    - Enable adaptive features: measure available width → decide indent level → render
+    - More predictable layout behavior across different terminal widths
+  - **Implementation approach**:
+    - Create custom Renderable classes: TreeColumn, CountsColumn, BarsColumn, PercentColumn
+    - Each reports its measurement requirements via `__rich_measure__()`
+    - DiffTree composes them with explicit width distribution logic
+    - Pass available width down to components for adaptive rendering
+  - **Tradeoffs**:
+    - More complex code (need to understand Rich's rendering protocol)
+    - More testing required (custom renderables harder to test)
+    - More maintenance burden
+    - But: enables robust adaptive features and better layout guarantees
+  - **Enables future features**:
+    - Flexible tree indent based on measured available width
+    - Better handling of very narrow terminals
+    - Smooth degradation of display quality as width decreases
+
 - [ ] Format large numbers more compactly (e.g., "+123456" as "+123k")
 
 - [ ] Adaptive tree indentation
