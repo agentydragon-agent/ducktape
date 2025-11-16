@@ -50,9 +50,9 @@ class TimeOfDay(str, Enum):
 class Goal(BaseModel):
     """Model for habit goal configuration."""
 
-    unit_type: str
+    unit_type: UnitType
     value: float
-    periodicity: str
+    periodicity: Periodicity
 
 
 class Area(BaseModel):
@@ -68,15 +68,15 @@ class Progress(BaseModel):
 
     current_value: float
     target_value: float
-    unit_type: str
-    periodicity: str
+    unit_type: UnitType
+    periodicity: Periodicity
     reference_date: str
 
 
 class HabitStatus(BaseModel):
     """Model for habit status response from the API."""
 
-    status: str
+    status: Status
 
     # These fields aren't in the API response but are useful for our client
     date: str | None = None  # Raw API response uses string dates
@@ -90,7 +90,7 @@ class HabitStatus(BaseModel):
 class HabitStatusResponse(BaseModel):
     """Client response model that uses Python date objects."""
 
-    status: str
+    status: Status
     date: datetime.date | None = None  # Client response uses Python date objects
     value: float | None = None
     note: str | None = None
@@ -121,7 +121,7 @@ class Habit(BaseModel):
     name: str
     is_archived: bool
     start_date: str
-    time_of_day: list[str]
+    time_of_day: list[TimeOfDay]
     goal: Goal | None = None
     goal_history_items: list[Goal] = []
     log_method: str = ""
@@ -132,7 +132,7 @@ class Habit(BaseModel):
     priority: float
 
     # Additional fields that appear in journal endpoint
-    status: str | None = None
+    status: Status | None = None
     habit_type: int | None = None
     progress: Progress | None = None
 
@@ -200,7 +200,7 @@ class HabitResult(BaseModel):
 class StatusResult(BaseModel):
     """Result for checkHabit tool."""
 
-    status: str
+    status: Status
     date: str
     formatted_date: str
     completed: bool
@@ -211,7 +211,7 @@ class DateRangeStatusItem(BaseModel):
 
     date: str
     formatted_date: str
-    status: str
+    status: Status
     completed: bool
 
 
@@ -227,7 +227,7 @@ class DateRangeStatusResult(BaseModel):
 class LogResult(BaseModel):
     """Result for logHabit/setHabitStatus tool."""
 
-    status: str
+    status: Status
     date: str
     formatted_date: str
     note: str | None = None
