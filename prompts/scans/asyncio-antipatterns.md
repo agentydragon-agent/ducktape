@@ -64,12 +64,12 @@ Issues:
 async def write_to_pipe(fd: int, data: bytes):
     os.write(fd, data)  # Can block!
 
-# ACCEPTABLE: Use asyncio.to_thread for write (but not ideal)
+# GOOD: Use asyncio.to_thread for one-shot writes
 async def write_to_pipe(fd: int, data: bytes):
     await asyncio.to_thread(os.write, fd, data)
 
-# BEST: Use proper asyncio streams with non-blocking FD
-async def write_to_pipe(fd: int, data: bytes):
+# BEST (for ongoing communication): Use proper asyncio streams with non-blocking FD
+async def write_to_pipe_stream(fd: int) -> asyncio.StreamWriter:
     import fcntl
     # Set FD to non-blocking for asyncio
     flags = fcntl.fcntl(fd, fcntl.F_GETFL)
@@ -80,10 +80,15 @@ async def write_to_pipe(fd: int, data: bytes):
     transport, protocol = await loop.connect_write_pipe(
         asyncio.streams.FlowControlMixin, os.fdopen(fd, 'wb', buffering=0)
     )
-    writer = asyncio.StreamWriter(transport, protocol, None, loop)
+    return asyncio.StreamWriter(transport, protocol, None, loop)
 
+# Use the stream for multiple writes
+async def communicate_via_pipe(fd: int):
+    writer = await write_to_pipe_stream(fd)
     try:
-        writer.write(data)
+        writer.write(b"message 1\n")
+        await writer.drain()
+        writer.write(b"message 2\n")
         await writer.drain()
     finally:
         writer.close()
@@ -92,8 +97,9 @@ async def write_to_pipe(fd: int, data: bytes):
 
 Issues:
 - `os.write()` and `os.read()` can block if buffer is full/empty
-- `asyncio.to_thread()` works but adds thread overhead
-- **BEST**: Use native asyncio streams with non-blocking FDs for true async I/O
+- **Note**: Python lacks `asyncio.open_pipe(fd)` - no high-level primitive for FD streams
+- **For one-shot writes**: `asyncio.to_thread()` is simpler and acceptable
+- **For ongoing communication**: Use `connect_read_pipe()`/`connect_write_pipe()` with streams
 
 ### Example: os.fdopen without non-blocking FD
 
@@ -414,45 +420,26 @@ async def write_startup_handshake(**data):
     # Blocks event loop!
     os.write(handshake_fd, payload)
 
-# ACCEPTABLE: Thread-based approach (adds overhead)
+# GOOD: Thread-based approach (simple and acceptable for one-shot writes)
 async def write_startup_handshake(**data):
     handshake_fd = int(os.environ.get("WT_HANDSHAKE_FD"))
     payload = json.dumps(data).encode() + b"\n"
 
-    # Works but uses thread pool
+    # For one-shot startup handshake, asyncio.to_thread is pragmatic
+    # (Python lacks asyncio.open_pipe(fd) high-level primitive)
     await asyncio.to_thread(os.write, handshake_fd, payload)
-
-# BEST: Native asyncio streams
-async def write_startup_handshake(**data):
-    handshake_fd = int(os.environ.get("WT_HANDSHAKE_FD"))
-    payload = json.dumps(data).encode() + b"\n"
-
-    import fcntl
-    # Set FD to non-blocking
-    flags = fcntl.fcntl(handshake_fd, fcntl.F_GETFL)
-    fcntl.fcntl(handshake_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-    # Create asyncio StreamWriter
-    loop = asyncio.get_running_loop()
-    transport, protocol = await loop.connect_write_pipe(
-        asyncio.streams.FlowControlMixin,
-        os.fdopen(handshake_fd, 'wb', buffering=0)
-    )
-    writer = asyncio.StreamWriter(transport, protocol, None, loop)
-
-    try:
-        writer.write(payload)
-        await writer.drain()  # True async write
-    finally:
-        writer.close()
-        await writer.wait_closed()
 ```
 
-**Key improvements**:
-- Set FDs to `O_NONBLOCK` before asyncio use
-- Use `asyncio.get_running_loop()` instead of deprecated `get_event_loop()`
-- Use native asyncio streams instead of `asyncio.to_thread()` for true async I/O
-- Proper cleanup with `writer.close()` and `await writer.wait_closed()`
+**Why asyncio.to_thread is appropriate here**:
+- One-shot write during daemon startup (not performance-critical)
+- Python lacks `asyncio.open_pipe(fd)` - no high-level API like `open_connection()`
+- Creating full asyncio stream machinery is overkill for a single write
+- Thread overhead is negligible compared to process startup time
+
+**When to use full asyncio streams** (via `connect_write_pipe()`):
+- Ongoing bidirectional communication over a pipe
+- High-frequency writes where thread overhead matters
+- When you need backpressure control via `writer.drain()`
 
 ## References
 

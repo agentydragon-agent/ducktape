@@ -104,27 +104,10 @@ async def write_startup_handshake(
     if handshake_fd is None:
         return
 
-    # Write using proper asyncio stream to avoid blocking event loop
+    # For one-shot handshake writes, asyncio.to_thread is acceptable
+    # (Python lacks a high-level asyncio.open_pipe(fd) primitive)
     with contextlib.suppress(OSError):
-        import fcntl
-        # Set FD to non-blocking for asyncio
-        flags = fcntl.fcntl(handshake_fd, fcntl.F_GETFL)
-        fcntl.fcntl(handshake_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-        # Create asyncio StreamWriter from the FD
-        loop = asyncio.get_running_loop()
-        transport, protocol = await loop.connect_write_pipe(
-            asyncio.streams.FlowControlMixin, os.fdopen(handshake_fd, 'wb', buffering=0)
-        )
-        writer = asyncio.StreamWriter(transport, protocol, None, loop)
-
-        try:
-            writer.write(payload)
-            await writer.drain()
-        finally:
-            writer.close()
-            with contextlib.suppress(Exception):
-                await writer.wait_closed()
+        await asyncio.to_thread(os.write, handshake_fd, payload)
 
     if redirect_after:
         try:
