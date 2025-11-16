@@ -2,7 +2,6 @@ import asyncio
 from datetime import UTC, datetime
 from importlib import resources
 import logging
-import uuid
 
 from fastmcp.server.context import ServerSession
 from jinja2 import Template
@@ -10,22 +9,15 @@ from pydantic import BaseModel
 
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.models.proposal_status import ProposalStatus
-
-# Persistence API (SQLite-backed implementation injected by container)
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
-from adgn.agent.policy_eval.container import ContainerPolicyEvaluator, run_policy_source
+from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.mcp._shared.constants import (
     APPROVAL_POLICY_PROPOSALS_INDEX_URI,
     APPROVAL_POLICY_RESOURCE_URI,
     APPROVAL_POLICY_SERVER_NAME_APPROVER,
     APPROVAL_POLICY_SERVER_NAME_PROPOSER,
     APPROVAL_POLICY_SERVER_NAME_READER,
-    RUNTIME_EXEC_TOOL_NAME,
-    RUNTIME_SERVER_NAME,
-    UI_SERVER_NAME,
 )
-from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.uris import approval_policy_proposal_item_uri
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -203,22 +195,11 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
     def __init__(self, *, engine: ApprovalPolicyEngine, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER) -> None:
         super().__init__(name=name, instructions=None)
         self._engine = engine
-        self._agent_id = engine.agent_id
-        self._persistence = engine.persistence
-        self._docker = engine.docker_client
 
         @self.flat_model()
         async def create_proposal(input: CreateProposalArgs) -> ProposalDescriptor:  # type: ignore[unused-ignore]
             """Create a new policy proposal and return its descriptor."""
-            if self._docker is not None:
-                run_policy_source(
-                    docker_client=self._docker,
-                    source=input.content,
-                    input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
-                )
-            new_id = uuid.uuid4().hex
-            await self._persistence.create_policy_proposal(self._agent_id, proposal_id=new_id, content=input.content)
-            self._engine.notify_proposal_change(new_id)
+            new_id = await self._engine.create_proposal(input.content)
             return ProposalDescriptor(
                 id=new_id, status=ProposalStatus.PENDING, created_at=datetime.now(UTC), decided_at=None
             )
@@ -226,9 +207,7 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
         @self.flat_model()
         async def withdraw_proposal(input: WithdrawProposalArgs) -> bool:  # type: ignore[unused-ignore]
             """Withdraw a pending policy proposal by id."""
-            pid = input.id
-            await self._persistence.delete_policy_proposal(self._agent_id, pid)
-            self._engine.notify_proposal_change(pid)
+            await self._engine.withdraw_proposal(input.id)
             return True
 
 
@@ -253,34 +232,17 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
     def __init__(self, *, engine: ApprovalPolicyEngine, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER) -> None:
         super().__init__(name=name, instructions=None)
         self._engine = engine
-        self._agent_id = engine.agent_id
-        self._persistence = engine.persistence
-        self._docker = engine.docker_client
 
         @self.flat_model()
         async def approve_proposal(input: ApproveProposalArgs) -> bool:  # type: ignore[unused-ignore]
             """Approve a pending policy proposal by id (activates policy)."""
-            got = await self._persistence.get_policy_proposal(self._agent_id, input.id)
-            if got is None:
-                raise KeyError(input.id)
-            # Self-check the proposal program before activation
-            if self._docker is not None:
-                run_policy_source(
-                    docker_client=self._docker,
-                    source=got.content,
-                    input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
-                )
-            # Activate policy in engine (notifies via engine)
-            self._engine.set_policy(got.content)
-            await self._persistence.approve_policy_proposal(self._agent_id, input.id)
-            self._engine.notify_proposal_change(input.id)
+            await self._engine.approve_proposal(input.id)
             return True
 
         @self.flat_model()
         async def reject_proposal(input: RejectProposalArgs) -> bool:  # type: ignore[unused-ignore]
             """Reject a pending policy proposal by id."""
-            await self._persistence.reject_policy_proposal(self._agent_id, input.id)
-            self._engine.notify_proposal_change(input.id)
+            await self._engine.reject_proposal(input.id)
             return True
 
         @self.flat_model()

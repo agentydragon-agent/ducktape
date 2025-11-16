@@ -197,6 +197,58 @@ class ApprovalPolicyEngine:
         self.notify_resource(approval_policy_proposal_item_uri(proposal_id))
         self.notify_proposals_changed()
 
+    async def create_proposal(self, content: str) -> str:
+        """Create a new policy proposal and return its ID.
+
+        Validates the proposal content if docker_client is available,
+        persists it, and notifies about the change.
+        """
+        # Self-check proposal program if docker is available
+        if self.docker_client is not None:
+            run_policy_source(
+                docker_client=self.docker_client,
+                source=content,
+                input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
+            )
+        # Generate new proposal ID and persist
+        import uuid
+
+        new_id = uuid.uuid4().hex
+        await self.persistence.create_policy_proposal(self.agent_id, proposal_id=new_id, content=content)
+        self.notify_proposal_change(new_id)
+        return new_id
+
+    async def withdraw_proposal(self, proposal_id: str) -> None:
+        """Withdraw (delete) a pending policy proposal by ID."""
+        await self.persistence.delete_policy_proposal(self.agent_id, proposal_id)
+        self.notify_proposal_change(proposal_id)
+
+    async def approve_proposal(self, proposal_id: str) -> None:
+        """Approve a pending policy proposal by ID and activate it.
+
+        Retrieves the proposal, validates it, activates it as the current policy,
+        marks it approved in persistence, and notifies about the change.
+        """
+        got = await self.persistence.get_policy_proposal(self.agent_id, proposal_id)
+        if got is None:
+            raise KeyError(proposal_id)
+        # Self-check the proposal program before activation
+        if self.docker_client is not None:
+            run_policy_source(
+                docker_client=self.docker_client,
+                source=got.content,
+                input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
+            )
+        # Activate policy (notifies via engine's set_policy)
+        self.set_policy(got.content)
+        await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
+        self.notify_proposal_change(proposal_id)
+
+    async def reject_proposal(self, proposal_id: str) -> None:
+        """Reject a pending policy proposal by ID."""
+        await self.persistence.reject_policy_proposal(self.agent_id, proposal_id)
+        self.notify_proposal_change(proposal_id)
+
 
 def make_policy_engine(
     *,
