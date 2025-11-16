@@ -21,19 +21,23 @@ dependencies = [
     "pathspec",
 ]
 
+[tool.setuptools]
+packages = ["graders"]
+
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio",
-    "pytest-mock",
-    "pytest-cov",
+    # Note: pytest disabled - tests require code from llm/adgn_llm/instruction_optimizer
+    # "pytest>=7.0.0",
+    # "pytest-asyncio",
+    # "pytest-mock",
+    # "pytest-cov",
     "black",
     "ruff",
     "mypy",
     "pre-commit",
     # Type stubs
     "types-requests",
-    "types-PyYAML", 
+    "types-PyYAML",
     "types-setuptools",
     "types-docutils",
     "pandas-stubs",

@@ -29,7 +29,7 @@ dependencies = [
     'passlib',
     "tomlkit",
     'fastapi-csrf-protect',
-    'fastapi-users[sqlalchemy,argon2]',
+    'fastapi-users[sqlalchemy]',
     'fastapi-sessions',
 
     # ActivityWatch stuff

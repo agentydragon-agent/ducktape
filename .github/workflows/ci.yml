@@ -87,6 +87,13 @@ jobs:
             ${{ runner.os }}-pip-uv-${{ matrix.project }}-
             ${{ runner.os }}-pip-uv-
 
+      - name: Install gitstatusd for wt tests
+        if: matrix.project == 'wt'
+        run: |
+          wget -qO- https://github.com/romkatv/gitstatus/archive/refs/heads/master.tar.gz | tar xz -C /tmp
+          sudo install -m 755 /tmp/gitstatus-master/usrbin/gitstatusd-linux-x86_64 /usr/local/bin/gitstatusd
+          which gitstatusd
+
       - name: Install dependencies and run tests
         id: pytest
         working-directory: ${{ matrix.project }}
