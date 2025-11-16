@@ -13,6 +13,7 @@ import subprocess
 import sys
 from typing import Any, cast
 
+from anthropic.types import MessageParam
 from anthropic.types.text_block_param import TextBlockParam
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
@@ -226,6 +227,52 @@ def index_of_last_assistant_before_final(msgs: list[StandardMessage]) -> int | N
     return None
 
 
+def index_of_last_assistant_in_anthropic_messages(messages: list[MessageParam]) -> int | None:
+    """Find index of last assistant message in Anthropic MessageParam list before the final message."""
+    for i in range(len(messages) - 2, -1, -1):
+        msg = messages[i]
+        if isinstance(msg, dict) and msg.get("role") == "assistant":
+            return i
+    return None
+
+
+def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[StandardMessage]:
+    """Convert Anthropic MessageParam list to StandardMessage list for grader context.
+
+    Extracts text content from Anthropic content blocks and flattens to simple string content.
+    """
+    result: list[StandardMessage] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        content = msg.get("content")
+
+        # Extract text from content
+        text_content = ""
+        if isinstance(content, str):
+            text_content = content
+        elif isinstance(content, list):
+            texts: list[str] = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") in ("text", "input_text"):
+                        text = block.get("text")
+                        if isinstance(text, str):
+                            texts.append(text)
+            text_content = "\n".join(texts)
+
+        if not text_content.strip():
+            continue
+
+        if role == "user":
+            result.append(StandardUserMessage(content=text_content))
+        elif role == "assistant":
+            result.append(StandardAssistantMessage(content=text_content))
+
+    return result
+
+
 def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, Any]] | None:
     tools = parse_tools_list(tools_val)
     if not tools:
@@ -237,8 +284,10 @@ def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, 
     return normalized
 
 
-def anthro_to_openai_messages(body: dict[str, Any], new_system_text: str | None) -> list[ChatCompletionMessageParam]:
-    """Translate Anthropic-style messages into OpenAI Chat format, returning SDK models."""
+def anthro_to_openai_messages(
+    messages: list[MessageParam], new_system_text: str | None
+) -> list[ChatCompletionMessageParam]:
+    """Translate Anthropic MessageParam list into OpenAI Chat format, returning SDK models."""
 
     def _join_text_parts(parts: Iterable[dict[str, Any]]) -> str:
         texts: list[str] = []
@@ -257,7 +306,7 @@ def anthro_to_openai_messages(body: dict[str, Any], new_system_text: str | None)
     if new_system_text:
         raw_messages.append({"role": "system", "content": new_system_text})
 
-    for message in body.get("messages", []):
+    for message in messages:
         if not isinstance(message, dict):
             continue
         role = message.get("role")
@@ -594,17 +643,14 @@ async def run_eval(
                 ar = item.anthropic_request
                 sys_val = extract_anthropic_system_text(ar.system)
                 new_sys = rewrite_system_with_template(sys_val, template_path)
-                # 2) Build OpenAI sampling request BEFORE the bad assistant turn
-                if (chat_params := parse_chat_messages(ar.messages)) is None:
-                    log_event({"correlation_id": item.correlation_id, "status": "parse_messages_failed"})
-                    return None, None
-                msgs = [chat_param_to_standard_message(msg) for msg in chat_params]
-                prev_asst_idx = index_of_last_assistant_before_final(msgs)
+                # 2) Find last assistant message in Anthropic messages (before final user complaint)
+                prev_asst_idx = index_of_last_assistant_in_anthropic_messages(ar.messages)
                 if prev_asst_idx is None:
                     log_event({"correlation_id": item.correlation_id, "status": "no_prev_assistant"})
                     return None, None
-                context_body = {"messages": ar.messages[:prev_asst_idx]}
-                oai_messages = anthro_to_openai_messages(context_body, new_sys)
+                # 3) Build OpenAI sampling request BEFORE the bad assistant turn
+                context_messages = ar.messages[:prev_asst_idx]
+                oai_messages = anthro_to_openai_messages(context_messages, new_sys)
                 in_tokens = tokens_for_chat_messages(oai_messages)
                 log_event(
                     {
@@ -645,8 +691,8 @@ async def run_eval(
                     log_event(msg)
                     return None, None
                 new_asst_obj = samp.choices[0].message.model_dump()
-                # For grader context construction later
-                msgs_for_grader = msgs
+                # For grader context: convert full Anthropic message list to StandardMessage
+                msgs_for_grader = anthropic_messages_to_standard(ar.messages)
                 prev_asst_idx_for_grader: int = prev_asst_idx
             else:
                 # Crush / Responses-native path
@@ -1011,16 +1057,17 @@ async def run_eval(
                         shared_prefix = [m for m in (msgs_disp[:idx]) if m.role != MessageRole.SYSTEM]
                         bad_branch = msgs_disp[idx:]
                 else:
-                    # CCR item
-                    # Flatten original system
-                    orig_sys = flatten_system_string(ar.get("system"))
-                    rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
-                    _msgs = ar.get("messages")
-                    raw_msgs = _msgs if _msgs is not None else []
-                    if (chat_params := parse_chat_messages(raw_msgs)) is None:
+                    # CCR item - validate and use typed Anthropic structures
+                    try:
+                        ccr_req = CCRRequest.model_validate(ar)
+                        orig_sys = extract_anthropic_system_text(ccr_req.system)
+                        rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
+                        msgs = anthropic_messages_to_standard(ccr_req.messages)
+                    except Exception:
+                        # Fallback for malformed data
+                        orig_sys = flatten_system_string(ar.get("system"))
+                        rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
                         msgs = []
-                    else:
-                        msgs = [chat_param_to_standard_message(msg) for msg in chat_params]
                     idx = index_of_last_assistant_before_final(msgs)
                     if idx is None:
                         shared_prefix = msgs
