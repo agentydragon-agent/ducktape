@@ -18,7 +18,7 @@ from .types import (
     StatusResult,
 )
 from .utils import with_client
-from .utils.date_utils import format_date_human, format_date_yyyy_mm_dd
+from .utils.date_utils import format_date_yyyy_mm_dd
 from .utils.error_utils import create_error_response, create_validation_error
 from .utils.habit_resolver import resolve_habit
 
@@ -197,13 +197,12 @@ async def get_habit_status(
         # Process each status
         for status in statuses:
             date_str = format_date_yyyy_mm_dd(status.date)
-            formatted_date = format_date_human(date_str)
             is_completed = status.status == Status.COMPLETED
 
             # Build the status item
             items.append(
                 DateRangeStatusItem(
-                    date=date_str, formatted_date=formatted_date, status=status.status, completed=is_completed
+                    date=date_str, status=status.status, completed=is_completed
                 )
             )
 
@@ -226,12 +225,9 @@ async def get_habit_status(
 
     status = await client.check_habit_status(resolved.habit_id, date_str)
 
-    # Format the status value for easier use by LLMs
-    readable_date = format_date_human(date_str)
-
     # Status is now a Pydantic model, use attribute access
     return StatusResult(
-        status=status.status, date=date_str, formatted_date=readable_date, completed=status.status == Status.COMPLETED
+        status=status.status, date=date_str, completed=status.status == Status.COMPLETED
     )
 
 
@@ -271,10 +267,7 @@ async def set_habit_status(
         resolved.habit_id, cast(Literal["completed", "skipped", "failed", "none"], status.value), date, note, value
     )
 
-    # Format the response for easier use by LLMs
-    date_str = format_date_human(date) if date else format_date_human(datetime.now())
-
     # Pydantic handles optional fields
     return LogResult(
-        status=result.status, date=result.date, formatted_date=date_str, note=result.note, value=result.value
+        status=result.status, date=result.date, note=result.note, value=result.value
     )

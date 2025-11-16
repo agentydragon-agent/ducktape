@@ -201,16 +201,14 @@ class StatusResult(BaseModel):
     """Result for checkHabit tool."""
 
     status: Status
-    date: str
-    formatted_date: str
+    date: str  # YYYY-MM-DD format
     completed: bool
 
 
 class DateRangeStatusItem(BaseModel):
     """Status for a single date within a date range."""
 
-    date: str
-    formatted_date: str
+    date: str  # YYYY-MM-DD format
     status: Status
     completed: bool
 
@@ -228,8 +226,7 @@ class LogResult(BaseModel):
     """Result for logHabit/setHabitStatus tool."""
 
     status: Status
-    date: str
-    formatted_date: str
+    date: str  # YYYY-MM-DD format
     note: str | None = None
     value: float | None = None
 
