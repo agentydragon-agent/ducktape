@@ -8,6 +8,7 @@ import asyncio
 from collections.abc import Callable
 import contextlib
 from dataclasses import dataclass, field
+import fcntl
 import json
 import logging
 import os
@@ -173,6 +174,11 @@ class WtClient:
         """
         # Create pipe for handshake communication (dedicated FD)
         read_fd, write_fd = os.pipe()
+
+        # Set read end to non-blocking for asyncio compatibility
+        flags = fcntl.fcntl(read_fd, fcntl.F_GETFL)
+        fcntl.fcntl(read_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
         with contextlib.suppress(Exception):
             os.set_inheritable(write_fd, True)
 
@@ -224,11 +230,11 @@ class WtClient:
             raise RuntimeError("No handshake pipe available")
 
         # Create async stream reader from file descriptor
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         reader = asyncio.StreamReader()
         protocol = asyncio.StreamReaderProtocol(reader)
 
-        # Open file descriptor in binary mode for async reading
+        # Open file descriptor in binary mode for async reading (FD already set to non-blocking)
         pipe_file = os.fdopen(self._handshake_pipe, "rb", buffering=0)
         transport, _ = await loop.connect_read_pipe(lambda: protocol, pipe_file)
 
