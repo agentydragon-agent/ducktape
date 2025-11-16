@@ -46,10 +46,12 @@
 - [ ] **Response Status**: Fix `adgn/src/adgn/rspcache/responses_db.py:109`
   - [ ] Change `status: Mapped[str]` to `status: Mapped[ResponseStatus]`
   - [ ] Update database migration script
-- [ ] **Hook Type**: Fix `llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/hooks/validation.py`
-  - [ ] Update `validate_hook_outcome` parameter type (line 34)
-  - [ ] Update `_validate_outcome_semantics` parameter type (line 53)
-  - [ ] Update `validate_final_response` parameter type (line 82)
+- [x] **Hook Type**: Fix `llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/hooks/validation.py` ✅ FIXED in commit bb09dd4
+  - [x] Update `validate_hook_outcome` parameter type (line 34) ✅
+  - [x] Update `_validate_outcome_semantics` parameter type (line 53) ✅
+  - [x] Update `validate_final_response` parameter type (line 82) ✅
+  - [x] Create HookEventName enum in claude_code_api.py ✅
+  - [x] Update VALID_OUTCOMES dict to use enum keys ✅
 
 #### 3. Security Issue
 - [ ] **ember/src/ember/config.py:56** - Move pickle_key from TOML to k8s secret
