@@ -35,7 +35,6 @@ class _CapturingServer(LowLevelServer):
         on_session_created: Callable[[ServerSession], None] | None = None,
         on_session_created_async: Callable[[ServerSession], Awaitable[None]] | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
-        fastmcp: Any | None = None,  # Accept but ignore; kept for compatibility
         **kw,
     ):
         super().__init__(*a, **kw)
@@ -145,7 +144,6 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
             assert isinstance(sess, ServerSession)
 
         capturing_server = _CapturingServer(
-            fastmcp=self,
             name=self.name,
             instructions=self.instructions,
             on_session_created=_adapter,
