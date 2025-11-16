@@ -1,11 +1,21 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from tana.domain.types import NodeId
+
+
+class SearchKind(StrEnum):
+    """Valid search expression kinds."""
+
+    TAG = "tag"
+    TYPE = "type"
+    TEXT = "text"
+    FIELD = "field"
+    BOOLEAN = "boolean"
 
 
 class BooleanOperator(str, Enum):
