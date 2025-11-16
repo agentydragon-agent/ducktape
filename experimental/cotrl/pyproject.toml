@@ -1,3 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cotrl"
+version = "0.1.0"
+description = "Experimental LLM RL scripts"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+# This is a collection of experimental scripts, not a proper package
+# Don't try to install any modules
+py-modules = []
 
 [tool.mypy]
 # Ignore missing type stubs for experimental code

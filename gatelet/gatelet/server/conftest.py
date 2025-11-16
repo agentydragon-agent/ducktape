@@ -36,6 +36,15 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(leve
 def _postgres():
     """Start and stop a temporary PostgreSQL server if needed."""
 
+    # In CI (GitHub Actions, etc.), use the service container
+    # The service container provides PostgreSQL at localhost:5432
+    if os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true":
+        os.environ["DATABASE_URL"] = "postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet"
+        settings.database.dsn = os.environ["DATABASE_URL"]
+        yield
+        return
+
+    # In Codex environment, set up a temporary PostgreSQL server
     if os.environ.get("IS_CODEX_ENV") != "1":
         yield
         return

@@ -70,6 +70,21 @@ jobs:
       fail-fast: false
       matrix:
         project: ${{ fromJson(needs.discover.outputs.projects) }}
+    # PostgreSQL service for gatelet tests
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: gatelet
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -86,6 +101,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-uv-${{ matrix.project }}-
             ${{ runner.os }}-pip-uv-
+
+      - name: Install system dependencies for projects with dbus-python
+        if: matrix.project == 'gnome-terminal-profile-switcher' || matrix.project == 'llm/ducktape_llm_common'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
 
       - name: Install gitstatusd for wt tests
         if: matrix.project == 'wt'
