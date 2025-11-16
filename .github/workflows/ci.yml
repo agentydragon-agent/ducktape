@@ -122,6 +122,12 @@ jobs:
           # UV version synced with flake.nix / .envrc
           pip install uv==0.5.11
           uv pip install --system -e ".[dev]" || uv pip install --system -e .
+
+          # Install Playwright browsers if playwright is installed (for gatelet e2e tests)
+          if uv pip show playwright >/dev/null 2>&1; then
+            playwright install --with-deps chromium
+          fi
+
           if uv pip show pytest >/dev/null 2>&1; then
             pytest -v
           else
