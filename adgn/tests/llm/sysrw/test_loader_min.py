@@ -5,7 +5,7 @@ from importlib import resources
 from pathlib import Path
 
 from hamcrest import any_of, assert_that, contains_string, equal_to, has_entries, has_item
-from openai.types.responses import ResponseInputMessage
+from openai.types.responses import ResponseInputMessageItem
 import pytest
 
 from adgn.llm.sysrw.run_eval import read_dataset  # type: ignore
@@ -62,5 +62,5 @@ async def test_read_crush_min():
     input_data = oai_req.input
     assert isinstance(input_data, list)
     # Extract roles from the input messages (should be proper message objects)
-    roles = [item.role.lower() for item in input_data if isinstance(item, ResponseInputMessage)]
+    roles = [item.role.lower() for item in input_data if isinstance(item, ResponseInputMessageItem)]
     assert any(r in ("user", "assistant") for r in roles)

@@ -35,12 +35,14 @@ class _CapturingServer(LowLevelServer):
         on_session_created: Callable[[ServerSession], None] | None = None,
         on_session_created_async: Callable[[ServerSession], Awaitable[None]] | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+        fastmcp: Any | None = None,  # Accept but ignore; kept for compatibility
         **kw,
     ):
         super().__init__(*a, **kw)
         self._on_session_created = on_session_created
         self._on_session_created_async = on_session_created_async
         self._experimental_capabilities = experimental_capabilities or {}
+        self._fastmcp = fastmcp  # Store reference if needed
 
     async def run(
         self,
