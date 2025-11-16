@@ -9,10 +9,10 @@ string derived from the concrete type.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal, cast, overload
+from typing import Any, Literal, cast
 
 from fastmcp.client.client import CallToolResult
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from adgn.agent.loop_control import NoLoopDecision
 from adgn.openai_utils.model import ReasoningItem
@@ -21,17 +21,15 @@ from adgn.openai_utils.model import ReasoningItem
 # ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
 class GroundTruthUsage(BaseModel):
     model: str
-    input_tokens: int = 0
-    output_tokens: int = 0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     total_tokens: int | None = None
-    reasoning_tokens: int = 0
-    cache_creation_input_tokens: int = 0
-    cache_read_input_tokens: int = 0
-    request_id: str | None = None
-    response_id: str | None = None
+    reasoning_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
     created_at: datetime | None = None
     idempotency_key: str | None = None
-    estimation: dict[str, str] | None = None
+    estimation: dict[str, Any] | None = None
 
 
 # ---- Typed events (no shared runtime base required) ----
@@ -88,79 +86,25 @@ type EventType = UserText | AssistantText | ToolCall | ToolCallOutput | Response
 
 
 # ---- Transcript JSONL serialization ----
-class _UserTextRecord(UserText):
-    kind: Literal["user_text"] = "user_text"
-
-
-class _AssistantTextRecord(AssistantText):
-    kind: Literal["assistant_text"] = "assistant_text"
-
-
-class _ToolCallRecord(ToolCall):
-    kind: Literal["tool_call"] = "tool_call"
-
-
-class _ToolCallOutputRecord(ToolCallOutput):
-    kind: Literal["function_call_output"] = "function_call_output"
-
-
-class _ResponseRecord(Response):
-    kind: Literal["response"] = "response"
-
-
-class _ReasoningRecord(ReasoningItem):
-    kind: Literal["reasoning"] = "reasoning"
-
-
-JsonlRecord = Annotated[
-    _UserTextRecord
-    | _AssistantTextRecord
-    | _ToolCallRecord
-    | _ToolCallOutputRecord
-    | _ResponseRecord
-    | _ReasoningRecord,
-    Field(discriminator="kind"),
-]
-
-
-_RECORD_CLASS_MAP: dict[type[BaseModel], type[BaseModel]] = {
-    UserText: _UserTextRecord,
-    AssistantText: _AssistantTextRecord,
-    ToolCall: _ToolCallRecord,
-    ToolCallOutput: _ToolCallOutputRecord,
-    Response: _ResponseRecord,
-    ReasoningItem: _ReasoningRecord,
+KIND_MAP: dict[
+    type, Literal["user_text", "assistant_text", "tool_call", "function_call_output", "response", "reasoning"]
+] = {
+    UserText: "user_text",
+    AssistantText: "assistant_text",
+    ToolCall: "tool_call",
+    ToolCallOutput: "function_call_output",
+    Response: "response",
+    ReasoningItem: "reasoning",
 }
 
 
-@overload
-def to_jsonl_record(evt: UserText) -> _UserTextRecord: ...
-
-
-@overload
-def to_jsonl_record(evt: AssistantText) -> _AssistantTextRecord: ...
-
-
-@overload
-def to_jsonl_record(evt: ToolCall) -> _ToolCallRecord: ...
-
-
-@overload
-def to_jsonl_record(evt: ToolCallOutput) -> _ToolCallOutputRecord: ...
-
-
-@overload
-def to_jsonl_record(evt: Response) -> _ResponseRecord: ...
-
-
-@overload
-def to_jsonl_record(evt: ReasoningItem) -> _ReasoningRecord: ...
+type JsonlRecord = dict[str, Any]
 
 
 def to_jsonl_record(evt: EventType) -> JsonlRecord:
-    rec_cls = _RECORD_CLASS_MAP[type(evt)]
-    data = evt.model_dump(mode="json", exclude_none=True)
-    return cast(JsonlRecord, rec_cls(**data))
+    data = cast(JsonlRecord, evt.model_dump(mode="json", exclude_none=True))
+    data["kind"] = KIND_MAP[type(evt)]
+    return data
 
 
 class BaseHandler:

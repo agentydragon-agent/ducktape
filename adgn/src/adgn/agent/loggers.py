@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-
-from adgn.agent.handler import BaseHandler, ToolCall, ToolCallOutput, to_jsonl_record
+from adgn.agent.handler import BaseHandler, JsonlRecord, ToolCall, ToolCallOutput, to_jsonl_record
 
 # TranscriptLoggerHandler removed; use TranscriptHandler from adgn.agent.transcript_handler instead.
 
@@ -15,13 +13,13 @@ class RecordingHandler(BaseHandler):
     """
 
     def __init__(self) -> None:
-        self.records: list[dict[str, Any]] = []
+        self.records: list[JsonlRecord] = []
 
     # Minimal subset used by tests; extend as needed
     def on_tool_call_event(self, evt: ToolCall) -> None:
         rec = to_jsonl_record(evt)
-        self.records.append(rec.model_dump(mode="json", exclude_none=True))
+        self.records.append(rec)
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         rec = to_jsonl_record(evt)
-        self.records.append(rec.model_dump(mode="json", exclude_none=True))
+        self.records.append(rec)

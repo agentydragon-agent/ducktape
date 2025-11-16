@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from functools import singledispatch
 from typing import Any, Literal, Protocol, Self, cast
 
@@ -154,9 +155,17 @@ class ResponsesRequest(BaseModel):
 
 
 class Usage(BaseModel):
-    input_tokens: int
-    output_tokens: int
-    total_tokens: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
+    request_id: str | None = None
+    response_id: str | None = None
+    idempotency_key: str | None = None
+    created_at: datetime | None = None
+    estimation: dict[str, Any] | None = None
 
 
 class OutputText(BaseModel):
@@ -298,11 +307,7 @@ def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
                 out_items.append(converted)
         else:
             continue
-    u = sdk_resp.usage
-    if u is None:
-        usage = Usage(input_tokens=0, output_tokens=0, total_tokens=0)
-    else:
-        usage = Usage(input_tokens=u.input_tokens, output_tokens=u.output_tokens, total_tokens=u.total_tokens)
+    usage = Usage() if sdk_resp.usage is None else Usage.model_validate(sdk_resp.usage.model_dump())
     return ResponsesResult(id=sdk_resp.id, usage=usage, output=out_items)
 
 
@@ -334,37 +339,7 @@ class OpenAIModel:
 
         kwargs = req.to_kwargs()
         sdk_resp: Response = await self.client.responses.create(**kwargs)
-        # Convert SDK response to our typed ResponsesResult
-        out_items: list[ResponseOutItem] = []
-        for item in sdk_resp.output:
-            if isinstance(item, ResponseReasoningItem):
-                # Convert SDK Summary objects to our ReasoningSummaryItem
-                summary_items = []
-                if item.summary:
-                    summary_items = [ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
-                out_items.append(ReasoningItem(id=item.id, summary=summary_items))
-            elif isinstance(item, ResponseFunctionToolCall):
-                out_items.append(
-                    FunctionCallItem(
-                        name=item.name,
-                        arguments=item.arguments,  # Already string from SDK
-                        call_id=item.call_id,
-                        id=item.id,
-                        status=item.status,
-                    )
-                )
-            elif isinstance(item, ResponseOutputMessage):
-                converted = _message_output_to_assistant(item)
-                if converted is not None:
-                    out_items.append(converted)
-            else:
-                continue
-        u = sdk_resp.usage
-        if u is None:
-            usage = Usage(input_tokens=0, output_tokens=0, total_tokens=0)
-        else:
-            usage = Usage(input_tokens=u.input_tokens, output_tokens=u.output_tokens, total_tokens=u.total_tokens)
-        return ResponsesResult(id=sdk_resp.id, usage=usage, output=out_items)
+        return convert_sdk_response(sdk_resp)
 
 
 # ------------------------------

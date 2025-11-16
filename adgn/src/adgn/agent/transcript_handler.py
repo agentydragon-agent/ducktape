@@ -47,8 +47,7 @@ class TranscriptHandler(BaseHandler):
 
     # ---- Event helpers ----
     def _write_event(self, evt: Any) -> None:
-        rec_model = to_jsonl_record(evt)
-        rec = rec_model.model_dump(mode="json", exclude_none=True)
+        rec = to_jsonl_record(evt)
         # Timestamped envelope (events.jsonl)
         out = {"ts": datetime.utcnow().isoformat() + "Z", **rec}
         with self._events_path.open("a", encoding="utf-8") as f:

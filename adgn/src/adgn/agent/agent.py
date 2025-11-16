@@ -435,15 +435,20 @@ class MiniCodex:
                         input_tokens=u.input_tokens,
                         output_tokens=u.output_tokens,
                         total_tokens=u.total_tokens,
-                        reasoning_tokens=getattr(u, "reasoning_tokens", 0) or 0,
-                        cache_creation_input_tokens=getattr(u, "cache_creation_input_tokens", 0) or 0,
-                        cache_read_input_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
+                        reasoning_tokens=u.reasoning_tokens,
+                        cache_creation_input_tokens=u.cache_creation_input_tokens,
+                        cache_read_input_tokens=u.cache_read_input_tokens,
+                        created_at=u.created_at,
+                        idempotency_key=u.idempotency_key,
+                        estimation=u.estimation,
                     ),
                     model=self._model,
+                    created_at=u.created_at,
+                    idempotency_key=u.idempotency_key,
                 )
             )  # type: ignore[arg-type]
-            # TODO(token-propagation): plumb request_id/response_id/idempotency_key/created_at/estimation
-            # from OpenAI Usage once downstream consumers are ready for them.
+            # TODO(token-propagation): capture additional metadata once OpenAI surfaces it
+            # (request identifiers, cache hit context, estimation payloads).
             resp_output = resp.output
         else:
             raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")

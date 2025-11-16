@@ -281,10 +281,10 @@ class ClaudeHistoryReader:
         for session in sessions:
             for msg in session.messages:
                 if msg.type == "assistant" and msg.usage:
-                    total_input_tokens += msg.usage.input_tokens
-                    total_output_tokens += msg.usage.output_tokens
-                    total_cache_creation_tokens += msg.usage.cache_creation_input_tokens
-                    total_cache_read_tokens += msg.usage.cache_read_input_tokens
+                    total_input_tokens += msg.usage.input_tokens or 0
+                    total_output_tokens += msg.usage.output_tokens or 0
+                    total_cache_creation_tokens += msg.usage.cache_creation_input_tokens or 0
+                    total_cache_read_tokens += msg.usage.cache_read_input_tokens or 0
 
                 if msg.model:
                     models_used[msg.model] += 1
