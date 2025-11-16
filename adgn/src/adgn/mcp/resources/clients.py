@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastmcp.client import Client
 
 from adgn.mcp._shared.client_helpers import call_simple_ok
+from adgn.mcp._shared.constants import RESOURCES_SUBSCRIPTIONS_INDEX_URI
 from adgn.mcp._shared.resources import read_text_json_typed
-from adgn.mcp._shared.uris import subscriptions_index_uri
 from adgn.mcp.resources.types import SubscriptionsIndex
 
 
@@ -20,8 +20,7 @@ class ResourcesClient:
 
     async def list_subscriptions(self) -> SubscriptionsIndex:
         """Read the subscriptions index resource and parse into a typed model."""
-        uri = subscriptions_index_uri()
-        return await read_text_json_typed(self.client.session, uri, SubscriptionsIndex)
+        return await read_text_json_typed(self.client.session, RESOURCES_SUBSCRIPTIONS_INDEX_URI, SubscriptionsIndex)
 
     # ---- Tools (typed wrappers) ---------------------------------------------
 

@@ -159,9 +159,9 @@ See `README.md` for a shorter overview.
 - Imports at top
   - Keep all imports at module top. Only import inside a function to break a proven circular dependency; add a one‑line comment at that import explaining the cycle. Do not add per‑file linters or mypy excludes without explicit approval.
 - URI helpers, no literals
-  - Use helpers in `adgn.mcp._shared.uris` instead of hard‑coded strings:
-    - `compositor_meta_state_uri(server)`, `compositor_meta_instructions_uri(server)`, `compositor_meta_capabilities_uri(server)`
-    - `parse_compositor_state_server(uri)` when matching state URIs
+  - Use canonical constants/format strings from `adgn.mcp._shared.constants` instead of hard-coded strings:
+    - `COMPOSITOR_META_STATE_URI_FMT.format(server=...)`, `.INSTRUCTIONS_URI_FMT`, `.CAPABILITIES_URI_FMT`
+    - When matching state URIs, compare with `COMPOSITOR_META_STATE_URI_FMT`/`COMPOSITOR_META_URI_PREFIX`
   - Use `COMPOSITOR_ADMIN_SERVER_NAME` instead of the literal `"compositor_admin"`.
 - Standard in‑proc mounts (pinned)
   - Mount `resources`, `compositor_meta`, and `compositor_admin` pinned by default. Prefer the helper:

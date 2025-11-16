@@ -16,7 +16,6 @@ from adgn.agent.persist import Persistence
 from adgn.agent.policy_eval.runner import run_policy_source
 from adgn.mcp._shared.constants import APPROVAL_POLICY_PROPOSALS_INDEX_URI, APPROVAL_POLICY_RESOURCE_URI, UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.uris import approval_policy_proposal_item_uri
 
 # build_mcp_function is used for self_check payload construction
 
@@ -195,7 +194,7 @@ class ApprovalPolicyEngine:
         Convenience method that combines notifying about a specific proposal item
         and the proposals index list change.
         """
-        self.notify_resource(approval_policy_proposal_item_uri(proposal_id))
+        self.notify_resource(f"{APPROVAL_POLICY_PROPOSALS_INDEX_URI}/{proposal_id}")
         self.notify_proposals_changed()
 
     async def create_proposal(self, content: str) -> str:
