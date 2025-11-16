@@ -1,10 +1,8 @@
 """Shared test fixtures for difftree tests."""
 
-from collections.abc import Generator
 from io import StringIO
 from pathlib import Path
 import subprocess
-import tempfile
 
 import pytest
 from rich.console import Console
@@ -78,26 +76,25 @@ def sample_changes() -> list[FileChange]:
 
 
 @pytest.fixture
-def temp_git_repo() -> Generator[Path, None, None]:
+def temp_git_repo(tmp_path_factory) -> Path:
     """
     Create a temporary git repository for E2E testing.
 
-    Yields:
+    Returns:
         Path to the temporary git repository.
     """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        repo_path = Path(tmpdir)
+    repo_path = tmp_path_factory.mktemp("git_repo")
 
-        # Initialize git repo
-        subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True, capture_output=True
-        )
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True, capture_output=True)
-        # Disable commit signing for tests
-        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=repo_path, check=True, capture_output=True)
+    # Initialize git repo
+    subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True, capture_output=True
+    )
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True, capture_output=True)
+    # Disable commit signing for tests
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=repo_path, check=True, capture_output=True)
 
-        yield repo_path
+    return repo_path
 
 
 def create_file(repo_path: Path, file_path: str, content: str) -> None:

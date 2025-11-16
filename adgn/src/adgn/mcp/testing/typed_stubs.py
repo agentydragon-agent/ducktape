@@ -64,7 +64,7 @@ def _build_arguments(
     if input_model is not None and not isinstance(payload, input_model):
         raise TypeError(f"{tool_name} expects {input_model.__name__}, got {type(payload).__name__}")
     data = (
-        cast(dict[str, object], payload.model_dump(exclude_none=exclude_none))
+        payload.model_dump(exclude_none=exclude_none)
         if isinstance(payload, BaseModel)
         else payload
     )

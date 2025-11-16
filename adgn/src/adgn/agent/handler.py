@@ -9,7 +9,7 @@ string derived from the concrete type.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from fastmcp.client.client import CallToolResult
 from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
@@ -99,7 +99,7 @@ type JsonlRecord = dict[str, Any]
 
 
 def to_jsonl_record(evt: EventType) -> JsonlRecord:
-    data = cast(JsonlRecord, evt.model_dump(mode="json", exclude_none=True))
+    data = evt.model_dump(mode="json", exclude_none=True)
     data["kind"] = KIND_MAP[type(evt)]
     return data
 

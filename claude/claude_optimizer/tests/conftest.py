@@ -1,18 +1,7 @@
 """Pytest configuration and shared fixtures."""
 
-from collections.abc import Generator
-from pathlib import Path
-import tempfile
-
 from claude_optimizer.config import OptimizerConfig
 import pytest
-
-
-@pytest.fixture
-def temp_dir() -> Generator[Path, None, None]:
-    """Create a temporary directory for tests."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        yield Path(temp_dir)
 
 
 @pytest.fixture

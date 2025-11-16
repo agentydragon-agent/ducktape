@@ -12,15 +12,7 @@ DATE_SPAN_PATTERN = re.compile(r'<span data-inlineref-date="([^"]+)"></span>')
 
 
 def parse_inline_date(date_ref_data: str) -> str:
-    """
-    Parse a Tana inline date reference.
-
-    Args:
-        date_ref_data: The escaped JSON data from the date span
-
-    Returns:
-        ISO-formatted date string with timezone notation
-    """
+    """Returns ISO-formatted date string with timezone notation."""
     data: dict[str, Any] = json.loads(html.unescape(date_ref_data))
     date_str: str = str(data["dateTimeString"])  # ensure precise type for mypy
     timezone: str = str(data.get("timezone", "")) if data.get("timezone", "") else ""
@@ -41,17 +33,7 @@ def parse_inline_date(date_ref_data: str) -> str:
 def replace_inline_refs(
     text: str, node_replacer: Callable[[str], str] | None = None, date_replacer: Callable[[str], str] | None = None
 ) -> str:
-    """
-    Replace inline references in text with custom formatting.
-
-    Args:
-        text: The text containing inline references
-        node_replacer: Function to replace node references (takes node ID, returns replacement text)
-        date_replacer: Function to replace date references (takes ISO date string, returns replacement text)
-
-    Returns:
-        Text with inline references replaced
-    """
+    """node_replacer takes node ID, date_replacer takes ISO date string."""
     if node_replacer:
         text = NODE_SPAN_PATTERN.sub(lambda m: node_replacer(m.group(1)), text)
 
@@ -67,13 +49,4 @@ def replace_inline_refs(
 
 
 def find_inline_node_refs(text: str) -> list[str]:
-    """
-    Find all inline node references in text.
-
-    Args:
-        text: The text to search
-
-    Returns:
-        List of node IDs referenced in the text
-    """
     return NODE_SPAN_PATTERN.findall(text)

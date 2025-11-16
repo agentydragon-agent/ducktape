@@ -39,30 +39,13 @@ async def grade_rollout(
     cfg: OptimizerConfig,
     environment: RunnerEnvironment | None = None,
 ) -> Grade:
-    """Grade a rollout using the appropriate strategy.
-
-    Args:
-        rollout: The rollout to grade
-        task: The task that was executed
-        grading_config: The grading configuration (from task type or overrides)
-        model: The grading model to use
-        cfg: Optimizer configuration
-        environment: Optional runner environment info
-
-    Returns:
-        Grade with scores and rationales
-    """
-    # Create grading context
+    """Grade a rollout using the appropriate strategy."""
     context = GradingContext(rollout=rollout, task=task, environment=environment)
 
-    # Create the appropriate grading strategy
     # Note: We don't pass config_path since criteria are already resolved in grading_config
     strategy = create_grading_strategy(grading_config)
 
-    # Collect artifacts using the strategy
     artifacts = strategy.collect_artifacts(context)
-
-    # Prepare artifacts for grading (truncation, etc.)
     prepared = strategy.prepare_for_grader(artifacts, cfg)
 
     # Handle different grading types

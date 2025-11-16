@@ -16,28 +16,14 @@ class ConfigFactory:
     """Factory for creating test configurations with different presets."""
 
     def __init__(self, repo_path: Path, temp_base_dir: Path | None = None):
-        """Initialize factory with repository path.
-
-        Args:
-            repo_path: Path to the main git repository
-            temp_base_dir: Base directory for temporary WT_DIR (default: repo_path.parent)
-        """
+        """Initialize factory with repository path."""
         self.repo_path = repo_path
         self.temp_base_dir = temp_base_dir or repo_path.parent
 
     def create(
         self, preset: str | Mapping[str, Any] = "MINIMAL", *, wt_dir: Path | None = None, **config_overrides
     ) -> Configuration:
-        """Create a configuration with specified preset and overrides.
-
-        Args:
-            preset: Name of preset from ConfigPresets class
-            wt_dir: Custom WT_DIR path (default: auto-generated)
-            **config_overrides: Any ConfigFile fields to override
-
-        Returns:
-            Resolved Configuration instance
-        """
+        """preset is a name from ConfigPresets class or a dict."""
         # Get base configuration from preset (by value or by name)
         if isinstance(preset, Mapping):
             base_config = dict(preset)

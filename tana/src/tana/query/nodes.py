@@ -8,17 +8,7 @@ from tana.graph.workspace import TanaGraph
 
 
 def get_field_values(node: BaseNode, field_name: str, store: TanaGraph) -> Iterator[str]:
-    """
-    Get all values for a field as a list of strings.
-
-    Args:
-        node: The node to search for field values
-        field_name: The name of the field to look for
-        store: The graph containing all nodes
-
-    Yields:
-        String values for the specified field
-    """
+    """Get all values for a field as a list of strings."""
     for child in node.child_nodes:
         if (
             isinstance(child, TupleNode)
@@ -33,16 +23,7 @@ def get_field_values(node: BaseNode, field_name: str, store: TanaGraph) -> Itera
 
 
 def is_in_deleted_nodes(node: BaseNode, store: TanaGraph) -> bool:
-    """
-    Check if a node has 'Deleted Nodes' in its ancestor chain.
-
-    Args:
-        node: The node to check
-        store: The graph containing all nodes
-
-    Returns:
-        True if the node is under 'Deleted Nodes', False otherwise
-    """
+    """Check if a node has 'Deleted Nodes' in its ancestor chain."""
     current: BaseNode | None = node
     visited = set()
 
@@ -64,16 +45,7 @@ def is_in_deleted_nodes(node: BaseNode, store: TanaGraph) -> bool:
 
 
 def get_ancestors(node: BaseNode, store: TanaGraph) -> list[BaseNode]:
-    """
-    Get all ancestors of a node (parents, grandparents, etc).
-
-    Args:
-        node: The node to get ancestors for
-        store: The graph containing all nodes
-
-    Returns:
-        List of ancestor nodes, from immediate parent to root
-    """
+    """Get all ancestors of a node, from immediate parent to root."""
     ancestors = []
     current = node
     visited = set()
@@ -90,16 +62,7 @@ def get_ancestors(node: BaseNode, store: TanaGraph) -> list[BaseNode]:
 
 
 def find_nodes_by_tag(store: TanaGraph, tag_name: str) -> Iterator[BaseNode]:
-    """
-    Find all nodes with a specific supertag.
-
-    Args:
-        store: The graph to search
-        tag_name: The tag name to search for
-
-    Yields:
-        Nodes that have the specified tag
-    """
+    """Find all nodes with a specific supertag."""
     for node in store.values():
         if store.has_supertag(node.id, tag_name):
             yield node

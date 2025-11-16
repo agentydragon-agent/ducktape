@@ -106,11 +106,7 @@ class DockerFileProvider:
     """File provider for Docker container workspaces."""
 
     def __init__(self, container_files: list[dict[str, str]]):
-        """Initialize with pre-collected files from container.
-
-        Args:
-            container_files: List of dicts with 'path' and 'content' keys
-        """
+        """container_files: List of dicts with 'path' and 'content' keys."""
         self._files = {f["path"]: f["content"] for f in container_files}
 
     def list_files(self) -> list[str]:
@@ -161,28 +157,14 @@ class FileCollector:
 
 
 def collect_workspace_files(workspace_path: Path) -> dict[str, str]:
-    """Convenience function to collect files from a local workspace.
-
-    Args:
-        workspace_path: Path to the workspace directory
-
-    Returns:
-        Dictionary mapping relative file paths to their contents
-    """
+    """Returns dict mapping relative file paths to their contents."""
     provider = WorkspaceFileProvider(workspace_path)
     collector = FileCollector(provider)
     return collector.collect_files()
 
 
 def collect_docker_files(container_files: list[dict[str, str]]) -> dict[str, str]:
-    """Convenience function to collect and filter files from Docker container.
-
-    Args:
-        container_files: List of dicts with 'path' and 'content' keys
-
-    Returns:
-        Dictionary mapping relative file paths to their contents
-    """
+    """Returns dict mapping relative file paths to their contents."""
     provider = DockerFileProvider(container_files)
     collector = FileCollector(provider)
     return collector.collect_files()

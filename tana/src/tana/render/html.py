@@ -76,15 +76,6 @@ class HTMLToMarkdownParser(HTMLParser):
 
 
 def html_to_markdown(html_text: str) -> str:
-    """
-    Convert HTML formatting to Markdown.
-
-    Args:
-        html_text: HTML-formatted text
-
-    Returns:
-        Markdown-formatted text
-    """
     parser = HTMLToMarkdownParser()
     parser.feed(html_text)
     return parser.get_markdown()
@@ -96,18 +87,7 @@ def process_inline_refs(
     date_formatter: Callable[[str], str] | None = None,
     unescape: bool = True,
 ) -> str:
-    """
-    Process inline references in text with custom formatting.
-
-    Args:
-        text: The text containing inline references
-        node_formatter: Function to format node references (takes node ID, returns formatted text)
-        date_formatter: Function to format date references (takes ISO date string, returns formatted text)
-        unescape: Whether to unescape HTML entities in the final result
-
-    Returns:
-        Text with inline references processed
-    """
+    """node_formatter takes node ID, date_formatter takes ISO date string."""
     # Process node references
     if node_formatter:
         text = NODE_SPAN_PATTERN.sub(lambda m: node_formatter(m.group(1)), text)
@@ -129,26 +109,8 @@ def process_inline_refs(
 
 
 def find_inline_node_refs(text: str) -> list[NodeId]:
-    """
-    Find all inline node references in text.
-
-    Args:
-        text: The text to search
-
-    Returns:
-        List of node IDs referenced in the text
-    """
     return [NodeId(match) for match in NODE_SPAN_PATTERN.findall(text)]
 
 
 def find_inline_date_refs(text: str) -> list[str]:
-    """
-    Find all inline date references in text.
-
-    Args:
-        text: The text to search
-
-    Returns:
-        List of date reference data strings
-    """
     return DATE_SPAN_PATTERN.findall(text)

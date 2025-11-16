@@ -11,18 +11,7 @@ from .loader import PromptVariableError, load_prompt
 def load_work_tracking_prompt(
     agent_name: str, task_id: str, project_name: str, context: str | None = None, **extra_vars
 ) -> str:
-    """Load the work tracking prompt with standard variables.
-
-    Args:
-        agent_name: Name of the AI agent
-        task_id: Unique task identifier
-        project_name: Name of the project
-        context: Optional additional context
-        **extra_vars: Any additional variables for the prompt
-
-    Returns:
-        The formatted work tracking prompt
-    """
+    """Load the work tracking prompt with standard variables."""
     variables = {
         "agent_name": agent_name,
         "task_id": task_id,
@@ -38,18 +27,7 @@ def load_work_tracking_prompt(
 def load_task_management_prompt(
     task_id: str, goal: str, deliverables: list[str], constraints: list[str] | None = None, **extra_vars
 ) -> str:
-    """Load the task management prompt with required information.
-
-    Args:
-        task_id: Unique task identifier
-        goal: The goal to achieve
-        deliverables: List of expected deliverables
-        constraints: Optional list of constraints
-        **extra_vars: Any additional variables
-
-    Returns:
-        The formatted task management prompt
-    """
+    """Load the task management prompt with required information."""
     variables = {
         "task_id": task_id,
         "goal": goal,
@@ -69,18 +47,7 @@ def load_debugging_protocol_prompt(
     attempted_solutions: list[str] | None = None,
     **extra_vars,
 ) -> str:
-    """Load the debugging protocol prompt.
-
-    Args:
-        error_description: Description of the error
-        context: Context in which the error occurred
-        stack_trace: Optional stack trace
-        attempted_solutions: Optional list of already attempted solutions
-        **extra_vars: Any additional variables
-
-    Returns:
-        The formatted debugging protocol prompt
-    """
+    """Load the debugging protocol prompt."""
     variables = {
         "error_description": error_description,
         "context": context,
@@ -96,18 +63,7 @@ def load_debugging_protocol_prompt(
 def load_spawn_coordination_prompt(
     team_id: str, agents: list[str], task_graph: str, coordination_strategy: str | None = None, **extra_vars
 ) -> str:
-    """Load the spawn coordination prompt for multi-agent teams.
-
-    Args:
-        team_id: Unique team identifier
-        agents: List of agent names
-        task_graph: Task dependency graph description
-        coordination_strategy: Optional coordination strategy
-        **extra_vars: Any additional variables
-
-    Returns:
-        The formatted spawn coordination prompt
-    """
+    """Load the spawn coordination prompt for multi-agent teams."""
     variables = {
         "team_id": team_id,
         "agents": "\n".join(f"- {agent}" for agent in agents),
@@ -128,19 +84,7 @@ def load_investigation_setup_prompt(
     methodology: str | None = None,
     **extra_vars,
 ) -> str:
-    """Load the investigation setup prompt.
-
-    Args:
-        investigation_id: Unique investigation identifier
-        title: Investigation title
-        goal: What the investigation aims to discover
-        initial_evidence: Optional list of initial evidence
-        methodology: Optional investigation methodology
-        **extra_vars: Any additional variables
-
-    Returns:
-        The formatted investigation setup prompt
-    """
+    """Load the investigation setup prompt."""
     variables = {
         "investigation_id": investigation_id,
         "title": title,
@@ -157,17 +101,7 @@ def load_investigation_setup_prompt(
 def load_metadata_validation_prompt(
     file_path: str, expected_version: int, validation_rules: list[str] | None = None, **extra_vars
 ) -> str:
-    """Load the metadata validation prompt.
-
-    Args:
-        file_path: Path to the file to validate
-        expected_version: Expected metadata version
-        validation_rules: Optional list of validation rules
-        **extra_vars: Any additional variables
-
-    Returns:
-        The formatted metadata validation prompt
-    """
+    """Load the metadata validation prompt."""
     variables = {
         "file_path": file_path,
         "expected_version": str(expected_version),
@@ -182,19 +116,7 @@ def load_metadata_validation_prompt(
 def create_prompt_with_defaults(
     prompt_name: PromptName, required_vars: dict[str, Any], optional_vars: dict[str, Any] | None = None
 ) -> str:
-    """Create a prompt with default values for common variables.
-
-    Args:
-        prompt_name: Name of the prompt to load
-        required_vars: Required variables that must be provided
-        optional_vars: Optional variables with defaults
-
-    Returns:
-        The formatted prompt
-
-    Raises:
-        PromptVariableError: If required variables are missing
-    """
+    """Raises PromptVariableError if required variables are missing."""
     # Set up default values for common variables
     defaults = {
         "timestamp": datetime.now().isoformat(),
@@ -214,15 +136,7 @@ def create_prompt_with_defaults(
 
 
 def validate_prompt_variables(prompt_name: PromptName, provided_vars: dict[str, Any]) -> tuple[bool, list[str]]:
-    """Validate that all required variables are provided for a prompt.
-
-    Args:
-        prompt_name: Name of the prompt
-        provided_vars: Variables that will be provided
-
-    Returns:
-        Tuple of (is_valid, list_of_missing_variables)
-    """
+    """Returns (is_valid, list_of_missing_variables)."""
     # Try to load the prompt with the provided variables
     try:
         load_prompt(prompt_name.value, provided_vars, allow_missing_vars=False)
@@ -244,14 +158,7 @@ def validate_prompt_variables(prompt_name: PromptName, provided_vars: dict[str, 
 
 
 def get_prompt_variables(prompt_name: PromptName) -> list[str]:
-    """Extract all variables used in a prompt.
-
-    Args:
-        prompt_name: Name of the prompt
-
-    Returns:
-        List of variable names found in the prompt
-    """
+    """Extract all variables used in a prompt."""
     try:
         # Load the raw prompt without substitution
         content = load_prompt(prompt_name.value, use_cache=False)
