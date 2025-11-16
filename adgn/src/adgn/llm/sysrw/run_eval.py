@@ -13,6 +13,7 @@ import subprocess
 import sys
 from typing import Any, cast
 
+from anthropic.types.text_block_param import TextBlockParam
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
@@ -168,6 +169,22 @@ def flatten_system_string(sys: Any) -> str:
         parts = parse_response_parts(sys)
         if parts:
             return "\n\n".join(iter_resolved_text(parts))
+    return ""
+
+
+def extract_anthropic_system_text(system: str | list[TextBlockParam] | None) -> str:
+    """Extract text from Anthropic system parameter (str or list of TextBlockParam)."""
+    if isinstance(system, str):
+        return system
+    if isinstance(system, list):
+        # System is list[TextBlockParam] where each block has {"type": "text", "text": "..."}
+        texts: list[str] = []
+        for block in system:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text")
+                if isinstance(text, str):
+                    texts.append(text)
+        return "\n\n".join(texts)
     return ""
 
 
@@ -574,14 +591,8 @@ async def run_eval(
             # Branch by source without coercing persisted formats
             if isinstance(item, CCRSample):  # CCR
                 # 1) Rewrite system via Node apply script
-                ar = item.anthropic_request  # type: ignore[assignment]
-                sys_val = (
-                    ar.system
-                    if isinstance(ar.system, str)
-                    else "\n\n".join(
-                        [p.get("text", "") for p in (ar.system if ar.system is not None else []) if isinstance(p, dict)]
-                    )
-                )
+                ar = item.anthropic_request
+                sys_val = extract_anthropic_system_text(ar.system)
                 new_sys = rewrite_system_with_template(sys_val, template_path)
                 # 2) Build OpenAI sampling request BEFORE the bad assistant turn
                 if (chat_params := parse_chat_messages(ar.messages)) is None:
