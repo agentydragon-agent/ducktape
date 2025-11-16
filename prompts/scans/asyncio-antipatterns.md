@@ -357,6 +357,103 @@ rg --type py -U 'async def.*\n.*\n.*(socket\..*\.connect|socket\..*\.recv|socket
    - Defeats the entire purpose of async/await
    - Blocks event loop, preventing all other tasks
 
+## Real-World Example: Handshake Pipe Communication
+
+This example shows the complete fix for async pipe-based handshake communication between a client and daemon process.
+
+### Client side: Reading from handshake pipe
+
+```python
+# BAD: Blocking FD used with asyncio
+async def _read_handshake_from_pipe(self):
+    # Create pipe without setting non-blocking
+    read_fd, write_fd = os.pipe()
+
+    # Use deprecated API
+    loop = asyncio.get_event_loop()
+
+    # Open blocking FD for asyncio use
+    pipe_file = os.fdopen(read_fd, "rb", buffering=0)
+    reader = asyncio.StreamReader()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    await loop.connect_read_pipe(lambda: protocol, pipe_file)
+
+# GOOD: Non-blocking FD with modern asyncio
+async def _read_handshake_from_pipe(self):
+    # Create pipe and set read end to non-blocking
+    read_fd, write_fd = os.pipe()
+    import fcntl
+    flags = fcntl.fcntl(read_fd, fcntl.F_GETFL)
+    fcntl.fcntl(read_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+    # Use modern get_running_loop (Python 3.10+)
+    loop = asyncio.get_running_loop()
+
+    # Open non-blocking FD for asyncio use
+    pipe_file = os.fdopen(read_fd, "rb", buffering=0)
+    reader = asyncio.StreamReader()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    transport, _ = await loop.connect_read_pipe(lambda: protocol, pipe_file)
+
+    # Read asynchronously
+    while True:
+        line_bytes = await reader.readline()
+        if not line_bytes:
+            break
+        # Process line...
+```
+
+### Server side: Writing to handshake pipe
+
+```python
+# BAD: Blocking os.write from async function
+async def write_startup_handshake(**data):
+    handshake_fd = int(os.environ.get("WT_HANDSHAKE_FD"))
+    payload = json.dumps(data).encode() + b"\n"
+
+    # Blocks event loop!
+    os.write(handshake_fd, payload)
+
+# ACCEPTABLE: Thread-based approach (adds overhead)
+async def write_startup_handshake(**data):
+    handshake_fd = int(os.environ.get("WT_HANDSHAKE_FD"))
+    payload = json.dumps(data).encode() + b"\n"
+
+    # Works but uses thread pool
+    await asyncio.to_thread(os.write, handshake_fd, payload)
+
+# BEST: Native asyncio streams
+async def write_startup_handshake(**data):
+    handshake_fd = int(os.environ.get("WT_HANDSHAKE_FD"))
+    payload = json.dumps(data).encode() + b"\n"
+
+    import fcntl
+    # Set FD to non-blocking
+    flags = fcntl.fcntl(handshake_fd, fcntl.F_GETFL)
+    fcntl.fcntl(handshake_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+    # Create asyncio StreamWriter
+    loop = asyncio.get_running_loop()
+    transport, protocol = await loop.connect_write_pipe(
+        asyncio.streams.FlowControlMixin,
+        os.fdopen(handshake_fd, 'wb', buffering=0)
+    )
+    writer = asyncio.StreamWriter(transport, protocol, None, loop)
+
+    try:
+        writer.write(payload)
+        await writer.drain()  # True async write
+    finally:
+        writer.close()
+        await writer.wait_closed()
+```
+
+**Key improvements**:
+- Set FDs to `O_NONBLOCK` before asyncio use
+- Use `asyncio.get_running_loop()` instead of deprecated `get_event_loop()`
+- Use native asyncio streams instead of `asyncio.to_thread()` for true async I/O
+- Proper cleanup with `writer.close()` and `await writer.wait_closed()`
+
 ## References
 
 - [Python asyncio documentation](https://docs.python.org/3/library/asyncio.html)
