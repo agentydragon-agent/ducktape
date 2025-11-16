@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from datetime import datetime, timedelta
+import fcntl
 import json
 import logging
 import os
@@ -70,6 +71,28 @@ from .worktree_service import WorktreeService
 logger = logging.getLogger(__name__)
 
 
+async def _open_write_pipe(fd: int) -> asyncio.StreamWriter:
+    """Open a file descriptor for async writing, returning a StreamWriter.
+
+    This is a convenience wrapper mimicking asyncio.open_connection() but for pipes/FDs.
+    Python lacks a built-in asyncio.open_pipe() so we create our own helper.
+    """
+    # Set FD to non-blocking (required for asyncio)
+    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+    # Create stream components (following asyncio.open_connection pattern)
+    loop = asyncio.get_running_loop()
+    reader = asyncio.StreamReader(loop=loop)
+    protocol = asyncio.StreamReaderProtocol(reader, loop=loop)
+
+    # Connect to the pipe
+    transport, _ = await loop.connect_write_pipe(lambda: protocol, os.fdopen(fd, "wb", buffering=0))
+
+    # Return writer (following asyncio.open_connection pattern)
+    return asyncio.StreamWriter(transport, protocol, reader, loop)
+
+
 async def write_startup_handshake(
     success: bool,
     error_message: str | None = None,
@@ -104,10 +127,16 @@ async def write_startup_handshake(
     if handshake_fd is None:
         return
 
-    # For one-shot handshake writes, asyncio.to_thread is acceptable
-    # (Python lacks a high-level asyncio.open_pipe(fd) primitive)
+    # Use our helper to get proper async stream writing
     with contextlib.suppress(OSError):
-        await asyncio.to_thread(os.write, handshake_fd, payload)
+        writer = await _open_write_pipe(handshake_fd)
+        try:
+            writer.write(payload)
+            await writer.drain()
+        finally:
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
 
     if redirect_after:
         try:

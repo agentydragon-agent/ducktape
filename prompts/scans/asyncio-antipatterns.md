@@ -64,27 +64,39 @@ Issues:
 async def write_to_pipe(fd: int, data: bytes):
     os.write(fd, data)  # Can block!
 
-# GOOD: Use asyncio.to_thread for one-shot writes
+# ACCEPTABLE: Use asyncio.to_thread for one-shot writes
 async def write_to_pipe(fd: int, data: bytes):
     await asyncio.to_thread(os.write, fd, data)
 
-# BEST (for ongoing communication): Use proper asyncio streams with non-blocking FD
-async def write_to_pipe_stream(fd: int) -> asyncio.StreamWriter:
-    import fcntl
-    # Set FD to non-blocking for asyncio
+# BEST: Create an open_pipe() helper following asyncio.open_connection() pattern
+import fcntl
+
+async def open_write_pipe(fd: int) -> asyncio.StreamWriter:
+    """Python lacks asyncio.open_pipe(), but we can easily create one.
+
+    This follows the same pattern as asyncio.open_connection() -
+    the source even says "just copy the code" if you want to customize it.
+    """
+    # Set FD to non-blocking (required for asyncio)
     flags = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
-    # Create asyncio StreamWriter from the FD
+    # Create stream components (same as asyncio.open_connection)
     loop = asyncio.get_running_loop()
-    transport, protocol = await loop.connect_write_pipe(
-        asyncio.streams.FlowControlMixin, os.fdopen(fd, 'wb', buffering=0)
-    )
-    return asyncio.StreamWriter(transport, protocol, None, loop)
+    reader = asyncio.StreamReader(loop=loop)
+    protocol = asyncio.StreamReaderProtocol(reader, loop=loop)
 
-# Use the stream for multiple writes
+    # Connect to the pipe
+    transport, _ = await loop.connect_write_pipe(
+        lambda: protocol, os.fdopen(fd, 'wb', buffering=0)
+    )
+
+    # Return StreamWriter (same interface as open_connection)
+    return asyncio.StreamWriter(transport, protocol, reader, loop)
+
+# Now use it like open_connection
 async def communicate_via_pipe(fd: int):
-    writer = await write_to_pipe_stream(fd)
+    writer = await open_write_pipe(fd)
     try:
         writer.write(b"message 1\n")
         await writer.drain()
@@ -97,9 +109,10 @@ async def communicate_via_pipe(fd: int):
 
 Issues:
 - `os.write()` and `os.read()` can block if buffer is full/empty
-- **Note**: Python lacks `asyncio.open_pipe(fd)` - no high-level primitive for FD streams
-- **For one-shot writes**: `asyncio.to_thread()` is simpler and acceptable
-- **For ongoing communication**: Use `connect_read_pipe()`/`connect_write_pipe()` with streams
+- **Python lacks `asyncio.open_pipe(fd)`** but you can trivially create one
+- **Pattern**: Copy `asyncio.open_connection()` source and adapt for pipes
+- **For one-shot writes**: `asyncio.to_thread()` is acceptable
+- **For ongoing communication**: Use the `open_pipe()` helper pattern above
 
 ### Example: os.fdopen without non-blocking FD
 
@@ -420,26 +433,52 @@ async def write_startup_handshake(**data):
     # Blocks event loop!
     os.write(handshake_fd, payload)
 
-# GOOD: Thread-based approach (simple and acceptable for one-shot writes)
+# GOOD: Use an open_pipe() helper (following asyncio.open_connection pattern)
+import fcntl
+
+async def open_write_pipe(fd: int) -> asyncio.StreamWriter:
+    """Create a StreamWriter from a file descriptor.
+
+    Python lacks asyncio.open_pipe(), so we create one following
+    the asyncio.open_connection() pattern (it literally says "just copy the code").
+    """
+    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+    loop = asyncio.get_running_loop()
+    reader = asyncio.StreamReader(loop=loop)
+    protocol = asyncio.StreamReaderProtocol(reader, loop=loop)
+
+    transport, _ = await loop.connect_write_pipe(
+        lambda: protocol, os.fdopen(fd, 'wb', buffering=0)
+    )
+
+    return asyncio.StreamWriter(transport, protocol, reader, loop)
+
+
 async def write_startup_handshake(**data):
     handshake_fd = int(os.environ.get("WT_HANDSHAKE_FD"))
     payload = json.dumps(data).encode() + b"\n"
 
-    # For one-shot startup handshake, asyncio.to_thread is pragmatic
-    # (Python lacks asyncio.open_pipe(fd) high-level primitive)
-    await asyncio.to_thread(os.write, handshake_fd, payload)
+    # Use our helper - now as clean as open_connection()
+    writer = await open_write_pipe(handshake_fd)
+    try:
+        writer.write(payload)
+        await writer.drain()
+    finally:
+        writer.close()
+        await writer.wait_closed()
 ```
 
-**Why asyncio.to_thread is appropriate here**:
-- One-shot write during daemon startup (not performance-critical)
-- Python lacks `asyncio.open_pipe(fd)` - no high-level API like `open_connection()`
-- Creating full asyncio stream machinery is overkill for a single write
-- Thread overhead is negligible compared to process startup time
+**Why create an open_pipe() helper**:
+- Python lacks `asyncio.open_pipe(fd)` but it's trivial to create
+- Follows the exact pattern from `asyncio.open_connection()` source
+- Provides proper async stream interface with backpressure control
+- Reusable for any pipe/FD async communication
 
-**When to use full asyncio streams** (via `connect_write_pipe()`):
-- Ongoing bidirectional communication over a pipe
-- High-frequency writes where thread overhead matters
-- When you need backpressure control via `writer.drain()`
+**When asyncio.to_thread() is acceptable instead**:
+- Truly one-shot writes where setup overhead dominates
+- When you don't need the helper elsewhere in your codebase
 
 ## References
 
