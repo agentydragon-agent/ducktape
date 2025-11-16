@@ -178,7 +178,7 @@ def _build_flat_wrapper(
     model_out: Any,
     context_param: inspect.Parameter | None,
     context_name: str | None,
-) -> FlatWrapper:
+) -> Callable[..., Any]:
     """Build a FlatWrapper instance that flattens the model parameters."""
     is_async = inspect.iscoroutinefunction(fn)
     wrapper = FlatWrapper(fn=fn, model_in=model_in, model_out=model_out, context_param=context_param, is_async=is_async)
@@ -196,8 +196,17 @@ def _build_flat_wrapper(
         async_wrapper.__signature__ = wrapper.__signature__  # type: ignore[attr-defined]
         return async_wrapper  # type: ignore[return-value]
 
-    # For sync functions, the wrapper itself is callable
-    return wrapper
+    # For sync functions, also create a proper function wrapper (not just the FlatWrapper instance)
+    # This is required for fastmcp 2.13+ which validates that @tool receives a real function
+    @functools.wraps(fn)
+    def sync_wrapper(**kwargs: Any) -> Any:
+        return wrapper.__call__(**kwargs)
+
+    # Transfer MCP metadata to the sync wrapper
+    sync_wrapper._mcp_flat_input_model = wrapper._mcp_flat_input_model  # type: ignore[attr-defined]
+    sync_wrapper._mcp_flat_output_model = wrapper._mcp_flat_output_model  # type: ignore[attr-defined]
+    sync_wrapper.__signature__ = wrapper.__signature__  # type: ignore[attr-defined]
+    return sync_wrapper
 
 
 def _apply_wrapper_metadata(
