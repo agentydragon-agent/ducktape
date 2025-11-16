@@ -9,7 +9,8 @@ from hamcrest import all_of, assert_that, contains_string, has_item, has_propert
 from uvicorn import Config, Server
 
 from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
-from adgn.openai_utils.model import AssistantMessageOut, InputItem, OpenAIModelProto, ResponsesRequest, ResponsesResult
+from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
+from adgn.openai_utils.text_extraction import extract_input_text_content
 from adgn.util.net import pick_free_port
 
 # System notification tag constants
@@ -23,25 +24,6 @@ class NoopOpenAIClient(OpenAIModelProto):
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         # This should never be called when using SyntheticAction path
         raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")
-
-
-def extract_input_text_content(messages: Sequence[InputItem | AssistantMessageOut]) -> list[str]:
-    """Extract input_text content from messages, returning list of text strings.
-
-    All messages are Pydantic BaseModel instances (InputItem or AssistantMessageOut).
-    """
-    texts: list[str] = []
-    for item in messages:
-        # Convert to dict for uniform content extraction
-        msgd = item.model_dump(exclude_none=True)
-        # Extract input_text content
-        contents = msgd.get("content") or []
-        for c in contents:
-            if isinstance(c, dict) and c.get("type") == "input_text":
-                text = c.get("text")
-                if isinstance(text, str):
-                    texts.append(text)
-    return texts
 
 
 def strip_system_notification_wrapper(text: str) -> str:

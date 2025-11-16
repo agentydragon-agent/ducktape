@@ -135,19 +135,20 @@ class WtClient:
             try:
                 loop = asyncio.get_event_loop()
                 reader_future = loop.run_in_executor(None, self._read_handshake_from_pipe)
-                handshake_data = await asyncio.wait_for(
+                handshake_msg = await asyncio.wait_for(
                     asyncio.shield(reader_future), timeout=self.config.startup_timeout.total_seconds()
                 )
 
-                protocol_version = handshake_data.get("protocol_version", 0)
-                if protocol_version != 1:
-                    raise RuntimeError(f"Incompatible daemon protocol version {protocol_version}, expected 1")
+                if handshake_msg.protocol_version != 1:
+                    raise RuntimeError(
+                        f"Incompatible daemon protocol version {handshake_msg.protocol_version}, expected 1"
+                    )
 
-                if handshake_data.get("success") and handshake_data.get("ready"):
+                if handshake_msg.success and handshake_msg.ready:
                     logger.info("Daemon startup handshake ok (ready)")
                     return
-                if not handshake_data.get("success"):
-                    error_message = handshake_data.get("error", "Unknown startup error")
+                if not handshake_msg.success:
+                    error_message = handshake_msg.error or "Unknown startup error"
                     raise RuntimeError(f"Daemon startup failed:\n{error_message}")
                 # Guard: success without ready indicates premature closure; treat as error to avoid races
                 raise RuntimeError("Daemon startup did not signal ready")
@@ -215,7 +216,7 @@ class WtClient:
         # Store read pipe so _read_handshake_from_pipe can consume it
         self._handshake_pipe = read_fd
 
-    def _read_handshake_from_pipe(self) -> dict[str, object]:
+    def _read_handshake_from_pipe(self) -> StartupMessage:
         """Read streaming JSON handshake/progress until ready or failure.
 
         The daemon emits multiple JSON lines:
@@ -223,13 +224,15 @@ class WtClient:
         - progress {success=True, phase=..., discovered_worktrees=N}
         - final    {success=True, ready=True, ...}
         or a single failure {success=False, error=...}
+
+        Returns the final StartupMessage (either ready=True or success=False).
         """
 
         if not self._handshake_pipe:
             raise RuntimeError("No handshake pipe available")
 
         with os.fdopen(self._handshake_pipe, "r") as pipe_file:
-            last_obj: dict[str, object] | None = None
+            last_msg: StartupMessage | None = None
             last_ready = False
             while line := pipe_file.readline():
                 if self.verbose:
@@ -238,24 +241,23 @@ class WtClient:
                 if not stripped:
                     continue
                 try:
-                    obj = StartupMessage.model_validate_json(stripped)
+                    msg = StartupMessage.model_validate_json(stripped)
                 except ValidationError:
                     continue
-                d = obj.model_dump()  # type: ignore[no-any-return]
-                last_obj = d
-                last_ready = bool(d.get("ready", False))
-                if not obj.success:
-                    return d  # type: ignore[no-any-return]
+                last_msg = msg
+                last_ready = msg.ready
+                if not msg.success:
+                    return msg
                 if last_ready:
-                    return d  # type: ignore[no-any-return]
+                    return msg
             # Only accept closure if we already saw ready=True
-            if last_ready and last_obj is not None:
-                return last_obj
+            if last_ready and last_msg is not None:
+                return last_msg
             diag = self._collect_daemon_diagnostics()
-            msg = "Daemon closed handshake pipe before ready"
+            error_msg = "Daemon closed handshake pipe before ready"
             if diag:
-                msg += "\n" + diag
-            raise RuntimeError(msg)
+                error_msg += "\n" + diag
+            raise RuntimeError(error_msg)
 
     async def get_status(self, worktree_ids: list[WorktreeID] | None = None) -> StatusResponse:
         await self._start_daemon_if_needed()

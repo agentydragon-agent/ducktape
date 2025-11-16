@@ -13,7 +13,7 @@ import subprocess
 import sys
 from typing import Any, cast
 
-from anthropic.types import MessageParam
+from anthropic.types import ContentBlockParam, MessageParam
 from anthropic.types.text_block_param import TextBlockParam
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
@@ -318,19 +318,19 @@ def anthro_to_openai_messages(
             continue
 
         if isinstance(content, list):
-            # Content is list of TypedDict blocks (TextBlockParam, ToolUseBlockParam, etc.)
-            # These are dicts at runtime, not Pydantic models
-            part_dicts: list[dict[str, Any]] = []
+            # Content is list[ContentBlockParam] - TypedDict union (dicts at runtime)
+            # Includes TextBlockParam, ToolUseBlockParam, ToolResultBlockParam, etc.
+            content_blocks: list[ContentBlockParam] = []
             for part in content:
                 if isinstance(part, dict):
-                    part_dicts.append(part)
+                    content_blocks.append(part)  # type: ignore[arg-type]
                 else:
                     continue
 
             if role == "assistant":
                 text_buf: list[str] = []
                 tool_calls: list[dict[str, Any]] = []
-                for part in part_dicts:
+                for part in content_blocks:
                     ptype = part.get("type")
                     if ptype == "text" and isinstance(part.get("text"), str):
                         text_buf.append(part["text"])
@@ -365,7 +365,7 @@ def anthro_to_openai_messages(
             if role == "user":
                 text_parts: list[dict[str, Any]] = []
                 tool_msgs: list[dict[str, Any]] = []
-                for part in part_dicts:
+                for part in content_blocks:
                     ptype = part.get("type")
                     if ptype in {"text", "input_text"}:
                         text_parts.append(part)
@@ -393,8 +393,8 @@ def anthro_to_openai_messages(
                 content_val = ""
                 if isinstance(content, str):
                     content_val = content
-                elif part_dicts:
-                    content_val = _join_text_parts(part_dicts)
+                elif content_blocks:
+                    content_val = _join_text_parts(content_blocks)
                 raw_messages.append({"role": "tool", "tool_call_id": str(tcid), "content": content_val})
 
     parsed = parse_chat_messages(raw_messages)
