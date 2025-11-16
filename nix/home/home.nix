@@ -67,6 +67,9 @@ let
     inherit (myKubernetesHelm.passthru) pluginsDir;
   };
 
+  # Import claude-code-router HM module pinned to a specific commit
+  claudeCodeRouter = builtins.getFlake "github:agentydragon/claude-code-router/2b7c2ca";
+
   # Shell initialization scripts (loaded from external files to avoid escaping hell)
   commonShellInit = builtins.readFile ./shell/common-init.sh;
   bashInit = builtins.readFile ./shell/bash-init.sh;
@@ -74,7 +77,7 @@ let
 in {
   imports =
     [
-      ccr.homeManagerModules.claude-code-router
+      claudeCodeRouter.homeManagerModules.claude-code-router
       ./packages/google-drive-service.nix
       "${homeManagerMaster}/modules/programs/codex.nix"
       ./modules/codex.nix
@@ -176,7 +179,7 @@ in {
   # Delta - better git diffs
   programs.delta = {
     enable = true;
-    enableGitIntegration = true; # Explicitly enable as suggested by warning
+    enableGitIntegration = true;  # Explicitly enable as suggested by warning
     options = {
       navigate = true;
       light = false; # Default to dark theme
@@ -396,7 +399,7 @@ in {
       nerd-fonts.sauce-code-pro # SourceCodePro
       nerd-fonts.iosevka
       nerd-fonts.victor-mono
-      nerd-fonts.proggy-clean
+      nerd-fonts.proggy-clean-tt
       nerd-fonts.caskaydia-cove # CascadiaCode
 
       # GNOME Shell Extensions (migrated from Ansible gui role)
