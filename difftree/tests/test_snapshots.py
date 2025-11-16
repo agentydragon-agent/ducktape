@@ -2,8 +2,9 @@
 
 import pytest
 
-from difftree.config import Column, DEFAULT_CONFIG, RenderConfig, SortMode
+from difftree.config import DEFAULT_CONFIG, Column, RenderConfig, SortMode
 from difftree.parser import FileChange
+
 from .conftest import make_diff_tree, render_to_string as render_renderable
 
 
@@ -23,7 +24,9 @@ def complex_changes() -> list[FileChange]:
     ]
 
 
-def render_to_string(changes: list[FileChange], sort_by: SortMode = SortMode.SIZE, config: RenderConfig | None = None) -> str:
+def render_to_string(
+    changes: list[FileChange], sort_by: SortMode = SortMode.SIZE, config: RenderConfig | None = None
+) -> str:
     """Helper to render tree to string."""
     diff_tree = make_diff_tree(changes, config=config, sort_by=sort_by)
     result = render_renderable(diff_tree, width=120, legacy_windows=False, color_system="standard")

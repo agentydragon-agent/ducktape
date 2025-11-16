@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import hashlib
 import json
 import os
@@ -24,6 +25,34 @@ from adgn.rspcache.models import (
     stream_event_usage,
 )
 from adgn.rspcache.responses_db import APIKeyRecord, ResponsesDB
+
+
+@asynccontextmanager
+async def record_errors_to_db(
+    db: ResponsesDB, key: str, response_id: str | None = None, error_reason: str | None = None
+):
+    """Context manager to automatically record exceptions to database.
+
+    Args:
+        db: Database instance
+        key: Cache key
+        response_id: Optional response ID
+        error_reason: Default error reason if not provided by exception
+    """
+    try:
+        yield
+    except HTTPException:
+        # Don't record HTTPExceptions from FastAPI - they're user-facing errors
+        raise
+    except asyncio.CancelledError:
+        # Don't record cancellations
+        raise
+    except Exception as exc:
+        reason = error_reason or str(exc)
+        await db.record_error(
+            key, error_reason=reason, response_id=response_id, error=ErrorPayload(message=reason)
+        )
+        raise
 
 HTTP_ERROR_MIN = 400
 SSE_PREFIX = "data:"
@@ -212,10 +241,7 @@ async def _proxy_stream(
     except Exception:
         error_reason = "Streaming proxy failure"
         await db.record_error(
-            key,
-            error_reason=error_reason,
-            response_id=response_id,
-            error=ErrorPayload(message=error_reason),
+            key, error_reason=error_reason, response_id=response_id, error=ErrorPayload(message=error_reason)
         )
         raise
     finally:
@@ -286,12 +312,7 @@ async def responses_endpoint(
             resp = await client.send(request_obj, stream=True)
         except Exception as exc:
             await client.aclose()
-            await db.record_error(
-                key,
-                error_reason=str(exc),
-                response_id=None,
-                error=ErrorPayload(message=str(exc)),
-            )
+            await db.record_error(key, error_reason=str(exc), response_id=None, error=ErrorPayload(message=str(exc)))
             raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
         if resp.status_code >= HTTP_ERROR_MIN:
             payload = await resp.aread()
@@ -323,13 +344,8 @@ async def responses_endpoint(
     async with httpx.AsyncClient(timeout=120.0) as client:
         try:
             resp = await client.post(upstream_url, json=body, headers=headers)
-        except Exception as exc:  # noqa: BLE001
-            await db.record_error(
-                key,
-                error_reason=str(exc),
-                response_id=None,
-                error=ErrorPayload(message=str(exc)),
-            )
+        except Exception as exc:
+            await db.record_error(key, error_reason=str(exc), response_id=None, error=ErrorPayload(message=str(exc)))
             raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
 
     if resp.status_code >= HTTP_ERROR_MIN:

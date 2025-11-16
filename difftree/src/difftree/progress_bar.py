@@ -7,6 +7,7 @@ from rich.console import Console, ConsoleOptions, RenderResult
 from rich.measure import Measurement
 from rich.text import Text
 
+
 @dataclass(frozen=True)
 class BlockChars:
     """Configuration for progress bar block characters.

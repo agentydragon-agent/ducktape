@@ -30,13 +30,13 @@ from adgn.inop.engine.models import (
 )
 from adgn.inop.io.file_utils import collect_workspace_files
 from adgn.inop.runners.base import AgentRunner
+from adgn.mcp._shared.constants import WORKING_DIR
 from adgn.mcp._shared.container_session import ContainerOptions, NetworkMode
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.bwrap import make_bwrap_exec_server
 from adgn.mcp.exec.direct import make_direct_exec_server
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.mcp._shared.constants import WORKING_DIR
 
 """Mini Codex runner that delegates execution to the MiniCodex agent."""
 

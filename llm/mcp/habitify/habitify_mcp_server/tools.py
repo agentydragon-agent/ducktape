@@ -14,10 +14,10 @@ from .types import (
     HabitsResult,
     LogResult,
     ResultType,
+    Status,
     StatusResult,
 )
 from .utils import with_client
-from .utils.date_utils import format_date_human, format_date_yyyy_mm_dd
 from .utils.error_utils import create_error_response, create_validation_error
 from .utils.habit_resolver import resolve_habit
 
@@ -37,10 +37,6 @@ def validate_habit_identifier(**kwargs) -> ErrorResponse | None:
         return create_validation_error(f"Either a habit ID or habit name is required to {action} a habit.")
 
     return None
-
-
-# Valid statuses for habit status operations
-VALID_STATUSES = {"completed", "skipped", "failed", "none"}
 
 
 async def _validate_and_resolve(
@@ -199,28 +195,20 @@ async def get_habit_status(
 
         # Process each status
         for status in statuses:
-            date_str = format_date_yyyy_mm_dd(status.date)
-            formatted_date = format_date_human(date_str)
-            is_completed = status.status == "completed"
-
-            # Build the status item
-            items.append(
-                DateRangeStatusItem(
-                    date=date_str, formatted_date=formatted_date, status=status.status, completed=is_completed
-                )
-            )
+            # status.date is already an ISO date string (YYYY-MM-DD)
+            items.append(DateRangeStatusItem(date=status.date, status=status.status))
 
             # Track date range
-            if first_date is None or date_str < first_date:
-                first_date = date_str
-            if last_date is None or date_str > last_date:
-                last_date = date_str
+            if first_date is None or status.date < first_date:
+                first_date = status.date
+            if last_date is None or status.date > last_date:
+                last_date = status.date
 
         # Create the date range result
         return DateRangeStatusResult(
             statuses=items,
-            start_date=first_date or format_date_yyyy_mm_dd(None),
-            end_date=last_date or format_date_yyyy_mm_dd(None),
+            start_date=first_date or datetime.now().strftime("%Y-%m-%d"),
+            end_date=last_date or datetime.now().strftime("%Y-%m-%d"),
             date_count=len(items),
         )
     # Single date query (original behavior)
@@ -229,13 +217,8 @@ async def get_habit_status(
 
     status = await client.check_habit_status(resolved.habit_id, date_str)
 
-    # Format the status value for easier use by LLMs
-    readable_date = format_date_human(date_str)
-
     # Status is now a Pydantic model, use attribute access
-    return StatusResult(
-        status=status.status, date=date_str, formatted_date=readable_date, completed=status.status == "completed"
-    )
+    return StatusResult(status=status.status, date=date_str)
 
 
 @with_client
@@ -243,7 +226,7 @@ async def set_habit_status(
     client: HabitifyClient,
     id: str | None = None,
     name: str | None = None,
-    status: str = "completed",
+    status: Status = Status.COMPLETED,
     date: str | None = None,
     note: str | None = None,
     value: float | None = None,
@@ -268,22 +251,11 @@ async def set_habit_status(
     if isinstance(resolved, ErrorResponse):
         return resolved
 
-    if not status:
-        return create_validation_error("Status is required to set a habit status.")
-
-    if status not in VALID_STATUSES:
-        return create_validation_error(
-            f"Invalid status value: {status}. Status must be one of: {', '.join(VALID_STATUSES)}"
-        )
-
+    # Status validation is now handled by type system (Status enum)
+    # Convert Status enum to Literal type for client call
     result = await client.set_habit_status(
-        resolved.habit_id, cast(Literal["completed", "skipped", "failed", "none"], status), date, note, value
+        resolved.habit_id, cast(Literal["completed", "skipped", "failed", "none"], status.value), date, note, value
     )
-
-    # Format the response for easier use by LLMs
-    date_str = format_date_human(date) if date else format_date_human(datetime.now())
 
     # Pydantic handles optional fields
-    return LogResult(
-        status=result.status, date=result.date, formatted_date=date_str, note=result.note, value=result.value
-    )
+    return LogResult(status=result.status, date=result.date, note=result.note, value=result.value)

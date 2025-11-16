@@ -1,18 +1,17 @@
 """Tests for DiffTree renderable."""
 
-import re
 from dataclasses import replace
+import re
 
 import pytest
 from rich.console import Console
 from rich.segment import Segment
 from rich.text import Text
 
-from difftree.config import Column, DEFAULT_CONFIG, RenderConfig
+from difftree.config import DEFAULT_CONFIG, Column, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
-from difftree.tree import build_tree
 
 from .conftest import make_diff_tree, render_to_string
 
@@ -53,13 +52,12 @@ def _assert_column_before(result: str, filename: str, first: str, second: str, f
 
     first_pos = line.find(first) if first in line else -1
 
-    if second in ["tree_char"]:
-        second_pos = _find_tree_pos(line)
-    else:
-        second_pos = line.find(second) if second in line else -1
+    second_pos = _find_tree_pos(line) if second in ["tree_char"] else line.find(second) if second in line else -1
 
     if first_pos != -1 and second_pos != -1:
-        assert first_pos < second_pos, f"Expected {first_desc} before {second_desc}, but got {first_desc} at {first_pos}, {second_desc} at {second_pos}"
+        assert first_pos < second_pos, (
+            f"Expected {first_desc} before {second_desc}, but got {first_desc} at {first_pos}, {second_desc} at {second_pos}"
+        )
 
 
 def test_renderer_initialization():
@@ -421,8 +419,8 @@ def test_percentage_calculation():
     """Test that percentage column shows correct ratio of file changes to total changes."""
     changes = [
         FileChange(path="file1.py", additions=100, deletions=50),  # 150 total
-        FileChange(path="file2.py", additions=30, deletions=20),   # 50 total
-        FileChange(path="file3.py", additions=200, deletions=0),   # 200 total
+        FileChange(path="file2.py", additions=30, deletions=20),  # 50 total
+        FileChange(path="file3.py", additions=200, deletions=0),  # 200 total
     ]
 
     # Total changes across all files: 150 + 50 + 200 = 400
@@ -459,7 +457,7 @@ def test_percentage_not_sum_of_bar_percentages():
         # Create a scenario where bar fill percentages differ from total percentage
         # Total: +100 additions, -900 deletions = 1000 total changes
         FileChange(path="heavy_deletes.py", additions=10, deletions=890),  # 900 total = 90%
-        FileChange(path="only_adds.py", additions=90, deletions=10),       # 100 total = 10%
+        FileChange(path="only_adds.py", additions=90, deletions=10),  # 100 total = 10%
     ]
 
     # Totals: 100 additions, 900 deletions, 1000 total changes

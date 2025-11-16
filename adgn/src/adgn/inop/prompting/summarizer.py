@@ -8,13 +8,7 @@ from adgn.inop.io.logging_utils import DualOutputLogging
 from adgn.inop.prompting.context_window import context_window_tokens_by_id
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
 from adgn.inop.prompting.truncation_utils import TruncationManager
-from adgn.openai_utils.model import (
-    InputTextPart,
-    OpenAIModelProto,
-    ResponsesRequest,
-    SystemMessage,
-    UserMessage,
-)
+from adgn.openai_utils.model import InputTextPart, OpenAIModelProto, ResponsesRequest, SystemMessage, UserMessage
 from adgn.openai_utils.text_extraction import first_assistant_text
 
 logger = DualOutputLogging.get_logger()

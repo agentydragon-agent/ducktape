@@ -15,18 +15,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
-from adgn.rspcache.models import (
-    FRAME_ADAPTER,
-    FinalResponseSnapshot,
-    stream_event_event_id,
-)
-from adgn.rspcache.responses_db import (
-    APIKeyRecord,
-    ClientAPIKey,
-    Response,
-    ResponseFrame,
-    ResponsesDB,
-)
+from adgn.rspcache.models import FRAME_ADAPTER, FinalResponseSnapshot, stream_event_event_id
+from adgn.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponseFrame, ResponsesDB
 
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200
@@ -88,9 +78,7 @@ class ResponseRecordModel(BaseModel):
     cache_key: str
     response_id: str | None = None
     model: str
-    status: (
-        Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"] | None
-    ) = None
+    status: Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"] | None = None
     error: str | None = None
     created_at: datetime
     updated_at: datetime
