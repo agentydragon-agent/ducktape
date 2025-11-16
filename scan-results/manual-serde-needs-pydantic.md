@@ -1,324 +1,400 @@
 # Scan Results: Manual Serialization Patterns That Should Use Pydantic
 
-**Scan Date:** 2025-11-16
-**Pattern:** Code using manual JSON serialization/deserialization, dict construction, and validation instead of leveraging Pydantic's built-in capabilities.
+**Date**: 2025-11-16
+**Scan Definition**: `/home/user/ducktape/prompts/scans/manual-serde-needs-pydantic.md`
 
-## Summary
+## Executive Summary
 
-Found **11 instances** across **8 files** where manual serialization/deserialization patterns could benefit from Pydantic models. The findings fall into these categories:
+This scan identified **6 high-priority** locations where internal code uses manual dict manipulation, `list[dict]` with known structure, and `.isoformat()` calls that should be replaced with Pydantic models. These patterns reduce type safety, prevent IDE autocomplete, and require manual validation instead of leveraging Pydantic's built-in capabilities.
 
-1. **Manual dict construction with `datetime.isoformat()`** (8 instances)
-2. **Manual dict parsing with validation logic** (1 instance)
-3. **Dataclass with manual serialization method** (1 instance)
-4. **Manual datetime conversion in Pydantic model construction** (3 instances)
+## Key Findings
 
-## Findings by Category
+### 1. LLM Message History - Ultra Long CoT (HIGH PRIORITY)
 
-### 1. Manual Dict Construction with `datetime.isoformat()`
+**File**: `/home/user/ducktape/llm/ultra-long-cot/ultra_long_cot_o4.py`
 
-These instances manually build dictionaries with `isoformat()` calls for datetime serialization, which Pydantic handles automatically with `model_dump(mode="json")`.
+**Issues**:
+- Lines 74, 84: Functions accept `list[dict[str, str]]` for message history
+- Line 145: Manual dict construction: `messages = [{"role": "system", "content": system_prompt}]`
+- Line 167, 204-206, 248: Repeated `{"role": ..., "content": ...}` construction
+- Line 296: Manual dict with `.isoformat()`: `{"timestamp": datetime.now().isoformat(), ...}`
 
-#### `/home/user/ducktape/experimental/cotrl/llm_rl_experiment.py`
-
-**Lines 119-132** - `log_episode()` method
+**Evidence**:
 ```python
-episode_data = {
-    "timestamp": datetime.now().isoformat(),
-    "model": model,
-    "environment": env_name,
-    "run_num": run_num,
-    "episode_num": episode_num,
-    "total_reward": episode.total_reward,
-    "num_steps": len(episode.steps),
-    "states": [...],
-    "actions": [...],
-    "rewards": [...],
-}
+def count_messages_tokens(messages: list[dict[str, str]]) -> int:
+    """Count total tokens in message history"""
+    total = 0
+    for msg in messages:
+        # Each message has role tokens + content tokens + formatting
+        total += count_tokens(msg["role"]) + count_tokens(msg["content"]) + 5
+    return total
 ```
 
-**Why it matches:** Manually constructing a dict with `datetime.now().isoformat()` and multiple fields that could be a Pydantic model with automatic datetime serialization.
+**Why It's Bad**:
+- String-literal dict access (`msg["role"]`, `msg["content"]`) in internal code
+- No validation - can pass `{"foo": "bar"}` and get KeyError at runtime
+- Structure documented in comments instead of enforced by types
+- Manual timestamp formatting instead of automatic serialization
 
-**Lines 139-151** - `log_step()` method
+**Recommended Fix**:
 ```python
-step_data = {
-    "timestamp": datetime.now().isoformat(),
-    "model": model,
-    "environment": env_name,
-    "run_num": run_num,
-    "episode_num": episode_num,
-    "step_num": step_num,
-    "state": step.state.tolist() if isinstance(step.state, np.ndarray) else step.state,
-    "action": step.action,
-    "reward": step.reward,
-    "done": step.done,
-    "truncated": step.truncated,
-}
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+class Message(BaseModel):
+    role: str
+    content: str
+
+class LogEntry(BaseModel):
+    timestamp: datetime = Field(default_factory=datetime.now)
+    turn: int
+    user_input: str
+    response_segments: int
+    total_output_tokens: int
+    context_used_percentage: float
+    messages: list[Message]
+    usage_details: list[dict]  # Could be further typed
+
+# Usage:
+messages: list[Message] = [Message(role="system", content=system_prompt)]
+# Serialize: log_entry.model_dump_json()
 ```
-
-**Why it matches:** Similar to above - manual dict construction with datetime serialization that could be a Pydantic model.
-
-**Lines 158-160** - `log_summary()` method
-```python
-summary = {
-    "experiment_start": self.start_time.isoformat(),
-    "experiment_end": datetime.now().isoformat(),
-    "duration_seconds": (datetime.now() - self.start_time).total_seconds(),
-    ...
-}
-```
-
-**Why it matches:** Multiple datetime fields being manually converted to ISO format strings.
 
 ---
 
-#### `/home/user/ducktape/llm/ultra-long-cot/ultra_long_cot_o4.py`
+### 2. RL Experiment Conversation History (HIGH PRIORITY)
 
-**Lines 295-304** - Log entry construction
+**File**: `/home/user/ducktape/experimental/cotrl/llm_rl_experiment.py`
+
+**Issues**:
+- Lines 187, 247: `self.conversation_history: list[dict[str, str]] = []`
+- Lines 120, 140: Manual dict with `.isoformat()` for episode logging
+- Lines 159-160: Manual dict construction with timestamps
+
+**Evidence**:
 ```python
-log_entry = {
-    "timestamp": datetime.now().isoformat(),
-    "turn": len([m for m in messages if m["role"] == "user"]) - 1,
-    "user_input": user_input,
-    "response_segments": continuation_count + 1,
-    "total_output_tokens": total_generated,
-    "context_used_percentage": context_percentage,
-    "messages": messages.copy(),
-    "usage_details": usage_details,
-}
+class LLMRLAgent:
+    def __init__(self, model: str):
+        self.conversation_history: list[dict[str, str]] = []
+
+    async def get_action(...):
+        self.conversation_history.append({"role": "user", "content": prompt})
+        # Later:
+        self.conversation_history.append({"role": "assistant", "content": action_str})
 ```
 
-**Why it matches:** Manual dict construction with `datetime.isoformat()` for logging that could be a Pydantic model with automatic serialization.
+**Why It's Bad**:
+- Same as #1 - internal state using untyped dicts
+- Episode logging manually constructs dicts with `.isoformat()`
+- No compile-time verification of message structure
+
+**Recommended Fix**:
+```python
+class Message(BaseModel):
+    role: str
+    content: str
+
+class EpisodeData(BaseModel):
+    timestamp: datetime
+    model: str
+    environment: str
+    run_num: int
+    episode_num: int
+    total_reward: float
+    num_steps: int
+    states: list[Any]
+    actions: list[int]
+    rewards: list[float]
+
+class LLMRLAgent:
+    def __init__(self, model: str):
+        self.conversation_history: list[Message] = []
+```
 
 ---
 
-#### `/home/user/ducktape/llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/hooks/handler.py`
+### 3. File Truncation Utils (HIGH PRIORITY - Partial Fix Available)
 
-**Lines 136-146** - Hook log entry
+**File**: `/home/user/ducktape/adgn/src/adgn/inop/prompting/truncation_utils.py`
+
+**Issues**:
+- Lines 47, 59, 66, 88, 115-116, 128: Mixed use of `list[dict[str, str]]` and `list[FileInfo]`
+- Lines 104-105: String-literal dict access: `file_info["path"]`, `file_info["content"]`
+- The codebase already has a `FileInfo` Pydantic model but doesn't consistently use it
+
+**Evidence**:
 ```python
-log_entry = {
-    "timestamp": timestamp,
-    "hook_type": hook_type,
-    "session_id": session_id,
-    "request": {
-        "type": type(request).__name__,
-        "data": request.model_dump(),
-    },
-    "outcome": {"type": type(outcome).__name__, "data": str(outcome)},
-    "response": response.model_dump(),
-    "decision_details": {},
-}
+def truncate_file_content_by_size(
+    self, files: list[dict[str, str]], max_size: int, purpose: str | None = None
+) -> dict[str, str]:
+    """..."""
+    for file_info in files:
+        path = file_info["path"]      # String-literal access
+        content = file_info["content"]  # String-literal access
 ```
 
-**Why it matches:** Manual dict construction combining Pydantic models (via `model_dump()`) with timestamps. Could be a unified Pydantic model that handles the entire structure.
+**Why It's Bad**:
+- The code already imports and uses `FileInfo` model in some places
+- But then falls back to `list[dict[str, str]]` in other methods
+- Creates inconsistency and prevents full type safety
 
-**Line 164** - Decision log entry
-```python
-log_entry = {"timestamp": datetime.now().isoformat(), "decision_point": decision_point, "details": details}
-```
+**Recommended Fix**:
+- Remove `list[dict[str, str]]` variants entirely
+- Always use `list[FileInfo]` (the Pydantic model already exists)
+- Update `truncate_file_content_by_size` to accept `list[FileInfo]`
 
-**Why it matches:** Simple manual dict with datetime that could be a Pydantic model.
+**Note**: This is a **partial migration** - the code already has the right model, just needs to use it consistently.
 
 ---
 
-#### `/home/user/ducktape/adgn/src/adgn/inop/engine/optimizer.py`
+### 4. Grader Action Sequences (HIGH PRIORITY)
 
-**Lines 255-267** - Rollout data construction
-```python
-rollout_data = {
-    "task_id": t_id,
-    "agent_id": "agent_0",
-    "iteration": iteration,
-    "timestamp": datetime.now(UTC).isoformat(),
-    "runner_id": gr.rollout.runner_id,
-    "success": gr.rollout.success,
-    "cost_usd": gr.rollout.cost_usd,
-    "duration_seconds": gr.rollout.duration_seconds,
-    "trajectory": [item.model_dump() for item in gr.rollout.trajectory],
-    "files": gr.rollout.files,
-    "metadata": gr.rollout.metadata,
-}
-```
+**File**: `/home/user/ducktape/claude/claude_optimizer/graders/generic_graders.py`
 
-**Why it matches:** Complex nested structure with datetime serialization, mixing manual fields with Pydantic model dumps. Could be a unified Pydantic model.
+**Issues**:
+- Line 40: `action_sequence: list[dict[str, Any]]` in `AgentRollout` dataclass
+- Lines 150, 328: `json.loads(output_item.arguments)` without validation
+- Lines 282-283: Manual dict access in loop: `action.get("tool")`, `action.get("type")`
 
----
-
-#### `/home/user/ducktape/adgn/src/adgn/mcp/compositor/server.py`
-
-**Line 230** - Sampling snapshot construction
-```python
-return SamplingSnapshot(ts=datetime.now(UTC).isoformat(), servers=entries_map)
-```
-
-**Why it matches:** Manually converting datetime to isoformat string when constructing a Pydantic model. The model should accept `datetime` directly and handle serialization.
-
----
-
-### 2. Manual Dict Parsing with Validation
-
-#### `/home/user/ducktape/wt/src/wt/shared/github_models.py`
-
-**Lines 121-150** - `coerce_prdata()` function
-```python
-def coerce_prdata(src: Any) -> PRData:
-    if isinstance(src, PRData):
-        return src
-    if isinstance(src, GitHubPRResponse):
-        return PRData(...)
-    if isinstance(src, dict):
-        num = src["pr_number"] if "pr_number" in src else src["number"]
-        st = src.get("pr_state")
-        raw_state = st if st is not None else src.get("state")
-        if raw_state is None:
-            raise KeyError("state")
-        state = raw_state if isinstance(raw_state, PRState) else PRState(str(raw_state))
-        return PRData(
-            pr_number=int(num),
-            pr_state=state,
-            draft=bool(src.get("draft", False)),
-            mergeable=src.get("mergeable"),
-            merged_at=src.get("merged_at"),
-            additions=src.get("additions"),
-            deletions=src.get("deletions"),
-        )
-    raise TypeError("Unsupported PR data type")
-```
-
-**Why it matches:** This is a textbook example of manual dict parsing with field checking (`if "pr_number" in src`, `src.get(...)`), type coercion, and validation. This is exactly what Pydantic's `model_validate()` handles automatically, including:
-- Field alias support (multiple field name options)
-- Type coercion
-- Validation
-- Error handling
-
----
-
-### 3. Dataclass with Manual Serialization Method
-
-#### `/home/user/ducktape/wt/src/wt/shared/github_models.py`
-
-**Lines 165-173** - `PRInfo` dataclass with `to_repr()` method
+**Evidence**:
 ```python
 @dataclass
-class PRInfo:
-    branch: str
-    pr_data: PRData | None = None
-    github_pr: HasBasicPR | None = None  # runtime object, not serialized
-    gh_error: str | None = None
+class AgentRollout:
+    action_sequence: list[dict[str, Any]]  # Tool calls and actions Claude made
 
-    def to_repr(self) -> PRInfoRepr:
-        return PRInfoRepr(branch=self.branch, pr_data=self.pr_data, gh_error=self.gh_error)
+async def grade_agent_rollout(self, rollout: AgentRollout) -> GradeResult:
+    for i, action in enumerate(rollout.action_sequence, 1):
+        action_type = action.get("tool", action.get("type", "unknown"))
+        action_summary += f"{i}. {action_type}: {action.get('description', str(action)[:100])}\n"
 ```
 
-**Why it matches:** Dataclass with manual serialization method. The `to_repr()` method selectively converts fields to another Pydantic model. If `PRInfo` were a Pydantic model with `Field(exclude=True)` on `github_pr`, serialization would be automatic via `model_dump()`.
+**Why It's Bad**:
+- Action sequences are internal data with known structure
+- Using `.get()` with fallbacks suggests uncertain schema
+- Manual `json.loads()` without Pydantic validation
 
----
-
-### 4. Manual Datetime Conversion in Pydantic Model Construction
-
-These instances manually convert datetime to ISO format strings when creating Pydantic models, rather than letting Pydantic handle datetime fields natively.
-
-#### `/home/user/ducktape/wt/src/wt/shared/github_models.py`
-
-**Line 109** - `from_github_pr()` classmethod
+**Recommended Fix**:
 ```python
-@classmethod
-def from_github_pr(cls, pr) -> GitHubPRResponse:
-    return cls(
-        ...
-        merged_at=pr.merged_at.isoformat() if pr.merged_at else None,
-        ...
-    )
-```
+class Action(BaseModel):
+    tool: str | None = None
+    type: str | None = None
+    description: str = ""
+    # Add other known fields
 
-**Why it matches:** Manually converting datetime to isoformat string. The `merged_at` field could be typed as `datetime | None` in the Pydantic model, which would handle serialization automatically.
+@dataclass
+class AgentRollout:
+    action_sequence: list[Action]
+
+# For JSON parsing:
+analysis_data = AnalysisResult.model_validate(json.loads(output_item.arguments))
+```
 
 ---
 
-#### `/home/user/ducktape/wt/src/wt/server/pr_service.py`
+### 5. Claude Linter Session Rules (MEDIUM PRIORITY)
 
-**Line 144** - PRData construction
+**File**: `/home/user/ducktape/llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/session/state.py`
+
+**Issues**:
+- Line 28: `rules: list[dict[str, Any]] = field(default_factory=list)`
+- No validation of rule structure
+
+**Evidence**:
 ```python
-pr_info = PRData(
-    ...
-    merged_at=(pr.merged_at.isoformat() if pr.merged_at else None),
-    ...
-)
+@dataclass
+class SessionState:
+    rules: list[dict[str, Any]] = field(default_factory=list)
+
+    def add_rule(self, rule: dict[str, Any]) -> None:
+        """Add a session-specific rule."""
+        self.rules.append(rule)
 ```
 
-**Why it matches:** Same pattern - manually converting datetime to string for a Pydantic model field.
+**Why It's Bad**:
+- Rules have known structure (predicate, action, created, expires)
+- No validation when adding rules
+- Type annotation `dict[str, Any]` is too permissive
 
----
-
-#### `/home/user/ducktape/wt/src/wt/server/github_client.py`
-
-**Line 72** - PullRequestList construction
+**Recommended Fix**:
 ```python
-mergedAt=(pr.merged_at.isoformat() if pr.merged_at else None),
-```
+class Rule(BaseModel):
+    predicate: str
+    action: str  # Could be Literal["allow", "deny"]
+    created: datetime
+    expires: datetime | None = None
 
-**Why it matches:** Same pattern - manual datetime-to-string conversion in Pydantic model construction.
+@dataclass
+class SessionState:
+    rules: list[Rule] = field(default_factory=list)
+
+    def add_rule(self, rule: Rule) -> None:
+        self.rules.append(rule)
+```
 
 ---
 
-## Recommendations by Priority
+### 6. Session Manager Persistence (MEDIUM PRIORITY)
 
-### High Priority (Most Impact)
+**File**: `/home/user/ducktape/llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/session/manager.py`
 
-1. **`/home/user/ducktape/wt/src/wt/shared/github_models.py` - `coerce_prdata()` function**
-   - Replace with Pydantic's `model_validate()` with field aliases
-   - Add a validator if custom coercion logic is truly needed
-   - Example:
-     ```python
-     class PRData(BaseModel):
-         pr_number: int = Field(alias="number")
-         pr_state: PRState
-         ...
+**Issues**:
+- Lines 44, 65: Manual dict construction with `.isoformat()`
+- Line 111: Manual dict for rules with `.isoformat()`
+- Inconsistent use of `dict[str, Any]` for session data
 
-         model_config = ConfigDict(populate_by_name=True)
+**Evidence**:
+```python
+def _load_session(self, session_id: SessionID) -> dict[str, Any]:
+    # ...
+    return {"id": session_id, "created": datetime.now().isoformat(), "rules": []}
 
-     # Replace coerce_prdata(src) with:
-     PRData.model_validate(src)
-     ```
+def track_session(self, session_id: SessionID, working_dir: Path) -> None:
+    session_data = self._load_session(session_id)
+    session_data.update({
+        "last_seen": datetime.now().isoformat(),
+        "directory": str(working_dir.resolve())
+    })
+```
 
-2. **Datetime fields in Pydantic models** (3 instances in `github_models.py`, `pr_service.py`, `github_client.py`)
-   - Change `merged_at: str | None` to `merged_at: datetime | None` in the Pydantic models
-   - Remove manual `.isoformat()` calls
-   - Use `model_dump(mode="json")` for serialization
+**Why It's Bad**:
+- Manual `.isoformat()` instead of Pydantic automatic serialization
+- Session data structure not validated
+- Mix of string timestamps and datetime objects
 
-### Medium Priority
+**Recommended Fix**:
+```python
+class SessionData(BaseModel):
+    id: str
+    created: datetime
+    last_seen: datetime | None = None
+    directory: Path | None = None
+    rules: list[Rule] = Field(default_factory=list)
+    notification_id: int | None = None
 
-3. **Logging structures** in `llm_rl_experiment.py`, `ultra_long_cot_o4.py`, `claude_linter_v2/hooks/handler.py`
-   - Create Pydantic models for log entries
-   - Use `timestamp: datetime = Field(default_factory=datetime.now)` or similar
-   - Serialize with `model_dump_json()` instead of manual `json.dumps()`
+def _load_session(self, session_id: SessionID) -> SessionData:
+    session_file = self._session_file(session_id)
+    if session_file.exists():
+        return SessionData.model_validate_json(session_file.read_text())
+    return SessionData(id=session_id, created=datetime.now())
 
-4. **`PRInfo` dataclass** in `wt/src/wt/shared/github_models.py`
-   - Convert to Pydantic BaseModel
-   - Use `Field(exclude=True)` on `github_pr`
-   - Replace `to_repr()` with `model_dump(exclude={'github_pr'})`
+def _save_session(self, session_id: SessionID, session_data: SessionData) -> None:
+    session_file = self._session_file(session_id)
+    session_file.write_text(session_data.model_dump_json(indent=2))
+```
 
-### Lower Priority
+---
 
-5. **Rollout data** in `adgn/src/adgn/inop/engine/optimizer.py`
-   - Create a Pydantic model for rollout data structure
-   - Automatic datetime handling and nested model serialization
+## Lower Priority Findings
 
-6. **`SamplingSnapshot`** in `adgn/src/adgn/mcp/compositor/server.py`
-   - Change `ts` field from `str` to `datetime`
-   - Remove manual `.isoformat()` call
+### Trilium API Response Parsing
 
-## Benefits of Refactoring
+**Files**: Multiple files in `/home/user/ducktape/trilium/`
+- `search_hack.py`: Lines 23, 29, 33-34, 74, 84-85, etc.
+- `papers/trilium_paper_uploader.py`: Lines 63-64, 75-76, etc.
 
-1. **Type Safety**: Pydantic provides runtime type checking and validation
-2. **Less Code**: Eliminate manual serialization/deserialization logic
-3. **Datetime Handling**: Automatic ISO8601 serialization and parsing
-4. **Validation**: Built-in field validation and constraints
-5. **Documentation**: Field descriptions via `Field(description=...)`
-6. **JSON Schema**: Automatic schema generation for API documentation
-7. **Maintainability**: Single source of truth for data structures
+**Status**: **ACCEPTABLE** - These are I/O boundary responses from external API
+- Reading JSON from Trilium API (external system)
+- Not internal code - this is the correct place for dict manipulation
+- Would need to create Pydantic models for Trilium API schema to improve
 
-## Notes
+---
 
-- No instances of `TypedDict` were found (which is good - those would be high-priority conversions)
-- The codebase already uses Pydantic extensively, so these refactorings would align with existing patterns
-- Most instances are in active development areas (LLM tooling, worktree management)
+## Scan Methodology
+
+### Patterns Searched
+
+1. **String-literal dict access**: `rg '\["[a-zA-Z_]+"\]' --type py`
+2. **list[dict] parameters**: `rg 'list\[dict\[str' --type py`
+3. **Manual isoformat**: `rg '\.isoformat\(\)' --type py`
+4. **json.loads usage**: `rg 'json\.loads' --type py`
+5. **Dataclasses**: `rg '@dataclass' --type py`
+
+### Filtering Criteria
+
+**Excluded** (by design):
+- Test files (`tests/`, `test_*.py`)
+- I/O boundary code (reading external APIs, parsing config files)
+- Passthrough/forwarding code (just relaying data unchanged)
+
+**Included** (scan targets):
+- Internal functions passing structured data between components
+- Data with known, documented structure
+- Repeated dict construction patterns
+- Manual validation/serialization code
+
+---
+
+## Impact Analysis
+
+### Type Safety
+- **Before**: Runtime KeyErrors, no autocomplete, no validation
+- **After**: Compile-time type checking, IDE support, automatic validation
+
+### Maintenance
+- **Before**: Structure documented in comments/docstrings
+- **After**: Structure enforced by code, self-documenting
+
+### Serialization
+- **Before**: Manual `json.dumps()`, `.isoformat()`, dict construction
+- **After**: `model.model_dump_json()` handles all serialization
+
+---
+
+## Recommended Prioritization
+
+1. **High Priority** (Internal logic, frequently accessed):
+   - LLM message history (ultra_long_cot_o4.py, llm_rl_experiment.py)
+   - File truncation utils (partial migration needed)
+   - Grader action sequences
+
+2. **Medium Priority** (Configuration/persistence):
+   - Claude linter session management
+   - Session rules
+
+3. **Low Priority** (External API responses):
+   - Trilium API parsing (could improve but not critical)
+
+---
+
+## Migration Strategy
+
+For each finding:
+
+1. **Define Pydantic Models**
+   - Create models for known structures
+   - Add validation rules, constraints
+   - Use `Field()` for descriptions
+
+2. **Update Function Signatures**
+   - Replace `list[dict[str, str]]` with `list[ModelName]`
+   - Update type hints
+
+3. **Replace Manual Code**
+   - Dict access → property access
+   - `json.loads()` → `Model.model_validate_json()`
+   - Manual dict construction → `Model(...)`
+   - `.isoformat()` → automatic datetime handling
+
+4. **Update Tests**
+   - Construct typed models in tests
+   - Verify serialization round-trips
+
+---
+
+## Examples of Good Pydantic Usage in Codebase
+
+The codebase already uses Pydantic well in several places:
+
+1. **adgn/src/adgn/inop/engine/models.py**: `FileInfo` model (should be used more consistently)
+2. **llm/mcp/habitify/habitify_mcp_server/types.py**: Excellent discriminated unions, validators
+3. Various Pydantic models throughout the `adgn` package
+
+These serve as good templates for new models.
+
+---
+
+## Conclusion
+
+The ducktape codebase has **6 high-priority locations** where Pydantic models would significantly improve type safety, reduce manual validation code, and prevent runtime errors. The most impactful changes are in LLM message handling and file truncation utilities.
+
+Most findings are in active development areas (LLM tooling, experimental code), making this a good time to standardize on Pydantic before the patterns spread further.
