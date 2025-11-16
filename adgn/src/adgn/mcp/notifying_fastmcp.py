@@ -42,7 +42,6 @@ class _CapturingServer(LowLevelServer):
         self._on_session_created = on_session_created
         self._on_session_created_async = on_session_created_async
         self._experimental_capabilities = experimental_capabilities or {}
-        self._fastmcp = fastmcp  # Store reference if needed
 
     async def run(
         self,
