@@ -207,11 +207,6 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
         self._persistence = engine.persistence
         self._docker = engine.docker_client
 
-    def _notify_proposal_change(self, proposal_id: str) -> None:
-        """Notify about a proposal item change and the full proposals index."""
-        self._engine.notify_resource(approval_policy_proposal_item_uri(proposal_id))
-        self._engine.notify_proposals_changed()
-
         @self.flat_model()
         async def create_proposal(input: CreateProposalArgs) -> ProposalDescriptor:  # type: ignore[unused-ignore]
             """Create a new policy proposal and return its descriptor."""
@@ -235,6 +230,11 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
             await self._persistence.delete_policy_proposal(self._agent_id, pid)
             self._notify_proposal_change(pid)
             return True
+
+    def _notify_proposal_change(self, proposal_id: str) -> None:
+        """Notify about a proposal item change and the full proposals index."""
+        self._engine.notify_resource(approval_policy_proposal_item_uri(proposal_id))
+        self._engine.notify_proposals_changed()
 
 
 async def attach_approval_policy_proposer(
@@ -261,11 +261,6 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
         self._agent_id = engine.agent_id
         self._persistence = engine.persistence
         self._docker = engine.docker_client
-
-    def _notify_proposal_change(self, proposal_id: str) -> None:
-        """Notify about a proposal item change and the full proposals index."""
-        self._engine.notify_resource(approval_policy_proposal_item_uri(proposal_id))
-        self._engine.notify_proposals_changed()
 
         @self.flat_model()
         async def approve_proposal(input: ApproveProposalArgs) -> bool:  # type: ignore[unused-ignore]
@@ -300,6 +295,11 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
             self._engine.self_check(input.source)
             self._engine.set_policy(input.source)
             return True
+
+    def _notify_proposal_change(self, proposal_id: str) -> None:
+        """Notify about a proposal item change and the full proposals index."""
+        self._engine.notify_resource(approval_policy_proposal_item_uri(proposal_id))
+        self._engine.notify_proposals_changed()
 
 
 async def attach_approval_policy_admin(
