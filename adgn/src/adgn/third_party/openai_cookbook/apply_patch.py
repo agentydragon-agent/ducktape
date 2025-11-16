@@ -81,15 +81,11 @@ class Parser(BaseModel):
     def is_done(self, prefixes: Optional[tuple[str, ...]] = None) -> bool:
         if self.index >= len(self.lines):
             return True
-        if prefixes and self.lines[self.index].startswith(prefixes):
-            return True
-        return False
+        return bool(prefixes and self.lines[self.index].startswith(prefixes))
 
     def startswith(self, prefix: Optional[tuple[str, ...]]) -> bool:
         assert self.index < len(self.lines), f"Index: {self.index} >= {len(self.lines)}"
-        if self.lines[self.index].startswith(prefix):
-            return True
-        return False
+        return self.lines[self.index].startswith(prefix)
 
     def read_str(self, prefix: str = "", return_everything: bool = False) -> str:
         assert self.index < len(self.lines), f"Index: {self.index} >= {len(self.lines)}"
