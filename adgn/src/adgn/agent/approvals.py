@@ -5,6 +5,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from importlib import resources
 import logging
+import uuid
 
 from docker import DockerClient
 from pydantic import BaseModel
@@ -211,8 +212,6 @@ class ApprovalPolicyEngine:
                 input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
             )
         # Generate new proposal ID and persist
-        import uuid
-
         new_id = uuid.uuid4().hex
         await self.persistence.create_policy_proposal(self.agent_id, proposal_id=new_id, content=content)
         self.notify_proposal_change(new_id)
