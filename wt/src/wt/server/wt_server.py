@@ -70,7 +70,7 @@ from .worktree_service import WorktreeService
 logger = logging.getLogger(__name__)
 
 
-def write_startup_handshake(
+async def write_startup_handshake(
     success: bool,
     error_message: str | None = None,
     *,
@@ -103,8 +103,28 @@ def write_startup_handshake(
     payload = (json.dumps(handshake_data) + "\n").encode()
     if handshake_fd is None:
         return
+
+    # Write using proper asyncio stream to avoid blocking event loop
     with contextlib.suppress(OSError):
-        os.write(handshake_fd, payload)
+        import fcntl
+        # Set FD to non-blocking for asyncio
+        flags = fcntl.fcntl(handshake_fd, fcntl.F_GETFL)
+        fcntl.fcntl(handshake_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+        # Create asyncio StreamWriter from the FD
+        loop = asyncio.get_running_loop()
+        transport, protocol = await loop.connect_write_pipe(
+            asyncio.streams.FlowControlMixin, os.fdopen(handshake_fd, 'wb', buffering=0)
+        )
+        writer = asyncio.StreamWriter(transport, protocol, None, loop)
+
+        try:
+            writer.write(payload)
+            await writer.drain()
+        finally:
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
 
     if redirect_after:
         try:
@@ -508,7 +528,7 @@ class WtDaemon:
         logger.info("Starting wt daemon for %s", self.config.main_repo)
 
         # Emit initial progress handshake to ensure the client always sees at least one line
-        write_startup_handshake(success=True, protocol_version=1, ready=False, phase="starting", redirect_after=False)
+        await write_startup_handshake(success=True, protocol_version=1, ready=False, phase="starting", redirect_after=False)
 
         startup_errors = []
 
@@ -527,7 +547,7 @@ class WtDaemon:
         # If there are critical errors, write error handshake and return
         if startup_errors:
             error_message = "\n\n".join(startup_errors)
-            write_startup_handshake(
+            await write_startup_handshake(
                 success=False,
                 error_message=error_message,
                 protocol_version=1,
@@ -546,7 +566,7 @@ class WtDaemon:
             self.running = True
         except OSError as e:
             # Emit failure handshake so client can surface the error deterministically
-            write_startup_handshake(
+            await write_startup_handshake(
                 success=False,
                 error_message=f"Failed to bind daemon socket at {self.socket_path}: {e}",
                 protocol_version=1,
@@ -559,7 +579,7 @@ class WtDaemon:
             return
 
         # Signal listening via single handshake; redirect stdout to log afterward
-        write_startup_handshake(
+        await write_startup_handshake(
             success=True,
             protocol_version=1,
             ready=True,
