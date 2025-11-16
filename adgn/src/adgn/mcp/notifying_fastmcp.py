@@ -31,13 +31,14 @@ class _CapturingServer(LowLevelServer):
 
     def __init__(
         self,
+        fastmcp: FastMCP,  # Required positional arg in fastmcp 2.13+
         *a,
         on_session_created: Callable[[ServerSession], None] | None = None,
         on_session_created_async: Callable[[ServerSession], Awaitable[None]] | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
         **kw,
     ):
-        super().__init__(*a, **kw)
+        super().__init__(fastmcp, *a, **kw)
         self._on_session_created = on_session_created
         self._on_session_created_async = on_session_created_async
         self._experimental_capabilities = experimental_capabilities or {}
@@ -144,7 +145,7 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
             assert isinstance(sess, ServerSession)
 
         capturing_server = _CapturingServer(
-            fastmcp=self,
+            self,  # fastmcp positional argument (required in fastmcp 2.13+)
             name=self.name,
             instructions=self.instructions,
             on_session_created=_adapter,
