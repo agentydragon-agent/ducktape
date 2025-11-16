@@ -90,9 +90,8 @@ jobs:
       - name: Install gitstatusd for wt tests
         if: matrix.project == 'wt'
         run: |
-          git clone --depth=1 https://github.com/romkatv/gitstatus.git /tmp/gitstatus
-          sudo cp /tmp/gitstatus/usrbin/gitstatusd-linux-x86_64 /usr/local/bin/gitstatusd
-          sudo chmod +x /usr/local/bin/gitstatusd
+          wget -O /tmp/gitstatusd https://raw.githubusercontent.com/romkatv/gitstatus/master/usrbin/gitstatusd-linux-x86_64
+          sudo install -m 755 /tmp/gitstatusd /usr/local/bin/gitstatusd
           which gitstatusd
 
       - name: Install dependencies and run tests
