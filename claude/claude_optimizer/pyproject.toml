@@ -21,6 +21,9 @@ dependencies = [
     "pathspec",
 ]
 
+[tool.setuptools]
+packages = ["graders"]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",

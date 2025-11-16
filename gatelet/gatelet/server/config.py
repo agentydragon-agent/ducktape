@@ -8,7 +8,7 @@ import re
 import tomllib
 from typing import Literal
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,9 @@ class BearerAuth(BaseModel):
     type: Literal["bearer"] = "bearer"
     token: str
 
-    @validator("token")
-    def token_not_empty(self, v):
+    @field_validator("token")
+    @classmethod
+    def token_not_empty(cls, v):
         if not v:
             raise ValueError("Token must not be empty")
         return v
@@ -114,8 +115,9 @@ class WebhookSettings(BaseModel):
     integrations: dict[str, WebhookIntegrationSettings] = Field(default_factory=dict)
     default_page_size: int = Field(default=10)
 
-    @validator("integrations")
-    def validate_integration_names(self, v):
+    @field_validator("integrations")
+    @classmethod
+    def validate_integration_names(cls, v):
         for name in v:
             # Check for URL-safe names
             if not re.match(r"^[a-zA-Z0-9_-]+$", name):
@@ -124,8 +126,9 @@ class WebhookSettings(BaseModel):
                 raise ValueError(f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)")
         return v
 
-    @validator("default_page_size")
-    def validate_page_size(self, v):
+    @field_validator("default_page_size")
+    @classmethod
+    def validate_page_size(cls, v):
         if v < 1 or v > MAX_PAGE_SIZE:
             raise ValueError(f"default_page_size must be between 1 and {MAX_PAGE_SIZE}")
         return v
@@ -159,7 +162,7 @@ class Settings(BaseModel):
         logger.info(f"Loading settings from {path.absolute()}")
         with path.open("rb") as f:
             config_dict = tomllib.load(f)
-        return cls.parse_obj(config_dict)
+        return cls.model_validate(config_dict)
 
 
 # Path to the active configuration file
