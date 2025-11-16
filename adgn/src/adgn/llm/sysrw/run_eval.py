@@ -318,11 +318,11 @@ def anthro_to_openai_messages(
             continue
 
         if isinstance(content, list):
+            # Content is list of TypedDict blocks (TextBlockParam, ToolUseBlockParam, etc.)
+            # These are dicts at runtime, not Pydantic models
             part_dicts: list[dict[str, Any]] = []
             for part in content:
-                if hasattr(part, "model_dump"):
-                    part_dicts.append(part.model_dump(mode="json", exclude_none=True))
-                elif isinstance(part, dict):
+                if isinstance(part, dict):
                     part_dicts.append(part)
                 else:
                     continue
