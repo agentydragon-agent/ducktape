@@ -1,11 +1,23 @@
 """Pydantic models for Claude Code hook API requests and responses per Anthropic spec."""
 
+from enum import StrEnum
 from typing import Any, Literal, NewType
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
 SessionID = NewType("SessionID", UUID)
+
+
+class HookEventName(StrEnum):
+    """Valid hook event names in Claude Code."""
+
+    PRE_TOOL_USE = "PreToolUse"
+    POST_TOOL_USE = "PostToolUse"
+    NOTIFICATION = "Notification"
+    STOP = "Stop"
+    SUBAGENT_STOP = "SubagentStop"
+    PRE_COMPACT = "PreCompact"
 
 
 # Base input types for Claude Code hook requests
