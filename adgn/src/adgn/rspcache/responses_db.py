@@ -88,7 +88,7 @@ class ResponseFrame(Base):
     frame_type: Mapped[str | None] = mapped_column(String)
     event_id: Mapped[str | None] = mapped_column(String)
     created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    frame_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    frame: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     response: Mapped[Response] = relationship(back_populates="frames")
 
@@ -535,7 +535,7 @@ class ResponsesDB:
             ordinal=assigned_ordinal,
             frame_type=frame_type or serialized.get("type"),
             event_id=event_id,
-            frame_json=serialized,
+            frame=serialized,
         )
         session.add(frame)
         await session.flush()
