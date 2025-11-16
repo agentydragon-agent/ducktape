@@ -106,7 +106,6 @@ def render_template(c, api, template_pk):
             # OK: all rendered
             123,  # CJ7809 LDO
         ]
-    )
 
     response = api.post(
         url="/label/print/", data={"plugin": "InvenTreeLabelSheet", "template": template_pk, "items": part_ids}

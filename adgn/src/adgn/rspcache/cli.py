@@ -65,7 +65,7 @@ def mint_key(
     typer.echo(data.token)
     record = data.record
     typer.echo(
-        f"Name: {record.name}  Alias: {record.upstream_alias}  Prefix: {record.token_prefix}  Created: {record.created_ts.isoformat()}"
+        f"Name: {record.name}  Alias: {record.upstream_alias}  Prefix: {record.token_prefix}  Created: {record.created_at.isoformat()}"
     )
 
 
@@ -123,7 +123,7 @@ def list_keys(
     for item in items:
         status = "revoked" if item.revoked_ts else "active"
         typer.echo(
-            f"{item.id}  {item.name}  alias={item.upstream_alias}  prefix={item.token_prefix}  status={status}  created={item.created_ts.isoformat()}"
+            f"{item.id}  {item.name}  alias={item.upstream_alias}  prefix={item.token_prefix}  status={status}  created={item.created_at.isoformat()}"
         )
 
 
