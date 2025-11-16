@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import hashlib
 import json
 import os
@@ -24,6 +25,34 @@ from adgn.rspcache.models import (
     stream_event_usage,
 )
 from adgn.rspcache.responses_db import APIKeyRecord, ResponsesDB
+
+
+@asynccontextmanager
+async def record_errors_to_db(
+    db: ResponsesDB, key: str, response_id: str | None = None, error_reason: str | None = None
+):
+    """Context manager to automatically record exceptions to database.
+
+    Args:
+        db: Database instance
+        key: Cache key
+        response_id: Optional response ID
+        error_reason: Default error reason if not provided by exception
+    """
+    try:
+        yield
+    except HTTPException:
+        # Don't record HTTPExceptions from FastAPI - they're user-facing errors
+        raise
+    except asyncio.CancelledError:
+        # Don't record cancellations
+        raise
+    except Exception as exc:
+        reason = error_reason or str(exc)
+        await db.record_error(
+            key, error_reason=reason, response_id=response_id, error=ErrorPayload(message=reason)
+        )
+        raise
 
 HTTP_ERROR_MIN = 400
 SSE_PREFIX = "data:"

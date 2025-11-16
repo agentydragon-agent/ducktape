@@ -42,6 +42,27 @@ def _admin_client(admin_url: str, token: str | None) -> httpx.Client:
     return httpx.Client(base_url=admin_url, headers=headers, timeout=30.0)
 
 
+def _format_key_info(
+    item_id: str | UUID,
+    name: str,
+    upstream_alias: str,
+    token_prefix: str,
+    created_at: str,
+    status: str | None = None,
+) -> str:
+    """Format API key info for display."""
+    parts = [
+        f"{item_id}",
+        f"{name}",
+        f"alias={upstream_alias}",
+        f"prefix={token_prefix}",
+    ]
+    if status:
+        parts.append(f"status={status}")
+    parts.append(f"created={created_at}")
+    return "  ".join(parts)
+
+
 @keys_app.command("mint")
 def mint_key(
     name: str = typer.Argument(..., help="Display name for the client API key"),
@@ -64,9 +85,10 @@ def mint_key(
     typer.secho("Token (copy now, it will not be shown again):", fg=typer.colors.YELLOW)
     typer.echo(data.token)
     record = data.record
-    typer.echo(
-        f"Name: {record.name}  Alias: {record.upstream_alias}  Prefix: {record.token_prefix}  Created: {record.created_at.isoformat()}"
+    key_info = _format_key_info(
+        record.id, record.name, record.upstream_alias, record.token_prefix, record.created_at.isoformat()
     )
+    typer.echo(f"Name: {key_info}")
 
 
 def _resolve_key_id(client: httpx.Client, name: str | None, key_id: str | None) -> UUID:
@@ -122,9 +144,10 @@ def list_keys(
         return
     for item in items:
         status = "revoked" if item.revoked_ts else "active"
-        typer.echo(
-            f"{item.id}  {item.name}  alias={item.upstream_alias}  prefix={item.token_prefix}  status={status}  created={item.created_at.isoformat()}"
+        key_info = _format_key_info(
+            item.id, item.name, item.upstream_alias, item.token_prefix, item.created_at.isoformat(), status=status
         )
+        typer.echo(key_info)
 
 
 if __name__ == "__main__":
