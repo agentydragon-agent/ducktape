@@ -1,0 +1,20 @@
+#cloud-config
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: false
+    # password is 'ubuntu' (hashed)
+    passwd: $6$rounds=4096$saltsalt$IjGSMhM3KkVhXaKPE3HkM.vEh3R/2H8iQqnF2Cg8g4/4WtJj5jVKD5Ep6TYzJMoWwZ7cxKcBl8GWEK.bD/WfP0
+
+# Enable password authentication for SSH (for easy access)
+ssh_pwauth: true
+
+# Install packages we'll need
+packages:
+  - curl
+  - iptables
+
+# Run commands on first boot
+runcmd:
+  - echo "VM is ready" > /root/vm-ready.txt
