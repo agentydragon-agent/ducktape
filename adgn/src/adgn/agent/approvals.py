@@ -5,6 +5,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from importlib import resources
 import logging
+import uuid
 
 from docker import DockerClient
 from pydantic import BaseModel
@@ -15,6 +16,7 @@ from adgn.agent.persist import Persistence
 from adgn.agent.policy_eval.runner import run_policy_source
 from adgn.mcp._shared.constants import APPROVAL_POLICY_PROPOSALS_INDEX_URI, APPROVAL_POLICY_RESOURCE_URI, UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.uris import approval_policy_proposal_item_uri
 
 # build_mcp_function is used for self_check payload construction
 
@@ -186,6 +188,57 @@ class ApprovalPolicyEngine:
         cb = self._notify
         if cb:
             cb(APPROVAL_POLICY_PROPOSALS_INDEX_URI)
+
+    def notify_proposal_change(self, proposal_id: str) -> None:
+        """Notify about a specific proposal change and the proposals index.
+
+        Convenience method that combines notifying about a specific proposal item
+        and the proposals index list change.
+        """
+        self.notify_resource(approval_policy_proposal_item_uri(proposal_id))
+        self.notify_proposals_changed()
+
+    async def create_proposal(self, content: str) -> str:
+        """Create a new policy proposal and return its ID.
+
+        Validates the proposal content if docker_client is available,
+        persists it, and notifies about the change.
+        """
+        # Self-check proposal program if docker is available
+        if self.docker_client is not None:
+            self.self_check(content)
+        # Generate new proposal ID and persist
+        new_id = uuid.uuid4().hex
+        await self.persistence.create_policy_proposal(self.agent_id, proposal_id=new_id, content=content)
+        self.notify_proposal_change(new_id)
+        return new_id
+
+    async def withdraw_proposal(self, proposal_id: str) -> None:
+        """Withdraw (delete) a pending policy proposal by ID."""
+        await self.persistence.delete_policy_proposal(self.agent_id, proposal_id)
+        self.notify_proposal_change(proposal_id)
+
+    async def approve_proposal(self, proposal_id: str) -> None:
+        """Approve a pending policy proposal by ID and activate it.
+
+        Retrieves the proposal, validates it, activates it as the current policy,
+        marks it approved in persistence, and notifies about the change.
+        """
+        got = await self.persistence.get_policy_proposal(self.agent_id, proposal_id)
+        if got is None:
+            raise KeyError(proposal_id)
+        # Self-check the proposal program before activation
+        if self.docker_client is not None:
+            self.self_check(got.content)
+        # Activate policy (notifies via engine's set_policy)
+        self.set_policy(got.content)
+        await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
+        self.notify_proposal_change(proposal_id)
+
+    async def reject_proposal(self, proposal_id: str) -> None:
+        """Reject a pending policy proposal by ID."""
+        await self.persistence.reject_policy_proposal(self.agent_id, proposal_id)
+        self.notify_proposal_change(proposal_id)
 
 
 def make_policy_engine(
