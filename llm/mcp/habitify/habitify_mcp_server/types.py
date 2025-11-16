@@ -7,9 +7,24 @@ as documented in the reference YAML files.
 
 import datetime
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel
+
+
+def _validate_iso_date(v: str) -> str:
+    """Validate ISO 8601 date format (YYYY-MM-DD)."""
+    if not isinstance(v, str):
+        raise ValueError("Date must be a string")
+    try:
+        datetime.date.fromisoformat(v)
+        return v
+    except ValueError as e:
+        raise ValueError(f"Invalid ISO date format, expected YYYY-MM-DD: {e}") from e
+
+
+# Type alias for ISO 8601 date strings (YYYY-MM-DD)
+ISODate = Annotated[str, AfterValidator(_validate_iso_date)]
 
 
 class Status(str, Enum):
@@ -77,41 +92,12 @@ class HabitStatus(BaseModel):
     """Model for habit status response from the API."""
 
     status: Status
-
-    # These fields aren't in the API response but are useful for our client
-    date: str | None = None  # Raw API response uses string dates
+    date: ISODate | None = None
     value: float | None = None
     note: str | None = None
 
     # Model config to handle extra fields
     model_config = {"extra": "ignore"}
-
-
-class HabitStatusResponse(BaseModel):
-    """Client response model that uses Python date objects."""
-
-    status: Status
-    date: datetime.date | None = None  # Client response uses Python date objects
-    value: float | None = None
-    note: str | None = None
-
-    @classmethod
-    def from_api_model(cls, api_model: HabitStatus, date: str | datetime.date | None = None) -> "HabitStatusResponse":
-        """Convert API model to client response model with Python date object."""
-        # If we already have a date object, use it directly
-        if isinstance(date, datetime.date):
-            result_date = date
-        # If we have a string date parameter, convert it
-        elif isinstance(date, str):
-            result_date = datetime.date.fromisoformat(date)
-        # Otherwise use the API model's date string, which should always be present
-        elif api_model.date:
-            result_date = datetime.date.fromisoformat(api_model.date)
-        # This should never happen as API always provides a date, but just in case
-        else:
-            raise ValueError("No date available in API model or parameters")
-
-        return cls(status=api_model.status, date=result_date, value=api_model.value, note=api_model.note)
 
 
 class Habit(BaseModel):
@@ -201,13 +187,13 @@ class StatusResult(BaseModel):
     """Result for checkHabit tool."""
 
     status: Status
-    date: str  # YYYY-MM-DD format
+    date: ISODate
 
 
 class DateRangeStatusItem(BaseModel):
     """Status for a single date within a date range."""
 
-    date: str  # YYYY-MM-DD format
+    date: ISODate
     status: Status
 
 
@@ -215,8 +201,8 @@ class DateRangeStatusResult(BaseModel):
     """Result for getHabitStatus tool with date range."""
 
     statuses: list[DateRangeStatusItem]
-    start_date: str
-    end_date: str
+    start_date: ISODate
+    end_date: ISODate
     date_count: int
 
 
@@ -224,7 +210,7 @@ class LogResult(BaseModel):
     """Result for logHabit/setHabitStatus tool."""
 
     status: Status
-    date: str  # YYYY-MM-DD format
+    date: ISODate
     note: str | None = None
     value: float | None = None
 

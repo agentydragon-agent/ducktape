@@ -18,7 +18,6 @@ from .types import (
     StatusResult,
 )
 from .utils import with_client
-from .utils.date_utils import format_date_yyyy_mm_dd
 from .utils.error_utils import create_error_response, create_validation_error
 from .utils.habit_resolver import resolve_habit
 
@@ -196,22 +195,20 @@ async def get_habit_status(
 
         # Process each status
         for status in statuses:
-            date_str = format_date_yyyy_mm_dd(status.date)
-
-            # Build the status item
-            items.append(DateRangeStatusItem(date=date_str, status=status.status))
+            # status.date is already an ISO date string (YYYY-MM-DD)
+            items.append(DateRangeStatusItem(date=status.date, status=status.status))
 
             # Track date range
-            if first_date is None or date_str < first_date:
-                first_date = date_str
-            if last_date is None or date_str > last_date:
-                last_date = date_str
+            if first_date is None or status.date < first_date:
+                first_date = status.date
+            if last_date is None or status.date > last_date:
+                last_date = status.date
 
         # Create the date range result
         return DateRangeStatusResult(
             statuses=items,
-            start_date=first_date or format_date_yyyy_mm_dd(None),
-            end_date=last_date or format_date_yyyy_mm_dd(None),
+            start_date=first_date or datetime.now().strftime("%Y-%m-%d"),
+            end_date=last_date or datetime.now().strftime("%Y-%m-%d"),
             date_count=len(items),
         )
     # Single date query (original behavior)

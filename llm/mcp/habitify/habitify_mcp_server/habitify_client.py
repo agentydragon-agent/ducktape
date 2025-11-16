@@ -13,8 +13,8 @@ from typing import Any, Literal
 from dotenv import load_dotenv
 import httpx
 
-from .types import Area, Habit, HabitStatus, HabitStatusResponse
-from .utils.date_utils import create_date_range, format_date_for_api, format_date_yyyy_mm_dd
+from .types import Area, Habit, HabitStatus
+from .utils.date_utils import create_date_range, format_date_for_api
 
 logger = logging.getLogger("habitify.client")
 
@@ -221,7 +221,7 @@ class HabitifyClient:
 
     # All methods are async-only now
 
-    async def check_habit_status(self, habit_id: str, date: str | datetime.date | None = None) -> HabitStatusResponse:
+    async def check_habit_status(self, habit_id: str, date: str | datetime.date | None = None) -> HabitStatus:
         """
         Check a habit's status for a date.
 
@@ -232,7 +232,7 @@ class HabitifyClient:
             date: Optional date in YYYY-MM-DD format or date object (defaults to today)
 
         Returns:
-            Habit status as a client response model with Python date object
+            Habit status with ISO date string (YYYY-MM-DD)
         """
         habit_id = self._validate_habit_id(habit_id)
         check_date = format_date_for_api(date)
@@ -240,14 +240,18 @@ class HabitifyClient:
         try:
             response = await self.client.get(f"/status/{habit_id}", params={"target_date": check_date})
             response.raise_for_status()
-            api_result = self._process_response(response, HabitStatus)
+            result = self._process_response(response, HabitStatus)
 
-            # If API didn't return a date, add the request date to the API model
-            if not api_result.date:
-                api_result.date = format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()
+            # If API didn't return a date, add the request date
+            if not result.date:
+                if isinstance(date, datetime.date):
+                    result.date = date.isoformat()
+                elif isinstance(date, str):
+                    result.date = date
+                else:
+                    result.date = datetime.date.today().isoformat()
 
-            # Convert the API model to a client response model with Python date object
-            return HabitStatusResponse.from_api_model(api_result, date)
+            return result
         except Exception as e:
             raise self._handle_error(e)
 
@@ -257,7 +261,7 @@ class HabitifyClient:
         start_date: str | datetime.date | None = None,
         end_date: str | datetime.date | None = None,
         days: int | None = None,
-    ) -> list[HabitStatusResponse]:
+    ) -> list[HabitStatus]:
         """
         Check a habit's status for a range of dates.
 
@@ -271,7 +275,7 @@ class HabitifyClient:
             days: Number of days to include
 
         Returns:
-            List of habit status client response models with Python date objects, one for each date in the range
+            List of habit statuses with ISO date strings (YYYY-MM-DD), one for each date in the range
         """
         habit_id = self._validate_habit_id(habit_id)
 
@@ -280,14 +284,11 @@ class HabitifyClient:
 
         # Prepare coroutines for each date
         tasks = []
-        date_map = {}  # Map to track which date corresponds to which task
 
         # Create all the coroutines
         for date in date_range:
-            formatted_date = format_date_yyyy_mm_dd(date)
             task = asyncio.create_task(self.check_habit_status(habit_id, date))
             tasks.append(task)
-            date_map[task] = formatted_date
 
         # Run all tasks concurrently
         try:
@@ -316,7 +317,7 @@ class HabitifyClient:
         date: str | datetime.date | None = None,
         note: str | None = None,
         value: float | None = None,
-    ) -> HabitStatusResponse:
+    ) -> HabitStatus:
         """
         Set a habit's status for a specific date.
 
@@ -330,7 +331,7 @@ class HabitifyClient:
             value: Optional value for habits with goals
 
         Returns:
-            Client response model with Python date object
+            Habit status with ISO date string (YYYY-MM-DD)
         """
         if not status:
             raise HabitifyError("Status is required")
@@ -352,16 +353,14 @@ class HabitifyClient:
             response = await self.client.put(f"/status/{habit_id}", json=request_body)
             response.raise_for_status()
 
-            # Create API result model with the input data since the API returns null for success
-            api_result = HabitStatus(
+            # Create result model with the input data since the API returns null for success
+            iso_date = date.isoformat() if isinstance(date, datetime.date) else (date if date else datetime.date.today().isoformat())
+            return HabitStatus(
                 status=status,
-                date=(format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()),
+                date=iso_date,
                 note=note,
                 value=value,
             )
-
-            # Convert to client response model with Python date object
-            return HabitStatusResponse.from_api_model(api_result, date)
         except Exception as e:
             raise self._handle_error(e)
 

@@ -1,18 +1,14 @@
 """
-Test the separation between API response models and client response models.
-
-This test ensures that the HabitifyClient returns client response models (HabitStatusResponse)
-with Python date objects, while keeping API response models (HabitStatus) with string dates.
+Test that the HabitifyClient returns HabitStatus models with ISO date strings (YYYY-MM-DD).
 """
 
-import datetime
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from ..habitify_client import HabitifyClient
-from ..types import HabitStatus, HabitStatusResponse
+from ..types import HabitStatus
 
 
 @pytest.fixture
@@ -24,8 +20,8 @@ def client():
 
 
 @pytest.mark.asyncio
-async def test_check_habit_status_returns_client_response_with_date_object(client):
-    """Test that check_habit_status returns HabitStatusResponse with a date object."""
+async def test_check_habit_status_returns_iso_date_string(client):
+    """Test that check_habit_status returns HabitStatus with an ISO date string."""
     # Create a mock response
     mock_resp = AsyncMock(spec=httpx.Response)
     mock_resp.status_code = 200
@@ -37,20 +33,17 @@ async def test_check_habit_status_returns_client_response_with_date_object(clien
         # Call the method with a string date
         status = await client.check_habit_status("test-habit-id", "2025-01-15")
 
-        # Verify we get a HabitStatusResponse (not a HabitStatus)
-        assert isinstance(status, HabitStatusResponse)
-        assert not isinstance(status, HabitStatus)
+        # Verify we get a HabitStatus
+        assert isinstance(status, HabitStatus)
 
-        # Verify the date is a Python date object, not a string
-        assert isinstance(status.date, datetime.date)
-        assert status.date.year == 2025
-        assert status.date.month == 1
-        assert status.date.day == 15
+        # Verify the date is an ISO string (YYYY-MM-DD), not a date object
+        assert isinstance(status.date, str)
+        assert status.date == "2025-01-15"
 
 
 @pytest.mark.asyncio
-async def test_set_habit_status_returns_client_response_with_date_object(client):
-    """Test that set_habit_status returns HabitStatusResponse with a date object."""
+async def test_set_habit_status_returns_iso_date_string(client):
+    """Test that set_habit_status returns HabitStatus with an ISO date string."""
     # Create a mock response
     mock_resp = AsyncMock(spec=httpx.Response)
     mock_resp.status_code = 200
@@ -62,20 +55,17 @@ async def test_set_habit_status_returns_client_response_with_date_object(client)
         # Call the method with a string date
         status = await client.set_habit_status("test-habit-id", "completed", "2025-02-15", "Test note")
 
-        # Verify we get a HabitStatusResponse (not a HabitStatus)
-        assert isinstance(status, HabitStatusResponse)
-        assert not isinstance(status, HabitStatus)
+        # Verify we get a HabitStatus
+        assert isinstance(status, HabitStatus)
 
-        # Verify the date is a Python date object, not a string
-        assert isinstance(status.date, datetime.date)
-        assert status.date.year == 2025
-        assert status.date.month == 2
-        assert status.date.day == 15
+        # Verify the date is an ISO string (YYYY-MM-DD), not a date object
+        assert isinstance(status.date, str)
+        assert status.date == "2025-02-15"
 
 
 @pytest.mark.asyncio
-async def test_check_habit_status_range_returns_client_responses(client):
-    """Test that check_habit_status_range returns list of HabitStatusResponse with date objects."""
+async def test_check_habit_status_range_returns_iso_date_strings(client):
+    """Test that check_habit_status_range returns list of HabitStatus with ISO date strings."""
     # Create a mock response for all date checks
     mock_resp = AsyncMock(spec=httpx.Response)
     mock_resp.status_code = 200
@@ -93,12 +83,13 @@ async def test_check_habit_status_range_returns_client_responses(client):
         # Should return 3 status objects
         assert len(statuses) == 3
 
-        # All should be HabitStatusResponse with date objects
+        # All should be HabitStatus with ISO date strings
+        expected_dates = {"2025-03-15", "2025-03-16", "2025-03-17"}
+        actual_dates = {status.date for status in statuses}
+
         for status in statuses:
-            assert isinstance(status, HabitStatusResponse)
-            assert not isinstance(status, HabitStatus)
-            assert isinstance(status.date, datetime.date)
-            assert status.date.year == 2025
-            assert status.date.month == 3
-            assert status.date.day >= 15
-            assert status.date.day < 18  # 15, 16, 17
+            assert isinstance(status, HabitStatus)
+            assert isinstance(status.date, str)
+            assert status.date in expected_dates
+
+        assert actual_dates == expected_dates
