@@ -207,6 +207,11 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
         self._persistence = engine.persistence
         self._docker = engine.docker_client
 
+    def _notify_proposal_change(self, proposal_id: str) -> None:
+        """Notify about a proposal item change and the full proposals index."""
+        self._engine.notify_resource(approval_policy_proposal_item_uri(proposal_id))
+        self._engine.notify_proposals_changed()
+
         @self.flat_model()
         async def create_proposal(input: CreateProposalArgs) -> ProposalDescriptor:  # type: ignore[unused-ignore]
             """Create a new policy proposal and return its descriptor."""
@@ -218,8 +223,7 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
                 )
             new_id = uuid.uuid4().hex
             await self._persistence.create_policy_proposal(self._agent_id, proposal_id=new_id, content=input.content)
-            self._engine.notify_resource(approval_policy_proposal_item_uri(new_id))
-            self._engine.notify_proposals_changed()
+            self._notify_proposal_change(new_id)
             return ProposalDescriptor(
                 id=new_id, status=ProposalStatus.PENDING, created_at=datetime.now(UTC), decided_at=None
             )
@@ -229,8 +233,7 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
             """Withdraw a pending policy proposal by id."""
             pid = input.id
             await self._persistence.delete_policy_proposal(self._agent_id, pid)
-            self._engine.notify_resource(approval_policy_proposal_item_uri(pid))
-            self._engine.notify_proposals_changed()
+            self._notify_proposal_change(pid)
             return True
 
 
@@ -259,6 +262,11 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
         self._persistence = engine.persistence
         self._docker = engine.docker_client
 
+    def _notify_proposal_change(self, proposal_id: str) -> None:
+        """Notify about a proposal item change and the full proposals index."""
+        self._engine.notify_resource(approval_policy_proposal_item_uri(proposal_id))
+        self._engine.notify_proposals_changed()
+
         @self.flat_model()
         async def approve_proposal(input: ApproveProposalArgs) -> bool:  # type: ignore[unused-ignore]
             """Approve a pending policy proposal by id (activates policy)."""
@@ -275,16 +283,14 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
             # Activate policy in engine (notifies via engine)
             self._engine.set_policy(got.content)
             await self._persistence.approve_policy_proposal(self._agent_id, input.id)
-            self._engine.notify_resource(approval_policy_proposal_item_uri(input.id))
-            self._engine.notify_proposals_changed()
+            self._notify_proposal_change(input.id)
             return True
 
         @self.flat_model()
         async def reject_proposal(input: RejectProposalArgs) -> bool:  # type: ignore[unused-ignore]
             """Reject a pending policy proposal by id."""
             await self._persistence.reject_policy_proposal(self._agent_id, input.id)
-            self._engine.notify_resource(approval_policy_proposal_item_uri(input.id))
-            self._engine.notify_proposals_changed()
+            self._notify_proposal_change(input.id)
             return True
 
         @self.flat_model()
