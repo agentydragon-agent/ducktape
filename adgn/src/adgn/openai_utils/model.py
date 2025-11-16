@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from functools import singledispatch
 from typing import Any, Literal, Protocol, Self, cast
 
 from openai import AsyncOpenAI
 from openai.types.responses import Response, ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
+from openai.types.responses.response_usage import ResponseUsage
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adgn.openai_utils.retry import retry_decorator
@@ -154,20 +154,6 @@ class ResponsesRequest(BaseModel):
 # ------------------------------
 
 
-class Usage(BaseModel):
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    total_tokens: int | None = None
-    reasoning_tokens: int | None = None
-    cache_creation_input_tokens: int | None = None
-    cache_read_input_tokens: int | None = None
-    request_id: str | None = None
-    response_id: str | None = None
-    idempotency_key: str | None = None
-    created_at: datetime | None = None
-    estimation: dict[str, Any] | None = None
-
-
 class OutputText(BaseModel):
     text: str
     annotations: list[dict[str, Any]] | None = None
@@ -270,7 +256,7 @@ def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMes
 
 class ResponsesResult(BaseModel):
     id: str
-    usage: Usage
+    usage: ResponseUsage | None
     output: list[ResponseOutItem]
 
     def to_input_items(self) -> list[InputItem]:
@@ -307,8 +293,7 @@ def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
                 out_items.append(converted)
         else:
             continue
-    usage = Usage() if sdk_resp.usage is None else Usage.model_validate(sdk_resp.usage.model_dump())
-    return ResponsesResult(id=sdk_resp.id, usage=usage, output=out_items)
+    return ResponsesResult(id=sdk_resp.id, usage=sdk_resp.usage, output=out_items)
 
 
 # ------------------------------

@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Literal, cast
 
 from fastmcp.client.client import CallToolResult
+from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
 from pydantic import BaseModel
 
 from adgn.agent.loop_control import NoLoopDecision
@@ -22,14 +23,10 @@ from adgn.openai_utils.model import ReasoningItem
 class GroundTruthUsage(BaseModel):
     model: str
     input_tokens: int | None = None
+    input_tokens_details: InputTokensDetails | None = None
     output_tokens: int | None = None
+    output_tokens_details: OutputTokensDetails | None = None
     total_tokens: int | None = None
-    reasoning_tokens: int | None = None
-    cache_creation_input_tokens: int | None = None
-    cache_read_input_tokens: int | None = None
-    created_at: datetime | None = None
-    idempotency_key: str | None = None
-    estimation: dict[str, Any] | None = None
 
 
 # ---- Typed events (no shared runtime base required) ----

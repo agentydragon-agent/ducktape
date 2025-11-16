@@ -426,29 +426,20 @@ class MiniCodex:
                 reasoning=reasoning_param,
             )
             resp = await self._client.responses_create(req)
-            u = resp.usage
-            self._controller.on_response(
-                Response(
-                    response_id=resp.id,
-                    usage=GroundTruthUsage(
-                        model=self._model,
-                        input_tokens=u.input_tokens,
-                        output_tokens=u.output_tokens,
-                        total_tokens=u.total_tokens,
-                        reasoning_tokens=u.reasoning_tokens,
-                        cache_creation_input_tokens=u.cache_creation_input_tokens,
-                        cache_read_input_tokens=u.cache_read_input_tokens,
-                        created_at=u.created_at,
-                        idempotency_key=u.idempotency_key,
-                        estimation=u.estimation,
-                    ),
+            sdk_usage = resp.usage
+            usage = (
+                GroundTruthUsage(
                     model=self._model,
-                    created_at=u.created_at,
-                    idempotency_key=u.idempotency_key,
+                    input_tokens=sdk_usage.input_tokens,
+                    input_tokens_details=sdk_usage.input_tokens_details,
+                    output_tokens=sdk_usage.output_tokens,
+                    output_tokens_details=sdk_usage.output_tokens_details,
+                    total_tokens=sdk_usage.total_tokens,
                 )
-            )  # type: ignore[arg-type]
-            # TODO(token-propagation): capture additional metadata once OpenAI surfaces it
-            # (request identifiers, cache hit context, estimation payloads).
+                if sdk_usage is not None
+                else GroundTruthUsage(model=self._model)
+            )
+            self._controller.on_response(Response(response_id=resp.id, usage=usage, model=self._model))  # type: ignore[arg-type]
             resp_output = resp.output
         else:
             raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
