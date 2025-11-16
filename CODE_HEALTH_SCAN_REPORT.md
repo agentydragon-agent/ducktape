@@ -70,8 +70,8 @@
 - [ ] `llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/diff/parser.py:13` - DiffLine.change_type
 - [ ] `llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/diff/categorizer.py:15` - CategorizedViolation.category
 - [ ] `llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/config/models.py:116` - NotificationHookConfig.urgency
-- [ ] `llm/ducktape_llm_common/ducktape_llm_common/claude_code_api.py` - Convert 5 hook event Literal types to single HookEventName enum
-- [ ] `tana/src/tana/domain/search.py` - Convert 5 SearchKind Literal types to single enum
+- [x] `llm/ducktape_llm_common/ducktape_llm_common/claude_code_api.py` - Convert 5 hook event Literal types to single HookEventName enum ✅ FIXED in commit bb09dd4
+- [x] `tana/src/tana/domain/search.py` - Convert 5 SearchKind Literal types to single enum ✅ FIXED in commit f880197
 
 **Fix string status/state fields:**
 - [ ] `adgn/src/adgn/inop/runners/containerized_claude.py:338,340` - Create ContainerStatus enum
@@ -101,8 +101,8 @@
 #### 6. API Model Design Antipatterns (26 occurrences)
 
 **Remove `_json` suffixes (9 occurrences):**
-- [ ] `adgn/src/adgn/rspcache/responses_db.py:91` - Rename `frame_json` to `frame`
-- [ ] `adgn/src/adgn/agent/server/protocol.py:122` - Rename `args_json` to `arguments`
+- [x] `adgn/src/adgn/rspcache/responses_db.py:91` - Rename `frame_json` to `frame` ✅ FIXED in commit 814191c
+- [ ] `adgn/src/adgn/agent/server/protocol.py:122` - Rename `args_json` to `arguments` (40 usages across 14 files - large change)
 - [ ] `adgn/src/adgn/agent/persist/events.py:23` - Rename ToolCallPayload.args_json
 - [ ] `adgn/src/adgn/agent/approvals.py:58` - Rename ApprovalToolCall.args_json
 - [ ] `adgn/src/adgn/agent/server/protocol.py:235` - Rename ApprovalPendingEvt.args_json
