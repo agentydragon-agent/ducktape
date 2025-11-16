@@ -133,21 +133,20 @@ class WtClient:
             await self._start_daemon_background()
 
             try:
-                loop = asyncio.get_event_loop()
-                reader_future = loop.run_in_executor(None, self._read_handshake_from_pipe)
-                handshake_data = await asyncio.wait_for(
-                    asyncio.shield(reader_future), timeout=self.config.startup_timeout.total_seconds()
+                handshake_msg = await asyncio.wait_for(
+                    self._read_handshake_from_pipe(), timeout=self.config.startup_timeout.total_seconds()
                 )
 
-                protocol_version = handshake_data.get("protocol_version", 0)
-                if protocol_version != 1:
-                    raise RuntimeError(f"Incompatible daemon protocol version {protocol_version}, expected 1")
+                if handshake_msg.protocol_version != 1:
+                    raise RuntimeError(
+                        f"Incompatible daemon protocol version {handshake_msg.protocol_version}, expected 1"
+                    )
 
-                if handshake_data.get("success") and handshake_data.get("ready"):
+                if handshake_msg.success and handshake_msg.ready:
                     logger.info("Daemon startup handshake ok (ready)")
                     return
-                if not handshake_data.get("success"):
-                    error_message = handshake_data.get("error", "Unknown startup error")
+                if not handshake_msg.success:
+                    error_message = handshake_msg.error or "Unknown startup error"
                     raise RuntimeError(f"Daemon startup failed:\n{error_message}")
                 # Guard: success without ready indicates premature closure; treat as error to avoid races
                 raise RuntimeError("Daemon startup did not signal ready")
@@ -215,47 +214,59 @@ class WtClient:
         # Store read pipe so _read_handshake_from_pipe can consume it
         self._handshake_pipe = read_fd
 
-    def _read_handshake_from_pipe(self) -> dict[str, object]:
-        """Read streaming JSON handshake/progress until ready or failure.
+    async def _read_handshake_from_pipe(self) -> StartupMessage:
+        """Read streaming JSON messages from pipe until ready or failure.
 
-        The daemon emits multiple JSON lines:
-        - initial {success=True, phase="starting"}
-        - progress {success=True, phase=..., discovered_worktrees=N}
-        - final    {success=True, ready=True, ...}
-        or a single failure {success=False, error=...}
+        Daemon emits JSON lines: progress updates until {success:True, ready:True} or {success:False}.
+        Returns the terminal message.
         """
-
         if not self._handshake_pipe:
             raise RuntimeError("No handshake pipe available")
 
-        with os.fdopen(self._handshake_pipe, "r") as pipe_file:
-            last_obj: dict[str, object] | None = None
-            last_ready = False
-            while line := pipe_file.readline():
+        # Create async stream reader from file descriptor
+        loop = asyncio.get_event_loop()
+        reader = asyncio.StreamReader()
+        protocol = asyncio.StreamReaderProtocol(reader)
+
+        # Open file descriptor in binary mode for async reading
+        pipe_file = os.fdopen(self._handshake_pipe, "rb", buffering=0)
+        transport, _ = await loop.connect_read_pipe(lambda: protocol, pipe_file)
+
+        msg: StartupMessage | None = None
+
+        try:
+            while True:
+                line_bytes = await reader.readline()
+                if not line_bytes:
+                    # EOF - pipe closed
+                    break
+
+                line = line_bytes.decode("utf-8")
+
                 if self.verbose:
                     click.echo(f"[daemon-handshake] {line.rstrip()}")
+
                 stripped = line.strip()
                 if not stripped:
                     continue
+
                 try:
-                    obj = StartupMessage.model_validate_json(stripped)
+                    msg = StartupMessage.model_validate_json(stripped)
                 except ValidationError:
                     continue
-                d = cast(dict[str, object], obj.model_dump())
-                last_obj = d
-                last_ready = bool(d.get("ready", False))
-                if not obj.success:
-                    return d
-                if last_ready:
-                    return d
-            # Only accept closure if we already saw ready=True
-            if last_ready and last_obj is not None:
-                return last_obj
-            diag = self._collect_daemon_diagnostics()
-            msg = "Daemon closed handshake pipe before ready"
-            if diag:
-                msg += "\n" + diag
-            raise RuntimeError(msg)
+
+                # Return immediately on terminal condition
+                if not msg.success or msg.ready:
+                    return msg
+        finally:
+            transport.close()
+
+        # Pipe closed without terminal message
+        diag = self._collect_daemon_diagnostics()
+        error_msg = "Daemon closed handshake pipe before signaling ready"
+        if diag:
+            error_msg += "\n" + diag
+        raise RuntimeError(error_msg)
 
     async def get_status(self, worktree_ids: list[WorktreeID] | None = None) -> StatusResponse:
         await self._start_daemon_if_needed()

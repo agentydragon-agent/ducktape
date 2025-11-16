@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 import re
 import sys
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from aiolimiter import AsyncLimiter
 import asyncpg
@@ -96,7 +96,7 @@ def _model_dump_like(obj: Any, *, exclude_none: bool = True) -> dict[str, Any] |
     """
     if isinstance(obj, BaseModel):
         try:
-            return cast(dict[str, Any], obj.model_dump(exclude_none=exclude_none))
+            return obj.model_dump(exclude_none=exclude_none)  # type: ignore[no-any-return]
         except Exception:
             return None
     if isinstance(obj, dict):

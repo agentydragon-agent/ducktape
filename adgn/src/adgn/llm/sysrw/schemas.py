@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
+from anthropic.types import MessageParam
+from anthropic.types.text_block_param import TextBlockParam
+from anthropic.types.tool_param import ToolParam
 from openai.types.responses import ResponseCreateParams
 from pydantic import BaseModel, Field
 
@@ -39,9 +42,14 @@ class CrushSample(BaseModel):
 
 
 class CCRRequest(BaseModel):
-    system: str | list[dict[str, Any]] | None = None
-    messages: list[dict[str, Any]]
-    tools: list[dict[str, Any]] | None = None
+    """CCR request using proper Anthropic SDK types.
+
+    MessageParam is a TypedDict representing Anthropic Messages API format.
+    Pydantic validates these TypedDicts through TypeAdapter internally.
+    """
+    system: str | list[TextBlockParam] | None = None
+    messages: list[MessageParam]
+    tools: list[ToolParam] | None = None
 
 
 class CCRSample(BaseModel):

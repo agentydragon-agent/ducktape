@@ -3,7 +3,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
-from mcp import types as mtypes
+from fastmcp.client.client import CallToolResult as FastMcpCallToolResult
+from mcp import McpError, types as mtypes
 from pydantic import BaseModel
 
 from adgn.mcp._shared.constants import (
@@ -85,24 +86,33 @@ def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
     return None
 
 
-def detect_policy_gateway_error(err: Any) -> PolicyGatewayError | None:
+def detect_policy_gateway_error(
+    err: FastMcpCallToolResult | mtypes.CallToolResult | McpError | dict[str, Any] | mtypes.ErrorData | BaseException,
+) -> PolicyGatewayError | None:
     """Detect and classify policy-gateway errors robustly.
 
     Accepts either:
-    - A FastMCP CallToolResult (with is_error=True)
-    - An exception (McpError/ToolError/other)
-    - A raw error payload (dict/ErrorData)
+    - FastMCP CallToolResult with is_error=True
+    - MCP types.CallToolResult with is_error=True
+    - McpError exception (has .error attribute)
+    - Raw error payload (dict or ErrorData)
+    - Other exceptions (will return None unless they have .error attribute)
 
     Returns a typed PolicyGatewayError when recognized; otherwise None.
+
+    NOTE: This function is currently unused in the codebase.
     """
     # Prefer structured error data when present (CallToolResult or exception with .error)
     error_data: mtypes.ErrorData | None = None
-    if hasattr(err, "is_error") and bool(getattr(err, "is_error", False)):
-        error_data = _coerce_error_data(getattr(err, "error", None))
-    if error_data is None and hasattr(err, "error"):
+    # Check for CallToolResult with is_error=True
+    if (isinstance(err, FastMcpCallToolResult | mtypes.CallToolResult) and err.is_error) or isinstance(err, McpError):
         error_data = _coerce_error_data(err.error)
-    if error_data is None and isinstance(err, dict | mtypes.ErrorData):
+    # Check for direct error data
+    elif isinstance(err, dict | mtypes.ErrorData):
         error_data = _coerce_error_data(err)
+    # Fallback: other exceptions with .error attribute
+    elif hasattr(err, "error"):
+        error_data = _coerce_error_data(err.error)
 
     # Map structured error first
     if error_data is not None:
