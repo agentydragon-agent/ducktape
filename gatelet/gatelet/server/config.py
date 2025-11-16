@@ -5,10 +5,10 @@ import logging
 import os
 from pathlib import Path
 import re
+import tomllib
 from typing import Literal
 
 from pydantic import BaseModel, Field, validator
-import tomllib
 
 logger = logging.getLogger(__name__)
 

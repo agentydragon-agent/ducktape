@@ -14,7 +14,6 @@ from adgn.agent.server.protocol import (
     UiMessageEvt,
     UserText,
 )
-from adgn.mcp._shared.calltool import as_minimal_json
 from adgn.mcp._shared.constants import UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 

@@ -392,9 +392,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         elif isinstance(obj_any, pygit2.Commit):
             obj = obj_any
         else:
-            raise TypeError(
-                f"Unexpected git object type for {objspec}: {type(obj_any)!r}",
-            )
+            raise TypeError(f"Unexpected git object type for {objspec}: {type(obj_any)!r}")
 
         # Build commit diff against first parent (or empty tree)
         if obj.parent_ids:

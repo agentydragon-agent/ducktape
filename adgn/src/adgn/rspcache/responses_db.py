@@ -108,12 +108,8 @@ class Response(Base):
     request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
     error: Mapped[str | None] = mapped_column(String)
-    created_ts: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    last_update_ts: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    last_update_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     latency_ms: Mapped[int | None] = mapped_column(Integer)
 
     api_key: Mapped[ClientAPIKey | None] = relationship(back_populates="responses")
@@ -133,9 +129,7 @@ class ResponseSnapshot(Base):
     response: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    created_ts: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_ts: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
@@ -144,12 +138,7 @@ class ResponseSnapshot(Base):
 
     def to_model(self) -> FinalResponseSnapshot:
         return FinalResponseSnapshot.model_validate(
-            {
-                "status": self.status,
-                "response": self.response,
-                "error": self.error,
-                "token_usage": self.token_usage,
-            }
+            {"status": self.status, "response": self.response, "error": self.error, "token_usage": self.token_usage}
         )
 
 
@@ -303,14 +292,7 @@ class ResponsesDB:
         async with self._session_factory() as session:
             result = await session.execute(stmt)
             if result.rowcount and result.rowcount > 0:
-                await self._emit_event(
-                    session,
-                    ResponseStatusEvent(
-                        cache_key=key,
-                        response_id=None,
-                        status="queued",
-                    ),
-                )
+                await self._emit_event(session, ResponseStatusEvent(cache_key=key, response_id=None, status="queued"))
             await session.commit()
             return bool(result.rowcount and result.rowcount > 0)
 
@@ -321,20 +303,11 @@ class ResponsesDB:
             update_result = await session.execute(
                 update(Response)
                 .where(Response.cache_key == key)
-                .values(
-                    status="in_progress",
-                    response_id=response_id,
-                    last_update_ts=datetime.now(UTC),
-                )
+                .values(status="in_progress", response_id=response_id, last_update_ts=datetime.now(UTC))
             )
             if update_result.rowcount:
                 await self._emit_event(
-                    session,
-                    ResponseStatusEvent(
-                        cache_key=key,
-                        response_id=response_id,
-                        status="in_progress",
-                    ),
+                    session, ResponseStatusEvent(cache_key=key, response_id=response_id, status="in_progress")
                 )
             await session.commit()
 
@@ -361,10 +334,7 @@ class ResponsesDB:
             await session.execute(
                 update(Response)
                 .where(Response.cache_key == key)
-                .values(
-                    response_id=response_id,
-                    last_update_ts=datetime.now(UTC),
-                )
+                .values(response_id=response_id, last_update_ts=datetime.now(UTC))
             )
             await self._emit_event(
                 session,
@@ -406,22 +376,12 @@ class ResponsesDB:
             )
             await self._upsert_snapshot(session, key=key, snapshot=snapshot)
             await self._emit_event(
-                session,
-                ResponseStatusEvent(
-                    cache_key=key,
-                    response_id=response_id,
-                    status=snapshot.status.value,
-                ),
+                session, ResponseStatusEvent(cache_key=key, response_id=response_id, status=snapshot.status.value)
             )
             await session.commit()
 
     async def record_error(
-        self,
-        key: str,
-        *,
-        error_reason: str | None,
-        response_id: str | None,
-        error: ErrorPayload | None,
+        self, key: str, *, error_reason: str | None, response_id: str | None, error: ErrorPayload | None
     ) -> None:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
@@ -441,10 +401,7 @@ class ResponsesDB:
             await self._emit_event(
                 session,
                 ResponseStatusEvent(
-                    cache_key=key,
-                    response_id=response_id,
-                    status=snapshot.status.value,
-                    error=error_reason,
+                    cache_key=key, response_id=response_id, status=snapshot.status.value, error=error_reason
                 ),
             )
             await session.commit()
@@ -493,9 +450,7 @@ class ResponsesDB:
             if key_value is None:
                 return []
             stmt = (
-                select(ResponseFrame)
-                .where(ResponseFrame.cache_key == key_value)
-                .order_by(ResponseFrame.ordinal.asc())
+                select(ResponseFrame).where(ResponseFrame.cache_key == key_value).order_by(ResponseFrame.ordinal.asc())
             )
             if after_ordinal is not None:
                 stmt = stmt.where(ResponseFrame.ordinal > after_ordinal)

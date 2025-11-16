@@ -16,7 +16,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from .config import Column, DEFAULT_CONFIG, RenderConfig
+from .config import DEFAULT_CONFIG, Column, RenderConfig
 from .progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
 from .tree import TreeNode
 
@@ -118,11 +118,7 @@ class DiffTree:
         - Node has no children
         - We've exceeded max_depth
         """
-        return (
-            (self.config.max_depth is None or depth < self.config.max_depth)
-            and not node.is_file
-            and node.children
-        )
+        return (self.config.max_depth is None or depth < self.config.max_depth) and not node.is_file and node.children
 
     def _get_collapsed_path_and_node(self, node: TreeNode, depth: int) -> tuple[str, TreeNode, int]:
         """

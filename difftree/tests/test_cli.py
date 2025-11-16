@@ -159,7 +159,9 @@ def test_cli_integration_with_pathspec(runner, temp_git_repo, run_git, monkeypat
     # Commit 2: Modify files in different directories
     create_file(temp_git_repo, "src/core/engine.py", "def start():\n    print('starting')\n    pass\n")
     create_file(temp_git_repo, "src/utils/helpers.py", "def help():\n    print('helping')\n    pass\n")
-    create_file(temp_git_repo, "tests/test_core.py", "def test_start():\n    assert True\n\ndef test_stop():\n    assert True\n")
+    create_file(
+        temp_git_repo, "tests/test_core.py", "def test_start():\n    assert True\n\ndef test_stop():\n    assert True\n"
+    )
     create_file(temp_git_repo, "docs/README.md", "# Documentation\n\nDetailed docs here.\n")
     git_add_commit(run_git)
 

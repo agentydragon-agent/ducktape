@@ -4,12 +4,7 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
-from openai.types.responses import (
-    Response as OpenAIResponse,
-    ResponseError,
-    ResponseStreamEvent,
-    ResponseUsage,
-)
+from openai.types.responses import Response as OpenAIResponse, ResponseError, ResponseStreamEvent, ResponseUsage
 from pydantic import BaseModel, ConfigDict, TypeAdapter, field_serializer
 
 FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)

@@ -199,11 +199,7 @@ async def get_habit_status(
             date_str = format_date_yyyy_mm_dd(status.date)
 
             # Build the status item
-            items.append(
-                DateRangeStatusItem(
-                    date=date_str, status=status.status
-                )
-            )
+            items.append(DateRangeStatusItem(date=date_str, status=status.status))
 
             # Track date range
             if first_date is None or date_str < first_date:
@@ -225,9 +221,7 @@ async def get_habit_status(
     status = await client.check_habit_status(resolved.habit_id, date_str)
 
     # Status is now a Pydantic model, use attribute access
-    return StatusResult(
-        status=status.status, date=date_str
-    )
+    return StatusResult(status=status.status, date=date_str)
 
 
 @with_client
@@ -267,6 +261,4 @@ async def set_habit_status(
     )
 
     # Pydantic handles optional fields
-    return LogResult(
-        status=result.status, date=result.date, note=result.note, value=result.value
-    )
+    return LogResult(status=result.status, date=result.date, note=result.note, value=result.value)
