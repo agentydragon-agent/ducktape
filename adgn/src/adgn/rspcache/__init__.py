@@ -49,10 +49,9 @@ async def record_errors_to_db(
         raise
     except Exception as exc:
         reason = error_reason or str(exc)
-        await db.record_error(
-            key, error_reason=reason, response_id=response_id, error=ErrorPayload(message=reason)
-        )
+        await db.record_error(key, error_reason=reason, response_id=response_id, error=ErrorPayload(message=reason))
         raise
+
 
 HTTP_ERROR_MIN = 400
 SSE_PREFIX = "data:"

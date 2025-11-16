@@ -47,6 +47,7 @@ class CCRRequest(BaseModel):
     MessageParam is a TypedDict representing Anthropic Messages API format.
     Pydantic validates these TypedDicts through TypeAdapter internally.
     """
+
     system: str | list[TextBlockParam] | None = None
     messages: list[MessageParam]
     tools: list[ToolParam] | None = None

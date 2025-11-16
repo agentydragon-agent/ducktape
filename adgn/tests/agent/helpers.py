@@ -10,7 +10,6 @@ from uvicorn import Config, Server
 
 from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
-from adgn.openai_utils.text_extraction import extract_input_text_content
 from adgn.util.net import pick_free_port
 
 # System notification tag constants

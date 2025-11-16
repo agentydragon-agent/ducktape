@@ -43,20 +43,10 @@ def _admin_client(admin_url: str, token: str | None) -> httpx.Client:
 
 
 def _format_key_info(
-    item_id: str | UUID,
-    name: str,
-    upstream_alias: str,
-    token_prefix: str,
-    created_at: str,
-    status: str | None = None,
+    item_id: str | UUID, name: str, upstream_alias: str, token_prefix: str, created_at: str, status: str | None = None
 ) -> str:
     """Format API key info for display."""
-    parts = [
-        f"{item_id}",
-        f"{name}",
-        f"alias={upstream_alias}",
-        f"prefix={token_prefix}",
-    ]
+    parts = [f"{item_id}", f"{name}", f"alias={upstream_alias}", f"prefix={token_prefix}"]
     if status:
         parts.append(f"status={status}")
     parts.append(f"created={created_at}")

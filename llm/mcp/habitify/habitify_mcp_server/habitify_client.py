@@ -354,13 +354,12 @@ class HabitifyClient:
             response.raise_for_status()
 
             # Create result model with the input data since the API returns null for success
-            iso_date = date.isoformat() if isinstance(date, datetime.date) else (date if date else datetime.date.today().isoformat())
-            return HabitStatus(
-                status=status,
-                date=iso_date,
-                note=note,
-                value=value,
+            iso_date = (
+                date.isoformat()
+                if isinstance(date, datetime.date)
+                else (date if date else datetime.date.today().isoformat())
             )
+            return HabitStatus(status=status, date=iso_date, note=note, value=value)
         except Exception as e:
             raise self._handle_error(e)
 
