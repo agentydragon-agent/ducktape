@@ -202,7 +202,6 @@ class StatusResult(BaseModel):
 
     status: Status
     date: str  # YYYY-MM-DD format
-    completed: bool
 
 
 class DateRangeStatusItem(BaseModel):
@@ -210,7 +209,6 @@ class DateRangeStatusItem(BaseModel):
 
     date: str  # YYYY-MM-DD format
     status: Status
-    completed: bool
 
 
 class DateRangeStatusResult(BaseModel):

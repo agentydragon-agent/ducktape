@@ -197,12 +197,11 @@ async def get_habit_status(
         # Process each status
         for status in statuses:
             date_str = format_date_yyyy_mm_dd(status.date)
-            is_completed = status.status == Status.COMPLETED
 
             # Build the status item
             items.append(
                 DateRangeStatusItem(
-                    date=date_str, status=status.status, completed=is_completed
+                    date=date_str, status=status.status
                 )
             )
 
@@ -227,7 +226,7 @@ async def get_habit_status(
 
     # Status is now a Pydantic model, use attribute access
     return StatusResult(
-        status=status.status, date=date_str, completed=status.status == Status.COMPLETED
+        status=status.status, date=date_str
     )
 
 
