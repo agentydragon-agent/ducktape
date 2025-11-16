@@ -181,7 +181,8 @@ ansible_lint:
     - job: build_ci_image
   interruptible: true
   script:
-    - ansible-galaxy install -r ansible/requirements.yaml
+    - ansible-galaxy role install -r ansible/requirements.yaml
+    - ansible-galaxy collection install -r ansible/requirements.yaml
     - ansible-lint --progressive ansible | tee ansible-lint-output.txt
   image:
     name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA

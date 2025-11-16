@@ -27,6 +27,7 @@
 
 # Caches and temporary files
 **/.ansible/
+ansible/collections/
 **/.cache/
 **/.tmp/
 **/.uv-cache/
