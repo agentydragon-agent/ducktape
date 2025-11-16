@@ -133,10 +133,8 @@ class WtClient:
             await self._start_daemon_background()
 
             try:
-                loop = asyncio.get_event_loop()
-                reader_future = loop.run_in_executor(None, self._read_handshake_from_pipe)
                 handshake_msg = await asyncio.wait_for(
-                    asyncio.shield(reader_future), timeout=self.config.startup_timeout.total_seconds()
+                    self._read_handshake_from_pipe(), timeout=self.config.startup_timeout.total_seconds()
                 )
 
                 if handshake_msg.protocol_version != 1:
@@ -216,7 +214,7 @@ class WtClient:
         # Store read pipe so _read_handshake_from_pipe can consume it
         self._handshake_pipe = read_fd
 
-    def _read_handshake_from_pipe(self) -> StartupMessage:
+    async def _read_handshake_from_pipe(self) -> StartupMessage:
         """Read streaming JSON messages from pipe until ready or failure.
 
         Daemon emits JSON lines: progress updates until {success:True, ready:True} or {success:False}.
@@ -225,10 +223,26 @@ class WtClient:
         if not self._handshake_pipe:
             raise RuntimeError("No handshake pipe available")
 
+        # Create async stream reader from file descriptor
+        loop = asyncio.get_event_loop()
+        reader = asyncio.StreamReader()
+        protocol = asyncio.StreamReaderProtocol(reader)
+
+        # Open file descriptor in binary mode for async reading
+        pipe_file = os.fdopen(self._handshake_pipe, "rb", buffering=0)
+        transport, _ = await loop.connect_read_pipe(lambda: protocol, pipe_file)
+
         msg: StartupMessage | None = None
 
-        with os.fdopen(self._handshake_pipe, "r") as pipe:
-            for line in pipe:
+        try:
+            while True:
+                line_bytes = await reader.readline()
+                if not line_bytes:
+                    # EOF - pipe closed
+                    break
+
+                line = line_bytes.decode("utf-8")
+
                 if self.verbose:
                     click.echo(f"[daemon-handshake] {line.rstrip()}")
 
@@ -244,8 +258,10 @@ class WtClient:
                 # Return immediately on terminal condition
                 if not msg.success or msg.ready:
                     return msg
+        finally:
+            transport.close()
 
-        # Pipe closed without terminal message - only possible if msg=None or msg.ready somehow not caught
+        # Pipe closed without terminal message
         diag = self._collect_daemon_diagnostics()
         error_msg = "Daemon closed handshake pipe before signaling ready"
         if diag:
