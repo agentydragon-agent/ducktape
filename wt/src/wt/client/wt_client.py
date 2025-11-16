@@ -217,47 +217,40 @@ class WtClient:
         self._handshake_pipe = read_fd
 
     def _read_handshake_from_pipe(self) -> StartupMessage:
-        """Read streaming JSON handshake/progress until ready or failure.
+        """Read streaming JSON messages from pipe until ready or failure.
 
-        The daemon emits multiple JSON lines:
-        - initial {success=True, phase="starting"}
-        - progress {success=True, phase=..., discovered_worktrees=N}
-        - final    {success=True, ready=True, ...}
-        or a single failure {success=False, error=...}
-
-        Returns the final StartupMessage (either ready=True or success=False).
+        Daemon emits JSON lines: progress updates until {success:True, ready:True} or {success:False}.
+        Returns the terminal message.
         """
-
         if not self._handshake_pipe:
             raise RuntimeError("No handshake pipe available")
 
-        with os.fdopen(self._handshake_pipe, "r") as pipe_file:
-            last_msg: StartupMessage | None = None
-            last_ready = False
-            while line := pipe_file.readline():
+        msg: StartupMessage | None = None
+
+        with os.fdopen(self._handshake_pipe, "r") as pipe:
+            for line in pipe:
                 if self.verbose:
                     click.echo(f"[daemon-handshake] {line.rstrip()}")
+
                 stripped = line.strip()
                 if not stripped:
                     continue
+
                 try:
                     msg = StartupMessage.model_validate_json(stripped)
                 except ValidationError:
                     continue
-                last_msg = msg
-                last_ready = msg.ready
-                if not msg.success:
+
+                # Return immediately on terminal condition
+                if not msg.success or msg.ready:
                     return msg
-                if last_ready:
-                    return msg
-            # Only accept closure if we already saw ready=True
-            if last_ready and last_msg is not None:
-                return last_msg
-            diag = self._collect_daemon_diagnostics()
-            error_msg = "Daemon closed handshake pipe before ready"
-            if diag:
-                error_msg += "\n" + diag
-            raise RuntimeError(error_msg)
+
+        # Pipe closed without terminal message - only possible if msg=None or msg.ready somehow not caught
+        diag = self._collect_daemon_diagnostics()
+        error_msg = "Daemon closed handshake pipe before signaling ready"
+        if diag:
+            error_msg += "\n" + diag
+        raise RuntimeError(error_msg)
 
     async def get_status(self, worktree_ids: list[WorktreeID] | None = None) -> StatusResponse:
         await self._start_daemon_if_needed()

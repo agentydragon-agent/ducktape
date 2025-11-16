@@ -33,7 +33,6 @@ from .openai_typing import (
     chat_param_message_content_as_text,
     chat_param_message_role,
     chat_param_message_tool_calls,
-    chat_param_to_standard_message,
     dump_chat_messages,
     dump_response_messages,
     iter_resolved_text,
@@ -255,11 +254,10 @@ def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[Standar
         elif isinstance(content, list):
             texts: list[str] = []
             for block in content:
-                if isinstance(block, dict):
-                    if block.get("type") in ("text", "input_text"):
-                        text = block.get("text")
-                        if isinstance(text, str):
-                            texts.append(text)
+                if isinstance(block, dict) and block.get("type") in ("text", "input_text"):
+                    text = block.get("text")
+                    if isinstance(text, str):
+                        texts.append(text)
             text_content = "\n".join(texts)
 
         if not text_content.strip():
@@ -1058,16 +1056,10 @@ async def run_eval(
                         bad_branch = msgs_disp[idx:]
                 else:
                     # CCR item - validate and use typed Anthropic structures
-                    try:
-                        ccr_req = CCRRequest.model_validate(ar)
-                        orig_sys = extract_anthropic_system_text(ccr_req.system)
-                        rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
-                        msgs = anthropic_messages_to_standard(ccr_req.messages)
-                    except Exception:
-                        # Fallback for malformed data
-                        orig_sys = flatten_system_string(ar.get("system"))
-                        rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
-                        msgs = []
+                    ccr_req = CCRRequest.model_validate(ar)
+                    orig_sys = extract_anthropic_system_text(ccr_req.system)
+                    rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
+                    msgs = anthropic_messages_to_standard(ccr_req.messages)
                     idx = index_of_last_assistant_before_final(msgs)
                     if idx is None:
                         shared_prefix = msgs
