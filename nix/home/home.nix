@@ -77,6 +77,7 @@ in {
       ccr.homeManagerModules.claude-code-router
       ./packages/google-drive-service.nix
       "${homeManagerMaster}/modules/programs/codex.nix"
+      ./modules/codex.nix
       (import ./modules/solarized.nix {inherit pkgs lib enableGui;})
     ]
     ++ lib.optionals enableGui [
@@ -163,14 +164,6 @@ in {
       mergetool.prompt = false;
     };
   };
-
-  # Codex configuration using home-manager module with custom settings
-  programs.codex = {
-    enable = true;
-    package = unstablePkgs.codex;
-    settings = import ./codex-settings.nix;
-  };
-
   programs.neovim = {
     enable = true;
     viAlias = true;
@@ -802,12 +795,6 @@ in {
   # Powerlevel10k configuration, sourced in zsh-init.sh
   home.file.".p10k.zsh".source = ./p10k.zsh;
 
-  programs.codex = {
-    enable = true;
-    package = unstablePkgs.codex;
-    custom-instructions = builtins.readFile ../../dotfiles/codex/instructions.md;
-    settings = import ./codex-settings.nix;
-  };
   programs.claude-code = {
     enable = true;
     settings = {

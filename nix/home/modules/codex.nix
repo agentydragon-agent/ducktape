@@ -5,6 +5,7 @@ in {
   programs.codex = {
     enable = true;
     package = unstablePkgs.codex;
+    # custom-instructions = codexInstructions;
     settings = {
       model = "gpt-5-codex";
       # base_instructions_file = "/home/agentydragon/.codex/prompts/claude_code_with_applypatch.md";
@@ -26,6 +27,7 @@ in {
           "/home/agentydragon/.cache/nix"
           "/nix"
           "/nix/var/nix"
+          "/home/agentydragon/.cache/pre-commit/pre-commit.log"
         ];
         network_access = true;
         exclude_tmpdir_env_var = false;

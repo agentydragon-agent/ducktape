@@ -19,7 +19,9 @@ class RecordingHandler(BaseHandler):
 
     # Minimal subset used by tests; extend as needed
     def on_tool_call_event(self, evt: ToolCall) -> None:
-        self.records.append(to_jsonl_record(evt))
+        rec = to_jsonl_record(evt)
+        self.records.append(rec.model_dump(mode="json", exclude_none=True))
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        self.records.append(to_jsonl_record(evt))
+        rec = to_jsonl_record(evt)
+        self.records.append(rec.model_dump(mode="json", exclude_none=True))
