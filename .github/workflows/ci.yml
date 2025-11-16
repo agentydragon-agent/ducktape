@@ -102,12 +102,6 @@ jobs:
             ${{ runner.os }}-pip-uv-${{ matrix.project }}-
             ${{ runner.os }}-pip-uv-
 
-      - name: Install system dependencies for projects with dbus-python
-        if: matrix.project == 'gnome-terminal-profile-switcher' || matrix.project == 'llm/ducktape_llm_common'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
-
       - name: Install gitstatusd for wt tests
         if: matrix.project == 'wt'
         run: |
@@ -121,7 +115,22 @@ jobs:
         run: |
           # UV version synced with flake.nix / .envrc
           pip install uv==0.5.11
+
+          # Check if project needs dbus-python system dependencies
+          if grep -q "dbus-python" pyproject.toml 2>/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
+          fi
+
+          # Install project dependencies
           uv pip install --system -e ".[dev]" || uv pip install --system -e .
+
+          # Install Playwright browsers if playwright is installed
+          if uv pip show playwright >/dev/null 2>&1; then
+            playwright install --with-deps chromium
+          fi
+
+          # Run tests if pytest is available
           if uv pip show pytest >/dev/null 2>&1; then
             pytest -v
           else
