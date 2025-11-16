@@ -35,10 +35,14 @@
 - [ ] Create linter rule to prevent `datetime.now()` without timezone argument
 
 #### 2. Enums Exist But Not Enforced (3 critical cases)
-- [ ] **Habitify Status**: Fix `llm/mcp/habitify/habitify_mcp_server/types.py` - enum exists but models use `str`
-  - [ ] Update `HabitStatus.status` field to use `Status` enum (line 79)
-  - [ ] Update `StatusResult.status` field to use `Status` enum (line 93)
-  - [ ] Update function parameters in `tools.py` to use `Status` enum (line 246)
+- [x] **Habitify Status**: Fix `llm/mcp/habitify/habitify_mcp_server/types.py` - enum exists but models use `str` ✅ FIXED in commit dd1ec34
+  - [x] Update `HabitStatus.status` field to use `Status` enum (line 79) ✅
+  - [x] Update `StatusResult.status` field to use `Status` enum (line 93) ✅
+  - [x] Update function parameters in `tools.py` to use `Status` enum (line 246) ✅
+  - [x] Update all other Status usages (HabitStatusResponse, LogResult, DateRangeStatusItem, Habit) ✅
+  - [x] Update UnitType enum usage in Goal and Progress models ✅
+  - [x] Update Periodicity enum usage in Goal and Progress models ✅
+  - [x] Update TimeOfDay enum usage in Habit model ✅
 - [ ] **Response Status**: Fix `adgn/src/adgn/rspcache/responses_db.py:109`
   - [ ] Change `status: Mapped[str]` to `status: Mapped[ResponseStatus]`
   - [ ] Update database migration script
