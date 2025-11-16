@@ -206,11 +206,7 @@ class ApprovalPolicyEngine:
         """
         # Self-check proposal program if docker is available
         if self.docker_client is not None:
-            run_policy_source(
-                docker_client=self.docker_client,
-                source=content,
-                input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
-            )
+            self.self_check(content)
         # Generate new proposal ID and persist
         new_id = uuid.uuid4().hex
         await self.persistence.create_policy_proposal(self.agent_id, proposal_id=new_id, content=content)
@@ -233,11 +229,7 @@ class ApprovalPolicyEngine:
             raise KeyError(proposal_id)
         # Self-check the proposal program before activation
         if self.docker_client is not None:
-            run_policy_source(
-                docker_client=self.docker_client,
-                source=got.content,
-                input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
-            )
+            self.self_check(got.content)
         # Activate policy (notifies via engine's set_policy)
         self.set_policy(got.content)
         await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
