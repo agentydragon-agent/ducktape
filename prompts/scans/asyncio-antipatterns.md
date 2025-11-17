@@ -44,9 +44,18 @@ async def open_write_pipe(fd: int) -> asyncio.StreamWriter:
     return asyncio.StreamWriter(transport, protocol, reader, loop)
 ```
 
-## Detection Heuristics
+## Detection Strategy
 
-### Blocking I/O in async functions
+**Primary Method**: Manual code reading of async functions to identify blocking operations.
+
+**Why automation is insufficient**: Determining if an operation blocks requires understanding:
+- Library implementation details (does this library use async I/O internally?)
+- Whether operation is truly I/O-bound or CPU-bound
+- Context: is `subprocess.run()` acceptable if it's truly fast and infrequent?
+
+**Discovery aids** (candidates for manual review):
+
+### Grep Patterns for Blocking I/O in async functions
 
 ```bash
 # Find path.read_text/write_text in async functions

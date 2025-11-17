@@ -66,18 +66,29 @@ def shared_data_dir(tmp_path_factory):
     return tmp_path_factory.mktemp("shared")
 ```
 
-## Detection
+## Detection Strategy
+
+**Primary Method**: Manual code reading of test files to identify temp path creation patterns.
+
+**Why automation is insufficient**:
+- Some `tempfile` usage might be intentional (testing tempfile handling itself)
+- Need to understand test intent: does test actually need manual temp path creation?
+- Some tests can't use pytest fixtures (e.g., testing subprocess that creates temp files)
+
+**Discovery aids** (candidates for manual review):
 
 ```bash
-# Find tempfile imports in test files
+# Find tempfile imports in test files (may be intentional)
 rg --type py "import tempfile" --glob "test_*.py" --glob "*_test.py"
 
-# Find mkdtemp/mkstemp usage
+# Find mkdtemp/mkstemp usage (check if tmp_path would work)
 rg --type py "(mkdtemp|mkstemp|TemporaryDirectory|NamedTemporaryFile)" --glob "test_*.py"
 
-# Find manual cleanup in tests
+# Find manual cleanup in tests (strong signal for manual temp usage)
 rg --type py "shutil\.rmtree.*tmpdir|os\.unlink.*temp" --glob "test_*.py"
 ```
+
+**Manual review**: Check each case to determine if `tmp_path` fixture would work.
 
 ## Fix Strategy
 

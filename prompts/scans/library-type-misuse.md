@@ -127,26 +127,43 @@ class Response(BaseModel):
 
 ## Detection Strategy
 
-### Find Suspicious Patterns
+**Primary Method**: Manual code reading combined with reading library source code.
+
+**Why automation is insufficient**:
+- Determining if a cast/check is "misuse" requires understanding library capabilities
+- Need to read actual library source (`.pyi` files or implementation) to verify types
+- Some defensive code exists for valid reasons (handling multiple library versions, gradual migration)
+- Context matters: is this legacy code during migration or new antipattern?
+
+**Research-based workflow**:
+1. Find casts/defensive patterns using grep (discovery)
+2. For each, manually research library types
+3. Read actual `.pyi` or source files
+4. Verify if defensive code is actually needed
+
+**Discovery aids** (candidates for manual verification):
+
+### Grep Patterns
 
 ```bash
-# Cast on common well-typed libraries
+# Cast on common well-typed libraries (may be legitimate)
 rg --type py "cast.*\b(model_dump|Response|httpx|pydantic)\b"
 
-# hasattr on typed objects
+# hasattr on typed objects (often unnecessary but verify)
 rg --type py "hasattr\(.*,\s*['\"]model_dump|hasattr\(.*,\s*['\"]response"
 
 # isinstance checks on already-typed variables
 rg --type py "isinstance\(response,.*Response\)"
 ```
 
-### Verification Process
+### Verification Process (Manual)
 
-For each suspicious cast/check:
-1. Find the library source
-2. Read the actual type definition
-3. Check if cast/runtime check is needed
-4. If types are good, remove defensive code
+For each candidate found:
+1. **Find library source**: `import lib; print(lib.__file__)`
+2. **Read actual types**: Check `.pyi` files or source
+3. **Verify necessity**: Is cast/check actually needed given library types?
+4. **Check context**: Legacy migration code or new antipattern?
+5. **Remove if unnecessary**: Trust the library types
 
 ## Example Investigation
 

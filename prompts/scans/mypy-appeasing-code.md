@@ -152,23 +152,33 @@ result = cast(pygit2.Oid, repo.index.write_tree())
 
 ## Detection Strategy
 
-### AST Analysis for Casts
+**Goal**: Find ALL instances of mypy-appeasing code (100% recall).
 
-```python
-import ast
+**Recall/Precision**:
+- `grep "cast("` has ~100% recall for casts, ~95% precision (very few false positives)
+- AST check for TypeAdapter has ~100% recall, ~80% precision (some legitimate one-time uses)
+- Pattern matching for typed variables has ~70% recall, ~60% precision (many variations)
 
-class UnnecessaryCastDetector(ast.NodeVisitor):
-    def visit_Call(self, node):
-        if (isinstance(node.func, ast.Name) and node.func.id == 'cast'):
-            # Check if cast target matches actual type
-            # Requires type inference - use mypy's AST
-            pass
-```
+**Recommended approach**:
+1. Run grep/AST to gather ALL candidates (casts, TypeAdapter, typed variables)
+2. For each candidate: Research whether cast is actually necessary
+   - Check library version (might be outdated)
+   - Search for type stubs on PyPI
+   - Read actual `.pyi` or source to see real types
+   - Test removal with mypy
+3. Fix confirmed unnecessary casts
+4. Document remaining casts with reason (truly needed)
+
+**Verification strategy**: Deep research required (low precision for "unnecessary")
+- Even though grep has high recall, determining if cast is "unnecessary" requires library research
+- Each candidate needs: version check, stub search, source reading, mypy test
+
+**Recommended tools**:
 
 ### Grep Patterns
 
 ```bash
-# Find casts
+# Find casts (candidates only - must verify each)
 rg --type py "cast\("
 
 # Find typed variable assignments that immediately return
@@ -178,12 +188,23 @@ rg --type py -U "^\s+\w+:\s+\w+.*=.*\n\s+return \w+$"
 rg --type py -A1 "adapter.*=.*TypeAdapter"
 ```
 
-### Mypy Analysis
+### AST-Based Discovery (Optional)
 
-```bash
-# Check if removing cast changes mypy output
-# If mypy still passes without cast, it was unnecessary
-```
+Build tool that flags potential unnecessary casts:
+- Visit Call nodes where func.id == 'cast'
+- Extract cast target type and expression
+- Flag for manual review with context
+
+Strong coding LLM can build this from description. Use output as discovery only, not automatic fixes.
+
+### Verification Process
+
+For each cast found:
+1. **Research library**: Version, stubs, documentation
+2. **Read source**: Find actual return type in `.pyi` or source
+3. **Test removal**: Remove cast, run mypy
+4. **If mypy passes**: Cast was unnecessary, remove it
+5. **If mypy fails**: Research if newer version/stubs would fix it
 
 ## Fix Strategy
 

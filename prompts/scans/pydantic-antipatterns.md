@@ -57,15 +57,26 @@ Issues:
 - Doesn't leverage Pydantic's built-in validation
 - Extra boilerplate code
 
-## Detection
+## Detection Strategy
+
+**Primary Method**: Manual code reading to identify manual serialization/validation patterns.
+
+**Why automation is insufficient**:
+- Determining if code "should use Pydantic" requires understanding intent and domain
+- Some manual methods exist for good reasons (custom business logic, backwards compatibility)
+- Context matters: is this I/O boundary code or internal logic?
+
+**Discovery aids** (candidates for manual review):
 
 ```bash
-# Find manual field-by-field model_dump patterns
+# Find manual field-by-field model_dump patterns (may have valid reasons)
 rg --type py -A5 "def (to_db|to_dict|serialize)" | rg "model_dump.*if.*else"
 
 # Find manual field-by-field validation classmethods
 rg --type py -A10 "@classmethod" | rg -B3 "return cls\("
 ```
+
+**Manual review required**: Check each candidate to determine if Pydantic would actually simplify the code or if manual logic is justified.
 
 ## Fix Strategy
 

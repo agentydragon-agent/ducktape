@@ -138,16 +138,31 @@ Issues:
 - **Runtime errors** - Typos caught at runtime, not compile time
 - **Lost documentation** - Type tells you nothing about structure
 
-## Detection
+## Detection Strategy
+
+**Primary Method**: Manual code reading to identify denormalization and type inconsistencies.
+
+**Why automation is insufficient**:
+- Determining if a flat field is "denormalized" requires understanding domain relationships
+- Some field name patterns (_id + _name) are legitimate (not references to other models)
+- "_json" suffix might be intentional naming, not just DB leakage
+- `dict[str, Any]` is sometimes correct (truly dynamic data)
+
+**Manual analysis required**: For each pattern found, understand:
+- Is this truly denormalized data from a relationship?
+- Does the API structure match domain relationships?
+- Are types intentionally loose or just untyped?
+
+**Discovery aids** (candidates for review):
 
 ```bash
-# Find denormalized fields (ID + name pairs)
+# Find potential denormalized fields (ID + name pairs - may be legitimate)
 rg --type py "_id.*=.*UUID" -A3 | rg "_name.*="
 
-# Find _json suffixes
+# Find _json suffixes (may be intentional naming)
 rg --type py "_json.*Mapped\[dict"
 
-# Find dict[str, Any] that should be typed
+# Find dict[str, Any] that might benefit from typing
 rg --type py "dict\[str, Any\]" --type py | grep -v "# OK"
 ```
 

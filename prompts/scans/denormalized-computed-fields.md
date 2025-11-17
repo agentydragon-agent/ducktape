@@ -81,7 +81,19 @@ class PaginatedResult(BaseModel):
 
 **Rationale**: Converting string → date object → string is pointless. Use the API's native format unless there's a compelling reason to convert.
 
-## Detection
+## Detection Strategy
+
+**Primary Method**: Manual code reading - understand the domain model and identify which fields are derived from others.
+
+**Why automation is insufficient**: Determining if a field is "computed" vs "independent" requires understanding:
+- The semantic relationship between fields (is `completed` derived from `status`?)
+- Whether the computation is trivial (client-side) vs expensive (server-side required)
+- Business rules and domain logic (when is a computed field justified?)
+- Pagination and data availability (is `total_count` redundant or necessary?)
+
+**Discovery aids** (candidates for manual review):
+
+## Detection Patterns
 
 ```bash
 # Find potential boolean flags that might be derived from enums

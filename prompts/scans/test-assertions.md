@@ -77,7 +77,13 @@ def test_parse_creates_valid_change():
     ))
 ```
 
-**Rule**: When `has_properties()` lists ALL fields of a class with exact values, use plain `==` instead - it's simpler and clearer.
+**Benefits of PyHamcrest**:
+- Better error message: "Expected: sequence containing [object with property 'path' equal to 'src/main.py', ...]"
+- Order matters (use `contains_inanyorder` if order doesn't matter)
+- Can match subset of properties
+- Intent is clear: Parse produces these exact changes. Concise, complete.
+
+**Rule**: When `has_properties()` lists ALL fields of a class with exact values, use plain `==` instead - it's simpler and clearer. **For full object comparison, prefer plain `==`**.
 
 ```python
 # BAD: has_properties with all fields and exact values

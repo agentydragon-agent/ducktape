@@ -201,10 +201,27 @@ Use Pydantic when you have:
 
 ## Detection Strategy
 
+**Primary Method**: Manual code reading to identify dict-wrangling patterns in internal code.
+
+**Why automation is insufficient**:
+- Determining if `dict` "should be Pydantic" requires understanding context:
+  - I/O boundary (external API, files) vs internal code
+  - Known structure at development time vs dynamic keys
+  - Whether validation is actually needed
+- String-literal dict access appears everywhere - need semantic judgment
+
+**Key questions for manual review**:
+1. Is this I/O boundary or internal code passing data?
+2. Are keys known at development time?
+3. Is there documentation of dict structure in docstrings? (RED FLAG)
+4. Are same literal keys accessed multiple times?
+
+**Discovery aids** (very high false positive rate):
+
 ### Grep Patterns
 
 ```bash
-# String-literal dict access (most suspicious in internal code)
+# String-literal dict access (suspicious in internal code, fine at I/O boundaries)
 rg --type py '\["[a-zA-Z_]+"\]'  # f["path"], data["key"]
 rg --type py "list\[dict\[str"    # list[dict[str, ...]] parameters
 
@@ -247,23 +264,14 @@ rg --type py "return \{.*:" --multiline  # Look for manual dict returns
    - `data["key"]` appears 3+ times: Should be a model
    - One-off access: Might be fine
 
-### AST Analysis
+### AST-Based Discovery (Optional)
 
-```python
-import ast
+Build tool that flags dataclasses with manual serde methods:
+- Visit ClassDef nodes with `@dataclass` decorator
+- Check for `to_dict()`, `from_dict()`, or `asdict()` methods
+- Flag for manual review
 
-class ManualSerdeDetector(ast.NodeVisitor):
-    def visit_ClassDef(self, node):
-        # Check if dataclass with manual serialization methods
-        has_dataclass = any(
-            isinstance(d, ast.Name) and d.id == 'dataclass'
-            for d in node.decorator_list
-        )
-        if has_dataclass:
-            methods = {n.name for n in node.body if isinstance(n, ast.FunctionDef)}
-            if 'to_dict' in methods or 'from_dict' in methods:
-                print(f"Dataclass with manual serde: {node.name}")
-```
+Strong coding LLM can build this from description. Use output as discovery only - some manual serde is legitimate.
 
 ## Examples from This Codebase
 

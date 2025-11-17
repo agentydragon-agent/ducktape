@@ -58,16 +58,27 @@ class Response(BaseModel):
 | Published | `published_at` | `publish_ts`, `publication_date` |
 | Scheduled | `scheduled_at` | `scheduled_ts`, `schedule_time` |
 
-## Detection
+## Detection Strategy
+
+**Primary Method**: Manual code reading to identify timestamp field naming inconsistencies.
+
+**Why automation is insufficient**:
+- Some `_ts` fields might be abbreviations for domain terms (not "timestamp")
+- Need to understand if renaming requires database migration (breaking change)
+- Context matters: is this legacy code during migration or new antipattern?
+
+**Discovery aids** (usually accurate for this pattern):
 
 ```bash
-# Find _ts suffix timestamp fields
+# Find _ts suffix timestamp fields (likely candidates)
 rg --type py '^\s+\w+_ts:\s*Mapped\[datetime\]'
 rg --type py '^\s+\w+_ts:\s*datetime'
 
 # Find verbose timestamp names
 rg --type py 'last_update|last_modified|creation_time'
 ```
+
+**Note**: This is one of the few patterns where automation has high accuracy (timestamp suffixes are fairly unambiguous).
 
 ## Fix Strategy
 

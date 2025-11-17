@@ -3,46 +3,42 @@
 ## Context
 @../shared-context.md
 
-## Pattern: Single-Call Methods That Add No Value
+## Pattern Description
 
-### Seen in: adgn/rspcache/models.py
+Class methods that do nothing but forward to another method or function with identical or trivially transformed arguments. Similar to trivial-forwarders.md but for methods specifically.
+
+## Examples
 
 ```python
-# BAD: Method that just calls model_dump
-def to_db_payload(self) -> dict[str, Any]:
-    return self.model_dump(mode="json")
+# BAD: Trivial method forwarder
+class DataProcessor:
+    def process(self, data: dict) -> Result:
+        return self._process_impl(data)  # Just forwards
 
-# GOOD: Call model_dump directly at use site
-snapshot.model_dump(mode="json")
+# BAD: Property that just returns attribute
+class Config:
+    @property
+    def value(self) -> str:
+        return self._value  # No transformation, just forwarding
+
+# GOOD: Method adds value (validation, logging, transformation)
+class DataProcessor:
+    def process(self, data: dict) -> Result:
+        logger.info(f"Processing {len(data)} items")
+        return self._process_impl(data)
 ```
 
-This includes:
-- Methods that forward to a single Pydantic/library method
-- Getters that just access an attribute
-- Methods with no additional logic, validation, or transformation
+## Detection Strategy
 
-## Detection
+**Primary Method**: Manual code reading to determine if method adds semantic value.
 
-```bash
-# Find single-line return methods
-rg --type py -A1 "def \w+\(self.*\):" | rg -B1 "^\s+return self\.\w+\("
+**Why automation is insufficient**:
+- "Trivial" depends on architectural intent (facade pattern, interface compliance)
+- Some forwarders exist for valid reasons (API stability, dependency injection points)
+- Properties vs direct attributes often intentional (future extensibility)
 
-# Find methods that just call model_dump
-rg --type py "def.*:$" -A1 | rg -B1 "return.*model_dump"
-```
-
-## When Trivial Methods Are OK
-
-- **Interface compliance**: Implementing a Protocol/ABC
-- **Future extensibility**: Clear plan to add logic
-- **Semantic clarity**: Method name adds domain meaning
-
-## Fix Strategy
-
-1. Remove the method
-2. Update callers to use direct access/method call
-3. If semantics matter, consider a property or use direct access
+**Manual review required**: Understand why method exists before removing.
 
 ## References
 
-- [Python properties](https://docs.python.org/3/library/functions.html#property)
+- See also: `trivial-forwarders.md` for function-level forwarders

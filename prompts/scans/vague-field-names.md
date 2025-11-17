@@ -75,21 +75,53 @@ These are only problematic when context doesn't clarify:
 
 ## Detection Strategy
 
-**Not**: "Find all fields named 'id'"
-**Yes**: "Find fields where name doesn't clarify purpose in context"
+**Goal**: Find ALL vague field names (100% recall target).
 
-1. **Look for generic container names** with generic field names:
+**Recall/Precision**: Low recall (~30-40%) with automation, requires manual reading
+- Grep for common vague names (`id`, `key`, `name`, `data`, `cfg`, `value`, `type`) has ~30% recall
+  - Misses: contextually vague names that aren't on common list
+  - False positives: ~80% (most `id` fields are actually fine)
+- AST scan for short names (<= 3 chars) has ~40% recall, ~90% false positives
+
+**This pattern requires semantic analysis**: "Vague" is subjective and context-dependent
+- Is `User.id` vague? No - container clarifies
+- Is `Response.id` vague? Maybe - depends on what Response represents
+- Is `cfg` vague? Depends on how many configs are in scope
+
+**Recommended approach**:
+1. Use grep to find candidates (common vague names) - ~30% recall, high false positives
+2. **Supplement with manual reading** of model definitions and function signatures
+3. For each candidate: Analyze context
+   - Is container name generic? (`Response`, `Data`, `Result`)
+   - Are multiple similar entities in scope? (multiple IDs, multiple configs)
+   - Does field name clarify purpose? (`cache_key` vs `key`)
+4. Fix confirmed vague names
+5. **Accept**: Manual reading will find more than automation
+
+**Discovery aids** (low recall, use as starting point only):
+
+```bash
+# Find potentially vague field names (HIGH false positive rate)
+rg --type py "^\s+(id|key|name|data|value|type|cfg|config):"
+
+# Find short parameter names (contextual analysis required)
+rg --type py "def \w+\([^)]*\b(id|key|cfg|val)\b"
+```
+
+**Manual review approach** (required for comprehensive coverage):
+
+1. **Read model definitions** - look for generic container names with generic fields:
    - `Response.id`, `Data.key`, `Result.name` → likely vague
    - `User.id`, `CacheEntry.key`, `Product.name` → likely fine
 
-2. **Check for multiple similar entities in scope**:
+2. **Read function signatures** - check for multiple similar entities:
    ```python
    # BAD: Three IDs in scope, which is which?
    def link_items(id: str, parent_id: str, user_id: str):
        process(id)  # Which ID?
    ```
 
-3. **Look for abbreviated names in complex contexts**:
+3. **Analyze scope complexity** - abbreviated names in complex contexts:
    - `cfg` alone in function with 5 different config types → vague
    - `cfg` as only config parameter → fine
 
