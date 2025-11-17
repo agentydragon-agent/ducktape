@@ -19,10 +19,21 @@ else
     BOOT_MEDIA=""
 fi
 
+# Detect if KVM is available
+if [ -e /dev/kvm ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+    ACCEL="kvm"
+    CPU_TYPE="host"
+    echo "Using KVM acceleration"
+else
+    ACCEL="tcg"
+    CPU_TYPE="qemu64"
+    echo "KVM not available, using TCG (software emulation)"
+fi
+
 # Start QEMU
 qemu-system-x86_64 \
-    -machine type=q35,accel=kvm \
-    -cpu host \
+    -machine type=q35,accel=$ACCEL \
+    -cpu $CPU_TYPE \
     -m $MEMORY \
     -smp $CPUS \
     -drive file=$DISK_IMAGE,if=virtio,format=qcow2 \

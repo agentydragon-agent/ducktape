@@ -1,0 +1,17 @@
+us
+us
+alpine-k3s
+eth0
+dhcp
+
+k3spass
+k3spass
+UTC
+f
+1
+openssh
+chrony
+none
+vda
+sys
+y
