@@ -35,12 +35,7 @@ class WebhookPayload(Base):
 
     id = Column(Integer, primary_key=True)
     received_at = Column(DateTime, nullable=False, default=func.now())
-    # Direct storage of integration name as it was when received
-    integration_name = Column(
-        String, nullable=False, comment="Source integration name when received (e.g., 'home-assistant')"
-    )
-    # Link to integration configuration
-    integration_id = Column(Integer, ForeignKey("webhook_integrations.id"), nullable=True)
+    integration_id = Column(Integer, ForeignKey("webhook_integrations.id"), nullable=False)
     payload = Column(JSON, nullable=False)
 
     # Relationship to integration configuration

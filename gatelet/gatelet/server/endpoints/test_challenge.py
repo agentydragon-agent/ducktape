@@ -14,20 +14,6 @@ from gatelet.server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_co
 from gatelet.server.models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
 
 
-@pytest.fixture(autouse=True)
-async def _stub_data(monkeypatch):
-    async def _states():
-        return [{"entity_id": "sensor.test", "state": "on", "last_changed": datetime(2020, 1, 1)}]
-
-    async def _payloads(*_args, **_kwargs):
-        return [{"id": 1, "integration_name": "test", "received_at": __import__("datetime").datetime(2020, 1, 1)}]
-
-    monkeypatch.setattr("gatelet.server.endpoints.homeassistant.fetch_states", _states)
-    monkeypatch.setattr("gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads)
-    monkeypatch.setattr("gatelet.server.app.fetch_states", _states)
-    monkeypatch.setattr("gatelet.server.app.get_latest_payloads", _payloads)
-
-
 @pytest.mark.asyncio
 async def test_start_challenge_creates_nonce(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
     response = await client.get(f"/cr/{test_auth_key.id}")

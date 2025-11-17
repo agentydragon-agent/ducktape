@@ -65,7 +65,7 @@ async def reset_db() -> None:
         session.add(integ)
         await session.flush()
         for i in range(3):
-            session.add(WebhookPayload(integration_name=integ.name, integration_id=integ.id, payload={"sample": i}))
+            session.add(WebhookPayload(integration_id=integ.id, payload={"sample": i}))
     await engine.dispose()
     print("Database initialized with sample webhook payloads.")
 

@@ -73,6 +73,59 @@ def parse_response(data: dict[str, Any]) -> Response:
     return Response.model_validate(data)
 ```
 
+### Useless Inline Comments
+
+Comments that just restate what the code obviously does:
+
+```python
+# BAD: Comment just repeats the code
+# Create grading context
+context = GradingContext(rollout=rollout, task=task, environment=environment)
+
+# BAD: Obvious from the code
+# Loop through items
+for item in items:
+    process(item)
+
+# BAD: States the obvious
+# Set counter to zero
+counter = 0
+
+# BAD: Repeats what assignment does
+# Assign result to variable
+result = compute_value()
+
+# GOOD: Explains WHY, not WHAT
+# GradingContext needs environment for sandbox isolation
+context = GradingContext(rollout=rollout, task=task, environment=environment)
+
+# GOOD: Explains non-obvious behavior
+# Process in reverse - newest items may invalidate older ones
+for item in reversed(items):
+    process(item)
+
+# GOOD: Explains pitfall
+# Must initialize before calling setup() or it will use default config
+counter = 0
+
+# GOOD: No comment needed - code is self-explanatory
+result = compute_value()
+```
+
+**What makes inline comments useful:**
+- **Why** something is done (not what)
+- **Pitfalls** or gotchas to avoid
+- **Non-obvious requirements** (e.g., "must be called before X")
+- **Section summaries** in complex functions
+- **Workarounds** for bugs or limitations
+- **TODO/FIXME** with context
+
+**What makes inline comments useless:**
+- Restating what the code obviously does
+- Describing basic language features (`# Create variable`)
+- Repeating variable/function names
+- Stating `x = y + z` assigns `y + z` to `x`
+
 ## What Makes Documentation Useful
 
 Good documentation tells you:
@@ -105,6 +158,7 @@ def skip_global_compinit() -> None:
 
 ### Grep Patterns
 
+**Docstrings:**
 ```bash
 # Find Args: sections (often indicates javadoc style)
 rg --type py '""".*\n.*Args:'
@@ -114,6 +168,35 @@ rg --type py -A2 'Returns:\s*$'
 
 # Find parameter docs that just repeat param name
 rg --type py '    \w+: The \w+'
+```
+
+**Inline Comments:**
+
+Useless inline comments are hard to detect with simple grep patterns - it requires semantic analysis. Look for:
+
+**Manual review heuristics:**
+1. Comment is nearly identical to next line's variable/function names
+   - `# Create grading context` → `context = GradingContext(...)`
+   - `# Initialize counter` → `counter = 0`
+
+2. Comment just describes language constructs
+   - `# Loop through items` → `for item in items:`
+   - `# Return result` → `return result`
+
+3. Comment restates assignment without explaining WHY
+   - `# Get configuration` → `config = load_config()`
+
+**What NOT to flag:**
+- Section summaries: `# Handle different grading types`
+- Explaining purpose: `# Check if it's a date-only value (no time component)`
+- Non-obvious requirements: `# Must be called before setup() to avoid race`
+- Workarounds: `# Skip global compinit to avoid slowdown`
+
+**Simple patterns that might help (high false positive rate):**
+```bash
+# Very specific: literal variable name repetition
+# "# Create X" right before "X = ..."
+# This requires contextual matching - hard to grep reliably
 ```
 
 ### AST + Docstring Analysis
@@ -147,12 +230,21 @@ class UselessDocstringDetector(ast.NodeVisitor):
 
 ## Fix Strategy
 
+**Docstrings:**
 1. **Delete obvious docs**: Remove Args/Returns that add no information
 2. **Keep useful info**: Preserve exception documentation, non-obvious behavior
 3. **Refactor to single line**: If only one useful sentence, make it a single-line docstring
 4. **Module-level docs**: Move general explanations to module docstrings
 
+**Inline Comments:**
+1. **Delete restatements**: Remove comments that just describe what code does
+2. **Ask "why not what"**: If comment doesn't explain why, delete it
+3. **Keep explanations**: Preserve comments explaining pitfalls, requirements, workarounds
+4. **Improve if salvageable**: Turn "# Create X" into "# X needed for Y" if there's a reason
+
 ### Before/After Examples
+
+**Docstrings:**
 
 ```python
 # Before:
@@ -189,6 +281,51 @@ def concatenate_assistant_text(response: ResponsesResult, separator: str = "\n\n
 # After:
 def concatenate_assistant_text(response: ResponsesResult, separator: str = "\n\n") -> str:
     ...  # Or minimal: """Returns empty string if no assistant text found."""
+```
+
+**Inline Comments:**
+
+```python
+# Before:
+# Create grading context
+context = GradingContext(rollout=rollout, task=task, environment=environment)
+
+# After:
+context = GradingContext(rollout=rollout, task=task, environment=environment)
+```
+
+```python
+# Before:
+# Initialize counter
+counter = 0
+
+# Loop through items
+for item in items:
+    # Increment counter
+    counter += 1
+
+# After:
+counter = 0
+for item in items:
+    counter += 1
+```
+
+```python
+# Before:
+# Get configuration
+config = load_config()
+# Create processor with config
+processor = DataProcessor(config)
+# Process the data
+result = processor.process(data)
+
+# After:
+config = load_config()
+processor = DataProcessor(config)
+result = processor.process(data)
+
+# Or even better (from unnecessary-verbosity scan):
+result = DataProcessor(load_config()).process(data)
 ```
 
 ## False Positives (Keep These)

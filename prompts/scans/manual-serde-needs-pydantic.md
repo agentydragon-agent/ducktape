@@ -7,9 +7,50 @@
 
 Code using manual JSON serialization/deserialization, dict construction, and validation instead of leveraging Pydantic's built-in capabilities.
 
+## Core Principle
+
+**String-literal keyed dict access in internal code is suspect.** If you're accessing `data["key"]` with a literal string, and the keys are known at development time, you should use a Pydantic model.
+
 ## Examples of Antipatterns
 
-### 1. Manual json.loads with dict validation
+### 1. list[dict] parameters with string-literal access
+
+```python
+# BAD: Dict with known structure passed around internal code
+def __init__(self, container_files: list[dict[str, str]]):
+    """container_files: List of dicts with 'path' and 'content' keys."""
+    self._files = {f["path"]: f["content"] for f in container_files}
+    # Problems:
+    # - Magic strings "path" and "content"
+    # - No validation - can pass {"foo": "bar"}
+    # - KeyError at runtime instead of type error
+    # - Structure documented in docstring instead of enforced by types
+
+# GOOD: Pydantic model with type safety
+class ContainerFile(BaseModel):
+    path: str
+    content: str
+
+def __init__(self, container_files: list[ContainerFile]):
+    self._files = {f.path: f.content for f in container_files}
+    # Benefits:
+    # - Type-safe property access
+    # - Automatic validation
+    # - IDE autocomplete
+    # - Can't pass wrong structure
+```
+
+**When is `list[dict]` OK?**
+- **I/O boundaries**: Reading JSON from external API, files
+- **Dynamic schemas**: Keys/structure not known at development time
+- **Passthrough**: Just forwarding data unchanged
+
+**When is `list[dict]` BAD?**
+- **Internal code**: Passing structured data between functions
+- **Known structure**: Keys are documented/expected
+- **Validation needed**: Structure should be enforced
+
+### 2. Manual json.loads with dict validation
 
 ```python
 # BAD: Manual JSON parsing and dict access
@@ -163,6 +204,10 @@ Use Pydantic when you have:
 ### Grep Patterns
 
 ```bash
+# String-literal dict access (most suspicious in internal code)
+rg --type py '\["[a-zA-Z_]+"\]'  # f["path"], data["key"]
+rg --type py "list\[dict\[str"    # list[dict[str, ...]] parameters
+
 # Manual JSON with validation
 rg --type py "json\.loads.*\n.*if.*not in"
 
@@ -177,7 +222,30 @@ rg --type py "class \w+\(TypedDict\)"
 
 # Manual field extraction patterns
 rg --type py "json\.loads.*\[.*\].*if.*else"
+
+# Dict construction with known keys in internal functions
+rg --type py "return \{.*:" --multiline  # Look for manual dict returns
 ```
+
+### Context Analysis (Semantic, Not Just Pattern)
+
+**Key questions to ask:**
+
+1. **Is this I/O or internal code?**
+   - I/O boundary (reading JSON, calling external API): `dict` is OK
+   - Internal function passing data: `dict` is suspicious
+
+2. **Are keys known at development time?**
+   - Yes (e.g., always "path" and "content"): Should be Pydantic
+   - No (keys from user input, config): `dict` is fine
+
+3. **Is there documentation of dict structure?**
+   - Docstring says "dict with keys X, Y, Z": RED FLAG - should be model
+   - No structure mentioned: Might be genuinely dynamic
+
+4. **Are there multiple accesses with same literal keys?**
+   - `data["key"]` appears 3+ times: Should be a model
+   - One-off access: Might be fine
 
 ### AST Analysis
 

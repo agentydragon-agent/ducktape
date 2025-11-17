@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
+from adgn.openai_utils.model import ResponsesRequest
 from adgn.rspcache.models import FRAME_ADAPTER, FinalResponseSnapshot, stream_event_event_id
 from adgn.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponseFrame, ResponsesDB
 
@@ -84,8 +85,7 @@ class ResponseRecordModel(BaseModel):
     updated_at: datetime
     latency_ms: int | None = None
 
-    # TODO: Type this properly (OpenAI request model)
-    request_body: dict[str, Any]
+    request_body: ResponsesRequest
 
     # Nested relationships (typed)
     api_key: APIKeyModel | None = None
@@ -169,7 +169,7 @@ def _to_response_model(record: Response) -> ResponseRecordModel:
 
 
 def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:
-    payload = FRAME_ADAPTER.validate_python(frame.frame_json)
+    payload = FRAME_ADAPTER.validate_python(frame.frame)
     return FrameRecordModel(
         ordinal=frame.ordinal,
         frame_type=frame.frame_type or payload.type,

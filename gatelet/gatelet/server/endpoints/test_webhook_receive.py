@@ -39,7 +39,7 @@ async def test_receive_webhook_no_auth(client: AsyncClient, db_session: AsyncSes
     result = await db_session.execute(query)
     webhook_payload = result.scalar_one()
 
-    assert webhook_payload.integration_name == integration.name
+    assert webhook_payload.integration_id == integration.id
     assert webhook_payload.payload == payload
 
 
@@ -71,7 +71,7 @@ async def test_receive_webhook_bearer_auth(client: AsyncClient, db_session: Asyn
     result = await db_session.execute(query)
     webhook_payload = result.scalar_one()
 
-    assert webhook_payload.integration_name == integration.name
+    assert webhook_payload.integration_id == integration.id
     assert webhook_payload.payload == payload
 
 

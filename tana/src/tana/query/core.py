@@ -37,10 +37,7 @@ def get_tuple_value(node: BaseNode, key: NodeId | str) -> BaseNode | None:
             # Return first value if present and resolvable via store
             store = node._graph
             if store is not None and len(children) >= 2:
-                try:
-                    return store[children[1]]
-                except KeyError:
-                    return None
+                return store.get(children[1])
             return None
 
     # Case 2: search child tuples under this node
@@ -61,8 +58,5 @@ def get_tuple_value(node: BaseNode, key: NodeId | str) -> BaseNode | None:
             continue
         # Found the right tuple: return its first value node if present
         if len(t_children) >= 2:
-            try:
-                return store[t_children[1]]
-            except KeyError:
-                return None
+            return store.get(t_children[1])
     return None

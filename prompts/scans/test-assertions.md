@@ -3,7 +3,19 @@
 ## Context
 @../shared-context.md
 
-## Pattern: Field-by-Field Assertions Instead of Object Comparison
+## Overview
+
+Tests using plain `assert` statements miss opportunities for better error messages, expressivity, and composability that PyHamcrest matchers provide.
+
+## Core Principle
+
+**Use PyHamcrest matchers for better test assertions**:
+- More expressive: `has_properties(status="success")` vs `assert obj.status == "success"`
+- Better error messages: "Expected: object with property 'status' equal to 'success', but was 'failed'"
+- Composable: Combine matchers with `all_of()`, `any_of()`, `not_()`
+- Still catches the field-by-field problem while being more general
+
+## Pattern 1: Field-by-Field Assertions
 
 ### BAD: Manual field-by-field assertions
 
@@ -29,12 +41,13 @@ def test_parse_numstat_output():
     assert changes[2].deletions == 0
 ```
 
-### GOOD: Compare whole objects
+### GOOD: Compare whole objects (plain equality)
 
 ```python
 def test_parse_numstat_output():
     numstat = "10\t5\tsrc/main.py\n3\t0\tREADME.md\n-\t-\timage.png"
 
+    # Simple and obvious - just state what you expect
     assert parse_numstat_output(numstat) == [
         FileChange("src/main.py", additions=10, deletions=5, is_binary=False),
         FileChange("README.md", additions=3, deletions=0, is_binary=False),
@@ -42,7 +55,29 @@ def test_parse_numstat_output():
     ]
 ```
 
-**Intent is clear**: Parse produces these exact changes. Concise, complete.
+**Intent is clear**: Parse produces these exact changes. Simple, complete, obvious.
+
+### BETTER: PyHamcrest for partial matching or composition
+
+Use `has_properties()` when you need:
+- **Partial matching** (only check some fields, ignore others)
+- **Composed matchers** (e.g., `count=greater_than(0)`)
+
+```python
+from hamcrest import assert_that, has_properties, greater_than
+
+def test_parse_creates_valid_change():
+    result = parse_numstat_output("10\t5\tsrc/main.py")
+
+    # Good: Check specific properties with matchers
+    assert_that(result[0], has_properties(
+        path="src/main.py",
+        additions=greater_than(0),  # Composed matcher
+        # Don't care about deletions, is_binary
+    ))
+```
+
+**For full object comparison, prefer plain `==`** - it's simpler and more obvious.
 
 ### Even Better: Parametrize multiple scenarios
 
@@ -81,23 +116,133 @@ rg --type py "assert \w+\.\w+ ==" --glob "test_*.py" -A1 | grep "assert"
 3. **Use structured comparison** (dict, list, tuple)
 4. **Parametrize** for multiple test cases
 
-## When Field-by-Field Is Okay
-
-- **Object has 50+ fields** and you only care about 3
-- **Testing specific field transformations** in isolation
-- **Partial matching** with complex nested structures
-
-But even then, consider extracting relevant fields into a test helper:
+## Pattern 2: Collection Assertions
 
 ```python
-def test_api_response_includes_user():
-    resp = get_user_details(123)
-    # Extract what matters
-    user = (resp.user.id, resp.user.name, resp.user.email)
-    assert user == (123, "Alice", "alice@example.com")
+# BAD: Manual assertions on collections
+assert len(items) == 3
+assert "foo" in items
+assert items[0] == "first"
+
+# GOOD: PyHamcrest matchers
+from hamcrest import assert_that, has_length, has_item, contains_exactly
+
+assert_that(items, has_length(3))
+assert_that(items, has_item("foo"))
+assert_that(items, contains_exactly("first", "second", "third"))
+```
+
+## Pattern 3: Type Checks
+
+```python
+# BAD: Manual isinstance
+assert isinstance(result, User)
+assert type(obj) == MyClass
+
+# GOOD: PyHamcrest matchers
+from hamcrest import assert_that, instance_of
+
+assert_that(result, instance_of(User))
+assert_that(obj, instance_of(MyClass))
+```
+
+## Pattern 4: String Assertions
+
+```python
+# BAD: Manual string checks
+assert "error" in message
+assert message.startswith("ERROR:")
+assert re.match(r"^\d{3}-\d{4}$", code)
+
+# GOOD: PyHamcrest matchers
+from hamcrest import assert_that, contains_string, starts_with, matches_regexp
+
+assert_that(message, contains_string("error"))
+assert_that(message, starts_with("ERROR:"))
+assert_that(code, matches_regexp(r"^\d{3}-\d{4}$"))
+```
+
+## Pattern 5: Numeric Comparisons
+
+```python
+# BAD: Manual numeric assertions
+assert count > 0
+assert value >= 10 and value <= 20
+assert abs(result - 3.14) < 0.01
+
+# GOOD: PyHamcrest matchers
+from hamcrest import assert_that, greater_than, greater_than_or_equal_to, close_to
+
+assert_that(count, greater_than(0))
+assert_that(value, all_of(greater_than_or_equal_to(10), less_than_or_equal_to(20)))
+assert_that(result, close_to(3.14, 0.01))
+```
+
+## Pattern 6: Complex Composite Assertions
+
+```python
+# BAD: Multiple separate assertions
+assert result.status == "success"
+assert result.count > 0
+assert "error" not in result.message
+assert isinstance(result.data, dict)
+
+# GOOD: Plain equality if checking all fields with exact values
+assert result == Result(
+    status="success",
+    count=5,
+    message="All good",
+    data={"key": "value"}
+)
+
+# BETTER: has_properties() for composed matchers or partial matching
+from hamcrest import assert_that, has_properties, greater_than, not_, contains_string, instance_of
+
+# When you need composition (>, <, contains, etc.)
+assert_that(result, has_properties(
+    status="success",
+    count=greater_than(0),              # Not exact value - need matcher
+    message=not_(contains_string("error")),  # Composition
+    data=instance_of(dict)              # Type check, not exact value
+))
+```
+
+**Rule**: Use plain `==` for exact full object comparison, `has_properties()` when you need matchers or partial matching.
+
+## When Plain Assert Is Okay
+
+- **Simple equality on primitives**: `assert x == 5` (though `assert_that(x, equal_to(5))` is better)
+- **Boolean conditions**: `assert is_valid` (though `assert_that(is_valid, is_(True))` is clearer)
+- **Quick prototypes/debugging**
+
+But for production tests, PyHamcrest matchers provide:
+- **Better failure messages** ("Expected: greater than 5, but was: 3")
+- **Self-documenting** (matcher name explains intent)
+- **Composable** (combine matchers for complex conditions)
+
+## Detection Strategy
+
+```bash
+# Field-by-field patterns
+rg --type py "assert \w+\.\w+ ==" --glob "test_*.py" -A1 | grep "assert"
+
+# Collection operations that have matchers
+rg --type py "assert len\(" --glob "test_*.py"
+rg --type py "assert .* in " --glob "test_*.py"
+
+# Type checks
+rg --type py "assert isinstance\(" --glob "test_*.py"
+
+# String operations
+rg --type py 'assert ".*" in \w+' --glob "test_*.py"
+rg --type py "assert \w+\.startswith\(" --glob "test_*.py"
+
+# Numeric comparisons
+rg --type py "assert \w+ [><]=" --glob "test_*.py"
 ```
 
 ## References
 
+- [PyHamcrest Documentation](https://pyhamcrest.readthedocs.io/)
 - [Effective Python Testing](https://realpython.com/pytest-python-testing/)
 - [Test Clarity](https://www.satisfice.com/blog/archives/856)

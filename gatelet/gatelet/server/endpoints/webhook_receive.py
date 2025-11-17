@@ -59,7 +59,7 @@ async def receive(integration_name: str, request: Request, db_session: AsyncSess
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload")
 
     # Store webhook payload
-    new_payload = WebhookPayload(integration_name=integration_name, integration_id=integration.id, payload=payload)
+    new_payload = WebhookPayload(integration_id=integration.id, payload=payload)
 
     db_session.add(new_payload)
     await db_session.commit()
