@@ -191,6 +191,39 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    - If mostly matches: Consider using SDK types as base, extend if needed
    - If significantly different: Custom types OK, but use Literal discriminators
 
+   **Example - Claude Code history format**:
+   ```python
+   # Claude Code logs wrap Anthropic Messages API format:
+   # {
+   #   "type": "user" | "assistant" | "summary",  # Claude Code-specific
+   #   "sessionId": "...", "uuid": "...", "cwd": "...",  # Claude Code metadata
+   #   "message": {  # ← This is Anthropic Messages API format!
+   #     "role": "user" | "assistant",
+   #     "content": [...],  # List[ContentBlock] for assistant
+   #     "id": "msg_...",
+   #     "model": "claude-...",
+   #     "usage": {...}
+   #   }
+   # }
+
+   # GOOD: Reuse SDK types for the nested message field
+   from anthropic.types import Message
+   from typing_extensions import Literal
+
+   class ClaudeCodeEntry(BaseModel):
+       type: Literal["user", "assistant", "summary"]
+       session_id: str = Field(alias="sessionId")
+       uuid: str
+       timestamp: str
+       cwd: str | None = None
+       message: Message | None = None  # ← Use SDK type!
+
+   # BAD: Reinventing Message structure
+   class ClaudeCodeEntry(BaseModel):
+       type: str  # ❌ Should use Literal
+       message: dict[str, Any]  # ❌ Loses type safety, SDK types already exist!
+   ```
+
 2. **Check standard library enums**:
    ```python
    # Use stdlib enums when available
