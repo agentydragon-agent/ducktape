@@ -1,7 +1,0 @@
----
-- name: Restart systemd-resolved
-  ansible.builtin.systemd:
-    name: systemd-resolved
-    state: restarted
-    daemon_reload: true
-  tags: [k3s, dns]

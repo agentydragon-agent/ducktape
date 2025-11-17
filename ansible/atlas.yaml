@@ -124,18 +124,3 @@
       tags: [nix]
       vars:
         nix_trusted_users: "root {{ my_user }}"
-
-    - name: Apply k3s role
-      ansible.builtin.import_role:
-        name: k3s
-      tags: [k3s]
-
-    - name: Apply dnsmasq k3s role
-      ansible.builtin.import_role:
-        name: dnsmasq_k3s
-      tags: [dnsmasq, dns]
-
-    # TODO
-    # - ansible.builtin.import_role:
-    #     name: gpu-passthrough
-    #   tags: [gpu-passthrough]
