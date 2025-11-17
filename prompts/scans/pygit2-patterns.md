@@ -200,7 +200,16 @@ ref.peel(pygit2.Commit)            # Commit - explicitly peel to Commit type
 ref.shorthand                       # str - short reference name
 ```
 
-## Detection
+## Detection Strategy
+
+**Primary Method**: Manual code reading to identify non-idiomatic pygit2 patterns.
+
+**Why automation is insufficient**:
+- Determining if code is "non-idiomatic" requires understanding pygit2 API capabilities
+- Some patterns exist for good reasons (handling older pygit2 versions, specific edge cases)
+- Need to verify refactored code actually works with Walker API, etc.
+
+**Discovery aids** (candidates for manual review):
 
 ```bash
 # Find HEAD access that could use repo.head.target
