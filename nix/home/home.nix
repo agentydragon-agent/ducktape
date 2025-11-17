@@ -26,8 +26,9 @@
 #   - Node.js (Nix: nodejs_22)
 #   - Rust (Nix: rustc/cargo packages)
 let
-  oldPkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-23.11.tar.gz") {};
-  unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") {};
+  nixpkgsConfig = {config = {allowUnfree = true;};};
+  oldPkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-23.11.tar.gz") nixpkgsConfig;
+  unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") nixpkgsConfig;
   nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};
   homeManagerMaster = fetchTarball {
     url = "https://github.com/nix-community/home-manager/archive/82b58f38202540bce4e5e00759d115c5a43cab85.tar.gz";
@@ -800,6 +801,7 @@ in {
 
   programs.claude-code = {
     enable = true;
+    package = unstablePkgs.claude-code;
     settings = {
       theme = "dark";
       includeCoAuthoredBy = false;
