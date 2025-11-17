@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 
-from adgn.inop.engine.models import GradedRollout
+from adgn.inop.engine.models import FileInfo, GradedRollout
 from adgn.inop.io.logging_utils import DualOutputLogging
 from adgn.inop.prompting.context_window import context_window_tokens_by_id
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
@@ -77,7 +77,7 @@ class PatternSummarizer(FeedbackProvider):
             # Only include files for coding tasks
             if graded.rollout.files:
                 # Convert files dict to list format expected by truncation manager
-                files_list = [{"path": path, "content": content} for path, content in graded.rollout.files.items()]
+                files_list = [FileInfo(path=path, content=content) for path, content in graded.rollout.files.items()]
                 truncated_files = self.truncation_manager.truncate_file_content_by_size(
                     files_list, self.max_file_size_pattern_analysis, "pattern analysis"
                 )

@@ -27,6 +27,7 @@ from adgn.inop.engine.models import (
     TaskType,
     TrajectoryItem,
     UserInput,
+    WorkspaceEnvironment,
 )
 from adgn.inop.io.file_utils import collect_workspace_files
 from adgn.inop.runners.base import AgentRunner
@@ -182,4 +183,4 @@ class MiniCodexRunner(AgentRunner):
     def get_environment(self) -> RunnerEnvironment | None:
         if not self.workspace_path:
             return None
-        return RunnerEnvironment(type="workspace_dir", data={"path": str(self.workspace_path)})
+        return WorkspaceEnvironment(workspace_path=str(self.workspace_path))

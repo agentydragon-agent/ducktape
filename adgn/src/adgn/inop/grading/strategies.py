@@ -1,8 +1,8 @@
 """Grading strategy implementations."""
 
 from abc import ABC, abstractmethod
+from contextlib import suppress
 import json
-import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,7 +11,6 @@ from adgn.inop.engine.models import (
     AssistantMessage,
     ComparisonGrading,
     Criterion,
-    EnvironmentType,
     FileBasedGrading,
     FileInfo,
     FinalOutput,
@@ -77,16 +76,9 @@ class FileBasedGradingStrategy(GradingStrategy):
 
         # Try to get files from environment first (container/workspace)
         if context.environment:
-            if context.environment.type == EnvironmentType.DOCKER_CONTAINER:
-                # TODO: Implement container file collection
-                # container_id = context.environment.container_id
-                # files = collect_from_container(container_id)
-                raise NotImplementedError("Docker container file collection not yet implemented")
-            if context.environment.type == EnvironmentType.WORKSPACE_DIR:
-                # Collect files from workspace directory
-                workspace = context.environment.workspace_path
-                if workspace and Path(workspace).exists():
-                    files = self._collect_from_directory(workspace)
+            # Docker container file collection not yet implemented, will raise NotImplementedError
+            with suppress(NotImplementedError):
+                files = context.environment.collect_files()
 
         # Fall back to files in rollout
         if not files and context.rollout.files:
@@ -97,21 +89,6 @@ class FileBasedGradingStrategy(GradingStrategy):
             files = self._extract_files_from_trajectory(context.rollout.trajectory)
 
         return {"files": files}
-
-    def _collect_from_directory(self, directory: str) -> dict[str, str]:
-        """Collect all files from a directory."""
-        files = {}
-        directory_path = Path(directory)
-        for root, _, filenames in os.walk(directory):
-            for filename in filenames:
-                filepath = Path(root) / filename
-                relative_path = filepath.relative_to(directory_path).as_posix()
-                try:
-                    files[relative_path] = filepath.read_text(encoding="utf-8")
-                except (UnicodeDecodeError, OSError):
-                    # Skip binary or unreadable files
-                    continue
-        return files
 
     def _extract_files_from_trajectory(self, trajectory: list[TrajectoryItem]) -> dict[str, str]:
         """Extract files from Write/Edit tool calls in trajectory."""

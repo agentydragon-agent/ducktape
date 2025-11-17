@@ -22,7 +22,9 @@ from adgn.inop.engine.models import (
     RunnerEnvironment,
     TaskDefinition,
     TaskType,
+    TaskTypeEnum,
     TrajectoryItem,
+    WorkspaceEnvironment,
 )
 import adgn.inop.engine.optimizer
 import adgn.inop.engine.runner_factory
@@ -126,7 +128,7 @@ async def test_optimize_prompts_two_iterations_async(
     # Provide a lightweight runner that avoids Docker and writes deterministic outputs
     class FakeRunner(AgentRunner):
         async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:
-            self._env = RunnerEnvironment(type="workspace_dir", data={"path": str(tmp_path / "ws")})
+            self._env = WorkspaceEnvironment(workspace_path=str(tmp_path / "ws"))
             (tmp_path / "ws").mkdir(parents=True, exist_ok=True)
 
         async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:
@@ -160,7 +162,7 @@ async def test_optimize_prompts_two_iterations_async(
         TaskDefinition(
             id="t1",
             prompt="print hello",
-            type="coding",
+            type=TaskTypeEnum.CODING,
             grading_overrides=MessageBasedGrading(criteria=[Criterion(name="overall", description="overall quality")]),
         )
     ]

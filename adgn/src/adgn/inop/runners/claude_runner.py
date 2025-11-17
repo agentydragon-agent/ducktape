@@ -28,6 +28,7 @@ from adgn.inop.engine.models import (
     ToolResult,
     TrajectoryItem,
     UserInput,
+    WorkspaceEnvironment,
 )
 from adgn.inop.io.file_utils import collect_docker_files
 from adgn.inop.runners.base import AgentRunner
@@ -231,6 +232,4 @@ class ClaudeRunner(AgentRunner):
         if not self.workspace_path:
             return None
 
-        return RunnerEnvironment(
-            type="workspace_dir", data={"path": str(self.workspace_path), "docker_image": self.docker_image}
-        )
+        return WorkspaceEnvironment(workspace_path=str(self.workspace_path))
