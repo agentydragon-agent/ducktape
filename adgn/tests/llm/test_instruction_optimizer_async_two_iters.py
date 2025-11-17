@@ -21,8 +21,8 @@ from adgn.inop.engine.models import (
     Rollout,
     RunnerEnvironment,
     TaskDefinition,
-    TaskType,
-    TaskTypeEnum,
+    TaskTypeConfig,
+    TaskTypeName,
     TrajectoryItem,
     WorkspaceEnvironment,
 )
@@ -162,12 +162,12 @@ async def test_optimize_prompts_two_iterations_async(
         TaskDefinition(
             id="t1",
             prompt="print hello",
-            type=TaskTypeEnum.CODING,
+            type=TaskTypeName("coding"),
             grading_overrides=MessageBasedGrading(criteria=[Criterion(name="overall", description="overall quality")]),
         )
     ]
     criteria = [Criterion(name="overall", description="overall quality")]
-    task_types = {"coding": TaskType(name="coding", grading=None)}
+    task_types = {"coding": TaskTypeConfig(name=TaskTypeName("coding"), grading=None)}
     runner_configs = {"claude": {"type": "claude_runner", "config": {}}}
 
     fake_model = FakeModelLayer(responses_factory)

@@ -23,7 +23,7 @@ from adgn.inop.engine.models import (
     SeedTask,
     TaskDefinition,
     TaskSetup,
-    TaskType,
+    TaskTypeConfig,
     ToolCall,
     ToolResult,
     TrajectoryItem,
@@ -70,8 +70,8 @@ class ClaudeRunner(AgentRunner):
             task: Task to execute
             task_type_config: Configuration from task type
         """
-        # TaskType mapping requires TaskType values, not raw dicts
-        ttype = TaskType(name=task.type, grading=task_type_config.get("grading"))
+        # TaskTypeConfig mapping requires TaskTypeConfig values, not raw dicts
+        ttype = TaskTypeConfig(name=task.type, grading=task_type_config.get("grading"))
         setup, _ = task.resolve_config({task.type: ttype})
 
         # Create workspace directory

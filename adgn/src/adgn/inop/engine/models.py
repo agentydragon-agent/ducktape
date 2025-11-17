@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NewType
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
@@ -19,10 +19,8 @@ class AgentTaskType(StrEnum):
     CODE_REVIEW = "code_review"
 
 
-class TaskTypeEnum(StrEnum):
-    """Valid task types."""
-
-    CODING = "coding"
+# Task type names are extensible strings, not a fixed enum
+TaskTypeName = NewType("TaskTypeName", str)
 
 
 class EnvironmentType(StrEnum):
@@ -217,11 +215,11 @@ class MessageBasedGrading(BaseModel):
 GradingConfig = FileBasedGrading | ComparisonGrading | MessageBasedGrading
 
 
-# Task type definition
-class TaskType(BaseModel):
-    """Definition of a task type with its grading configuration."""
+# Task type configuration
+class TaskTypeConfig(BaseModel):
+    """Configuration for a task type including its default grading."""
 
-    name: str
+    name: TaskTypeName
     grading: GradingConfig | None  # Default grading for this task type
 
 
@@ -231,7 +229,7 @@ class TaskDefinition(BaseModel):
 
     id: str
     prompt: str
-    type: TaskTypeEnum = TaskTypeEnum.CODING  # Default to coding for backwards compatibility
+    type: TaskTypeName = TaskTypeName("coding")  # Default to coding for backwards compatibility
 
     # Optional overrides - properly typed
     setup_overrides: TaskSetup | None = None
@@ -242,7 +240,7 @@ class TaskDefinition(BaseModel):
     allowed_tools: list[str] | None = None
     pre_task_commands: str | None = None
 
-    def resolve_config(self, task_types: dict[str, TaskType]) -> tuple[TaskSetup | None, GradingConfig | None]:
+    def resolve_config(self, task_types: dict[str, TaskTypeConfig]) -> tuple[TaskSetup | None, GradingConfig | None]:
         """Resolve final setup and grading config.
 
         Setup comes from task's setup_overrides only (no default).
