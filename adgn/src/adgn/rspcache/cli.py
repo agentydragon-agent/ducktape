@@ -133,7 +133,7 @@ def list_keys(
         typer.echo("No keys found.")
         return
     for item in items:
-        status = "revoked" if item.revoked_ts else "active"
+        status = "revoked" if item.revoked_at else "active"
         key_info = _format_key_info(
             item.id, item.name, item.upstream_alias, item.token_prefix, item.created_at.isoformat(), status=status
         )

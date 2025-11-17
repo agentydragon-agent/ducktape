@@ -79,8 +79,8 @@ class ClientAPIKey(Base):
         default="default",
         doc="Logical name for selecting an upstream OpenAI API key (see _load_openai_keys).",
     )
-    created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    revoked_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     responses: Mapped[list[Response]] = relationship(back_populates="api_key", cascade="all, delete-orphan")
 
@@ -100,7 +100,7 @@ class ResponseFrame(Base):
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     frame_type: Mapped[str | None] = mapped_column(String)
     event_id: Mapped[str | None] = mapped_column(String)
-    created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     frame: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     response: Mapped[Response] = relationship(back_populates="frames")
@@ -109,7 +109,7 @@ class ResponseFrame(Base):
 class Response(Base):
     __tablename__ = "responses"
     __table_args__ = (
-        Index("idx_responses_created_ts", "created_ts"),
+        Index("idx_responses_created_at", "created_at"),
         Index("idx_responses_model", "model"),
         Index("idx_responses_response_id", "response_id"),
     )
@@ -125,8 +125,8 @@ class Response(Base):
         default=ResponseStatus.QUEUED,
     )
     error: Mapped[str | None] = mapped_column(String)
-    created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    last_update_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     latency_ms: Mapped[int | None] = mapped_column(Integer)
 
     api_key: Mapped[ClientAPIKey | None] = relationship(back_populates="responses")
@@ -148,8 +148,8 @@ class ResponseSnapshot(Base):
     response: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_ts: Mapped[datetime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
@@ -167,8 +167,8 @@ class APIKeyRecord:
     name: str
     token_prefix: str
     upstream_alias: str
-    created_ts: datetime
-    revoked_ts: datetime | None
+    created_at: datetime
+    revoked_at: datetime | None
 
 
 @dataclass(slots=True)
@@ -247,7 +247,7 @@ class ResponsesDB:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
-            stmt = select(ClientAPIKey).order_by(ClientAPIKey.created_ts.desc())
+            stmt = select(ClientAPIKey).order_by(ClientAPIKey.created_at.desc())
             result = await session.execute(stmt)
             return list(result.scalars())
 
@@ -257,8 +257,8 @@ class ResponsesDB:
         async with self._session_factory() as session:
             result = await session.execute(
                 update(ClientAPIKey)
-                .where(ClientAPIKey.id == key_id, ClientAPIKey.revoked_ts.is_(None))
-                .values(revoked_ts=datetime.now(UTC))
+                .where(ClientAPIKey.id == key_id, ClientAPIKey.revoked_at.is_(None))
+                .values(revoked_at=datetime.now(UTC))
                 .returning(ClientAPIKey.id)
             )
             revoked_id = result.scalar_one_or_none()
@@ -278,7 +278,7 @@ class ResponsesDB:
         prefix = core[:8]
         async with self._session_factory() as session:
             result = await session.execute(
-                select(ClientAPIKey).where(ClientAPIKey.token_prefix == prefix, ClientAPIKey.revoked_ts.is_(None))
+                select(ClientAPIKey).where(ClientAPIKey.token_prefix == prefix, ClientAPIKey.revoked_at.is_(None))
             )
             record = result.scalar_one_or_none()
         if record is None:
@@ -303,8 +303,8 @@ class ResponsesDB:
                 model=model,
                 request_body=request_body,
                 status=ResponseStatus.QUEUED,
-                created_ts=now,
-                last_update_ts=now,
+                created_at=now,
+                updated_at=now,
                 api_key_id=api_key.id if api_key else None,
             )
             .on_conflict_do_nothing(index_elements=[Response.cache_key])
@@ -326,7 +326,7 @@ class ResponsesDB:
             update_result = await session.execute(
                 update(Response)
                 .where(Response.cache_key == key)
-                .values(status=ResponseStatus.IN_PROGRESS, response_id=response_id, last_update_ts=datetime.now(UTC))
+                .values(status=ResponseStatus.IN_PROGRESS, response_id=response_id, updated_at=datetime.now(UTC))
                 .returning(Response.cache_key)
             )
             updated_key = update_result.scalar_one_or_none()
@@ -360,7 +360,7 @@ class ResponsesDB:
             await session.execute(
                 update(Response)
                 .where(Response.cache_key == key)
-                .values(response_id=response_id, last_update_ts=datetime.now(UTC))
+                .values(response_id=response_id, updated_at=datetime.now(UTC))
             )
             await self._emit_event(
                 session,
@@ -394,7 +394,7 @@ class ResponsesDB:
                     status=ResponseStatus.COMPLETE,
                     response_id=response_id,
                     latency_ms=latency_ms,
-                    last_update_ts=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
                 )
             )
             snapshot = FinalResponseSnapshot(
@@ -419,7 +419,7 @@ class ResponsesDB:
                     status=ResponseStatus.ERROR,
                     error=error_reason,
                     response_id=response_id,
-                    last_update_ts=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
                 )
             )
             snapshot = FinalResponseSnapshot(status=ResponseStatus.ERROR, response=None, error=error, token_usage=None)
@@ -439,7 +439,7 @@ class ResponsesDB:
             stmt = (
                 select(Response)
                 .options(selectinload(Response.api_key), selectinload(Response.snapshot))
-                .order_by(Response.created_ts.desc())
+                .order_by(Response.created_at.desc())
                 .offset(offset)
                 .limit(limit)
             )
@@ -637,6 +637,6 @@ class ResponsesDB:
             name=obj.name,
             token_prefix=obj.token_prefix,
             upstream_alias=obj.upstream_alias,
-            created_ts=obj.created_ts,
-            revoked_ts=obj.revoked_ts,
+            created_at=obj.created_at,
+            revoked_at=obj.revoked_at,
         )

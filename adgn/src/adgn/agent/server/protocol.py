@@ -26,7 +26,7 @@ class Envelope(BaseModel):
 
     session_id: str
     event_id: int
-    event_ts: datetime
+    event_at: datetime
     payload: ServerMessage
     model_config = ConfigDict(extra="forbid")
 

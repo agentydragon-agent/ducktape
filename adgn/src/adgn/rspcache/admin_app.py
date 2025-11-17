@@ -114,7 +114,7 @@ class APIKeyModel(BaseModel):
     token_prefix: str
     upstream_alias: str
     created_at: datetime
-    revoked_ts: datetime | None = None
+    revoked_at: datetime | None = None
 
 
 class APIKeyListModel(BaseModel):
@@ -161,8 +161,8 @@ def _to_response_model(record: Response) -> ResponseRecordModel:
         model=record.model,
         status=record.status,
         error=record.error,
-        created_at=record.created_ts,
-        updated_at=record.last_update_ts,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
         latency_ms=record.latency_ms,
         request_body=request_model,
         api_key=_to_api_key_model(record.api_key) if record.api_key else None,
@@ -176,7 +176,7 @@ def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:
         ordinal=frame.ordinal,
         frame_type=frame.frame_type or payload.type,
         event_id=frame.event_id or stream_event_event_id(payload),
-        created_at=frame.created_ts,
+        created_at=frame.created_at,
         frame=payload.model_dump(mode="json"),
     )
 
@@ -187,8 +187,8 @@ def _to_api_key_model(record: ClientAPIKey | APIKeyRecord) -> APIKeyModel:
         name=record.name,
         token_prefix=record.token_prefix,
         upstream_alias=record.upstream_alias,
-        created_at=record.created_ts,
-        revoked_ts=record.revoked_ts,
+        created_at=record.created_at,
+        revoked_at=record.revoked_at,
     )
 
 

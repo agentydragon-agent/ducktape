@@ -37,7 +37,7 @@ MARKDOWN_PAGES = ["tana", "coding"]
 PAGE_TITLES = {}
 
 # Cache for stats with TTL
-STATS_CACHE = {"data": None, "last_updated": None, "ttl": timedelta(minutes=5)}
+STATS_CACHE = {"data": None, "updated_at": None, "ttl": timedelta(minutes=5)}
 
 # Common security headers for all responses
 HEADERS = {
@@ -204,8 +204,8 @@ async def stats_api():
     now = datetime.now(TIMEZONE)
     if (
         STATS_CACHE["data"] is not None
-        and STATS_CACHE["last_updated"] is not None
-        and now - STATS_CACHE["last_updated"] < STATS_CACHE["ttl"]
+        and STATS_CACHE["updated_at"] is not None
+        and now - STATS_CACHE["updated_at"] < STATS_CACHE["ttl"]
     ):
         logger.info("Returning cached stats")
         return STATS_CACHE["data"]
@@ -234,7 +234,7 @@ async def stats_api():
 
     # Update cache
     STATS_CACHE["data"] = result
-    STATS_CACHE["last_updated"] = now
+    STATS_CACHE["updated_at"] = now
 
     return result
 

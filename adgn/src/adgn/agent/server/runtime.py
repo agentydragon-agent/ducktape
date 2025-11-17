@@ -145,7 +145,7 @@ class ConnectionManager(BaseHandler):
     async def send_payload(self, payload: ServerMessage) -> None:
         await self.send_json(
             Envelope(
-                session_id=self._session_id, event_id=self._next_event_id(), event_ts=datetime.now(UTC), payload=payload
+                session_id=self._session_id, event_id=self._next_event_id(), event_at=datetime.now(UTC), payload=payload
             ).model_dump(mode="json")
         )
         # Mirror run status events to agents hub
