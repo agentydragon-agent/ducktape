@@ -30,11 +30,7 @@ def _cap_append(parts: list[str], chunk: str, cap_bytes: int, truncation_note: s
 
 
 def _diff(repo: pygit2.Repository, include_all: bool) -> pygit2.Diff:
-    if include_all:
-        # Compare HEAD vs working tree
-        return repo.diff(repo.head.target, None, cached=False)
-    # Compare HEAD vs index (staged)
-    return repo.diff(repo.head.target, None, cached=True)
+    return repo.diff(repo.head.target, None, cached=not include_all)
 
 
 def _format_name_status(repo: pygit2.Repository, include_all: bool) -> str:
@@ -127,15 +123,16 @@ def _format_status_porcelain(repo: pygit2.Repository) -> str:
 
 
 def _log_subjects(repo: pygit2.Repository, n: int = 10) -> list[str]:
-    """Return up to n commit subjects following the first-parent chain."""
+    """Return up to n raw commit log entries (short hash + full message)."""
     walker = repo.walk(repo.head.target)
     walker.simplify_first_parent()
 
     out: list[str] = []
     for commit in walker:
         msg = commit.message or ""
-        subj = msg.splitlines()[0] if msg else ""
-        out.append(subj)
+        short = str(commit.id)[:7]
+        entry = f"{short} {msg}".rstrip("\n") if msg else short
+        out.append(entry)
         if len(out) >= n:
             break
     return out
