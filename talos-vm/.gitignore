@@ -1,0 +1,16 @@
+# Large binary files - download these with setup scripts
+talos-amd64.iso
+talosctl
+
+# VM runtime files
+*.qcow2
+*.log
+vm.log
+
+# Generated at runtime
+kubeconfig-talos
+
+# Sensitive configuration (contains certificates and keys)
+talosconfig
+controlplane.yaml
+worker.yaml
