@@ -67,12 +67,6 @@ from openai import OpenAIError
 # Find string fields that should be enums (common patterns)
 rg --type py ": str.*#.*(status|type|kind|mode|state)"
 
-# Find string literals in comparisons (might indicate enum candidates)
-rg --type py '== "(queued|pending|complete|completed|error|success|failed|failure|skipped|cancelled|canceled|in_progress|processing)"'
-
-# Find string status values in function/method calls
-rg --type py 'status\s*=\s*"(queued|pending|complete|completed|error|success|failed|failure|skipped|cancelled|canceled|in_progress|processing)"'
-
 # Find Literal types with multiple options (convert to StrEnum)
 rg --type py 'Literal\[.*,.*\]'
 
