@@ -3,69 +3,58 @@
 
 import argparse
 from collections import Counter
+from contextlib import suppress
 from datetime import datetime
 import json
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
-
-
-# Pydantic models for Claude Code history data
-class Usage(BaseModel):
-    """Token usage information for a message"""
-
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_creation_input_tokens: int = 0
-    cache_read_input_tokens: int = 0
-    service_tier: str | None = None
+from anthropic.types import Message, Usage
+from anthropic.types.content_block import ContentBlock
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class TextContent(BaseModel):
-    """Text content in a message"""
+class ToolResultBlock(BaseModel):
+    """Tool result block in user messages (input to API)"""
 
-    type: str
-    text: str | None = None
+    type: Literal["tool_result"]
+    tool_use_id: str
+    content: str | list[dict[str, Any]]
+    is_error: bool | None = None
 
-    # Allow extra fields for tool use, etc.
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
-class MessageContent(BaseModel):
-    """Message from user or assistant"""
+class UserMessage(BaseModel):
+    """Simple user message structure in Claude Code history"""
 
-    id: str | None = None
-    type: str | None = None  # Make optional since user messages don't have this
-    role: str
-    model: str | None = None
-    content: str | list[TextContent | dict[str, Any]]
-    stop_reason: str | None = None
-    stop_sequence: str | None = None
-    usage: Usage | None = None
+    role: Literal["user"]
+    content: str | list[ContentBlock | ToolResultBlock | dict[str, Any]]
+
+    model_config = ConfigDict(extra="allow")
 
 
 class SummaryEntry(BaseModel):
     """Summary metadata for a session"""
 
-    type: str = "summary"
+    type: Literal["summary"] = "summary"
     summary: str
     leaf_uuid: str = Field(alias="leafUuid")
 
 
 class MessageEntry(BaseModel):
-    """Entry in the JSONL file"""
+    """Entry in the JSONL file - Claude Code wrapper around Anthropic Message"""
 
     parent_uuid: str | None = Field(None, alias="parentUuid")
     is_sidechain: bool = Field(False, alias="isSidechain")
     user_type: str | None = Field(None, alias="userType")
     cwd: str | None = None
+    git_branch: str | None = Field(None, alias="gitBranch")
     session_id: str | None = Field(None, alias="sessionId")
     version: str | None = None
-    type: str
-    message: MessageContent | None = None
+    type: Literal["user", "assistant"]
+    message: UserMessage | Message | None = None  # User or Assistant message
     request_id: str | None = Field(None, alias="requestId")
     uuid: str
     timestamp: str
@@ -200,9 +189,12 @@ class ClaudeHistoryReader:
                         try:
                             entry = MessageEntry(**entry_data)
                             if entry.message:
-                                usage = None
-                                if entry.message.usage:
+                                # Only assistant messages (Message type) have usage and model
+                                usage: Usage | None = None
+                                model: str | None = None
+                                if isinstance(entry.message, Message):
                                     usage = entry.message.usage
+                                    model = entry.message.model
 
                                 parsed_msg = ParsedMessage(
                                     type=entry.type,
@@ -211,7 +203,7 @@ class ClaudeHistoryReader:
                                     uuid=entry.uuid,
                                     parent_uuid=entry.parent_uuid,
                                     cwd=entry.cwd,
-                                    model=entry.message.model,
+                                    model=model,
                                     usage=usage,
                                 )
                                 messages.append(parsed_msg)
@@ -230,28 +222,67 @@ class ClaudeHistoryReader:
             end_time=messages[-1].timestamp if messages else None,
         )
 
-    def _extract_content(self, message: MessageContent) -> str:
-        """Extract content from message object"""
+    def _extract_content(self, message: UserMessage | Message) -> str:
+        """Extract text content from message object (user or assistant)"""
         if isinstance(message.content, str):
             return message.content
-        if isinstance(message.content, list):
-            # Handle structured content
-            text_parts = []
-            for item in message.content:
-                if isinstance(item, TextContent) and item.text:
-                    text_parts.append(item.text)
-                elif isinstance(item, dict):
-                    if item.get("type") == "text" and item.get("text"):
-                        text_parts.append(item.get("text", ""))
-                    elif item.get("type") == "tool_use":
-                        # Handle tool use content
-                        tool_name = item.get("name", "unknown_tool")
-                        text_parts.append(f"[Tool: {tool_name}]")
-                    elif item.get("type") == "tool_result":
-                        # Handle tool result content
+
+        if not isinstance(message.content, list):
+            return ""
+
+        # Handle structured content blocks
+        text_parts = []
+        for block in message.content:
+            if isinstance(block, dict):
+                # Handle dict blocks (fallback for untyped data)
+                block_type = block.get("type", "")
+                if block_type == "text":
+                    text_parts.append(block.get("text", ""))
+                elif block_type == "tool_use":
+                    text_parts.append(f"[Tool: {block.get('name', 'unknown')}]")
+                elif block_type == "tool_result":
+                    content = block.get("content", "")
+                    if isinstance(content, str) and content:
+                        text_parts.append(
+                            f"[Tool Result: {content[:50]}...]" if len(content) > 50 else f"[Tool Result: {content}]"
+                        )
+                    else:
                         text_parts.append("[Tool Result]")
-            return "\n".join(text_parts)
-        return ""
+                continue
+
+            # Handle typed block objects from Anthropic SDK
+            try:
+                block_type = block.type
+            except AttributeError:
+                continue
+
+            if block_type == "text":
+                with suppress(AttributeError):
+                    text_parts.append(block.text)
+            elif block_type == "thinking":
+                with suppress(AttributeError):
+                    thinking = block.thinking
+                    text_parts.append(
+                        f"[Thinking: {thinking[:100]}...]" if len(thinking) > 100 else f"[Thinking: {thinking}]"
+                    )
+            elif block_type == "tool_use":
+                try:
+                    text_parts.append(f"[Tool: {block.name}]")
+                except AttributeError:
+                    text_parts.append("[Tool: unknown]")
+            elif block_type == "tool_result":
+                try:
+                    content = block.content
+                    if isinstance(content, str) and content:
+                        text_parts.append(
+                            f"[Tool Result: {content[:50]}...]" if len(content) > 50 else f"[Tool Result: {content}]"
+                        )
+                    else:
+                        text_parts.append("[Tool Result]")
+                except AttributeError:
+                    text_parts.append("[Tool Result]")
+
+        return "\n".join(text_parts)
 
     def analyze_project(self, project_path: Path) -> ProjectAnalysis:
         """Analyze all sessions in a project"""
