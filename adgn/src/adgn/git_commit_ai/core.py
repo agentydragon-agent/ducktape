@@ -29,16 +29,12 @@ def _cap_append(parts: list[str], chunk: str, cap_bytes: int, truncation_note: s
     return False
 
 
-def _head_commit_oid(repo: pygit2.Repository) -> pygit2.Oid:
-    return repo.head.peel(pygit2.Commit).id
-
-
-def _index_tree_oid(repo: pygit2.Repository) -> pygit2.Oid:
-    return repo.index.write_tree()
-
-
 def _diff(repo: pygit2.Repository, include_all: bool) -> pygit2.Diff:
-    return repo.diff(repo.head.target, None, cached=not include_all)
+    if include_all:
+        # Compare HEAD vs working tree
+        return repo.diff(repo.head.target, None, cached=False)
+    # Compare HEAD vs index (staged)
+    return repo.diff(repo.head.target, None, cached=True)
 
 
 def _format_name_status(repo: pygit2.Repository, include_all: bool) -> str:
@@ -131,20 +127,15 @@ def _format_status_porcelain(repo: pygit2.Repository) -> str:
 
 
 def _log_subjects(repo: pygit2.Repository, n: int = 10) -> list[str]:
-    """Return up to n raw commit log entries (short hash + full message).
-
-    This avoids SortMode typing mismatches across pygit2 versions while still
-    producing a sensible, linear history for commit-context prompts.
-    """
-    head = repo.head.peel(pygit2.Commit)
-    walker = repo.walk(head.id)
+    """Return up to n commit subjects following the first-parent chain."""
+    walker = repo.walk(repo.head.target)
     walker.simplify_first_parent()
+
     out: list[str] = []
     for commit in walker:
         msg = commit.message or ""
-        short = str(commit.id)[:7]
-        entry = f"{short} {msg}".rstrip("\n") if msg else short
-        out.append(entry)
+        subj = msg.splitlines()[0] if msg else ""
+        out.append(subj)
         if len(out) >= n:
             break
     return out
