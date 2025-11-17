@@ -45,18 +45,90 @@ class GetRepoInfoArgs(BaseModel):
 
 
 class GetRepoInfoResponse(BaseModel):
-    """Repository information from Gitea API (subset of /repos/{owner}/{repo} response)."""
+    """Repository information from Gitea API (matches GET /repos/{owner}/{repo} response).
+
+    All fields from Gitea's Repository object are explicitly declared.
+    Mirror-relevant fields have detailed descriptions.
+    """
+    # Core repository identity
+    id: int
     name: str = Field(description="Repository name. Mirror path for cloning: '{owner}/{name}.git'")
     full_name: str = Field(description="Full repository name including owner (owner/name)")
+    description: str
+    empty: bool
+    private: bool
+    fork: bool
+    template: bool
+
+    # Mirror-specific fields
     mirror: bool = Field(description="True if this repository is a pull mirror")
     mirror_updated: str = Field(
         description="ISO 8601 timestamp of last mirror update. Poll this endpoint and compare timestamps to detect sync completion."
     )
     mirror_interval: str = Field(description="Mirror sync interval (e.g., '8h0m0s')")
-    size: int = Field(description="Repository size in KB")
-    default_branch: str = Field(description="Default branch name (e.g., 'main', 'master')")
 
-    model_config = ConfigDict(extra="ignore")  # Gitea returns many more fields; ignore extras
+    # Repository metadata
+    size: int = Field(description="Repository size in KB")
+    language: str
+    languages_url: str
+    default_branch: str = Field(description="Default branch name (e.g., 'main', 'master')")
+    archived: bool
+
+    # URLs
+    html_url: str
+    url: str
+    link: str
+    ssh_url: str
+    clone_url: str
+    original_url: str
+    website: str
+
+    # Statistics
+    stars_count: int
+    forks_count: int
+    watchers_count: int
+    open_issues_count: int
+    open_pr_counter: int
+    release_counter: int
+
+    # Timestamps
+    created_at: str
+    updated_at: str
+    archived_at: str | None = None
+
+    # Features
+    has_code: bool
+    has_issues: bool
+    has_wiki: bool
+    has_pull_requests: bool
+    has_projects: bool
+    projects_mode: str
+    has_releases: bool
+    has_packages: bool
+    has_actions: bool
+    ignore_whitespace_conflicts: bool
+
+    # Merge settings
+    allow_merge_commits: bool
+    allow_rebase: bool
+    allow_rebase_explicit: bool
+    allow_squash_merge: bool
+    allow_fast_forward_only_merge: bool
+    allow_rebase_update: bool
+    allow_manual_merge: bool
+    autodetect_manual_merge: bool
+    default_delete_branch_after_merge: bool
+    default_merge_style: str
+    default_allow_maintainer_edit: bool
+
+    # Miscellaneous
+    avatar_url: str
+    internal: bool
+    object_format_name: str
+    topics: list[str]
+    licenses: list[str]
+
+    model_config = ConfigDict(extra="forbid")
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -86,15 +158,83 @@ class _UserInfo(BaseModel):
 
 class _RepositoryInfo(BaseModel):
     """Internal model for parsing Gitea's /repos/{owner}/{repo} response."""
+    # Core repository identity
+    id: int
     name: str
     full_name: str
+    description: str
+    empty: bool
+    private: bool
+    fork: bool
+    template: bool
+
+    # Mirror-specific fields
     mirror: bool
     mirror_updated: str
     mirror_interval: str
-    size: int
-    default_branch: str
 
-    model_config = ConfigDict(extra="ignore")  # Gitea returns many more fields
+    # Repository metadata
+    size: int
+    language: str
+    languages_url: str
+    default_branch: str
+    archived: bool
+
+    # URLs
+    html_url: str
+    url: str
+    link: str
+    ssh_url: str
+    clone_url: str
+    original_url: str
+    website: str
+
+    # Statistics
+    stars_count: int
+    forks_count: int
+    watchers_count: int
+    open_issues_count: int
+    open_pr_counter: int
+    release_counter: int
+
+    # Timestamps
+    created_at: str
+    updated_at: str
+    archived_at: str | None = None
+
+    # Features
+    has_code: bool
+    has_issues: bool
+    has_wiki: bool
+    has_pull_requests: bool
+    has_projects: bool
+    projects_mode: str
+    has_releases: bool
+    has_packages: bool
+    has_actions: bool
+    ignore_whitespace_conflicts: bool
+
+    # Merge settings
+    allow_merge_commits: bool
+    allow_rebase: bool
+    allow_rebase_explicit: bool
+    allow_squash_merge: bool
+    allow_fast_forward_only_merge: bool
+    allow_rebase_update: bool
+    allow_manual_merge: bool
+    autodetect_manual_merge: bool
+    default_delete_branch_after_merge: bool
+    default_merge_style: str
+    default_allow_maintainer_edit: bool
+
+    # Miscellaneous
+    avatar_url: str
+    internal: bool
+    object_format_name: str
+    topics: list[str]
+    licenses: list[str]
+
+    model_config = ConfigDict(extra="ignore")  # Ignore fields we haven't declared
 
 
 T_Model = TypeVar("T_Model", bound=BaseModel)
@@ -206,7 +346,7 @@ def make_gitea_mirror_server(
     def get_repo_info(input: GetRepoInfoArgs) -> GetRepoInfoResponse:
         """Get repository information including mirror status.
 
-        Matches Gitea's GET /repos/{owner}/{repo} endpoint (returns subset of fields).
+        Matches Gitea's GET /repos/{owner}/{repo} endpoint (returns all fields).
 
         Use this to poll for sync completion after calling trigger_mirror_sync().
         Compare the returned mirror_updated timestamp before and after sync.
@@ -219,14 +359,7 @@ def make_gitea_mirror_server(
         if not repo_data.mirror:
             raise MirrorError(f"repository {input.owner}/{input.repo} is not a mirror")
 
-        return GetRepoInfoResponse(
-            name=repo_data.name,
-            full_name=repo_data.full_name,
-            mirror=repo_data.mirror,
-            mirror_updated=repo_data.mirror_updated,
-            mirror_interval=repo_data.mirror_interval,
-            size=repo_data.size,
-            default_branch=repo_data.default_branch,
-        )
+        # Pass through all fields from Gitea API response
+        return GetRepoInfoResponse(**repo_data.model_dump())
 
     return server

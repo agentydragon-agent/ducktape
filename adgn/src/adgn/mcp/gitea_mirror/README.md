@@ -73,7 +73,7 @@ adgn-mcp-gitea-mirror
 ```
 
 The server exposes two tools:
-- `get_repo_info`: Returns repository information from Gitea API (matches GET /repos/{owner}/{repo})
+- `get_repo_info`: Returns full repository information from Gitea API (matches GET /repos/{owner}/{repo})
 - `trigger_mirror_sync`: Ensures mirror exists, triggers async sync, returns empty (matches POST /repos/{owner}/{repo}/mirror-sync)
 
 ### Docker exec MCP
@@ -107,16 +107,25 @@ Flags of note:
    }
    ```
 
-   Response (subset of Gitea's Repository object):
+   Response (full Gitea Repository object - showing key fields):
    ```json
    {
+     "id": 42,
      "name": "github-com-username-repo",
      "full_name": "agentydragon/github-com-username-repo",
+     "description": "Example repository",
      "mirror": true,
      "mirror_updated": "2024-01-15T10:30:00Z",
      "mirror_interval": "8h0m0s",
      "size": 1234,
-     "default_branch": "main"
+     "default_branch": "main",
+     "clone_url": "https://gitea.example.com/agentydragon/github-com-username-repo.git",
+     "html_url": "https://gitea.example.com/agentydragon/github-com-username-repo",
+     "stars_count": 0,
+     "forks_count": 0,
+     "created_at": "2024-01-15T10:00:00Z",
+     "updated_at": "2024-01-15T10:30:00Z",
+     ...
    }
    ```
 

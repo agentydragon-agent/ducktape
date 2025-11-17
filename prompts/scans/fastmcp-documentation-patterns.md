@@ -28,16 +28,38 @@ Understanding how FastMCP works is essential for effective documentation.
 from pydantic import BaseModel, Field
 
 class GetRepoInfoResponse(BaseModel):
-    """Repository information from Gitea API (subset of /repos/{owner}/{repo} response)."""
+    """Repository information from Gitea API (matches GET /repos/{owner}/{repo} response).
+
+    All fields from Gitea's Repository object are explicitly declared.
+    Mirror-relevant fields have detailed descriptions.
+    """
+    # Core repository identity
+    id: int
     name: str = Field(description="Repository name. Mirror path for cloning: '{owner}/{name}.git'")
     full_name: str = Field(description="Full repository name including owner (owner/name)")
+    description: str
+    empty: bool
+    private: bool
+    fork: bool
+    template: bool
+
+    # Mirror-specific fields (with detailed descriptions)
     mirror: bool = Field(description="True if this repository is a pull mirror")
     mirror_updated: str = Field(
         description="ISO 8601 timestamp of last mirror update. Poll this endpoint and compare timestamps to detect sync completion."
     )
     mirror_interval: str = Field(description="Mirror sync interval (e.g., '8h0m0s')")
+
+    # Repository metadata
     size: int = Field(description="Repository size in KB")
+    language: str
+    languages_url: str
     default_branch: str = Field(description="Default branch name (e.g., 'main', 'master')")
+    archived: bool
+
+    # ... (additional fields: URLs, statistics, timestamps, features, merge settings)
+
+    model_config = ConfigDict(extra="forbid")
 ```
 
 ### FastMCP's Approach (from official examples)
