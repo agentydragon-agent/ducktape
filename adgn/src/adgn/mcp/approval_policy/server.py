@@ -146,7 +146,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
             return got.content
 
         @self.flat_model()
-        async def decide(input: PolicyRequest) -> PolicyResponse:  # type: ignore[unused-ignore]
+        async def decide(input: PolicyRequest) -> PolicyResponse:
             """Evaluate a policy decision for a single tool call via Docker-backed evaluator."""
             evaluator = ContainerPolicyEvaluator(
                 agent_id=self._agent_id, docker_client=self._docker, engine=self._engine
@@ -194,7 +194,7 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
         self._engine = engine
 
         @self.flat_model()
-        async def create_proposal(input: CreateProposalArgs) -> ProposalDescriptor:  # type: ignore[unused-ignore]
+        async def create_proposal(input: CreateProposalArgs) -> ProposalDescriptor:
             """Create a new policy proposal and return its descriptor."""
             new_id = await self._engine.create_proposal(input.content)
             return ProposalDescriptor(
@@ -202,7 +202,7 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
             )
 
         @self.flat_model()
-        async def withdraw_proposal(input: WithdrawProposalArgs) -> None:  # type: ignore[unused-ignore]
+        async def withdraw_proposal(input: WithdrawProposalArgs) -> None:
             """Withdraw a pending policy proposal by id."""
             await self._engine.withdraw_proposal(input.id)
 
@@ -229,17 +229,17 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
         self._engine = engine
 
         @self.flat_model()
-        async def approve_proposal(input: ApproveProposalArgs) -> None:  # type: ignore[unused-ignore]
+        async def approve_proposal(input: ApproveProposalArgs) -> None:
             """Approve a pending policy proposal by id (activates policy)."""
             await self._engine.approve_proposal(input.id)
 
         @self.flat_model()
-        async def reject_proposal(input: RejectProposalArgs) -> None:  # type: ignore[unused-ignore]
+        async def reject_proposal(input: RejectProposalArgs) -> None:
             """Reject a pending policy proposal by id."""
             await self._engine.reject_proposal(input.id)
 
         @self.flat_model()
-        async def set_policy_text(input: SetPolicyTextArgs) -> None:  # type: ignore[unused-ignore]
+        async def set_policy_text(input: SetPolicyTextArgs) -> None:
             """Directly set active policy text after self-check."""
             # Self-check program using engine's docker client
             self._engine.self_check(input.source)
