@@ -188,9 +188,6 @@ def make_gitea_mirror_server(
 
         To detect sync completion: Poll get_mirror_status() and compare mirror_updated.
         When the timestamp changes, the sync is complete (typically 5-60 seconds).
-
-        Returns: owner, repo, mirror_path (for cloning), mirror_updated (for polling),
-        sync_triggered (always true on success).
         """
         owner = _resolve_owner(cfg.base_url, cfg.token)
         repo = _derive_repo_name(input.url)
@@ -219,9 +216,6 @@ def make_gitea_mirror_server(
         When timestamps differ, the sync is complete.
 
         Recommended polling: Every 2-5 seconds until mirror_updated changes.
-
-        Returns: owner, repo, mirror_path, mirror_updated (current timestamp),
-        is_mirror (validation flag).
         """
         repo_data = _get_repo_info(cfg, input.owner, input.repo)
 
