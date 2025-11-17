@@ -4,11 +4,32 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
-from typing import Any
 
 from platformdirs import user_data_dir
+from pydantic import BaseModel, Field
 
 from ..types import SessionID
+
+
+class Rule(BaseModel):
+    """Session-specific permission rule."""
+
+    predicate: str
+    action: str
+    created: datetime
+    expires: datetime | None = None
+
+
+class SessionData(BaseModel):
+    """Session data structure."""
+
+    id: str
+    created: datetime
+    last_seen: datetime | None = None
+    directory: Path | None = None
+    rules: list[Rule] = Field(default_factory=list)
+    notification_id: int | None = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,25 +51,23 @@ class SessionManager:
         """Get the path to a session's data file."""
         return self.sessions_dir / f"{session_id}.json"
 
-    def _load_session(self, session_id: SessionID) -> dict[str, Any]:
+    def _load_session(self, session_id: SessionID) -> SessionData:
         """Load a single session from disk."""
         session_file = self._session_file(session_id)
         if session_file.exists():
             try:
-                with session_file.open() as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError) as e:
+                return SessionData.model_validate_json(session_file.read_text())
+            except (json.JSONDecodeError, OSError, ValueError) as e:
                 logger.error(f"Failed to load session {session_id}: {e}")
 
         # Return default session data
-        return {"id": session_id, "created": datetime.now().isoformat(), "rules": []}
+        return SessionData(id=session_id, created=datetime.now())
 
-    def _save_session(self, session_id: SessionID, session_data: dict[str, Any]) -> None:
+    def _save_session(self, session_id: SessionID, session_data: SessionData) -> None:
         """Save a single session to disk."""
         session_file = self._session_file(session_id)
         try:
-            with session_file.open("w") as f:
-                json.dump(session_data, f, indent=2, default=str)
+            session_file.write_text(session_data.model_dump_json(indent=2))
         except (OSError, TypeError) as e:
             logger.error(f"Failed to save session {session_id}: {e}")
 
@@ -61,28 +80,26 @@ class SessionManager:
             working_dir: Current working directory for the session
         """
         session_data = self._load_session(session_id)
-
-        session_data.update({"last_seen": datetime.now().isoformat(), "directory": str(working_dir.resolve())})
-
+        session_data.last_seen = datetime.now()
+        session_data.directory = working_dir.resolve()
         self._save_session(session_id, session_data)
 
     def set_notification_id(self, session_id: SessionID, notification_id: int) -> None:
         """Store the notification ID for a session."""
         session_data = self._load_session(session_id)
-        session_data["notification_id"] = notification_id
+        session_data.notification_id = notification_id
         self._save_session(session_id, session_data)
 
     def get_notification_id(self, session_id: SessionID) -> int | None:
         """Get the notification ID for a session."""
         session_data = self._load_session(session_id)
-        return session_data.get("notification_id")
+        return session_data.notification_id
 
     def clear_notification_id(self, session_id: SessionID) -> None:
         """Clear the notification ID for a session."""
         session_data = self._load_session(session_id)
-        if "notification_id" in session_data:
-            del session_data["notification_id"]
-            self._save_session(session_id, session_data)
+        session_data.notification_id = None
+        self._save_session(session_id, session_data)
 
     def add_rule(
         self,
@@ -108,17 +125,14 @@ class SessionManager:
         directory = directory or Path.cwd()
         directory_str = str(directory.resolve())
 
-        rule = {"predicate": predicate, "action": action, "created": datetime.now().isoformat()}
-
-        if expires:
-            rule["expires"] = expires.isoformat()
+        rule = Rule(predicate=predicate, action=action, created=datetime.now(), expires=expires)
 
         affected = 0
 
         if session_id:
             # Add to specific session
             session_data = self._load_session(session_id)
-            session_data["rules"].append(rule)
+            session_data.rules.append(rule)
             self._save_session(session_id, session_data)
             affected = 1
         else:
@@ -128,18 +142,18 @@ class SessionManager:
                 session_data = self._load_session(sid)
 
                 # Skip if session is in different directory
-                session_dir = session_data.get("directory", "")
+                session_dir = str(session_data.directory) if session_data.directory else ""
                 if not session_dir.startswith(directory_str):
                     continue
 
                 # Add rule to this session
-                session_data["rules"].append(rule.copy())
+                session_data.rules.append(rule.model_copy())
                 self._save_session(sid, session_data)
                 affected += 1
 
         return affected
 
-    def list_sessions(self, all_dirs: bool = False) -> list[dict[str, Any]]:
+    def list_sessions(self, all_dirs: bool = False) -> list[dict]:
         """
         List all sessions.
 
@@ -159,19 +173,19 @@ class SessionManager:
                 session_data = self._load_session(session_id)
 
                 # Skip sessions in other directories unless requested
-                session_dir = session_data.get("directory", "")
+                session_dir = str(session_data.directory) if session_data.directory else ""
                 if not all_dirs and session_dir and not session_dir.startswith(current_dir):
                     continue
 
                 results.append(
                     {
                         "id": session_id,
-                        "directory": Path(session_dir) if session_dir else None,
-                        "last_seen": session_data.get("last_seen", session_data.get("created")),
-                        "rules": session_data.get("rules", []),
+                        "directory": session_data.directory,
+                        "last_seen": session_data.last_seen or session_data.created,
+                        "rules": session_data.rules,
                     }
                 )
-            except (json.JSONDecodeError, OSError) as e:
+            except (json.JSONDecodeError, OSError, ValueError) as e:
                 logger.error(f"Failed to load session {session_id}: {e}")
 
         # Sort by last seen time (most recent first)
@@ -179,20 +193,17 @@ class SessionManager:
 
         return results
 
-    def get_session_rules(self, session_id: SessionID) -> list[dict[str, Any]]:
+    def get_session_rules(self, session_id: SessionID) -> list[Rule]:
         """Get active rules for a session."""
         session_data = self._load_session(session_id)
-        rules = session_data.get("rules", [])
 
         # Filter out expired rules
         now = datetime.now()
         active_rules = []
 
-        for rule in rules:
-            if "expires" in rule:
-                expires = datetime.fromisoformat(rule["expires"])
-                if expires < now:
-                    continue
+        for rule in session_data.rules:
+            if rule.expires and rule.expires < now:
+                continue
             active_rules.append(rule)
 
         return active_rules
