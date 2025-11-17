@@ -4,7 +4,8 @@ from collections.abc import Callable
 from datetime import timedelta
 import os
 import subprocess
-import time
+
+from tenacity import Retrying, RetryError, stop_after_delay, wait_fixed
 
 
 def add_project_root_to_env(env: dict) -> None:
@@ -34,13 +35,19 @@ def wait_until(predicate: Callable[[], bool], *, timeout_seconds: float = 5.0, i
 
     Returns True if the condition became true within the timeout; False otherwise.
     """
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        try:
-            if predicate():
-                return True
-        except Exception:
-            # Treat exceptions as transient until timeout; tests can inspect state after
-            pass
-        time.sleep(interval_seconds)
-    return False
+    def _check() -> bool:
+        result = predicate()
+        if not result:
+            raise RuntimeError("predicate not yet true")
+        return result
+
+    try:
+        Retrying(
+            stop=stop_after_delay(timeout_seconds),
+            wait=wait_fixed(interval_seconds),
+            reraise=True,
+        )(_check)
+        return True
+    except (RetryError, RuntimeError):
+        # Timeout or predicate never became true
+        return False

@@ -14,12 +14,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-import time
 from typing import Any, TypeVar, cast
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 import requests
+from tenacity import Retrying, RetryError, stop_after_delay, wait_fixed
 
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -128,21 +128,30 @@ def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
 
 def _wait_for_update(cfg: MirrorConfig, owner: str, repo: str) -> _RepositoryInfo:
     repo_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}"
-    deadline = time.monotonic() + cfg.poll_timeout_secs
     last_updated: str | None = None
-    while time.monotonic() < deadline:
+
+    def _check_update() -> _RepositoryInfo:
+        nonlocal last_updated
         try:
             data = _get_typed_json(repo_url, cfg.token, _RepositoryInfo)
         except requests.RequestException as exc:  # pragma: no cover - transient network
             raise MirrorError("failed to fetch repository metadata") from exc
-        else:
-            if not data.mirror:
-                raise MirrorError("repository is not marked as a mirror (mirror: boolean expected)")
-            if data.mirror_updated != last_updated:
-                return data
-            last_updated = data.mirror_updated
-        time.sleep(cfg.poll_interval_secs)
-    raise MirrorError(f"mirror did not update within {cfg.poll_timeout_secs}s")
+
+        if not data.mirror:
+            raise MirrorError("repository is not marked as a mirror (mirror: boolean expected)")
+        if data.mirror_updated != last_updated:
+            return data
+        last_updated = data.mirror_updated
+        raise RuntimeError("mirror not yet updated")
+
+    try:
+        return Retrying(
+            stop=stop_after_delay(cfg.poll_timeout_secs),
+            wait=wait_fixed(cfg.poll_interval_secs),
+            reraise=True,
+        )(_check_update)
+    except (RetryError, RuntimeError):
+        raise MirrorError(f"mirror did not update within {cfg.poll_timeout_secs}s")
 
 
 def _resolve_owner(base_url: str, token: str) -> str:
