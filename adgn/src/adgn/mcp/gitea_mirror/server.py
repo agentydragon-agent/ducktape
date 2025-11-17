@@ -6,8 +6,6 @@
 Configuration (env or kwargs):
   GITEA_BASE_URL: base URL to the Gitea instance (required)
   GITEA_TOKEN: access token with write:repository scope for target org/user (required)
-  GITEA_POLL_INTERVAL_SECS: optional poll interval (default 2s)
-  GITEA_POLL_TIMEOUT_SECS: optional timeout for mirror appearance (default 60s)
 """
 
 from __future__ import annotations
@@ -19,7 +17,6 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 import requests
-from tenacity import Retrying, RetryError, stop_after_delay, wait_fixed
 
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -28,24 +25,39 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 class MirrorConfig:
     base_url: str
     token: str
-    poll_interval_secs: float = 2.0
-    poll_timeout_secs: float = 60.0
 
 
 class MirrorError(RuntimeError):
     pass
 
 
-class EnsureMirrorAndSyncArgs(BaseModel):
+class TriggerMirrorSyncArgs(BaseModel):
     url: str
     model_config = ConfigDict(extra="forbid")
 
 
-class EnsureMirrorAndSyncResponse(BaseModel):
+class TriggerMirrorSyncResponse(BaseModel):
     owner: str
     repo: str
     mirror_path: str
-    mirror_updated: str  # API spec: string (date-time); we return as-is
+    mirror_updated: str  # Timestamp BEFORE sync (for comparison)
+    sync_triggered: bool
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class GetMirrorStatusArgs(BaseModel):
+    owner: str
+    repo: str
+    model_config = ConfigDict(extra="forbid")
+
+
+class GetMirrorStatusResponse(BaseModel):
+    owner: str
+    repo: str
+    mirror_path: str
+    mirror_updated: str
+    is_mirror: bool
 
     model_config = ConfigDict(extra="forbid")
 
@@ -126,32 +138,14 @@ def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
         raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}")
 
 
-def _wait_for_update(cfg: MirrorConfig, owner: str, repo: str) -> _RepositoryInfo:
+def _get_repo_info(cfg: MirrorConfig, owner: str, repo: str) -> _RepositoryInfo:
+    """Get current repository info including mirror status and last update time."""
     repo_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}"
-    last_updated: str | None = None
-
-    def _check_update() -> _RepositoryInfo:
-        nonlocal last_updated
-        try:
-            data = _get_typed_json(repo_url, cfg.token, _RepositoryInfo)
-        except requests.RequestException as exc:  # pragma: no cover - transient network
-            raise MirrorError("failed to fetch repository metadata") from exc
-
-        if not data.mirror:
-            raise MirrorError("repository is not marked as a mirror (mirror: boolean expected)")
-        if data.mirror_updated != last_updated:
-            return data
-        last_updated = data.mirror_updated
-        raise RuntimeError("mirror not yet updated")
-
     try:
-        return Retrying(
-            stop=stop_after_delay(cfg.poll_timeout_secs),
-            wait=wait_fixed(cfg.poll_interval_secs),
-            reraise=True,
-        )(_check_update)
-    except (RetryError, RuntimeError):
-        raise MirrorError(f"mirror did not update within {cfg.poll_timeout_secs}s")
+        data = _get_typed_json(repo_url, cfg.token, _RepositoryInfo)
+    except requests.RequestException as exc:
+        raise MirrorError("failed to fetch repository metadata") from exc
+    return data
 
 
 def _resolve_owner(base_url: str, token: str) -> str:
@@ -164,20 +158,10 @@ def make_gitea_mirror_server(
     *,
     base_url: str | None = None,
     token: str | None = None,
-    poll_interval_secs: float | None = None,
-    poll_timeout_secs: float | None = None,
 ) -> NotifyingFastMCP:
     cfg = MirrorConfig(
         base_url=str(base_url or os.environ.get("GITEA_BASE_URL", "")),
         token=str(token or os.environ.get("GITEA_TOKEN", "")),
-        poll_interval_secs=(
-            float(os.environ.get("GITEA_POLL_INTERVAL_SECS", "2.0"))
-            if poll_interval_secs is None
-            else poll_interval_secs
-        ),
-        poll_timeout_secs=(
-            float(os.environ.get("GITEA_POLL_TIMEOUT_SECS", "60.0")) if poll_timeout_secs is None else poll_timeout_secs
-        ),
     )
     if not cfg.base_url or not cfg.token:
         raise ValueError("Gitea mirror MCP requires GITEA_BASE_URL and GITEA_TOKEN")
@@ -185,21 +169,71 @@ def make_gitea_mirror_server(
     server = NotifyingFastMCP(
         "Gitea Mirror",
         instructions=(
-            "Host-side Gitea mirror manager. Ensures a pull mirror exists, triggers a sync, "
-            "and waits for the repository to update."
+            "Host-side Gitea mirror manager for async pull mirror syncing.\n\n"
+            "Workflow:\n"
+            "1. Call trigger_mirror_sync(url) to ensure mirror exists and start syncing (returns immediately)\n"
+            "2. Poll get_mirror_status(owner, repo) until mirror_updated timestamp changes\n"
+            "3. When timestamps differ, sync is complete and mirror is ready for cloning\n\n"
+            "Typical sync time: 5-60 seconds depending on repository size. "
+            "Recommended polling interval: 2-5 seconds."
         ),
     )
 
     @server.flat_model()
-    def ensure_mirror_and_sync(input: EnsureMirrorAndSyncArgs) -> EnsureMirrorAndSyncResponse:
-        """Ensure a Gitea pull mirror exists and syncs before returning."""
+    def trigger_mirror_sync(input: TriggerMirrorSyncArgs) -> TriggerMirrorSyncResponse:
+        """Ensure mirror exists and trigger async sync. Returns immediately.
+
+        Creates a Gitea pull mirror if it doesn't exist, then triggers an async sync
+        from the upstream repository. Returns the current mirror_updated timestamp.
+
+        To detect sync completion: Poll get_mirror_status() and compare mirror_updated.
+        When the timestamp changes, the sync is complete (typically 5-60 seconds).
+
+        Returns: owner, repo, mirror_path (for cloning), mirror_updated (for polling),
+        sync_triggered (always true on success).
+        """
         owner = _resolve_owner(cfg.base_url, cfg.token)
         repo = _derive_repo_name(input.url)
         _ensure_mirror(cfg, input.url, owner, repo)
+
+        # Get current state before triggering sync
+        repo_data = _get_repo_info(cfg, owner, repo)
+
+        # Trigger async sync
         _trigger_sync(cfg, owner, repo)
-        repo_data = _wait_for_update(cfg, owner, repo)
-        return EnsureMirrorAndSyncResponse(
-            owner=owner, repo=repo, mirror_path=f"{owner}/{repo}.git", mirror_updated=repo_data.mirror_updated
+
+        return TriggerMirrorSyncResponse(
+            owner=owner,
+            repo=repo,
+            mirror_path=f"{owner}/{repo}.git",
+            mirror_updated=repo_data.mirror_updated,
+            sync_triggered=True,
+        )
+
+    @server.flat_model()
+    def get_mirror_status(input: GetMirrorStatusArgs) -> GetMirrorStatusResponse:
+        """Get current mirror status including last update timestamp.
+
+        Use this to poll for sync completion after calling trigger_mirror_sync().
+        Compare the returned mirror_updated timestamp with the initial value.
+        When timestamps differ, the sync is complete.
+
+        Recommended polling: Every 2-5 seconds until mirror_updated changes.
+
+        Returns: owner, repo, mirror_path, mirror_updated (current timestamp),
+        is_mirror (validation flag).
+        """
+        repo_data = _get_repo_info(cfg, input.owner, input.repo)
+
+        if not repo_data.mirror:
+            raise MirrorError(f"repository {input.owner}/{input.repo} is not a mirror")
+
+        return GetMirrorStatusResponse(
+            owner=input.owner,
+            repo=input.repo,
+            mirror_path=f"{input.owner}/{input.repo}.git",
+            mirror_updated=repo_data.mirror_updated,
+            is_mirror=repo_data.mirror,
         )
 
     return server
