@@ -97,7 +97,7 @@
     - Public
     - Templates
     - Videos
-  register: dir_contents
+  register: cli_dir_contents
   become: true
   become_user: "{{ cli_user | default(ansible_user_id) }}"
   failed_when: false  # Don't fail if directory doesn't exist
@@ -107,7 +107,7 @@
     path: "/home/{{ cli_user | default(ansible_user_id) }}/{{ item.item }}"
     state: absent
   when: item.matched == 0  # Directory exists but is empty
-  loop: "{{ dir_contents.results }}"
+  loop: "{{ cli_dir_contents.results }}"
   become: true
   become_user: "{{ cli_user | default(ansible_user_id) }}"
   failed_when:
