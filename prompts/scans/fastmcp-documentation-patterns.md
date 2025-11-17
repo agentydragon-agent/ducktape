@@ -27,16 +27,17 @@ Understanding how FastMCP works is essential for effective documentation.
 ```python
 from pydantic import BaseModel, Field
 
-class TriggerMirrorSyncResponse(BaseModel):
-    owner: str = Field(description="Gitea owner (username) of the mirror repository")
-    repo: str = Field(description="Repository name (auto-generated from URL)")
-    mirror_path: str = Field(
-        description="Path to mirror for cloning: 'owner/repo.git' (use with docker_exec bind mount)"
-    )
+class GetRepoInfoResponse(BaseModel):
+    """Repository information from Gitea API (subset of /repos/{owner}/{repo} response)."""
+    name: str = Field(description="Repository name. Mirror path for cloning: '{owner}/{name}.git'")
+    full_name: str = Field(description="Full repository name including owner (owner/name)")
+    mirror: bool = Field(description="True if this repository is a pull mirror")
     mirror_updated: str = Field(
-        description="Timestamp BEFORE sync started. Poll get_mirror_status() until this changes to detect completion."
+        description="ISO 8601 timestamp of last mirror update. Poll this endpoint and compare timestamps to detect sync completion."
     )
-    sync_triggered: bool = Field(description="Always true on success (sync was triggered)")
+    mirror_interval: str = Field(description="Mirror sync interval (e.g., '8h0m0s')")
+    size: int = Field(description="Repository size in KB")
+    default_branch: str = Field(description="Default branch name (e.g., 'main', 'master')")
 ```
 
 ### FastMCP's Approach (from official examples)

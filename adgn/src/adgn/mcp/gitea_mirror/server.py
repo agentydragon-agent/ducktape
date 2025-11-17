@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-
-
 """Host-side MCP server for managing Gitea pull mirrors.
 
 Configuration (env or kwargs):
@@ -37,35 +34,29 @@ class TriggerMirrorSyncArgs(BaseModel):
 
 
 class TriggerMirrorSyncResponse(BaseModel):
-    owner: str = Field(description="Gitea owner (username) of the mirror repository")
-    repo: str = Field(description="Repository name (auto-generated from URL)")
-    mirror_path: str = Field(
-        description="Path to mirror for cloning: 'owner/repo.git' (use with docker_exec bind mount)"
-    )
-    mirror_updated: str = Field(
-        description="Timestamp BEFORE sync started. Poll get_mirror_status() until this changes to detect completion."
-    )
-    sync_triggered: bool = Field(description="Always true on success (sync was triggered)")
-
+    """Response matching Gitea's mirror-sync behavior (returns nothing)."""
     model_config = ConfigDict(extra="forbid")
 
 
-class GetMirrorStatusArgs(BaseModel):
+class GetRepoInfoArgs(BaseModel):
     owner: str
     repo: str
     model_config = ConfigDict(extra="forbid")
 
 
-class GetMirrorStatusResponse(BaseModel):
-    owner: str = Field(description="Gitea owner (username) of the mirror repository")
-    repo: str = Field(description="Repository name")
-    mirror_path: str = Field(description="Path to mirror for cloning: 'owner/repo.git'")
+class GetRepoInfoResponse(BaseModel):
+    """Repository information from Gitea API (subset of /repos/{owner}/{repo} response)."""
+    name: str = Field(description="Repository name. Mirror path for cloning: '{owner}/{name}.git'")
+    full_name: str = Field(description="Full repository name including owner (owner/name)")
+    mirror: bool = Field(description="True if this repository is a pull mirror")
     mirror_updated: str = Field(
-        description="Current timestamp of last mirror update. Compare with initial value from trigger_mirror_sync() to detect completion."
+        description="ISO 8601 timestamp of last mirror update. Poll this endpoint and compare timestamps to detect sync completion."
     )
-    is_mirror: bool = Field(description="Validation: true if repository is configured as a mirror")
+    mirror_interval: str = Field(description="Mirror sync interval (e.g., '8h0m0s')")
+    size: int = Field(description="Repository size in KB")
+    default_branch: str = Field(description="Default branch name (e.g., 'main', 'master')")
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")  # Gitea returns many more fields; ignore extras
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -94,12 +85,16 @@ class _UserInfo(BaseModel):
 
 
 class _RepositoryInfo(BaseModel):
+    """Internal model for parsing Gitea's /repos/{owner}/{repo} response."""
+    name: str
+    full_name: str
     mirror: bool
     mirror_updated: str
+    mirror_interval: str
+    size: int
+    default_branch: str
 
-    # Gitea's repository payload carries numerous unrelated fields; ignore them and only
-    # validate the subset we require for mirror orchestration.
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore")  # Gitea returns many more fields
 
 
 T_Model = TypeVar("T_Model", bound=BaseModel)
@@ -177,9 +172,11 @@ def make_gitea_mirror_server(
         instructions=(
             "Host-side Gitea mirror manager for async pull mirror syncing.\n\n"
             "Workflow:\n"
-            "1. Call trigger_mirror_sync(url) to ensure mirror exists and start syncing (returns immediately)\n"
-            "2. Poll get_mirror_status(owner, repo) until mirror_updated timestamp changes\n"
-            "3. When timestamps differ, sync is complete and mirror is ready for cloning\n\n"
+            "1. Call get_repo_info(owner, repo) to get initial mirror_updated timestamp\n"
+            "2. Call trigger_mirror_sync(url) to start async sync (returns immediately)\n"
+            "3. Poll get_repo_info(owner, repo) until mirror_updated timestamp changes\n"
+            "4. When timestamps differ, sync is complete and mirror is ready for cloning\n\n"
+            "Mirror path for cloning: '{owner}/{repo}.git'\n"
             "Typical sync time: 5-60 seconds depending on repository size. "
             "Recommended polling interval: 2-5 seconds."
         ),
@@ -189,36 +186,30 @@ def make_gitea_mirror_server(
     def trigger_mirror_sync(input: TriggerMirrorSyncArgs) -> TriggerMirrorSyncResponse:
         """Ensure mirror exists and trigger async sync. Returns immediately.
 
+        Matches Gitea's POST /repos/{owner}/{repo}/mirror-sync endpoint behavior.
         Creates a Gitea pull mirror if it doesn't exist, then triggers an async sync
-        from the upstream repository. Returns the current mirror_updated timestamp.
+        from the upstream repository.
 
-        To detect sync completion: Poll get_mirror_status() and compare mirror_updated.
-        When the timestamp changes, the sync is complete (typically 5-60 seconds).
+        To detect sync completion: Call get_repo_info() before and after triggering sync,
+        then poll until mirror_updated timestamp changes (typically 5-60 seconds).
+
+        Returns: Empty response (matching Gitea API).
         """
         owner = _resolve_owner(cfg.base_url, cfg.token)
         repo = _derive_repo_name(input.url)
         _ensure_mirror(cfg, input.url, owner, repo)
-
-        # Get current state before triggering sync
-        repo_data = _get_repo_info(cfg, owner, repo)
-
-        # Trigger async sync
         _trigger_sync(cfg, owner, repo)
 
-        return TriggerMirrorSyncResponse(
-            owner=owner,
-            repo=repo,
-            mirror_path=f"{owner}/{repo}.git",
-            mirror_updated=repo_data.mirror_updated,
-            sync_triggered=True,
-        )
+        return TriggerMirrorSyncResponse()
 
     @server.flat_model()
-    def get_mirror_status(input: GetMirrorStatusArgs) -> GetMirrorStatusResponse:
-        """Get current mirror status including last update timestamp.
+    def get_repo_info(input: GetRepoInfoArgs) -> GetRepoInfoResponse:
+        """Get repository information including mirror status.
+
+        Matches Gitea's GET /repos/{owner}/{repo} endpoint (returns subset of fields).
 
         Use this to poll for sync completion after calling trigger_mirror_sync().
-        Compare the returned mirror_updated timestamp with the initial value.
+        Compare the returned mirror_updated timestamp before and after sync.
         When timestamps differ, the sync is complete.
 
         Recommended polling: Every 2-5 seconds until mirror_updated changes.
@@ -228,12 +219,14 @@ def make_gitea_mirror_server(
         if not repo_data.mirror:
             raise MirrorError(f"repository {input.owner}/{input.repo} is not a mirror")
 
-        return GetMirrorStatusResponse(
-            owner=input.owner,
-            repo=input.repo,
-            mirror_path=f"{input.owner}/{input.repo}.git",
+        return GetRepoInfoResponse(
+            name=repo_data.name,
+            full_name=repo_data.full_name,
+            mirror=repo_data.mirror,
             mirror_updated=repo_data.mirror_updated,
-            is_mirror=repo_data.mirror,
+            mirror_interval=repo_data.mirror_interval,
+            size=repo_data.size,
+            default_branch=repo_data.default_branch,
         )
 
     return server

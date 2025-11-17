@@ -8,13 +8,15 @@ to date and clone them inside sandboxed containers.
 ## Overview
 
 ```
-┌─────────────────┐  1. trigger_mirror_sync          ┌────────────────────┐
-│ gitea_mirror MCP │ ───────────────────────────────▶ │ Gitea (pull mirrors)│
-│                 │  2. get_mirror_status (poll)     │                    │
+┌─────────────────┐  1. get_repo_info                ┌────────────────────┐
+│ gitea_mirror MCP │ ◀───────────────────────────────  │ Gitea (pull mirrors)│
+│                 │  2. trigger_mirror_sync          │                    │
+│                 │ ───────────────────────────────▶ │                    │
+│                 │  3. get_repo_info (poll)         │                    │
 │                 │ ◀───────────────────────────────  │                    │
 └─────────────────┘                                   └────────────────────┘
           ▲                                                     │
-          │ mirror_path                                         │ host bind mount
+          │ owner/repo                                          │ host bind mount
           │                                                     ▼
 ┌─────────────────┐  git clone via exec tool        ┌────────────────────┐
 │ docker_exec MCP  │ ─────────────────────────────▶ │ /mnt/git-bare/<repo>│
@@ -24,15 +26,15 @@ to date and clone them inside sandboxed containers.
 1. `gitea_mirror` MCP is run on the host with access to the Gitea API.
 2. `docker_exec` MCP runs sandboxed containers with a read-only bind mount of
 the mirror store (e.g. `/Users/<user>/.combo_mcp/gitea/git/repositories`).
-3. Agents call `trigger_mirror_sync` with an HTTPS repository URL. The tool creates
+3. Agents call `get_repo_info` to get the initial repository state (GET `/repos/{owner}/{repo}`).
+4. Agents call `trigger_mirror_sync` with an HTTPS repository URL. The tool creates
 a pull mirror (POST `/repos/migrate`), triggers an async sync (POST
-`/repos/{owner}/{repo}/mirror-sync`), and returns immediately with the current
-`mirror_updated` timestamp.
-4. Agents poll `get_mirror_status` until the `mirror_updated` timestamp changes,
+`/repos/{owner}/{repo}/mirror-sync`), and returns immediately (empty response,
+matching Gitea API).
+5. Agents poll `get_repo_info` until the `mirror_updated` timestamp changes,
 indicating the sync is complete.
-5. Once synced, agents call `mcp_docker_clone_from_mirror` with `mirror_path` set
-to `owner/repo.git`. The container clones from the read-only bind mount using
-`git clone --reference` for fast object reuse.
+6. Once synced, agents construct the mirror path as `{owner}/{repo}.git` and clone
+from the read-only bind mount using `git clone --reference` for fast object reuse.
 
 ## Running Gitea locally
 
@@ -71,8 +73,8 @@ adgn-mcp-gitea-mirror
 ```
 
 The server exposes two tools:
-- `trigger_mirror_sync`: Ensures mirror exists, triggers async sync, returns immediately
-- `get_mirror_status`: Returns current mirror status including `mirror_updated` timestamp
+- `get_repo_info`: Returns repository information from Gitea API (matches GET /repos/{owner}/{repo})
+- `trigger_mirror_sync`: Ensures mirror exists, triggers async sync, returns empty (matches POST /repos/{owner}/{repo}/mirror-sync)
 
 ### Docker exec MCP
 
@@ -97,27 +99,42 @@ Flags of note:
 
 ## Client workflow
 
-1. **Trigger the sync**: Call `trigger_mirror_sync` with the upstream URL:
+1. **Get initial state**: Call `get_repo_info` to get the initial mirror state:
+   ```json
+   {
+     "owner": "agentydragon",
+     "repo": "github-com-username-repo"
+   }
+   ```
+
+   Response (subset of Gitea's Repository object):
+   ```json
+   {
+     "name": "github-com-username-repo",
+     "full_name": "agentydragon/github-com-username-repo",
+     "mirror": true,
+     "mirror_updated": "2024-01-15T10:30:00Z",
+     "mirror_interval": "8h0m0s",
+     "size": 1234,
+     "default_branch": "main"
+   }
+   ```
+
+   Save the `mirror_updated` timestamp.
+
+2. **Trigger the sync**: Call `trigger_mirror_sync` with the upstream URL:
    ```json
    {
      "url": "https://github.com/username/repo"
    }
    ```
 
-   The response includes:
+   Response: Empty (matching Gitea's mirror-sync endpoint)
    ```json
-   {
-     "owner": "agentydragon",
-     "repo": "github-com-username-repo",
-     "mirror_path": "agentydragon/github-com-username-repo.git",
-     "mirror_updated": "2024-01-15T10:30:00Z",
-     "sync_triggered": true
-   }
+   {}
    ```
 
-   Save the `mirror_updated` timestamp and `mirror_path`.
-
-2. **Poll for completion**: Repeatedly call `get_mirror_status` until `mirror_updated` changes:
+3. **Poll for completion**: Repeatedly call `get_repo_info` until `mirror_updated` changes:
    ```json
    {
      "owner": "agentydragon",
@@ -127,7 +144,7 @@ Flags of note:
 
    When `mirror_updated` differs from the initial timestamp, the sync is complete.
 
-3. **Clone from mirror**: Use the `exec` tool on the docker exec server to clone:
+4. **Clone from mirror**: Construct mirror path as `{owner}/{repo}.git` and use the `exec` tool:
    ```json
    {
      "cmd": [
@@ -138,5 +155,5 @@ Flags of note:
    }
    ```
 
-4. **Work with the repo**: Subsequent `exec` calls can operate inside the checkout
+5. **Work with the repo**: Subsequent `exec` calls can operate inside the checkout
    (e.g. run tests or edit files under `/workspace/repos/repo`).
