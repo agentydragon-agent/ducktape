@@ -83,7 +83,7 @@ kubectl get nodes
 
 ## Technical Details
 
-Uses `null_resource` with direct QEMU commands (no libvirt dependency). All Talos configuration workarounds from [`../manual/SUCCESS.md`](../manual/SUCCESS.md) are automated.
+Uses `null_resource` with direct QEMU commands (no libvirt dependency). All Talos configuration workarounds from [`../manual/SETUP.md`](../manual/SETUP.md) are automated.
 
 **Key fix**: Used `abspath()` for path resolution to avoid relative path issues.
 
@@ -91,4 +91,4 @@ Uses `null_resource` with direct QEMU commands (no libvirt dependency). All Talo
 
 - [Talos Documentation](https://www.talos.dev/v1.9/)
 - [Talos Terraform Provider](https://registry.terraform.io/providers/siderolabs/talos/latest/docs)
-- [Manual Setup Guide](../manual/SUCCESS.md)
+- [Manual Setup Guide](../manual/SETUP.md)

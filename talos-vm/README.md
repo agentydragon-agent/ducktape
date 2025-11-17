@@ -27,7 +27,7 @@ Location: [`manual/`](manual/)
 - Useful for learning or customization
 - Requires manual intervention at each step
 
-**Start here:** [`manual/SUCCESS.md`](manual/SUCCESS.md)
+**Start here:** [`manual/SETUP.md`](manual/SETUP.md)
 
 ## Quick Comparison
 

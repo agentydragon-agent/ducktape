@@ -1,16 +1,15 @@
 # Manual Talos Setup
 
-Scripts and documentation for manually setting up Talos Linux on QEMU.
+Complete guide for manually setting up Talos Linux on QEMU.
 
-**For automation, use [`../terraform/`](../terraform/) instead.**
+**For automation, use [`../terraform/`](../terraform/) instead** (recommended).
 
-## Documentation
+## Setup Guide
 
-- **[SUCCESS.md](SUCCESS.md)** - Complete working setup guide
-- [PROXY-SOLUTION.md](PROXY-SOLUTION.md), [DNS-SOLUTION.md](DNS-SOLUTION.md) - Workaround details
+**[SETUP.md](SETUP.md)** - Complete working solution with all workarounds, scripts, and troubleshooting.
 
-## Scripts
+## Helper Scripts
 
-- `start-vm-kernel.sh` - Start VM (working method)
-- `https-proxy.py` - Authenticated proxy helper
+- `start-vm-kernel.sh` - Start QEMU VM
+- `https-proxy.py` - Authenticated proxy forwarder
 - `download-talos.sh` - Download Talos components
