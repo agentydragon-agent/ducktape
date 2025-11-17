@@ -5,63 +5,26 @@
 This scan identified multiple instances of stringly-typed code across the ducktape codebase where raw strings are used for categorical values instead of enums (particularly `StrEnum`). The codebase already uses `StrEnum` in some areas (e.g., `ResponseStatus`, `Status` in habitify), but many other areas still use plain strings with hardcoded comparisons.
 
 **Total categories of findings:** 7 major areas
+**Update 2025-11-17:** Finding #1 mostly applied. Remaining: 6 findings + 1 cleanup item.
+
 **Severity:** Medium - These patterns reduce type safety, make refactoring harder, and are prone to typos
 
 ## Detailed Findings
 
-### 1. rspcache: Inconsistent Status Type Usage
+### ~~1. rspcache: Inconsistent Status Type Usage~~ ✅ MOSTLY APPLIED
 
-**Location:** `/home/user/ducktape/adgn/src/adgn/rspcache/`
+**Status**: Mostly fixed - enum expanded and used in most places
 
-**Issue:** The codebase defines `ResponseStatus` enum but doesn't use it consistently.
+**What was applied:**
+- ✅ `ResponseStatus` enum expanded to: `QUEUED`, `IN_PROGRESS`, `COMPLETE`, `ERROR`
+- ✅ `ResponseStatusEvent.status` field now typed as `ResponseStatus`
+- ✅ Most string literals replaced with enum values
 
-**Evidence:**
-
-#### Good: Enum exists in models.py
-```python
-# /home/user/ducktape/adgn/src/adgn/rspcache/models.py:16-18
-class ResponseStatus(StrEnum):
-    COMPLETE = "complete"
-    ERROR = "error"
-```
-
-#### Bad: ResponseStatusEvent uses plain string
-```python
-# /home/user/ducktape/adgn/src/adgn/rspcache/events.py:15-20
-class ResponseStatusEvent(EventBase):
-    type: Literal["response_status"] = "response_status"
-    cache_key: str
-    response_id: str | None = None
-    status: str  # ❌ Should be ResponseStatus enum
-    error: str | None = None
-```
-
-#### Bad: admin_app uses Literal instead of expanding ResponseStatus
-```python
-# /home/user/ducktape/adgn/src/adgn/rspcache/admin_app.py:81
-status: Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"] | None = None
-```
-
-**Issue:** This Literal has 6 values but `ResponseStatus` only has 2 (COMPLETE, ERROR). Either:
-1. `ResponseStatus` should be expanded to include all these states, OR
-2. There should be a separate enum for database/admin statuses
-
-#### Bad: String literals in code
-```python
-# /home/user/ducktape/adgn/src/adgn/rspcache/__init__.py:293
-if cached and cached.status == "complete":  # ❌ Should use ResponseStatus.COMPLETE
-
-# /home/user/ducktape/adgn/src/adgn/rspcache/responses_db.py:285
-status="queued",  # ❌ String literal
-
-# /home/user/ducktape/adgn/src/adgn/rspcache/responses_db.py:295
-ResponseStatusEvent(cache_key=key, response_id=None, status="queued")  # ❌ String literal
-```
-
-**Recommendation:**
-1. Expand `ResponseStatus` enum to include all statuses: `QUEUED`, `IN_PROGRESS`, `COMPLETE`, `ERROR`, `FAILED`, `CANCELLED`, `INCOMPLETE`
-2. Change `ResponseStatusEvent.status` to use `ResponseStatus`
-3. Replace all string literals with enum values
+**Remaining cleanup:**
+- ❌ One string literal at `/home/user/ducktape/adgn/src/adgn/rspcache/__init__.py:275`:
+  ```python
+  if cached and cached.status == "complete":  # Should be ResponseStatus.COMPLETE
+  ```
 
 ---
 
