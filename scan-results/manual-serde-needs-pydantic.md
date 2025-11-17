@@ -7,7 +7,16 @@
 
 This scan identified **6 high-priority** locations where internal code uses manual dict manipulation, `list[dict]` with known structure, and `.isoformat()` calls that should be replaced with Pydantic models. These patterns reduce type safety, prevent IDE autocomplete, and require manual validation instead of leveraging Pydantic's built-in capabilities.
 
+**Update 2025-11-17**: Finding #3 (File Truncation Utils) has been applied. Remaining: 5 findings.
+
 ## Key Findings
+
+### ~~3. File Truncation Utils~~ ✅ APPLIED
+
+**Status**: Fixed in `adgn/src/adgn/inop/prompting/truncation_utils.py`
+- Changed `truncate_file_content_by_size` to accept `list[FileInfo]`
+- Replaced string-literal dict access with property access
+- Now uses FileInfo consistently
 
 ### 1. LLM Message History - Ultra Long CoT (HIGH PRIORITY)
 
@@ -110,40 +119,6 @@ class LLMRLAgent:
     def __init__(self, model: str):
         self.conversation_history: list[Message] = []
 ```
-
----
-
-### 3. File Truncation Utils (HIGH PRIORITY - Partial Fix Available)
-
-**File**: `/home/user/ducktape/adgn/src/adgn/inop/prompting/truncation_utils.py`
-
-**Issues**:
-- Lines 47, 59, 66, 88, 115-116, 128: Mixed use of `list[dict[str, str]]` and `list[FileInfo]`
-- Lines 104-105: String-literal dict access: `file_info["path"]`, `file_info["content"]`
-- The codebase already has a `FileInfo` Pydantic model but doesn't consistently use it
-
-**Evidence**:
-```python
-def truncate_file_content_by_size(
-    self, files: list[dict[str, str]], max_size: int, purpose: str | None = None
-) -> dict[str, str]:
-    """..."""
-    for file_info in files:
-        path = file_info["path"]      # String-literal access
-        content = file_info["content"]  # String-literal access
-```
-
-**Why It's Bad**:
-- The code already imports and uses `FileInfo` model in some places
-- But then falls back to `list[dict[str, str]]` in other methods
-- Creates inconsistency and prevents full type safety
-
-**Recommended Fix**:
-- Remove `list[dict[str, str]]` variants entirely
-- Always use `list[FileInfo]` (the Pydantic model already exists)
-- Update `truncate_file_content_by_size` to accept `list[FileInfo]`
-
-**Note**: This is a **partial migration** - the code already has the right model, just needs to use it consistently.
 
 ---
 
@@ -344,7 +319,7 @@ def _save_session(self, session_id: SessionID, session_data: SessionData) -> Non
 
 1. **High Priority** (Internal logic, frequently accessed):
    - LLM message history (ultra_long_cot_o4.py, llm_rl_experiment.py)
-   - File truncation utils (partial migration needed)
+   - ~~File truncation utils~~ ✅ **APPLIED**
    - Grader action sequences
 
 2. **Medium Priority** (Configuration/persistence):
