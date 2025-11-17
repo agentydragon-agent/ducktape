@@ -5,18 +5,9 @@
 
 ## Executive Summary
 
-This scan identified **6 high-priority** locations where internal code uses manual dict manipulation, `list[dict]` with known structure, and `.isoformat()` calls that should be replaced with Pydantic models. These patterns reduce type safety, prevent IDE autocomplete, and require manual validation instead of leveraging Pydantic's built-in capabilities.
-
-**Update 2025-11-17**: Finding #3 (File Truncation Utils) has been applied. Remaining: 5 findings.
+This scan identified **5 high-priority** locations where internal code uses manual dict manipulation, `list[dict]` with known structure, and `.isoformat()` calls that should be replaced with Pydantic models. These patterns reduce type safety, prevent IDE autocomplete, and require manual validation instead of leveraging Pydantic's built-in capabilities.
 
 ## Key Findings
-
-### ~~3. File Truncation Utils~~ ✅ APPLIED
-
-**Status**: Fixed in `adgn/src/adgn/inop/prompting/truncation_utils.py`
-- Changed `truncate_file_content_by_size` to accept `list[FileInfo]`
-- Replaced string-literal dict access with property access
-- Now uses FileInfo consistently
 
 ### 1. LLM Message History - Ultra Long CoT (HIGH PRIORITY)
 
@@ -319,7 +310,6 @@ def _save_session(self, session_id: SessionID, session_data: SessionData) -> Non
 
 1. **High Priority** (Internal logic, frequently accessed):
    - LLM message history (ultra_long_cot_o4.py, llm_rl_experiment.py)
-   - ~~File truncation utils~~ ✅ **APPLIED**
    - Grader action sequences
 
 2. **Medium Priority** (Configuration/persistence):
@@ -370,6 +360,6 @@ These serve as good templates for new models.
 
 ## Conclusion
 
-The ducktape codebase has **6 high-priority locations** where Pydantic models would significantly improve type safety, reduce manual validation code, and prevent runtime errors. The most impactful changes are in LLM message handling and file truncation utilities.
+The ducktape codebase has **5 high-priority locations** where Pydantic models would significantly improve type safety, reduce manual validation code, and prevent runtime errors. The most impactful changes are in LLM message handling and grader action sequences.
 
 Most findings are in active development areas (LLM tooling, experimental code), making this a good time to standardize on Pydantic before the patterns spread further.
