@@ -1,0 +1,38 @@
+# Alpine Linux setup-alpine answers file
+# This can be used for semi-automated installation
+
+# Keyboard layout (us, us)
+KEYMAPOPTS="us us"
+
+# Hostname
+HOSTNAMEOPTS="alpine-k3s"
+
+# Network interface configuration (dhcp on eth0)
+INTERFACESOPTS="auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+    hostname alpine-k3s
+"
+
+# Root password (will be set to 'k3spass' - CHANGE THIS!)
+# Note: setup-alpine doesn't support password in answer file directly
+
+# Timezone
+TIMEZONEOPTS="UTC"
+
+# Proxy
+PROXYOPTS="none"
+
+# APK mirror (1 for automatic selection)
+APKREPOSOPTS="-f"
+
+# SSH server
+SSHDOPTS="openssh"
+
+# NTP client
+NTPOPTS="chrony"
+
+# Disk mode (sys = traditional disk install)
+DISKOPTS="-m sys /dev/vda"

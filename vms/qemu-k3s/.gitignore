@@ -1,0 +1,15 @@
+# VM disk images and ISOs
+*.iso
+*.qcow2
+*.img
+
+# VM runtime files
+.installed
+*.log
+
+# Kubeconfig (contains sensitive data)
+kubeconfig.yaml
+k3s.yaml
+
+# SSH known hosts
+.ssh/
