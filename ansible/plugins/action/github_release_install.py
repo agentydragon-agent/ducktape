@@ -47,7 +47,7 @@ Example:
       method: deb
       version: "v3.0.0-alpha-4"
       acknowledged_version: "v3.0.0-alpha-4"
-      asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+      asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
     become: true
 
   # Separate release info gathering
@@ -56,7 +56,7 @@ Example:
       repo: "TheAssassin/AppImageLauncher"
       method: deb
       version: "latest"
-      asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+      asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
     register: release_data
 """
 

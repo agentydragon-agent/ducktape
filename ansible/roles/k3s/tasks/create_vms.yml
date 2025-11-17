@@ -5,11 +5,11 @@
   ansible.builtin.shell: |
     qm clone {{ k3s_vm_template | default(9000) }} {{ item.vmid }} --name {{ item.name }} --full
   loop: "{{ k3s_vms }}"
-  register: clone_result
+  register: k3s_clone_result
   failed_when:
-    - clone_result.rc != 0
-    - "'already exists' not in clone_result.stderr"
-  changed_when: clone_result.rc == 0
+    - k3s_clone_result.rc != 0
+    - "'already exists' not in k3s_clone_result.stderr"
+  changed_when: k3s_clone_result.rc == 0
   tags: [k3s, vm-clone]
 
 - name: Configure VM resources
@@ -41,11 +41,11 @@
   ansible.builtin.shell: |
     qm start {{ item.vmid }}
   loop: "{{ k3s_vms }}"
-  register: start_result
+  register: k3s_start_result
   failed_when:
-    - start_result.rc != 0
-    - "'already running' not in start_result.stderr"
-  changed_when: start_result.rc == 0
+    - k3s_start_result.rc != 0
+    - "'already running' not in k3s_start_result.stderr"
+  changed_when: k3s_start_result.rc == 0
   tags: [k3s, vm-start]
 
 - name: Wait for cloud-init to complete

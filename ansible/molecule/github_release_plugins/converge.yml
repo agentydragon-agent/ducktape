@@ -8,7 +8,7 @@
       github_release_info:
         repo: "TheAssassin/AppImageLauncher"
         version: "latest"
-        asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+        asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
       register: release_check
 
     - name: Verify release_check results
@@ -29,7 +29,7 @@
         release_spec:
           repo: "TheAssassin/AppImageLauncher"
           version: "{{ test_version }}"
-          asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+          asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
         method: deb
       register: install_result
       become: true
@@ -39,7 +39,7 @@
         that:
           - install_result.latest_version is defined
           - install_result.asset_url is defined
-          - install_result.asset_url is search(".*_" + dpkg_arch + "\\.deb$")
+          - install_result.asset_url is search(".*_" + common_dpkg_arch + "\\.deb$")
         success_msg: "GitHub release install installed AppImageLauncher correctly"
         fail_msg: "GitHub release install failed to install AppImageLauncher"
 
@@ -52,7 +52,7 @@
             method: deb
             version: "{{ test_version }}"
             acknowledged_version: "v2.0.0"  # An old version
-            asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+            asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
           register: ack_result
           become: true
       rescue:

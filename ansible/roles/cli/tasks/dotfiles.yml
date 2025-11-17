@@ -6,13 +6,13 @@
     - name: Debug - Check if ducktape exists
       ansible.builtin.stat:
         path: "{{ cli_ducktape_path }}"
-      register: ducktape_stat
+      register: cli_ducktape_stat
 
     - name: Assert ducktape repository exists
       ansible.builtin.assert:
         that:
-          - ducktape_stat.stat.exists
-          - ducktape_stat.stat.isdir
+          - cli_ducktape_stat.stat.exists
+          - cli_ducktape_stat.stat.isdir
         fail_msg: >-
           Ducktape repository must be cloned to {{ cli_ducktape_path }} before
           running this playbook. Run:
@@ -38,8 +38,8 @@
       timeout: 10
       become: true
       become_user: "{{ cli_user | default(ansible_user_id) }}"
-      register: rcup_result
-      failed_when: rcup_result.rc != 0
+      register: cli_rcup_result
+      failed_when: cli_rcup_result.rc != 0
       ignore_errors: true
 
     - name: Check if rcup needs manual intervention
@@ -52,5 +52,5 @@
 
           You'll likely need to confirm overwriting pre-existing default files (like .bashrc).
       when:
-        - rcup_result.failed
-        - "'overwrite' in rcup_result.stdout"
+        - cli_rcup_result.failed
+        - "'overwrite' in cli_rcup_result.stdout"

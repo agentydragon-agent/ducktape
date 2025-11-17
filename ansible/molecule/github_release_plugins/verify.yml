@@ -39,7 +39,7 @@
           github_release_info:
             repo: "TheAssassin/AppImageLauncher"
             version: "v3.0.0-alpha-4"  # Using a known version
-            asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+            asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
           register: verification_check
 
         - name: Verify GitHub release info returned correct metadata

@@ -23,7 +23,7 @@
     mode: '0644'
   become: true
   loop: "{{ k3s_vms }}"
-  register: registry_config
+  register: k3s_registry_config
   tags: [k3s, registry]
 
   notify:

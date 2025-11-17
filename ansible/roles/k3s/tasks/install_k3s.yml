@@ -22,8 +22,8 @@
   ansible.builtin.shell: |
     kubectl get nodes
   loop: "{{ k3s_vms | selectattr('role', 'equalto', 'master') | list }}"
-  register: kubectl_result
-  until: kubectl_result.rc == 0
+  register: k3s_kubectl_result
+  until: k3s_kubectl_result.rc == 0
   retries: 30
   delay: 10
   changed_when: false
@@ -34,14 +34,14 @@
   ansible.builtin.shell: |
     sudo cat /var/lib/rancher/k3s/server/node-token
   loop: "{{ k3s_vms | selectattr('role', 'equalto', 'master') | list }}"
-  register: node_token
+  register: k3s_node_token_result
   changed_when: false
   tags: [k3s, install-master]
 
 - name: Set master URL and token facts
   ansible.builtin.set_fact:
     k3s_master_ip: "{{ (k3s_vms | selectattr('role', 'equalto', 'master') | first).ip }}"
-    k3s_node_token: "{{ node_token.results[0].stdout }}"
+    k3s_node_token: "{{ k3s_node_token_result.results[0].stdout }}"
   tags: [k3s, install-worker]
 
 - name: Install k3s on worker nodes

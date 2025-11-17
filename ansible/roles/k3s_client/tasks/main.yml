@@ -39,11 +39,11 @@
 
 - name: Verify cluster access
   ansible.builtin.command: kubectl get nodes
-  register: nodes_output
+  register: k3s_client_nodes_output
   changed_when: false
   tags: [k3s_client, verify]
 
 - name: Display cluster status
   ansible.builtin.debug:
-    msg: "{{ nodes_output.stdout_lines }}"
+    msg: "{{ k3s_client_nodes_output.stdout_lines }}"
   tags: [k3s_client, verify]

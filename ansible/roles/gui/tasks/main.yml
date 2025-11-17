@@ -94,7 +94,7 @@
   become: true
   when: ansible_architecture in ["amd64", "x86_64"]
   ansible.builtin.apt:
-    deb: "https://www.rescuetime.com/installers/rescuetime_current_{{ dpkg_arch }}.deb"
+    deb: "https://www.rescuetime.com/installers/rescuetime_current_{{ common_dpkg_arch }}.deb"
 
 - name: Install snaps
   become: true
@@ -166,10 +166,10 @@
       repo: "TheAssassin/AppImageLauncher"
       version: "v3.0.0-alpha-4"  # Pinned version
       acknowledged_version: "v3.0.0-alpha-4"
-      asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+      asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
     method: deb
   become: true
-  when: dpkg_arch == "amd64"
+  when: common_dpkg_arch == "amd64"
   tags: appimagelauncher
 
 - name: Configure Syncthing GUI

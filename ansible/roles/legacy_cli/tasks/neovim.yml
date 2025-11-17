@@ -10,7 +10,7 @@
     uris: https://ppa.launchpadcontent.net/neovim-ppa/unstable/ubuntu
     suites: ["{{ ansible_distribution_release }}"]
     components: [main]
-    architectures: ["{{ dpkg_arch }}"]
+    architectures: ["{{ common_dpkg_arch }}"]
     signed_by: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x9DBB0BE9366964F134855E2255F96FCF8231B6DD
   when: not (skip_ubuntu_ppas | default(false))
 

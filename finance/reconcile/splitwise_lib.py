@@ -1,11 +1,14 @@
 import datetime
 import decimal
-import http.server
 import json
+import threading
 import urllib.parse
 
 from absl import logging
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 import splitwise
+import uvicorn
 import xdg
 
 from ducktape.finance.reconcile import external_system
@@ -56,21 +59,26 @@ def assign_token(client, cache_dir):
 
 def retrieve_get_params(port):
     get_params = None
+    completion_event = threading.Event()
+    app = FastAPI()
 
-    class RequestHandler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            nonlocal get_params
-            query = urllib.parse.urlparse(self.path).query
-            get_params = urllib.parse.parse_qs(query)
-            logging.info("parsed query string: %s", get_params)
+    @app.get("/")
+    async def handle_callback(request: Request):
+        nonlocal get_params
+        query = request.url.query
+        get_params = urllib.parse.parse_qs(query)
+        logging.info("parsed query string: %s", get_params)
+        completion_event.set()
+        return PlainTextResponse("Auth handled, you can close this tab.")
 
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"Auth handled, you can close this tab.")
-            self.server.shutdown()
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    server_thread = threading.Thread(target=server.run, daemon=True)
+    server_thread.start()
 
-    server = http.server.ThreadingHTTPServer(("", port), RequestHandler)
-    server.serve_forever()
+    completion_event.wait()
+    server.should_exit = True
+    server_thread.join()
     return get_params
 
 

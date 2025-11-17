@@ -18,7 +18,7 @@ def account_from_path(top_account, account_path, original_path=None):
     return account
 
 
-def gnc_numeric_to_python_Decimal(numeric):
+def gnc_numeric_to_python_decimal(numeric):
     negative = numeric.negative_p()
     sign = 1 if negative else 0
     copy = gnucash.GncNumeric(numeric.num(), numeric.denom())
@@ -33,11 +33,11 @@ def gnc_numeric_to_python_Decimal(numeric):
 
 
 def get_split_amount(split):
-    return gnc_numeric_to_python_Decimal(split.GetAmount())
+    return gnc_numeric_to_python_decimal(split.GetAmount())
 
 
 @contextlib.contextmanager
-def GnuCashSession(path):
+def gnucash_session(path):
     session = gnucash.Session(path)
     try:
         yield session

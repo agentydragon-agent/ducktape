@@ -1,7 +1,7 @@
 ---
 - name: Check for system Go installation
   ansible.builtin.command: which go
-  register: system_go_check
+  register: golang_system_go_check
   failed_when: false
   changed_when: false
 
@@ -13,18 +13,18 @@
       sudo apt remove --purge golang golang-go golang-1.* golang-doc golang-src
       sudo apt autoremove
   when:
-    - system_go_check.rc == 0
-    - system_go_check.stdout.startswith('/usr')
+    - golang_system_go_check.rc == 0
+    - golang_system_go_check.stdout.startswith('/usr')
 
 - name: Check if Go is installed in user directory
   ansible.builtin.stat:
     path: "{{ golang_install_dir }}/go/bin/go"
-  register: go_binary
+  register: golang_binary
 
 - name: Check installed Go version
   ansible.builtin.command: "{{ golang_install_dir }}/go/bin/go version"
-  register: installed_golang_version
-  when: go_binary.stat.exists
+  register: golang_installed_version
+  when: golang_binary.stat.exists
   changed_when: false
 
 - name: Fail if wrong Go version is installed
@@ -32,17 +32,17 @@
     msg: |
       Wrong Go version installed!
       Expected: go{{ golang_version }}
-      Found: {{ installed_golang_version.stdout }}
+      Found: {{ golang_installed_version.stdout }}
 
       Manual resolution required:
       rm -rf {{ golang_install_dir }}/go
       Then re-run this playbook
   when:
-    - go_binary.stat.exists
-    - "'go' + golang_version not in installed_golang_version.stdout"
+    - golang_binary.stat.exists
+    - "'go' + golang_version not in golang_installed_version.stdout"
 
 - name: Install Go {{ golang_version }}
-  when: not go_binary.stat.exists
+  when: not golang_binary.stat.exists
   block:
     - name: Create install directory
       ansible.builtin.file:

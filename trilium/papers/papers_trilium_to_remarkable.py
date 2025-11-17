@@ -21,6 +21,7 @@ _TOKEN = flags.DEFINE_string("token", None, "ETAPI token")
 _PURGE = flags.DEFINE_bool("purge", False, "Purge RM side?")
 SYNCED_DIR_PATH = xdg_cache_home() / "papers_trilium_to_remarkable" / "synced_dir"
 REMARKABLE_SIDE_PATH = "/papers_trilium_to_remarkable"
+FILE_PREFIX = "[f]\t"
 
 
 def find_attribute_value_in_result(result, attribute_name):
@@ -136,7 +137,6 @@ def get_existing_filenames():
     """Yields filenames uploaded in shared folder sans .pdf extension."""
     existing = subprocess.check_output(make_args("ls", REMARKABLE_SIDE_PATH)).decode("utf-8")
     for line in existing.splitlines():
-        FILE_PREFIX = "[f]\t"
         assert line.startswith(FILE_PREFIX)
         yield line.removeprefix(FILE_PREFIX)
 
@@ -224,7 +224,7 @@ def sync():
         headers = {"Authorization": token}
         response = requests.get(f"{root}/etapi/notes/{paper.pdf_note_id}/content", headers=headers)
         assert response.status_code == 200
-        with open(path, "wb") as f:
+        with path.open("wb") as f:
             f.write(response.content)
 
         args = make_args("put", f"/home/app/synced_dir/{filename}.pdf", REMARKABLE_SIDE_PATH)

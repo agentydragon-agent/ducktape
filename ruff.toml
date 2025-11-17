@@ -7,14 +7,13 @@ line-length = 120
 target-version = "py312"
 
 # Exclude specimens, testdata, fixtures, third-party and examples from all ruff operations
+# Specimens are deliberately broken examples for testing.
 exclude = [
-    "adgn/src/adgn/props/specimens",
-    "adgn/src/adgn/third_party",
-    "adgn/tests/*/testdata",
-    "adgn/tests/*/fixtures",
+    "**/specimens",
     "**/testdata",
     "**/fixtures",
     "**/examples",
+    "**/third_party",
 ]
 
 [format]
@@ -61,7 +60,7 @@ ignore = [
     "PLR0912",  # too many branches
     "PLR0915",  # too many statements
     "PLR0911",  # too many returns
-    "PLR0913",  # too many arguments - often leads to annoying unhelpful refactors
+    "PLR0913",  # too many arguments - often leads to unhelpful refactors
     "B904",     # raise from e
     "E501"      # line length (formatter handles wrapping)
 ]
@@ -83,17 +82,7 @@ combine-as-imports = true
 split-on-trailing-comma = false
 
 [lint.per-file-ignores]
-"experimental/webhook_inbox/webhook_inbox.py" = ["RUF003"]  # Ambiguous unicode characters in comments
-"trilium/search_hack.py" = ["N806", "PD901", "PTH110", "PTH123"]  # Various style issues
-"trilium/papers/*.py" = ["N806", "PTH123"]  # Naming and pathlib issues
-"finance/*.py" = ["N802"]  # Function naming conventions
-
 # Project-specific ignores (consolidated from individual pyproject.toml files)
 "gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
 "adgn/src/adgn/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
 "gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
-
-# Test fixtures and specimens - these are deliberately broken examples for testing
-"adgn/tests/detectors/fixtures/**/*.py" = ["ALL"]  # Test fixtures with intentional issues
-"adgn/src/adgn/props/specimens/**/*.py" = ["ALL"]  # Code specimens for testing
-"adgn/src/adgn/third_party/**/*.py" = ["ALL"]  # Vendored third-party code

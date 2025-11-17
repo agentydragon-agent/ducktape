@@ -54,7 +54,7 @@
 
 - name: "Set certbot email argument"
   ansible.builtin.set_fact:
-    _certbot_email_arg: >-
+    letsencrypt_certbot_email_arg: >-
       {{
         '--email ' + _letsencrypt_email_effective
         if _letsencrypt_email_effective | length > 0
@@ -63,7 +63,7 @@
 
 - name: "Assemble certbot domain arguments"
   ansible.builtin.set_fact:
-    _certbot_domain_args: >-
+    letsencrypt_certbot_domain_args: >-
       {{ letsencrypt_domains | map('regex_replace', '^(.*)$', '-d \1') | join(' ') }}
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@
     certbot certonly --non-interactive --agree-tos --keep-until-expiring
     --authenticator nginx
     --cert-name {{ letsencrypt_cert_name }}
-    {{ _certbot_email_arg }}
-    {{ _certbot_domain_args }}
+    {{ letsencrypt_certbot_email_arg }}
+    {{ letsencrypt_certbot_domain_args }}
   args:
     creates: "/etc/letsencrypt/live/{{ letsencrypt_cert_name }}/fullchain.pem"

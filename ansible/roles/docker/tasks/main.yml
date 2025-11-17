@@ -12,7 +12,7 @@
     suites: ["{{ ansible_lsb.codename }}"]
     components: [stable]
     signed_by: https://download.docker.com/linux/ubuntu/gpg
-    architectures: ["{{ dpkg_arch }}"]
+    architectures: ["{{ common_dpkg_arch }}"]
   become: true
   when: (docker_state | default('present')) != 'absent'
 

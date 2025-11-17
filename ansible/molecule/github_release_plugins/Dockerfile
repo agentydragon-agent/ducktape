@@ -26,8 +26,8 @@ RUN cd /lib/systemd/system/sysinit.target.wants/ \
     /lib/systemd/system/plymouth* \
     /lib/systemd/system/systemd-update-utmp*
 
-# Set dpkg_arch for tests
-RUN echo 'export dpkg_arch=$(dpkg --print-architecture)' >> /etc/bash.bashrc
+# Set common_dpkg_arch for tests
+RUN echo 'export common_dpkg_arch=$(dpkg --print-architecture)' >> /etc/bash.bashrc
 
 # Volume for systemd
 VOLUME [ "/sys/fs/cgroup" ]

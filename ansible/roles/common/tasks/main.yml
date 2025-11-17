@@ -1,13 +1,13 @@
 ---
 - name: Get raw dpkg architecture
   ansible.builtin.command: dpkg --print-architecture
-  register: raw_dpkg_arch
+  register: common_raw_dpkg_arch
   changed_when: false
   tags: [always]
 
 - name: Set dpkg_arch fact to architecture string
   ansible.builtin.set_fact:
-    dpkg_arch: "{{ raw_dpkg_arch.stdout }}"
+    common_dpkg_arch: "{{ common_raw_dpkg_arch.stdout }}"
   tags: [always]
 
 # Python environment health checks
@@ -15,7 +15,7 @@
   block:
     - name: Check if pytest-socket is installed globally
       ansible.builtin.command: pip show pytest-socket
-      register: pytest_socket_check
+      register: common_pytest_socket_check
       failed_when: false
       changed_when: false
 
@@ -30,13 +30,13 @@
 
           To check what depends on it:
             pipdeptree --reverse --packages pytest-socket
-      when: pytest_socket_check.rc == 0
+      when: common_pytest_socket_check.rc == 0
 
     - name: Set fact for pytest-socket presence
       ansible.builtin.set_fact:
-        has_pytest_socket: "{{ pytest_socket_check.rc == 0 }}"
+        common_has_pytest_socket: "{{ common_pytest_socket_check.rc == 0 }}"
 
 - name: Report Python environment health
   ansible.builtin.debug:
     msg: |
-      pytest-socket: {{ 'FOUND ⚠️' if has_pytest_socket else 'Not found ✅' }}
+      pytest-socket: {{ 'FOUND ⚠️' if common_has_pytest_socket else 'Not found ✅' }}

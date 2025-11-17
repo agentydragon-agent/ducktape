@@ -10,7 +10,7 @@
     - name: Query current MIME type associations
       ansible.builtin.command:
         cmd: "xdg-mime query default {{ item.mime_type }}"
-      register: current_mime_associations
+      register: gui_current_mime_associations
       changed_when: false
       failed_when: false
       loop: "{{ gui_xdg_mime_associations | default([]) }}"
@@ -24,7 +24,7 @@
         - item.item.desktop_file is defined
         - item.rc == 0 and item.stdout.strip() != item.item.desktop_file
           or item.rc != 0
-      loop: "{{ current_mime_associations.results }}"
+      loop: "{{ gui_current_mime_associations.results }}"
       loop_control:
         label: "{{ item.item.mime_type }} -> {{ item.item.desktop_file | default('undefined') }}"
       changed_when: true

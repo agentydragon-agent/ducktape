@@ -1,6 +1,6 @@
 import datetime
 import json
-import os.path
+from pathlib import Path
 
 from absl import app, flags
 import openai
@@ -12,7 +12,9 @@ import requests
 
 _ROOT = flags.DEFINE_string("root", "http://localhost:37840", "ETAPI root URL")
 _TOKEN = flags.DEFINE_string("token", None, "ETAPI token")
-EMBEDDINGS_FILE = "embeddings.json"
+EMBEDDINGS_FILE = Path("embeddings.json")
+INDEXED_QUERIES = ["#issue", "#dateNote", "~type.title = Paper", "~type.title = Person", "#hotlist"]
+MAX_INDEX_RESULTS = 100
 
 
 def fetch_openai_api_key():
@@ -49,14 +51,11 @@ def index():
     #   'notes': {'noteid': {'string': ..., 'datetime': 'iso8601 string'}}},
     #   'strings': {'string': embedding},
     # }
-    if os.path.exists(EMBEDDINGS_FILE):
-        with open(EMBEDDINGS_FILE) as f:
+    if EMBEDDINGS_FILE.exists():
+        with EMBEDDINGS_FILE.open() as f:
             embeddings = json.load(f)
     else:
         embeddings = {"notes": {}, "strings": {}}
-
-    INDEXED_QUERIES = ["#issue", "#dateNote", "~type.title = Paper", "~type.title = Person", "#hotlist"]
-    MAX = 100
 
     for _query in INDEXED_QUERIES:
         response = requests.get(
@@ -64,7 +63,7 @@ def index():
             # TODO: I want to index *all* notes but the API doesn't allow empty
             # search...
             # params={'search': '~type.title = Paper'},
-            params={"search": INDEXED_QUERIES[0]},
+            params={"search": _query},
             headers=headers,
         )
         results = response.json()
@@ -74,7 +73,7 @@ def index():
         r = results["results"]
         random.shuffle(r)
 
-        for result in r[:MAX]:
+        for result in r[:MAX_INDEX_RESULTS]:
             # TODO: include in embedding string:
             #   - branch path(s)
             #   - relations, relation titles
@@ -167,20 +166,20 @@ def index():
     # def get_result_priority(result):
     #    for attribute in result['attributes']:
     #        if attribute['name'] == 'readingPriority':
-    with open(EMBEDDINGS_FILE, "w") as f:
+    with EMBEDDINGS_FILE.open("w") as f:
         json.dump(embeddings, f)
 
 
 def search(query):
     openai.api_key = fetch_openai_api_key()
 
-    with open(EMBEDDINGS_FILE) as f:
+    with EMBEDDINGS_FILE.open() as f:
         embeddings = json.load(f)
 
     # TODO: lower level caching
     embedding = get_cached_embedding(embeddings, query)
 
-    df = pd.DataFrame.from_records(
+    results_df = pd.DataFrame.from_records(
         [
             {"note_id": note_id, "embedding": embeddings["strings"].get(note["string"]), "string": note["string"]}
             for note_id, note in embeddings["notes"].items()
@@ -190,15 +189,17 @@ def search(query):
     # return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
     import numpy as np
 
-    df["similarities"] = df.embedding.apply(lambda x: cosine_similarity(x or np.zeros_like(embedding), embedding))
-    df = df.drop(columns=["embedding"])
-    res = df.sort_values("similarities", ascending=False).head(10)
+    results_df["similarities"] = results_df.embedding.apply(
+        lambda x: cosine_similarity(x or np.zeros_like(embedding), embedding)
+    )
+    results_df = results_df.drop(columns=["embedding"])
+    res = results_df.sort_values("similarities", ascending=False).head(10)
     print(query)
     pd.set_option("display.max_rows", None)
     print(res)
 
     # TODO: use some sort of db, it sucks when we crash before saving
-    with open(EMBEDDINGS_FILE, "w") as f:
+    with EMBEDDINGS_FILE.open("w") as f:
         json.dump(embeddings, f)
 
 

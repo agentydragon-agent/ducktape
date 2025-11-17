@@ -8,5 +8,5 @@
       asset_pattern: ".*_amd64\\.deb$"
     method: deb
   become: true
-  when: dpkg_arch == "amd64"
+  when: common_dpkg_arch == "amd64"
   tags: trilium

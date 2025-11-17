@@ -11,7 +11,7 @@
 - name: Check if VM 9000 exists
   ansible.builtin.shell: |
     qm status 9000 2>/dev/null || echo "NOTFOUND"
-  register: vm_9000_check
+  register: k3s_vm_9000_check
   changed_when: false
   tags: [k3s, template]
 
@@ -22,14 +22,14 @@
       --memory 2048 \
       --cores 2 \
       --net0 virtio,bridge={{ k3s_network_bridge }}
-  when: vm_9000_check.stdout == "NOTFOUND"
+  when: k3s_vm_9000_check.stdout == "NOTFOUND"
   changed_when: true
   tags: [k3s, template]
 
 - name: Import disk to VM
   ansible.builtin.shell: |
     qm importdisk 9000 /var/lib/vz/template/iso/ubuntu-22.04-cloudimg.img {{ k3s_vm_storage }}
-  when: vm_9000_check.stdout == "NOTFOUND"
+  when: k3s_vm_9000_check.stdout == "NOTFOUND"
   changed_when: true
   tags: [k3s, template]
 
@@ -40,7 +40,7 @@
     qm set 9000 --boot c --bootdisk scsi0
     qm set 9000 --serial0 socket --vga serial0
     qm set 9000 --agent enabled=1
-  when: vm_9000_check.stdout == "NOTFOUND"
+  when: k3s_vm_9000_check.stdout == "NOTFOUND"
   changed_when: true
   tags: [k3s, template]
 
@@ -48,7 +48,7 @@
   ansible.builtin.shell: |
     set -o pipefail
     qm config 9000 | grep -q "^template: 1" && echo "IS_TEMPLATE" || echo "NOT_TEMPLATE"
-  register: template_check
+  register: k3s_template_check
   changed_when: false
   failed_when: false
   tags: [k3s, template]
@@ -57,8 +57,8 @@
   ansible.builtin.shell: |
     qm template 9000
   when:
-    - vm_9000_check.stdout != "NOTFOUND"
-    - template_check.stdout == "NOT_TEMPLATE"
+    - k3s_vm_9000_check.stdout != "NOTFOUND"
+    - k3s_template_check.stdout == "NOT_TEMPLATE"
   changed_when: true
   tags: [k3s, template]
 

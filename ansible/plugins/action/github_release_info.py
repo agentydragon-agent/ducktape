@@ -25,7 +25,7 @@ Example:
     github_release_info:
       repo: "TheAssassin/AppImageLauncher"
       version: "latest"
-      asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+      asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
     register: release_data
 """
 

@@ -147,7 +147,7 @@ def main(_):
     with (config_dir / "config.yaml").open() as f:
         config = yaml.safe_load(f)
 
-    with gnucash_util.GnuCashSession(config["reconcile"]["gnucash_book_path"]) as session:
+    with gnucash_util.gnucash_session(config["reconcile"]["gnucash_book_path"]) as session:
         for reconcile_config in config["reconcile"]["mappings"]:
             if "gnucash_account_path" not in reconcile_config:
                 raise Exception("no gnucash_account_path")

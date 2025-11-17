@@ -79,12 +79,12 @@
 - name: Check headscale service status
   ansible.builtin.systemd:
     name: headscale
-  register: headscale_status
+  register: headscale_server_status
   tags: [headscale, service]
 
 - name: Display headscale service status
   ansible.builtin.debug:
-    var: headscale_status.status
+    var: headscale_server_status.status
   tags: [headscale, service]
 
 - name: Wait for headscale to be ready
@@ -94,8 +94,8 @@
     status_code: 200
     timeout: 5
     validate_certs: false
-  register: headscale_health
-  until: headscale_health.status is defined and headscale_health.status == 200
+  register: headscale_server_health
+  until: headscale_server_health.status is defined and headscale_server_health.status == 200
   retries: 10
   delay: 3
   failed_when: false
@@ -104,9 +104,9 @@
 - name: Verify headscale readiness
   ansible.builtin.assert:
     that:
-      - headscale_health.status is defined
-      - headscale_health.status == 200
+      - headscale_server_health.status is defined
+      - headscale_server_health.status == 200
     fail_msg: >-
       Headscale did not return HTTP 200 after the configured retries.
-      Last response: {{ headscale_health }}
+      Last response: {{ headscale_server_health }}
   tags: [headscale, service]

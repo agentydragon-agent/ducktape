@@ -2,40 +2,40 @@
 - name: "Apply profile {{ profile_name }}"
   ansible.builtin.script: >
     apply.py apply '{{ profile_name }}' "{{ dir }}" --font "{{ font }}"
-  register: apply_result
-  failed_when: apply_result.rc != 0
+  register: gnome_terminal_solarized_apply_result
+  failed_when: gnome_terminal_solarized_apply_result.rc != 0
 
 - name: Debug apply_result output
   ansible.builtin.debug:
     msg:
-      - "Return code: {{ apply_result.rc }}"
-      - "Stdout: {{ apply_result.stdout }}"
-      - "Stderr: {{ apply_result.stderr }}"
-      - "Stdout lines: {{ apply_result.stdout_lines | default([]) }}"
-      - "Stderr lines: {{ apply_result.stderr_lines | default([]) }}"
+      - "Return code: {{ gnome_terminal_solarized_apply_result.rc }}"
+      - "Stdout: {{ gnome_terminal_solarized_apply_result.stdout }}"
+      - "Stderr: {{ gnome_terminal_solarized_apply_result.stderr }}"
+      - "Stdout lines: {{ gnome_terminal_solarized_apply_result.stdout_lines | default([]) }}"
+      - "Stderr lines: {{ gnome_terminal_solarized_apply_result.stderr_lines | default([]) }}"
   when: ansible_verbosity >= 1
 
 - name: Validate JSON output
   ansible.builtin.assert:
     that:
-      - apply_result.stdout != ''
+      - gnome_terminal_solarized_apply_result.stdout != ''
     fail_msg: "apply.py must output something. Got empty output"
     success_msg: "apply.py returned output"
 
 - name: Parse JSON output from apply.py
   ansible.builtin.set_fact:
-    apply_json: "{{ apply_result.stdout | from_json }}"
+    gnome_terminal_solarized_apply_json: "{{ gnome_terminal_solarized_apply_result.stdout | from_json }}"
 
 - name: Set changed based on result
   ansible.builtin.set_fact:
-    profile_changed: "{{ apply_json.changed }}"
+    gnome_terminal_solarized_profile_changed: "{{ gnome_terminal_solarized_apply_json.changed }}"
 
 - name: Debug apply output in verbose mode
   when: ansible_verbosity >= 1 | default(False)
   block:
     - name: Debug stdout
       ansible.builtin.debug:
-        var: apply_result.stdout_lines
+        var: gnome_terminal_solarized_apply_result.stdout_lines
     - name: Debug stderr
       ansible.builtin.debug:
-        var: apply_result.stderr_lines
+        var: gnome_terminal_solarized_apply_result.stderr_lines

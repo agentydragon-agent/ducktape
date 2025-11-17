@@ -1,21 +1,21 @@
 # Check glibc version - newer Anki requires glibc 2.36+
 - name: Check glibc version
   ansible.builtin.command: ldd --version
-  register: glibc_version_check
+  register: anki_glibc_version_check
   changed_when: false
 
 - name: Extract glibc version
   ansible.builtin.set_fact:
-    glibc_version: "{{ glibc_version_check.stdout_lines[0] | regex_search('\\d+\\.\\d+') }}"
+    anki_glibc_version: "{{ anki_glibc_version_check.stdout_lines[0] | regex_search('\\d+\\.\\d+') }}"
 
 - name: Skip Anki installation on systems with older glibc
   ansible.builtin.debug:
-    msg: "Skipping Anki installation - requires glibc 2.36+ but system has {{ glibc_version }}"
-  when: glibc_version is version('2.36', '<')
+    msg: "Skipping Anki installation - requires glibc 2.36+ but system has {{ anki_glibc_version }}"
+  when: anki_glibc_version is version('2.36', '<')
 
 - name: End play if glibc is too old
   ansible.builtin.meta: end_play
-  when: glibc_version is version('2.36', '<')
+  when: anki_glibc_version is version('2.36', '<')
 
 # Install Anki (only runs on systems with glibc 2.36+)
 - name: Remove system-installed Anki
@@ -52,36 +52,36 @@
       ansible.builtin.tempfile:
         state: directory
         suffix: anki-release
-      register: tmp_dir
+      register: anki_tmp_dir
       changed_when: false
 
     - name: Set temporary dir path
       ansible.builtin.set_fact:
-        tmp_path: "{{ tmp_dir.path }}"
+        anki_tmp_path: "{{ anki_tmp_dir.path }}"
       changed_when: false
 
     - name: Download info about Anki's latest release
       ansible.builtin.get_url:
         url: https://api.github.com/repos/ankitects/anki/releases/latest
-        dest: "{{ tmp_path }}/latest-release.json"
+        dest: "{{ anki_tmp_path }}/latest-release.json"
         mode: "0644"
       changed_when: false
 
     - name: Get latest Anki release version
       ansible.builtin.shell: |
-        jq --raw-output '.tag_name' {{ tmp_path }}/latest-release.json
-      register: latest_release_version
+        jq --raw-output '.tag_name' {{ anki_tmp_path }}/latest-release.json
+      register: anki_latest_release_version
       changed_when: false
 
     - name: Debug latest Anki release version
       ansible.builtin.debug:
-        var: latest_release_version
+        var: anki_latest_release_version
         verbosity: 1
 
     - name: Assert latest release version was found
       ansible.builtin.assert:
         that:
-          - latest_release_version != ""
+          - anki_latest_release_version != ""
 
     - name: Get latest Anki release URL
       ansible.builtin.shell: |
@@ -90,18 +90,18 @@
           .assets[]
           | select(.name | test("anki-launcher.tar.zst"))
           | .browser_download_url
-        ' {{ tmp_path }}/latest-release.json
-      register: latest_release_url
+        ' {{ anki_tmp_path }}/latest-release.json
+      register: anki_latest_release_url_raw
       changed_when: false
 
     - name: Assert latest release URL found
       ansible.builtin.assert:
         that:
-          - latest_release_url != ""
+          - anki_latest_release_url_raw != ""
 
     - name: Set latest release URL
       ansible.builtin.set_fact:
-        latest_release_url: "{{ latest_release_url.stdout }}"
+        anki_latest_release_url: "{{ anki_latest_release_url_raw.stdout }}"
       changed_when: false
 
     # Check if Anki is installed and get its version
@@ -121,19 +121,19 @@
     #     var: anki_version_data
     - name: Debug latest Anki release URL
       ansible.builtin.debug:
-        var: latest_release_url
+        var: anki_latest_release_url
 
     - name: Install latest Anki
       when: >-
         (not anki_version_data.installed) or
         (anki_version_data.installed and
-         anki_version_data.version != latest_release_version.stdout)
+         anki_version_data.version != anki_latest_release_version.stdout)
       block:
         - name: Download Anki
           ansible.builtin.unarchive:
             remote_src: true
-            src: "{{ latest_release_url }}"
-            dest: "{{ tmp_path }}"
+            src: "{{ anki_latest_release_url }}"
+            dest: "{{ anki_tmp_path }}"
           changed_when: false
 
         - name: Run ./install.sh
@@ -141,17 +141,17 @@
           become: true
           ansible.builtin.command:
             cmd: ./install.sh
-            chdir: "{{ tmp_path }}/anki-launcher"
+            chdir: "{{ anki_tmp_path }}/anki-launcher"
 
     - name: Stat anki binary at {{ anki_binary_path }}
       ansible.builtin.stat:
         path: "{{ anki_binary_path }}"
-      register: installed_anki_binary
+      register: anki_installed_binary
 
     - name: Check Anki binary now exists at {{ anki_binary_path }}
       ansible.builtin.assert:
         that:
-          - installed_anki_binary.stat.exists
+          - anki_installed_binary.stat.exists
 
 
 # TODO: install Anki addons:

@@ -29,7 +29,9 @@ py_library(
     srcs = ["splitwise_lib.py"],
     deps = [
         "@pypi//absl_py",
+        "@pypi//fastapi",
         "@pypi//splitwise",
+        "@pypi//uvicorn",
         # TODO: get rid of xdg requirement
         "@pypi//xdg",
         ":external_system",

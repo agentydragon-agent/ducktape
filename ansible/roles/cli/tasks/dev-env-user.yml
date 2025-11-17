@@ -23,7 +23,7 @@
     - name: Check if npm-global directory exists
       ansible.builtin.stat:
         path: "{{ ansible_user_dir }}/.npm-global"
-      register: npm_global_dir
+      register: cli_npm_global_dir
       changed_when: false
       tags: [npm-cleanup]
 
@@ -34,14 +34,14 @@
           We use pnpm now, not npm!
           Remove it with: rm -rf ~/.npm-global ~/.npm
           Then re-run this playbook.
-      when: npm_global_dir.stat.exists and npm_global_dir.stat.isdir
+      when: cli_npm_global_dir.stat.exists and cli_npm_global_dir.stat.isdir
       tags: [npm-cleanup]
 
     # Check if claude binary is actually executable
     - name: Check if Claude binary exists and is executable
       ansible.builtin.stat:
         path: "{{ ansible_user_dir }}/.local/bin/claude"
-      register: claude_binary_check
+      register: cli_claude_binary_check
 
     # Install Claude via official installation script
     # TODO: Not super fond of curl|bash pattern but eh ... *cringe and look away*
@@ -52,15 +52,15 @@
         curl -fsSL https://claude.ai/install.sh | bash -s latest
       environment:
         HOME: "{{ ansible_user_dir }}"
-      when: not claude_binary_check.stat.exists or not claude_binary_check.stat.executable
+      when: not cli_claude_binary_check.stat.exists or not cli_claude_binary_check.stat.executable
       changed_when: true
 
     # Verify installation succeeded
     - name: Verify Claude installation
       ansible.builtin.command: "{{ ansible_user_dir }}/.local/bin/claude --version"
-      register: claude_version_check
+      register: cli_claude_version_check
       changed_when: false
-      failed_when: claude_version_check.rc != 0
+      failed_when: cli_claude_version_check.rc != 0
 
     # See consolidated migration comment above
 

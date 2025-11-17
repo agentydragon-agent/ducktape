@@ -12,8 +12,7 @@
 # Note: ansible.cfg moved to ansible/ subdirectory with relative paths
 
 # Skip false-positive warnings from incomplete ansible-lint module parameter database
-skip_list:
-  - args[module]  # Collection modules have incomplete parameter validation, causing false warnings
+skip_list: []
 exclude_paths:
   - "roles/legacy_*/**"                 # All legacy roles, being migrated to Nix home-manager (relative to ansible/ dir)
 

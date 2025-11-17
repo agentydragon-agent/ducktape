@@ -18,6 +18,6 @@
 - name: Test DNS resolution to PowerDNS
   ansible.builtin.command:
     cmd: dig @{{ powerdns_dns_bind_address }} k3s.agentydragon.com NS
-  register: dns_test
-  failed_when: "'NOERROR' not in dns_test.stdout"
+  register: letsencrypt_dns_powerdns_test
+  failed_when: "'NOERROR' not in letsencrypt_dns_powerdns_test.stdout"
   changed_when: false

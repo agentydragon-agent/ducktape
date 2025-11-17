@@ -55,8 +55,8 @@
       {{ _letsencrypt_dns_email_arg }}
       {{ letsencrypt_dns_domains | map('regex_replace', '^(.*)$', '-d \1') | join(' ') }}
   become: true
-  register: certbot_result
-  changed_when: "'Certificate not yet due for renewal' not in certbot_result.stdout"
+  register: letsencrypt_dns_certbot_result
+  changed_when: "'Certificate not yet due for renewal' not in letsencrypt_dns_certbot_result.stdout"
 
 - name: Set up automatic renewal
   ansible.builtin.cron:

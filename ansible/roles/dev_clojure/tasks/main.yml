@@ -3,7 +3,7 @@
 - name: Check if zprint is installed
   ansible.builtin.stat:
     path: "{{ local_scripts_path }}/zprint"
-  register: zprint_binary
+  register: dev_clojure_zprint_binary
   tags: [zprint, deprecated]
 
 - name: Fail if zprint is still installed
@@ -18,5 +18,5 @@
         rm {{ local_scripts_path }}/zprint
 
       Then re-run this playbook.
-  when: zprint_binary.stat.exists
+  when: dev_clojure_zprint_binary.stat.exists
   tags: [zprint, deprecated]

@@ -33,10 +33,10 @@
 - name: Check if config.xml already exists
   ansible.builtin.stat:
     path: /srv/syncthing/.local/state/syncthing/config.xml
-  register: st_cfg
+  register: syncthing_server_cfg
 
 - name: Bail out if config.xml did not exist
-  when: not st_cfg.stat.exists
+  when: not syncthing_server_cfg.stat.exists
   ansible.builtin.fail:
     msg: Syncthing config not found. Generate one.
 

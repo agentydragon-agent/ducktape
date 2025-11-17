@@ -10,14 +10,14 @@
 
 - name: Get primary network interface
   ansible.builtin.set_fact:
-    primary_interface: "{{ ansible_default_ipv4.interface }}"
+    dnsmasq_k3s_primary_interface: "{{ ansible_default_ipv4.interface }}"
 
 - name: Configure dnsmasq for k3s.local
   ansible.builtin.copy:
     content: |
       # k3s.local DNS configuration
       # Listen only on primary interface to avoid conflicts
-      interface={{ primary_interface }}
+      interface={{ dnsmasq_k3s_primary_interface }}
       bind-interfaces
 
       # Listen on standard DNS port

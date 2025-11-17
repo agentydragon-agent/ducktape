@@ -39,13 +39,13 @@
     systemd-resolve registry.registry.svc.cluster.local || \
     resolvectl query registry.registry.svc.cluster.local || \
     nslookup registry.registry.svc.cluster.local 10.43.0.10
-  register: dns_test
+  register: k3s_dns_resolver_dns_test
   changed_when: false
   failed_when: false
   tags: [k3s, dns]
 
 - name: Display DNS test result
   ansible.builtin.debug:
-    msg: "{{ dns_test.stdout_lines }}"
-  when: dns_test.rc == 0
+    msg: "{{ k3s_dns_resolver_dns_test.stdout_lines }}"
+  when: k3s_dns_resolver_dns_test.rc == 0
   tags: [k3s, dns]

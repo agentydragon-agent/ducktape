@@ -21,12 +21,12 @@
           - jq
         state: present
 
-    # Set up dpkg_arch for testing
+    # Set up common_dpkg_arch for testing
     - name: Get dpkg architecture
       ansible.builtin.command: dpkg --print-architecture
-      register: dpkg_arch_cmd
+      register: common_dpkg_arch_cmd
       changed_when: false
 
-    - name: Set dpkg_arch fact
+    - name: Set common_dpkg_arch fact
       ansible.builtin.set_fact:
-        dpkg_arch: "{{ dpkg_arch_cmd.stdout }}"
+        common_dpkg_arch: "{{ common_dpkg_arch_cmd.stdout }}"
