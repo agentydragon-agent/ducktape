@@ -64,7 +64,8 @@ in {
   programs.codex = {
     enable = true;
     package = unstablePkgs.codex;
-    settings = codexSettings;
+    # Avoid letting the upstream module overwrite ~/.codex/config.toml.
+    # The activation script below handles merging our desired settings.
   };
 
   home = {
