@@ -240,7 +240,36 @@ Build a tool that flags functions where:
 - Returns section just repeats return type annotation
 - First sentence of docstring is just function name rephrased
 
-Strong coding LLM can build this from description. Use output as discovery only, not automatic fixes.
+**What NOT to flag:**
+- Section summaries: `# Handle different grading types`
+- Explaining purpose: `# Check if it's a date-only value (no time component)`
+- Non-obvious requirements: `# Must be called before setup() to avoid race`
+- Workarounds: `# Skip global compinit to avoid slowdown`
+
+**Simple patterns that might help (high false positive rate):**
+```bash
+# Very specific: literal variable name repetition
+# "# Create X" right before "X = ..."
+# This requires contextual matching - hard to grep reliably
+```
+
+### AST + Docstring Analysis
+
+Build a detector that:
+- Visits FunctionDef nodes, extracts docstrings with `ast.get_docstring()`
+- Checks for javadoc-style markers (Args, Returns, Parameters)
+- Extracts parameter names from `node.args.args`
+- For each param, checks if doc just says "param: The param"
+- Reports functions with useless parameter documentation
+
+Strong LLM can reconstruct from this description.
+
+### Heuristics
+
+- **Long Args section**: If every parameter has a doc that's just "The <param>"
+- **Returns mirrors type**: If "Returns: str" when return type is `-> str`
+- **Function name repetition**: Docstring first sentence just rephrases function name
+- **No exception info**: Doc doesn't mention raises/errors but function can raise
 
 ## Fix Strategy
 
