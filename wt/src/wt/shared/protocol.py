@@ -424,7 +424,7 @@ class HookOutputEvent(BaseModel):
 
     event: Literal["hook_output"] = "hook_output"
     stream: HookStream
-    data: str
+    output: str
 
 
 # Discriminated union for stream messages from server

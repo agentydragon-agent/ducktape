@@ -349,7 +349,7 @@ class WtClient:
                 hook_ev: HookOutputEvent = HookOutputEvent.model_validate(obj)
                 if callable(hook_cb):
                     hook_cb(hook_ev)
-                (hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr).append(hook_ev.data)
+                (hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr).append(hook_ev.output)
                 continue
             if ev == "progress":
                 prog_ev: ProgressEvent = ProgressEvent.model_validate(obj)

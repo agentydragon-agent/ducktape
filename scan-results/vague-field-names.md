@@ -7,54 +7,11 @@ This scan identified instances where field names lack sufficient context to clar
 - Multiple similar entities exist in the same scope
 - Field names are documented because they're vague (indicating the type should be clearer)
 
-**Total instances found: 3**
+**Total instances found: 1**
 
 ## Findings
 
-### 1. Grade.task - Misleading field name (stores prompt, not task)
-
-**Location:** `/home/user/ducktape/adgn/src/adgn/inop/engine/models.py:50`
-
-**Class definition:**
-```python
-class Grade(BaseModel):
-    task: str
-    task_id: str
-    agent_id: str
-    axes: dict[str, ScoreWithRationale]
-    timestamp: datetime
-```
-
-**Context issue:**
-The field `task` is misleading because it actually contains the task's prompt text, not a task object or task description. This is evident from the usage in `/home/user/ducktape/adgn/src/adgn/inop/grading/grader.py`:
-
-Line 152:
-```python
-return Grade(
-    task=task.prompt,  # <-- Stores prompt, not task
-    task_id=task.id,
-    agent_id=rollout.agent_id,
-    axes={"overall": ScoreWithRationale(score=score, rationale=parsed["rationale"])},
-    timestamp=datetime.now(UTC),
-)
-```
-
-Line 255:
-```python
-return Grade(task=task.prompt, task_id=task.id, agent_id=rollout.agent_id, axes=axes, timestamp=datetime.now(UTC))
-```
-
-**Why this is vague:**
-- The field is named `task` but actually holds `task.prompt`
-- There's also a `task_id` field, creating ambiguity about what `task` represents
-- A developer reading the Grade class would naturally assume `task` is either a task object or a task identifier, not the prompt text
-
-**Suggested fix:**
-Rename `task` to `task_prompt` or `prompt` to make it clear what the field contains.
-
----
-
-### 2. RunnerEnvironment.data - Generic type-specific data dict
+### 1. RunnerEnvironment.data - Generic type-specific data dict
 
 **Location:** `/home/user/ducktape/adgn/src/adgn/inop/engine/models.py:343`
 
@@ -98,33 +55,6 @@ Either:
 
 ---
 
-### 3. HookOutputEvent.data - Hook output stored in generic field name
-
-**Location:** `/home/user/ducktape/wt/src/wt/shared/protocol.py:427`
-
-**Class definition:**
-```python
-class HookOutputEvent(BaseModel):
-    """Streaming output from post-creation hook (discriminated by event='hook_output')."""
-
-    event: Literal["hook_output"] = "hook_output"
-    stream: HookStream
-    data: str
-```
-
-**Context issue:**
-The `data` field contains the actual output from the hook (log output, stdout, etc.) but uses a generic name that doesn't indicate this.
-
-**Why this is vague:**
-- In the context of a "HookOutputEvent", the field `data` doesn't clarify that it's the actual output content
-- More specific names like `output`, `content`, or `hook_output` would be clearer
-- The field is the primary payload of the event, so it deserves a more descriptive name
-
-**Suggested fix:**
-Rename to `output` or `content` to make it clear this is the actual output from the hook.
-
----
-
 ## Not Vague (Examples of Acceptable Usage)
 
 The following were examined but deemed acceptable due to sufficient context:
@@ -158,8 +88,6 @@ Both config parameters have specific names (`user_cfg` and `local_cfg`) that dis
 
 ## Recommendations
 
-1. **Grade.task → Grade.task_prompt**: Rename to accurately reflect that it stores the prompt text
-2. **RunnerEnvironment.data → discriminated union**: Replace dict with typed DockerEnvironment | WorkspaceEnvironment
-3. **HookOutputEvent.data → HookOutputEvent.output**: Use a more descriptive name for the primary payload
+1. **RunnerEnvironment.data → discriminated union**: Replace dict with typed DockerEnvironment | WorkspaceEnvironment
 
-These changes would make the code more self-documenting and reduce the cognitive load on developers reading the code.
+This change would make the code more self-documenting and reduce the cognitive load on developers reading the code.

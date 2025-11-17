@@ -115,9 +115,9 @@ async def handle_create_worktree(config, name: str, options: CreateWorktreeOptio
 
     def on_hook(evt: HookOutputEvent):
         if evt.stream == HookStream.STDERR:
-            click.echo(evt.data, err=True, nl=False)
+            click.echo(evt.output, err=True, nl=False)
         else:
-            click.echo(evt.data, nl=False)
+            click.echo(evt.output, nl=False)
 
     daemon_client.set_progress_callback(on_progress)
     daemon_client.set_hook_output_callback(on_hook)

@@ -60,7 +60,7 @@ class ScoreWithRationale(BaseModel):
 
 
 class Grade(BaseModel):
-    task: str
+    task_prompt: str
     task_id: str
     agent_id: str  # Changed from int to match Rollout.agent_id
     axes: dict[str, ScoreWithRationale]
