@@ -6,6 +6,7 @@ _out/
 # VM runtime files
 *.qcow2
 *.log
+*.pid
 vm.log
 
 # Generated at runtime
@@ -15,3 +16,11 @@ kubeconfig-talos
 talosconfig
 controlplane.yaml
 worker.yaml
+
+# Terraform-generated sensitive files
+terraform/kubeconfig
+terraform/talosconfig
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup

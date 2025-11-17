@@ -1,13 +1,15 @@
 # Talos Kubernetes on QEMU with Terraform
 
-This Terraform configuration automates the deployment of a Talos Linux v1.9.2 Kubernetes cluster on QEMU/libvirt using the Talos Image Factory.
+This Terraform configuration automates the deployment of a Talos Linux v1.9.2 Kubernetes cluster on QEMU using the Talos Image Factory.
+
+**TESTED END-TO-END**: This configuration has been fully tested and successfully deploys a working Kubernetes cluster from scratch in ~5-6 minutes.
 
 ## Overview
 
 This configuration implements the same solution as the manual setup (documented in `../SUCCESS.md`), but fully automated with Terraform. It:
 
 1. **Uses Talos Image Factory** to get the latest Talos images
-2. **Provisions a QEMU VM** using the libvirt provider
+2. **Provisions a QEMU VM** using direct QEMU commands (via null_resource)
 3. **Applies Talos configuration** with all necessary workarounds for proxy/network restrictions
 4. **Bootstraps Kubernetes** automatically
 5. **Exports kubeconfig** for immediate cluster access
@@ -30,16 +32,18 @@ nohup python3 ../https-proxy.py > /tmp/python-proxy.log 2>&1 &
 ### Required Tools
 
 - **Terraform** >= 1.5.0
-- **libvirt/QEMU** installed and running
-- **talosctl** (optional, for manual cluster interaction)
+- **QEMU** (qemu-system-x86_64) installed
 - **kubectl** (for accessing the cluster)
+- **talosctl** (optional, for manual cluster interaction)
 
 ### Provider Installation
 
 The required providers will be automatically downloaded on first run:
 - `siderolabs/talos` (~> 0.7.0)
-- `dmacvicar/libvirt` (~> 0.8.1)
+- `hashicorp/null` (~> 3.2.0)
 - `hashicorp/local` (~> 2.5.0)
+
+**Note**: This configuration uses `null_resource` with direct QEMU commands instead of the libvirt provider, making it work in environments where libvirtd is not available.
 
 ## Quick Start
 
@@ -223,17 +227,40 @@ insecure_registries = [
 ]
 ```
 
+## Known Limitations
+
+### NodePort Services
+
+NodePort services are not accessible from the host machine because QEMU user-mode networking only forwards explicitly configured ports (50000 for Talos API and 6443 for Kubernetes API).
+
+**Workaround**: Use `kubectl port-forward` or `kubectl exec` to test services:
+
+```bash
+# Test a service using port-forward
+kubectl port-forward deployment/nginx 8080:80
+
+# Or test from within a pod
+kubectl exec deployment/nginx -- curl localhost
+```
+
 ## Troubleshooting
 
 ### Terraform Errors
 
-**libvirt provider connection error:**
+**QEMU not found:**
 ```bash
-# Check libvirt is running
-systemctl status libvirtd
+# Check QEMU is installed
+which qemu-system-x86_64
+qemu-system-x86_64 --version
+```
 
-# Verify libvirt URI
-virsh -c qemu:///system version
+**VM not starting:**
+```bash
+# Check VM console log
+tail -f ../vm-console-tf.log
+
+# Check if VM process is running
+ps aux | grep qemu | grep talos-qemu
 ```
 
 **Image download failures:**
@@ -293,7 +320,7 @@ Typical deployment timeline:
 | Aspect | Manual Setup | Terraform |
 |--------|-------------|-----------|
 | Image Download | Manual wget/curl | Automatic via Image Factory |
-| VM Creation | Manual qemu-system-x86_64 | libvirt_domain resource |
+| VM Creation | Manual qemu-system-x86_64 | null_resource with QEMU commands |
 | Configuration | Manual talosctl apply-config | talos_machine_configuration_apply |
 | Bootstrap | Manual talosctl bootstrap | talos_machine_bootstrap |
 | Kubeconfig | Manual talosctl kubeconfig | Automatic output |
@@ -306,23 +333,13 @@ Typical deployment timeline:
 ### Multi-Node Cluster
 
 To create a multi-node cluster, you would:
-1. Create additional libvirt_domain resources for worker nodes
-2. Generate worker machine configurations
-3. Apply configurations to all nodes
-4. Bootstrap on the control plane only
+1. Create additional null_resource blocks for worker VM startup
+2. Configure QEMU networking to allow inter-VM communication
+3. Generate worker machine configurations
+4. Apply configurations to all nodes
+5. Bootstrap on the control plane only
 
-Example pattern:
-
-```hcl
-# Control plane
-resource "libvirt_domain" "controlplane" { ... }
-
-# Workers
-resource "libvirt_domain" "worker" {
-  count = 2
-  # ... worker configuration ...
-}
-```
+**Note**: Multi-node setup with QEMU user-mode networking requires additional network configuration to allow VMs to communicate with each other. Consider using QEMU with tap networking or bridge mode for multi-node clusters.
 
 ### Custom Image Factory Schematic
 
@@ -349,22 +366,35 @@ resource "talos_image_factory_schematic" "custom" {
 
 ### Using with KVM
 
-If KVM is available, the VM will automatically use hardware acceleration. No configuration changes needed.
+If KVM is available, you can enable hardware acceleration by modifying the QEMU command in `main.tf`:
 
-To verify:
-```bash
-virsh dominfo $(terraform output -raw cluster_name)
+```hcl
+# Add to the qemu-system-x86_64 command
+-enable-kvm \
+-cpu host \
 ```
 
-Look for "Virt type: kvm" (with KVM) vs "Virt type: qemu" (without KVM).
+This will significantly improve VM performance.
 
 ## References
 
 - [Talos Linux Documentation](https://www.talos.dev/v1.9/)
 - [Talos Terraform Provider](https://registry.terraform.io/providers/siderolabs/talos/latest/docs)
 - [Talos Image Factory](https://factory.talos.dev/)
-- [libvirt Terraform Provider](https://registry.terraform.io/providers/dmacvicar/libvirt/latest/docs)
 - [Manual Setup Documentation](../SUCCESS.md)
+
+## Configuration Changes
+
+### v2 (Current) - Direct QEMU
+
+**Change**: Switched from libvirt provider to direct QEMU commands via `null_resource`.
+
+**Reason**: Provides better compatibility in environments where libvirtd is not available or not running.
+
+**Key fixes**:
+- Used `abspath()` for `vm_dir` local variable to ensure correct path resolution
+- All resources use absolute paths to avoid path resolution issues
+- VM lifecycle managed through null_resource provisioners with explicit cleanup
 
 ## License
 

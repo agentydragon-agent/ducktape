@@ -6,9 +6,9 @@ terraform {
       source  = "siderolabs/talos"
       version = "~> 0.7.0"
     }
-    libvirt = {
-      source  = "dmacvicar/libvirt"
-      version = "~> 0.8.1"
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2.0"
     }
     local = {
       source  = "hashicorp/local"

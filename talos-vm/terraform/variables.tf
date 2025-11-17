@@ -57,9 +57,3 @@ variable "insecure_registries" {
   type        = list(string)
   default     = ["ghcr.io", "gcr.io", "registry.k8s.io", "docker.io"]
 }
-
-variable "libvirt_uri" {
-  description = "Libvirt connection URI"
-  type        = string
-  default     = "qemu:///system"
-}

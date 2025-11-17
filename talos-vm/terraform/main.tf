@@ -1,9 +1,11 @@
 # Provider configuration
-provider "libvirt" {
-  uri = var.libvirt_uri
-}
-
 provider "talos" {}
+
+# Working directory for VM files
+locals {
+  vm_dir = abspath("${path.root}/..")
+  talos_version_short = replace(var.talos_version, "v", "")
+}
 
 # Generate Talos machine secrets
 resource "talos_machine_secrets" "this" {
@@ -22,7 +24,6 @@ data "talos_client_configuration" "this" {
 resource "talos_image_factory_schematic" "this" {
   schematic = yamlencode({
     customization = {
-      # No system extensions needed for basic setup
       systemExtensions = {
         officialExtensions = []
       }
@@ -40,11 +41,11 @@ data "talos_image_factory_urls" "this" {
 
 # Generate control plane machine configuration
 data "talos_machine_configuration" "controlplane" {
-  cluster_name     = var.cluster_name
-  cluster_endpoint = "https://127.0.0.1:6443"
-  machine_type     = "controlplane"
-  machine_secrets  = talos_machine_secrets.this.machine_secrets
-  talos_version    = var.talos_version
+  cluster_name       = var.cluster_name
+  cluster_endpoint   = "https://127.0.0.1:6443"
+  machine_type       = "controlplane"
+  machine_secrets    = talos_machine_secrets.this.machine_secrets
+  talos_version      = var.talos_version
   kubernetes_version = var.kubernetes_version
 
   config_patches = [
@@ -68,7 +69,7 @@ data "talos_machine_configuration" "controlplane" {
 
         install = {
           disk  = "/dev/vda" # virtio disk
-          image = data.talos_image_factory_urls.this.urls.installer
+          image = "ghcr.io/siderolabs/installer:${var.talos_version}"
         }
 
         registries = {
@@ -88,8 +89,8 @@ data "talos_machine_configuration" "controlplane" {
 
       cluster = {
         network = {
-          dnsDomain = "cluster.local"
-          podSubnets = ["10.244.0.0/16"]
+          dnsDomain      = "cluster.local"
+          podSubnets     = ["10.244.0.0/16"]
           serviceSubnets = ["10.96.0.0/12"]
         }
       }
@@ -97,116 +98,111 @@ data "talos_machine_configuration" "controlplane" {
   ]
 }
 
-# Create libvirt storage pool (if not exists)
-resource "libvirt_pool" "talos" {
-  name = "${var.cluster_name}-pool"
-  type = "dir"
-  path = "/var/lib/libvirt/images/${var.cluster_name}"
+# Create disk image
+resource "null_resource" "create_disk" {
+  provisioner "local-exec" {
+    command     = "qemu-img create -f qcow2 ${local.vm_dir}/talos-disk-tf.qcow2 ${var.vm_disk_size}"
+    working_dir = local.vm_dir
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    command     = "rm -f ${self.triggers.disk_path}"
+    on_failure  = continue
+  }
+
+  triggers = {
+    disk_path = "${local.vm_dir}/talos-disk-tf.qcow2"
+  }
 }
 
-# Download Talos kernel
-resource "libvirt_volume" "talos_kernel" {
-  name   = "${var.cluster_name}-kernel"
-  pool   = libvirt_pool.talos.name
-  source = data.talos_image_factory_urls.this.urls.kernel
-  format = "raw"
+# Start VM
+resource "null_resource" "start_vm" {
+  depends_on = [null_resource.create_disk]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      nohup qemu-system-x86_64 \
+        -name ${var.cluster_name} \
+        -machine type=q35 \
+        -cpu Nehalem \
+        -m ${var.vm_memory} \
+        -smp ${var.vm_cpus} \
+        -drive file=${local.vm_dir}/talos-disk-tf.qcow2,if=virtio,format=qcow2 \
+        -kernel ${local.vm_dir}/_out/vmlinuz-amd64 \
+        -initrd ${local.vm_dir}/_out/initramfs-amd64.xz \
+        -append "console=ttyS0 talos.platform=metal slab_nomerge pti=on" \
+        -netdev user,id=net0,hostfwd=tcp::50000-:50000,hostfwd=tcp::6443-:6443,dns=8.8.8.8 \
+        -device virtio-net-pci,netdev=net0 \
+        -rtc base=utc,clock=host \
+        -nographic \
+        > ${local.vm_dir}/vm-console-tf.log 2>&1 &
+      echo $! > ${local.vm_dir}/vm-tf.pid
+    EOT
+    working_dir = local.vm_dir
+  }
+
+  provisioner "local-exec" {
+    when       = destroy
+    command    = <<-EOT
+      if [ -f ${self.triggers.pid_file} ]; then
+        kill $(cat ${self.triggers.pid_file}) 2>/dev/null || true
+        rm -f ${self.triggers.pid_file}
+      fi
+      pkill -f "qemu.*${self.triggers.cluster_name}" || true
+    EOT
+    on_failure = continue
+  }
+
+  triggers = {
+    cluster_name = var.cluster_name
+    pid_file     = "${local.vm_dir}/vm-tf.pid"
+    disk_id      = null_resource.create_disk.id
+  }
 }
 
-# Download Talos initramfs
-resource "libvirt_volume" "talos_initramfs" {
-  name   = "${var.cluster_name}-initramfs"
-  pool   = libvirt_pool.talos.name
-  source = data.talos_image_factory_urls.this.urls.initramfs
-  format = "raw"
-}
+# Wait for VM to be ready (maintenance mode)
+resource "null_resource" "wait_for_vm" {
+  depends_on = [null_resource.start_vm]
 
-# Create VM disk
-resource "libvirt_volume" "talos_disk" {
-  name   = "${var.cluster_name}-disk.qcow2"
-  pool   = libvirt_pool.talos.name
-  format = "qcow2"
-  size   = var.vm_disk_size
-}
-
-# Create libvirt domain (VM)
-resource "libvirt_domain" "talos" {
-  name   = var.cluster_name
-  memory = var.vm_memory
-  vcpu   = var.vm_cpus
-
-  cpu {
-    mode = "custom"
-    model = "Nehalem" # x86-64-v2 support for Talos v1.9.2
+  provisioner "local-exec" {
+    command = "sleep 30"
   }
 
-  # Boot from kernel/initramfs (direct kernel boot)
-  kernel = libvirt_volume.talos_kernel.id
-  initrd = libvirt_volume.talos_initramfs.id
-
-  # Kernel command line with KSPP parameters
-  cmdline {
-    _  = "console=ttyS0"
-    talos_platform = "metal"
-    slab_nomerge = ""
-    pti = "on"
-  }
-
-  # Main disk
-  disk {
-    volume_id = libvirt_volume.talos_disk.id
-  }
-
-  # Network interface (user-mode networking)
-  network_interface {
-    network_name   = "default"
-    wait_for_lease = false
-  }
-
-  # Console configuration
-  console {
-    type        = "pty"
-    target_port = "0"
-    target_type = "serial"
-  }
-
-  # Graphics (none for headless)
-  graphics {
-    type = "none"
-  }
-
-  # Clock sync with host
-  clock {
-    utc       = true
-    sync_host = true
+  triggers = {
+    vm_id = null_resource.start_vm.id
   }
 }
 
 # Apply machine configuration to the VM
 resource "talos_machine_configuration_apply" "controlplane" {
   depends_on = [
-    libvirt_domain.talos
+    null_resource.wait_for_vm
   ]
 
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
   endpoint                    = "127.0.0.1"
   node                        = "127.0.0.1"
+}
 
-  config_patches = [
-    yamlencode({
-      machine = {
-        install = {
-          image = data.talos_image_factory_urls.this.urls.installer
-        }
-      }
-    })
-  ]
+# Wait for installation to complete
+resource "null_resource" "wait_for_install" {
+  depends_on = [talos_machine_configuration_apply.controlplane]
+
+  provisioner "local-exec" {
+    command = "sleep 120"
+  }
+
+  triggers = {
+    config_id = talos_machine_configuration_apply.controlplane.id
+  }
 }
 
 # Bootstrap the Kubernetes cluster
 resource "talos_machine_bootstrap" "this" {
   depends_on = [
-    talos_machine_configuration_apply.controlplane
+    null_resource.wait_for_install
   ]
 
   client_configuration = talos_machine_secrets.this.client_configuration
@@ -214,10 +210,23 @@ resource "talos_machine_bootstrap" "this" {
   node                 = "127.0.0.1"
 }
 
+# Wait for cluster to be ready
+resource "null_resource" "wait_for_cluster" {
+  depends_on = [talos_machine_bootstrap.this]
+
+  provisioner "local-exec" {
+    command = "sleep 90"
+  }
+
+  triggers = {
+    bootstrap_id = talos_machine_bootstrap.this.id
+  }
+}
+
 # Get cluster kubeconfig
 data "talos_cluster_kubeconfig" "this" {
   depends_on = [
-    talos_machine_bootstrap.this
+    null_resource.wait_for_cluster
   ]
 
   client_configuration = talos_machine_secrets.this.client_configuration
