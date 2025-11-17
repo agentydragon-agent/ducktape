@@ -6,7 +6,7 @@ This Terraform configuration automates the deployment of a Talos Linux v1.9.2 Ku
 
 ## Overview
 
-This configuration implements the same solution as the manual setup (documented in `../SUCCESS.md`), but fully automated with Terraform. It:
+This configuration implements the same solution as the manual setup (documented in `../manual/SUCCESS.md`), but fully automated with Terraform. It:
 
 1. **Uses Talos Image Factory** to get the latest Talos images
 2. **Provisions a QEMU VM** using direct QEMU commands (via null_resource)
@@ -26,7 +26,7 @@ nohup /tmp/cloudflared proxy-dns --address 0.0.0.0 --port 53 \
   --upstream https://dns.google/dns-query > /tmp/cloudflared.log 2>&1 &
 
 # 2. Start authenticated HTTP proxy (if environment requires proxy auth)
-nohup python3 ../https-proxy.py > /tmp/python-proxy.log 2>&1 &
+nohup python3 ../manual/https-proxy.py > /tmp/python-proxy.log 2>&1 &
 ```
 
 ### Required Tools
@@ -257,7 +257,7 @@ qemu-system-x86_64 --version
 **VM not starting:**
 ```bash
 # Check VM console log
-tail -f ../vm-console-tf.log
+tail -f ../manual/vm-console-tf.log
 
 # Check if VM process is running
 ps aux | grep qemu | grep talos-qemu
@@ -381,7 +381,7 @@ This will significantly improve VM performance.
 - [Talos Linux Documentation](https://www.talos.dev/v1.9/)
 - [Talos Terraform Provider](https://registry.terraform.io/providers/siderolabs/talos/latest/docs)
 - [Talos Image Factory](https://factory.talos.dev/)
-- [Manual Setup Documentation](../SUCCESS.md)
+- [Manual Setup Documentation](../manual/SUCCESS.md)
 
 ## Configuration Changes
 
