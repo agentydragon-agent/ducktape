@@ -172,10 +172,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
 
 
 async def attach_approval_policy_readonly(
-    comp: Compositor,
-    engine: ApprovalPolicyEngine,
-    *,
-    name: str = APPROVAL_POLICY_SERVER_NAME_READER,
+    comp: Compositor, engine: ApprovalPolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER
 ) -> ApprovalPolicyServer:
     """Attach the approval policy readonly server (resources only; no proposer tools)."""
     server = ApprovalPolicyServer(engine, name=name)
@@ -208,10 +205,7 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
 
 
 async def attach_approval_policy_proposer(
-    comp: Compositor,
-    engine: ApprovalPolicyEngine,
-    *,
-    name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER,
+    comp: Compositor, engine: ApprovalPolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER
 ) -> ApprovalPolicyProposerServer:
     server = ApprovalPolicyProposerServer(engine=engine, name=name)
     await comp.mount_inproc(name, server)
@@ -247,10 +241,7 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
 
 
 async def attach_approval_policy_admin(
-    comp: Compositor,
-    engine: ApprovalPolicyEngine,
-    *,
-    name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER,
+    comp: Compositor, engine: ApprovalPolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER
 ) -> ApprovalPolicyAdminServer:
     server = ApprovalPolicyAdminServer(engine=engine, name=name)
     await comp.mount_inproc(name, server)
