@@ -44,11 +44,10 @@ class GetRepoInfoArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class GetRepoInfoResponse(BaseModel):
-    """Repository information from Gitea API (matches GET /repos/{owner}/{repo} response).
+class _GiteaRepositoryFields(BaseModel):
+    """Base class containing all Gitea Repository fields.
 
-    All fields from Gitea's Repository object are explicitly declared.
-    Mirror-relevant fields have detailed descriptions.
+    Shared by both the public response model and internal parsing model.
     """
     # Core repository identity
     id: int
@@ -128,6 +127,13 @@ class GetRepoInfoResponse(BaseModel):
     topics: list[str]
     licenses: list[str]
 
+
+class GetRepoInfoResponse(_GiteaRepositoryFields):
+    """Repository information from Gitea API (matches GET /repos/{owner}/{repo} response).
+
+    All fields from Gitea's Repository object are explicitly declared in base class.
+    Mirror-relevant fields have detailed descriptions.
+    """
     model_config = ConfigDict(extra="forbid")
 
 
@@ -156,84 +162,8 @@ class _UserInfo(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class _RepositoryInfo(BaseModel):
+class _RepositoryInfo(_GiteaRepositoryFields):
     """Internal model for parsing Gitea's /repos/{owner}/{repo} response."""
-    # Core repository identity
-    id: int
-    name: str
-    full_name: str
-    description: str
-    empty: bool
-    private: bool
-    fork: bool
-    template: bool
-
-    # Mirror-specific fields
-    mirror: bool
-    mirror_updated: str
-    mirror_interval: str
-
-    # Repository metadata
-    size: int
-    language: str
-    languages_url: str
-    default_branch: str
-    archived: bool
-
-    # URLs
-    html_url: str
-    url: str
-    link: str
-    ssh_url: str
-    clone_url: str
-    original_url: str
-    website: str
-
-    # Statistics
-    stars_count: int
-    forks_count: int
-    watchers_count: int
-    open_issues_count: int
-    open_pr_counter: int
-    release_counter: int
-
-    # Timestamps
-    created_at: str
-    updated_at: str
-    archived_at: str | None = None
-
-    # Features
-    has_code: bool
-    has_issues: bool
-    has_wiki: bool
-    has_pull_requests: bool
-    has_projects: bool
-    projects_mode: str
-    has_releases: bool
-    has_packages: bool
-    has_actions: bool
-    ignore_whitespace_conflicts: bool
-
-    # Merge settings
-    allow_merge_commits: bool
-    allow_rebase: bool
-    allow_rebase_explicit: bool
-    allow_squash_merge: bool
-    allow_fast_forward_only_merge: bool
-    allow_rebase_update: bool
-    allow_manual_merge: bool
-    autodetect_manual_merge: bool
-    default_delete_branch_after_merge: bool
-    default_merge_style: str
-    default_allow_maintainer_edit: bool
-
-    # Miscellaneous
-    avatar_url: str
-    internal: bool
-    object_format_name: str
-    topics: list[str]
-    licenses: list[str]
-
     model_config = ConfigDict(extra="ignore")  # Ignore fields we haven't declared
 
 
