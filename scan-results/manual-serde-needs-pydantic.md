@@ -5,38 +5,11 @@
 
 ## Executive Summary
 
-This scan identified **2 remaining** locations where internal code uses manual dict manipulation and `.isoformat()` calls that should be replaced with Pydantic models. Three findings have been applied.
+This scan identified **2 remaining** locations where internal code uses manual dict manipulation and `.isoformat()` calls that should be replaced with Pydantic models.
 
-**Applied**: Findings #1 (Ultra Long CoT), #2 (RL Experiment), #4 (Grader Actions) - commit `add445b`
+## Findings
 
-## Key Findings
-
-### ~~1. LLM Message History - Ultra Long CoT~~ ✅ APPLIED
-
-**Status**: Fixed in commit `add445b`
-- Replaced `list[dict[str, str]]` with `list[Message]`
-- Added Pydantic models for Message and LogEntry
-- Automatic datetime serialization
-
-### ~~2. RL Experiment Conversation History~~ ✅ APPLIED
-
-**Status**: Fixed in commit `add445b`
-- Replaced `list[dict[str, str]]` with `list[Message]`
-- Added EpisodeData, StepData, SummaryData models
-- Automatic datetime handling throughout
-
-### ~~4. Grader Action Sequences~~ ✅ APPLIED
-
-**Status**: Fixed in commit `add445b`
-- Replaced `list[dict[str, Any]]` with `list[Action]`
-- Property access instead of `.get()` calls
-- Type-safe action handling
-
----
-
-## Remaining Findings
-
-### 5. Claude Linter Session Rules (MEDIUM PRIORITY)
+### 1. Claude Linter Session Rules (MEDIUM PRIORITY)
 
 **File**: `/home/user/ducktape/llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/session/state.py`
 
@@ -78,7 +51,7 @@ class SessionState:
 
 ---
 
-### 6. Session Manager Persistence (MEDIUM PRIORITY)
+### 2. Session Manager Persistence (MEDIUM PRIORITY)
 
 **File**: `/home/user/ducktape/llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/session/manager.py`
 
@@ -187,15 +160,11 @@ def _save_session(self, session_id: SessionID, session_data: SessionData) -> Non
 
 ## Recommended Prioritization
 
-1. ~~**High Priority** (Internal logic, frequently accessed)~~ ✅ **COMPLETED**
-   - ~~LLM message history (ultra_long_cot_o4.py, llm_rl_experiment.py)~~ ✅ Applied
-   - ~~Grader action sequences~~ ✅ Applied
-
-2. **Medium Priority** (Configuration/persistence) - **REMAINING**:
+1. **Medium Priority** (Configuration/persistence):
    - Claude linter session management
    - Session rules
 
-3. **Low Priority** (External API responses):
+2. **Low Priority** (External API responses):
    - Trilium API parsing (could improve but not critical)
 
 ---
@@ -239,12 +208,4 @@ These serve as good templates for new models.
 
 ## Conclusion
 
-**Progress**: 3 of 5 high-priority findings have been applied (commit `add445b`).
-
-**Remaining**: 2 medium-priority findings in Claude linter session management code. These are less critical as they're in configuration/persistence code rather than hot-path logic.
-
-**Impact**: The applied changes significantly improved type safety in:
-- LLM message handling (ultra-long CoT, RL experiments)
-- Grader action sequences
-
-All high-priority findings (frequently accessed internal logic) are now complete. Remaining findings are lower priority configuration/persistence code.
+**Remaining**: 2 medium-priority findings in Claude linter session management code. These are in configuration/persistence code rather than hot-path logic, making them lower priority than the previously completed message handling and grader improvements.
