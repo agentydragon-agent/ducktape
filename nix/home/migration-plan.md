@@ -7,22 +7,6 @@ Your proposed strategy makes perfect sense! Here's the refined plan:
 ### Phase 1: Test & Mark 
 **Status: Testing Complete, Marking Pending**
 
-#### Successfully Migrated to Nix (home.nix)
-- [x] **GUI role (partial)**:
-  - [x] dconf settings (GNOME preferences, workspace shortcuts, night light)
-  - [x] GNOME Shell extensions configuration
-  - [x] XDG autostart entries (Syncthing-GTK, Discord, Flameshot)
-  - [x] XDG MIME associations
-  - [x] Flameshot keybinding
-- [x] **gnome-terminal-solarized role**:
-  - [x] Solarized Light & Dark profiles (using nix-colors)
-- [x] **claude-mcp role**:
-  - [x] MCP server configuration via ~/.claude.json
-- [x] **Package management**:
-  - [x] User-level packages (Python 3.12 tools, Node tools, dev tools)
-  - [x] GNOME extensions packages
-  - [x] ML packages (pandas, pytorch, numpy) - using Python 3.12 for compatibility
-
 #### K8s Sandbox Testing Results (2025-08-28)
 - ✅ Successfully built home.nix with nixpkgs 24.05 (now updated to 25.05)
 - ✅ All packages installed correctly with Python 3.12 (changed from 3.13 for numpy compatibility)
@@ -30,31 +14,6 @@ Your proposed strategy makes perfect sense! Here's the refined plan:
 - ✅ File linking works (manual activation required in container due to dbus)
 - ⚠️ Note: Used single-user Nix installation in container (no daemon needed)
 - ⚠️ Note: home-manager must be installed via `programs.home-manager.enable = true`, not nix-env
-
-#### Wyrm Deployment (2025-08-28)
-- ✅ Nix daemon installed successfully
-- ✅ Updated to latest stable: nixpkgs 25.05 + home-manager 25.05
-- ✅ home.nix updated with correct username (agentydragon) and stateVersion (25.05)
-- ✅ Successfully activated home-manager configuration (2 generations)
-- ✅ GNOME dconf settings applied (focus-mode, panel date format)
-- ✅ Autostart desktop files created (syncthing-gtk, discord, flameshot)
-- ✅ Packages accessible (some from Nix, some from existing installations)
-
-#### Atlas Deployment (2025-08-30)
-- ✅ Nix multi-user daemon installed successfully (after cleanup of failed root install)
-- ✅ Fixed Debian `/etc/profile` PATH issue (removed sourcing from `.shellrc`)
-- ✅ home-manager installed and configuration applied
-- ✅ All packages available in user environment
-- ⚠️ Note: Debian requires different handling than Ubuntu for shell initialization
-
-#### Agentydragon Deployment (2025-08-31)
-- ✅ Nix daemon installed successfully
-- ✅ home-manager installed with nixpkgs 25.05 + home-manager 25.05
-- ✅ home.nix already configured with correct username and stateVersion
-- ✅ All user packages migrated from Ansible to Nix
-- ✅ Playbook updated to exclude `*_nix_migrated` roles
-- ✅ oh-my-zsh kept as git clone (not Nix package) for compatibility
-- ✅ Python dependencies added for switch_gnome_terminal_profile script
 
 #### What We Had to Skip/Disable
 - ❌ **XDG MIME associations** (mimeapps.list): Home-manager would replace all 105 associations with just 2. Kept in Ansible to preserve existing associations.

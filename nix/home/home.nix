@@ -80,7 +80,7 @@ in {
       claudeCodeRouter.homeManagerModules.claude-code-router
       ./packages/google-drive-service.nix
       "${homeManagerMaster}/modules/programs/codex.nix"
-      ./modules/codex.nix
+      ./codex
       (import ./modules/solarized.nix {inherit pkgs lib enableGui;})
     ]
     ++ lib.optionals enableGui [
