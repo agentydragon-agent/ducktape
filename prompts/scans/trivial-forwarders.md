@@ -356,6 +356,94 @@ metadata = safe_json_loads(row.metadata_json)
 
 **Decision**: **KEEP** - Reduces complexity by consolidating error handling
 
+## Scan Results Structure
+
+**IMPORTANT**: The scan results MUST include reasoning and categorization, not just a list of candidates.
+
+For each finding, apply the Decision Framework and categorize:
+
+### ✅ Should Inline (True Positives)
+- **What**: Function name, location, evidence
+- **Why it should be inlined**: Apply Decision Framework
+  - Call count test result
+  - Complexity test result
+  - Architectural role test result
+  - Consolidation test result
+- **Recommended action**: Specific fix (show before/after)
+
+### ❌ Should Keep (False Positives / Justified Forwarders)
+- **What**: Function name, location
+- **Why it should be kept**: Specific reason from "When to Keep" section
+  - Facade/interface implementation
+  - Consolidates error handling/validation
+  - Called many times with complexity benefit
+  - Framework requirement (e.g., Django template tags)
+  - Backward compatibility shim
+- **Decision**: No action needed (justified)
+
+### Example Result Format
+
+```markdown
+## Findings
+
+### True Positives (Should Inline)
+
+#### 1. SearchService Facade Methods
+**File:** `/path/to/search.py`
+**Lines:** 19-32
+
+**Evidence:** 5 methods that just forward to module functions
+- `get_node()` → forwards to `_graph[node_id]`
+- `materialize()` → forwards to `materialize_search()`
+- etc.
+
+**Decision Framework Analysis:**
+1. ✅ **Call count**: Only 2 of 5 methods used, both called from single caller (Workspace class)
+2. ✅ **Complexity test**: Inlining doesn't increase complexity (1 line → 1 line)
+3. ✅ **Architectural role**: Not implementing interface, not public API boundary
+4. ✅ **Consolidation test**: No error handling or validation added
+
+**Decision**: **INLINE** - Remove SearchService, use direct imports in Workspace
+
+**Recommended fix:**
+- Replace `SearchService(graph)` with direct imports
+- Update Workspace methods to call functions directly
+- Delete SearchService class
+
+---
+
+### False Positives (Keep - Justified)
+
+#### 1. Django Template Tag Wrapper
+**File:** `/path/to/custom_tags.py`
+**Line:** 233-234
+
+**Why flagged:** Single-line function forwarding to constructor
+
+**Why it should be kept:** **Framework requirement**
+- Django's `@register.simple_tag` decorator requires function signature
+- Template engine calls functions, not constructors directly
+- Not a code smell - necessary for framework integration
+
+**Decision**: No action needed (justified forwarder)
+
+---
+
+#### 2. GnuCash Utility Wrapper
+**File:** `/path/to/gnucash_util.py`
+**Line:** 35-36
+
+**Why flagged:** Single-line wrapper around conversion function
+
+**Why it should be kept:** **Semantic clarity**
+- Called 3 times in reconciliation code
+- `get_split_amount(split)` clearer than `gnc_numeric_to_python_Decimal(split.GetAmount())`
+- One usage as key function for sorting - shorter name improves readability
+- Abstracts GnuCash's awkward numeric type conversion
+
+**Decision**: No action needed (readability benefit justifies wrapper)
+```
+
 ## Validation
 
 ```bash
