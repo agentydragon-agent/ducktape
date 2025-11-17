@@ -85,12 +85,12 @@ class TruncationManager:
         return (best_content, best_tokens) if best_content is not None else (None, 0)
 
     def truncate_file_content_by_size(
-        self, files: list[dict[str, str]], max_size: int, purpose: str | None = None
+        self, files: list[FileInfo], max_size: int, purpose: str | None = None
     ) -> dict[str, str]:
         """Truncate file contents by character size.
 
         Args:
-            files: List of file dicts with 'path' and 'content' keys
+            files: List of FileInfo objects
             max_size: Maximum characters per file
             purpose: Optional label for logging/UX (ignored in logic)
 
@@ -101,8 +101,8 @@ class TruncationManager:
         skip_threshold = max_size * 5  # Skip extremely large files
 
         for file_info in files:
-            path = file_info["path"]
-            content = file_info["content"]
+            path = file_info.path
+            content = file_info.content
 
             if len(content) > skip_threshold:
                 truncated[path] = self._skipped_content(content, skip_threshold)

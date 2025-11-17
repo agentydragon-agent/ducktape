@@ -14,6 +14,12 @@ from ..shared.configuration import Configuration
 from ..shared.git_utils import git_run
 from ..shared.protocol import CommitInfo
 
+
+def _resolve_to_commit(repo: pygit2.Repository, revspec: str) -> pygit2.Commit:
+    """Resolve any revspec to a Commit, peeling tags if needed."""
+    return repo.revparse_single(revspec).peel(pygit2.Commit)
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,8 +72,7 @@ class GitManager:
 
     def create_branch(self, branch_name: str, source_branch: str = "HEAD") -> None:
         if not self.branch_exists(branch_name):
-            target_obj = self._main_repo.revparse_single(source_branch)
-            target_commit = target_obj.peel(pygit2.Commit)
+            target_commit = _resolve_to_commit(self._main_repo, source_branch)
             self._main_repo.branches.local.create(branch_name, target_commit)
 
     async def get_working_directory_status(self) -> tuple[list[Path], list[Path]]:
@@ -168,8 +173,7 @@ class GitManager:
 
         # Ensure branch exists; if not, create it off upstream
         if self._main_repo.lookup_branch(branch) is None:
-            target_obj = self._main_repo.revparse_single(self.config.upstream_branch)
-            target = target_obj.peel(pygit2.Commit)
+            target = _resolve_to_commit(self._main_repo, self.config.upstream_branch)
             self._main_repo.branches.local.create(branch, target)
 
         # Use git CLI to create worktree without checkout (critical for large repos)

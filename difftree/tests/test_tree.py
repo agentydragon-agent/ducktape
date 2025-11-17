@@ -69,13 +69,9 @@ def test_tree_statistics_aggregation(sample_changes: list[FileChange]):
 
     # src should have stats from all files under it
     src_dir = root.children["src"]
-    assert_that(
-        src_dir,
-        has_properties(
-            additions=10 + 5 + 20 + 15,  # main.py + utils.py + models/*
-            deletions=2 + 0 + 5 + 3,
-        ),
-    )
+    expected_additions = 10 + 5 + 20 + 15  # main.py + utils.py + models/*
+    expected_deletions = 2 + 0 + 5 + 3
+    assert_that(src_dir, has_properties(additions=expected_additions, deletions=expected_deletions))
 
 
 def test_sort_tree_by_size(sample_changes: list[FileChange]):

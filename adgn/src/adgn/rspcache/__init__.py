@@ -19,6 +19,7 @@ from openai.types.responses import Response as OpenAIResponse, ResponseUsage
 from adgn.rspcache.models import (
     FRAME_ADAPTER,
     ErrorPayload,
+    ResponseStatus,
     parse_response,
     stream_event_final_response,
     stream_event_response_id,
@@ -272,7 +273,7 @@ async def responses_endpoint(
     is_stream = bool(body.get("stream"))
     if not cache_skip:
         cached = await db.get_response(key)
-        if cached and cached.status == "complete":
+        if cached and cached.status == ResponseStatus.COMPLETE:
             cached_payload = await db.get_cached_response_payload(key)
             if cached_payload is not None:
                 headers = {"X-Cache-Hit": "1", "X-Cache-Key": key}
