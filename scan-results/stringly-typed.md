@@ -172,66 +172,37 @@ Error = ValidationError | NetworkError | ...
 
 ## Patterns with Good Enum Usage (For Reference)
 
-The codebase already has good examples of StrEnum usage:
+The codebase has many examples of StrEnum usage:
 
 1. **wt (worktree tool)** - Extensive enum usage:
    - `StrategyType`, `RepositoryState`, `DaemonHealthStatus`, `StartupPhase`, `StreamEventType`, `ProgressOperation`, `WorktreeCreateStep`, `HookStream`, `ComponentState`, `GitstatusdState`, `CowMethod`, `PRStatus`, `PRState`, `PRMergeability`
 
-2. **adgn/rspcache** - `ResponseStatus` (though underused)
+2. **adgn/rspcache** - `ResponseStatus` (now fully used throughout)
 
-3. **adgn/inop** - `AgentTaskType`
+3. **adgn/inop** - `AgentTaskType`, `TaskTypeEnum`, `EnvironmentType`
 
 4. **adgn/seatbelt** - `Action`, `FileOp`, `NetworkOp`, `DefaultBehavior`, `EnvPassthroughMode`
 
 5. **adgn/git_commit_ai** - `TaskStatus`
 
-6. **adgn/openai_utils** - `ReasoningEffort`, `ReasoningSummary`, `Family`, `ErrorCode`
+6. **adgn/openai_utils** - `ReasoningEffort`, `ReasoningSummary`, `Family`, `ErrorCode`, `ProbeKind`
 
 7. **habitify** - `Status`, `UnitType`, `Periodicity`
 
----
-
-## Literal Types That Could Be StrEnum
-
-The codebase uses many `Literal[...]` types. While Literals are good for single-use type constraints, some appear multiple times and would benefit from being StrEnum:
-
-```python
-# /home/user/ducktape/adgn/src/adgn/rspcache/admin_app.py:81
-status: Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"] | None
-
-# /home/user/ducktape/llm/mcp/habitify/habitify_mcp_server/habitify_client.py:316
-status: Literal["completed", "skipped", "failed", "none"]
-
-# /home/user/ducktape/adgn/src/adgn/openai_utils/probe/main.py:129
-ProbeKind = Literal["responses", "chat"]
-```
-
-**Recommendation:** Convert these to StrEnum when:
-1. The same literal set is used in multiple places
-2. You need to enumerate all values programmatically
-3. The values might be extended in the future
+8. **claude_optimizer** - `OptimizationRunStatus` (tests)
 
 ---
 
-## Migration Priority
+## Remaining Work
 
-**High Priority (Most Impact):**
-1. **rspcache status handling** - Expand `ResponseStatus` enum and use it consistently
-2. **inop environment types** - Create `EnvironmentType` enum
-3. **habitify CLI** - Use `Status` enum instead of strings
+Two findings remain unaddressed:
 
-**Medium Priority:**
-1. **claude_optimizer status** - Create `OptimizationRunStatus` enum
-2. **openai_utils probe kinds** - Convert Literal to StrEnum
-3. **Structured errors** - Start with most common error sites (rspcache, wt)
-
-**Low Priority (Can be done incrementally):**
-1. **claude-history types** - Add Literal discriminators
-2. **habitify field enums** - Add enums for log_method, recurrence if API supports it
+1. **Finding #4: claude-history types** - Add Literal discriminators for type fields used in discriminated unions
+2. **Finding #6: Unstructured errors** - Create structured error types with enum-based categorization for error fields across rspcache, inop, wt, and claude_optimizer
 
 ---
 
-## Benefits of Fixing These Issues
+## Benefits of StrEnum Migration
 
 1. **Type Safety** - Typos caught at type-check time (e.g., "complet" vs "complete")
 2. **IDE Support** - Autocomplete shows all valid values
@@ -239,51 +210,3 @@ ProbeKind = Literal["responses", "chat"]
 4. **Refactoring** - Rename enum value, all usages update automatically
 5. **Exhaustiveness** - Type checker can ensure all cases are handled
 6. **Structured Error Handling** - Categorize and query errors programmatically
-
----
-
-## Example Fix (rspcache)
-
-**Before:**
-```python
-# events.py
-class ResponseStatusEvent(EventBase):
-    status: str
-
-# responses_db.py
-status="queued"
-if cached.status == "complete":
-
-# admin_app.py
-status: Literal["completed", "failed", "in_progress", ...] | None
-```
-
-**After:**
-```python
-# models.py
-class ResponseStatus(StrEnum):
-    QUEUED = "queued"
-    IN_PROGRESS = "in_progress"
-    COMPLETE = "complete"
-    ERROR = "error"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    INCOMPLETE = "incomplete"
-
-# events.py
-class ResponseStatusEvent(EventBase):
-    status: ResponseStatus
-
-# responses_db.py
-status=ResponseStatus.QUEUED
-if cached.status == ResponseStatus.COMPLETE:
-
-# admin_app.py
-status: ResponseStatus | None = None
-```
-
-**Benefits:**
-- Type checker catches `status="complet"` typo
-- IDE autocompletes `ResponseStatus.`
-- Single source of truth for all valid statuses
-- Easy to add new status values
