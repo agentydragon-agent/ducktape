@@ -48,31 +48,78 @@ This scan identified multiple instances of stringly-typed code across the duckta
 
 **Location:** `/home/user/ducktape/experimental/claude-history/claude_history_reader.py`
 
+**Status:** NOT YET APPLIED - Consider using Literal discriminators (Anthropic SDK pattern)
+
+**Context:** This parses Claude Code's internal history logs from `~/.claude/projects/`, NOT direct Anthropic API responses. Format is based on/similar to Anthropic Messages API but with extensions (e.g., "summary" entry type).
+
 **Issue:** Multiple models have untyped `type` fields used for discriminating variants.
 
 **Evidence:**
 
 ```python
-# Line 29
+# Line 29 - Content type discriminator
 class TextContent(BaseModel):
-    type: str  # ❌ Should be Literal or enum
+    type: str  # ❌ Should be Literal["text"] | Literal["tool_use"] | Literal["tool_result"]
 
-# Line 41
-type: str | None = None  # ❌ Optional type field
+# Line 41 - Message type field
+type: str | None = None  # ❌ Should be typed
 
-# Line 53
-type: str = "summary"  # ❌ Should be Literal["summary"]
+# Line 53 - Custom entry type for Claude Code logs
+type: str = "summary"  # ❌ Should be Literal["summary"] = "summary"
 
-# Line 67, 77, 128
-type: str  # ❌ Multiple models with plain type fields
+# Line 67 - Entry type discriminator
+class MessageEntry(BaseModel):
+    type: str  # ❌ Should be Literal["user"] | Literal["assistant"]
+
+# Line 77 - Parsed message type
+class ParsedMessage(BaseModel):
+    type: str  # ❌ Should be Literal["user"] | Literal["assistant"]
 ```
 
-**Issue:** When `type` is used for discrimination in a union, it should be `Literal[...]` for each variant
+**Anthropic SDK Reference:**
+The official Anthropic SDK uses proper Literal discriminators for similar structures:
+```python
+# From anthropic.types
+class TextBlock(BaseModel):
+    type: Literal["text"]
+    text: str
+
+class ToolUseBlock(BaseModel):
+    type: Literal["tool_use"]
+    id: str
+    name: str
+    input: Dict[str, object]
+
+# Param type (input to API)
+class ToolResultBlockParam(TypedDict):
+    type: Required[Literal["tool_result"]]
+    tool_use_id: Required[str]
+    content: Union[str, Iterable[Content]]
+    is_error: bool
+```
 
 **Recommendation:**
-1. For `SummaryEntry`, use `type: Literal["summary"] = "summary"`
-2. For discriminated unions, use Pydantic's `Field(discriminator="type")` with Literal tags
-3. If types form a closed set across all messages, create a `MessageType` enum
+Since claude-history parses Claude Code's extended format (not direct API):
+
+1. **Option A: Use Literal discriminators (like Anthropic SDK)**:
+   ```python
+   class SummaryEntry(BaseModel):
+       type: Literal["summary"] = "summary"  # Custom to Claude Code logs
+       summary: str
+       leaf_uuid: str
+
+   class TextContent(BaseModel):
+       type: Literal["text"]
+       text: str | None = None
+
+   class ParsedMessage(BaseModel):
+       type: Literal["user", "assistant"]  # Like SDK's MessageParam role
+       # ...
+   ```
+
+2. **Option B: Skip** - This is experimental code in `experimental/` directory. May be acceptable to leave as-is if it's just exploratory tooling.
+
+**Decision:** Recommend Option B (skip) - experimental code, internal format parsing. Not worth the effort unless this becomes production tooling.
 
 ---
 
@@ -197,8 +244,16 @@ The codebase has many examples of StrEnum usage:
 
 Two findings remain unaddressed:
 
-1. **Finding #4: claude-history types** - Add Literal discriminators for type fields used in discriminated unions
-2. **Finding #6: Unstructured errors** - Create structured error types with enum-based categorization for error fields across rspcache, inop, wt, and claude_optimizer
+1. **Finding #4: claude-history types** - **RECOMMEND SKIP**
+   - Experimental code parsing Claude Code's internal logs (not production)
+   - Could use Literal discriminators like Anthropic SDK, but not worth effort for exploratory tooling
+   - If this becomes production code, apply Literal types following Anthropic SDK patterns
+
+2. **Finding #6: Unstructured errors** - **RECOMMEND SKIP**
+   - Large architectural change affecting multiple systems
+   - Would require careful design of error taxonomy
+   - Would require migration strategy across rspcache, inop, wt, claude_optimizer
+   - Not worth effort unless error categorization becomes critical business need
 
 ---
 
