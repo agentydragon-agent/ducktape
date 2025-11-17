@@ -15,7 +15,7 @@ import os
 from typing import Any, TypeVar, cast
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 import requests
 
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -37,11 +37,15 @@ class TriggerMirrorSyncArgs(BaseModel):
 
 
 class TriggerMirrorSyncResponse(BaseModel):
-    owner: str
-    repo: str
-    mirror_path: str
-    mirror_updated: str  # Timestamp BEFORE sync (for comparison)
-    sync_triggered: bool
+    owner: str = Field(description="Gitea owner (username) of the mirror repository")
+    repo: str = Field(description="Repository name (auto-generated from URL)")
+    mirror_path: str = Field(
+        description="Path to mirror for cloning: 'owner/repo.git' (use with docker_exec bind mount)"
+    )
+    mirror_updated: str = Field(
+        description="Timestamp BEFORE sync started. Poll get_mirror_status() until this changes to detect completion."
+    )
+    sync_triggered: bool = Field(description="Always true on success (sync was triggered)")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -53,11 +57,13 @@ class GetMirrorStatusArgs(BaseModel):
 
 
 class GetMirrorStatusResponse(BaseModel):
-    owner: str
-    repo: str
-    mirror_path: str
-    mirror_updated: str
-    is_mirror: bool
+    owner: str = Field(description="Gitea owner (username) of the mirror repository")
+    repo: str = Field(description="Repository name")
+    mirror_path: str = Field(description="Path to mirror for cloning: 'owner/repo.git'")
+    mirror_updated: str = Field(
+        description="Current timestamp of last mirror update. Compare with initial value from trigger_mirror_sync() to detect completion."
+    )
+    is_mirror: bool = Field(description="Validation: true if repository is configured as a mirror")
 
     model_config = ConfigDict(extra="forbid")
 
