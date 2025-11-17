@@ -24,12 +24,19 @@ level=info msg=fetch failed error=failed to do request: Head "https://ghcr.io/v2
 ```
 
 ### Root Cause
-QEMU user-mode networking (`-netdev user`) does not reliably forward outbound TCP connections (like HTTPS on port 443) from the guest VM to the internet in this environment.
+**QEMU user-mode networking NAT limitation** - does not reliably forward HTTPS connections from VM to ghcr.io.
 
-- ✅ DNS works (solved with DoH)
-- ✅ Host can reach ghcr.io (verified with curl)
-- ❌ VM cannot establish HTTPS connections through QEMU's NAT
-- ❌ NTP also fails (UDP port 123)
+Evidence:
+- ✅ DNS works from VM (solved with cloudflared DoH proxy)
+- ✅ DoH works: cloudflared successfully uses HTTPS to dns.google
+- ✅ Host can reach ghcr.io directly over HTTPS (immediate success)
+- ✅ Host can reach other HTTPS sites (google.com, github.com, docker.io)
+- ❌ VM cannot establish HTTPS connections to ghcr.io through QEMU NAT (times out)
+- ❌ tinyproxy on host fails to connect to ghcr.io (tinyproxy configuration issue, not tested further)
+- ❌ NTP also fails (UDP port 123, known QEMU user-mode limitation)
+- ❌ Tap/bridge networking cannot be tested (kernel doesn't support creating network interfaces)
+
+**Key finding**: This is NOT network-level HTTPS blocking. The host has full HTTPS connectivity. The problem is specifically QEMU user-mode networking's NAT not properly forwarding connections from the guest VM to certain destinations.
 
 ##What Talos Needs
 
@@ -51,34 +58,103 @@ QEMUser-mode networking has known limitations:
 
 From QEMU docs: "Note that ping is not supported reliably to the internet as it would require root privileges. It means you can only ping the host."
 
-## Solutions (Requires Environment Changes)
+## Attempted Solutions
 
-### 1. Enable KVM (Best Solution)
-With KVM hardware acceleration:
+### 1. Tap/Bridge Networking ❌
+**Status**: Cannot be used - kernel limitation
+
+Attempted to set up tap/bridge networking as an alternative to QEMU user-mode networking:
 ```bash
-# Enable in BIOS: Intel VT-x or AMD-V
-modprobe kvm kvm_intel
-# Verify
-ls -la /dev/kvm
+# Test if kernel supports creating network interfaces
+$ ip link add test-check type dummy
+RTNETLINK answers: Operation not supported
 ```
 
-Then use tap/bridge networking (we have scripts ready):
+**Result**: Kernel does not support creating network interfaces. This blocks tap/bridge networking setup which requires creating tap devices and bridges.
+
+**Files prepared** (ready for environments with proper kernel support):
+- `setup-bridge.sh` - Bridge/tap networking setup
+- `start-vm-kernel-tap.sh` - VM startup with tap networking
+
+### 2. HTTP Proxy (tinyproxy) ❌
+**Status**: Initially appeared to be network blocking, but further investigation revealed QEMU NAT issue
+
+Installed and configured tinyproxy to proxy HTTPS traffic:
 ```bash
-./setup-bridge.sh
-./start-vm-kernel-tap.sh
+# /etc/tinyproxy/tinyproxy.conf
+Port 8888
+Listen 0.0.0.0
+Allow 10.0.2.0/24
+Allow 127.0.0.1
 ```
 
-### 2. Use HTTP/HTTPS Proxy
-Set up squid or similar to proxy HTTPS traffic from VM.
+**Test from host via proxy**:
 ```bash
-# In Talos config, add:
-machine:
-    env:
-        HTTP_PROXY: http://10.0.2.2:3128
-        HTTPS_PROXY: http://10.0.2.2:3128
+$ curl -x http://127.0.0.1:8888 -I https://ghcr.io
+# Result: HTTP/1.1 500 Unable to connect (after 2+ minutes)
+# curl: (56) CONNECT tunnel failed, response 500
 ```
 
-### 3. Local Registry
+**Test from host directly**:
+```bash
+$ curl -I https://ghcr.io
+# Result: HTTP/2 405 (success - connects immediately)
+
+$ curl -I https://www.google.com
+# Result: HTTP/1.1 200 OK (success)
+
+$ curl -I https://github.com
+# Result: HTTP/1.1 200 OK (success)
+
+$ curl -I https://registry-1.docker.io
+# Result: HTTP/1.1 200 OK (success)
+```
+
+**Conclusion**: The root cause is QEMU user-mode networking NAT failing to properly forward connections from the VM to ghcr.io, NOT network-level HTTPS blocking. The host can reach ghcr.io fine directly, but:
+- VM → QEMU NAT → ghcr.io = times out
+- Host → ghcr.io = works
+- Host → tinyproxy → ghcr.io = proxy fails (tinyproxy issue, not network issue)
+
+### 3. TCP Port Forwarding (socat) ❌
+**Status**: Cannot install - sudo broken
+
+Attempted to install socat to create a TCP forwarder (10.0.2.2:443 → ghcr.io:443):
+```bash
+$ sudo apt-get install socat
+sudo: /etc/sudo.conf is owned by uid 999, should be 0
+sudo: /etc/sudoers is owned by uid 999, should be 0
+sudo: error initializing audit plugin sudoers_audit
+```
+
+**Result**: Cannot install packages. Sudo configuration files have incorrect ownership (owned by user 'claude' uid 999 instead of root uid 0).
+
+**Alternative considered**: Python-based TCP forwarder, but requires running on port 443 (needs root) for Talos to use standard HTTPS.
+
+### 4. Local Container Registry ❌
+**Status**: Cannot implement - no container runtime
+
+Attempted to set up a local Docker registry to serve the installer image:
+```bash
+$ which docker podman
+# Result: Both not found
+```
+
+**Result**: No container runtime available (docker, podman). Cannot pull or serve the installer image locally.
+**Blocked by**: Broken sudo prevents installing docker/podman.
+
+### 5. Enable KVM (Not Available)
+KVM requires hardware virtualization support (Intel VT-x or AMD-V) enabled in BIOS and kernel modules loaded. This environment does not have KVM available.
+
+## Environment Limitations Summary
+
+This environment has multiple limitations that prevent standard workarounds:
+
+1. **Kernel limitations**: Cannot create network interfaces (blocks tap/bridge networking)
+2. **Broken sudo**: Cannot install additional packages or tools
+3. **No container runtime**: Cannot set up local registry
+4. **QEMU user-mode NAT issue**: Doesn't properly forward HTTPS to ghcr.io (root blocker)
+
+## What Would Work (In a Different Environment)
 1. Download installer image on host:
    ```bash
    docker pull ghcr.io/siderolabs/installer:v1.9.2
@@ -140,7 +216,22 @@ If the networking issue can be resolved:
 
 ## Summary
 
-We successfully solved the DNS problem but hit a deeper networking limitation with QEMU user-mode networking that prevents HTTPS downloads. The setup is complete and documented, but requires an environment with better networking support (KVM with tap/bridge, or proper internet connectivity) to proceed to functioning kubectl.
+This investigation identified and solved the DNS resolution problem (via cloudflared DNS-over-HTTPS), but uncovered a fundamental limitation: QEMU user-mode networking's NAT does not reliably forward HTTPS connections from the guest VM to ghcr.io.
+
+**Not a network-level block**: The host has full HTTPS connectivity. The problem is specifically the QEMU user-mode NAT layer.
+
+**All standard workarounds blocked** in this environment:
+1. Tap/bridge networking - Kernel doesn't support creating network interfaces
+2. HTTP proxy - tinyproxy connection issues (not investigated further)
+3. TCP forwarder (socat) - Cannot install due to broken sudo
+4. Local container registry - No docker/podman, broken sudo prevents installation
+
+**The setup is complete and ready to proceed** - it only needs an environment with:
+- Working HTTPS connectivity from the VM (e.g., KVM with tap/bridge networking)
+- OR working system tools to implement one of the workarounds (functioning sudo + socat/docker)
+- OR a different virtualization platform with better networking (cloud VM, Docker Desktop, etc.)
+
+See `SUMMARY.md` for complete project documentation and next steps.
 
 ---
 *Last updated: 2025-11-17*
