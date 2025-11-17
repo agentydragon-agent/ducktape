@@ -293,153 +293,51 @@ if result is not None:
 
 **Automated Preprocessing** (high recall, requires manual verification):
 
-### Walrus Operator Detector
+### AST-Based Detection
 
-```python
-import ast
+Build AST analyzers to find candidates:
 
-class WalrusOpportunityDetector(ast.NodeVisitor):
-    """Find assign-then-check patterns that could use walrus operator."""
+1. **SingleAssignmentDetector**: Track assignments and usages, find variables assigned once and used once on next line
+   - Visit Assign nodes → record variable names and line numbers
+   - Visit Name nodes with Load context → record usage line numbers
+   - Find where assignment line + 1 == usage line and usage count == 1
 
-    def __init__(self):
-        self.candidates = []
+2. **WalrusOpportunityDetector**: Find assign-then-check patterns
+   - Walk function bodies looking for consecutive statements
+   - Pattern: `ast.Assign` followed by `ast.If` or `ast.While`
+   - Check if condition references the assigned variable
+   - Report line, variable name, pattern type
 
-    def visit_FunctionDef(self, node):
-        """Check function body for assign-then-if patterns."""
-        for i in range(len(node.body) - 1):
-            current = node.body[i]
-            next_stmt = node.body[i + 1]
+3. **VerboseBooleanDetector**: Find `if-true-else-false` returns
+   - Check functions with single If statement
+   - Look for: body has `return True`, orelse has `return False`
+   - Check for Constant nodes with boolean values
 
-            # Pattern: var = expr; if var:
-            if isinstance(current, ast.Assign) and isinstance(next_stmt, ast.If):
-                if len(current.targets) == 1 and isinstance(current.targets[0], ast.Name):
-                    var_name = current.targets[0].id
-                    # Check if condition uses the assigned variable
-                    if self._references_var(next_stmt.test, var_name):
-                        self.candidates.append({
-                            'line': current.lineno,
-                            'variable': var_name,
-                            'pattern': 'assign-then-if'
-                        })
+**Implementation**: Strong coding LLM can reconstruct these from description above. Key is walking AST, tracking variables, checking adjacency.
 
-            # Pattern: var = file.readline(); while var:
-            if isinstance(current, ast.Assign) and isinstance(next_stmt, ast.While):
-                if len(current.targets) == 1 and isinstance(current.targets[0], ast.Name):
-                    var_name = current.targets[0].id
-                    if self._references_var(next_stmt.test, var_name):
-                        self.candidates.append({
-                            'line': current.lineno,
-                            'variable': var_name,
-                            'pattern': 'assign-then-while'
-                        })
+### Grep Patterns (Quick High-Recall Scan)
 
-        self.generic_visit(node)
-
-    def _references_var(self, node, var_name):
-        """Check if node references the given variable."""
-        for child in ast.walk(node):
-            if isinstance(child, ast.Name) and child.id == var_name:
-                return True
-        return False
-
-# Usage:
-# detector = WalrusOpportunityDetector()
-# detector.visit(ast.parse(source_code))
-# for candidate in detector.candidates:
-#     print(f"Line {candidate['line']}: {candidate['variable']} - {candidate['pattern']}")
-```
-
-### Boolean Return Detector
-
-```python
-import ast
-
-class VerboseBooleanDetector(ast.NodeVisitor):
-    """Find if-true-else-false patterns."""
-
-    def visit_FunctionDef(self, node):
-        """Check for verbose boolean returns."""
-        if len(node.body) == 1 and isinstance(node.body[0], ast.If):
-            if_node = node.body[0]
-            # Check for: if cond: return True; else: return False
-            if (len(if_node.body) == 1 and isinstance(if_node.body[0], ast.Return) and
-                len(if_node.orelse) == 1 and isinstance(if_node.orelse[0], ast.Return)):
-
-                if_ret = if_node.body[0].value
-                else_ret = if_node.orelse[0].value
-
-                # Check if returning boolean literals
-                if (isinstance(if_ret, ast.Constant) and isinstance(else_ret, ast.Constant)):
-                    if if_ret.value is True and else_ret.value is False:
-                        print(f"Line {if_node.lineno}: Verbose boolean in {node.name}")
-
-        self.generic_visit(node)
-```
-
-### Grep Patterns (High-Recall Quick Scan)
+These find candidates for manual review - NOT definitive problems:
 
 ```bash
-# Pattern: assign-then-check (walrus opportunity)
-# Find: var = ...; if var:
+# Walrus opportunities
 rg --type py -U "(\w+)\s*=\s*[^\n]+\n\s*if\s+\1[:\s]" --multiline
-
-# Find: var = ...; while var:
 rg --type py -U "(\w+)\s*=\s*[^\n]+\n\s*while\s+\1[:\s]" --multiline
 
-# Pattern: if-true-else-false
+# Verbose boolean returns
 rg --type py "if.*:\s*return True\s*(else:\s*return False|return False)" --multiline
 
-# Pattern: else-after-return
+# Else after return
 rg --type py "return [^\n]+\n\s*else:" --multiline
 
-# Pattern: try-except-raise
+# Pointless try-except-raise
 rg --type py "except[^:]*:\s*raise\s*$" --multiline
 
-# Pattern: simple for-append (use comprehension)
+# Simple for-append (comprehension candidate)
 rg --type py "^\s*for\s+\w+\s+in.*:\s*$" -A1 --multiline | rg "append\("
 
-# Pattern: return-var on next line
+# Return variable on next line
 rg --type py "(\w+)\s*=\s*[^\n]+\n\s*return\s+\1\s*$" --multiline
-```
-
-### Statistical Analysis (Preprocessing)
-
-```bash
-# Count lines between variable assignment and usage
-# High frequency of adjacent lines suggests single-use pattern
-python3 << 'PYTHON'
-import ast
-import sys
-from collections import Counter
-
-distances = Counter()
-
-class DistanceAnalyzer(ast.NodeVisitor):
-    def __init__(self):
-        self.last_assign = {}
-
-    def visit_Assign(self, node):
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                self.last_assign[target.id] = node.lineno
-        self.generic_visit(node)
-
-    def visit_Name(self, node):
-        if isinstance(node.ctx, ast.Load) and node.id in self.last_assign:
-            distance = node.lineno - self.last_assign[node.id]
-            distances[distance] += 1
-
-for file in sys.stdin:
-    try:
-        tree = ast.parse(open(file.strip()).read())
-        analyzer = DistanceAnalyzer()
-        analyzer.visit(tree)
-    except: pass
-
-# Show distribution - distance=1 is assign-then-immediate-use
-for dist in sorted(distances.keys())[:10]:
-    print(f"Distance {dist}: {distances[dist]} occurrences")
-PYTHON
 ```
 
 **Critical**: These patterns have false positives. Always read the actual code, understand intent, check if simplification makes sense.
