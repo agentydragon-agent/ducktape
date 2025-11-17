@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 import json
 import os
 from pathlib import Path
@@ -126,7 +127,11 @@ class CachedProbeError(RuntimeError):
         self.code = info.code
 
 
-ProbeKind = Literal["responses", "chat"]
+class ProbeKind(StrEnum):
+    """Type of API endpoint to probe."""
+
+    RESPONSES = "responses"
+    CHAT = "chat"
 
 
 class ProbeRecord(BaseModel):
@@ -134,7 +139,7 @@ class ProbeRecord(BaseModel):
     start_ts: datetime | None = None
     end_ts: datetime | None = None
     model: str
-    kind: ProbeKind  # "responses" | "chat"
+    kind: ProbeKind
     ok: bool
     latency_s: float | None = None
     response: dict[str, Any] | None = None
@@ -180,11 +185,11 @@ async def _write_probe_result(res: ProbeResult) -> None:
     responses_json: Any | None = None
 
     if res.ok and res.raw:
-        if res.kind == "chat":
+        if res.kind == ProbeKind.CHAT:
             chat_obj = res.raw_chat()
             if chat_obj is not None:
                 chat_json = chat_obj.model_dump(exclude_none=False)
-        elif res.kind == "responses":
+        elif res.kind == ProbeKind.RESPONSES:
             resp_obj = res.raw_responses()
             if resp_obj is not None:
                 responses_json = resp_obj.model_dump(exclude_none=False)
@@ -459,11 +464,11 @@ class ProbeResult:
     def content(self) -> str | None:
         try:
             if self.ok and self.raw is not None:
-                if self.kind == "responses":
+                if self.kind == ProbeKind.RESPONSES:
                     resp = self.raw_responses()
                     if resp is not None:
                         return _snippet_from_responses(resp)
-                if self.kind == "chat":
+                if self.kind == ProbeKind.CHAT:
                     ch = self.raw_chat()
                     if ch is not None:
                         return _snippet_from_chat(ch)
@@ -499,11 +504,11 @@ class ProbeResult:
         ts_use = ts or datetime.now(UTC)
         response_json: dict[str, Any] | None = None
         if self.ok and self.raw is not None:
-            if self.kind == "responses":
+            if self.kind == ProbeKind.RESPONSES:
                 resp = self.raw_responses()
                 if resp is not None:
                     response_json = resp.model_dump(exclude_none=False)
-            elif self.kind == "chat":
+            elif self.kind == ProbeKind.CHAT:
                 ch = self.raw_chat()
                 if ch is not None:
                     response_json = ch.model_dump(exclude_none=False)
@@ -537,13 +542,13 @@ class ProbeResult:
     def from_record(cls, record: ProbeRecord) -> ProbeResult:
         raw: Any | None = None
         if record.ok and record.response is not None:
-            if record.kind == "responses":
+            if record.kind == ProbeKind.RESPONSES:
                 data = record.response
                 try:
                     raw = Response.model_validate(data)
                 except Exception:
                     raw = data
-            elif record.kind == "chat":
+            elif record.kind == ProbeKind.CHAT:
                 data2 = record.response
                 try:
                     raw = ChatCompletion.model_validate(data2)
@@ -564,12 +569,12 @@ class ProbeResult:
         )
 
     def raw_chat(self) -> ChatCompletion | None:
-        if self.kind == "chat" and isinstance(self.raw, ChatCompletion):
+        if self.kind == ProbeKind.CHAT and isinstance(self.raw, ChatCompletion):
             return self.raw
         return None
 
     def raw_responses(self) -> Response | None:
-        if self.kind == "responses" and isinstance(self.raw, Response):
+        if self.kind == ProbeKind.RESPONSES and isinstance(self.raw, Response):
             return self.raw
         return None
 
@@ -615,7 +620,7 @@ async def consume_stream_jsonl(
             )
             raw = res.raw
             if raw is not None:
-                if kind == "responses":
+                if kind == ProbeKind.RESPONSES:
                     resp_obj = res.raw_responses()
                     if resp_obj is None:
                         raise TypeError("Expected ResponsesType for responses kind")

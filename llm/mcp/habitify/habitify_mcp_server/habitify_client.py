@@ -13,7 +13,7 @@ from typing import Any, Literal
 from dotenv import load_dotenv
 import httpx
 
-from .types import Area, Habit, HabitStatus
+from .types import Area, Habit, HabitStatus, Status
 from .utils.date_utils import create_date_range, format_date_for_api
 
 logger = logging.getLogger("habitify.client")
@@ -176,7 +176,7 @@ class HabitifyClient:
         self,
         date: datetime.date | None = None,
         order_by: str | None = "priority",
-        status: str | None = None,
+        status: Status | None = None,
         time_of_day: str | None = None,
         area_id: str | None = None,
     ) -> list[Habit]:

@@ -22,6 +22,8 @@ from claude_optimizer.database.models import (
 import pytest
 import yaml
 
+from .test_types import OptimizationRunStatus
+
 
 @pytest.fixture
 def temp_db():
@@ -663,14 +665,14 @@ Strengths:
         with temp_db.get_session() as session:
             run = session.query(OptimizationRun).filter_by(id=run_id).first()
             run.end_time = datetime.utcnow()
-            run.status = "completed"
+            run.status = OptimizationRunStatus.COMPLETED
             session.commit()
 
         # VERIFICATION: Test that all data was stored correctly
         with temp_db.get_session() as session:
             # Check optimization run
             run = session.query(OptimizationRun).filter_by(id=run_id).first()
-            assert run.status == "completed"
+            assert run.status == OptimizationRunStatus.COMPLETED
             assert run.total_iterations == 2
 
             # Check system prompts

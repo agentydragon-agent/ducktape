@@ -563,6 +563,9 @@ class ResponsesDB:
         )
 
     async def _upsert_snapshot(self, session: AsyncSession, *, key: str, snapshot: FinalResponseSnapshot) -> None:
+        # TODO: Decide how to split what's stored in JSONB columns vs separate columns
+        # Current: status as separate column, response/error/token_usage as JSONB
+        # Consider: Could status also go in JSONB? Or extract more fields?
         existing = await session.get(ResponseSnapshot, key)
         payload = snapshot.model_dump(mode="json")
         status_enum = snapshot.status

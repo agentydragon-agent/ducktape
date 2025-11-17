@@ -20,6 +20,7 @@ import habitify_mcp_server
 
 from .habitify_client import HabitifyClient, HabitifyError
 from .server import create_habitify_mcp_server
+from .types import Status
 from .utils import format_rich_status, get_api_key_from_param_or_env, get_status_color
 from .utils.cli_utils import resolve_habit_for_cli
 
@@ -277,7 +278,9 @@ async def _status_async(habit: str, date: str | None = None, api_key: str | None
 @app.command("log")
 def log(
     habit: str = typer.Argument(..., help="Habit ID or name"),
-    status: str = typer.Option("completed", "--status", "-s", help="Status to set (completed, skipped, failed, none)"),
+    status: Status = typer.Option(  # noqa: B008
+        Status.COMPLETED, "--status", "-s", help="Status to set (completed, skipped, failed, none, in_progress)"
+    ),
     date: str | None = typer.Option(None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"),
     note: str | None = typer.Option(None, "--note", "-n", help="Optional note to attach"),
     value: float | None = typer.Option(None, "--value", "-v", help="Optional value (for number/timer habits)"),
@@ -292,7 +295,7 @@ def log(
 
 async def _log_async(
     habit: str,
-    status: str,
+    status: Status,
     date: str | None = None,
     note: str | None = None,
     value: float | None = None,

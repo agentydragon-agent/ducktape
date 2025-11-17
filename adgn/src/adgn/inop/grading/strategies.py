@@ -11,6 +11,7 @@ from adgn.inop.engine.models import (
     AssistantMessage,
     ComparisonGrading,
     Criterion,
+    EnvironmentType,
     FileBasedGrading,
     FileInfo,
     FinalOutput,
@@ -76,12 +77,12 @@ class FileBasedGradingStrategy(GradingStrategy):
 
         # Try to get files from environment first (container/workspace)
         if context.environment:
-            if context.environment.type == "docker_container":
+            if context.environment.type == EnvironmentType.DOCKER_CONTAINER:
                 # TODO: Implement container file collection
                 # container_id = context.environment.container_id
                 # files = collect_from_container(container_id)
-                pass
-            elif context.environment.type == "workspace_dir":
+                raise NotImplementedError("Docker container file collection not yet implemented")
+            if context.environment.type == EnvironmentType.WORKSPACE_DIR:
                 # Collect files from workspace directory
                 workspace = context.environment.workspace_path
                 if workspace and Path(workspace).exists():

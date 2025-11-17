@@ -18,6 +18,8 @@ from claude_optimizer.database.models import (
 import pytest
 import yaml
 
+from .test_types import OptimizationRunStatus
+
 
 @pytest.fixture
 def temp_db():
@@ -169,7 +171,7 @@ class TestDatabaseModels:
                 base_output_dir="/tmp/test_run",
                 total_iterations=3,
                 config_snapshot='{"test": true}',
-                status="running",
+                status=OptimizationRunStatus.RUNNING,
             )
             session.add(run)
             session.commit()
@@ -178,7 +180,7 @@ class TestDatabaseModels:
             retrieved_run = session.query(OptimizationRun).first()
             assert retrieved_run.base_output_dir == "/tmp/test_run"
             assert retrieved_run.total_iterations == 3
-            assert retrieved_run.status == "running"
+            assert retrieved_run.status == OptimizationRunStatus.RUNNING
 
     def test_system_prompt_with_content_hash(self, temp_db):
         """Test system prompt storage with content hashing."""

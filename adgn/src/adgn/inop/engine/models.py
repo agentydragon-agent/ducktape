@@ -19,6 +19,19 @@ class AgentTaskType(StrEnum):
     CODE_REVIEW = "code_review"
 
 
+class TaskTypeEnum(StrEnum):
+    """Valid task types."""
+
+    CODING = "coding"
+
+
+class EnvironmentType(StrEnum):
+    """Type of runner environment."""
+
+    DOCKER_CONTAINER = "docker_container"
+    WORKSPACE_DIR = "workspace_dir"
+
+
 class FileInfo(BaseModel):
     path: str
     content: str
@@ -218,7 +231,7 @@ class TaskDefinition(BaseModel):
 
     id: str
     prompt: str
-    type: str = "coding"  # Default to coding for backwards compatibility
+    type: TaskTypeEnum = TaskTypeEnum.CODING  # Default to coding for backwards compatibility
 
     # Optional overrides - properly typed
     setup_overrides: TaskSetup | None = None
@@ -339,20 +352,20 @@ class Rollout:
 class RunnerEnvironment:
     """Environment information from a runner."""
 
-    type: str  # "docker_container", "workspace_dir", etc.
+    type: EnvironmentType
     data: dict[str, Any]  # Type-specific data
 
     @property
     def container_id(self) -> str | None:
         """Get Docker container ID if this is a container environment."""
-        if self.type == "docker_container":
+        if self.type == EnvironmentType.DOCKER_CONTAINER:
             return self.data.get("container_id")
         return None
 
     @property
     def workspace_path(self) -> str | None:
         """Get workspace path if this is a directory environment."""
-        if self.type == "workspace_dir":
+        if self.type == EnvironmentType.WORKSPACE_DIR:
             return self.data.get("path")
         return None
 
