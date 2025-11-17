@@ -23,11 +23,12 @@ from adgn.inop.engine.models import (
     SeedTask,
     TaskDefinition,
     TaskSetup,
-    TaskType,
+    TaskTypeConfig,
     ToolCall,
     ToolResult,
     TrajectoryItem,
     UserInput,
+    WorkspaceEnvironment,
 )
 from adgn.inop.io.file_utils import collect_docker_files
 from adgn.inop.runners.base import AgentRunner
@@ -69,8 +70,8 @@ class ClaudeRunner(AgentRunner):
             task: Task to execute
             task_type_config: Configuration from task type
         """
-        # TaskType mapping requires TaskType values, not raw dicts
-        ttype = TaskType(name=task.type, grading=task_type_config.get("grading"))
+        # TaskTypeConfig mapping requires TaskTypeConfig values, not raw dicts
+        ttype = TaskTypeConfig(name=task.type, grading=task_type_config.get("grading"))
         setup, _ = task.resolve_config({task.type: ttype})
 
         # Create workspace directory
@@ -231,6 +232,4 @@ class ClaudeRunner(AgentRunner):
         if not self.workspace_path:
             return None
 
-        return RunnerEnvironment(
-            type="workspace_dir", data={"path": str(self.workspace_path), "docker_image": self.docker_image}
-        )
+        return WorkspaceEnvironment(workspace_path=str(self.workspace_path))

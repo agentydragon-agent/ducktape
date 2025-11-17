@@ -136,8 +136,8 @@ class ProbeKind(StrEnum):
 
 class ProbeRecord(BaseModel):
     ts: datetime
-    start_ts: datetime | None = None
-    end_ts: datetime | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
     model: str
     kind: ProbeKind
     ok: bool
@@ -175,7 +175,7 @@ async def _init_database() -> None:
 
 async def _write_probe_result(res: ProbeResult) -> None:
     """Write probe result to TimescaleDB."""
-    if not res.start_ts or not res.end_ts:
+    if not res.started_at or not res.ended_at:
         return  # Skip if missing timing data
 
     pool = await _get_db_pool()
@@ -261,8 +261,8 @@ async def _write_probe_result(res: ProbeResult) -> None:
         try:
             await conn.execute(
                 insert_sql,
-                res.start_ts,  # start_time
-                res.end_ts,  # end_time
+                res.started_at,  # start_time
+                res.ended_at,  # end_time
                 res.latency_s,  # latency_s
                 res.model_id,  # model
                 family_of(res.model_id).value,  # family
@@ -438,27 +438,27 @@ class ProbeResult:
     ok: bool
     exc: BaseException | None = None
     raw: Any | None = None
-    start_ts: datetime | None = None
-    end_ts: datetime | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
     latency_override_s: float | None = None
 
     @classmethod
     def success(
-        cls, *, model_id: str, kind: ProbeKind, raw: Response | ChatCompletion, start_ts: datetime, end_ts: datetime
+        cls, *, model_id: str, kind: ProbeKind, raw: Response | ChatCompletion, started_at: datetime, ended_at: datetime
     ) -> ProbeResult:
-        return cls(model_id=model_id, kind=kind, ok=True, raw=raw, start_ts=start_ts, end_ts=end_ts)
+        return cls(model_id=model_id, kind=kind, ok=True, raw=raw, started_at=started_at, ended_at=ended_at)
 
     @classmethod
     def failure(
-        cls, *, model_id: str, kind: ProbeKind, exc: BaseException, start_ts: datetime | None, end_ts: datetime
+        cls, *, model_id: str, kind: ProbeKind, exc: BaseException, started_at: datetime | None, ended_at: datetime
     ) -> ProbeResult:
-        return cls(model_id=model_id, kind=kind, ok=False, exc=exc, start_ts=start_ts, end_ts=end_ts)
+        return cls(model_id=model_id, kind=kind, ok=False, exc=exc, started_at=started_at, ended_at=ended_at)
 
     @property
     def latency_s(self) -> float | None:
-        if not isinstance(self.start_ts, datetime) or not isinstance(self.end_ts, datetime):
+        if not isinstance(self.started_at, datetime) or not isinstance(self.ended_at, datetime):
             return self.latency_override_s
-        return float((self.end_ts - self.start_ts).total_seconds())
+        return float((self.ended_at - self.started_at).total_seconds())
 
     @property
     def content(self) -> str | None:
@@ -528,8 +528,8 @@ class ProbeResult:
                 error_json = ErrorInfo(type=type(self.exc).__name__, message=str(self.exc))
         return ProbeRecord(
             ts=ts_use,
-            start_ts=self.start_ts,
-            end_ts=self.end_ts,
+            started_at=self.started_at,
+            ended_at=self.ended_at,
             model=self.model_id,
             kind=self.kind,
             ok=self.ok,
@@ -563,8 +563,8 @@ class ProbeResult:
             ok=record.ok,
             exc=exc,
             raw=raw,
-            start_ts=record.start_ts,
-            end_ts=record.end_ts,
+            started_at=record.started_at,
+            ended_at=record.ended_at,
             latency_override_s=record.latency_s,
         )
 

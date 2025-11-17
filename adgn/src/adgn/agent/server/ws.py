@@ -172,7 +172,7 @@ def register_ws(app: FastAPI) -> None:
 
         # Send Accepted only after container is ensured live so callers waiting for
         # Accepted can proceed with a consistent view (e.g., HTTP /api/agents shows live)
-        await _ws_send(ws, Envelope(session_id="bootstrap", event_id=0, event_ts=datetime.now(UTC), payload=Accepted()))
+        await _ws_send(ws, Envelope(session_id="bootstrap", event_id=0, event_at=datetime.now(UTC), payload=Accepted()))
 
         await cm.connect(ws)
         cm._session = session

@@ -8,12 +8,13 @@ Ultra Long 2-Level Chain of Thought for o4-mini
 """
 
 from datetime import datetime
-import json
 import os
 from pathlib import Path
 import sys
+from typing import Any, Literal
 
 from openai import OpenAI
+from pydantic import BaseModel, Field
 import tiktoken
 
 # Configuration for o4-mini
@@ -30,6 +31,26 @@ PRICE_OUTPUT = 2.40
 # Initialize
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 encoder = tiktoken.encoding_for_model("gpt-4")  # o4 uses same tokenizer
+
+
+class Message(BaseModel):
+    """Single message in conversation"""
+
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class LogEntry(BaseModel):
+    """Log entry for conversation turn"""
+
+    timestamp: datetime = Field(default_factory=datetime.now)
+    turn: int
+    user_input: str
+    response_segments: int
+    total_output_tokens: int
+    context_used_percentage: float
+    messages: list[Message]
+    usage_details: list[dict[str, Any]]
 
 
 class ConversationTracker:
@@ -71,17 +92,17 @@ def count_tokens(text: str) -> int:
     return len(encoder.encode(text))
 
 
-def count_messages_tokens(messages: list[dict[str, str]]) -> int:
+def count_messages_tokens(messages: list[Message]) -> int:
     """Count total tokens in message history"""
     total = 0
     for msg in messages:
         # Each message has role tokens + content tokens + formatting
-        total += count_tokens(msg["role"]) + count_tokens(msg["content"]) + 5
+        total += count_tokens(msg.role) + count_tokens(msg.content) + 5
     return total
 
 
 def generate_reasoning_response(
-    messages: list[dict[str, str]], available_tokens: int, tracker: ConversationTracker
+    messages: list[Message], available_tokens: int, tracker: ConversationTracker
 ) -> tuple[str, int, dict]:
     """Generate response optimized for reasoning models"""
 
@@ -90,7 +111,7 @@ def generate_reasoning_response(
 
     response = client.chat.completions.create(
         model=MODEL,
-        messages=messages,
+        messages=[msg.model_dump() for msg in messages],
         max_completion_tokens=max_tokens,  # o4-mini uses this parameter
         temperature=1.0,  # Full temperature for reasoning models
         # o4-specific parameters that might help:
@@ -142,7 +163,7 @@ FORMAT YOUR RESPONSE AS:
 
 Remember: You're collaborating with 99 other agents. Don't try to do everything yourself - set up the foundation for others to build on."""
 
-    messages = [{"role": "system", "content": system_prompt}]
+    messages = [Message(role="system", content=system_prompt)]
 
     print("\n💡 Tip: This system is optimized for complex reasoning tasks.")
     print("Try questions like:")
@@ -164,7 +185,7 @@ Remember: You're collaborating with 99 other agents. Don't try to do everything 
             continue
 
         # Add user message
-        messages.append({"role": "user", "content": user_input})
+        messages.append(Message(role="user", content=user_input))
 
         # Calculate available tokens
         current_tokens = count_messages_tokens(messages)
@@ -201,9 +222,9 @@ Remember: You're collaborating with 99 other agents. Don't try to do everything 
 
             # Update conversation with current response
             if continuation_count == 1:
-                messages.append({"role": "assistant", "content": full_response})
+                messages.append(Message(role="assistant", content=full_response))
             else:
-                messages[-1]["content"] = full_response
+                messages[-1].content = full_response
 
             # Calculate which agent number this is
             agent_num = continuation_count + 2  # +2 because we start at Agent #1
@@ -245,7 +266,7 @@ Build on their work. Add new perspectives, deeper analysis, or explore suggested
 
 Note for Agent #{agent_num + 1}:"""
 
-            continuation_messages = [*messages, {"role": "user", "content": continuation_prompt}]
+            continuation_messages = [*messages, Message(role="user", content=continuation_prompt)]
 
             response_part, tokens_used, usage = generate_reasoning_response(
                 continuation_messages, available_tokens, tracker
@@ -260,10 +281,10 @@ Note for Agent #{agent_num + 1}:"""
                 print(response_part, end="", flush=True)
 
         # Update final response
-        if messages[-1]["role"] == "assistant":
-            messages[-1]["content"] = full_response
+        if messages[-1].role == "assistant":
+            messages[-1].content = full_response
         else:
-            messages.append({"role": "assistant", "content": full_response})
+            messages.append(Message(role="assistant", content=full_response))
 
         # Calculate context usage percentage
         current_tokens = count_messages_tokens(messages)
@@ -292,19 +313,18 @@ Note for Agent #{agent_num + 1}:"""
             print(f"🧠 Reasoning tokens used: {total_reasoning:,}")
 
         # Log the conversation turn
-        log_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "turn": len([m for m in messages if m["role"] == "user"]) - 1,  # -1 to exclude system
-            "user_input": user_input,
-            "response_segments": continuation_count + 1,
-            "total_output_tokens": total_generated,
-            "context_used_percentage": context_percentage,
-            "messages": messages.copy(),  # Full conversation history
-            "usage_details": usage_details,
-        }
+        log_entry = LogEntry(
+            turn=len([m for m in messages if m.role == "user"]) - 1,  # -1 to exclude system
+            user_input=user_input,
+            response_segments=continuation_count + 1,
+            total_output_tokens=total_generated,
+            context_used_percentage=context_percentage,
+            messages=messages.copy(),  # Full conversation history
+            usage_details=usage_details,
+        )
 
         with log_file.open("a") as f:
-            f.write(json.dumps(log_entry) + "\n")
+            f.write(log_entry.model_dump_json() + "\n")
 
         # Context limit warning
         current_tokens = count_messages_tokens(messages)

@@ -62,7 +62,7 @@ async def get_db_pool() -> asyncpg.Pool:
 
 async def write_probe_result(res: Any) -> None:
     # Expect a ProbeResult-like object with attributes, not dynamic getattr probing
-    if not res.start_ts or not res.end_ts:
+    if not res.started_at or not res.ended_at:
         return
 
     pool = await get_db_pool()
@@ -131,8 +131,8 @@ async def write_probe_result(res: Any) -> None:
         rj = json.dumps(responses_json) if responses_json is not None else None
         await conn.execute(
             insert_sql,
-            res.start_ts,
-            res.end_ts,
+            res.started_at,
+            res.ended_at,
             res.latency_s,
             res.model_id,
             family_of(res.model_id).value,

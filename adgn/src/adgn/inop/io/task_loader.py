@@ -16,7 +16,8 @@ from adgn.inop.engine.models import (
     SandboxConfig,
     TaskDefinition,
     TaskSetup,
-    TaskType,
+    TaskTypeConfig,
+    TaskTypeName,
 )
 
 
@@ -79,14 +80,14 @@ def parse_grading_config(config: dict[str, Any]) -> GradingConfig | None:
     raise ValueError(f"Unknown grading strategy: {strategy}")
 
 
-def load_task_types(file_path: Path | str) -> dict[str, TaskType]:
+def load_task_types(file_path: Path | str) -> dict[str, TaskTypeConfig]:
     """Load task type definitions from YAML file.
 
     Args:
         file_path: Path to task_types.yaml
 
     Returns:
-        Dictionary mapping task type names to TaskType objects
+        Dictionary mapping task type names to TaskTypeConfig objects
     """
     file_path = Path(file_path)
     if not file_path.exists():
@@ -101,7 +102,7 @@ def load_task_types(file_path: Path | str) -> dict[str, TaskType]:
         grading_config = config.get("grading")
         grading = parse_grading_config(grading_config) if grading_config else None
 
-        task_types[name] = TaskType(name=name, grading=grading)
+        task_types[name] = TaskTypeConfig(name=TaskTypeName(name), grading=grading)
 
     return task_types
 
@@ -127,7 +128,9 @@ def load_runner_configs(file_path: Path | str) -> dict[str, dict[str, Any]]:
     return TypeAdapter(dict[str, dict[str, Any]]).validate_python(runners)
 
 
-def load_task_definitions(file_path: Path | str, task_types: dict[str, TaskType] | None = None) -> list[TaskDefinition]:
+def load_task_definitions(
+    file_path: Path | str, task_types: dict[str, TaskTypeConfig] | None = None
+) -> list[TaskDefinition]:
     """Load task definitions from seeds YAML file.
 
     Args:

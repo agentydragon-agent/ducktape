@@ -24,9 +24,10 @@ from adgn.inop.engine.models import (
     Rollout,
     RunnerEnvironment,
     TaskDefinition,
-    TaskType,
+    TaskTypeConfig,
     TrajectoryItem,
     UserInput,
+    WorkspaceEnvironment,
 )
 from adgn.inop.io.file_utils import collect_workspace_files
 from adgn.inop.runners.base import AgentRunner
@@ -60,8 +61,8 @@ class MiniCodexRunner(AgentRunner):
         )
 
     async def setup(self, task: TaskDefinition, task_type_config: dict[str, Any]) -> None:
-        # Ensure proper typing for resolve_config: expects dict[str, TaskType]
-        typed_map: dict[str, TaskType] = {task.type: TaskType.model_validate(task_type_config)}
+        # Ensure proper typing for resolve_config: expects dict[str, TaskTypeConfig]
+        typed_map: dict[str, TaskTypeConfig] = {task.type: TaskTypeConfig.model_validate(task_type_config)}
         setup, _ = task.resolve_config(typed_map)
 
         self.workspace_path = Path(tempfile.mkdtemp(prefix="minicodex_"))
@@ -182,4 +183,4 @@ class MiniCodexRunner(AgentRunner):
     def get_environment(self) -> RunnerEnvironment | None:
         if not self.workspace_path:
             return None
-        return RunnerEnvironment(type="workspace_dir", data={"path": str(self.workspace_path)})
+        return WorkspaceEnvironment(workspace_path=str(self.workspace_path))

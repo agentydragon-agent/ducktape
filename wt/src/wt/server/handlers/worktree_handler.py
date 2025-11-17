@@ -105,7 +105,7 @@ async def worktree_create(
     if config.post_creation_script:
         # run_post_creation_script is async; we stream via the same writer
         async def _sink(name: str, data: str) -> None:
-            ev = HookOutputEvent(stream=(HookStream.STDOUT if name == "stdout" else HookStream.STDERR), data=data)
+            ev = HookOutputEvent(stream=(HookStream.STDOUT if name == "stdout" else HookStream.STDERR), output=data)
             stream.emit(ev)
 
         post = await WorktreeService.run_post_creation_script(

@@ -144,7 +144,7 @@ Return a JSON object with:
 
     # Create Grade object with just the overall score
     return Grade(
-        task=task.prompt,
+        task_prompt=task.prompt,
         task_id=task.id,
         agent_id=rollout.agent_id,
         axes={"overall": ScoreWithRationale(score=score, rationale=parsed["rationale"])},
@@ -247,4 +247,6 @@ async def _grade_with_criteria(
     for facet, data in parsed.items():
         axes[facet] = ScoreWithRationale(score=data["score"], rationale=data["rationale"])
 
-    return Grade(task=task.prompt, task_id=task.id, agent_id=rollout.agent_id, axes=axes, timestamp=datetime.now(UTC))
+    return Grade(
+        task_prompt=task.prompt, task_id=task.id, agent_id=rollout.agent_id, axes=axes, timestamp=datetime.now(UTC)
+    )

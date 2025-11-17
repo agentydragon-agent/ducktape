@@ -57,6 +57,47 @@ Issues:
 - Doesn't leverage Pydantic's built-in validation
 - Extra boilerplate code
 
+## Pattern 3: Dict-Style Access on Pydantic Model Fields
+
+### Seen in: adgn/inop/grading/strategies.py, adgn/inop/engine/models.py
+
+```python
+# BAD: Using dict-style access on Pydantic model fields
+class ComparisonGrading(BaseModel):
+    criteria: list[dict[str, str]]  # Should be list[Criterion]!
+
+criteria_desc = "\n".join([f"- {c['name']}: {c['description']}" for c in criteria])
+
+# GOOD: Use Pydantic models with attribute access
+class ComparisonGrading(BaseModel):
+    criteria: list[Criterion]
+
+criteria_desc = "\n".join([f"- {c.name}: {c.description}" for c in criteria])
+```
+
+Issues:
+- Using `list[dict[str, str]]` when a Pydantic model already exists (e.g., `Criterion`)
+- Dict-style access (`obj['field']`) instead of attribute access (`obj.field`)
+- Loses type safety and IDE autocomplete
+- Doesn't leverage Pydantic validation
+- Makes code harder to refactor
+
+**Detection aid**:
+```bash
+# Find potential dict-access on model fields (check each manually)
+rg --type py "\[\"(name|description|criteria|score|rationale|status|type)\"\]"
+```
+
+**When dict access is OK**:
+- Accessing raw JSON data from `json.loads()` before creating Pydantic models
+- Generic dict operations where the structure isn't a domain model
+- Dynamic field access in meta-programming contexts
+
+**When to fix**:
+- A Pydantic model already exists for the structure
+- The fields are well-known and fixed
+- The code would benefit from type safety
+
 ## Detection Strategy
 
 **Primary Method**: Manual code reading to identify manual serialization/validation patterns.

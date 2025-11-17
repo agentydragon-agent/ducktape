@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, NewType
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
@@ -19,10 +19,8 @@ class AgentTaskType(StrEnum):
     CODE_REVIEW = "code_review"
 
 
-class TaskTypeEnum(StrEnum):
-    """Valid task types."""
-
-    CODING = "coding"
+# Task type names are extensible strings, not a fixed enum
+TaskTypeName = NewType("TaskTypeName", str)
 
 
 class EnvironmentType(StrEnum):
@@ -60,7 +58,7 @@ class ScoreWithRationale(BaseModel):
 
 
 class Grade(BaseModel):
-    task: str
+    task_prompt: str
     task_id: str
     agent_id: str  # Changed from int to match Rollout.agent_id
     axes: dict[str, ScoreWithRationale]
@@ -197,7 +195,7 @@ class ComparisonGrading(BaseModel):
 
     strategy: Literal["comparison"] = "comparison"
     reference: str
-    criteria: list[dict[str, str]]
+    criteria: list[Criterion]
 
 
 class MessageBasedGrading(BaseModel):
@@ -217,11 +215,11 @@ class MessageBasedGrading(BaseModel):
 GradingConfig = FileBasedGrading | ComparisonGrading | MessageBasedGrading
 
 
-# Task type definition
-class TaskType(BaseModel):
-    """Definition of a task type with its grading configuration."""
+# Task type configuration
+class TaskTypeConfig(BaseModel):
+    """Configuration for a task type including its default grading."""
 
-    name: str
+    name: TaskTypeName
     grading: GradingConfig | None  # Default grading for this task type
 
 
@@ -231,7 +229,7 @@ class TaskDefinition(BaseModel):
 
     id: str
     prompt: str
-    type: TaskTypeEnum = TaskTypeEnum.CODING  # Default to coding for backwards compatibility
+    type: TaskTypeName = TaskTypeName("coding")  # Default to coding for backwards compatibility
 
     # Optional overrides - properly typed
     setup_overrides: TaskSetup | None = None
@@ -242,7 +240,7 @@ class TaskDefinition(BaseModel):
     allowed_tools: list[str] | None = None
     pre_task_commands: str | None = None
 
-    def resolve_config(self, task_types: dict[str, TaskType]) -> tuple[TaskSetup | None, GradingConfig | None]:
+    def resolve_config(self, task_types: dict[str, TaskTypeConfig]) -> tuple[TaskSetup | None, GradingConfig | None]:
         """Resolve final setup and grading config.
 
         Setup comes from task's setup_overrides only (no default).
@@ -348,26 +346,57 @@ class Rollout:
         return ""
 
 
-@dataclass
-class RunnerEnvironment:
-    """Environment information from a runner."""
+class DockerEnvironment(BaseModel):
+    """Docker container environment for task execution."""
 
-    type: EnvironmentType
-    data: dict[str, Any]  # Type-specific data
+    type: Literal[EnvironmentType.DOCKER_CONTAINER] = EnvironmentType.DOCKER_CONTAINER
+    container_id: str
 
-    @property
-    def container_id(self) -> str | None:
-        """Get Docker container ID if this is a container environment."""
-        if self.type == EnvironmentType.DOCKER_CONTAINER:
-            return self.data.get("container_id")
-        return None
+    def collect_files(self) -> dict[str, str]:
+        """Collect files from Docker container.
 
-    @property
-    def workspace_path(self) -> str | None:
-        """Get workspace path if this is a directory environment."""
-        if self.type == EnvironmentType.WORKSPACE_DIR:
-            return self.data.get("path")
-        return None
+        Returns:
+            Dictionary mapping file paths to contents
+        """
+        # TODO: Implement container file collection
+        raise NotImplementedError("Docker container file collection not yet implemented")
+
+
+class WorkspaceEnvironment(BaseModel):
+    """Local workspace directory environment for task execution."""
+
+    type: Literal[EnvironmentType.WORKSPACE_DIR] = EnvironmentType.WORKSPACE_DIR
+    workspace_path: str
+
+    def collect_files(self) -> dict[str, str]:
+        """Collect all files from workspace directory.
+
+        Returns:
+            Dictionary mapping relative file paths to contents
+        """
+        import os
+        from pathlib import Path
+
+        files: dict[str, str] = {}
+        directory_path = Path(self.workspace_path)
+
+        if not directory_path.exists():
+            return files
+
+        for root, _, filenames in os.walk(self.workspace_path):
+            for filename in filenames:
+                filepath = Path(root) / filename
+                relative_path = filepath.relative_to(directory_path).as_posix()
+                try:
+                    files[relative_path] = filepath.read_text(encoding="utf-8")
+                except (UnicodeDecodeError, OSError):
+                    # Skip binary or unreadable files
+                    continue
+        return files
+
+
+# Discriminated union of environment types
+RunnerEnvironment = Annotated[DockerEnvironment | WorkspaceEnvironment, Field(discriminator="type")]
 
 
 @dataclass

@@ -14,10 +14,22 @@ from fastapi.responses import FileResponse, HTMLResponse
 from jinja2 import Environment, FileSystemLoader
 import markdown
 from markdownify import markdownify
+from pydantic import BaseModel, ConfigDict
 import uvicorn
 
 from .token_counter import count_tokens_for_models
 from .token_scheme import TokenScheme, VerificationError
+
+
+class StatsCache(BaseModel):
+    """Cache for page statistics with TTL."""
+
+    model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
+
+    data: dict | None = None
+    updated_at: datetime | None = None
+    ttl: timedelta
+
 
 # Configure logging to output to stdout
 logging.basicConfig(
@@ -37,7 +49,7 @@ MARKDOWN_PAGES = ["tana", "coding"]
 PAGE_TITLES = {}
 
 # Cache for stats with TTL
-STATS_CACHE = {"data": None, "last_updated": None, "ttl": timedelta(minutes=5)}
+STATS_CACHE = StatsCache(ttl=timedelta(minutes=5))
 
 # Common security headers for all responses
 HEADERS = {
@@ -203,12 +215,12 @@ async def stats_api():
     # Check cache
     now = datetime.now(TIMEZONE)
     if (
-        STATS_CACHE["data"] is not None
-        and STATS_CACHE["last_updated"] is not None
-        and now - STATS_CACHE["last_updated"] < STATS_CACHE["ttl"]
+        STATS_CACHE.data is not None
+        and STATS_CACHE.updated_at is not None
+        and now - STATS_CACHE.updated_at < STATS_CACHE.ttl
     ):
         logger.info("Returning cached stats")
-        return STATS_CACHE["data"]
+        return STATS_CACHE.data
 
     logger.info("Calculating fresh stats")
     pages_stats = []
@@ -233,8 +245,8 @@ async def stats_api():
     result = {"pages": pages_stats, "totals": totals}
 
     # Update cache
-    STATS_CACHE["data"] = result
-    STATS_CACHE["last_updated"] = now
+    STATS_CACHE.data = result
+    STATS_CACHE.updated_at = now
 
     return result
 

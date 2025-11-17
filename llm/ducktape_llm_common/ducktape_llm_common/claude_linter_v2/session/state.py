@@ -3,10 +3,22 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+
+from pydantic import BaseModel, ConfigDict
 
 from ..config.models import Violation
 from ..types import SessionID
+
+
+class Rule(BaseModel):
+    """Session-specific permission rule."""
+
+    model_config = ConfigDict(frozen=False)
+
+    predicate: str
+    action: str
+    created: datetime
+    expires: datetime | None = None
 
 
 @dataclass
@@ -25,7 +37,7 @@ class SessionState:
     pending_warnings: list[str] = field(default_factory=list)
 
     # Session-specific rules
-    rules: list[dict[str, Any]] = field(default_factory=list)
+    rules: list[Rule] = field(default_factory=list)
 
     # Notification tracking
     notification_id: int | None = None
@@ -54,7 +66,7 @@ class SessionState:
         """Clear the list of touched files (called after Stop hook)."""
         self.touched_files.clear()
 
-    def add_rule(self, rule: dict[str, Any]) -> None:
+    def add_rule(self, rule: Rule) -> None:
         """Add a session-specific rule."""
         self.rules.append(rule)
         self.last_seen = datetime.now()

@@ -134,12 +134,104 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
 
 ## Fix Strategy
 
-1. **Check library first**:
-   - Does OpenAI SDK / library already have the enum?
-   - Use `from openai.types import X` instead of reinventing
-   - READ THE ACTUAL SOURCE CODE of the library types
+1. **Check external API/SDK types FIRST** (Highest Priority):
 
-2. **Create StrEnum for internal values**:
+   **If parsing external API responses** (OpenAI, Anthropic, GitHub, etc.):
+   - **CRITICAL**: Check if official SDK exists and provides typed models
+   - Use SDK types instead of defining your own string-typed versions
+   - Common SDKs with good types:
+     - `anthropic` - Anthropic Claude API (`Message`, `ContentBlock`, `TextBlock`, `ToolUseBlock`)
+     - `openai` - OpenAI API (`ChatCompletion`, `ChatCompletionMessage`)
+     - `github` (PyGithub) - GitHub API
+     - `stripe` - Stripe API
+     - `google-cloud-*` - Google Cloud APIs
+
+   **Example - BAD (reinventing the wheel)**:
+   ```python
+   # Parsing Anthropic API responses with custom types
+   class TextContent(BaseModel):
+       type: str  # ❌ Should use SDK types
+       text: str | None = None
+
+   class MessageContent(BaseModel):
+       role: str  # ❌ Should be Literal["user"] | Literal["assistant"] from SDK
+       content: str | list[dict[str, Any]]  # ❌ Should use ContentBlock from SDK
+   ```
+
+   **Example - GOOD (using SDK types)**:
+   ```python
+   from anthropic.types import Message, ContentBlock, TextBlock, ToolUseBlock
+
+   # Use SDK's properly-typed models directly
+   def process_message(message: Message) -> str:
+       # message.role is properly typed as Literal["assistant"]
+       # message.content is List[ContentBlock] with proper union types
+       for block in message.content:
+           if isinstance(block, TextBlock):  # Type-safe!
+               return block.text
+   ```
+
+   **How to check**:
+   ```bash
+   # 1. Check if SDK is in requirements
+   rg "anthropic|openai|github|stripe" requirements.txt pyproject.toml
+
+   # 2. Check what types the SDK provides
+   python -c "import anthropic.types; print(dir(anthropic.types))"
+
+   # 3. Read SDK source code (GitHub)
+   # Example: https://github.com/anthropics/anthropic-sdk-python/blob/main/src/anthropic/types/
+
+   # 4. If SDK exists but you're using custom types, migrate to SDK types
+   ```
+
+   **Special case - Internal/Extended formats**:
+   - If parsing data that's *based on* external API but with extensions (e.g., Claude Code history logs)
+   - Check if structure matches SDK types closely
+   - If mostly matches: Consider using SDK types as base, extend if needed
+   - If significantly different: Custom types OK, but use Literal discriminators
+
+   **Example - Claude Code history format**:
+   ```python
+   # Claude Code logs wrap Anthropic Messages API format:
+   # {
+   #   "type": "user" | "assistant" | "summary",  # Claude Code-specific
+   #   "sessionId": "...", "uuid": "...", "cwd": "...",  # Claude Code metadata
+   #   "message": {  # ← This is Anthropic Messages API format!
+   #     "role": "user" | "assistant",
+   #     "content": [...],  # List[ContentBlock] for assistant
+   #     "id": "msg_...",
+   #     "model": "claude-...",
+   #     "usage": {...}
+   #   }
+   # }
+
+   # GOOD: Reuse SDK types for the nested message field
+   from anthropic.types import Message
+   from typing_extensions import Literal
+
+   class ClaudeCodeEntry(BaseModel):
+       type: Literal["user", "assistant", "summary"]
+       session_id: str = Field(alias="sessionId")
+       uuid: str
+       timestamp: str
+       cwd: str | None = None
+       message: Message | None = None  # ← Use SDK type!
+
+   # BAD: Reinventing Message structure
+   class ClaudeCodeEntry(BaseModel):
+       type: str  # ❌ Should use Literal
+       message: dict[str, Any]  # ❌ Loses type safety, SDK types already exist!
+   ```
+
+2. **Check standard library enums**:
+   ```python
+   # Use stdlib enums when available
+   from http import HTTPStatus  # For HTTP status codes
+   from enum import IntEnum, StrEnum  # For custom enums
+   ```
+
+3. **Create StrEnum for internal values**:
    ```python
    from enum import StrEnum
 

@@ -201,21 +201,52 @@ for func in all_functions:
 **Verification for each candidate**:
 
 1. **Check call count**: Functions called 1-2 times are high priority candidates
-2. **Check architectural role**:
+   - **CRITICAL**: Check if method is actually called from external code, not just by other methods in same class
+   - Example: `close()` might only be called by `__aexit__()` internally, but that's protocol conformance
+
+2. **Check interface/protocol conformance** (MOST IMPORTANT - prevents false positives):
+   - **Python protocols**: Check if method is called by dunder methods:
+     ```python
+     # Context manager protocol
+     __enter__() / __exit__() / __aenter__() / __aexit__()
+     # Iterator protocol
+     __iter__() / __next__()
+     # Sequence protocol
+     __len__() / __getitem__() / __setitem__()
+     ```
+   - **Abstract base classes**: Check if method overrides ABC abstract method:
+     ```bash
+     # Look for class inheritance from ABC
+     rg "class.*\(.*ABC.*\)" file.py
+     # Look for @abstractmethod in parent class
+     ```
+   - **Framework interfaces**: Check for standard API patterns:
+     ```python
+     # Gym environment: reset(), step(), render(), close()
+     # Django models: save(), delete(), clean()
+     # Context managers: __enter__(), __exit__(), close()
+     # FastAPI dependencies: __call__()
+     ```
+   - **If method is required by protocol/interface → KEEP** (even if trivial forwarder)
+
+3. **Check architectural role**:
    - Method overriding abstract method? → Keep (interface requirement)
-   - Public method in facade class? → Keep (API design)
+   - Public method in facade class AND actually called externally? → Keep (API design)
+   - Public method in facade class but NO external callers? → Consider removing
    - Private helper with simple body? → Likely inline
-3. **Complexity analysis**:
+
+4. **Complexity analysis**:
    ```python
    # For each call site:
    # Current: result = helper_func(arg1, arg2)
    # After inline: result = <helper_body with arg1, arg2>
    # Is "After" significantly longer or more complex? If no → inline
    ```
-4. **Check for consolidation**:
+
+5. **Check for consolidation**:
    - Does function consolidate error handling? → Keep
    - Does function consolidate validation? → Keep
-   - Does function just forward? → Inline
+   - Does function just forward? → Inline (unless protocol/interface conformance)
 
 ## Decision Framework: Inline or Keep?
 
@@ -239,11 +270,19 @@ For each candidate function, ask:
 ```
 
 ### 3. **Architectural Role Test**
-- [ ] Implements interface/abstract method? → **KEEP**
-- [ ] Part of public API (facade pattern)? → **KEEP**
-- [ ] Provides dependency injection point? → **KEEP**
-- [ ] Backward compatibility shim? → **KEEP (temporarily)**
-- [ ] Private helper, simple body? → **LIKELY INLINE**
+**Check in this order** (most common to least common):
+1. [ ] **Protocol/interface conformance?** → **KEEP** (highest priority check)
+   - Called by dunder methods? (`__aexit__`, `__enter__`, `__iter__`, etc.)
+   - Part of framework interface? (Gym, Django, FastAPI, etc.)
+   - Overrides abstract method from ABC?
+2. [ ] **Public API actually used externally?** → **KEEP**
+   - Check if method is called from outside the class
+   - Facade with actual external callers
+3. [ ] **Backward compatibility shim?** → **KEEP (temporarily)**
+   - Document with TODO if temporary
+4. [ ] **Dependency injection point?** → **KEEP**
+   - Provides customization for testing
+5. [ ] **Private helper, simple body?** → **LIKELY INLINE**
 
 ### 4. **Consolidation Test**
 - Consolidates error handling? → **KEEP**
@@ -277,15 +316,45 @@ For each candidate function, ask:
 
 These patterns have **legitimate reasons** for simple forwarding:
 
+### Protocol/Interface Conformance (HIGHEST PRIORITY - Most Common False Positives)
+
+**Python Protocols**:
+- **Context managers**: `close()` called by `__aexit__()`, even if trivial
+- **Iterators**: `__next__()` forwarding to internal iterator
+- **Async protocols**: `__aenter__()` / `__aexit__()` / `close()` / `stop()`
+- **Descriptors**: `__get__()` / `__set__()` / `__delete__()`
+
+**Framework Interfaces**:
+- **Gym environments**: `reset()`, `step()`, `render()`, `close()` - standard API
+- **Django**: Template tags must be functions (can't call constructors directly)
+- **FastAPI**: Dependencies implementing `__call__()`
+- **SQLAlchemy**: Repository pattern methods implementing interface
+
+**How to verify**:
+```bash
+# Check if method is called by dunder methods
+rg "def __(enter|exit|aenter|aexit|iter|next)" file.py -A10 | grep "method_name"
+
+# Check class inheritance for ABC or known frameworks
+rg "class.*\((ABC|gym\.Env|BaseModel|Repository)" file.py
+
+# Check if it's a public API actually used externally
+rg "from.*import.*ClassName" --type py | wc -l  # Check usage count
+```
+
 ### Architectural Patterns
 - **Facade pattern**: Stable API over changing implementation
-- **Interface implementation**: Required by abstract base class
+  - **IMPORTANT**: Only keep if actually used externally (check call sites)
+  - Example: SearchService was removed because only 2 of 5 methods used by single caller
+- **Public API with external callers**: Method is part of class's public interface AND called from outside
 - **Dependency injection**: Provides customization point for testing
 
 ### Complexity Reduction
 - **Consolidates error handling**: Multiple try/except blocks → single function
 - **Consolidates validation**: Complex checks used in multiple places
 - **Called many times**: 10+ call sites benefit from centralized logic
+- **Semantic clarity**: Wrapper name significantly clearer than underlying call
+  - Example: `get_split_amount(split)` vs `gnc_numeric_to_python_Decimal(split.GetAmount())`
 
 ### Temporary Patterns
 - **Backward compatibility**: During migration/refactoring (document with TODO)
@@ -355,6 +424,193 @@ metadata = safe_json_loads(row.metadata_json)
 3. ❌ **Consolidation test**: Consolidates error handling logic
 
 **Decision**: **KEEP** - Reduces complexity by consolidating error handling
+
+---
+
+### Counter-Example: Context Manager Protocol (Keep)
+
+```python
+# Class with async context manager protocol
+class MatrixClient:
+    async def stop(self) -> None:
+        # ... cleanup logic ...
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
+
+    async def close(self) -> None:
+        await self.stop()
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
+```
+
+**Why flagged:** `close()` is a trivial forwarder to `stop()`
+
+**Decision analysis**:
+1. ❌ **Call count**: Only called once (by `__aexit__`)
+2. ❌ **Interface conformance**: **Protocol requirement**
+   - `__aexit__()` calls `close()` - this is async context manager protocol
+   - Provides semantic clarity: `close()` for context managers, `stop()` for explicit cleanup
+3. ❌ **Architectural role**: Part of Python async context manager protocol
+
+**Decision**: **KEEP** - Required for protocol conformance, even though trivial
+
+---
+
+### Counter-Example: Framework Interface (Keep)
+
+```python
+# Gym environment wrapper
+class OpaqueEnvironmentWrapper:
+    def __init__(self, env_name: str):
+        self.env = gym.make(env_name)
+
+    def reset(self):
+        obs = self.env.reset()
+        return self._flatten_observation(obs)
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        return self._flatten_observation(obs), reward, done, info
+
+    def close(self):
+        self.env.close()  # Trivial forwarder!
+```
+
+**Why flagged:** `close()` just forwards to `self.env.close()`
+
+**Decision analysis**:
+1. ❌ **Interface conformance**: **Framework requirement**
+   - Gym environments are expected to have `reset()`, `step()`, `render()`, `close()`
+   - Even if `close()` just forwards, it's part of the standard Gym interface
+   - Callers expect to call `wrapper.close()`, not `wrapper.env.close()`
+2. ❌ **Architectural role**: Wrapper implementing standard interface
+
+**Decision**: **KEEP** - Required by Gym environment interface
+
+---
+
+### Counter-Example: Method Actually Used by Public API (Keep)
+
+```python
+class SettingsWrapper:
+    def __init__(self, schema: str, path: str):
+        self.settings = Gio.Settings.new_with_path(schema, path)
+
+    def sync(self) -> None:
+        self.settings.sync()  # Trivial forwarder!
+
+# Usage - called 3 times by external code:
+profile_list = ProfileList()  # subclass of SettingsWrapper
+profile_list["default"] = uuid
+profile_list.sync()  # Called from external code
+
+profile = Profile(uuid)  # subclass of SettingsWrapper
+profile.apply_color_scheme(...)
+profile.sync()  # Called from external code
+```
+
+**Why flagged:** `sync()` just forwards to `self.settings.sync()`
+
+**Decision analysis**:
+1. ❌ **Call count**: Called 3 times by external code (not just internal methods)
+2. ❌ **Architectural role**: Part of public API, actually used by callers
+3. ❌ **Facade pattern**: Wrapper provides public API boundary
+
+**Decision**: **KEEP** - Part of public API with actual external callers
+
+**Lesson**: Just because a method forwards doesn't mean it's unused. Check actual call sites!
+
+---
+
+## Scan Results Structure
+
+**IMPORTANT**: The scan results MUST include reasoning and categorization, not just a list of candidates.
+
+For each finding, apply the Decision Framework and categorize:
+
+### ✅ Should Inline (True Positives)
+- **What**: Function name, location, evidence
+- **Why it should be inlined**: Apply Decision Framework
+  - Call count test result
+  - Complexity test result
+  - Architectural role test result
+  - Consolidation test result
+- **Recommended action**: Specific fix (show before/after)
+
+### ❌ Should Keep (False Positives / Justified Forwarders)
+- **What**: Function name, location
+- **Why it should be kept**: Specific reason from "When to Keep" section
+  - Facade/interface implementation
+  - Consolidates error handling/validation
+  - Called many times with complexity benefit
+  - Framework requirement (e.g., Django template tags)
+  - Backward compatibility shim
+- **Decision**: No action needed (justified)
+
+### Example Result Format
+
+```markdown
+## Findings
+
+### True Positives (Should Inline)
+
+#### 1. SearchService Facade Methods
+**File:** `/path/to/search.py`
+**Lines:** 19-32
+
+**Evidence:** 5 methods that just forward to module functions
+- `get_node()` → forwards to `_graph[node_id]`
+- `materialize()` → forwards to `materialize_search()`
+- etc.
+
+**Decision Framework Analysis:**
+1. ✅ **Call count**: Only 2 of 5 methods used, both called from single caller (Workspace class)
+2. ✅ **Complexity test**: Inlining doesn't increase complexity (1 line → 1 line)
+3. ✅ **Architectural role**: Not implementing interface, not public API boundary
+4. ✅ **Consolidation test**: No error handling or validation added
+
+**Decision**: **INLINE** - Remove SearchService, use direct imports in Workspace
+
+**Recommended fix:**
+- Replace `SearchService(graph)` with direct imports
+- Update Workspace methods to call functions directly
+- Delete SearchService class
+
+---
+
+### False Positives (Keep - Justified)
+
+#### 1. Django Template Tag Wrapper
+**File:** `/path/to/custom_tags.py`
+**Line:** 233-234
+
+**Why flagged:** Single-line function forwarding to constructor
+
+**Why it should be kept:** **Framework requirement**
+- Django's `@register.simple_tag` decorator requires function signature
+- Template engine calls functions, not constructors directly
+- Not a code smell - necessary for framework integration
+
+**Decision**: No action needed (justified forwarder)
+
+---
+
+#### 2. GnuCash Utility Wrapper
+**File:** `/path/to/gnucash_util.py`
+**Line:** 35-36
+
+**Why flagged:** Single-line wrapper around conversion function
+
+**Why it should be kept:** **Semantic clarity**
+- Called 3 times in reconciliation code
+- `get_split_amount(split)` clearer than `gnc_numeric_to_python_Decimal(split.GetAmount())`
+- One usage as key function for sorting - shorter name improves readability
+- Abstracts GnuCash's awkward numeric type conversion
+
+**Decision**: No action needed (readability benefit justifies wrapper)
+```
 
 ## Validation
 
