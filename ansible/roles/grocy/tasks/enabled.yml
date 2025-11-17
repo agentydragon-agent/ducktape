@@ -58,7 +58,7 @@
 
 - name: Start Grocy Docker container
   community.docker.docker_container:
-    container_default_behavior: false_defaults
+    container_default_behavior: no_defaults
     detach: true
     init: false
     interactive: false
