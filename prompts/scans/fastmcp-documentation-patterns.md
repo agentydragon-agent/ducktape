@@ -3,11 +3,30 @@
 ## Context
 @../shared-context.md
 
+## FastMCP Documentation References
+
+FastMCP automatically generates JSON schemas from Pydantic models and exposes them to MCP clients.
+Understanding how FastMCP works is essential for effective documentation.
+
+**Official Resources:**
+- [FastMCP Documentation](https://gofastmcp.com/)
+- [FastMCP GitHub](https://github.com/jlowin/fastmcp)
+- [Tools Documentation](https://gofastmcp.com/servers/tools) - Parameter metadata and Field usage
+- [Complex Inputs Example](https://github.com/jlowin/fastmcp/blob/main/examples/complex_inputs.py) - Pydantic models with validation
+
+**Key FastMCP Behaviors:**
+- Generates input schemas from function signatures and type annotations
+- Generates output schemas from return type annotations
+- Exposes Pydantic `Field(description=...)` in JSON schemas sent to clients
+- Supports both simple string descriptions (`Annotated[str, "description"]`) and full Field metadata
+
 ## Pattern 1: Missing Field Descriptions in Response Models
 
 ### Good Example: adgn/mcp/gitea_mirror/server.py
 
 ```python
+from pydantic import BaseModel, Field
+
 class TriggerMirrorSyncResponse(BaseModel):
     owner: str = Field(description="Gitea owner (username) of the mirror repository")
     repo: str = Field(description="Repository name (auto-generated from URL)")
@@ -19,6 +38,27 @@ class TriggerMirrorSyncResponse(BaseModel):
     )
     sync_triggered: bool = Field(description="Always true on success (sync was triggered)")
 ```
+
+### FastMCP's Approach (from official examples)
+
+FastMCP documentation shows Field usage for **input parameters**:
+
+```python
+# From FastMCP tools documentation
+from typing import Annotated
+from pydantic import Field
+
+@mcp.tool
+def process_image(
+    image_url: Annotated[str, Field(description="URL of the image to process")],
+    width: Annotated[int, Field(description="Target width in pixels", ge=1, le=2000)] = 800,
+) -> dict:
+    """Process an image with optional resizing."""
+    # Implementation...
+```
+
+The same principle applies to **response models**. When your tool returns a Pydantic model,
+FastMCP generates an output schema from that model, including Field descriptions.
 
 ### Bad Example
 
@@ -32,15 +72,18 @@ class MyToolResponse(BaseModel):
 ```
 
 **Why it matters**:
-- FastMCP exposes full Pydantic schemas to MCP clients via JSON Schema
-- Field descriptions appear in the schema clients receive
-- Helps LLM agents understand how to use the response fields
-- No ambiguity about field purpose or format
+- FastMCP automatically generates JSON schemas from Pydantic models
+- Field descriptions are embedded in the JSON schema sent to MCP clients
+- LLM agents use these descriptions to understand field purpose
+- No ambiguity about field formats, usage patterns, or relationships
+
+**Per FastMCP docs**: "FastMCP handles schema generation from type hints and docstrings."
+Field descriptions extend this with field-level documentation.
 
 **Detection**:
 ```bash
-# Find response models without Field descriptions
-rg --type py "class.*Response.*BaseModel" -A10 | rg -v "Field\(description="
+# Find response models without Field descriptions in MCP servers
+rg --type py "class.*Response.*BaseModel" adgn/src/adgn/mcp/ -A10 | rg -v "Field\(description="
 ```
 
 ## Pattern 2: Redundant Schema Documentation in Docstrings
@@ -201,6 +244,14 @@ fd -e py "server\.py$" adgn/src/adgn/mcp/
 
 ## References
 
+### FastMCP Resources
+- [FastMCP Official Documentation](https://gofastmcp.com/)
+- [FastMCP GitHub Repository](https://github.com/jlowin/fastmcp)
+- [Tools - Parameter Metadata](https://gofastmcp.com/servers/tools#parameter-metadata) - Official guide to Field usage
+- [Complex Inputs Example](https://github.com/jlowin/fastmcp/blob/main/examples/complex_inputs.py) - Pydantic validation patterns
+- [Memory Example](https://github.com/jlowin/fastmcp/blob/main/examples/memory.py) - Real-world usage with Field descriptions
+
+### Related Resources
 - [Pydantic Field Documentation](https://docs.pydantic.dev/latest/concepts/fields/)
 - [JSON Schema Description](https://json-schema.org/understanding-json-schema/reference/generic.html#annotations)
-- [FastMCP Documentation](https://github.com/jlowin/fastmcp)
+- [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)
