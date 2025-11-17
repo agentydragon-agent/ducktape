@@ -1,7 +1,6 @@
 """Grading strategy implementations."""
 
 from abc import ABC, abstractmethod
-from contextlib import suppress
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -76,9 +75,7 @@ class FileBasedGradingStrategy(GradingStrategy):
 
         # Try to get files from environment first (container/workspace)
         if context.environment:
-            # Docker container file collection not yet implemented, will raise NotImplementedError
-            with suppress(NotImplementedError):
-                files = context.environment.collect_files()
+            files = context.environment.collect_files()
 
         # Fall back to files in rollout
         if not files and context.rollout.files:
