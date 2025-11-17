@@ -28,6 +28,6 @@ exec qemu-system-x86_64 \
   -kernel $KERNEL \
   -initrd $INITRD \
   -append "console=ttyS0 talos.platform=metal slab_nomerge pti=on" \
-  -netdev user,id=net0,hostfwd=tcp::50000-:50000,hostfwd=tcp::6443-:6443 \
+  -netdev user,id=net0,hostfwd=tcp::50000-:50000,hostfwd=tcp::6443-:6443,dns=8.8.8.8 \
   -device virtio-net-pci,netdev=net0 \
   -nographic
