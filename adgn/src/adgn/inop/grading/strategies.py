@@ -187,7 +187,7 @@ class MessageBasedGradingStrategy(GradingStrategy):
 class ComparisonGradingStrategy(GradingStrategy):
     """Grade by comparing output to reference."""
 
-    def __init__(self, reference: str, criteria: list[dict[str, str]] | None = None):
+    def __init__(self, reference: str, criteria: list[Criterion] | None = None):
         self.reference = reference
         self.criteria = criteria if criteria is not None else []
 
@@ -233,7 +233,7 @@ class ComparisonGradingStrategy(GradingStrategy):
         """Generate comparison grading prompt."""
         agent_output = prepared_artifacts["agent_output"]
         reference = prepared_artifacts["reference"]
-        criteria_desc = "\n".join([f"- {c['name']}: {c['description']}" for c in prepared_artifacts["criteria"]])
+        criteria_desc = "\n".join([f"- {c.name}: {c.description}" for c in prepared_artifacts["criteria"]])
 
         return (
             f"Task: {task.prompt}\n\n"

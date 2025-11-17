@@ -195,7 +195,7 @@ class ComparisonGrading(BaseModel):
 
     strategy: Literal["comparison"] = "comparison"
     reference: str
-    criteria: list[dict[str, str]]
+    criteria: list[Criterion]
 
 
 class MessageBasedGrading(BaseModel):
