@@ -8,13 +8,14 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import aiofiles  # type: ignore[import-untyped]
 import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
 import openai
+from pydantic import BaseModel, Field
 from scipy import stats
 
 # Models to test
@@ -44,6 +45,58 @@ MAX_STEPS = {
     "Blackjack-v1": 100,  # Games are typically short
     "Acrobot-v1": 500,  # Default gym limit
 }
+
+
+class Message(BaseModel):
+    """Single message in conversation"""
+
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class EpisodeData(BaseModel):
+    """Log entry for episode data"""
+
+    timestamp: datetime = Field(default_factory=datetime.now)
+    model: str
+    environment: str
+    run_num: int
+    episode_num: int
+    total_reward: float
+    num_steps: int
+    states: list[Any]  # Can be list or ndarray
+    actions: list[int]
+    rewards: list[float]
+
+
+class StepData(BaseModel):
+    """Log entry for step data"""
+
+    timestamp: datetime = Field(default_factory=datetime.now)
+    model: str
+    environment: str
+    run_num: int
+    episode_num: int
+    step_num: int
+    state: Any  # Can be list or ndarray
+    action: int
+    reward: float
+    done: bool
+    truncated: bool
+
+
+class SummaryData(BaseModel):
+    """Experiment summary data"""
+
+    experiment_start: datetime
+    experiment_end: datetime = Field(default_factory=datetime.now)
+    duration_seconds: float
+    models: list[str]
+    environments: list[str]
+    episodes_per_run: int
+    runs_per_experiment: int
+    total_runs: int
+    log_directory: str
 
 
 @dataclass
@@ -116,59 +169,56 @@ class ExperimentLogger:
 
     async def log_episode(self, model: str, env_name: str, run_num: int, episode_num: int, episode: Episode):
         """Log episode data as it completes."""
-        episode_data = {
-            "timestamp": datetime.now().isoformat(),
-            "model": model,
-            "environment": env_name,
-            "run_num": run_num,
-            "episode_num": episode_num,
-            "total_reward": episode.total_reward,
-            "num_steps": len(episode.steps),
-            "states": [
+        episode_data = EpisodeData(
+            model=model,
+            environment=env_name,
+            run_num=run_num,
+            episode_num=episode_num,
+            total_reward=episode.total_reward,
+            num_steps=len(episode.steps),
+            states=[
                 step.state.tolist() if isinstance(step.state, np.ndarray) else step.state for step in episode.steps
             ],
-            "actions": [step.action for step in episode.steps],
-            "rewards": [step.reward for step in episode.steps],
-        }
+            actions=[step.action for step in episode.steps],
+            rewards=[step.reward for step in episode.steps],
+        )
 
         async with aiofiles.open(self.episode_log, "a") as f:
-            await f.write(json.dumps(episode_data) + "\n")
+            await f.write(episode_data.model_dump_json() + "\n")
 
     async def log_step(self, model: str, env_name: str, run_num: int, episode_num: int, step_num: int, step: Step):
         """Log individual step data (optional, for detailed analysis)."""
-        step_data = {
-            "timestamp": datetime.now().isoformat(),
-            "model": model,
-            "environment": env_name,
-            "run_num": run_num,
-            "episode_num": episode_num,
-            "step_num": step_num,
-            "state": step.state.tolist() if isinstance(step.state, np.ndarray) else step.state,
-            "action": step.action,
-            "reward": step.reward,
-            "done": step.done,
-            "truncated": step.truncated,
-        }
+        step_data = StepData(
+            model=model,
+            environment=env_name,
+            run_num=run_num,
+            episode_num=episode_num,
+            step_num=step_num,
+            state=step.state.tolist() if isinstance(step.state, np.ndarray) else step.state,
+            action=step.action,
+            reward=step.reward,
+            done=step.done,
+            truncated=step.truncated,
+        )
 
         async with aiofiles.open(self.step_log, "a") as f:
-            await f.write(json.dumps(step_data) + "\n")
+            await f.write(step_data.model_dump_json() + "\n")
 
     async def log_summary(self, all_runs: list[Run]):
         """Log experiment summary."""
-        summary = {
-            "experiment_start": self.start_time.isoformat(),
-            "experiment_end": datetime.now().isoformat(),
-            "duration_seconds": (datetime.now() - self.start_time).total_seconds(),
-            "models": MODELS,
-            "environments": ENVIRONMENTS,
-            "episodes_per_run": EPISODES_PER_RUN,
-            "runs_per_experiment": RUNS_PER_EXPERIMENT,
-            "total_runs": len(all_runs),
-            "log_directory": str(self.log_dir),
-        }
+        summary = SummaryData(
+            experiment_start=self.start_time,
+            duration_seconds=(datetime.now() - self.start_time).total_seconds(),
+            models=MODELS,
+            environments=ENVIRONMENTS,
+            episodes_per_run=EPISODES_PER_RUN,
+            runs_per_experiment=RUNS_PER_EXPERIMENT,
+            total_runs=len(all_runs),
+            log_directory=str(self.log_dir),
+        )
 
         async with aiofiles.open(self.summary_log, "w") as f:
-            await f.write(json.dumps(summary, indent=2))
+            await f.write(summary.model_dump_json(indent=2))
 
     def get_log_directory(self) -> Path:
         """Return the log directory path."""
@@ -184,7 +234,7 @@ class LLMRLAgent:
             timeout=30.0,  # 30 second timeout for API calls
             max_retries=2,  # Retry up to 2 times on failure
         )
-        self.conversation_history: list[dict[str, str]] = []
+        self.conversation_history: list[Message] = []
 
     def _create_initial_prompt(self) -> str:
         return """You are in an environment. Your goal is to maximize cumulative reward.
@@ -217,19 +267,20 @@ Choose action:"""
     ) -> int:
         """Get action from LLM based on raw state data."""
         if not self.conversation_history:
-            self.conversation_history.append({"role": "system", "content": self._create_initial_prompt()})
+            self.conversation_history.append(Message(role="system", content=self._create_initial_prompt()))
 
         prompt = self._create_step_prompt(state, reward, action_space_size, first_step)
-        self.conversation_history.append({"role": "user", "content": prompt})
+        self.conversation_history.append(Message(role="user", content=prompt))
 
+        messages_dict = [msg.model_dump() for msg in self.conversation_history]
         if self.model == "o1-mini":
             # o1 models don't support temperature parameter
             response = await self.client.chat.completions.create(
-                model=self.model, messages=self.conversation_history, max_tokens=10
+                model=self.model, messages=messages_dict, max_tokens=10
             )
         else:
             response = await self.client.chat.completions.create(
-                model=self.model, messages=self.conversation_history, temperature=1.0, max_tokens=10
+                model=self.model, messages=messages_dict, temperature=1.0, max_tokens=10
             )
 
         action_str = response.choices[0].message.content.strip()
@@ -237,14 +288,14 @@ Choose action:"""
 
         # Validate action
         if 0 <= action < action_space_size:
-            self.conversation_history.append({"role": "assistant", "content": action_str})
+            self.conversation_history.append(Message(role="assistant", content=action_str))
             return action
 
         raise ValueError(f"LLM returned invalid action {action} (must be 0-{action_space_size - 1})")
 
     def reset(self):
         """Reset conversation history for new episode."""
-        self.conversation_history: list[dict[str, str]] = []
+        self.conversation_history: list[Message] = []
 
 
 async def run_episode(

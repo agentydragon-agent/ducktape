@@ -13,8 +13,19 @@ from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
+from pydantic import BaseModel, ConfigDict
 
 from .scoresheet import GradeResult, GraderScoresheet, TestCase
+
+
+class Action(BaseModel):
+    """Single action in agent rollout sequence"""
+
+    tool: str | None = None
+    type: str | None = None
+    description: str | None = None
+
+    model_config = ConfigDict(extra="allow")  # Allow additional fields
 
 
 @dataclass
@@ -37,7 +48,7 @@ class AgentRollout:
     claude_md_content: str
     task_prompt: str
     generated_files: list[Path]  # Files Claude created in the directory
-    action_sequence: list[dict[str, Any]]  # Tool calls and actions Claude made
+    action_sequence: list[Action]  # Tool calls and actions Claude made
     final_output: str  # Claude's final response text
     success: bool  # Whether the rollout completed successfully
 
@@ -279,8 +290,9 @@ class ActionSequenceGrader(GraderScoresheet):
         # Format action sequence for analysis
         action_summary = ""
         for i, action in enumerate(rollout.action_sequence, 1):
-            action_type = action.get("tool", action.get("type", "unknown"))
-            action_summary += f"{i}. {action_type}: {action.get('description', str(action)[:100])}\n"
+            action_type = action.tool or action.type or "unknown"
+            description = action.description or str(action.model_dump())[:100]
+            action_summary += f"{i}. {action_type}: {description}\n"
 
         if not action_summary.strip():
             return GradeResult(
