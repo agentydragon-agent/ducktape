@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from ..config.models import Violation
 from ..types import SessionID
@@ -12,6 +12,8 @@ from ..types import SessionID
 
 class Rule(BaseModel):
     """Session-specific permission rule."""
+
+    model_config = ConfigDict(frozen=False)
 
     predicate: str
     action: str

@@ -6,13 +6,15 @@ import logging
 from pathlib import Path
 
 from platformdirs import user_data_dir
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..types import SessionID
 
 
 class Rule(BaseModel):
     """Session-specific permission rule."""
+
+    model_config = ConfigDict(frozen=False)
 
     predicate: str
     action: str
@@ -22,6 +24,8 @@ class Rule(BaseModel):
 
 class SessionData(BaseModel):
     """Session data structure."""
+
+    model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
 
     id: str
     created: datetime

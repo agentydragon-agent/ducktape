@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from jinja2 import Environment, FileSystemLoader
 import markdown
 from markdownify import markdownify
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import uvicorn
 
 from .token_counter import count_tokens_for_models
@@ -23,6 +23,8 @@ from .token_scheme import TokenScheme, VerificationError
 
 class StatsCache(BaseModel):
     """Cache for page statistics with TTL."""
+
+    model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
 
     data: dict | None = None
     updated_at: datetime | None = None
