@@ -1,4 +1,8 @@
 ---
+# Include system inspection sudo permissions for all systems
+- import_role:
+    name: system_inspection_nopasswd
+  tags: [sudo, system]
 
 - name: System-wide apt lock acquire timeout (3 min)
   become: true
@@ -50,8 +54,6 @@
       - sudo # for become: agentydragon further down
       - unrar-free
       - yasm
-
-
 - name: Remove retired pkgs
   become: true
   ansible.builtin.apt:
