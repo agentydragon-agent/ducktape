@@ -75,10 +75,6 @@ class ApprovalPolicyServer(NotifyingFastMCP):
     the backend snapshot.
     """
 
-    # Use shared constant for proposals index URI (broadcast mapping)
-
-    # proposal item URI helper removed; use approval_policy_proposal_item_uri directly
-
     def __init__(self, engine: ApprovalPolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER) -> None:
         super().__init__(name=name, instructions=_load_instructions())
         self._engine = engine
@@ -180,7 +176,6 @@ async def attach_approval_policy_readonly(
     engine: ApprovalPolicyEngine,
     *,
     name: str = APPROVAL_POLICY_SERVER_NAME_READER,
-    init_timeout_secs: float | None = None,
 ) -> ApprovalPolicyServer:
     """Attach the approval policy readonly server (resources only; no proposer tools)."""
     server = ApprovalPolicyServer(engine, name=name)
@@ -207,10 +202,9 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
             )
 
         @self.flat_model()
-        async def withdraw_proposal(input: WithdrawProposalArgs) -> bool:  # type: ignore[unused-ignore]
+        async def withdraw_proposal(input: WithdrawProposalArgs) -> None:  # type: ignore[unused-ignore]
             """Withdraw a pending policy proposal by id."""
             await self._engine.withdraw_proposal(input.id)
-            return True
 
 
 async def attach_approval_policy_proposer(
@@ -218,7 +212,6 @@ async def attach_approval_policy_proposer(
     engine: ApprovalPolicyEngine,
     *,
     name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER,
-    init_timeout_secs: float | None = None,
 ) -> ApprovalPolicyProposerServer:
     server = ApprovalPolicyProposerServer(engine=engine, name=name)
     await comp.mount_inproc(name, server)
@@ -236,24 +229,21 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
         self._engine = engine
 
         @self.flat_model()
-        async def approve_proposal(input: ApproveProposalArgs) -> bool:  # type: ignore[unused-ignore]
+        async def approve_proposal(input: ApproveProposalArgs) -> None:  # type: ignore[unused-ignore]
             """Approve a pending policy proposal by id (activates policy)."""
             await self._engine.approve_proposal(input.id)
-            return True
 
         @self.flat_model()
-        async def reject_proposal(input: RejectProposalArgs) -> bool:  # type: ignore[unused-ignore]
+        async def reject_proposal(input: RejectProposalArgs) -> None:  # type: ignore[unused-ignore]
             """Reject a pending policy proposal by id."""
             await self._engine.reject_proposal(input.id)
-            return True
 
         @self.flat_model()
-        async def set_policy_text(input: SetPolicyTextArgs) -> bool:  # type: ignore[unused-ignore]
+        async def set_policy_text(input: SetPolicyTextArgs) -> None:  # type: ignore[unused-ignore]
             """Directly set active policy text after self-check."""
             # Self-check program using engine's docker client
             self._engine.self_check(input.source)
             self._engine.set_policy(input.source)
-            return True
 
 
 async def attach_approval_policy_admin(
@@ -261,7 +251,6 @@ async def attach_approval_policy_admin(
     engine: ApprovalPolicyEngine,
     *,
     name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER,
-    init_timeout_secs: float | None = None,
 ) -> ApprovalPolicyAdminServer:
     server = ApprovalPolicyAdminServer(engine=engine, name=name)
     await comp.mount_inproc(name, server)
