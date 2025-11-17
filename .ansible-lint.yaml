@@ -27,10 +27,6 @@ mock_modules:
   - dconf_array_edit
   - install_handler
   - autostart_entry
-  - community.general.snap
-  - community.docker.docker_compose_v2
-  - community.docker.docker_container
-  - community.general.filesystem
 
 # Mock these roles if they're external/Galaxy roles
 mock_roles:
