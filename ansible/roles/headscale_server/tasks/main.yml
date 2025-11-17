@@ -53,7 +53,17 @@
     owner: headscale
     group: headscale
     mode: '0644'
-  notify: restart headscale
+  notify: Restart Headscale
+  tags: [headscale, config]
+
+- name: Deploy headscale ACL policy
+  ansible.builtin.copy:
+    src: policy.json
+    dest: /etc/headscale/policy.json
+    owner: headscale
+    group: headscale
+    mode: '0644'
+  notify: Restart Headscale
   tags: [headscale, config]
 
 - name: Create headscale systemd service
@@ -64,8 +74,8 @@
     group: root
     mode: '0644'
   notify:
-    - reload systemd
-    - restart headscale
+    - Reload Systemd
+    - Restart Headscale
   tags: [headscale, service]
 
 - name: Enable and start headscale service
