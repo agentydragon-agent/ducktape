@@ -3,7 +3,6 @@
 
 import argparse
 from collections import Counter
-from contextlib import suppress
 from datetime import datetime
 import json
 from pathlib import Path
@@ -11,26 +10,17 @@ import re
 from typing import Any, Literal
 
 from anthropic.types import Message, Usage
-from anthropic.types.content_block import ContentBlock
+from anthropic.types.text_block import TextBlock
+from anthropic.types.thinking_block import ThinkingBlock
+from anthropic.types.tool_use_block import ToolUseBlock
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ToolResultBlock(BaseModel):
-    """Tool result block in user messages (input to API)"""
-
-    type: Literal["tool_result"]
-    tool_use_id: str
-    content: str | list[dict[str, Any]]
-    is_error: bool | None = None
-
-    model_config = ConfigDict(extra="allow")
-
-
 class UserMessage(BaseModel):
-    """Simple user message structure in Claude Code history"""
+    """User message structure in Claude Code history (simple format, allows any content)"""
 
     role: Literal["user"]
-    content: str | list[ContentBlock | ToolResultBlock | dict[str, Any]]
+    content: str | list[dict[str, Any]]  # Keep flexible for tool_result blocks
 
     model_config = ConfigDict(extra="allow")
 
@@ -116,6 +106,11 @@ class SearchResult(BaseModel):
     timestamp: str
     type: str
     snippet: str
+
+
+def _truncate(text: str, max_len: int = 100) -> str:
+    """Truncate text with ellipsis if longer than max_len"""
+    return f"{text[:max_len]}..." if len(text) > max_len else text
 
 
 class ClaudeHistoryReader:
@@ -230,11 +225,18 @@ class ClaudeHistoryReader:
         if not isinstance(message.content, list):
             return ""
 
-        # Handle structured content blocks
+        # Handle structured content blocks using proper type matching
         text_parts = []
         for block in message.content:
-            if isinstance(block, dict):
-                # Handle dict blocks (fallback for untyped data)
+            # Type-safe handling using isinstance - no AttributeError possible
+            if isinstance(block, TextBlock):
+                text_parts.append(block.text)
+            elif isinstance(block, ThinkingBlock):
+                text_parts.append(f"[Thinking: {_truncate(block.thinking)}]")
+            elif isinstance(block, ToolUseBlock):
+                text_parts.append(f"[Tool: {block.name}]")
+            elif isinstance(block, dict):
+                # Handle dict blocks from user messages (tool_result, etc.)
                 block_type = block.get("type", "")
                 if block_type == "text":
                     text_parts.append(block.get("text", ""))
@@ -243,44 +245,9 @@ class ClaudeHistoryReader:
                 elif block_type == "tool_result":
                     content = block.get("content", "")
                     if isinstance(content, str) and content:
-                        text_parts.append(
-                            f"[Tool Result: {content[:50]}...]" if len(content) > 50 else f"[Tool Result: {content}]"
-                        )
+                        text_parts.append(f"[Tool Result: {_truncate(content, 50)}]")
                     else:
                         text_parts.append("[Tool Result]")
-                continue
-
-            # Handle typed block objects from Anthropic SDK
-            try:
-                block_type = block.type
-            except AttributeError:
-                continue
-
-            if block_type == "text":
-                with suppress(AttributeError):
-                    text_parts.append(block.text)
-            elif block_type == "thinking":
-                with suppress(AttributeError):
-                    thinking = block.thinking
-                    text_parts.append(
-                        f"[Thinking: {thinking[:100]}...]" if len(thinking) > 100 else f"[Thinking: {thinking}]"
-                    )
-            elif block_type == "tool_use":
-                try:
-                    text_parts.append(f"[Tool: {block.name}]")
-                except AttributeError:
-                    text_parts.append("[Tool: unknown]")
-            elif block_type == "tool_result":
-                try:
-                    content = block.content
-                    if isinstance(content, str) and content:
-                        text_parts.append(
-                            f"[Tool Result: {content[:50]}...]" if len(content) > 50 else f"[Tool Result: {content}]"
-                        )
-                    else:
-                        text_parts.append("[Tool Result]")
-                except AttributeError:
-                    text_parts.append("[Tool Result]")
 
         return "\n".join(text_parts)
 
