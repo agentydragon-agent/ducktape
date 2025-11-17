@@ -63,47 +63,71 @@ async def get_cached_response_payload(self, key: str) -> OpenAIResponse | None:
     return snapshot_model.response  # Return the typed object
 ```
 
-### BAD: Overly permissive union - "function doesn't know what it wants"
+### BAD: Overly permissive union - false "convenience"
 
 ```python
-# BAD: Why does this accept both dict and str?
+# BAD: Accepts both dict and str "for convenience"
 def make_item_tool_call(
     *,
     call_id: str,
     name: str,
-    arguments: dict[str, Any] | str  # Why both?
+    arguments: dict[str, Any] | str  # Ambiguous!
 ) -> FunctionCallItem:
     args_json = json.dumps(arguments) if isinstance(arguments, dict) else str(arguments)
     return FunctionCallItem(call_id=call_id, name=name, arguments=args_json)
 
-# Problem: Function is trying to handle multiple unrelated cases
-# Either always require structured form, or document WHY both are needed
+# Problem: This is NOT convenient, it's ambiguous!
+# - Callers must remember "do I have dict or str?"
+# - Function doesn't express clear intent
+# - Runtime isinstance() check is a code smell
 ```
 
-**Investigation required**:
-```python
-# Read OpenAI SDK / FastMCP to understand:
-# 1. Does the API actually accept both dict and pre-serialized JSON?
-# 2. If yes: Document this with a comment explaining the API requirement
-# 3. If no: Remove the permissive union, always require dict
+**Why this "convenience" is actually worse**:
 
-# If justified (e.g., OpenAI API quirk):
-def make_item_tool_call(
-    *,
-    call_id: str,
-    name: str,
-    arguments: dict[str, Any] | str  # OpenAI API accepts both dict and JSON string
-) -> FunctionCallItem:
-    """Create tool call item.
+1. **If caller has pre-serialized JSON** → They should deserialize it first
+   ```python
+   # Don't do this:
+   make_item_tool_call(name="foo", arguments=json_string)  # Pass pre-serialized
 
-    Args:
-        arguments: Tool arguments as dict (will be JSON-serialized) or
-                   pre-serialized JSON string. Both forms accepted to match
-                   OpenAI API specification.
-    """
-    args_json = json.dumps(arguments) if isinstance(arguments, dict) else str(arguments)
-    return FunctionCallItem(call_id=call_id, name=name, arguments=args_json)
-```
+   # Do this instead:
+   args_dict = json.loads(json_string)
+   make_item_tool_call(name="foo", arguments=args_dict)  # Explicit
+   ```
+
+2. **If caller has dict** → They pass it directly
+   ```python
+   make_item_tool_call(name="foo", arguments={"key": "value"})
+   ```
+
+3. **API should be clear about what it wants**:
+   ```python
+   # GOOD: Clear, unambiguous API
+   def make_item_tool_call(
+       *,
+       call_id: str,
+       name: str,
+       arguments: dict[str, Any]  # Clearly wants structured data
+   ) -> FunctionCallItem:
+       args_json = json.dumps(arguments)
+       return FunctionCallItem(call_id=call_id, name=name, arguments=args_json)
+
+   # If you really have JSON string, deserialize it at call site:
+   make_item_tool_call(
+       call_id="abc",
+       name="foo",
+       arguments=json.loads(json_string)  # Caller's responsibility
+   )
+   ```
+
+**Why loose unions are bad**:
+
+- **Ambiguity**: Function signature doesn't communicate intent
+- **Runtime checking**: `isinstance()` checks are type system failure
+- **False economy**: "Saving" one `json.loads()` call creates unclear API
+- **Propagates looseness**: Callers don't know which form to use
+- **Testing burden**: Must test both code paths
+
+**Principle**: Force callers to be explicit. One `json.loads()` at call site is better than ambiguous API.
 
 ### BAD: Union with loose type - "sometimes I know, sometimes I don't"
 
@@ -412,18 +436,32 @@ def pretty_print_json(data: dict[str, Any] | list[Any]) -> str:
     return json.dumps(data, indent=2)
 ```
 
-### 3. External API Compatibility (Document!)
+### 3. NOT JUSTIFIED: "Convenience" Unions
+
+**Even if external API accepts multiple forms, your wrapper should pick one**:
+
 ```python
-# If external library truly accepts multiple types
+# ❌ BAD: Mirroring external API's loose typing
 def api_call(data: dict[str, Any] | str) -> Response:
-    """Call external API.
+    """Calls external API that accepts dict or JSON string."""
+    # ... handle both cases
+
+# ✅ GOOD: Pick the structured form, force callers to be explicit
+def api_call(data: dict[str, Any]) -> Response:
+    """Calls external API.
 
     Args:
-        data: API accepts both dict (will be JSON-serialized) and
-              pre-serialized JSON string per API spec v2.1.
-              See: https://example.com/api/docs#data-format
+        data: Request payload. Will be JSON-serialized internally.
+              If you have pre-serialized JSON, deserialize it first.
     """
+    json_str = json.dumps(data)
+    return requests.post(url, data=json_str)
+
+# Callers with JSON string must be explicit:
+api_call(json.loads(json_string))  # Clear: deserialize then call
 ```
+
+**Reason**: Your API should have ONE clear contract, even if underlying library is permissive. Force callers to be explicit about what they're passing.
 
 ## Validation
 
