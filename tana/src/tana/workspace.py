@@ -30,9 +30,7 @@ class Workspace:
         return export_node_as_tanapaste(self.graph, self.node(node_id))
 
     def materialize_search(self, node_id: NodeId) -> list[NodeId]:
-        node = self.node(node_id)
-        return materialize_search(self.graph, node)
+        return materialize_search(self.graph, self.node(node_id))
 
     def compare_search_results(self, node_id: NodeId) -> dict[str, Iterable[NodeId]]:
-        node = self.node(node_id)
-        return compare_search_results(self.graph, node)
+        return compare_search_results(self.graph, self.node(node_id))
