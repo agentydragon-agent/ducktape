@@ -202,14 +202,32 @@ ref.shorthand                       # str - short reference name
 
 ## Detection Strategy
 
-**Primary Method**: Manual code reading to identify non-idiomatic pygit2 patterns.
+**Goal**: Find ALL non-idiomatic pygit2 patterns (100% recall target).
 
-**Why automation is insufficient**:
-- Determining if code is "non-idiomatic" requires understanding pygit2 API capabilities
-- Some patterns exist for good reasons (handling older pygit2 versions, specific edge cases)
-- Need to verify refactored code actually works with Walker API, etc.
+**Recall/Precision**: Medium-high recall (~70-80%) with targeted grep patterns
+- `rg 'revparse_single\("HEAD"\)'` finds HEAD access antipatterns: ~90% recall, ~85% precision
+- `rg 'parent_ids\[0\]'` finds parent access antipatterns: ~80% recall, ~70% precision
+- `rg 'cur\.parents\[0\]'` finds manual parent walking: ~60% recall, ~90% precision
+- Trivial helper detection (one-line functions): ~50% recall, ~40% precision
 
-**Discovery aids** (candidates for manual review):
+**This pattern has moderate automation support**:
+- Many non-idiomatic patterns have distinctive text signatures
+- But some require understanding API capabilities (knowing Walker exists, knowing .target vs .peel)
+- Need to verify refactored code works correctly
+
+**Recommended approach**:
+1. Run targeted grep patterns to find known antipatterns (~70-80% recall)
+2. Verify each candidate:
+   - Does proposed refactoring preserve behavior?
+   - Is there a reason for the current pattern? (version compatibility, edge cases)
+   - Does newer pygit2/types-pygit2 support the idiomatic approach?
+3. Fix confirmed antipatterns
+4. **Supplement with manual reading** of git-heavy code to find:
+   - Unusual antipatterns not matching grep
+   - Opportunities to use Walker API
+   - Complex HEAD/parent access patterns
+
+**Recommended tools**:
 
 ```bash
 # Find HEAD access that could use repo.head.target
