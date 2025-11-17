@@ -19,6 +19,7 @@ dependencies = [
   "pygit2>=1.18",
   "types-pygit2>=1.15.0",
   "tabulate>=0.9",
+  "tenacity>=8.2.0",
   "typer>=0.12",
   "watchdog>=4.0",
   "PyGithub>=1.77",

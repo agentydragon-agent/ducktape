@@ -9,7 +9,6 @@ import shlex
 import shutil
 import socket
 import subprocess
-import time
 from unittest.mock import Mock
 import uuid
 
@@ -358,12 +357,7 @@ class WtCLI:
 
     def wait_for(self, predicate, timeout: timedelta = timedelta(seconds=5), interval: float = 0.1) -> bool:
         """Poll a predicate until it returns True or timeout elapses."""
-        deadline = time.monotonic() + timeout.total_seconds()
-        while time.monotonic() < deadline:
-            if predicate():
-                return True
-            time.sleep(interval)
-        return False
+        return wait_until(predicate, timeout_seconds=timeout.total_seconds(), interval_seconds=interval)
 
 
 @pytest.fixture
