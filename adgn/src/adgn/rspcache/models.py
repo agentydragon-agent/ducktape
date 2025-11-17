@@ -14,6 +14,8 @@ USAGE_ADAPTER: TypeAdapter[ResponseUsage] = TypeAdapter(ResponseUsage)
 
 
 class ResponseStatus(StrEnum):
+    QUEUED = "queued"
+    IN_PROGRESS = "in_progress"
     COMPLETE = "complete"
     ERROR = "error"
 

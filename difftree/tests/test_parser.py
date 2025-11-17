@@ -11,9 +11,7 @@ def test_file_change_dataclass():
     """Test FileChange dataclass properties."""
     change = FileChange(path="test.py", additions=10, deletions=5)
 
-    assert change.path == "test.py"
-    assert change.additions == 10
-    assert change.deletions == 5
+    assert change == FileChange(path="test.py", additions=10, deletions=5, is_binary=False)
     assert change.total_changes == 15
 
 
@@ -49,6 +47,4 @@ def test_file_change_with_binary(temp_git_repo: Path, run_git):
     changes = parse_unified_diff(result.stdout)
 
     binary_change = next(c for c in changes if c.path == "image.png")
-    assert binary_change.is_binary is True
-    assert binary_change.additions == 0
-    assert binary_change.deletions == 0
+    assert binary_change == FileChange(path="image.png", additions=0, deletions=0, is_binary=True)

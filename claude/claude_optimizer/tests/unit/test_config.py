@@ -1,7 +1,5 @@
 """Tests for configuration management."""
 
-from pathlib import Path
-
 from claude_optimizer.config import OptimizerConfig
 import yaml
 

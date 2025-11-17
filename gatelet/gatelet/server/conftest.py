@@ -153,3 +153,20 @@ async def test_auth_session(db_session: AsyncSession, test_auth_key: AuthKey) ->
         last_activity_at=datetime.now(),
     )
     return await persist(db_session, session)
+
+
+@pytest.fixture(autouse=True)
+async def _stub_data(monkeypatch):
+    """Stub external data fetchers for all tests."""
+    from gatelet.server.endpoints.webhook_view import PayloadSummary
+
+    async def _states():
+        return [{"entity_id": "sensor.test", "state": "on", "last_changed": datetime(2020, 1, 1)}]
+
+    async def _payloads(*_args, **_kwargs):
+        return [PayloadSummary(id=1, integration_name="test", received_at=datetime(2020, 1, 1))]
+
+    monkeypatch.setattr("gatelet.server.endpoints.homeassistant.fetch_states", _states)
+    monkeypatch.setattr("gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads)
+    monkeypatch.setattr("gatelet.server.app.fetch_states", _states)
+    monkeypatch.setattr("gatelet.server.app.get_latest_payloads", _payloads)

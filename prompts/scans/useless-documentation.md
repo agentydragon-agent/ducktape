@@ -156,77 +156,91 @@ def skip_global_compinit() -> None:
 
 ## Detection Strategy
 
-### Grep Patterns
+**Primary Method**: Manual code reading or LLM-assisted review. Automated patterns are discovery aids only.
 
-**Docstrings:**
+**Why automation is insufficient**: Determining if documentation is "useless" requires understanding:
+- What's obvious from names and types (subjective, context-dependent)
+- Whether explanation adds semantic value (requires domain knowledge)
+- If the function is public API (needs more docs) vs internal (needs less)
+- Whether behavior is truly obvious or just seems obvious to the author
+
+### Discovery Approach: Code Skeleton Generation
+
+Create an intermediate file that strips function bodies, preserving only signatures, types, and documentation. This allows LLM to efficiently review many functions without reading implementations.
+
+**Helper script** (pseudocode):
+```python
+import ast
+from pathlib import Path
+
+def generate_skeleton(source_file: Path) -> str:
+    """Extract function signatures, types, and docstrings; omit bodies."""
+    tree = ast.parse(source_file.read_text())
+    output = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            # Extract signature
+            sig = ast.unparse(node).split('\n')[0]  # First line only
+
+            # Extract docstring
+            docstring = ast.get_docstring(node) or ""
+
+            # Format as skeleton
+            if docstring:
+                output.append(f"{sig}\n    \"\"\"{docstring}\"\"\"\n    ...\n")
+            else:
+                output.append(f"{sig}\n    ...\n")
+
+    return "\n".join(output)
+```
+
+**Usage**:
+1. Run skeleton generator on target files
+2. Feed skeleton to LLM with prompt: "Identify functions where docstring adds no value beyond name/types"
+3. LLM returns list of candidates with reasoning
+4. **Manually verify** each candidate (LLM can be wrong about what's "obvious")
+5. Remove truly useless docs
+
+**Benefits**:
+- LLM sees context (neighboring functions, module purpose)
+- No implementation details to distract from docs
+- Can process many functions quickly
+- Heuristic discovery with high recall (may flag useful docs too)
+
+### Automated Preprocessing (High False Positive Rate)
+
+These patterns find **candidates** for manual review. Do NOT automatically remove docs based on these.
+
+**Grep Patterns for Docstrings:**
 ```bash
-# Find Args: sections (often indicates javadoc style)
+# Find Args: sections (often javadoc style, but not always useless)
 rg --type py '""".*\n.*Args:'
 
-# Find Returns: sections that just repeat return type
+# Find Returns: sections (check if they add value beyond type hint)
 rg --type py -A2 'Returns:\s*$'
 
-# Find parameter docs that just repeat param name
+# Find "The <param>" pattern (often useless, but verify manually)
 rg --type py '    \w+: The \w+'
 ```
 
 **Inline Comments:**
 
-Useless inline comments are hard to detect with simple grep patterns - it requires semantic analysis. Look for:
+Automated detection is unreliable - requires semantic understanding of whether comment explains "why" or just restates "what". Use manual reading.
 
-**Manual review heuristics:**
-1. Comment is nearly identical to next line's variable/function names
-   - `# Create grading context` → `context = GradingContext(...)`
-   - `# Initialize counter` → `counter = 0`
+**Manual review heuristics**:
+1. Comment nearly identical to code on next line
+2. Comment describes basic language construct
+3. Comment restates assignment without explaining purpose
 
-2. Comment just describes language constructs
-   - `# Loop through items` → `for item in items:`
-   - `# Return result` → `return result`
+**AST-Based Discovery** (optional):
 
-3. Comment restates assignment without explaining WHY
-   - `# Get configuration` → `config = load_config()`
+Build a tool that flags functions where:
+- Every parameter doc is exactly "param: The param" pattern
+- Returns section just repeats return type annotation
+- First sentence of docstring is just function name rephrased
 
-**What NOT to flag:**
-- Section summaries: `# Handle different grading types`
-- Explaining purpose: `# Check if it's a date-only value (no time component)`
-- Non-obvious requirements: `# Must be called before setup() to avoid race`
-- Workarounds: `# Skip global compinit to avoid slowdown`
-
-**Simple patterns that might help (high false positive rate):**
-```bash
-# Very specific: literal variable name repetition
-# "# Create X" right before "X = ..."
-# This requires contextual matching - hard to grep reliably
-```
-
-### AST + Docstring Analysis
-
-```python
-import ast
-import re
-
-class UselessDocstringDetector(ast.NodeVisitor):
-    def visit_FunctionDef(self, node):
-        docstring = ast.get_docstring(node)
-        if not docstring:
-            return
-
-        # Check for javadoc markers
-        if re.search(r'\b(Args|Arguments|Parameters|Returns|Return):', docstring):
-            # Analyze if parameters just repeat names
-            params = {arg.arg for arg in node.args.args}
-            for param in params:
-                # Check for "param: The param" pattern
-                if re.search(rf'{param}:.*\bThe {param}\b', docstring, re.IGNORECASE):
-                    print(f"Useless param doc in {node.name}: {param}")
-```
-
-### Heuristics
-
-- **Long Args section**: If every parameter has a doc that's just "The <param>"
-- **Returns mirrors type**: If "Returns: str" when return type is `-> str`
-- **Function name repetition**: Docstring first sentence just rephrases function name
-- **No exception info**: Doc doesn't mention raises/errors but function can raise
+Strong coding LLM can build this from description. Use output as discovery only, not automatic fixes.
 
 ## Fix Strategy
 

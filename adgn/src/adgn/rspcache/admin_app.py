@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
 from asyncpg import UniqueViolationError
@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
 from adgn.openai_utils.model import ResponsesRequest
-from adgn.rspcache.models import FRAME_ADAPTER, FinalResponseSnapshot, stream_event_event_id
+from adgn.rspcache.models import FRAME_ADAPTER, FinalResponseSnapshot, ResponseStatus, stream_event_event_id
 from adgn.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponseFrame, ResponsesDB
 
 DEFAULT_LIST_LIMIT = 50
@@ -79,7 +79,7 @@ class ResponseRecordModel(BaseModel):
     cache_key: str
     response_id: str | None = None
     model: str
-    status: Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"] | None = None
+    status: ResponseStatus
     error: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -153,6 +153,8 @@ async def _shutdown() -> None:
 
 def _to_response_model(record: Response) -> ResponseRecordModel:
     """Convert DB Response record to API model."""
+    request_payload = record.request_body if record.request_body is not None else {"input": []}
+    request_model = ResponsesRequest.model_validate(request_payload)
     return ResponseRecordModel(
         cache_key=record.cache_key,
         response_id=record.response_id,
@@ -162,7 +164,7 @@ def _to_response_model(record: Response) -> ResponseRecordModel:
         created_at=record.created_ts,
         updated_at=record.last_update_ts,
         latency_ms=record.latency_ms,
-        request_body=record.request_body,
+        request_body=request_model,
         api_key=_to_api_key_model(record.api_key) if record.api_key else None,
         snapshot=record.snapshot.to_model() if record.snapshot else None,
     )

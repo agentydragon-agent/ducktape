@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from fastapi.openapi.utils import get_openapi
 import httpx
@@ -15,13 +15,12 @@ OPENAI_SPEC_URL = "https://raw.githubusercontent.com/openai/openai-openapi/2025-
 
 
 def build_admin_schema() -> dict[str, Any]:
-    schema = get_openapi(
+    return get_openapi(
         title=ADMIN_APP.title,
         version="1.0.0",
         description=ADMIN_APP.description or "rspcache admin API",
         routes=ADMIN_APP.routes,
     )
-    return cast(dict[str, Any], schema)
 
 
 def fetch_openai_schema() -> dict[str, Any]:
@@ -31,7 +30,7 @@ def fetch_openai_schema() -> dict[str, Any]:
         data = yaml.safe_load(resp.text)
     if not isinstance(data, dict):
         raise TypeError("OpenAI OpenAPI document is not a JSON object")
-    return cast(dict[str, Any], data)
+    return data
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:

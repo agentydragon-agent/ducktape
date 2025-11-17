@@ -8,6 +8,7 @@ import logging
 import os
 from pathlib import Path
 
+from mautrix.types import RoomAlias, RoomID
 from nio import AsyncClient, AsyncClientConfig, RoomMessageText
 from nio.events.invite_events import InviteMemberEvent
 from nio.events.room_events import MegolmEvent
@@ -20,6 +21,8 @@ from nio.responses import (
     KeysClaimError,
     KeysQueryError,
     KeysUploadError,
+    RoomResolveAliasError,
+    RoomResolveAliasResponse,
     SyncError,
     SyncResponse,
     WhoamiError,
@@ -52,13 +55,14 @@ class MatrixClient:
         self._stop_event = asyncio.Event()
         self._queue: asyncio.Queue[RoomMessageText] = asyncio.Queue()
         self._debounce = max(debounce_seconds, 0.1)
-        self._control_rooms: set[str] = set()
+        self._control_rooms: set[RoomID] = set()
+        self._control_rooms: set[RoomID] = set()
         self._token_secret = settings.access_token_secret
         self._store_dir = settings.store_dir
         self._device_id = settings.device_id
         self._pickle_key = settings.pickle_key
         self._status_lock = asyncio.Lock()
-        self._room_status: dict[str, ConversationStatus] = {}
+        self._room_status: dict[RoomID, ConversationStatus] = {}
         self._aggregate_status = ConversationStatus()
 
     @classmethod
@@ -112,11 +116,8 @@ class MatrixClient:
         self._control_rooms = await self._initialise_control_rooms()
         self._since = self._load_since_token()
 
-        logger.info(
-            "Initialized Matrix client; tracking %d joined rooms: %s",
-            len(self._control_rooms),
-            ", ".join(sorted(self._control_rooms)) or "(none)",
-        )
+        rooms_display = ", ".join(sorted(str(room) for room in self._control_rooms)) or "(none)"
+        logger.info("Initialized Matrix client; tracking %d joined rooms: %s", len(self._control_rooms), rooms_display)
 
         self._stop_event.clear()
         self._sync_task = asyncio.create_task(self._sync_loop(), name="matrix-sync-loop")
@@ -162,15 +163,16 @@ class MatrixClient:
             events.append(self._queue.get_nowait())
         return events
 
-    async def send_text_message(self, room_id: str, body: str, *, msgtype: str = "m.notice") -> None:
+    async def send_text_message(self, room_id: RoomID | str, body: str, *, msgtype: str = "m.notice") -> None:
         """Send a text message to a Matrix room."""
         if self._client is None:  # pragma: no cover - defensive
             raise RuntimeError("Matrix client is not running; call start() first")
 
+        resolved_room = await self._ensure_room_id(room_id)
         await self._client.room_send(
-            room_id=room_id, message_type="m.room.message", content={"msgtype": msgtype, "body": body}
+            room_id=str(resolved_room), message_type="m.room.message", content={"msgtype": msgtype, "body": body}
         )
-        logger.info("Sent Matrix message to %s", room_id)
+        logger.info("Sent Matrix message to %s", resolved_room)
 
     @property
     def client(self) -> AsyncClient:
@@ -179,11 +181,11 @@ class MatrixClient:
             raise RuntimeError("Matrix client not initialised")
         return self._client
 
-    async def _initialise_control_rooms(self) -> set[str]:
+    async def _initialise_control_rooms(self) -> set[RoomID]:
         assert self._client is not None
         return await self._fetch_joined_rooms()
 
-    async def _fetch_joined_rooms(self) -> set[str]:
+    async def _fetch_joined_rooms(self) -> set[RoomID]:
         assert self._client is not None
         try:
             response = await self._client.joined_rooms()
@@ -197,7 +199,7 @@ class MatrixClient:
         if not isinstance(response, JoinedRoomsResponse):
             logger.warning("Unexpected joined_rooms response: %r", response)
             return set()
-        return set(response.rooms or [])
+        return {RoomID(room_id) for room_id in (response.rooms or [])}
 
     async def _sync_loop(self) -> None:
         assert self._client is not None
@@ -230,13 +232,15 @@ class MatrixClient:
         if not (invites := response.rooms.invite):
             return
 
-        for room_id, invite in invites.items():
+        for room_id_value, invite in invites.items():
+            room_id = RoomID(room_id_value)
             if await self._should_accept_invite(room_id, invite):
                 await self._accept_invite(room_id)
 
     async def _handle_joined_rooms(self, response: SyncResponse) -> None:
         joined = response.rooms.join or {}
-        for room_id, room in joined.items():
+        for room_id_value, room in joined.items():
+            room_id = RoomID(room_id_value)
             timeline = room.timeline.events or []
             logger.debug(
                 "Matrix room %s timeline has %d events (limited=%s)",
@@ -272,7 +276,7 @@ class MatrixClient:
             if last_event_id is not None:
                 await self._mark_read(room_id, last_event_id)
 
-    async def _record_message_event(self, room_id: str, event: RoomMessageText) -> None:
+    async def _record_message_event(self, room_id: RoomID, event: RoomMessageText) -> None:
         timestamp = _event_timestamp(event)
         async with self._status_lock:
             tracker = self._room_status.setdefault(room_id, ConversationStatus())
@@ -293,7 +297,9 @@ class MatrixClient:
     async def _handle_left_rooms(self, response: SyncResponse) -> None:
         if not (left := response.rooms.leave):
             return
-        if not (removed := set(left) & self._control_rooms):
+        left_ids = {RoomID(room_id) for room_id in left}
+        removed = left_ids & self._control_rooms
+        if not removed:
             return
         self._control_rooms.difference_update(removed)
         for room_id in removed:
@@ -303,20 +309,21 @@ class MatrixClient:
         async with self._status_lock:
             return self._aggregate_status.model_copy()
 
-    async def set_typing(self, room_ids: Iterable[str], typing: bool, timeout_ms: int = 30000) -> None:
+    async def set_typing(self, room_ids: Iterable[RoomID | str], typing: bool, timeout_ms: int = 30000) -> None:
         """Send typing notifications for the given rooms."""
 
         if self._client is None:
-            return
+            raise RuntimeError("Matrix client not initialised")
 
         for room_id in room_ids:
             try:
-                await self._client.room_typing(room_id, typing_state=typing, timeout=timeout_ms if typing else 0)
-                logger.debug("Sent typing=%s notification for room %s (timeout=%sms)", typing, room_id, timeout_ms)
+                rid = await self._ensure_room_id(room_id)
+                await self._client.room_typing(str(rid), typing_state=typing, timeout=timeout_ms if typing else 0)
+                logger.debug("Sent typing=%s notification for room %s (timeout=%sms)", typing, rid, timeout_ms)
             except Exception as exc:
                 logger.warning("Failed to send typing notification for %s: %s", room_id, exc)
 
-    async def _should_accept_invite(self, room_id: str, invite: InviteInfo) -> bool:
+    async def _should_accept_invite(self, room_id: RoomID, invite: InviteInfo) -> bool:
         admin_user = self._settings.admin_user_id
         if admin_user is None:
             logger.debug("Skipping invite to %s; MATRIX_ADMIN_USER_ID not set", room_id)
@@ -339,10 +346,10 @@ class MatrixClient:
         logger.debug("Invite to %s ignored; no admin invite event found", room_id)
         return False
 
-    async def _accept_invite(self, room_id: str) -> None:
+    async def _accept_invite(self, room_id: RoomID) -> None:
         assert self._client is not None
         try:
-            response = await self._client.join(room_id)
+            response = await self._client.join(str(room_id))
         except Exception as exc:
             logger.warning("Failed to join invited room %s: %s", room_id, exc)
             return
@@ -354,13 +361,27 @@ class MatrixClient:
         self._control_rooms.add(room_id)
         logger.info("Joined control room %s", room_id)
 
-    async def _mark_read(self, room_id: str, event_id: str) -> None:
+    async def _mark_read(self, room_id: RoomID, event_id: str) -> None:
         if self._client is None:
-            return
+            raise RuntimeError("Matrix client not initialised")
         try:
-            await self._client.room_read_markers(room_id, fully_read_event=event_id, read_event=event_id)
+            await self._client.room_read_markers(str(room_id), fully_read_event=event_id, read_event=event_id)
         except Exception as exc:
             logger.warning("Failed to update Matrix read marker for %s: %s", room_id, exc)
+
+    async def _ensure_room_id(self, room: RoomID | str) -> RoomID:
+        identifier = str(room)
+        if identifier.startswith("!"):
+            return RoomID(identifier)
+        if self._client is None:
+            raise RuntimeError("Matrix client not initialised")
+        alias = RoomAlias(identifier)
+        response = await self._client.room_resolve_alias(str(alias))
+        if isinstance(response, RoomResolveAliasError):
+            raise RuntimeError(f"Failed to resolve Matrix alias {alias}: {response.message}")
+        if not isinstance(response, RoomResolveAliasResponse) or not response.room_id:
+            raise RuntimeError(f"Matrix alias {alias} returned no room_id")
+        return RoomID(response.room_id)
 
     async def _create_client(self) -> AsyncClient:
         base_url = self._settings.base_url

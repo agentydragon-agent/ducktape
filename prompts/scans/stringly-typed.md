@@ -61,16 +61,76 @@ from openai import OpenAIError
 
 ## Detection
 
+### Quick Manual Patterns
+
 ```bash
 # Find string fields that should be enums (common patterns)
 rg --type py ": str.*#.*(status|type|kind|mode|state)"
 
-# Find string literals in comparisons (might indicate enum candidates)
-rg --type py '== "(queued|pending|complete|error|success|failed)"'
-
 # Find Literal types with multiple options (convert to StrEnum)
 rg --type py 'Literal\[.*,.*\]'
+
+# Look for repeated string patterns in code - when you see the same string values
+# appearing multiple times, that's a strong signal for enum extraction:
+# 1. Find existing enums, then search for string comparisons with those values
+# 2. Look for status-like field names with string assignments
+# 3. Check if codebase uses certain status values repeatedly
+
+# Example: If you found a Status enum with COMPLETED/SKIPPED values,
+# search for places still using strings:
+#   rg --type py 'status.*=.*"(completed|skipped)"'
+#   rg --type py '== "(completed|skipped)"'
+#
+# The key is to let the codebase guide you - find what enums exist,
+# then search for string literals that should use those enums.
 ```
+
+### Detection Strategy
+
+**Primary Method**: Manual code reading - understand the domain, look for repeated categorical strings. Read code to understand which strings represent categorical values vs messages/IDs/etc.
+
+**Automated Preprocessing** (discovers candidates, NOT definitive):
+
+1. **String Literal Repetition Counter** (AST-based)
+   - Walk AST extracting Constant nodes with string values
+   - Filter: 3-30 chars, alphanumeric (skip URLs/paths/messages)
+   - Count occurrences, report strings appearing 5+ times
+   - Strong LLM can build from description
+
+2. **String Comparison Detector** (AST-based)
+   - Find Compare nodes with Eq operator + string literals
+   - Group by compared values
+   - Shows which strings are used in conditionals
+
+3. **Categorical Field Analyzer** (AST-based)
+   - Find AnnAssign nodes where field name contains: "status", "type", "kind", "mode", "state", "level"
+   - Check if annotated as `str`
+   - These fields are prime enum candidates
+
+4. **Cross-Reference Existing Enums**
+```bash
+# Find enums already defined
+rg --type py "class \w+\(.*Enum\):" -A5
+
+# For each enum value, search for string literal usage
+# If Status has COMPLETED = "completed", search for "completed" strings
+rg --type py '"completed"' --glob '!**/enums.py'
+```
+
+5. **Assignment Pattern Analysis**
+```bash
+# Count status/type assignments to find common values
+rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq -c | sort -rn
+```
+
+**Critical Workflow**:
+1. Run automated tools → get candidate strings
+2. **MANUALLY READ CODE** - understand domain, group related values
+3. Determine if candidates are truly categorical (not messages/IDs)
+4. Create enums for related value groups
+5. Search codebase for specific enum values to replace
+
+**Warning**: Automated tools are preprocessing only. String "error" appears everywhere - manual judgment determines if it's an enum candidate or just a message.
 
 ## Fix Strategy
 

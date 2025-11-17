@@ -29,22 +29,8 @@ def _cap_append(parts: list[str], chunk: str, cap_bytes: int, truncation_note: s
     return False
 
 
-def _head_commit_oid(repo: pygit2.Repository) -> pygit2.Oid:
-    commit = repo.revparse_single("HEAD").peel(pygit2.Commit)
-    return commit.id
-
-
-def _index_tree_oid(repo: pygit2.Repository) -> pygit2.Oid:
-    return repo.index.write_tree()
-
-
 def _diff(repo: pygit2.Repository, include_all: bool) -> pygit2.Diff:
-    a = _head_commit_oid(repo)
-    if include_all:
-        # Compare HEAD vs working tree
-        return repo.diff(a, None, cached=False)
-    # Compare HEAD vs index (staged)
-    return repo.diff(a, None, cached=True)
+    return repo.diff(repo.head.target, None, cached=not include_all)
 
 
 def _format_name_status(repo: pygit2.Repository, include_all: bool) -> str:
@@ -137,24 +123,18 @@ def _format_status_porcelain(repo: pygit2.Repository) -> str:
 
 
 def _log_subjects(repo: pygit2.Repository, n: int = 10) -> list[str]:
-    """Return up to n commit subjects following the first-parent chain.
+    """Return up to n raw commit log entries (short hash + full message)."""
+    walker = repo.walk(repo.head.target)
+    walker.simplify_first_parent()
 
-    This avoids SortMode typing mismatches across pygit2 versions while still
-    producing a sensible, linear history for commit-context prompts.
-    """
-    head = repo.revparse_single("HEAD").peel(pygit2.Commit)
     out: list[str] = []
-    cur = head
-    i = 0
-    while True:
-        msg = cur.message or ""
-        subj = msg.splitlines()[0] if msg else ""
-        out.append(subj)
-        i += 1
-        if i >= n or not cur.parents:
+    for commit in walker:
+        msg = commit.message or ""
+        short = str(commit.id)[:7]
+        entry = f"{short} {msg}".rstrip("\n") if msg else short
+        out.append(entry)
+        if len(out) >= n:
             break
-        # Follow first-parent to keep a linear chain
-        cur = cur.parents[0]
     return out
 
 
@@ -170,7 +150,7 @@ def _build_ai_context(repo: pygit2.Repository, include_all: bool) -> str:
     ns_out = _format_name_status(repo, include_all) + "\n"
     _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
 
-    parts.append(f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %s\n")
+    parts.append(f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %B\n")
     log_out = "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n"
     _cap_append(parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
 
@@ -263,17 +243,17 @@ Staged diff (first to {DIFF_SNIPPET_CHARS} of {len(diff)} chars)
 
 {diff[:DIFF_SNIPPET_CHARS]}"""
         )
-    # Past commits (subjects only)
-    # Append past commit subjects
-    log_subjects = _log_subjects(repo, 10)
-    for i, subj in enumerate(log_subjects):
-        new_prompt = prompt
-        if i == 0:
-            new_prompt += """\n\nPast commits (subjects):\n\n"""
-        new_prompt += f"- {subj}\n"
-        if len(new_prompt) > PAST_COMMITS_MAX_CHARS:
-            break
-        prompt = new_prompt
+    log_entries = _log_subjects(repo, 10)
+    if log_entries:
+        block_header = "\n\nPast commits (raw log):\n\n"
+        block_body = ""
+        for entry in log_entries:
+            addition = f"{entry}\n\n"
+            if len(prompt + block_header + block_body + addition) > PAST_COMMITS_MAX_CHARS:
+                break
+            block_body += addition
+        if block_body:
+            prompt += block_header + block_body.rstrip()
     return prompt
 
 

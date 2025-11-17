@@ -129,12 +129,12 @@ def _build_amend_diff(repo: pygit2.Repository, passthru: list[str]) -> str:
     """Build amend-mode diff: original commit diff plus new changes."""
     parts: list[str] = []
     # Original commit
-    head = repo.revparse_single("HEAD").peel(pygit2.Commit)
-    try:
-        parent = repo.revparse_single("HEAD^").peel(pygit2.Commit)
+    head = repo.head.peel(pygit2.Commit)
+    if head.parents:
+        parent = head.parents[0]
         parts.append("=== Original commit diff (HEAD^ to HEAD) ===")
         parts.append(repo.diff(parent.id, head.id).patch or "")
-    except KeyError:
+    else:
         # First commit: diff from empty tree
         tb = repo.TreeBuilder()
         empty_tree_oid = tb.write()
@@ -163,8 +163,7 @@ def get_commit_diff(repo: pygit2.Repository, passthru: list[str], previous_messa
 
 def get_short_commitish(repo: pygit2.Repository) -> str:
     """Get the short commit hash of HEAD (7-char prefix)."""
-    commit = repo.revparse_single("HEAD").peel(pygit2.Commit)
-    return str(commit.id)[:7]
+    return str(repo.head.peel(pygit2.Commit).id)[:7]
 
 
 def repo_cache_dir(repo: pygit2.Repository) -> Path:
@@ -532,7 +531,7 @@ def _get_previous_message_if_amend(repo: pygit2.Repository, is_amend: bool) -> s
     if not is_amend:
         return None
     try:
-        commit = repo.revparse_single("HEAD").peel(pygit2.Commit)
+        commit = repo.head.peel(pygit2.Commit)
         return (commit.message or "").strip()
     except (KeyError, pygit2.GitError) as e:
         print(f"Error: Cannot amend - failed to retrieve previous commit message: {e}", file=sys.stderr)

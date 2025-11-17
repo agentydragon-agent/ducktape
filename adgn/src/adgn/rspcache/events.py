@@ -5,6 +5,8 @@ from typing import Literal
 from pydantic import BaseModel
 from pydantic.type_adapter import TypeAdapter
 
+from adgn.rspcache.models import ResponseStatus
+
 
 class EventBase(BaseModel):
     """Base class for rspcache events emitted over PG NOTIFY."""
@@ -16,7 +18,7 @@ class ResponseStatusEvent(EventBase):
     type: Literal["response_status"] = "response_status"
     cache_key: str
     response_id: str | None = None
-    status: str
+    status: ResponseStatus
     error: str | None = None
 
 

@@ -9,7 +9,7 @@ import hashlib
 import json
 import os
 import time
-from typing import Any, cast
+from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -70,13 +70,11 @@ def _require_api_keys() -> bool:
 
 def _load_openai_keys() -> dict[str, str]:
     mapping: dict[str, str] = {}
-    default = os.environ.get("OPENAI_API_KEY")
-    if default:
+    if default := os.environ.get("OPENAI_API_KEY"):
         mapping.setdefault("default", default)
-    mapping_env = os.environ.get("ADGN_OPENAI_KEYS")
-    if mapping_env:
-        for item in mapping_env.split(","):
-            if not item.strip() or "=" not in item:
+    if mapping_env := os.environ.get("ADGN_OPENAI_KEYS"):
+        for raw in mapping_env.split(","):
+            if not (item := raw.strip()) or "=" not in item:
                 continue
             alias, key = item.split("=", 1)
             mapping[alias.strip()] = key.strip()
@@ -89,31 +87,21 @@ def _load_openai_keys() -> dict[str, str]:
 
 
 def _resolve_openai_api_key(alias: str | None) -> str:
-    alias = alias or "default"
     mapping = _load_openai_keys()
-    api_key = mapping.get(alias)
-    if not api_key:
-        raise HTTPException(status_code=500, detail=f"OPENAI API key not configured for alias '{alias}'")
+    if not (api_key := mapping.get(alias or "default")):
+        raise HTTPException(status_code=500, detail=f"OPENAI API key not configured for alias {alias}")
     return api_key
 
 
 def _extract_client_token(request: Request, authorization: str | None, x_api_key: str | None) -> str | None:
-    if x_api_key:
-        token = x_api_key.strip()
-        if token:
-            return token
+    if x_api_key and (token := x_api_key.strip()):
+        return token
     if authorization:
         for prefix in ("Bearer ", "bearer "):
-            stripped = authorization.removeprefix(prefix)
-            if stripped != authorization:
-                token = stripped.strip()
-                if token:
-                    return token
-    header_token: str | None = request.headers.get("X-API-Key")  # type: ignore[assignment]
-    if header_token:
-        token = header_token.strip()
-        if token:
-            return cast(str, token)
+            if (stripped := authorization.removeprefix(prefix)) != authorization and (token := stripped.strip()):
+                return token
+    if (header_token := request.headers.get("X-API-Key")) and (token := header_token.strip()):
+        return token
     return None
 
 
@@ -203,30 +191,24 @@ async def _proxy_stream(
             for frame in parsed:
                 frame_payload = FRAME_ADAPTER.validate_python(frame)
                 ordinal += 1
-                maybe_response_id = stream_event_response_id(frame_payload)
-                if maybe_response_id and response_id != maybe_response_id:
+                if (maybe_response_id := stream_event_response_id(frame_payload)) and response_id != maybe_response_id:
                     response_id = maybe_response_id
                     await db.mark_in_progress(key, response_id)
-                usage = stream_event_usage(frame_payload)
-                if usage:
+                if usage := stream_event_usage(frame_payload):
                     token_usage = usage
-                response_candidate = stream_event_final_response(frame_payload)
-                if response_candidate is not None:
+                if (response_candidate := stream_event_final_response(frame_payload)) is not None:
                     latest_response = response_candidate
                 await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
         trailing_frames = _extract_remaining(text_buffer)
         for frame in trailing_frames:
             frame_payload = FRAME_ADAPTER.validate_python(frame)
             ordinal += 1
-            maybe_response_id = stream_event_response_id(frame_payload)
-            if maybe_response_id and response_id != maybe_response_id:
+            if (maybe_response_id := stream_event_response_id(frame_payload)) and response_id != maybe_response_id:
                 response_id = maybe_response_id
                 await db.mark_in_progress(key, response_id)
-            usage = stream_event_usage(frame_payload)
-            if usage:
+            if usage := stream_event_usage(frame_payload):
                 token_usage = usage
-            response_candidate = stream_event_final_response(frame_payload)
-            if response_candidate is not None:
+            if (response_candidate := stream_event_final_response(frame_payload)) is not None:
                 latest_response = response_candidate
             await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
         latency_ms = int((time.perf_counter() - start_time) * 1000)

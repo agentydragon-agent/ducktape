@@ -7,11 +7,12 @@ Uses mock data based on the actual API responses seen in the reference YAML file
 import datetime
 from unittest.mock import MagicMock, patch
 
+from hamcrest import assert_that, has_properties, instance_of, only_contains
 import httpx
 import pytest
 
 from ..habitify_client import HabitifyError
-from ..types import Area, Habit, HabitStatus
+from ..types import Area, Habit, HabitStatus, Status
 
 
 class TestHabitifyClient:
@@ -32,8 +33,8 @@ class TestHabitifyClient:
             mock_get.assert_called_once_with("/habits")
 
             # Check the returned data
-            assert isinstance(habits, list)
-            assert all(isinstance(habit, Habit) for habit in habits)
+            assert_that(habits, instance_of(list))
+            assert_that(habits, only_contains(instance_of(Habit)))
             assert len(habits) > 0
 
             # Check a specific habit attribute
@@ -55,7 +56,7 @@ class TestHabitifyClient:
             mock_get.assert_called_once_with("/habits/-Lo9NTLRX3aCxg-PjN25")
 
             # Check the returned data
-            assert isinstance(habit, Habit)
+            assert_that(habit, instance_of(Habit))
             assert habit.id == "-Lo9NTLRX3aCxg-PjN25"
             assert not habit.archived
 
@@ -95,8 +96,8 @@ class TestHabitifyClient:
             mock_get.assert_called_once_with("/areas")
 
             # Check the returned data
-            assert isinstance(areas, list)
-            assert all(isinstance(area, Area) for area in areas)
+            assert_that(areas, instance_of(list))
+            assert_that(areas, only_contains(instance_of(Area)))
             assert len(areas) > 0
 
             # Check a specific area attribute
@@ -127,8 +128,8 @@ class TestHabitifyClient:
             assert params["order_by"] == "priority"
 
             # Check the returned data
-            assert isinstance(habits, list)
-            assert all(isinstance(habit, Habit) for habit in habits)
+            assert_that(habits, instance_of(list))
+            assert_that(habits, only_contains(instance_of(Habit)))
 
     @pytest.mark.asyncio
     async def test_get_journal_filtered(self, client, mock_async_response):
@@ -155,7 +156,7 @@ class TestHabitifyClient:
             assert params["time_of_day"] == "morning,evening"
 
             # Check the returned data
-            assert isinstance(habits, list)
+            assert_that(habits, instance_of(list))
 
     @pytest.mark.asyncio
     async def test_check_habit_status(self, client, mock_async_response):
@@ -177,8 +178,8 @@ class TestHabitifyClient:
             assert "target_date" in params
 
             # Check the returned data
-            assert isinstance(status, HabitStatus)
-            assert status.status == "completed"
+            assert_that(status, instance_of(HabitStatus))
+            assert status.status == Status.COMPLETED
 
     @pytest.mark.asyncio
     async def test_check_habit_status_invalid_date(self, client, mock_async_response):
@@ -228,9 +229,9 @@ class TestHabitifyClient:
             assert mock_get.call_count == 5
 
             # Check the returned data
-            assert isinstance(statuses, list)
+            assert_that(statuses, instance_of(list))
             assert len(statuses) == 5
-            assert all(isinstance(status, HabitStatus) for status in statuses)
+            assert_that(statuses, only_contains(instance_of(HabitStatus)))
 
             # Check that dates are sorted in chronological order
             dates = [status.date for status in statuses]
@@ -247,7 +248,7 @@ class TestHabitifyClient:
             # Call the method
             status = await client.set_habit_status(
                 "-Lo9NTLRX3aCxg-PjN25",
-                status="completed",
+                status=Status.COMPLETED,
                 date="2025-05-09",
                 note="Test completed via async unit test",
                 value=1.0,
@@ -265,10 +266,10 @@ class TestHabitifyClient:
             assert body["value"] == 1.0
 
             # Check the returned data
-            assert isinstance(status, HabitStatus)
-            assert status.status == "completed"
-            assert status.note == "Test completed via async unit test"
-            assert status.value == 1.0
+            assert_that(status, instance_of(HabitStatus))
+            assert_that(
+                status, has_properties(status=Status.COMPLETED, note="Test completed via async unit test", value=1.0)
+            )
 
     @pytest.mark.asyncio
     async def test_set_habit_status_skipped(self, client, mock_async_response):
@@ -280,7 +281,10 @@ class TestHabitifyClient:
         with patch.object(client.client, "put", return_value=mock_resp) as mock_put:
             # Call the method
             status = await client.set_habit_status(
-                "-Lo9NTLRX3aCxg-PjN25", status="skipped", date="2025-05-09", note="Test skipped via async unit test"
+                "-Lo9NTLRX3aCxg-PjN25",
+                status=Status.SKIPPED,
+                date="2025-05-09",
+                note="Test skipped via async unit test",
             )
 
             # Check that the correct URL was called with the right body
@@ -295,7 +299,7 @@ class TestHabitifyClient:
             assert "value" not in body
 
             # Check the returned data
-            assert isinstance(status, HabitStatus)
-            assert status.status == "skipped"
-            assert status.note == "Test skipped via async unit test"
-            assert status.value is None
+            assert_that(status, instance_of(HabitStatus))
+            assert_that(
+                status, has_properties(status=Status.SKIPPED, note="Test skipped via async unit test", value=None)
+            )

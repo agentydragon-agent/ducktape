@@ -46,6 +46,13 @@ jobs:
 
       - uses: ./.github/actions/setup-python-env
 
+      - name: Bootstrap Ansible Galaxy dependencies
+        run: |
+          pip install "ansible-core>=2.18"
+          cd ansible
+          ansible-galaxy role install -r requirements.yaml
+          ansible-galaxy collection install -r requirements.yaml
+
       - name: Cache pre-commit environments
         uses: actions/cache@v4
         with:
@@ -97,7 +104,9 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.cache/uv
-          key: ${{ runner.os }}-pip-uv-${{ matrix.project }}-${{ hashFiles(format('{0}/pyproject.toml', matrix.project)) }}
+          key: >-
+            ${{ runner.os }}-pip-uv-${{ matrix.project }}-${{
+            hashFiles(format('{0}/pyproject.toml', matrix.project)) }}
           restore-keys: |
             ${{ runner.os }}-pip-uv-${{ matrix.project }}-
             ${{ runner.os }}-pip-uv-

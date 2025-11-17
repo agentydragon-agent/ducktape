@@ -1,4 +1,3 @@
-import datetime
 from http import HTTPStatus
 import re
 

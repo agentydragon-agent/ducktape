@@ -4,9 +4,9 @@ Features (MVP):
 - Background sync watcher that collects new text messages in a single room.
 - Emits ResourceUpdatedNotification on each new message via NotifyingFastMCP.
 
-Notes
-- Designed for unencrypted rooms first; E2EE can be added later with matrix-nio[e2e]
-  and a persistent store_path. For now we rely on plaintext rooms.
+- Notes
+- Designed for unencrypted rooms first; E2EE can be added later with mautrix + a persisted
+  state store. For now we rely on plaintext rooms.
 - Network credentials are supplied via MatrixConfig; callers construct this server
   in-proc via make_matrix_server().
 """
@@ -22,7 +22,10 @@ from typing import Any, cast
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
-from nio import AsyncClient, LoginResponse, MatrixRoom, RoomMessageText  # type: ignore
+from mautrix.api import HTTPAPI
+from mautrix.client import Client as MautrixClient
+from mautrix.client.state_store import FileStateStore, StateStore
+from mautrix.types import EventType, MessageEvent, RoomAlias, RoomID, TextMessageEventContent, UserID
 from pydantic import BaseModel, Field
 
 from adgn.agent.server.bus import ServerBus, UiEndTurn
@@ -41,7 +44,9 @@ class MatrixConfig(BaseModel):
     access_token: str | None = Field(default=None, description="Access token for the device (preferred)")
     password: str | None = Field(default=None, description="Password (fallback if no access token)")
     room: str = Field(description="Room id or alias to join/watch (e.g. !id:server or #alias:server)")
-    store_path: str | None = Field(default=None, description="Optional path for matrix-nio store (for E2EE / sessions)")
+    store_path: str | None = Field(
+        default=None, description="Optional path for mautrix state store (enable if you need persistence/E2EE)"
+    )
 
 
 class IncomingMessage(BaseModel):
@@ -97,137 +102,137 @@ class _Inbox:
             self.new_event.clear()
 
 
-def _room_matches(r: MatrixRoom, room: str) -> bool:  # type: ignore[valid-type]
-    """Return True if the MatrixRoom matches the given id or alias.
-
-    Uses attribute access for display_name/canonical_alias guarded by getattr
-    since matrix-nio may omit these fields.
-    """
-    return (
-        str(r.room_id) == room
-        or getattr(r, "display_name", None) == room
-        or getattr(r, "canonical_alias", None) == room
-    )
-
-
-def _parse_text_event(room: MatrixRoom, event: RoomMessageText, self_user: str) -> IncomingMessage | None:  # type: ignore[valid-type]
+def _parse_text_event(event: MessageEvent, self_user: str) -> IncomingMessage | None:
     """Build an IncomingMessage from a RoomMessageText or return None to skip.
 
     Skips self-sent messages and non-text bodies.
     """
     if str(event.sender) == self_user:
         return None
-    body = getattr(event, "body", None)
-    if not isinstance(body, str):
+    content = event.content
+    if not isinstance(content, TextMessageEventContent):
         return None
     return IncomingMessage(
         event_id=str(event.event_id),
-        room_id=str(room.room_id),
+        room_id=str(event.room_id),
         sender=str(event.sender),
-        timestamp_ms=int(getattr(event, "server_timestamp", 0)),
-        body=body,
+        timestamp_ms=int(event.timestamp or 0),
+        body=content.body,
     )
 
 
 class _MatrixClient:
-    """Thin wrapper for matrix-nio client with guarded imports."""
+    """Thin wrapper around a mautrix client with guarded imports."""
 
     def __init__(self, cfg: MatrixConfig, inbox: _Inbox, notify: Callable[[str], Any]):
         self.cfg = cfg
         self.inbox = inbox
         self._notify = notify
-        self._client: AsyncClient | None = None  # set in start
-        self._room_id: str | None = None
-        self._bg_task: asyncio.Task[Any] | None = None
+        self._client: MautrixClient | None = None
+        self._room_id: RoomID | None = None
+        self._sync_task: asyncio.Future[Any] | None = None
+        self._state_store: StateStore | None = None
 
     async def start(self) -> None:
-        self._client = AsyncClient(self.cfg.homeserver, self.cfg.user_id, store_path=self.cfg.store_path)
+        state_store = FileStateStore(self.cfg.store_path) if self.cfg.store_path else None
+        self._state_store = state_store
+        api = HTTPAPI(self.cfg.homeserver)
+        self._client = MautrixClient(mxid=UserID(self.cfg.user_id), api=api, state_store=state_store)
         c = self._client
-        assert c is not None
 
-        # Login if needed
         if self.cfg.access_token:
-            c.access_token = self.cfg.access_token
-            c.user_id = self.cfg.user_id
+            c.api.token = self.cfg.access_token
         else:
             if not self.cfg.password:
                 raise RuntimeError("Matrix password or access_token required")
-            res = await c.login(self.cfg.password)
-            if not isinstance(res, LoginResponse):
-                raise RuntimeError(f"Matrix login failed: {res}")
+            await c.login(password=self.cfg.password, device_name="adgn-matrix-mcp")
 
-        # Ensure we're in the room
         room = self.cfg.room
-        if room.startswith("#"):
-            await c.join(room)
-        # Resolve room id (for sending)
-        await c.sync(timeout=SYNC_PRIME_TIMEOUT_MS)  # prime rooms
-        rid = None
-        for r in c.rooms.values():
-            if _room_matches(r, room):
-                rid = str(r.room_id)
-                break
-        if rid is None:
-            # fallback: if looks like a room id, assume as-is
-            rid = room
-        self._room_id = rid
+        is_alias = room.startswith("#")
+        room_identifier: RoomID | RoomAlias = RoomAlias(room) if is_alias else RoomID(room)
 
-        # Callbacks for new messages
-        def _on_message(room: MatrixRoom, event: RoomMessageText):  # type: ignore
+        try:
+            joined_room = await c.join_room(room_identifier)
+            self._room_id = joined_room
+        except Exception as join_exc:
+            logger.warning("matrix join failed for %s: %s", room_identifier, join_exc)
+            if is_alias:
+                try:
+                    resolved = await c.resolve_room_alias(RoomAlias(room))
+                except Exception as resolve_exc:
+                    raise RuntimeError(f"Matrix alias {room} could not be resolved") from resolve_exc
+                resolved_id = resolved.room_id if hasattr(resolved, "room_id") else None
+                if resolved_id is None:
+                    raise RuntimeError(f"Matrix alias {room} returned no room_id")
+                canonical_room_id = RoomID(resolved_id)
+            else:
+                canonical_room_id = RoomID(room)
+            self._room_id = canonical_room_id
+
+        async def _on_message(event: MessageEvent) -> None:
             try:
-                msg = _parse_text_event(room, event, str(c.user))
+                event_room_id = RoomID(str(event.room_id))
+                if self._room_id and event_room_id != self._room_id:
+                    return
+                msg = _parse_text_event(event, str(c.mxid))
                 if msg is None:
                     return
                 self.inbox.enqueue(msg)
-                # Emit a protocol notification so handlers can insert a system message
                 try:
-                    uri = f"matrix://inbox/{self._room_id}/{msg.event_id}"
-                    # Fire and forget
+                    uri = f"matrix://inbox/{(self._room_id or event_room_id)!s}/{msg.event_id}"
                     task = asyncio.create_task(self._notify(uri))
                     task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
-                except Exception as e:
-                    logger.warning("matrix notify failed: %s", e)
-            except Exception as e:
-                # Best effort; do not crash the callback
-                logger.exception("matrix on_message callback failed: %s", e)
+                except Exception as notify_exc:
+                    logger.warning("matrix notify failed: %s", notify_exc)
+            except Exception as exc:
+                logger.exception("matrix on_message callback failed: %s", exc)
 
-        c.add_event_callback(_on_message, (RoomMessageText,))
+        c.add_event_handler(EventType.ROOM_MESSAGE, _on_message)
 
-        async def _sync_forever() -> None:
-            # Long-poll sync
-            while True:
-                try:
-                    await c.sync(timeout=SYNC_LOOP_TIMEOUT_MS)
-                except Exception:
-                    logger.exception("matrix sync failed; retrying")
-                    await asyncio.sleep(1.0)
-                    continue
+        try:
+            await c.sync(timeout=SYNC_PRIME_TIMEOUT_MS)
+        except Exception:
+            logger.debug("initial matrix sync failed; continuing", exc_info=True)
 
-        self._bg_task = asyncio.create_task(_sync_forever())
+        self._sync_task = c.start(None)
 
     async def stop(self) -> None:
         c = self._client
         if c is None:
             return
         try:
-            await c.close()
-        except Exception as e:
-            logger.warning("matrix client close failed", exc_info=e)
-        t = self._bg_task
-        if t:
-            t.cancel()
-            with suppress(Exception):  # type: ignore
-                await t
+            c.stop()
+        except Exception as exc:
+            logger.warning("matrix client stop failed", exc_info=exc)
+        task = self._sync_task
+        if task:
+            task.cancel()
+            with suppress(Exception):
+                await task
+        session = None
+        try:
+            session = c.api.session  # type: ignore[attr-defined]
+        except AttributeError:
+            session = None
+        except Exception as exc:
+            logger.warning("matrix HTTP session lookup failed", exc_info=exc)
+        if session is not None:
+            try:
+                if not session.closed:
+                    await session.close()
+            except Exception as exc:
+                logger.warning("matrix HTTP session close failed", exc_info=exc)
+        if self._state_store is not None:
+            with suppress(Exception):
+                await self._state_store.close()
 
     async def send_text(self, content: str) -> dict[str, Any]:
         c = self._client
         rid = self._room_id
         if c is None or rid is None:
             raise RuntimeError("Matrix client not started or room not resolved")
-        res = await c.room_send(rid, message_type="m.room.message", content={"msgtype": "m.text", "body": content})
-        # nio returns a Response with event_id for successful send
-        eid = getattr(res, "event_id", None)
-        return {"ok": True, "event_id": eid}
+        event_id = await c.send_text(rid, text=content)
+        return {"ok": True, "event_id": str(event_id)}
 
 
 def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> NotifyingFastMCP:
@@ -235,7 +240,7 @@ def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> Notifyin
     # Background client managed via server lifespan; broadcast notifications on new msgs
     client_holder: dict[str, _MatrixClient] = {}
 
-    # Lifespan wires the matrix-nio client and uses the provided server instance for notifications
+    # Lifespan wires the mautrix client and uses the provided server instance for notifications
     @asynccontextmanager
     async def _lifespan(server: FastMCP):
         async def _broadcast(uri: str) -> None:

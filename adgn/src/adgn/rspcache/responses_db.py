@@ -8,12 +8,25 @@ from datetime import UTC, datetime
 import hashlib
 import os
 import secrets
-from typing import Any, cast
+from typing import Any
 import uuid
 
 import asyncpg
 from openai.types.responses import Response as OpenAIResponse, ResponseStreamEvent, ResponseUsage
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, LargeBinary, String, func, select, text, update
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    Enum as SQLEnum,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    func,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, selectinload
@@ -106,7 +119,11 @@ class Response(Base):
     api_key_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("client_api_keys.id"))
     model: Mapped[str] = mapped_column(String, nullable=False)
     request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    status: Mapped[ResponseStatus] = mapped_column(
+        SQLEnum(ResponseStatus, name="rspcache_response_status", native_enum=False),
+        nullable=False,
+        default=ResponseStatus.QUEUED,
+    )
     error: Mapped[str | None] = mapped_column(String)
     created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     last_update_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -125,7 +142,9 @@ class ResponseSnapshot(Base):
     cache_key: Mapped[str] = mapped_column(
         String, ForeignKey("responses.cache_key", ondelete="CASCADE"), primary_key=True
     )
-    status: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[ResponseStatus] = mapped_column(
+        SQLEnum(ResponseStatus, name="rspcache_snapshot_status", native_enum=False), nullable=False
+    )
     response: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -240,12 +259,13 @@ class ResponsesDB:
                 update(ClientAPIKey)
                 .where(ClientAPIKey.id == key_id, ClientAPIKey.revoked_ts.is_(None))
                 .values(revoked_ts=datetime.now(UTC))
+                .returning(ClientAPIKey.id)
             )
-            rowcount = int(result.rowcount or 0)
-            if rowcount > 0:
+            revoked_id = result.scalar_one_or_none()
+            if revoked_id is not None:
                 await self._emit_event(session, APIKeyRevokedEvent(id=str(key_id)))
             await session.commit()
-            return rowcount > 0
+            return revoked_id is not None
 
     async def verify_api_key(self, token: str) -> APIKeyRecord | None:
         if self._session_factory is None:
@@ -282,7 +302,7 @@ class ResponsesDB:
                 key=key,
                 model=model,
                 request_body=request_body,
-                status="queued",
+                status=ResponseStatus.QUEUED,
                 created_ts=now,
                 last_update_ts=now,
                 api_key_id=api_key.id if api_key else None,
@@ -290,11 +310,14 @@ class ResponsesDB:
             .on_conflict_do_nothing(index_elements=[Response.cache_key])
         )
         async with self._session_factory() as session:
-            result = await session.execute(stmt)
-            if result.rowcount and result.rowcount > 0:
-                await self._emit_event(session, ResponseStatusEvent(cache_key=key, response_id=None, status="queued"))
+            result = await session.execute(stmt.returning(Response.cache_key))
+            inserted_key = result.scalar_one_or_none()
+            if inserted_key:
+                await self._emit_event(
+                    session, ResponseStatusEvent(cache_key=key, response_id=None, status=ResponseStatus.QUEUED)
+                )
             await session.commit()
-            return bool(result.rowcount and result.rowcount > 0)
+            return inserted_key is not None
 
     async def mark_in_progress(self, key: str, response_id: str | None) -> None:
         if self._session_factory is None:
@@ -303,11 +326,14 @@ class ResponsesDB:
             update_result = await session.execute(
                 update(Response)
                 .where(Response.cache_key == key)
-                .values(status="in_progress", response_id=response_id, last_update_ts=datetime.now(UTC))
+                .values(status=ResponseStatus.IN_PROGRESS, response_id=response_id, last_update_ts=datetime.now(UTC))
+                .returning(Response.cache_key)
             )
-            if update_result.rowcount:
+            updated_key = update_result.scalar_one_or_none()
+            if updated_key:
                 await self._emit_event(
-                    session, ResponseStatusEvent(cache_key=key, response_id=response_id, status="in_progress")
+                    session,
+                    ResponseStatusEvent(cache_key=key, response_id=response_id, status=ResponseStatus.IN_PROGRESS),
                 )
             await session.commit()
 
@@ -365,7 +391,7 @@ class ResponsesDB:
                 update(Response)
                 .where(Response.cache_key == key)
                 .values(
-                    status=ResponseStatus.COMPLETE.value,
+                    status=ResponseStatus.COMPLETE,
                     response_id=response_id,
                     latency_ms=latency_ms,
                     last_update_ts=datetime.now(UTC),
@@ -376,7 +402,7 @@ class ResponsesDB:
             )
             await self._upsert_snapshot(session, key=key, snapshot=snapshot)
             await self._emit_event(
-                session, ResponseStatusEvent(cache_key=key, response_id=response_id, status=snapshot.status.value)
+                session, ResponseStatusEvent(cache_key=key, response_id=response_id, status=ResponseStatus.COMPLETE)
             )
             await session.commit()
 
@@ -390,7 +416,7 @@ class ResponsesDB:
                 update(Response)
                 .where(Response.cache_key == key)
                 .values(
-                    status=ResponseStatus.ERROR.value,
+                    status=ResponseStatus.ERROR,
                     error=error_reason,
                     response_id=response_id,
                     last_update_ts=datetime.now(UTC),
@@ -401,7 +427,7 @@ class ResponsesDB:
             await self._emit_event(
                 session,
                 ResponseStatusEvent(
-                    cache_key=key, response_id=response_id, status=snapshot.status.value, error=error_reason
+                    cache_key=key, response_id=response_id, status=ResponseStatus.ERROR, error=error_reason
                 ),
             )
             await session.commit()
@@ -432,7 +458,7 @@ class ResponsesDB:
                 .options(selectinload(Response.api_key), selectinload(Response.snapshot))
                 .where(column == identifier)
             )
-            return cast(Response | None, result.scalar_one_or_none())
+            return result.scalar_one_or_none()
 
     async def get_frames(
         self, identifier: str, *, limit: int | None = None, after_ordinal: int | None = None
@@ -457,8 +483,7 @@ class ResponsesDB:
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
-            frames = list(result.scalars())
-            return cast(list[ResponseFrame], frames)
+            return list(result.scalars())
 
     # ------------------------------------------------------------------
     # Event streaming
@@ -540,17 +565,18 @@ class ResponsesDB:
     async def _upsert_snapshot(self, session: AsyncSession, *, key: str, snapshot: FinalResponseSnapshot) -> None:
         existing = await session.get(ResponseSnapshot, key)
         payload = snapshot.model_dump(mode="json")
+        status_enum = snapshot.status
         if existing is None:
             new_row = ResponseSnapshot(
                 key=key,
-                status=payload["status"],
+                status=status_enum,
                 response=payload["response"],
                 error=payload["error"],
                 token_usage=payload["token_usage"],
             )
             session.add(new_row)
         else:
-            existing.status = payload["status"]
+            existing.status = status_enum
             existing.response = payload["response"]
             existing.error = payload["error"]
             existing.token_usage = payload["token_usage"]

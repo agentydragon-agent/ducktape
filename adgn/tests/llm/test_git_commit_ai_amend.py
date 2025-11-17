@@ -166,7 +166,7 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fa
     _stage(repo, "file.txt")
 
     # Get previous message
-    previous_message = repo.revparse_single("HEAD").peel(pygit2.Commit).message.strip()
+    previous_message = repo.head.peel(pygit2.Commit).message.strip()
     assert previous_message == "Initial implementation"
 
     # Get the diff that would be shown to AI
@@ -202,7 +202,7 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fa
 
     # Verify the committed message contains only the AI message
     fresh = pygit2.Repository(str(tmpdir))
-    committed = fresh.revparse_single("HEAD").peel(pygit2.Commit).message.strip()
+    committed = fresh.head.peel(pygit2.Commit).message.strip()
     assert committed.startswith(("Subject line", "Updated:"))
     assert "editor-added comment" not in committed
     assert ">8" not in committed

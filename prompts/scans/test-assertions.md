@@ -13,7 +13,7 @@ Tests using plain `assert` statements miss opportunities for better error messag
 - More expressive: `has_properties(status="success")` vs `assert obj.status == "success"`
 - Better error messages: "Expected: object with property 'status' equal to 'success', but was 'failed'"
 - Composable: Combine matchers with `all_of()`, `any_of()`, `not_()`
-- Still catches the field-by-field problem while being more general
+- Concise for complex assertions
 
 ## Pattern 1: Field-by-Field Assertions
 
@@ -77,7 +77,30 @@ def test_parse_creates_valid_change():
     ))
 ```
 
-**For full object comparison, prefer plain `==`** - it's simpler and more obvious.
+**Rule**: When `has_properties()` lists ALL fields of a class with exact values, use plain `==` instead - it's simpler and clearer.
+
+```python
+# BAD: has_properties with all fields and exact values
+assert_that(
+    status,
+    has_properties(
+        status=Status.SKIPPED,
+        note="Test skipped",
+        value=None,
+        timestamp=None,
+        # ... all other fields
+    ),
+)
+
+# GOOD: Full object equality
+assert status == HabitStatus(
+    status=Status.SKIPPED,
+    note="Test skipped",
+    value=None,
+    timestamp=None,
+    # ... all other fields
+)
+```
 
 ### Even Better: Parametrize multiple scenarios
 
@@ -91,32 +114,50 @@ def test_parse_numstat_output(numstat, expected):
     assert parse_numstat_output(numstat) == expected
 ```
 
-## Issues with Field-by-Field
+## Pattern 2: Verbose Collection Type Checks
 
-- **Verbose** - 20 lines → 5 lines
-- **Fragile** - Add a field? Update every test
-- **Incomplete** - Easy to forget fields
-- **Unclear intent** - What's the expected object?
-- **Harder to read** - Scattered assertions vs clear data structure
+### BAD: Multiple assertions about collection structure
 
-## Detection
+```python
+# BAD: Three separate assertions saying "non-empty list of Habit"
+assert_that(habits, instance_of(list))
+assert_that(habits, only_contains(instance_of(Habit)))
+assert len(habits) > 0
 
-```bash
-# Find tests with many assertions on same object
-rg --type py -A20 "def test_" | rg "assert.*\[0\].*==" | head -20
+# BAD: Two assertions about collection type
+assert_that(areas, instance_of(list))
+assert_that(areas, only_contains(instance_of(Area)))
 
-# Find patterns like: assert obj.field1 == x; assert obj.field2 == y
-rg --type py "assert \w+\.\w+ ==" --glob "test_*.py" -A1 | grep "assert"
+# BAD: Checking specific type of collection when any collection works
+assert_that(statuses, instance_of(list))
+assert len(statuses) == 5
+assert_that(statuses, only_contains(instance_of(HabitStatus)))
 ```
 
-## Fix Strategy
+### GOOD: Concise composed assertions
 
-1. **Use `==` on whole objects** (if dataclass/Pydantic with `__eq__`)
-2. **Use pytest.approx for floats** when needed
-3. **Use structured comparison** (dict, list, tuple)
-4. **Parametrize** for multiple test cases
+```python
+# GOOD: "non-empty collection of Habit" in one assertion
+from hamcrest import assert_that, all_of, has_length, greater_than, only_contains, instance_of
 
-## Pattern 2: Collection Assertions
+assert_that(habits, all_of(
+    has_length(greater_than(0)),
+    only_contains(instance_of(Habit))
+))
+
+# GOOD: Just check content type, don't care if list/tuple
+assert_that(areas, only_contains(instance_of(Area)))
+
+# GOOD: "collection of exactly 5 HabitStatus"
+assert_that(statuses, all_of(
+    has_length(5),
+    only_contains(instance_of(HabitStatus))
+))
+```
+
+**Principle**: In tests, usually don't care if result is `list` vs `tuple` vs `set` - just care about the content. Don't assert `instance_of(list)` unless the specific collection type matters to the contract.
+
+## Pattern 3: Collection Assertions
 
 ```python
 # BAD: Manual assertions on collections
@@ -132,21 +173,21 @@ assert_that(items, has_item("foo"))
 assert_that(items, contains_exactly("first", "second", "third"))
 ```
 
-## Pattern 3: Type Checks
+## Pattern 4: Type Checks
 
 ```python
 # BAD: Manual isinstance
 assert isinstance(result, User)
 assert type(obj) == MyClass
 
-# GOOD: PyHamcrest matchers
+# GOOD: PyHamcrest matchers (better error messages)
 from hamcrest import assert_that, instance_of
 
 assert_that(result, instance_of(User))
 assert_that(obj, instance_of(MyClass))
 ```
 
-## Pattern 4: String Assertions
+## Pattern 5: String Assertions
 
 ```python
 # BAD: Manual string checks
@@ -160,22 +201,6 @@ from hamcrest import assert_that, contains_string, starts_with, matches_regexp
 assert_that(message, contains_string("error"))
 assert_that(message, starts_with("ERROR:"))
 assert_that(code, matches_regexp(r"^\d{3}-\d{4}$"))
-```
-
-## Pattern 5: Numeric Comparisons
-
-```python
-# BAD: Manual numeric assertions
-assert count > 0
-assert value >= 10 and value <= 20
-assert abs(result - 3.14) < 0.01
-
-# GOOD: PyHamcrest matchers
-from hamcrest import assert_that, greater_than, greater_than_or_equal_to, close_to
-
-assert_that(count, greater_than(0))
-assert_that(value, all_of(greater_than_or_equal_to(10), less_than_or_equal_to(20)))
-assert_that(result, close_to(3.14, 0.01))
 ```
 
 ## Pattern 6: Complex Composite Assertions
@@ -209,20 +234,16 @@ assert_that(result, has_properties(
 
 **Rule**: Use plain `==` for exact full object comparison, `has_properties()` when you need matchers or partial matching.
 
-## When Plain Assert Is Okay
-
-- **Simple equality on primitives**: `assert x == 5` (though `assert_that(x, equal_to(5))` is better)
-- **Boolean conditions**: `assert is_valid` (though `assert_that(is_valid, is_(True))` is clearer)
-- **Quick prototypes/debugging**
-
-But for production tests, PyHamcrest matchers provide:
-- **Better failure messages** ("Expected: greater than 5, but was: 3")
-- **Self-documenting** (matcher name explains intent)
-- **Composable** (combine matchers for complex conditions)
-
 ## Detection Strategy
 
+**Primary**: Manual code reading - read test files thoroughly, look for verbose patterns.
+
+**Automated preprocessing** (high recall, manual verification required):
+
 ```bash
+# Verbose collection checks (3+ lines about same collection)
+rg --type py "assert_that.*instance_of\(list\)" --glob "test_*.py" -A2 | grep -E "(only_contains|len)"
+
 # Field-by-field patterns
 rg --type py "assert \w+\.\w+ ==" --glob "test_*.py" -A1 | grep "assert"
 
@@ -239,7 +260,12 @@ rg --type py "assert \w+\.startswith\(" --glob "test_*.py"
 
 # Numeric comparisons
 rg --type py "assert \w+ [><]=" --glob "test_*.py"
+
+# has_properties with many fields (might be better as full ==)
+rg --type py "has_properties\(" --glob "test_*.py" -A10
 ```
+
+**Important**: Grep patterns find candidates for manual review. Don't trust them blindly. Read the actual code to understand context and determine if changes make sense.
 
 ## References
 

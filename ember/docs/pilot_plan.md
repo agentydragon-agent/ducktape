@@ -24,7 +24,7 @@ approvals, and no extra MCP surfaces yet.
 ## Steps
 
 1. **Container image**
-   - Build `emberd` image with Python, matrix-nio, OpenAI SDK, and the runtime.
+   - Build `emberd` image with Python, mautrix, OpenAI SDK, and the runtime.
    - Provide the direnv-managed editable install locally for quick iteration.
 2. **Matrix/OpenAI wiring**
    - Inject `MATRIX_BASE_URL` and `MATRIX_ADMIN_USER_ID` via the config map.

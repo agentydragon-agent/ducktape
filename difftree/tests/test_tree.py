@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from hamcrest import assert_that, has_properties
+
 from difftree.config import SortMode
 from difftree.parser import FileChange
 from difftree.tree import TreeNode, build_tree, sort_tree
@@ -27,10 +29,7 @@ def test_build_tree_single_file():
     assert "test.py" in root.children
 
     test_file = root.children["test.py"]
-    assert test_file.name == "test.py"
-    assert test_file.is_file
-    assert test_file.additions == 10
-    assert test_file.deletions == 5
+    assert test_file == TreeNode(name="test.py", is_file=True, additions=10, deletions=5)
 
 
 def test_build_tree_nested_files(sample_changes: list[FileChange]):
@@ -41,8 +40,7 @@ def test_build_tree_nested_files(sample_changes: list[FileChange]):
     total_additions = sum(c.additions for c in sample_changes)
     total_deletions = sum(c.deletions for c in sample_changes)
 
-    assert root.additions == total_additions
-    assert root.deletions == total_deletions
+    assert_that(root, has_properties(additions=total_additions, deletions=total_deletions))
 
     # Check directory structure
     assert "src" in root.children
@@ -67,15 +65,17 @@ def test_tree_statistics_aggregation(sample_changes: list[FileChange]):
 
     # src/models should have stats from user.py and post.py
     models_dir = root.children["src"].children["models"]
-    assert models_dir.additions == 20 + 15  # user.py + post.py
-    assert models_dir.deletions == 5 + 3
+    assert_that(models_dir, has_properties(additions=20 + 15, deletions=5 + 3))
 
     # src should have stats from all files under it
     src_dir = root.children["src"]
-    expected_additions = 10 + 5 + 20 + 15  # main.py + utils.py + models/*
-    expected_deletions = 2 + 0 + 5 + 3
-    assert src_dir.additions == expected_additions
-    assert src_dir.deletions == expected_deletions
+    assert_that(
+        src_dir,
+        has_properties(
+            additions=10 + 5 + 20 + 15,  # main.py + utils.py + models/*
+            deletions=2 + 0 + 5 + 3,
+        ),
+    )
 
 
 def test_sort_tree_by_size(sample_changes: list[FileChange]):

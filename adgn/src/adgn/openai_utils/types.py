@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal, cast
+from typing import Literal
 
 from typing_extensions import TypedDict
 
@@ -50,13 +50,13 @@ def build_reasoning_params(
     if effort_value is None and summary_value is None:
         return None
 
-    payload: dict[str, str] = {}
+    payload: ReasoningParams = {}
     if effort_value is not None:
-        payload["effort"] = cast(ReasoningEffortLiteral, effort_value)
+        payload["effort"] = effort_value  # type: ignore[typeddict-item]
     if summary_value is not None:
         payload["summary"] = summary_value
 
-    return cast(ReasoningParams, payload)
+    return payload
 
 
 class ReasoningSummary(StrEnum):

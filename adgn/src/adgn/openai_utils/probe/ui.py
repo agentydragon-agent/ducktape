@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 from rich import box
 from rich.console import Group
@@ -120,7 +120,7 @@ class ProbeTUI(App):
 
     @property
     def current_family(self) -> Family | None:
-        return cast(Family | None, self.family_choices[self.family_idx])
+        return self.family_choices[self.family_idx]
 
     def _filter_mid(self, mid: str) -> bool:
         fam = family_of(mid)

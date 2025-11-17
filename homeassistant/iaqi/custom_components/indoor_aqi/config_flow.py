@@ -3,7 +3,7 @@
 import logging
 
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.config_entries import ConfigFlowResult
 
 from . import DOMAIN
 
@@ -15,7 +15,7 @@ class IndoorAQIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_import(self, user_input=None) -> FlowResult:
+    async def async_step_import(self, user_input=None) -> ConfigFlowResult:
         """Handle YAML import."""
         # user_input might contain data we pass in from __init__.py,
         # e.g. the entire monitors list. Let's store it in the entry's data.

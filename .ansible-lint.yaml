@@ -16,7 +16,6 @@ skip_list:
   - args[module]  # Collection modules have incomplete parameter validation, causing false warnings
 exclude_paths:
   - "roles/legacy_*/**"                 # All legacy roles, being migrated to Nix home-manager (relative to ansible/ dir)
-  - ".ansible/**"                       # Exclude ansible-lint generated mock modules (relative to ansible/ dir)
 
 # Custom modules and plugins configuration
 # Note: custom_module_paths and action_plugins are not valid in config file

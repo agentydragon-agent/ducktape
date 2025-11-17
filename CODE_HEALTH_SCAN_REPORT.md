@@ -1,11 +1,5 @@
 # Code Health Scan Report - Ducktape Repository
 
-**Scan Date**: 2025-01-16
-**Branch Scanned**: `claude/read-scan-prompts-01KJcv4Kab7vRGWwwaMPKgXS`
-**Scan Prompts Source**: `claude/prompts-only-018JJNA3pm4G3rqG1uXkXcVh`
-
----
-
 ## Executive Summary
 
 - **Total issues identified**: **350+** across 14 categories
@@ -15,8 +9,6 @@
 - **High priority**: **4** categories (117+ occurrences)
 - **Medium priority**: **6** categories (234+ occurrences)
 - **Low priority**: **2** categories (22 occurrences)
-
----
 
 ## Action Items by Priority
 
@@ -35,23 +27,9 @@
 - [ ] Create linter rule to prevent `datetime.now()` without timezone argument
 
 #### 2. Enums Exist But Not Enforced (3 critical cases)
-- [x] **Habitify Status**: Fix `llm/mcp/habitify/habitify_mcp_server/types.py` - enum exists but models use `str` ✅ FIXED in commit dd1ec34
-  - [x] Update `HabitStatus.status` field to use `Status` enum (line 79) ✅
-  - [x] Update `StatusResult.status` field to use `Status` enum (line 93) ✅
-  - [x] Update function parameters in `tools.py` to use `Status` enum (line 246) ✅
-  - [x] Update all other Status usages (HabitStatusResponse, LogResult, DateRangeStatusItem, Habit) ✅
-  - [x] Update UnitType enum usage in Goal and Progress models ✅
-  - [x] Update Periodicity enum usage in Goal and Progress models ✅
-  - [x] Update TimeOfDay enum usage in Habit model ✅
 - [ ] **Response Status**: Fix `adgn/src/adgn/rspcache/responses_db.py:109`
   - [ ] Change `status: Mapped[str]` to `status: Mapped[ResponseStatus]`
   - [ ] Update database migration script
-- [x] **Hook Type**: Fix `llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/hooks/validation.py` ✅ FIXED in commit bb09dd4
-  - [x] Update `validate_hook_outcome` parameter type (line 34) ✅
-  - [x] Update `_validate_outcome_semantics` parameter type (line 53) ✅
-  - [x] Update `validate_final_response` parameter type (line 82) ✅
-  - [x] Create HookEventName enum in claude_code_api.py ✅
-  - [x] Update VALID_OUTCOMES dict to use enum keys ✅
 
 #### 3. Security Issue
 - [ ] **ember/src/ember/config.py:56** - Move pickle_key from TOML to k8s secret
@@ -70,8 +48,6 @@
 - [ ] `llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/diff/parser.py:13` - DiffLine.change_type
 - [ ] `llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/diff/categorizer.py:15` - CategorizedViolation.category
 - [ ] `llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2/config/models.py:116` - NotificationHookConfig.urgency
-- [x] `llm/ducktape_llm_common/ducktape_llm_common/claude_code_api.py` - Convert 5 hook event Literal types to single HookEventName enum ✅ FIXED in commit bb09dd4
-- [x] `tana/src/tana/domain/search.py` - Convert 5 SearchKind Literal types to single enum ✅ FIXED in commit f880197
 
 **Fix string status/state fields:**
 - [ ] `adgn/src/adgn/inop/runners/containerized_claude.py:338,340` - Create ContainerStatus enum
@@ -101,7 +77,6 @@
 #### 6. API Model Design Antipatterns (26 occurrences)
 
 **Remove `_json` suffixes (9 occurrences):**
-- [x] `adgn/src/adgn/rspcache/responses_db.py:91` - Rename `frame_json` to `frame` ✅ FIXED in commit 814191c
 - [ ] `adgn/src/adgn/agent/server/protocol.py:122` - Rename `args_json` to `arguments` (40 usages across 14 files - large change)
 - [ ] `adgn/src/adgn/agent/persist/events.py:23` - Rename ToolCallPayload.args_json
 - [ ] `adgn/src/adgn/agent/approvals.py:58` - Rename ApprovalToolCall.args_json
@@ -976,28 +951,3 @@ MAX_POLL_ATTEMPTS = 20
 - Datetime timezone: 58
 - Security: 1
 - Enums not enforced: 3
-
----
-
-## References
-
-- Scan prompts source: `claude/prompts-only-018JJNA3pm4G3rqG1uXkXcVh`
-- Industry standards:
-  - [Pydantic Documentation](https://docs.pydantic.dev/)
-  - [Python StrEnum](https://docs.python.org/3/library/enum.html#enum.StrEnum)
-  - [SQLAlchemy 2.0](https://docs.sqlalchemy.org/en/20/)
-  - [Rails Timestamp Conventions](https://guides.rubyonrails.org/active_record_basics.html#timestamps)
-
----
-
-## Change Log
-
-- 2025-01-16: Initial comprehensive scan completed
-  - Scanned 100+ Python files
-  - Identified 350+ issues across 14 categories
-  - Created action item checklist
-  - Established priority matrix
-
----
-
-*End of Report*

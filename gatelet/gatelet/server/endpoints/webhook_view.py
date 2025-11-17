@@ -2,7 +2,7 @@
 
 from datetime import datetime
 import math
-from typing import Annotated
+from typing import Annotated, Any
 
 from compact_json import Formatter
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -136,11 +136,7 @@ async def get_latest_payloads(db_session: AsyncSession, limit: int = 5) -> list[
     )
     result = await db_session.execute(query)
     return [
-        PayloadSummary(
-            id=payload.id,
-            integration_name=payload.integration_config.name,
-            received_at=payload.received_at,
-        )
+        PayloadSummary(id=payload.id, integration_name=payload.integration_config.name, received_at=payload.received_at)
         for payload in result.scalars().all()
     ]
 

@@ -279,7 +279,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         # Build base diff using repository-level APIs that match type stubs
         # Note: pygit2 stubs do not expose 'paths' filtering; filter results downstream if needed.
         a = None if repo.head_is_unborn else repo.head.target
-        diff = repo.diff(a, None, cached=True) if input.staged else repo.diff(a, None, cached=False)
+        diff = repo.diff(a, None, cached=input.staged)
 
         if input.find_renames:
             diff.find_similar()
@@ -307,8 +307,9 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
         walker = repo.walk(head_oid)
         for i, c in enumerate(walker, start=1):
             if input.oneline:
-                summary = (c.message or "").splitlines()[0]
-                lines.append(f"{str(c.id)[:7]} {summary}")
+                raw_message = (c.message or "").rstrip("\n")
+                prefix = str(c.id)[:7]
+                lines.append(f"{prefix} {raw_message}" if raw_message else prefix)
             else:
                 lines.append(
                     f"commit {c.id}\nAuthor: {c.author.name} <{c.author.email}>\nDate:   {c.commit_time}\n\n{c.message or ''}\n"
@@ -395,8 +396,8 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
             raise TypeError(f"Unexpected git object type for {objspec}: {type(obj_any)!r}")
 
         # Build commit diff against first parent (or empty tree)
-        if obj.parent_ids:
-            parent = repo[obj.parent_ids[0]].peel(pygit2.Commit)
+        if obj.parents:
+            parent = obj.parents[0]
             diff = repo.diff(parent, obj)
         else:
             diff = repo.diff(None, obj)

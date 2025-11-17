@@ -38,23 +38,18 @@ repos:
         files: "\\.ya?ml$"
         exclude: "ansible/host_vars/.*\\.yml$|^k8s/.*\\.ya?ml$"
 
-  # Ansible-lint with compatibility fix for ansible-core 2.19.0+
-  # NOTE: ansible-core 2.19.0 fucking removed ansible.parsing.yaml.constructor module
-  # that ansible-lint depends on, causing ModuleNotFoundError. Pin to 2.18.x
-  # until ansible-lint is updated. See: https://github.com/ansible/ansible/issues/85243
+  # Ansible-lint: track latest release with ansible-core 2.19+ support.
   #
   # IMPORTANT: Run from ansible/ to limit discovery to ansible files only.
   # When ansible-lint runs with no lintables specified, it defaults to *scanning the whole repo* (".").
   - repo: https://github.com/ansible/ansible-lint
-    rev: v24.9.2
+    rev: v25.7.0
     hooks:
       - id: ansible-lint
         files: "^ansible/"
         exclude: "k8s/.*"  # Exclude k8s files that cause parsing issues
         entry: bash -c 'cd "$(git rev-parse --show-toplevel)/ansible" && ./run-ansible-lint.sh'
         args: []  # Clear default args since we're using custom entry
-        additional_dependencies:
-          - ansible-core>=2.18.0,<2.19.0  # Avoid fucking breaking module removal in 2.19.0
 
   # Ruff = linter + import sorter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -72,6 +67,7 @@ repos:
     rev: v1.18.2
     hooks:
       - id: mypy
+        alias: mypy-adgn
         name: mypy (adgn)
         files: "^adgn/.*\\.py$"
         exclude: "(/props/specimens/|/third_party/|/testdata/|/fixtures/|/vendor/)"
@@ -80,6 +76,10 @@ repos:
         additional_dependencies:
           # Core dependencies
           - pydantic>=2
+          - fastapi>=0.115.0
+          - mautrix>=0.20.0
+          - textual>=0.78.0
+          - "sqlalchemy[mypy]>=2.0"
           # Type stubs
           - types-psycopg2
           - types-python-dateutil
@@ -92,6 +92,17 @@ repos:
           - types-aiofiles
           - types-colorama
           - types-psutil
+
+      - id: mypy
+        alias: mypy-homeassistant
+        name: mypy (homeassistant iaqi)
+        files: "^homeassistant/iaqi/.*\\.py$"
+        language_version: python3.12
+        args: ["--config-file=mypy.ini"]
+        additional_dependencies:
+          # Needed because PyYAML 6.0 (pulled via homeassistant) must be cythonized on Python 3.12
+          - "Cython<3"
+          # Full HA typing surface
           - homeassistant-stubs
 
   - repo: https://github.com/keith/pre-commit-buildifier

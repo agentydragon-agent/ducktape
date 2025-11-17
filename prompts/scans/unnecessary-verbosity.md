@@ -214,61 +214,133 @@ result = [x * 2 + 1 for x in items]
 result = [item.upper() for item in items]
 ```
 
-## Detection Strategy
+## Pattern 6: Walrus Operator Opportunities
 
-### AST-Based Detection (Recommended)
+The walrus operator (`:=`) can eliminate unnecessary intermediate variables when assigning and immediately checking/using a value.
 
-Use AST analysis to find single-assignment variables:
+### BAD: Assign-then-check
 
 ```python
-import ast
-from collections import defaultdict
+# BAD: Two lines for assign + check
+result = expensive_call()
+if result:
+    process(result)
 
-class SingleAssignmentDetector(ast.NodeVisitor):
-    def __init__(self):
-        self.assignments = defaultdict(list)  # name -> [line numbers]
-        self.usages = defaultdict(list)       # name -> [line numbers]
+# BAD: Assign + check in while loop
+line = file.readline()
+while line:
+    process(line)
+    line = file.readline()
 
-    def visit_Assign(self, node):
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                self.assignments[target.id].append(node.lineno)
-        self.generic_visit(node)
+# BAD: Assign + check + access
+match = pattern.search(text)
+if match:
+    return match.group(1)
 
-    def visit_Name(self, node):
-        if isinstance(node.ctx, ast.Load):
-            self.usages[node.id].append(node.lineno)
-        self.generic_visit(node)
-
-    def find_single_use_vars(self):
-        """Find variables assigned once and used once immediately after."""
-        candidates = []
-        for name, assign_lines in self.assignments.items():
-            if len(assign_lines) == 1 and name in self.usages:
-                use_lines = self.usages[name]
-                if len(use_lines) == 1 and use_lines[0] == assign_lines[0] + 1:
-                    candidates.append((name, assign_lines[0]))
-        return candidates
+# BAD: Nested assign + check
+data = fetch_data()
+if data:
+    value = data.get('key')
+    if value:
+        return value
 ```
 
-### Grep Patterns (Quick Scan)
+### GOOD: Walrus operator
+
+```python
+# GOOD: Assign and check in one line
+if result := expensive_call():
+    process(result)
+
+# GOOD: Assign in while condition
+while line := file.readline():
+    process(line)
+
+# GOOD: Assign in conditional
+if match := pattern.search(text):
+    return match.group(1)
+
+# GOOD: Nested walrus
+if (data := fetch_data()) and (value := data.get('key')):
+    return value
+```
+
+### When NOT to use walrus
+
+```python
+# BAD: Sacrifices readability for terseness
+if (x := compute_long_complex_name_that_explains_what_it_is()) > 0:
+    process(x)  # What was x again?
+
+# BETTER: Name adds clarity
+result_from_expensive_validation = compute_long_complex_name_that_explains_what_it_is()
+if result_from_expensive_validation > 0:
+    process(result_from_expensive_validation)
+
+# BAD: Complex expression in walrus
+if (result := (transform(data) if validate(data) else fallback())) is not None:
+    ...  # Too complex
+
+# BETTER: Break it down
+result = transform(data) if validate(data) else fallback()
+if result is not None:
+    ...
+```
+
+## Detection Strategy
+
+**Primary Method**: Manual code reading - read through source files, understand the context, look for verbose patterns. Automated tools find candidates but miss context.
+
+**Automated Preprocessing** (high recall, requires manual verification):
+
+### AST-Based Detection
+
+Build AST analyzers to find candidates:
+
+1. **SingleAssignmentDetector**: Track assignments and usages, find variables assigned once and used once on next line
+   - Visit Assign nodes → record variable names and line numbers
+   - Visit Name nodes with Load context → record usage line numbers
+   - Find where assignment line + 1 == usage line and usage count == 1
+
+2. **WalrusOpportunityDetector**: Find assign-then-check patterns
+   - Walk function bodies looking for consecutive statements
+   - Pattern: `ast.Assign` followed by `ast.If` or `ast.While`
+   - Check if condition references the assigned variable
+   - Report line, variable name, pattern type
+
+3. **VerboseBooleanDetector**: Find `if-true-else-false` returns
+   - Check functions with single If statement
+   - Look for: body has `return True`, orelse has `return False`
+   - Check for Constant nodes with boolean values
+
+**Implementation**: Strong coding LLM can reconstruct these from description above. Key is walking AST, tracking variables, checking adjacency.
+
+### Grep Patterns (Quick High-Recall Scan)
+
+These find candidates for manual review - NOT definitive problems:
 
 ```bash
-# Find 'return variable' pattern (potential single-use)
-rg --type py -A1 "^\s*(\w+) = " | rg "return \1$"
+# Walrus opportunities
+rg --type py -U "(\w+)\s*=\s*[^\n]+\n\s*if\s+\1[:\s]" --multiline
+rg --type py -U "(\w+)\s*=\s*[^\n]+\n\s*while\s+\1[:\s]" --multiline
 
-# Find if-true-else-false pattern
-rg --type py "if.*:\s*return True\s*else:\s*return False" --multiline
+# Verbose boolean returns
+rg --type py "if.*:\s*return True\s*(else:\s*return False|return False)" --multiline
 
-# Find else-after-return
-rg --type py "return .+\n\s*else:" -A1
+# Else after return
+rg --type py "return [^\n]+\n\s*else:" --multiline
 
-# Find try-except-raise pattern
-rg --type py "except.*:\s*raise$" --multiline
+# Pointless try-except-raise
+rg --type py "except[^:]*:\s*raise\s*$" --multiline
 
-# Find simple for-append pattern
-rg --type py "for .* in .*:\s*\w+\.append\(" -A1
+# Simple for-append (comprehension candidate)
+rg --type py "^\s*for\s+\w+\s+in.*:\s*$" -A1 --multiline | rg "append\("
+
+# Return variable on next line
+rg --type py "(\w+)\s*=\s*[^\n]+\n\s*return\s+\1\s*$" --multiline
 ```
+
+**Critical**: These patterns have false positives. Always read the actual code, understand intent, check if simplification makes sense.
 
 ## Context Analysis
 

@@ -34,8 +34,9 @@ def _commit(repo: pygit2.Repository, message: str) -> None:
     sig = pygit2.Signature(sig_name, sig_email)
     tree_oid = repo.index.write_tree()
     try:
-        parent = repo.revparse_single("HEAD").peel(pygit2.Commit)
+        parent = repo.head.peel(pygit2.Commit)
         parents = [parent.id]
-    except KeyError:
+    except (KeyError, pygit2.GitError):
+        # No HEAD yet (first commit)
         parents = []
     repo.create_commit("HEAD", sig, sig, message, tree_oid, parents)
