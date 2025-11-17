@@ -2,36 +2,25 @@
 
 ## Philosophy Compliance
 
-The following scan prompts **have been updated** to follow the philosophy (manual reading first, automation as discovery aids):
+✅ **ALL SCAN PROMPTS UPDATED** - All 17 scan prompts now follow the philosophy:
 
-✅ **Updated** (7/17):
 1. `useless-documentation.md` - Code skeleton generation approach
 2. `stringly-typed.md` - General strategies over hardcoded lists
-3. `unnecessary-verbosity.md` - Simplified from full AST implementations
-4. `test-assertions.md` - Emphasizes PyHamcrest patterns with context
-5. `pygit2-patterns.md` - API reference with idiomatic patterns
+3. `unnecessary-verbosity.md` - AST-based detection with manual verification
+4. `test-assertions.md` - PyHamcrest patterns with philosophy
+5. `pygit2-patterns.md` - Idiomatic patterns guide
 6. `mypy-appeasing-code.md` - Research-first workflow for casts
 7. `asyncio-antipatterns.md` - Context-dependent blocking detection
-
-## Remaining Prompts to Update
-
-The following prompts need "Detection Strategy" sections added following the philosophy:
-
-**High Priority** (frequently used):
-- `pydantic-antipatterns.md` - Very short, easy to add philosophy section
-- `trivial-forwarders.md` - Has AST code, needs philosophy framing
-- `manual-serde-needs-pydantic.md` - Has AST/grep, needs manual-first emphasis
-- `vague-field-names.md` - Has "semantic analysis" note, formalize as Detection Strategy
-
-**Medium Priority**:
-- `library-type-misuse.md` - Has "read source" methodology, formalize philosophy
-- `api-model-design.md` - Pattern-focused, add context-dependent detection note
-
-**Low Priority** (simple/rarely used):
-- `trivial-forwarder-methods.md`
-- `timestamp-naming.md`
-- `pytest-tmp-paths.md`
-- `denormalized-computed-fields.md`
+8. `pydantic-antipatterns.md` - Detection Strategy with manual review
+9. `trivial-forwarders.md` - Comprehensive decision framework with recall/precision
+10. `manual-serde-needs-pydantic.md` - Detection Strategy with context analysis
+11. `vague-field-names.md` - Semantic analysis formalized
+12. `library-type-misuse.md` - Read source methodology
+13. `api-model-design.md` - Context-dependent detection
+14. `trivial-forwarder-methods.md` - Detection Strategy added
+15. `timestamp-naming.md` - Convention-based detection
+16. `pytest-tmp-paths.md` - Simple pattern detection
+17. `denormalized-computed-fields.md` - Domain model analysis (just updated)
 
 ## Update Template
 
