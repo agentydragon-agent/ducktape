@@ -1,6 +1,7 @@
 # Large binary files - download these with setup scripts
 talos-amd64.iso
 talosctl
+_out/
 
 # VM runtime files
 *.qcow2
