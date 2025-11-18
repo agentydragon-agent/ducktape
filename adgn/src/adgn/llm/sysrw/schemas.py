@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
-from anthropic.types import MessageParam
-from anthropic.types.text_block_param import TextBlockParam
+from anthropic.types import Message as AnthropicMessageResponse
 from anthropic.types.tool_param import ToolParam
+from openai.types.chat import ChatCompletion
+from openai.types.chat.chat_completion_create_params import ChatCompletionCreateParams
+from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.responses import ResponseCreateParams
 from pydantic import BaseModel, Field
+
+from adgn.llm.anthropic.types import Message as AnthropicMessage
+from adgn.openai_utils.model import InputItem, ResponsesResult
 
 # ------------------------
 # Crush (OpenAI Responses)
@@ -41,15 +46,14 @@ class CrushSample(BaseModel):
 # ------------------------
 
 
-class CCRRequest(BaseModel):
-    """CCR request using proper Anthropic SDK types.
+class Request(BaseModel):
+    """Anthropic API request with Pydantic-validated messages.
 
-    MessageParam is a TypedDict representing Anthropic Messages API format.
-    Pydantic validates these TypedDicts through TypeAdapter internally.
+    Uses adgn.llm.anthropic types (Pydantic) instead of anthropic.types (TypedDicts).
     """
 
-    system: str | list[TextBlockParam] | None = None
-    messages: list[MessageParam]
+    system: str | None = None
+    messages: list[AnthropicMessage]
     tools: list[ToolParam] | None = None
 
 
@@ -57,7 +61,7 @@ class CCRSample(BaseModel):
     kind: Literal["ccr"] = "ccr"
     correlation_id: str | None = None
     timestamp: int | None = None
-    anthropic_request: CCRRequest
+    anthropic_request: Request
 
 
 # ------------------------
@@ -65,19 +69,52 @@ class CCRSample(BaseModel):
 # ------------------------
 
 
+class ChatAssistantMessage(BaseModel):
+    """Chat completion assistant message from CCR samples."""
+
+    kind: Literal["chat"] = "chat"
+    message: ChatCompletionMessage
+
+
+class ResponsesAssistantMessage(BaseModel):
+    """Responses API assistant message from Crush samples."""
+
+    kind: Literal["responses"] = "responses"
+    responses_input: list[InputItem]
+    responses_output: ResponsesResult
+
+
+AssistantMessage = Annotated[
+    ChatAssistantMessage | ResponsesAssistantMessage,
+    Field(discriminator="kind"),
+]
+
+
+class Grade(BaseModel):
+    """Grade result from the grader model."""
+
+    score: int = Field(ge=1, le=5, description="Score from 1 (worst) to 5 (best)")
+    rationale: str = Field(description="Explanation of the score")
+
+
 class EvalSampleRecord(BaseModel):
-    request: dict[str, Any]
-    response: dict[str, Any]
-    new_assistant_message: dict[str, Any]
+    """Eval sample with request, response, and grading information.
+
+    Supports both Chat Completions and Responses API formats.
+    """
+    request: ChatCompletionCreateParams | ResponseCreateParams
+    response: ChatCompletion | ResponsesResult
+    new_assistant_message: AssistantMessage
     correlation_id: str | None = None
     timestamp: int | None = None
-    anthropic_request: CCRRequest | None = None
-    grade: dict[str, Any] | None = None
+    anthropic_request: Request | None = None
+    grade: Grade | None = None
 
 
 class EvalGradeRecord(BaseModel):
-    request: dict[str, Any]
-    response: dict[str, Any]
+    """Grader's evaluation using Responses API."""
+    request: ResponseCreateParams
+    response: ResponsesResult
     correlation_id: str | None = None
     timestamp: int | None = None
 

@@ -3,34 +3,53 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import types
-from typing import Any, Generic, cast, get_origin
+from typing import Any, Generic, TypeVar, cast, get_origin
 
 from fastmcp.client import Client
+from fastmcp.client.client import CallToolResult as FMCallToolResult
 from fastmcp.server import FastMCP
 from mcp import types as mcp_types
 from mcp.types import CallToolResult
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from adgn.mcp._shared.client_helpers import T_Out, _call_normalized, call_tool_typed, extract_error_detail
-
-StructuredContent = BaseModel | dict[str, Any] | list[Any] | str | int | float | bool | None
+from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.client_helpers import extract_error_detail
 
 # We use the concrete FastMCP Client type for sessions in tests
+
+T_In = TypeVar("T_In", bound=BaseModel)
+T_Out = TypeVar("T_Out")
+
+
+def _structured_content(result: CallToolResult, *, tool_name: str) -> dict[str, Any]:
+    sc = result.structuredContent
+    if sc is None:
+        raise RuntimeError(f"{tool_name!r} did not return structuredContent; tests require structured outputs")
+    return sc
 
 
 class ToolStub(Generic[T_Out]):
     """Awaitable callable bound to a (session, tool_name, out_type)."""
 
-    def __init__(self, session: Client, name: str, out_type: type[T_Out], *, exclude_none: bool = True) -> None:
+    def __init__(
+        self,
+        session: Client,
+        name: str,
+        out_type: type[T_Out],
+        *,
+        exclude_none: bool = True,
+    ) -> None:
         self._session = session
         self._name = name
         self._out_type = out_type
         self._exclude_none = exclude_none
 
-    async def __call__(self, payload: BaseModel) -> T_Out:
-        return await call_tool_typed(
-            self._session, self._name, payload, self._out_type, exclude_none=self._exclude_none
-        )
+    async def __call__(self, payload: T_In) -> T_Out:
+        args = payload.model_dump(exclude_none=self._exclude_none)
+        result = await self._session.call_tool(name=self._name, arguments=args)
+        pydantic_result = to_pydantic(result)
+        structured = _structured_content(pydantic_result, tool_name=self._name)
+        return TypeAdapter(self._out_type).validate_python(structured)
 
 
 def _resolve_output_type(hinted_output: object, out_model: object) -> type[Any]:
@@ -88,7 +107,12 @@ class TypedClient:
         self._models: dict[str, ToolModels] = {}
 
     def stub(self, name: str, out_type: type[T_Out]) -> ToolStub[T_Out]:
-        return ToolStub(self._session, name, out_type, exclude_none=self._exclude_none)
+        return ToolStub(
+            self._session,
+            name,
+            out_type,
+            exclude_none=self._exclude_none,
+        )
 
     @property
     def models(self) -> dict[str, ToolModels]:
@@ -100,19 +124,15 @@ class TypedClient:
 
         Requires a server created via FastMCP. Uses server._tool_manager.list_tools()
         and reads each tool.fn_metadata.arg_model/output_model.
-
-        Note: This method intentionally accesses private attributes of FastMCP
-        objects for test introspection. These are not public APIs but are needed
-        to extract type information for creating typed test stubs.
         """
         # Access the internal tool manager and fetch local tools synchronously
         try:
-            tm = server._tool_manager
+            tm = server._tool_manager  # type: ignore[attr-defined]
         except AttributeError as exc:
             raise RuntimeError("Server does not expose _tool_manager") from exc
         # Prefer local tools; mounted tools aren't needed for typed tests here
         try:
-            tools_by_name = tm._tools
+            tools_by_name = tm._tools  # type: ignore[attr-defined]
         except AttributeError as exc:
             raise RuntimeError("Server tool manager does not expose _tools") from exc
         tools = list(tools_by_name.values())
@@ -120,22 +140,22 @@ class TypedClient:
         client = cls(session, exclude_none=exclude_none)
         for t in tools:
             try:
-                fm = t.fn_metadata
+                fm = t.fn_metadata  # type: ignore[attr-defined]
             except AttributeError:
                 fm = None
             try:
-                fn = t.fn
+                fn = t.fn  # type: ignore[attr-defined]
             except AttributeError:
                 fn = None
             hinted_input = None
             hinted_output = None
             if fn is not None:
                 try:
-                    hinted_input = fn._mcp_flat_input_model
+                    hinted_input = fn._mcp_flat_input_model  # type: ignore[attr-defined]
                 except AttributeError:
                     hinted_input = None
                 try:
-                    hinted_output = fn._mcp_flat_output_model
+                    hinted_output = fn._mcp_flat_output_model  # type: ignore[attr-defined]
                 except AttributeError:
                     hinted_output = None
             if fm is None:
@@ -145,8 +165,8 @@ class TypedClient:
                 if not (isinstance(arg_model, type) and issubclass(arg_model, BaseModel)):
                     continue
             else:
-                arg_model = fm.arg_model
-                out_model = fm.output_model
+                arg_model = fm.arg_model  # type: ignore[attr-defined]
+                out_model = fm.output_model  # type: ignore[attr-defined]
                 if out_model is None or arg_model is None:
                     continue
 
@@ -158,16 +178,18 @@ class TypedClient:
                 input_type = None
 
             try:
-                tool_key = t.key
+                tool_key = t.key  # type: ignore[attr-defined]
             except AttributeError:
                 try:
-                    tool_key = t.name
+                    tool_key = t.name  # type: ignore[attr-defined]
                 except AttributeError:
                     tool_key = None
             if not isinstance(tool_key, str) or not tool_key:
                 continue
             output_type = _resolve_output_type(hinted_output, out_model)
-            client._models[tool_key] = ToolModels(Input=input_type, Output=output_type, _arg_model=arg_model)
+            client._models[tool_key] = ToolModels(
+                Input=input_type, Output=output_type, _arg_model=arg_model
+            )
         return client
 
     def error(self, name: str) -> Callable[[BaseModel], Awaitable[str]]:
@@ -178,10 +200,13 @@ class TypedClient:
         session = self._session
 
         async def _err(payload: BaseModel) -> str:
+            if models.Input is not None and not isinstance(payload, models.Input):
+                raise TypeError(f"{name} expects {models.Input.__name__}, got {type(payload).__name__}")
             args_dict = payload.model_dump(exclude_none=exclude_none)
             # Call; FastMCP raises on tool error by default. Capture and return message.
             try:
-                result = await _call_normalized(session, name, args_dict)
+                raw = await session.call_tool(name=name, arguments=args_dict)
+                result = to_pydantic(raw)
             except Exception as exc:
                 return str(exc)
             if not result.isError:

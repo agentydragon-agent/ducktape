@@ -5,7 +5,7 @@ scratch
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-.venv/
+.venv*/
 
 # Built frontend assets (generated from src/adgn/agent/web)
 # Keep the directory in Git, but ignore generated contents

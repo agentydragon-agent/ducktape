@@ -19,7 +19,8 @@ from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, load_default
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp.approval_policy.clients import PolicyReaderClient
+from adgn.mcp.approval_policy.clients import PolicyReaderStub
+from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
@@ -27,9 +28,6 @@ from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.policy_gateway.middleware import install_policy_gateway
 from adgn.mcp.testing.simple_servers import make_simple_mcp
 from tests.types import McpServerSpecs
-
-# Top-level imports for fixtures
-from adgn.mcp.testing.typed_stubs import TypedClient
 
 # Ensure shared fixtures from tests/fixtures are always registered, even when
 # running a subset of tests or in parallel workers where the module wouldn't be
@@ -202,7 +200,7 @@ def make_pg_compositor(approval_hub: ApprovalHub):
         await stack.__aenter__()
         try:
             _reader_client = await stack.enter_async_context(Client(reader))
-            policy_reader = PolicyReaderClient(_reader_client)
+            policy_reader = PolicyReaderStub(TypedClient(_reader_client))
             install_policy_gateway(comp, hub=approval_hub, policy_reader=policy_reader, pending_notifier=notifier)
             # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
             await mount_standard_inproc_servers(compositor=comp, gateway_client=None)

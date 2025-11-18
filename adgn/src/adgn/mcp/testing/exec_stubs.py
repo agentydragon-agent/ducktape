@@ -4,7 +4,7 @@ from adgn.mcp.exec.bwrap import BwrapExecArgs
 from adgn.mcp.exec.direct import DirectExecArgs
 from adgn.mcp.exec.models import BaseExecResult
 from adgn.mcp.exec.seatbelt import SandboxExecArgs, SandboxExecResult
-from adgn.mcp.testing.server_stubs import ServerStub
+from adgn.mcp.stubs.server_stubs import ServerStub
 
 
 class DirectExecServerStub(ServerStub):

@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 from fastmcp.client.client import CallToolResult
+from openai.types.responses.response_usage import ResponseUsage
 from pydantic import TypeAdapter
 import pytest
 from tests.llm.support.openai_mock import LIVE, make_mock
@@ -16,7 +17,6 @@ from adgn.openai_utils.model import (
     ReasoningItem,
     ResponseOutItem,
     ResponsesResult,
-    Usage,
 )
 
 
@@ -44,7 +44,7 @@ class ResponsesFactory:
     def make_assistant_message(self, text: str) -> ResponsesResult:
         return ResponsesResult(
             id="resp_msg",
-            usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
+            usage=ResponseUsage(input_tokens=0, output_tokens=1, total_tokens=1),
             output=[self._item_factory.assistant_text(text)],
         )
 
@@ -75,7 +75,7 @@ class ResponsesFactory:
         for it in items:
             if isinstance(it, AssistantMessageOut):
                 out_tokens += max(1, len(it.text))
-        usage = Usage(input_tokens=0, output_tokens=(1 if out_tokens else 0), total_tokens=(1 if out_tokens else 0))
+        usage = ResponseUsage(input_tokens=0, output_tokens=(1 if out_tokens else 0), total_tokens=(1 if out_tokens else 0))
         # Coerce any plain dicts to proper models if needed (not expected here)
         return ResponsesResult(id="resp_generic", usage=usage, output=list(items))
 

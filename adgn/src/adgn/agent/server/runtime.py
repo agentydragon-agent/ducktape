@@ -218,7 +218,14 @@ class ConnectionManager(BaseHandler):
 
 class AgentSession:
     def __init__(
-        self, manager: ConnectionManager, approval_hub: ApprovalHub | None = None, *, persistence=None
+        self,
+        manager: ConnectionManager,
+        approval_hub: ApprovalHub | None = None,
+        *,
+        persistence=None,
+        agent_id: str | None = None,
+        ui_bus: Any | None = None,
+        approval_engine: ApprovalPolicyEngine | None = None,
     ) -> None:
         self._task: asyncio.Task | None = None
         self.approval_hub = approval_hub or ApprovalHub()
@@ -228,12 +235,12 @@ class AgentSession:
         self._agent: MiniCodex | None = None
         self._manager = manager
         self._persistence = persistence
-        self.ui_bus: Any | None = None
+        self.ui_bus: Any | None = ui_bus
         self.ui_state: UiState = new_state()
-        self.approval_engine: ApprovalPolicyEngine | None = None
+        self.approval_engine: ApprovalPolicyEngine | None = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
         # Optional: agent identifier to associate runs with a specific hosted agent
-        self.agent_id: str | None = None
+        self.agent_id: str | None = agent_id
         # No Docker client on session; runtime server handles any containerization
 
     def current_run_phase(self) -> RunPhase:

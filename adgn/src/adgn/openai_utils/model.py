@@ -10,7 +10,6 @@ from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 from openai.types.responses.response_usage import ResponseUsage
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from adgn.openai_utils.retry import retry_decorator
 from adgn.openai_utils.types import ReasoningEffort, ReasoningParams
 
 # ------------------------------
@@ -330,22 +329,6 @@ class OpenAIModel:
 # ------------------------------
 # Test-friendly fake (records typed CapturedRequest, returns canned outputs)
 # ------------------------------
-
-
-@dataclass
-class RetryingOpenAIModel:
-    """Retry-decorated wrapper around an OpenAIModel-like base implementing our protocol."""
-
-    base: OpenAIModelProto
-
-    @property
-    def model(self) -> str:
-        return self.base.model
-
-    @retry_decorator()
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        result = await self.base.responses_create(req)
-        return cast(ResponsesResult, result)
 
 
 @dataclass

@@ -12,7 +12,7 @@ from adgn.agent.reducer import AutoHandler, NotificationsHandler
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.mcp.testing.typed_stubs import call_tool_typed
+from adgn.mcp.stubs.typed_stubs import ToolStub
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult, UserMessage
 from tests.fixtures.responses import ResponsesFactory
 from tests.llm.support.openai_mock import make_mock
@@ -63,9 +63,8 @@ async def test_notifications_pre_sampling_out_of_band(
     # Buffered client path via shared fixture
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         # Prime a protocol-level notification before sampling by calling the server tool once
-        await call_tool_typed(
-            mcp_client, build_mcp_function("notifier", "notify_policy"), NotifyPolicyInput(), NotifyPolicyOutput
-        )
+        stub = ToolStub(mcp_client, build_mcp_function("notifier", "notify_policy"), NotifyPolicyOutput)
+        await stub(NotifyPolicyInput())
 
         captured: list[ResponsesRequest] = []
 
