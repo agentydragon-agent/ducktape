@@ -13,7 +13,7 @@ Corresponds to:
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -30,41 +30,35 @@ class AnthropicMessageRole(StrEnum):
 
 
 class AnthropicTextBlock(BaseModel):
-    """Text content block.
+    """Text content block. Corresponds to anthropic.types.TextBlockParam."""
 
-    Corresponds to anthropic.types.TextBlockParam TypedDict.
-    """
-
-    type: str = Field(default="text", pattern="^text$")
+    type: Literal["text"] = "text"
     text: str
 
 
 class AnthropicToolUseBlock(BaseModel):
-    """Tool use content block.
+    """Tool use content block. Corresponds to anthropic.types.ToolUseBlockParam."""
 
-    Corresponds to anthropic.types.ToolUseBlockParam TypedDict.
-    """
-
-    type: str = Field(default="tool_use", pattern="^tool_use$")
+    type: Literal["tool_use"] = "tool_use"
     id: str
     name: str
     input: dict[str, Any]
 
 
 class AnthropicToolResultBlock(BaseModel):
-    """Tool result content block.
+    """Tool result content block. Corresponds to anthropic.types.ToolResultBlockParam."""
 
-    Corresponds to anthropic.types.ToolResultBlockParam TypedDict.
-    """
-
-    type: str = Field(default="tool_result", pattern="^tool_result$")
+    type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
     content: str | list[AnthropicTextBlock]
     is_error: bool = False
 
 
-# Union type for content blocks (corresponds to ContentBlockParam)
-AnthropicContentBlock = AnthropicTextBlock | AnthropicToolUseBlock | AnthropicToolResultBlock
+# Discriminated union for content blocks (corresponds to ContentBlockParam)
+AnthropicContentBlock = Annotated[
+    AnthropicTextBlock | AnthropicToolUseBlock | AnthropicToolResultBlock,
+    Field(discriminator="type"),
+]
 
 
 class AnthropicMessage(BaseModel):
