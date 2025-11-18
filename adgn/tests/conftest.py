@@ -407,10 +407,10 @@ def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemera
 
 
 @pytest.fixture
-def make_echo_spec(make_backend_server) -> Callable[[], dict[str, Any]]:
+def make_echo_spec(make_backend_server) -> Callable[[], dict[str, FastMCP]]:
     """Return a factory that produces in-proc FastMCP servers for echo tests."""
 
-    def _spec() -> dict[str, object]:
+    def _spec() -> dict[str, FastMCP]:
         return {"echo": make_backend_server("echo")}
 
     return _spec

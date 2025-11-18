@@ -93,13 +93,14 @@ class Continue:
     """
 
     tool_policy: ToolPolicy
-    # Input-side items to add to the next request (adapter-only).
-    # Normal path: accept InputItem (UserMessage, AssistantMessage, SystemMessage,
-    # FunctionCallItem, FunctionCallOutputItem).
-    # Skip-sampling path: accept adapter ResponseOut items (FunctionCallItem,
-    # FunctionCallOutputItem, AssistantMessageOut). ReasoningItem MUST be produced
-    # by the SDK/model, not injected here.
-    inserts_input: tuple[InputItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut, ...] = ()
+    # Input-side items to add to the next request or treat as synthetic output.
+    # Normal path (skip_sampling=False): Only UserMessage, AssistantMessage, SystemMessage, and
+    # FunctionCallItem are appended to transcript (runtime check enforces this at agent.py:396).
+    # Skip-sampling path (skip_sampling=True): Caller must ensure inserts_input contains only
+    # output-side items (FunctionCallItem, FunctionCallOutputItem, AssistantMessageOut).
+    # ReasoningItem MUST be produced by the SDK/model, not injected here.
+    # Type annotation enforces the intersection: items valid for normal path.
+    inserts_input: tuple[UserMessage | AssistantMessage | SystemMessage | FunctionCallItem, ...] = ()
     # When True: do NOT call the model this phase; execute directly from inserts_input
     skip_sampling: bool = False
 

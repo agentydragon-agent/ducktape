@@ -173,7 +173,7 @@ def typed_editor_factory(tmp_path: Path):
 # Helper: create a live agent via HTTP on a TestClient and return its id
 @pytest.fixture
 def create_live_agent():
-    def _create(client, *, specs: dict[str, Any] | None = None) -> str:
+    def _create(client, *, specs: dict[str, BaseModel | FastMCP] | None = None) -> str:
         specs = specs or {}
         # Split into typed JSON specs vs runtime slot specs
         typed: dict[str, BaseModel] = {}
@@ -182,6 +182,8 @@ def create_live_agent():
             if isinstance(v, FastMCP):
                 inproc[k] = v
                 continue
+            # Must be BaseModel at this point
+            assert isinstance(v, BaseModel), f"Expected BaseModel or FastMCP, got {type(v)}"
             typed[k] = v
         # Create agent via API using a preset
         resp = client.post("/api/agents", json={"preset": "default"})
@@ -247,8 +249,8 @@ def ws_hub(agent_app_client, patch_agent_build_client, responses_factory):
 
 
 @pytest.fixture
-def make_spy_spec() -> Callable[[list[str]], dict[str, Any]]:
-    def _spec(counter: list[str]) -> dict[str, Any]:
+def make_spy_spec() -> Callable[[list[str]], dict[str, FastMCP]]:
+    def _spec(counter: list[str]) -> dict[str, FastMCP]:
         mcp = FastMCP("spy")
 
         @mcp.tool()
@@ -285,7 +287,7 @@ def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
     def _open(
         model_client: Any,
         *,
-        specs: dict[str, Any] | None = None,
+        specs: dict[str, BaseModel | FastMCP] | None = None,
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):
@@ -394,7 +396,7 @@ def agent_ws_box(ws_session, make_agent_http):
     def _open(
         model_client: Any,
         *,
-        specs: dict[str, Any] | None = None,
+        specs: dict[str, BaseModel | FastMCP] | None = None,
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):

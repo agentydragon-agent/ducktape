@@ -392,9 +392,9 @@ class MiniCodex:
             resp_output = list(decision.inserts_input)  # Trust type system
         elif isinstance(decision, Continue):
             # Inject any handler-provided pre-sample inserts into transcript
+            # Type system enforces that inserts_input only contains valid types
             for it in decision.inserts_input:
-                if isinstance(it, UserMessage | AssistantMessage | SystemMessage | FunctionCallItem):
-                    self._transcript.append(it)
+                self._transcript.append(it)
             raw_tc = _tool_choice_from_policy(decision.tool_policy)
             if isinstance(raw_tc, dict) and raw_tc.get("type") == "function" and isinstance(raw_tc.get("name"), str):
                 tool_choice_typed: ToolChoice = ToolChoiceFunction(name=raw_tc["name"])
@@ -406,8 +406,11 @@ class MiniCodex:
             tools_payload: list[FunctionToolParam] = []
             tools = await self._mcp_client.list_tools()
             for t in tools:
+                # Note: mcp.types.Tool has description: str | None and inputSchema: dict[str, Any]
+                # FunctionToolParam accepts description: str | None and parameters: dict[str, Any]
+                # Pass through types as-is; no defensive defaults needed
                 tools_payload.append(
-                    FunctionToolParam(name=t.name, description=t.description or "", parameters=t.inputSchema or {})
+                    FunctionToolParam(name=t.name, description=t.description, parameters=t.inputSchema)
                 )
 
             req = ResponsesRequest(
