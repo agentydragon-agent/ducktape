@@ -11,7 +11,7 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.local_runtime import LocalAgentRuntime
 from adgn.agent.runtime.running import RunningInfrastructure
 from adgn.agent.server.bus import ServerBus
-from adgn.mcp.compositor.clients import CompositorAdminClient
+from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.openai_utils.model import OpenAIModelProto
 
 from .builder import build_local_agent
@@ -47,6 +47,21 @@ class AgentRuntime:
     def policy_approver(self):
         """Policy approver stub from infrastructure."""
         return self.running.policy_approver
+
+    @property
+    def compositor_client(self):
+        """Compositor client from infrastructure."""
+        return self.running.compositor_client
+
+    @property
+    def runtime_ephemeral(self):
+        """Runtime ephemeral flag (always False for new architecture)."""
+        return False
+
+    async def list_mcp_entries(self):
+        """List MCP server entries via compositor_meta."""
+        meta = CompositorMetaClient(self.running.compositor_client)
+        return await meta.list_states()
 
     async def close(self):
         """Close both runtime and infrastructure."""
