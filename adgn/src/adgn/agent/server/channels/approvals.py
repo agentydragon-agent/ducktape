@@ -87,3 +87,29 @@ class ApprovalsChannelManager(ChannelConnectionManager):
         ]
         snapshot = ApprovalsSnapshot(pending=pending)
         await self.broadcast(snapshot)
+
+
+# ============================================================================
+# WebSocket Endpoint
+# ============================================================================
+
+
+def register_endpoint(app):
+    """Register approvals channel WebSocket endpoint."""
+    from fastapi import FastAPI, WebSocket
+
+    from adgn.agent.server.channels.common import handle_channel_ws
+
+    @app.websocket("/ws/approvals")
+    async def ws_approvals(ws: WebSocket) -> None:
+        """Approvals channel - tool approval requests and decisions."""
+        await handle_channel_ws(
+            ws,
+            "approvals",
+            ws.query_params.get("agent_id"),
+            lambda b: b.approvals,
+            lambda b, aid: b.approvals.send_snapshot(app.state.registry.get(aid).running.approval_hub)
+            if app.state.registry.get(aid)
+            else None,
+            app,
+        )

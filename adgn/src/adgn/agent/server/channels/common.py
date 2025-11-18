@@ -1,12 +1,21 @@
-"""Common protocol messages used across all channels."""
+"""Common protocol messages and utilities used across all channels."""
 
 from __future__ import annotations
 
-from datetime import datetime
+import logging
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+    from adgn.agent.server.channels.bundle import ChannelBundle
+
+logger = logging.getLogger(__name__)
 
 
 class ChannelEnvelope(BaseModel):
@@ -51,3 +60,86 @@ class HeartbeatEvt(BaseModel):
     type: Literal["heartbeat"] = "heartbeat"
     interval_ms: int
     model_config = ConfigDict(extra="forbid")
+
+
+# ============================================================================
+# Common WebSocket Helpers
+# ============================================================================
+
+
+async def send_envelope(ws: WebSocket, channel: str, payload: Accepted | ErrorEvt) -> None:
+    """Send envelope to client, ignoring errors."""
+    from fastapi import WebSocket
+
+    envelope = ChannelEnvelope(
+        channel=channel,
+        event_id=0,
+        event_at=datetime.now(UTC),
+        payload=payload,
+    )
+    try:
+        await ws.send_json(envelope.model_dump(mode="json"))
+    except Exception:
+        pass
+
+
+async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | None:
+    """Get or create channel bundle for agent."""
+    from adgn.agent.server.channels.bundle import ChannelBundle
+
+    await app.state.ready.wait()
+    try:
+        runtime = await app.state.registry.ensure_live(agent_id, with_ui=True)
+    except KeyError:
+        return None
+    except Exception as e:
+        logger.exception("ensure_live failed", exc_info=e)
+        return None
+
+    if runtime._channel_bundle is None:
+        runtime._channel_bundle = ChannelBundle.for_agent_runtime(runtime)
+    return runtime._channel_bundle
+
+
+async def handle_channel_ws(
+    ws: WebSocket,
+    channel: str,
+    agent_id: str | None,
+    get_manager,
+    send_initial_snapshot,
+    app: FastAPI,
+):
+    """Common WebSocket handler pattern for all channels."""
+    from fastapi import WebSocket, WebSocketDisconnect
+
+    await ws.accept()
+    try:
+        if not agent_id:
+            await send_envelope(ws, channel, ErrorEvt(code=ErrorCode.NO_AGENT, message="agent_id required"))
+            return
+
+        bundle = await get_channel_bundle(app, agent_id)
+        if bundle is None:
+            await send_envelope(ws, channel, ErrorEvt(code=ErrorCode.NO_AGENT, message="unknown agent"))
+            return
+
+        manager = get_manager(bundle)
+        if manager is None:
+            await send_envelope(
+                ws, channel, ErrorEvt(code=ErrorCode.COMPONENT_UNAVAILABLE, message=f"{channel} not available")
+            )
+            return
+
+        client_id = str(uuid4())
+        await manager.connect(client_id, ws)
+        await send_envelope(ws, channel, Accepted())
+
+        await send_initial_snapshot(bundle, agent_id)
+
+        try:
+            while True:
+                await ws.receive_text()
+        except WebSocketDisconnect:
+            await manager.disconnect(client_id)
+    finally:
+        await ws.close()

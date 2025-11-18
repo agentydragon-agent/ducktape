@@ -73,3 +73,29 @@ class McpChannelManager(ChannelConnectionManager):
         sampling = await compositor.sampling_snapshot()
         snapshot = McpSnapshot(sampling=sampling)
         await self.broadcast(snapshot)
+
+
+# ============================================================================
+# WebSocket Endpoint
+# ============================================================================
+
+
+def register_endpoint(app):
+    """Register MCP channel WebSocket endpoint."""
+    from fastapi import FastAPI, WebSocket
+
+    from adgn.agent.server.channels.common import handle_channel_ws
+
+    @app.websocket("/ws/mcp")
+    async def ws_mcp(ws: WebSocket) -> None:
+        """MCP channel - compositor state and sampling snapshots."""
+        await handle_channel_ws(
+            ws,
+            "mcp",
+            ws.query_params.get("agent_id"),
+            lambda b: b.mcp,
+            lambda b, aid: b.mcp.send_snapshot(app.state.registry.get(aid).running.compositor)
+            if app.state.registry.get(aid)
+            else None,
+            app,
+        )
