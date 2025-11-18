@@ -46,22 +46,23 @@ def anthropic_to_chat_messages(
             continue
 
         # message.content is list[ContentBlock] - Pydantic models
-        content_blocks = message.content
-
         if message.role == AnthropicMessageRole.ASSISTANT:
             text_buf: list[str] = []
             tool_calls: list[ChatCompletionMessageToolCallParam] = []
-            for block in content_blocks:
+            for block in message.content:
                 if isinstance(block, AnthropicTextBlock):
                     text_buf.append(block.text)
                 elif isinstance(block, AnthropicToolUseBlock):
-                    args_str = json.dumps(block.input, ensure_ascii=False, separators=(",", ":"))
-                    tool_call = ChatCompletionMessageToolCallParam(
-                        type="function",
-                        function={"name": block.name, "arguments": args_str},
-                        id=block.id,
+                    tool_calls.append(
+                        ChatCompletionMessageToolCallParam(
+                            type="function",
+                            function={
+                                "name": block.name,
+                                "arguments": json.dumps(block.input, ensure_ascii=False, separators=(",", ":")),
+                            },
+                            id=block.id,
+                        )
                     )
-                    tool_calls.append(tool_call)
             if text_buf or tool_calls:
                 content = "\n".join(text_buf) if text_buf else None
                 if tool_calls:
@@ -76,15 +77,15 @@ def anthropic_to_chat_messages(
         elif message.role == AnthropicMessageRole.USER:
             text_parts: list[str] = []
             tool_msgs: list[ChatCompletionToolMessageParam] = []
-            for block in content_blocks:
+            for block in message.content:
                 if isinstance(block, AnthropicTextBlock):
                     text_parts.append(block.text)
                 elif isinstance(block, AnthropicToolResultBlock):
-                    if isinstance(block.content, str):
-                        tool_text = block.content
-                    else:
-                        # list[TextBlock]
-                        tool_text = "\n".join(b.text for b in block.content)
+                    tool_text = (
+                        block.content
+                        if isinstance(block.content, str)
+                        else "\n".join(b.text for b in block.content)
+                    )
                     tool_msgs.append(
                         ChatCompletionToolMessageParam(
                             role="tool", tool_call_id=block.tool_use_id, content=tool_text
