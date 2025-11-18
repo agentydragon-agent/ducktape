@@ -42,14 +42,15 @@ repos:
   #
   # IMPORTANT: Run from ansible/ to limit discovery to ansible files only.
   # When ansible-lint runs with no lintables specified, it defaults to *scanning the whole repo* (".").
+  # By passing specific files (pass_filenames: true), we avoid the slow full-repo scan.
   - repo: https://github.com/ansible/ansible-lint
     rev: v25.7.0
     hooks:
       - id: ansible-lint
         files: "^ansible/"
         exclude: "k8s/.*"  # Exclude k8s files that cause parsing issues
-        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/ansible" && ./run-ansible-lint.sh'
-        args: []  # Clear default args since we're using custom entry
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/ansible" && ./run-ansible-lint.sh "$@"' --
+        pass_filenames: true
 
   # Ruff = linter + import sorter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
