@@ -72,6 +72,19 @@ class PolicyProposal(BaseModel):
     content: str
 
 
+class ApprovalRecord(BaseModel):
+    """Historical approval record from persistence."""
+
+    call_id: str
+    run_id: str | None
+    agent_id: str | None
+    tool_key: str
+    outcome: ApprovalOutcome
+    decided_at: datetime
+    details: dict[str, JsonValue] | None = None
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
 from .events import EventRecord  # noqa: E402
 
 
@@ -126,6 +139,8 @@ class Persistence(Protocol):
         decided_at: datetime,
         details: dict[str, JsonValue] | None = None,
     ) -> None: ...
+
+    async def list_approvals(self, *, agent_id: str, limit: int = 100) -> list[ApprovalRecord]: ...
 
     async def list_runs(self, *, agent_id: str | None = None, limit: int = 50) -> list[RunRow]: ...
     async def get_run(self, run_id: UUID) -> RunRow | None: ...

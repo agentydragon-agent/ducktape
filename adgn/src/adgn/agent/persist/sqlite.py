@@ -15,7 +15,7 @@ from pydantic import JsonValue
 from adgn.agent.persist import PolicyProposal
 from adgn.agent.runtime.auto_attach import filter_persistable_servers
 
-from . import AgentMetadata, AgentRow, ApprovalOutcome, EventType, Persistence, RunRow, RunStatus
+from . import AgentMetadata, AgentRow, ApprovalOutcome, ApprovalRecord, EventType, Persistence, RunRow, RunStatus
 from .events import EventRecord, parse_event
 
 MAX_EVENT_PAYLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB hard limit per event payload
@@ -478,6 +478,35 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 ),
             )
             await db.commit()
+
+    async def list_approvals(self, *, agent_id: str, limit: int = 100) -> list[ApprovalRecord]:
+        """List approval history for an agent, ordered by decision time (newest first)."""
+        out: list[ApprovalRecord] = []
+        async with self._open_row() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT call_id, run_id, agent_id, tool_key, outcome, decided_at, details
+                FROM approvals
+                WHERE agent_id = ?
+                ORDER BY decided_at DESC
+                LIMIT ?
+                """,
+                (agent_id, limit),
+            ) as cur:
+                async for r in cur:
+                    out.append(
+                        ApprovalRecord(
+                            call_id=r["call_id"],
+                            run_id=r["run_id"],
+                            agent_id=r["agent_id"],
+                            tool_key=r["tool_key"],
+                            outcome=ApprovalOutcome(r["outcome"]),
+                            decided_at=datetime.fromisoformat(r["decided_at"]),
+                            details=json.loads(r["details"]) if r["details"] else None,
+                        )
+                    )
+        return out
 
     async def list_runs(self, *, agent_id: str | None = None, limit: int = 50) -> list[RunRow]:
         params: list[object] = []
