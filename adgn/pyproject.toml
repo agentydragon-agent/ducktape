@@ -192,6 +192,7 @@ rspcache = "adgn.rspcache.cli:app"
 # LLM console scripts
 adgn-sysrw = "adgn.llm.sysrw.cli:app"
 adgn-mini-codex = "adgn.agent.cli:main"
+adgn-mcp-bridge = "adgn.agent.mcp_bridge.cli:cli"
 adgn-properties = "adgn.props.cli:main"
 adgn-properties2 = "adgn.props.cli_app.main:app"
 git-commit-ai = "adgn.git_commit_ai.cli:main"
