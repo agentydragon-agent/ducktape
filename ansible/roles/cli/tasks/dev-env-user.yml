@@ -16,7 +16,7 @@
 # User-level development tools
 - name: Install user-level development tools
   become: true
-  become_user: "{{ cli_user | default(ansible_user_id) }}"
+  become_user: "{{ cli_effective_user }}"
   block:
 
     # Check for legacy npm-global directory that should be removed

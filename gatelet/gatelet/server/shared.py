@@ -19,7 +19,9 @@ def make_ha_history_url(settings: Settings):
     Returns:
         Callable that takes entity_id and returns URL string
     """
+
     def helper(entity_id: str) -> str:
         base = settings.home_assistant.api_url.rstrip("/")
         return f"{base}/history?entity_id={entity_id}"
+
     return helper

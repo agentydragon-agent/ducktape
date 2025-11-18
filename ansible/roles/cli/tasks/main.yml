@@ -81,14 +81,14 @@
   become: true
   tags: [zsh]
   ansible.builtin.user:
-    name: "{{ cli_user | default(ansible_user_id) }}"
+    name: "{{ cli_effective_user }}"
     shell: /bin/zsh
 
 # Remove default Ubuntu directories (only if empty)
 # I have custom dirs configured via user-dirs.dirs
 - name: Check if default Ubuntu directories are empty
   ansible.builtin.find:
-    paths: "/home/{{ cli_user | default(ansible_user_id) }}/{{ item }}"
+    paths: "/home/{{ cli_effective_user }}/{{ item }}"
     file_type: any
   loop:
     - Desktop
@@ -101,12 +101,12 @@
     - Videos
   register: cli_dir_contents
   become: true
-  become_user: "{{ cli_user | default(ansible_user_id) }}"
+  become_user: "{{ cli_effective_user }}"
   failed_when: false  # Don't fail if directory doesn't exist
 
 - name: Ensure default directories are either absent or empty
   ansible.builtin.file:
-    path: "/home/{{ cli_user | default(ansible_user_id) }}/{{ item.item }}"
+    path: "/home/{{ cli_effective_user }}/{{ item.item }}"
     state: absent
   when:
     - item.matched is defined
@@ -115,7 +115,7 @@
   loop_control:
     label: "{{ item.path | default('skipped') }}"
   become: true
-  become_user: "{{ cli_user | default(ansible_user_id) }}"
+  become_user: "{{ cli_effective_user }}"
 
 # Deploy dotfiles before dev_env to ensure npmrc is in place
 - name: Import dotfiles configuration tasks

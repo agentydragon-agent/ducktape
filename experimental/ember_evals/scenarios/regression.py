@@ -115,7 +115,9 @@ class ServiceRestartResilienceScenario(Scenario):
 
     async def run(self) -> None:
         await self.send_matrix_message(
-            self.render("Start an HTTP server on port 23456 that returns the run id. Ensure it restarts automatically if killed.")
+            self.render(
+                "Start an HTTP server on port 23456 that returns the run id. Ensure it restarts automatically if killed."
+            )
         )
         await self.wait_seconds(120)
         await self.probe_http(container="emberd", port=23456, path="/", expect_body_includes=self.run_id)

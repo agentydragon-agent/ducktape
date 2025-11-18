@@ -338,7 +338,9 @@ def generate_html_report(report_base: Path):
                     shared_prefix = display_messages
                     bad_branch = []
                 else:
-                    shared_prefix = [msg for msg in (display_messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM]
+                    shared_prefix = [
+                        msg for msg in (display_messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM
+                    ]
                     bad_branch = display_messages[last_assistant_index:]
             else:
                 # CCR item - validate and use typed Anthropic structures
@@ -370,8 +372,7 @@ def generate_html_report(report_base: Path):
 
     # Jinja2 template
     env = Environment(
-        loader=FileSystemLoader(str(Path(__file__).parent / "templates")),
-        autoescape=select_autoescape(["html", "xml"]),
+        loader=FileSystemLoader(str(Path(__file__).parent / "templates")), autoescape=select_autoescape(["html", "xml"])
     )
     template = env.get_template("report.html.j2")
     html_text = template.render(rows=rows, summary=summary)
@@ -528,7 +529,9 @@ async def run_eval(
                     msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
                     log_event(msg)
                     return None, None
-                new_assistant_message = ResponsesAssistantMessage(responses_input=responses_input, responses_output=sample)
+                new_assistant_message = ResponsesAssistantMessage(
+                    responses_input=responses_input, responses_output=sample
+                )
                 # For grader context later, build ephemeral CCR-like messages
                 parsed_request_input = parse_response_messages(request_input)
                 if parsed_request_input is None:
@@ -556,7 +559,9 @@ async def run_eval(
             # Greedily add middle messages until we hit budget
             added = 0
             for message in middle_messages:
-                trial_grader_input = build_grader_prompt([*prefix_messages, message, *tail_messages], bad_branch, new_assistant_message)
+                trial_grader_input = build_grader_prompt(
+                    [*prefix_messages, message, *tail_messages], bad_branch, new_assistant_message
+                )
                 trial_token_count = tokens_for_chat_messages(trial_grader_input)
                 if trial_token_count <= TARGET_PREFIX_TOKENS:
                     prefix_messages.append(message)
@@ -717,7 +722,10 @@ async def run_eval(
             json.dump(summary, f, sort_keys=True)
         return summary
 
-    with samples_out.open("w", encoding="utf-8") as samples_output, grades_out.open("w", encoding="utf-8") as grades_output:
+    with (
+        samples_out.open("w", encoding="utf-8") as samples_output,
+        grades_out.open("w", encoding="utf-8") as grades_output,
+    ):
         log_event({"event": "as_completed_start", "count": len(tasks)})
         for fut in asyncio.as_completed(tasks):
             sample_record, grade_record = await fut
@@ -726,7 +734,9 @@ async def run_eval(
             if sample_record:
                 samples_output.write(json.dumps(sample_record.model_dump(), sort_keys=True) + "\n")
                 # Determine source from message type
-                source = "crush" if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage) else "ccr"
+                source = (
+                    "crush" if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage) else "ccr"
+                )
                 # Update tool usage stats
                 tool_stats["total_samples"] = tool_stats.get("total_samples", 0) + 1
                 # Extract tool calls from ChatAssistantMessage

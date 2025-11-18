@@ -119,7 +119,9 @@ async def list_keys(
 ) -> HTMLResponse:
     keys = (await db_session.execute(select(AuthKey).order_by(AuthKey.id))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = request.app.state.templates.TemplateResponse("admin_keys.html", {"request": request, "keys": keys, "csrf_token": token})
+    response = request.app.state.templates.TemplateResponse(
+        "admin_keys.html", {"request": request, "keys": keys, "csrf_token": token}
+    )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 
@@ -129,7 +131,9 @@ async def new_key_form(
     request: Request, admin_session: AdminSession = ADMIN_SESSION, csrf_protect: CsrfProtect = CSRF
 ) -> HTMLResponse:
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = request.app.state.templates.TemplateResponse("admin_key_new.html", {"request": request, "csrf_token": token})
+    response = request.app.state.templates.TemplateResponse(
+        "admin_key_new.html", {"request": request, "csrf_token": token}
+    )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 
@@ -258,4 +262,6 @@ async def view_logs(
             log_text = "<unable to read log file>"
     else:
         log_text = "<log file not found>"
-    return request.app.state.templates.TemplateResponse("admin_logs.html", {"request": request, "log_text": log_text, "lines": lines})
+    return request.app.state.templates.TemplateResponse(
+        "admin_logs.html", {"request": request, "log_text": log_text, "lines": lines}
+    )

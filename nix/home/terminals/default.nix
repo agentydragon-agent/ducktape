@@ -6,7 +6,10 @@
   unstablePkgs ? pkgs,
   solarizedLight ? null,
   solarizedDark ? null,
-  terminalFont ? { family = "JetBrainsMono Nerd Font"; size = 11; },
+  terminalFont ? {
+    family = "JetBrainsMono Nerd Font";
+    size = 11;
+  },
   ...
 }: let
   nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};

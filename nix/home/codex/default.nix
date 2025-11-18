@@ -1,5 +1,10 @@
 # Codex configuration module
-{pkgs, lib, config, ...}: let
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}: let
   unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") {};
   codexSettings = {
     model = "gpt-5.1-codex";
@@ -15,14 +20,15 @@
       "set" = {CODEX_AGENT = "1";};
     };
     sandbox_mode = "workspace-write";
-    sandbox_workspace_write = {
-      writable_roots = [
-        "/home/agentydragon/.cache/sccache"
-        "/home/agentydragon/.cache/nix"
-        "/nix"
-        "/nix/var/nix"
-        "/home/agentydragon/.cache/pre-commit/pre-commit.log"
-      ];
+      sandbox_workspace_write = {
+        writable_roots = [
+          "/home/agentydragon/.cache/sccache"
+          "/home/agentydragon/.cache/nix"
+          "/nix"
+          "/nix/var/nix"
+          "/home/agentydragon/.cache/pre-commit"
+          "/home/agentydragon/.cache/pre-commit/pre-commit.log"
+        ];
       network_access = true;
       exclude_tmpdir_env_var = false;
       exclude_slash_tmp = false;
@@ -35,9 +41,13 @@
   useXdgDirectories = config.home.preferXdgDirectories;
   xdgConfigHomeRelative = lib.removePrefix "${config.home.homeDirectory}/" config.xdg.configHome;
   codexHomeRelative =
-    if useXdgDirectories then "${xdgConfigHomeRelative}/codex" else ".codex";
+    if useXdgDirectories
+    then "${xdgConfigHomeRelative}/codex"
+    else ".codex";
   codexHomeAbsolute =
-    if useXdgDirectories then "${config.xdg.configHome}/codex" else "${config.home.homeDirectory}/.codex";
+    if useXdgDirectories
+    then "${config.xdg.configHome}/codex"
+    else "${config.home.homeDirectory}/.codex";
 
   baseFileRelative = "${codexHomeRelative}/config.nix-base.toml";
   baseFileAbsolute = "${codexHomeAbsolute}/config.nix-base.toml";

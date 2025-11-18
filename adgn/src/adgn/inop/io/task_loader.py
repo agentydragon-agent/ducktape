@@ -20,7 +20,9 @@ def load_task_types(file_path: Path) -> dict[str, TaskTypeConfig]:
     with file_path.open() as f:
         config = TaskTypesYaml.model_validate(yaml.safe_load(f))
 
-    return {name: TaskTypeConfig(name=TaskTypeName(name), grading=cfg.grading) for name, cfg in config.task_types.items()}
+    return {
+        name: TaskTypeConfig(name=TaskTypeName(name), grading=cfg.grading) for name, cfg in config.task_types.items()
+    }
 
 
 def load_runner_configs(file_path: Path) -> dict[str, RunnerConfig]:

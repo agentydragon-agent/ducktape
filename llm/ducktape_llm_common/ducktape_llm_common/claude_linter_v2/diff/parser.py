@@ -95,12 +95,7 @@ def _parse_hunk(hunk_data: HunkData, hunk_idx: int) -> DiffHunk:
             current_new_line += 1
 
         parsed_lines.append(
-            DiffLine(
-                line_number=line_number,
-                content=content,
-                change_type=change_type,
-                hunk_index=hunk_idx,
-            )
+            DiffLine(line_number=line_number, content=content, change_type=change_type, hunk_index=hunk_idx)
         )
 
     return DiffHunk(
@@ -117,9 +112,7 @@ def _parse_structured_patch(file_path: str, structured_patch: list[HunkData]) ->
 
     # Handle empty patch list
     if not structured_patch:
-        return ParsedDiff(
-            file_path=file_path, hunks=[], added_lines=set(), removed_lines=set(), context_lines=set()
-        )
+        return ParsedDiff(file_path=file_path, hunks=[], added_lines=set(), removed_lines=set(), context_lines=set())
 
     for hunk_idx, hunk_data in enumerate(structured_patch):
         hunk = _parse_hunk(hunk_data, hunk_idx)

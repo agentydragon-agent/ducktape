@@ -61,7 +61,11 @@ async def get_webhook_integration(integration_name: str, db_session: AsyncSessio
 
 
 async def get_webhook_payloads(
-    db_session: AsyncSession, integration_name: str | None = None, page: int = 1, page_size: int | None = None, settings: Settings | None = None
+    db_session: AsyncSession,
+    integration_name: str | None = None,
+    page: int = 1,
+    page_size: int | None = None,
+    settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Get webhook payloads with pagination.
 

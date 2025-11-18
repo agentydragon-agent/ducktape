@@ -31,17 +31,18 @@ def _get_repo_root() -> Path:
     """Get repository root from environment or discover it."""
     if repo_root := os.environ.get("DUCKTAPE_REPO_ROOT"):
         return Path(repo_root)
-    
+
     # Fall back to discovery from known paths
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
         if (parent / "k8s" / "helm" / "ember").exists():
             return parent
-    
+
     raise RuntimeError(
         "Cannot locate ducktape repository root. Set DUCKTAPE_REPO_ROOT environment variable "
         "or ensure this runs from within the ducktape repository."
     )
+
 
 CHART_PATH = _get_repo_root() / "k8s" / "helm" / "ember"
 BASE_VALUES_FILE = CHART_PATH / "values-eval.yaml"
@@ -56,10 +57,7 @@ class SuiteOption:
 
 
 SUITE_REGISTRY: dict[str, SuiteOption] = {
-    "regression": SuiteOption(
-        description="Baseline regression coverage for Ember",
-        suite=REGRESSION_SUITE,
-    ),
+    "regression": SuiteOption(description="Baseline regression coverage for Ember", suite=REGRESSION_SUITE)
 }
 
 
@@ -156,6 +154,7 @@ async def compute_image_tag() -> str:
         dirty = "d"
     return f"{timestamp}-{short_sha}{dirty}"
 
+
 async def build_image(image_ref: str) -> None:
     print(f"[ember-eval] Building image {image_ref} from working tree...")
     await run_command(("docker", "build", "-t", image_ref, "."), cwd=REPO_ROOT / "ember")
@@ -191,10 +190,7 @@ def prepare_values(
     repository, tag = split_image_ref(image)
     overrides = {
         "namespace": {"create": False, "name": namespace},
-        "config": {
-            "matrix": {"base_url": matrix_base_url},
-            "openai": {"api_base": rspcache_api_base},
-        },
+        "config": {"matrix": {"base_url": matrix_base_url}, "openai": {"api_base": rspcache_api_base}},
         "podLabels": labels.pod_labels(release),
         "runtimeSecrets": {
             "matrixTokenSecret": secrets.matrix,
@@ -204,10 +200,7 @@ def prepare_values(
             "rspcacheClientSecret": secrets.rspcache,
             "rspcacheApiKeyKey": "openai_api_key",
         },
-        "image": {
-            "repository": repository,
-            "tag": tag,
-        },
+        "image": {"repository": repository, "tag": tag},
     }
     merge_dict(values, overrides)
     return values
@@ -228,11 +221,9 @@ def write_artifact(path: Path, payload: Mapping[str, object]) -> None:
     path.write_text(json.dumps(dict(payload), indent=2), encoding="utf-8")
 
 
-
 def write_artifact(path: Path, payload: Mapping[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(dict(payload), indent=2), encoding="utf-8")
-
 
 
 async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
@@ -262,19 +253,11 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
         namespace_labels = request.labels.namespace_labels()
         await kube.ensure_namespace(request.namespace, namespace_labels)
         await namespaced.upsert_secret(
-            request.secrets.matrix,
-            {"access_token": request.matrix_access_token},
-            namespace_labels,
+            request.secrets.matrix, {"access_token": request.matrix_access_token}, namespace_labels
         )
+        await namespaced.upsert_secret(request.secrets.gitea, {"token": request.gitea_token}, namespace_labels)
         await namespaced.upsert_secret(
-            request.secrets.gitea,
-            {"token": request.gitea_token},
-            namespace_labels,
-        )
-        await namespaced.upsert_secret(
-            request.secrets.rspcache,
-            {"openai_api_key": request.rspcache_api_key},
-            namespace_labels,
+            request.secrets.rspcache, {"openai_api_key": request.rspcache_api_key}, namespace_labels
         )
 
         with tempfile.TemporaryDirectory(prefix=f"ember-eval-{request.run_id}-") as temp_dir_str:
@@ -295,12 +278,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
             await helm_upgrade(request.release, request.namespace, values_path)
             await namespaced.wait_for_deployment_ready(request.release)
 
-            selector = LabelSelector(
-                {
-                    "ember.run/id": request.run_id,
-                    "app.kubernetes.io/component": "agent",
-                }
-            )
+            selector = LabelSelector({"ember.run/id": request.run_id, "app.kubernetes.io/component": "agent"})
             pod_name = await namespaced.first_pod_name(selector)
             suite = request.suite
 
@@ -314,11 +292,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
                     room_id=request.matrix_room_id,
                 ) as matrix:
                     executor = ScenarioExecutor(
-                        request=request,
-                        matrix=matrix,
-                        pod_name=pod_name,
-                        artifact_dir=artifact_dir,
-                        kube=namespaced,
+                        request=request, matrix=matrix, pod_name=pod_name, artifact_dir=artifact_dir, kube=namespaced
                     )
                     scenario_summary = await executor.run_suite(suite)
                     transcript = MatrixTranscript(events=matrix.transcript)
@@ -330,10 +304,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
         write_artifact(artifact_dir / "metadata.json", metadata.model_dump())
         if transcript.events:
             write_artifact(artifact_dir / "matrix_transcript.json", transcript.model_dump())
-            (artifact_dir / "matrix_transcript.txt").write_text(
-                render_matrix_transcript(transcript),
-                encoding="utf-8",
-            )
+            (artifact_dir / "matrix_transcript.txt").write_text(render_matrix_transcript(transcript), encoding="utf-8")
         if scenario_summary.scenarios:
             write_artifact(artifact_dir / "scenarios.json", scenario_summary.model_dump())
         print(f"[ember-eval] Run {request.run_id} ready (namespace {request.namespace}).")
@@ -344,16 +315,12 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
         metadata.error = str(exc)
         if transcript.events:
             write_artifact(artifact_dir / "matrix_transcript.json", transcript.model_dump())
-            (artifact_dir / "matrix_transcript.txt").write_text(
-                render_matrix_transcript(transcript),
-                encoding="utf-8",
-            )
+            (artifact_dir / "matrix_transcript.txt").write_text(render_matrix_transcript(transcript), encoding="utf-8")
         if scenario_summary.scenarios:
             write_artifact(artifact_dir / "scenarios.json", scenario_summary.model_dump())
 
         error_report = EvalRunErrorReport(
-            metadata=metadata,
-            scenarios=scenario_summary if scenario_summary.scenarios else None,
+            metadata=metadata, scenarios=scenario_summary if scenario_summary.scenarios else None
         )
         write_artifact(artifact_dir / "error.json", error_report.model_dump())
         raise
@@ -361,8 +328,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
         try:
             if request.preserve:
                 print(
-                    f"[ember-eval] Preserve flag set for {request.run_id}; "
-                    f"namespace {request.namespace} left intact."
+                    f"[ember-eval] Preserve flag set for {request.run_id}; namespace {request.namespace} left intact."
                 )
             else:
                 await helm_uninstall(request.release, request.namespace)
@@ -373,10 +339,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
 
 
 def plan_runs(
-    args: argparse.Namespace,
-    image_ref: str,
-    suite_key: str,
-    suite_option: SuiteOption,
+    args: argparse.Namespace, image_ref: str, suite_key: str, suite_option: SuiteOption
 ) -> list[EvalRunRequest]:
     runs: list[EvalRunRequest] = []
     base_run_id = make_base_run_id(args.run_id)
@@ -398,10 +361,7 @@ def plan_runs(
             gitea=resource_name(run_id, "gitea", "ember-eval"),
             rspcache=resource_name(run_id, "rspcache", "ember-eval"),
         )
-        labels = RunLabels(
-            run_id=run_id,
-            image=image_ref,
-        )
+        labels = RunLabels(run_id=run_id, image=image_ref)
         username = None
         if args.gitea_username:
             username = args.gitea_username.format(run_id=run_id)
@@ -483,7 +443,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--matrix-room-id", help="Existing Matrix room ID to reuse for evaluation")
     parser.add_argument("--ember-user-id", required=True, help="Matrix user ID for the Ember agent under test")
     parser.add_argument("--gitea-token", required=True, help="Gitea personal access token for the evaluator")
-    parser.add_argument("--gitea-base-url", required=True, help="Base URL of the Gitea instance (e.g. https://gitea.example.com)")
+    parser.add_argument(
+        "--gitea-base-url", required=True, help="Base URL of the Gitea instance (e.g. https://gitea.example.com)"
+    )
     parser.add_argument("--gitea-repo", required=True, help="Owner/repo slug used for evaluation (e.g. eval/ember)")
     parser.add_argument("--gitea-username", help="Expected Gitea username for Ember's comments")
     parser.add_argument("--rspcache-api-base", required=True, help="RSPCache/OpenAI API base URL")
@@ -499,20 +461,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--image-tag", help="Docker image tag to deploy (default: build from working tree)")
     parser.add_argument("--preserve", action="store_true", help="Skip cleanup after each run")
     parser.add_argument("--runs", type=int, default=1, help="Number of evaluation runs to execute")
-    parser.add_argument(
-        "--parallel",
-        type=int,
-        default=1,
-        help="Maximum number of runs to execute in parallel",
-    )
+    parser.add_argument("--parallel", type=int, default=1, help="Maximum number of runs to execute in parallel")
     suite_choices = list(suite_keys())
     if not suite_choices:
         raise RuntimeError("No evaluation suites registered")
     parser.add_argument(
-        "--suite",
-        default=suite_choices[0],
-        choices=suite_choices,
-        help="Evaluation scenario suite to run",
+        "--suite", default=suite_choices[0], choices=suite_choices, help="Evaluation scenario suite to run"
     )
     return parser
 

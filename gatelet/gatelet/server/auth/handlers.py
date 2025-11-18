@@ -147,7 +147,9 @@ async def key_path_auth(key: str, db_session: AsyncSession = Depends(get_db_sess
         raise AuthHandlerError
 
 
-async def session_auth(session_token: str, db_session: AsyncSession = Depends(get_db_session), settings: Settings = Depends(get_settings)) -> SessionAuthContext:
+async def session_auth(
+    session_token: str, db_session: AsyncSession = Depends(get_db_session), settings: Settings = Depends(get_settings)
+) -> SessionAuthContext:
     """Authenticate using challenge-response session token."""
     # Find session
     query = select(AuthCRSession).where(AuthCRSession.session_token == session_token)

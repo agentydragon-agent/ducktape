@@ -6,7 +6,10 @@
   enableGui ? true,
   solarizedLight ? null,
   solarizedDark ? null,
-  terminalFont ? { family = "JetBrainsMono Nerd Font"; size = 11; },
+  terminalFont ? {
+    family = "JetBrainsMono Nerd Font";
+    size = 11;
+  },
   ...
 }: let
   # Import nix-colors for Solarized color schemes

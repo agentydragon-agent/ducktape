@@ -11,7 +11,7 @@ server {
 
 # HTTPS proxy for all k3s subdomains
 server {
-    listen 443 ssl http2;
+    listen {{ nginx_https_listener_port }} ssl http2;
     server_name *.k3s.agentydragon.com;
 
     # Wildcard certificate (to be obtained via Let's Encrypt DNS validation)

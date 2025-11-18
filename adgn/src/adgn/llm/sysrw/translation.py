@@ -42,7 +42,9 @@ def _extract_text_from_content(content: str | list[AnthropicContentBlock]) -> st
     return _join_texts(texts)
 
 
-def _handle_assistant_blocks(blocks: list[AnthropicContentBlock]) -> tuple[str | None, list[ChatCompletionMessageToolCallParam]]:
+def _handle_assistant_blocks(
+    blocks: list[AnthropicContentBlock],
+) -> tuple[str | None, list[ChatCompletionMessageToolCallParam]]:
     """Process assistant message blocks, extracting text and tool calls."""
     texts: list[str] = []
     tool_calls: list[ChatCompletionMessageToolCallParam] = []
@@ -75,15 +77,9 @@ def _handle_user_blocks(blocks: list[AnthropicContentBlock]) -> tuple[list[str],
         if isinstance(block, AnthropicTextBlock):
             texts.append(block.text)
         elif isinstance(block, AnthropicToolResultBlock):
-            tool_text = (
-                block.content
-                if isinstance(block.content, str)
-                else "\n".join(b.text for b in block.content)
-            )
+            tool_text = block.content if isinstance(block.content, str) else "\n".join(b.text for b in block.content)
             tool_msgs.append(
-                ChatCompletionToolMessageParam(
-                    role="tool", tool_call_id=block.tool_use_id, content=tool_text
-                )
+                ChatCompletionToolMessageParam(role="tool", tool_call_id=block.tool_use_id, content=tool_text)
             )
 
     return texts, tool_msgs
@@ -114,9 +110,7 @@ def anthropic_to_chat_messages(
             content, tool_calls = _handle_assistant_blocks(message.content)
             if tool_calls:
                 result.append(
-                    ChatCompletionAssistantMessageParam(
-                        role="assistant", content=content, tool_calls=tool_calls
-                    )
+                    ChatCompletionAssistantMessageParam(role="assistant", content=content, tool_calls=tool_calls)
                 )
             elif content:
                 result.append(ChatCompletionAssistantMessageParam(role="assistant", content=content))
