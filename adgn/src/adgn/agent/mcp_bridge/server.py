@@ -7,11 +7,12 @@ External agents connect using MCP-over-HTTP and get policy-gated access to tools
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NewType
 
 from docker import DockerClient
 from fastapi import FastAPI, Request, Response
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+AgentID = NewType("AgentID", str)
+
 
 class AgentMode(StrEnum):
     """Agent mode enumeration."""
@@ -36,16 +39,25 @@ class AgentMode(StrEnum):
     BRIDGE = "bridge"
 
 
-class AgentMetadata:
-    """Metadata about an agent in the registry."""
+class AgentEntry:
+    """Complete agent entry in registry."""
 
-    def __init__(self, mode: AgentMode, local_runtime: LocalAgentRuntime | None = None):
+    def __init__(
+        self,
+        running: RunningInfrastructure,
+        compositor_app: FastAPI,
+        mode: AgentMode,
+        local_runtime: LocalAgentRuntime | None = None,
+    ):
+        self.running = running
+        self.compositor_app = compositor_app
         self.mode = mode
         self.local_runtime = local_runtime
+        self.lock = asyncio.Lock()
 
 
 async def create_bridge_infrastructure(
-    agent_id: str,
+    agent_id: AgentID,
     persistence: SQLitePersistence,
     docker_client: DockerClient,
     mcp_config: MCPConfig,
@@ -81,21 +93,15 @@ class InfrastructureRegistry:
         self.docker_client = docker_client
         self.mcp_config = mcp_config
         self.initial_policy = initial_policy
-        # Infrastructure cache: agent_id → (RunningInfrastructure, FastAPI app)
-        self._infra_cache: dict[str, tuple[RunningInfrastructure, FastAPI]] = {}
-        # Agent metadata: agent_id → AgentMetadata
-        self._agent_metadata: dict[str, AgentMetadata] = {}
-        self._infra_locks: dict[str, asyncio.Lock] = {}
+        self._agents: dict[AgentID, AgentEntry] = {}
+        self._creation_locks: defaultdict[AgentID, asyncio.Lock] = defaultdict(asyncio.Lock)
 
-    async def get_or_create_infrastructure(self, agent_id: str) -> tuple[RunningInfrastructure, FastAPI]:
+    async def get_or_create_infrastructure(self, agent_id: AgentID) -> tuple[RunningInfrastructure, FastAPI]:
         """Get or create infrastructure for an agent_id (creates bridge agent)."""
-        # Ensure we have a lock for this agent_id
-        if agent_id not in self._infra_locks:
-            self._infra_locks[agent_id] = asyncio.Lock()
-
-        async with self._infra_locks[agent_id]:
-            if agent_id in self._infra_cache:
-                return self._infra_cache[agent_id]
+        async with self._creation_locks[agent_id]:
+            if agent_id in self._agents:
+                entry = self._agents[agent_id]
+                return (entry.running, entry.compositor_app)
 
             logger.info(f"Creating infrastructure for agent_id={agent_id}")
             running = await create_bridge_infrastructure(
@@ -106,55 +112,53 @@ class InfrastructureRegistry:
                 initial_policy=self.initial_policy,
             )
 
-            # Start the infrastructure
             await running.__aenter__()
 
-            # Get the compositor's HTTP app
             compositor_app: FastAPI = running.compositor.http_app()  # type: ignore[assignment]
 
-            self._infra_cache[agent_id] = (running, compositor_app)
-            # Register as bridge agent
-            self._agent_metadata[agent_id] = AgentMetadata(mode=AgentMode.BRIDGE)
+            self._agents[agent_id] = AgentEntry(
+                running=running, compositor_app=compositor_app, mode=AgentMode.BRIDGE
+            )
             logger.info(f"Infrastructure ready for agent_id={agent_id}")
             return (running, compositor_app)
 
-    async def get_compositor_app(self, agent_id: str) -> FastAPI:
+    async def get_compositor_app(self, agent_id: AgentID) -> FastAPI:
         """Get compositor app for an agent_id."""
         _, app = await self.get_or_create_infrastructure(agent_id)
         return app
 
-    def get_running_infrastructure(self, agent_id: str) -> RunningInfrastructure | None:
+    def get_running_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure | None:
         """Get running infrastructure if it exists (doesn't create)."""
-        if agent_id in self._infra_cache:
-            return self._infra_cache[agent_id][0]
-        return None
+        entry = self._agents.get(agent_id)
+        return entry.running if entry else None
 
-    def known_agents(self) -> list[str]:
-        return list(self._infra_cache.keys())
+    def known_agents(self) -> list[AgentID]:
+        return list(self._agents.keys())
 
-    async def get_infrastructure(self, agent_id: str) -> RunningInfrastructure:
+    async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
         """Raises KeyError if agent not in registry."""
-        if agent_id not in self._infra_cache:
+        if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        return self._infra_cache[agent_id][0]
+        return self._agents[agent_id].running
 
-    def get_agent_mode(self, agent_id: str) -> AgentMode:
+    def get_agent_mode(self, agent_id: AgentID) -> AgentMode:
         """Raises KeyError if agent not in registry."""
-        if agent_id not in self._agent_metadata:
+        if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        return self._agent_metadata[agent_id].mode
+        return self._agents[agent_id].mode
 
-    def get_local_runtime(self, agent_id: str) -> LocalAgentRuntime | None:
+    def get_local_runtime(self, agent_id: AgentID) -> LocalAgentRuntime | None:
         """Returns None if agent is not local. Raises KeyError if agent not in registry."""
-        if agent_id not in self._agent_metadata:
+        if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        return self._agent_metadata[agent_id].local_runtime
+        return self._agents[agent_id].local_runtime
 
     def register_local_agent(
-        self, agent_id: str, running: RunningInfrastructure, compositor_app: FastAPI, local_runtime: LocalAgentRuntime
+        self, agent_id: AgentID, running: RunningInfrastructure, compositor_app: FastAPI, local_runtime: LocalAgentRuntime
     ) -> None:
-        self._infra_cache[agent_id] = (running, compositor_app)
-        self._agent_metadata[agent_id] = AgentMetadata(mode=AgentMode.LOCAL, local_runtime=local_runtime)
+        self._agents[agent_id] = AgentEntry(
+            running=running, compositor_app=compositor_app, mode=AgentMode.LOCAL, local_runtime=local_runtime
+        )
 
 
 async def create_mcp_server_app(auth_tokens_path: Path, registry: InfrastructureRegistry) -> FastAPI:
@@ -225,7 +229,7 @@ async def create_management_ui_app(registry: InfrastructureRegistry) -> FastAPI:
     ui_app = FastAPI(title="Management UI")
 
     @ui_app.websocket("/ws/policy")
-    async def ws_policy(websocket: WebSocket, agent_id: str):
+    async def ws_policy(websocket: WebSocket, agent_id: AgentID):
         """Policy channel - view/edit approval policy."""
         await websocket.accept()
         # TODO: Implement policy channel
@@ -233,7 +237,7 @@ async def create_management_ui_app(registry: InfrastructureRegistry) -> FastAPI:
         await websocket.close()
 
     @ui_app.websocket("/ws/approvals")
-    async def ws_approvals(websocket: WebSocket, agent_id: str):
+    async def ws_approvals(websocket: WebSocket, agent_id: AgentID):
         """Approvals channel - pending approvals and decisions."""
         await websocket.accept()
         # TODO: Implement approvals channel
@@ -241,7 +245,7 @@ async def create_management_ui_app(registry: InfrastructureRegistry) -> FastAPI:
         await websocket.close()
 
     @ui_app.websocket("/ws/mcp")
-    async def ws_mcp(websocket: WebSocket, agent_id: str):
+    async def ws_mcp(websocket: WebSocket, agent_id: AgentID):
         """MCP channel - server state and tool calls."""
         await websocket.accept()
         # TODO: Implement MCP channel

@@ -9,19 +9,22 @@ from datetime import datetime
 from enum import StrEnum
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NewType
 
 from pydantic import BaseModel
 
 from adgn.agent.approvals import ApprovalRequest
-from adgn.agent.persist import ApprovalOutcome, ApprovalRecord
+from adgn.agent.persist import ApprovalOutcome, ApprovalRecord, PolicyProposal
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 if TYPE_CHECKING:
-    from adgn.agent.mcp_bridge.server import InfrastructureRegistry
     from mcp import types as mcp_types
 
+    from adgn.agent.mcp_bridge.server import InfrastructureRegistry
+
 logger = logging.getLogger(__name__)
+
+AgentID = NewType("AgentID", str)
 
 
 # Helper functions for data conversion
@@ -87,31 +90,18 @@ class AgentMode(StrEnum):
     BRIDGE = "bridge"
 
 
-class ApprovalStatus(StrEnum):
-    """Approval tool response status."""
-
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-
-class AbortStatus(StrEnum):
-    """Abort tool response status."""
-
-    ABORTED = "aborted"
-
-
 # Tool input models
 class ApproveToolCallArgs(BaseModel):
     """Arguments for approve_tool_call tool."""
 
-    agent_id: str
+    agent_id: AgentID
     call_id: str
 
 
 class RejectToolCallArgs(BaseModel):
     """Arguments for reject_tool_call tool."""
 
-    agent_id: str
+    agent_id: AgentID
     call_id: str
     reason: str
 
@@ -119,7 +109,7 @@ class RejectToolCallArgs(BaseModel):
 class AbortAgentArgs(BaseModel):
     """Arguments for abort_agent tool."""
 
-    agent_id: str
+    agent_id: AgentID
 
 
 # Pending approval models
@@ -149,49 +139,55 @@ class ApprovalHistoryEntry(BaseModel):
 class AgentInfo(BaseModel):
     """Information about a single agent."""
 
-    agent_id: str
+    agent_id: AgentID
     capabilities: dict[str, bool]  # e.g., {"chat": True, "agent_loop": False}
     mode: AgentMode
     state_uri: str | None = None
     approvals_uri: str | None = None
+    policy_proposals_uri: str | None = None
 
 
-class AgentListResponse(BaseModel):
-    """Response for resource://agents/list."""
+class AgentList(BaseModel):
+    """Content for resource://agents/list."""
 
     agents: list[AgentInfo]
 
 
-class AgentApprovalsPendingResponse(BaseModel):
-    """Response for resource://agents/{id}/approvals/pending."""
+class AgentApprovalsPending(BaseModel):
+    """Content for resource://agents/{id}/approvals/pending."""
 
-    agent_id: str
+    agent_id: AgentID
     pending: list[PendingApproval]
 
 
-class AgentApprovalsHistoryResponse(BaseModel):
-    """Response for resource://agents/{id}/approvals/history."""
+class AgentApprovalsHistory(BaseModel):
+    """Content for resource://agents/{id}/approvals/history."""
 
-    agent_id: str
+    agent_id: AgentID
     timeline: list[ApprovalHistoryEntry]
     pending: list[PendingApproval]  # Pending approvals not yet decided
     count: int  # Total count (timeline + pending)
 
 
-# Tool response models
-class ApprovalToolResponse(BaseModel):
-    """Response from approval tools (approve/reject)."""
+class PolicyProposalInfo(BaseModel):
+    """Policy proposal metadata with URI to full content."""
 
-    status: ApprovalStatus
-    agent_id: str
-    call_id: str
+    id: str
+    status: str
+    created_at: datetime
+    decided_at: datetime | None = None
+    proposal_uri: str  # URI to access full proposal content in policy server
 
 
-class AbortAgentResponse(BaseModel):
-    """Response from abort_agent tool."""
+class AgentPolicyProposals(BaseModel):
+    """Content for resource://agents/{id}/policy/proposals."""
 
-    status: AbortStatus
-    agent_id: str
+    agent_id: AgentID
+    proposals: list[PolicyProposalInfo]
+    active_policy_uri: str  # URI to active policy
+
+
+# Tool response models - empty responses, caller tracks what they called
 
 
 def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
@@ -217,7 +213,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
     @server.resource(
         "resource://agents/list", name="agents.list", mime_type="application/json", description="List all agents with capabilities and state"
     )
-    async def list_agents() -> AgentListResponse:
+    async def list_agents() -> AgentList:
         agent_infos: list[AgentInfo] = []
         for agent_id in registry.known_agents():
             mode = registry.get_agent_mode(agent_id)
@@ -232,13 +228,19 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 
             state_uri = f"resource://agents/{agent_id}/state" if is_local else None
             approvals_uri = f"resource://agents/{agent_id}/approvals/pending"
+            policy_proposals_uri = f"resource://agents/{agent_id}/policy/proposals"
 
             agent_info = AgentInfo(
-                agent_id=agent_id, capabilities=capabilities, mode=mode, state_uri=state_uri, approvals_uri=approvals_uri
+                agent_id=agent_id,
+                capabilities=capabilities,
+                mode=mode,
+                state_uri=state_uri,
+                approvals_uri=approvals_uri,
+                policy_proposals_uri=policy_proposals_uri,
             )
             agent_infos.append(agent_info)
 
-        return AgentListResponse(agents=agent_infos)
+        return AgentList(agents=agent_infos)
 
     @server.resource(
         "resource://agents/{agent_id}/state",
@@ -246,7 +248,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         mime_type="application/json",
         description="Sampling state for a local agent",
     )
-    async def agent_state(agent_id: str):
+    async def agent_state(agent_id: AgentID):
         """Raises ValueError if agent is not local or has no runtime."""
         if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
             raise ValueError(f"Agent {agent_id} is not a local agent")
@@ -265,10 +267,10 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         mime_type="application/json",
         description="Pending approvals for a specific agent",
     )
-    async def agent_approvals_pending(agent_id: str) -> AgentApprovalsPendingResponse:
+    async def agent_approvals_pending(agent_id: AgentID) -> AgentApprovalsPending:
         infra = await registry.get_infrastructure(agent_id)
         pending = _convert_pending_approvals(infra.approval_hub.pending)
-        return AgentApprovalsPendingResponse(agent_id=agent_id, pending=pending)
+        return AgentApprovalsPending(agent_id=agent_id, pending=pending)
 
     @server.resource(
         "resource://approvals/pending",
@@ -309,7 +311,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         mime_type="application/json",
         description="Historical approval timeline for an agent (activity log)",
     )
-    async def agent_approvals_history(agent_id: str) -> AgentApprovalsHistoryResponse:
+    async def agent_approvals_history(agent_id: AgentID) -> AgentApprovalsHistory:
         """Includes both pending (not yet decided) and completed approvals."""
         infra = await registry.get_infrastructure(agent_id)
 
@@ -321,14 +323,42 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         # Count includes both completed and pending
         total_count = len(completed_entries) + len(pending_approvals)
 
-        return AgentApprovalsHistoryResponse(
+        return AgentApprovalsHistory(
             agent_id=agent_id, timeline=completed_entries, pending=pending_approvals, count=total_count
+        )
+
+    @server.resource(
+        "resource://agents/{agent_id}/policy/proposals",
+        name="agent.policy.proposals",
+        mime_type="application/json",
+        description="Policy proposals for an agent (links to full proposals in policy server)",
+    )
+    async def agent_policy_proposals(agent_id: AgentID) -> AgentPolicyProposals:
+        """Lists policy proposals with URIs to access full content in policy server."""
+        infra = await registry.get_infrastructure(agent_id)
+        proposals = await infra.approval_engine.persistence.list_policy_proposals(agent_id)
+
+        proposal_infos = [
+            PolicyProposalInfo(
+                id=p.id,
+                status=p.status,
+                created_at=p.created_at,
+                decided_at=p.decided_at,
+                proposal_uri=f"resource://approval-policy/proposals/{p.id}",
+            )
+            for p in proposals
+        ]
+
+        return AgentPolicyProposals(
+            agent_id=agent_id,
+            proposals=proposal_infos,
+            active_policy_uri="resource://approval-policy/policy.py",
         )
 
     # Tools
 
     @server.tool()
-    async def approve_tool_call(agent_id: str, call_id: str) -> ApprovalToolResponse:
+    async def approve_tool_call(agent_id: str, call_id: str) -> None:
         from adgn.agent.handler import ContinueDecision
 
         infra = await registry.get_infrastructure(agent_id)
@@ -338,10 +368,8 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/history")
         await server.broadcast_resource_updated("resource://approvals/pending")
 
-        return ApprovalToolResponse(status=ApprovalStatus.APPROVED, agent_id=agent_id, call_id=call_id)
-
     @server.tool()
-    async def reject_tool_call(agent_id: str, call_id: str, reason: str) -> ApprovalToolResponse:
+    async def reject_tool_call(agent_id: str, call_id: str, reason: str) -> None:
         from adgn.agent.handler import AbortTurnDecision
 
         infra = await registry.get_infrastructure(agent_id)
@@ -351,10 +379,8 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/history")
         await server.broadcast_resource_updated("resource://approvals/pending")
 
-        return ApprovalToolResponse(status=ApprovalStatus.REJECTED, agent_id=agent_id, call_id=call_id)
-
     @server.tool()
-    async def abort_agent(agent_id: str) -> AbortAgentResponse:
+    async def abort_agent(agent_id: AgentID) -> None:
         """Raises ValueError if agent is not local or has no agent loop."""
         if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
             raise ValueError(f"Agent {agent_id} is not a local agent (cannot abort)")
@@ -364,7 +390,6 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
             raise ValueError(f"Agent {agent_id} has no agent loop")
 
         await local_runtime.agent.abort()
-        return AbortAgentResponse(status=AbortStatus.ABORTED, agent_id=agent_id)
 
     # Wire up notifications
     # For approval changes: notifications are broadcast directly in approve/reject tools
