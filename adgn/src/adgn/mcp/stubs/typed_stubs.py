@@ -30,14 +30,7 @@ def _structured_content(result: CallToolResult, *, tool_name: str) -> dict[str, 
 class ToolStub(Generic[T_Out]):
     """Awaitable callable bound to a (session, tool_name, out_type)."""
 
-    def __init__(
-        self,
-        session: Client,
-        name: str,
-        out_type: type[T_Out],
-        *,
-        exclude_none: bool = True,
-    ) -> None:
+    def __init__(self, session: Client, name: str, out_type: type[T_Out], *, exclude_none: bool = True) -> None:
         self._session = session
         self._name = name
         self._out_type = out_type
@@ -106,12 +99,7 @@ class TypedClient:
         self._models: dict[str, ToolModels] = {}
 
     def stub(self, name: str, out_type: type[T_Out]) -> ToolStub[T_Out]:
-        return ToolStub(
-            self._session,
-            name,
-            out_type,
-            exclude_none=self._exclude_none,
-        )
+        return ToolStub(self._session, name, out_type, exclude_none=self._exclude_none)
 
     @property
     def models(self) -> dict[str, ToolModels]:
@@ -186,9 +174,7 @@ class TypedClient:
             if not isinstance(tool_key, str) or not tool_key:
                 continue
             output_type = _resolve_output_type(hinted_output, out_model)
-            client._models[tool_key] = ToolModels(
-                Input=input_type, Output=output_type, _arg_model=arg_model
-            )
+            client._models[tool_key] = ToolModels(Input=input_type, Output=output_type, _arg_model=arg_model)
         return client
 
     def error(self, name: str) -> Callable[[BaseModel], Awaitable[str]]:

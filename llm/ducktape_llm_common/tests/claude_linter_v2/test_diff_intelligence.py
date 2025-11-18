@@ -21,7 +21,13 @@ class TestDiffParser:
             tool_input={"file_path": "/test.py", "old_string": "def foo():", "new_string": "def bar():"},
             tool_response={
                 "structuredPatch": [
-                    {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-def foo():", "+def bar():"]}
+                    {
+                        "oldStart": 10,
+                        "oldLines": 1,
+                        "newStart": 10,
+                        "newLines": 1,
+                        "lines": ["-def foo():", "+def bar():"],
+                    }
                 ]
             },
         )

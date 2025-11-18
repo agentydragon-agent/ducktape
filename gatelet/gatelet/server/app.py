@@ -28,11 +28,7 @@ from .models import AdminSession
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="Gatelet",
-    description="LLM-friendly API for Home Assistant and webhooks",
-    lifespan=lifespan,
-)
+app = FastAPI(title="Gatelet", description="LLM-friendly API for Home Assistant and webhooks", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 # Include routers

@@ -60,4 +60,3 @@ async def call_simple_ok(client: Client, *, name: str, arguments: dict) -> None:
         if detail:
             raise RuntimeError(f"{name} failed: {detail}")
         raise RuntimeError(f"{name} failed")
-

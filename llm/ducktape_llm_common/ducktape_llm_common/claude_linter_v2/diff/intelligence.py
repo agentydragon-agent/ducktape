@@ -28,9 +28,7 @@ class DiffIntelligence:
         self.categorizer = ViolationCategorizer(context_distance)
 
     def analyze(
-        self,
-        tool_call: ToolCall,
-        violations: list[Violation],
+        self, tool_call: ToolCall, violations: list[Violation]
     ) -> defaultdict[ViolationCategory, list[CategorizedViolation]]:
         """Analyze violations in context of tool changes."""
         # Parse diff information
@@ -43,10 +41,7 @@ class DiffIntelligence:
         return self.categorizer.group_by_category(categorized)
 
     def get_priority_violations(
-        self,
-        tool_call: ToolCall,
-        violations: list[Violation],
-        max_violations: int = 10,
+        self, tool_call: ToolCall, violations: list[Violation], max_violations: int = 10
     ) -> list[CategorizedViolation]:
         """Get violations prioritized by their relationship to changes."""
         # Parse and categorize

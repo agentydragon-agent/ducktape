@@ -170,8 +170,6 @@ def _to_response_model(record: Response) -> ResponseRecordModel:
     )
 
 
-
-
 def _to_api_key_model(record: ClientAPIKey | APIKeyRecord) -> APIKeyModel:
     return APIKeyModel(
         id=record.id,

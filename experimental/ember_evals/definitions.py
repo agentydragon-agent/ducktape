@@ -113,9 +113,7 @@ class Scenario(ABC):
         )
 
     async def expect_matrix_reply(self, equals: str, *, timeout_seconds: int = 60) -> ExpectMatrixReplyResult:
-        return await self._record_async_step(
-            self.executor.expect_matrix_reply(equals, timeout_seconds=timeout_seconds)
-        )
+        return await self._record_async_step(self.executor.expect_matrix_reply(equals, timeout_seconds=timeout_seconds))
 
     async def probe_http(
         self,
@@ -142,23 +140,17 @@ class Scenario(ABC):
         )
 
     async def verify_file_contents(self, path: str | Path, expected: str) -> VerifyFileContentsResult:
-        return await self._record_async_step(
-            self.executor.verify_file_contents(self._normalize_path(path), expected)
-        )
+        return await self._record_async_step(self.executor.verify_file_contents(self._normalize_path(path), expected))
 
     async def verify_file_contains(
         self, path: str | Path, includes: Sequence[str], *, min_size_bytes: int | None = None
     ) -> VerifyFileContainsResult:
         return await self._record_async_step(
-            self.executor.verify_file_contains(
-                self._normalize_path(path), includes, min_size_bytes=min_size_bytes
-            )
+            self.executor.verify_file_contains(self._normalize_path(path), includes, min_size_bytes=min_size_bytes)
         )
 
     async def kill_process(self, *, container: str | None = None, pattern: str) -> KillProcessResult:
-        return await self._record_async_step(
-            self.executor.kill_process(container=container, pattern=pattern)
-        )
+        return await self._record_async_step(self.executor.kill_process(container=container, pattern=pattern))
 
     def ok(
         self, description: str | None = None, *, status: StepStatus = StepStatus.OK, **details: object

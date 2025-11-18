@@ -83,10 +83,7 @@ class ResponsesAssistantMessage(BaseModel):
     responses_output: ResponsesResult
 
 
-AssistantMessage = Annotated[
-    ChatAssistantMessage | ResponsesAssistantMessage,
-    Field(discriminator="kind"),
-]
+AssistantMessage = Annotated[ChatAssistantMessage | ResponsesAssistantMessage, Field(discriminator="kind")]
 
 
 class Grade(BaseModel):
@@ -101,6 +98,7 @@ class EvalSampleRecord(BaseModel):
 
     Supports both Chat Completions and Responses API formats.
     """
+
     request: ChatCompletionCreateParams | ResponseCreateParams
     response: ChatCompletion | ResponsesResult
     new_assistant_message: AssistantMessage
@@ -112,6 +110,7 @@ class EvalSampleRecord(BaseModel):
 
 class EvalGradeRecord(BaseModel):
     """Grader's evaluation using Responses API."""
+
     request: ResponseCreateParams
     response: ResponsesResult
     correlation_id: str | None = None
