@@ -956,6 +956,8 @@ Ensure all frontend-facing models are exported:
 
 **Full acceptance testing** - no incomplete features.
 
+**Testing Strategy**: For local testing, mock out the OpenAI API using `unittest.mock` or `pytest-mock`. This avoids actual API calls and allows testing of infrastructure routing, approval flows, and UI integration without needing live LLM responses.
+
 #### 4.1 Backend Tests
 
 **File**: `adgn/tests/agent/mcp_bridge/test_agents_server.py`
@@ -964,6 +966,7 @@ Ensure all frontend-facing models are exported:
 async def test_agents_server_basic():
     """Test unified agents server basic functionality."""
     # Setup: Create registry with 2 agents (1 local, 1 bridge)
+    # Mock OpenAI API for local testing - no actual LLM calls needed
     registry = ...
     agents_server = make_agents_server(registry)
 
