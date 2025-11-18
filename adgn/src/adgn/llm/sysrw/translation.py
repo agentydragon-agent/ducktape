@@ -29,72 +29,107 @@ from adgn.llm.anthropic.text_extraction import extract_text_content
 from .openai_typing import dump_response_messages, parse_response_messages
 
 
+def _join_texts(texts: list[str]) -> str:
+    """Join text parts with newlines, filtering empty strings."""
+    return "\n".join(t for t in texts if t)
+
+
+def _extract_text_from_content(content: str | list[Any]) -> str:
+    """Extract text from Anthropic message content."""
+    if isinstance(content, str):
+        return content
+    texts = [
+        item.get("text")
+        for item in content
+        if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str)
+    ]
+    return _join_texts(texts)
+
+
+def _handle_assistant_blocks(blocks: list[Any]) -> tuple[str | None, list[ChatCompletionMessageToolCallParam]]:
+    """Process assistant message blocks, extracting text and tool calls."""
+    texts: list[str] = []
+    tool_calls: list[ChatCompletionMessageToolCallParam] = []
+
+    for block in blocks:
+        if isinstance(block, AnthropicTextBlock):
+            texts.append(block.text)
+        elif isinstance(block, AnthropicToolUseBlock):
+            tool_calls.append(
+                ChatCompletionMessageToolCallParam(
+                    type="function",
+                    function={
+                        "name": block.name,
+                        "arguments": json.dumps(block.input, ensure_ascii=False, separators=(",", ":")),
+                    },
+                    id=block.id,
+                )
+            )
+
+    content = _join_texts(texts) if texts else None
+    return content, tool_calls
+
+
+def _handle_user_blocks(blocks: list[Any]) -> tuple[list[str], list[ChatCompletionToolMessageParam]]:
+    """Process user message blocks, extracting text and tool results."""
+    texts: list[str] = []
+    tool_msgs: list[ChatCompletionToolMessageParam] = []
+
+    for block in blocks:
+        if isinstance(block, AnthropicTextBlock):
+            texts.append(block.text)
+        elif isinstance(block, AnthropicToolResultBlock):
+            tool_text = (
+                block.content
+                if isinstance(block.content, str)
+                else "\n".join(b.text for b in block.content)
+            )
+            tool_msgs.append(
+                ChatCompletionToolMessageParam(
+                    role="tool", tool_call_id=block.tool_use_id, content=tool_text
+                )
+            )
+
+    return texts, tool_msgs
+
+
 def anthropic_to_chat_messages(
     messages: list[AnthropicMessage], system: str | None = None
 ) -> list[ChatCompletionMessageParam]:
     """Translate Anthropic messages into OpenAI Chat Completion format."""
     result: list[ChatCompletionMessageParam] = []
+
     if system:
         result.append(ChatCompletionSystemMessageParam(role="system", content=system))
 
     for message in messages:
+        # Handle string content
         if isinstance(message.content, str):
-            if message.content.strip():
-                if message.role == AnthropicMessageRole.USER:
-                    result.append(ChatCompletionUserMessageParam(role="user", content=message.content))
-                elif message.role == AnthropicMessageRole.ASSISTANT:
-                    result.append(ChatCompletionAssistantMessageParam(role="assistant", content=message.content))
+            if not message.content.strip():
+                continue
+            if message.role == AnthropicMessageRole.USER:
+                result.append(ChatCompletionUserMessageParam(role="user", content=message.content))
+            elif message.role == AnthropicMessageRole.ASSISTANT:
+                result.append(ChatCompletionAssistantMessageParam(role="assistant", content=message.content))
             continue
 
-        # message.content is list[ContentBlock] - Pydantic models
+        # Handle block content
         if message.role == AnthropicMessageRole.ASSISTANT:
-            text_buf: list[str] = []
-            tool_calls: list[ChatCompletionMessageToolCallParam] = []
-            for block in message.content:
-                if isinstance(block, AnthropicTextBlock):
-                    text_buf.append(block.text)
-                elif isinstance(block, AnthropicToolUseBlock):
-                    tool_calls.append(
-                        ChatCompletionMessageToolCallParam(
-                            type="function",
-                            function={
-                                "name": block.name,
-                                "arguments": json.dumps(block.input, ensure_ascii=False, separators=(",", ":")),
-                            },
-                            id=block.id,
-                        )
+            content, tool_calls = _handle_assistant_blocks(message.content)
+            if tool_calls:
+                result.append(
+                    ChatCompletionAssistantMessageParam(
+                        role="assistant", content=content, tool_calls=tool_calls
                     )
-            if text_buf or tool_calls:
-                content = "\n".join(text_buf) if text_buf else None
-                if tool_calls:
-                    result.append(
-                        ChatCompletionAssistantMessageParam(
-                            role="assistant", content=content, tool_calls=tool_calls
-                        )
-                    )
-                elif content:
-                    result.append(ChatCompletionAssistantMessageParam(role="assistant", content=content))
+                )
+            elif content:
+                result.append(ChatCompletionAssistantMessageParam(role="assistant", content=content))
 
         elif message.role == AnthropicMessageRole.USER:
-            text_parts: list[str] = []
-            tool_msgs: list[ChatCompletionToolMessageParam] = []
-            for block in message.content:
-                if isinstance(block, AnthropicTextBlock):
-                    text_parts.append(block.text)
-                elif isinstance(block, AnthropicToolResultBlock):
-                    tool_text = (
-                        block.content
-                        if isinstance(block.content, str)
-                        else "\n".join(b.text for b in block.content)
-                    )
-                    tool_msgs.append(
-                        ChatCompletionToolMessageParam(
-                            role="tool", tool_call_id=block.tool_use_id, content=tool_text
-                        )
-                    )
+            texts, tool_msgs = _handle_user_blocks(message.content)
             result.extend(tool_msgs)
-            if text_parts:
-                result.append(ChatCompletionUserMessageParam(role="user", content="\n".join(text_parts)))
+            if texts:
+                result.append(ChatCompletionUserMessageParam(role="user", content=_join_texts(texts)))
 
     return result
 
@@ -103,19 +138,8 @@ def anthropic_to_responses_input(
     messages: list[AnthropicMessage], system: str | None = None
 ) -> list[ResponseOutputMessage]:
     """Translate Anthropic messages into OpenAI Responses API input format."""
-
-    def _join_text_content(content: str | list[Any]) -> str:
-        if isinstance(content, str):
-            return content
-        texts: list[str] = []
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                text = item.get("text")
-                if isinstance(text, str):
-                    texts.append(text)
-        return "\n".join(texts)
-
     raw_messages: list[dict[str, Any]] = []
+
     if system:
         raw_messages.append(SystemMessage.text(system).model_dump())
 
@@ -123,17 +147,17 @@ def anthropic_to_responses_input(
         if msg.role not in (AnthropicMessageRole.USER, AnthropicMessageRole.ASSISTANT):
             continue
 
-        text = _join_text_content(msg.content) if isinstance(msg.content, list) else msg.content
-        if text.strip():
-            if msg.role == AnthropicMessageRole.USER:
-                raw_messages.append(UserMessage.text(text).model_dump())
-            else:  # ASSISTANT
-                raw_messages.append(ResponsesAssistantMessage.text(text).model_dump())
+        text = _extract_text_from_content(msg.content) if isinstance(msg.content, list) else msg.content
+        if not text.strip():
+            continue
+
+        if msg.role == AnthropicMessageRole.USER:
+            raw_messages.append(UserMessage.text(text).model_dump())
+        else:  # ASSISTANT
+            raw_messages.append(ResponsesAssistantMessage.text(text).model_dump())
 
     validated = parse_response_messages(raw_messages)
-    if validated is None:
-        return []
-    return validated
+    return validated if validated is not None else []
 
 
 def anthropic_messages_to_standard(messages: list[AnthropicMessage]) -> list[ChatCompletionMessageParam]:
@@ -142,6 +166,7 @@ def anthropic_messages_to_standard(messages: list[AnthropicMessage]) -> list[Cha
     Only extracts text content, suitable for grader context where tool calls are not needed.
     """
     result: list[ChatCompletionMessageParam] = []
+
     for msg in messages:
         if not (text_content := extract_text_content(msg).strip()):
             continue
