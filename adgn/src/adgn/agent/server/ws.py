@@ -104,7 +104,17 @@ router = WsRouter()
 async def _h_hello_resume_snapshot(ctx: WsContext, _msg: BaseModel) -> None:
     await ctx.cm.send_payload(Accepted())
     # Kick off incremental sampling snapshot streaming without blocking
-    task = asyncio.create_task(ctx.container.sampling_snapshot_incremental())
+
+    async def _send_incremental_snapshot():
+        """Compose incremental sampling snapshot: compositor + session + UI."""
+        if not ctx.container._ui_manager or not ctx.container.runtime.session:
+            return
+        snap = await ctx.container.running.compositor.sampling_snapshot()
+        await ctx.container._ui_manager.send_payload(
+            await ctx.container.runtime.session.build_snapshot(sampling=snap)
+        )
+
+    task = asyncio.create_task(_send_incremental_snapshot())
     task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
     sampling = None
     session = ctx.session

@@ -20,90 +20,29 @@ from .builder import build_local_agent
 
 @dataclass
 class AgentRuntime:
-    """Combines infrastructure and runtime for a running agent.
+    """Holds components for a running local agent.
 
-    - RunningInfrastructure: Core MCP + policy gateway
-    - LocalAgentRuntime: MiniCodex agent
+    Components:
+    - running: Infrastructure (MCP + policy gateway)
+    - runtime: Local agent (MiniCodex + session)
+    - _ui_manager: WebSocket connection manager (optional)
+    - _ui_bus: UI event bus (optional)
+
+    This is a pure data holder for lifecycle management only.
+    Handlers access components directly (e.g., container.running.compositor).
     """
 
     agent_id: str
     running: RunningInfrastructure
     runtime: LocalAgentRuntime
-    _ui_manager = None  # Set from builder if UI attached
-    _ui_bus = None  # Set from builder if UI attached
-
-    async def list_mcp_entries(self):
-        """List MCP server entries via compositor_meta."""
-        meta = CompositorMetaClient(self.running.compositor_client)
-        return await meta.list_states()
+    _ui_manager: ConnectionManager | None = None
+    _ui_bus: ServerBus | None = None
 
     async def close(self):
-        """Close both runtime and infrastructure."""
+        """Lifecycle management - close all components together."""
         await self.runtime.close()
         result = await self.running.close()
         return {"drained": result.drained, "error": result.error}
-
-    async def reconfigure_mcp(
-        self,
-        *,
-        mcp_config: MCPConfig | None = None,
-        attach: dict[str, MCPConfig] | None = None,
-        detach: list[str] | None = None,
-    ) -> None:
-        """Reconfigure MCP servers at runtime."""
-        admin = CompositorAdminClient(self.running.compositor_client)
-        current_specs = await self.running.compositor.mount_specs()
-
-        # Full replace
-        if mcp_config is not None:
-            desired = mcp_config.mcpServers or {}
-            # Detach missing
-            miss = list(set(current_specs.keys()) - set(desired.keys()))
-            if miss:
-                await asyncio.gather(*(admin.detach_server(name=n) for n in miss))
-            # Attach new or changed
-            attach_args: list[tuple[str, MCPServerTypes]] = []
-            for name, spec in desired.items():
-                prev = current_specs.get(name)
-                if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
-                    attach_args.append((name, spec))
-            if attach_args:
-                await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args))
-
-        # Incremental detach
-        if detach:
-            await asyncio.gather(*(admin.detach_server(name=n) for n in detach))
-
-        # Incremental attach
-        if attach:
-            for _, cfg in attach.items():
-                latest_specs = await self.running.compositor.mount_specs()
-                attach_args2: list[tuple[str, MCPServerTypes]] = []
-                for name, spec in (cfg.mcpServers or {}).items():
-                    prev = latest_specs.get(name)
-                    if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
-                        attach_args2.append((name, spec))
-                if attach_args2:
-                    await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args2))
-
-    async def attach_mcp(self, name: str, spec: MCPServerTypes) -> None:
-        """Attach a single MCP server (policy-gated)."""
-        await self.running.attach_mcp(name, spec)
-
-    async def detach_mcp(self, name: str) -> None:
-        """Detach a single MCP server (policy-gated)."""
-        await self.running.detach_mcp(name)
-
-    async def sampling_snapshot(self):
-        """Get sampling snapshot from compositor."""
-        return await self.running.compositor.sampling_snapshot()
-
-    async def sampling_snapshot_incremental(self) -> None:
-        """Send incremental sampling snapshot to UI."""
-        if not self._ui_manager or not self.runtime.session:
-            return
-        snap = await self.running.compositor.sampling_snapshot()
-        await self._ui_manager.send_payload(await self.runtime.session.build_snapshot(sampling=snap))
 
 
 @dataclass
