@@ -130,35 +130,22 @@ class InfrastructureRegistry:
         return None
 
     def known_agents(self) -> list[str]:
-        """Return list of all known agent IDs."""
         return list(self._infra_cache.keys())
 
     async def get_infrastructure(self, agent_id: str) -> RunningInfrastructure:
-        """Get infrastructure for agent (must exist).
-
-        Raises:
-            KeyError: If agent_id is not in the registry.
-        """
+        """Raises KeyError if agent not in registry."""
         if agent_id not in self._infra_cache:
             raise KeyError(f"Agent {agent_id} not found in registry")
         return self._infra_cache[agent_id][0]
 
     def get_agent_mode(self, agent_id: str) -> AgentMode:
-        """Get agent mode (local or bridge).
-
-        Raises:
-            KeyError: If agent_id is not in the registry.
-        """
+        """Raises KeyError if agent not in registry."""
         if agent_id not in self._agent_metadata:
             raise KeyError(f"Agent {agent_id} not found in registry")
         return self._agent_metadata[agent_id].mode
 
     def get_local_runtime(self, agent_id: str) -> LocalAgentRuntime | None:
-        """Get LocalAgentRuntime if agent is local, None otherwise.
-
-        Raises:
-            KeyError: If agent_id is not in the registry.
-        """
+        """Returns None if agent is not local. Raises KeyError if agent not in registry."""
         if agent_id not in self._agent_metadata:
             raise KeyError(f"Agent {agent_id} not found in registry")
         return self._agent_metadata[agent_id].local_runtime
@@ -166,14 +153,6 @@ class InfrastructureRegistry:
     def register_local_agent(
         self, agent_id: str, running: RunningInfrastructure, compositor_app: FastAPI, local_runtime: LocalAgentRuntime
     ) -> None:
-        """Register a local agent with its infrastructure and runtime.
-
-        Args:
-            agent_id: Unique agent identifier
-            running: Running infrastructure instance
-            compositor_app: Compositor FastAPI app
-            local_runtime: Local agent runtime with loop control
-        """
         self._infra_cache[agent_id] = (running, compositor_app)
         self._agent_metadata[agent_id] = AgentMetadata(mode=AgentMode.LOCAL, local_runtime=local_runtime)
 
