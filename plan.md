@@ -179,7 +179,18 @@ class InfrastructureRegistry:
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Literal
+from enum import StrEnum
+
+# Enumerations
+class DecisionType(StrEnum):
+    """Approval decision types."""
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+class AgentMode(StrEnum):
+    """Agent mode enumeration."""
+    LOCAL = "local"
+    BRIDGE = "bridge"
 
 # Tool input models
 class ApproveToolCallArgs(BaseModel):
@@ -208,7 +219,7 @@ class ApprovalHistoryEntry(BaseModel):
     call_id: str
     tool: str
     args: dict
-    decision: Literal["approved", "rejected"]
+    decision: DecisionType
     reason: str | None = None  # Only for rejections
     timestamp: datetime
     decided_by: str  # "human" or agent ID
@@ -218,7 +229,7 @@ class AgentInfo(BaseModel):
     """Information about a single agent."""
     agent_id: str
     capabilities: dict[str, bool]  # e.g., {"chat": True, "agent_loop": False}
-    mode: Literal["local", "bridge"]
+    mode: AgentMode
     state_uri: str | None = None
     approvals_uri: str | None = None
 
@@ -267,22 +278,21 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         """
         agent_infos: list[AgentInfo] = []
         for agent_id in registry.known_agents():
-            infra = await registry.get_infrastructure(agent_id)
-
-            # Detect mode
-            has_chat = hasattr(infra, 'chat_component') and infra.chat_component is not None
-            has_agent_loop = hasattr(infra, 'agent_loop') and infra.agent_loop is not None
+            # Get mode from registry (no hasattr)
+            mode = registry.get_agent_mode(agent_id)
 
             # Build capabilities dict
+            # For now, assume bridge agents have no chat/agent_loop
+            # TODO: Add capability tracking to registry if needed
+            is_local = (mode == AgentMode.LOCAL)
             capabilities = {
-                "chat": has_chat,
-                "agent_loop": has_agent_loop,
+                "chat": is_local,  # Local agents have chat
+                "agent_loop": is_local,  # Local agents have agent loop
             }
 
-            # Determine mode and optional URIs
-            mode: Literal["local", "bridge"] = "local" if has_agent_loop else "bridge"
-            state_uri = f"resource://agents/{agent_id}/state" if has_agent_loop else None
-            approvals_uri = f"resource://agents/{agent_id}/approvals/pending" if has_agent_loop else None
+            # Determine optional URIs based on mode
+            state_uri = f"resource://agents/{agent_id}/state" if is_local else None
+            approvals_uri = f"resource://agents/{agent_id}/approvals/pending"
 
             # Construct Pydantic model
             agent_info = AgentInfo(
@@ -304,12 +314,16 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
     )
     async def agent_state(agent_id: str):
         """Get sampling state for local agent."""
-        infra = await registry.get_infrastructure(agent_id)
+        # Check mode via registry (no hasattr)
+        if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
+            raise ValueError(f"Agent {agent_id} is not a local agent")
 
-        if not hasattr(infra, 'agent_loop') or infra.agent_loop is None:
-            raise ValueError(f"Agent {agent_id} has no agent loop (not a local agent)")
+        # Get local runtime to access sampling state
+        local_runtime = registry.get_local_runtime(agent_id)
+        if local_runtime is None:
+            raise ValueError(f"Agent {agent_id} has no local runtime")
 
-        return await infra.compositor.sampling_snapshot()
+        return await local_runtime.session.get_sampling_snapshot()
 
     @server.resource(
         "resource://agents/{agent_id}/approvals/pending",
@@ -427,14 +441,18 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
     async def abort_agent(input: AbortAgentArgs) -> dict:
         """Abort a running agent.
 
-        Routes to: lookup_infrastructure(agent_id).agent_loop.abort()
+        Routes to: local_runtime.agent.abort()
         """
-        infra = await registry.get_infrastructure(input.agent_id)
+        # Check mode via registry (no hasattr)
+        if registry.get_agent_mode(input.agent_id) != AgentMode.LOCAL:
+            raise ValueError(f"Agent {input.agent_id} is not a local agent (cannot abort)")
 
-        if not hasattr(infra, 'agent_loop') or infra.agent_loop is None:
-            raise ValueError(f"Agent {input.agent_id} has no agent loop (cannot abort)")
+        # Get local runtime
+        local_runtime = registry.get_local_runtime(input.agent_id)
+        if local_runtime is None or local_runtime.agent is None:
+            raise ValueError(f"Agent {input.agent_id} has no agent loop")
 
-        await infra.agent_loop.abort()
+        await local_runtime.agent.abort()
         return {"status": "aborted", "agent_id": input.agent_id}
 
     # Wire up notifications
@@ -455,8 +473,12 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         try:
             infra = await registry.get_infrastructure(agent_id)
             infra.approval_engine.add_listener(lambda: _on_approval_change(agent_id))
-            if hasattr(infra, 'agent_loop') and infra.agent_loop:
-                infra.agent_loop.add_state_listener(lambda: _on_agent_state_change(agent_id))
+
+            # Only add agent loop listener for local agents (no hasattr)
+            if registry.get_agent_mode(agent_id) == AgentMode.LOCAL:
+                local_runtime = registry.get_local_runtime(agent_id)
+                if local_runtime and local_runtime.agent:
+                    local_runtime.agent.add_state_listener(lambda: _on_agent_state_change(agent_id))
         except Exception as e:
             logger.warning(f"Failed to hook listeners for {agent_id}: {e}")
 

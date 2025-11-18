@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from enum import StrEnum
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from docker import DockerClient
 from fastapi import FastAPI, Request, Response
@@ -21,7 +23,25 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.infrastructure import MCPInfrastructure, RunningInfrastructure
 from adgn.agent.runtime.sidecars import SidecarBundle
 
+if TYPE_CHECKING:
+    from adgn.agent.runtime.local_runtime import LocalAgentRuntime
+
 logger = logging.getLogger(__name__)
+
+
+class AgentMode(StrEnum):
+    """Agent mode enumeration."""
+
+    LOCAL = "local"
+    BRIDGE = "bridge"
+
+
+class AgentMetadata:
+    """Metadata about an agent in the registry."""
+
+    def __init__(self, mode: AgentMode, local_runtime: LocalAgentRuntime | None = None):
+        self.mode = mode
+        self.local_runtime = local_runtime
 
 
 async def create_bridge_infrastructure(
@@ -63,10 +83,12 @@ class InfrastructureRegistry:
         self.initial_policy = initial_policy
         # Infrastructure cache: agent_id → (RunningInfrastructure, FastAPI app)
         self._infra_cache: dict[str, tuple[RunningInfrastructure, FastAPI]] = {}
+        # Agent metadata: agent_id → AgentMetadata
+        self._agent_metadata: dict[str, AgentMetadata] = {}
         self._infra_locks: dict[str, asyncio.Lock] = {}
 
     async def get_or_create_infrastructure(self, agent_id: str) -> tuple[RunningInfrastructure, FastAPI]:
-        """Get or create infrastructure for an agent_id."""
+        """Get or create infrastructure for an agent_id (creates bridge agent)."""
         # Ensure we have a lock for this agent_id
         if agent_id not in self._infra_locks:
             self._infra_locks[agent_id] = asyncio.Lock()
@@ -91,6 +113,8 @@ class InfrastructureRegistry:
             compositor_app: FastAPI = running.compositor.http_app()  # type: ignore[assignment]
 
             self._infra_cache[agent_id] = (running, compositor_app)
+            # Register as bridge agent
+            self._agent_metadata[agent_id] = AgentMetadata(mode=AgentMode.BRIDGE)
             logger.info(f"Infrastructure ready for agent_id={agent_id}")
             return (running, compositor_app)
 
@@ -105,11 +129,56 @@ class InfrastructureRegistry:
             return self._infra_cache[agent_id][0]
         return None
 
+    def known_agents(self) -> list[str]:
+        """Return list of all known agent IDs."""
+        return list(self._infra_cache.keys())
 
-async def create_mcp_server_app(
-    auth_tokens_path: Path,
-    registry: InfrastructureRegistry,
-) -> FastAPI:
+    async def get_infrastructure(self, agent_id: str) -> RunningInfrastructure:
+        """Get infrastructure for agent (must exist).
+
+        Raises:
+            KeyError: If agent_id is not in the registry.
+        """
+        if agent_id not in self._infra_cache:
+            raise KeyError(f"Agent {agent_id} not found in registry")
+        return self._infra_cache[agent_id][0]
+
+    def get_agent_mode(self, agent_id: str) -> AgentMode:
+        """Get agent mode (local or bridge).
+
+        Raises:
+            KeyError: If agent_id is not in the registry.
+        """
+        if agent_id not in self._agent_metadata:
+            raise KeyError(f"Agent {agent_id} not found in registry")
+        return self._agent_metadata[agent_id].mode
+
+    def get_local_runtime(self, agent_id: str) -> LocalAgentRuntime | None:
+        """Get LocalAgentRuntime if agent is local, None otherwise.
+
+        Raises:
+            KeyError: If agent_id is not in the registry.
+        """
+        if agent_id not in self._agent_metadata:
+            raise KeyError(f"Agent {agent_id} not found in registry")
+        return self._agent_metadata[agent_id].local_runtime
+
+    def register_local_agent(
+        self, agent_id: str, running: RunningInfrastructure, compositor_app: FastAPI, local_runtime: LocalAgentRuntime
+    ) -> None:
+        """Register a local agent with its infrastructure and runtime.
+
+        Args:
+            agent_id: Unique agent identifier
+            running: Running infrastructure instance
+            compositor_app: Compositor FastAPI app
+            local_runtime: Local agent runtime with loop control
+        """
+        self._infra_cache[agent_id] = (running, compositor_app)
+        self._agent_metadata[agent_id] = AgentMetadata(mode=AgentMode.LOCAL, local_runtime=local_runtime)
+
+
+async def create_mcp_server_app(auth_tokens_path: Path, registry: InfrastructureRegistry) -> FastAPI:
     """Create token-authenticated MCP server app.
 
     Routes MCP-over-HTTP requests to per-agent compositor apps based on token.
@@ -166,9 +235,7 @@ async def create_mcp_server_app(
     return mcp_app
 
 
-async def create_management_ui_app(
-    registry: InfrastructureRegistry,
-) -> FastAPI:
+async def create_management_ui_app(registry: InfrastructureRegistry) -> FastAPI:
     """Create management UI app with WebSocket channels.
 
     Provides web interface for managing approvals, policy, and agent state.
@@ -242,9 +309,6 @@ async def create_multi_tenant_app(
     DEPRECATED: Use create_mcp_server_app() and create_management_ui_app() separately.
     """
     registry = InfrastructureRegistry(
-        persistence=persistence,
-        docker_client=docker_client,
-        mcp_config=mcp_config,
-        initial_policy=initial_policy,
+        persistence=persistence, docker_client=docker_client, mcp_config=mcp_config, initial_policy=initial_policy
     )
     return await create_mcp_server_app(auth_tokens_path=auth_tokens_path, registry=registry)
