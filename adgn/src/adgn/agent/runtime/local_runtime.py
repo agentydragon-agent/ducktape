@@ -37,6 +37,11 @@ class LocalAgentRuntime:
     - Loop control server
 
     Example:
+        from adgn.openai_utils.client_factory import build_client
+
+        def client_factory(model: str):
+            return build_client(model, enable_debug_logging=True)
+
         # Create infrastructure and attach sidecars
         infrastructure = MCPInfrastructure(...)
         running = await infrastructure.start(mcp_config)
@@ -47,7 +52,7 @@ class LocalAgentRuntime:
         runtime = LocalAgentRuntime(
             running=running,
             model="o4-mini",
-            client_factory=default_client_factory,
+            client_factory=client_factory,
         )
         await runtime.start()
 

@@ -26,8 +26,9 @@ from adgn.agent.persist.events import EventRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import AgentPreset, discover_presets
 from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
-from adgn.agent.runtime.container import default_client_factory
 from adgn.agent.runtime.registry import AgentRegistry
+from adgn.openai_utils.client_factory import build_client
+from adgn.openai_utils.model import OpenAIModelProto
 from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
 from adgn.agent.server.exceptions import (
     AgentNotFoundError,
@@ -49,6 +50,11 @@ logger = logging.getLogger(__name__)
 
 # Static directory for UI assets
 STATIC_DIR = Path(__file__).with_name("static")
+
+
+def default_client_factory(model: str) -> OpenAIModelProto:
+    """Default LLM client factory."""
+    return build_client(model, enable_debug_logging=True)
 
 
 # Request/Response models (module-level to avoid nested classes)

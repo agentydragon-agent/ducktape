@@ -11,11 +11,18 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.local_runtime import LocalAgentRuntime
 from adgn.agent.runtime.running import RunningInfrastructure
 from adgn.agent.server.bus import ServerBus
+from adgn.agent.server.runtime import ConnectionManager
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.openai_utils.model import OpenAIModelProto
 
 from .builder import build_local_agent
-from .container import UiFacet
+
+
+@dataclass
+class UiFacet:
+    """UI manager + bus wrapper for backward compatibility."""
+    manager: ConnectionManager
+    ui_bus: ServerBus
 
 
 @dataclass

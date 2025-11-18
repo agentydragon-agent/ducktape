@@ -36,12 +36,17 @@ async def build_local_agent(
     initial_policy: str | None = None,
 ) -> tuple[RunningInfrastructure, LocalAgentRuntime, ServerBus | None, ConnectionManager | None]:
     """Example:
+        from adgn.openai_utils.client_factory import build_client
+
+        def client_factory(model: str):
+            return build_client(model, enable_debug_logging=True)
+
         running, runtime, ui_bus, conn_mgr = await build_local_agent(
             agent_id="my-agent",
             mcp_config=config,
             persistence=persistence,
             model="o4-mini",
-            client_factory=default_client_factory,
+            client_factory=client_factory,
             docker_client=docker.from_env(),
             with_ui=True,
             ui_bus=ui_bus,
