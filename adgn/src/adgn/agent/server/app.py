@@ -42,6 +42,7 @@ from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_
 from adgn.agent.server.ws import register_ws
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
+from adgn.mcp.compositor.clients import CompositorMetaClient
 
 PROTOCOL_VERSION = "1.0.0"
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -325,7 +326,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     async def api_list_agents() -> AgentsList:
         rows = await app.state.persistence.list_agents()
         live = {c.agent_id: c for c in app.state.registry.list()}
-        working_ids = {cid for cid, c in live.items() if (c.session is not None and c.session.active_run is not None)}
+        working_ids = {cid for cid, c in live.items() if (c.runtime.session is not None and c.runtime.session.active_run is not None)}
         last_map = await app.state.persistence.list_agents_last_activity()
         # Build enriched list and sort by last activity desc (fallback to created_at)
         items: list[tuple[str, datetime, AgentDescriptor]] = []
@@ -426,9 +427,28 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         container = app.state.registry.get(agent_id)
         if container is not None:
             if patch.mcp_config is not None:
-                await container.reconfigure_mcp(mcp_config=patch.mcp_config)
+                # Full reconfiguration: detach all non-auto servers, then attach from new config
+                meta = CompositorMetaClient(container.running.compositor_client)
+                current_servers = await meta.list_states()
+                forbidden = set(DEFAULT_AUTO_SERVER_NAMES) | {"compositor"}
+                # Detach all non-auto servers
+                for name in current_servers:
+                    if name not in forbidden:
+                        await container.running.detach_mcp(name)
+                # Attach servers from new config
+                if patch.mcp_config.mcpServers:
+                    for name, spec in patch.mcp_config.mcpServers.items():
+                        await container.running.attach_mcp(name, spec)
             else:
-                await container.reconfigure_mcp(attach=patch.attach or {}, detach=patch.detach)
+                # Incremental attach/detach
+                if patch.detach:
+                    for name in patch.detach:
+                        await container.running.detach_mcp(name)
+                if patch.attach:
+                    for cfg_name, cfg in patch.attach.items():
+                        if cfg.mcpServers:
+                            for name, spec in cfg.mcpServers.items():
+                                await container.running.attach_mcp(name, spec)
         return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
     @app.post("/api/agents/{agent_id}/mcp/attach", response_model=PatchAgentMcpResult)
@@ -444,7 +464,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Live apply if running
         container = app.state.registry.get(agent_id)
         if container is not None:
-            await container.attach_mcp(body.name, body.spec)
+            await container.running.attach_mcp(body.name, body.spec)
         return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
     @app.post("/api/agents/{agent_id}/mcp/detach", response_model=PatchAgentMcpResult)
@@ -461,7 +481,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Live apply if running
         container = app.state.registry.get(agent_id)
         if container is not None:
-            await container.detach_mcp(body.name)
+            await container.running.detach_mcp(body.name)
         return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
     @app.get("/api/agents/{agent_id}", response_model=AgentInfo)
@@ -472,7 +492,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             return AgentInfo(agent=None, live=live)
         working = False
         cont = app.state.registry.get(agent_id)
-        if cont is not None and cont.session is not None and cont.session.active_run:
+        if cont is not None and cont.runtime.session is not None and cont.runtime.session.active_run:
             working = True
         return AgentInfo(
             agent=AgentDescriptor(
@@ -492,7 +512,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     async def api_get_snapshot(agent_id: str) -> Snapshot:
         container = await get_container(agent_id)
         sess = get_session(container, agent_id)
-        sampling = await container.sampling_snapshot()
+        sampling = await container.running.compositor.sampling_snapshot()
         return await sess.build_snapshot(sampling=sampling)
 
     @app.get("/api/agents/{agent_id}/status", response_model=AgentStatus)
@@ -678,5 +698,5 @@ async def _send_snapshot(container, sess, sampling=None) -> None:
 
 
 async def _send_snapshot_latest(container, sess) -> None:
-    sampling = await container.sampling_snapshot()
+    sampling = await container.running.compositor.sampling_snapshot()
     await _send_snapshot(container, sess, sampling=sampling)

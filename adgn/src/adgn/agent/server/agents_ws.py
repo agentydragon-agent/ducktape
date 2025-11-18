@@ -18,6 +18,7 @@ from adgn.agent.server.status_shared import (
     UiStateLite,
     build_agent_status_core,
 )
+from adgn.mcp.compositor.clients import CompositorMetaClient
 from adgn.mcp.snapshots import RunningServerEntry
 
 logger = logging.getLogger(__name__)
@@ -178,8 +179,8 @@ class AgentsWSHub:
         for r in rows:
             live_c = app.state.registry.get(r.id)
             active_run = None
-            if live_c is not None and live_c.session is not None and live_c.session.active_run:
-                active_run = live_c.session.active_run.run_id
+            if live_c is not None and live_c.runtime.session is not None and live_c.runtime.session.active_run:
+                active_run = live_c.runtime.session.active_run.run_id
             # Derive a lightweight lifecycle: persisted_only | starting | ready
             lifecycle: str | None
             if live_c is None:
@@ -187,8 +188,12 @@ class AgentsWSHub:
             else:
                 lifecycle = AgentLifecycle.STARTING
                 # Prefer compositor-backed entries map with typed union members
-                entries = await live_c.list_mcp_entries() if live_c is not None else {}
-                if (live_c.ui is not None) and (
+                if live_c is not None:
+                    meta = CompositorMetaClient(live_c.running.compositor_client)
+                    entries = await meta.list_states()
+                else:
+                    entries = {}
+                if (live_c._ui_manager is not None) and (
                     not entries or all(isinstance(e, RunningServerEntry) for e in entries.values())
                 ):
                     lifecycle = AgentLifecycle.READY
