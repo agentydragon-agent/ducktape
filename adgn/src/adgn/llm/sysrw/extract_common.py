@@ -12,6 +12,7 @@ from .constants import TOOLS_HEADER
 from .openai_typing import (
     MessageRole,
     ResponseContentPart,
+    ResponseOutputMessage,
     iter_resolved_text,
     parse_response_messages,
     response_message_content_as_text,
@@ -19,7 +20,7 @@ from .openai_typing import (
 )
 
 
-def join_text_parts(content: Any) -> str:
+def join_text_parts(content: str | list[ResponseContentPart] | None) -> str:
     """Normalize OpenAI-style content into plain text.
 
     Accepts either a string or a list of parts like {type: "text", text: "..."}.
@@ -33,7 +34,7 @@ def join_text_parts(content: Any) -> str:
     return "\n".join(iter_resolved_text(parts))
 
 
-def sys_has_tools_header(system: Any) -> bool:
+def sys_has_tools_header(system: str | list[ResponseContentPart] | None) -> bool:
     """Return True if system text (string or list-of-parts) contains tools header."""
     if isinstance(system, str):
         return TOOLS_HEADER in system
@@ -43,7 +44,7 @@ def sys_has_tools_header(system: Any) -> bool:
     return any(TOOLS_HEADER in text for text in iter_resolved_text(parts))
 
 
-def find_last_user_text_from_msg(msg: Any) -> str | None:
+def find_last_user_text_from_msg(msg: ResponseOutputMessage) -> str | None:
     """Extract plain text from a single user message object (CCR-style)."""
     if response_message_role(msg) != MessageRole.USER:
         return None
@@ -51,7 +52,7 @@ def find_last_user_text_from_msg(msg: Any) -> str | None:
     return text or None
 
 
-def find_last_user_text_from_messages(messages: Any) -> str | None:
+def find_last_user_text_from_messages(messages: list[ResponseOutputMessage] | Any) -> str | None:
     """Extract last user text from a list of messages (OpenAI chat/Responses)."""
     parsed = parse_response_messages(messages)
     if parsed:
