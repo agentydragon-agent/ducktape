@@ -7,6 +7,9 @@ manual/_out/
 manual/*.qcow2
 manual/*.log
 manual/*.pid
+*.qcow2
+vm-*.log
+vm-*.pid
 
 # Generated at runtime
 manual/kubeconfig-talos
@@ -21,5 +24,6 @@ terraform/kubeconfig
 terraform/talosconfig
 terraform/.terraform/
 terraform/.terraform.lock.hcl
+terraform/.terraform.tfstate.lock.info
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
