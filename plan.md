@@ -1662,9 +1662,7 @@ class ToolCallRecord(BaseModel):
 GET resource://agents/{id}/state
   → {
       agent_id: string,
-      state: "waiting_approval" | "executing" | "sampling" | "idle",
-      pending_approvals_count: number,
-      executing_tools: string[]  // call_ids of executing tools
+      state: "waiting_approval" | "executing" | "sampling" | "idle"
     }
 ```
 
