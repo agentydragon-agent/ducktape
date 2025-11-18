@@ -18,7 +18,7 @@ from anthropic.types.text_block_param import TextBlockParam
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter
 import tiktoken
 
 from adgn.openai_utils.client_factory import get_async_openai
@@ -218,11 +218,6 @@ MODEL_PREFIX = "You are powered by the model"
 MCP_HEADER = "# MCP Server Instructions"
 
 
-# Type adapters for validating Anthropic SDK types (TypedDicts)
-_MESSAGE_PARAM_ADAPTER: TypeAdapter[MessageParam] = TypeAdapter(MessageParam)
-_CONTENT_BLOCK_PARAM_ADAPTER: TypeAdapter[ContentBlockParam] = TypeAdapter(ContentBlockParam)
-
-
 def index_of_last_assistant_before_final(msgs: list[StandardMessage]) -> int | None:
     """Find index of last assistant message before the final message."""
     for i in range(len(msgs) - 2, -1, -1):
@@ -244,13 +239,12 @@ def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[Standar
     """Convert Anthropic MessageParam list to StandardMessage list for grader context.
 
     Extracts text content from Anthropic content blocks and flattens to simple string content.
-    Uses Pydantic TypeAdapter to validate Anthropic SDK TypedDicts for type safety.
-    Raises ValidationError if messages don't match the Anthropic SDK format.
+    Assumes messages are already validated through parent Pydantic model (e.g., CCRRequest).
     """
     result: list[StandardMessage] = []
-    for raw_msg in messages:
-        # Validate message structure - raises ValidationError on invalid input
-        msg = _MESSAGE_PARAM_ADAPTER.validate_python(raw_msg)
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
 
         role = msg.get("role")
         content = msg.get("content")
@@ -261,10 +255,8 @@ def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[Standar
             text_content = content
         elif isinstance(content, list):
             texts: list[str] = []
-            for raw_block in content:
-                # Validate content block - raises ValidationError on invalid input
-                block = _CONTENT_BLOCK_PARAM_ADAPTER.validate_python(raw_block)
-                if block.get("type") in ("text", "input_text"):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") in ("text", "input_text"):
                     text = block.get("text")
                     if isinstance(text, str):
                         texts.append(text)
@@ -297,8 +289,7 @@ def anthro_to_openai_messages(
 ) -> list[ChatCompletionMessageParam]:
     """Translate Anthropic MessageParam list into OpenAI Chat format, returning SDK models.
 
-    Uses Pydantic TypeAdapter to validate Anthropic SDK TypedDicts for type safety.
-    Raises ValidationError if messages don't match the Anthropic SDK format.
+    Assumes messages are already validated through parent Pydantic model (e.g., CCRRequest).
     """
 
     def _join_text_parts(parts: Iterable[dict[str, Any]]) -> str:
@@ -318,9 +309,9 @@ def anthro_to_openai_messages(
     if new_system_text:
         raw_messages.append({"role": "system", "content": new_system_text})
 
-    for raw_msg in messages:
-        # Validate message structure - raises ValidationError on invalid input
-        message = _MESSAGE_PARAM_ADAPTER.validate_python(raw_msg)
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
 
         role = message.get("role")
         content = message.get("content")
@@ -331,11 +322,11 @@ def anthro_to_openai_messages(
             continue
 
         if isinstance(content, list):
-            # Validate content blocks - raises ValidationError on invalid input
+            # Content is list of blocks (already validated by parent model)
             content_blocks: list[ContentBlockParam] = []
-            for raw_part in content:
-                validated_part = _CONTENT_BLOCK_PARAM_ADAPTER.validate_python(raw_part)
-                content_blocks.append(validated_part)
+            for part in content:
+                if isinstance(part, dict):
+                    content_blocks.append(part)  # type: ignore[arg-type]
 
             if role == "assistant":
                 text_buf: list[str] = []
