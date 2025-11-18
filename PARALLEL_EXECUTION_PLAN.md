@@ -500,18 +500,34 @@ Agent F.28: Scan fastmcp-documentation-patterns
           Report all violations found."
 ```
 
-#### Wave FINAL.2 (Consolidation - 1 agent)
+#### Wave FINAL.2 (Consolidation & Parallelization Strategy - 1 agent)
 **Depends on**: Wave FINAL.1 complete
 ```
-Agent F.CONSOLIDATE: Consolidate Violation Reports
+Agent F.CONSOLIDATE: Consolidate Violations & Design Fix Strategy
   Prompt: "Review all 28 scan reports from Wave FINAL.1.
-          Consolidate into priority-ordered list:
-          - Critical: Type safety, async correctness, API design
-          - High: Code clarity, maintainability
-          - Medium: Naming, documentation
-          - Low: Style preferences
-          Group by file for efficient fixing.
-          Return consolidated report with fix priority."
+
+          1. Consolidate violations with priority:
+             - Critical: Type safety, async correctness, API design
+             - High: Code clarity, maintainability
+             - Medium: Naming, documentation
+             - Low: Style preferences
+
+          2. Analyze overlap: Which files have violations from multiple scans?
+
+          3. Propose parallelization strategy:
+             Option A: By component/module (e.g., one agent for persist/, one for mcp/, etc.)
+             Option B: By file/file-group (to avoid agents stepping on each other)
+             Option C: By violation type (may cause conflicts)
+
+          4. Recommend specific agent assignments to minimize conflicts
+             Example: 'Agent 1: Fix all violations in adgn/agent/persist/*'
+                      'Agent 2: Fix all violations in adgn/mcp/policy_gateway/*'
+
+          5. Return:
+             - Consolidated violation report
+             - Recommended parallelization strategy with rationale
+             - Specific agent task assignments
+             - Dependency graph if some fixes must be sequential"
 ```
 
 #### Wave FINAL.3 (28 parallel agents - Fix Violations)
