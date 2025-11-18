@@ -6,12 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, TextIO
 
+from pydantic import TypeAdapter
+
 from .constants import TOOLS_HEADER
 from .openai_typing import (
     MessageRole,
+    ResponseContentPart,
     iter_resolved_text,
     parse_response_messages,
-    parse_response_parts,
     response_message_content_as_text,
     response_message_role,
 )
@@ -25,9 +27,12 @@ def join_text_parts(content: Any) -> str:
     """
     if isinstance(content, str):
         return content
-    parts = parse_response_parts(content)
-    if parts:
-        return "\n".join(iter_resolved_text(parts))
+    if content is not None:
+        try:
+            parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
+            return "\n".join(iter_resolved_text(parts))
+        except Exception:
+            pass
     if isinstance(content, list):
         texts: list[str] = []
         for part in content:
@@ -44,9 +49,12 @@ def sys_has_tools_header(system: Any) -> bool:
     """Return True if system text (string or list-of-parts) contains tools header."""
     if isinstance(system, str):
         return TOOLS_HEADER in system
-    parts = parse_response_parts(system)
-    if parts:
-        return any(TOOLS_HEADER in text for text in iter_resolved_text(parts))
+    if system is not None:
+        try:
+            parts = TypeAdapter(list[ResponseContentPart]).validate_python(system)
+            return any(TOOLS_HEADER in text for text in iter_resolved_text(parts))
+        except Exception:
+            pass
     if isinstance(system, list):
         for item in system:
             if isinstance(item, dict):

@@ -40,13 +40,6 @@ def chat_param_message_role(message: ChatCompletionMessageParam) -> MessageRole:
     return MessageRole(message["role"])
 
 
-def parse_response_parts(content: Any) -> list[ResponseContentPart] | None:
-    """Parse content into validated ResponseContentPart objects."""
-    if content is None:
-        return None
-    return TypeAdapter(list[ResponseContentPart]).validate_python(content)
-
-
 def iter_resolved_text(parts: list[ResponseContentPart]) -> Iterator[str]:
     """Extract text from validated content parts."""
     for part in parts:
@@ -82,10 +75,8 @@ def response_message_content_as_text(message: ResponseOutputMessage) -> str:
         return content
     if content is None:
         return ""
-    parts = parse_response_parts(content)
-    if parts:
-        return "\n".join(iter_resolved_text(parts))
-    return str(content)
+    parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
+    return "\n".join(iter_resolved_text(parts))
 
 
 def chat_param_message_content_as_text(message: ChatCompletionMessageParam) -> str:

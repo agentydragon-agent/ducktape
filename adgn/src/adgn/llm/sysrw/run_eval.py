@@ -34,6 +34,7 @@ from adgn.openai_utils.retry import chat_create_with_retries, responses_create_w
 from .constants import TOOLS_HEADER
 from .openai_typing import (
     MessageRole,
+    ResponseContentPart,
     chat_param_message_content_as_text,
     chat_param_message_role,
     chat_param_message_tool_calls,
@@ -43,7 +44,6 @@ from .openai_typing import (
     parse_chat_messages,
     parse_response,
     parse_response_messages,
-    parse_response_parts,
     parse_tools_list,
     response_message_content_as_text,
     response_message_role,
@@ -62,18 +62,6 @@ from .schemas import (
 )
 from .templates import validate_template_file
 from .translation import anthropic_messages_to_standard, anthropic_to_chat_messages, anthropic_to_responses_input
-
-
-def _as_int(x: Any) -> int:
-    """Best-effort conversion to int for counters read from loosely-typed dicts."""
-    if isinstance(x, int):
-        return x
-    if isinstance(x, float):
-        return int(x)
-    if isinstance(x, str):
-        with suppress(Exception):
-            return int(x)
-    return 0
 
 
 # Config
@@ -166,9 +154,11 @@ def flatten_system_string(sys: Any) -> str:
     if isinstance(sys, str):
         return sys
     if isinstance(sys, list):
-        parts = parse_response_parts(sys)
-        if parts:
+        try:
+            parts = TypeAdapter(list[ResponseContentPart]).validate_python(sys)
             return "\n\n".join(iter_resolved_text(parts))
+        except Exception:
+            pass
     return ""
 
 
@@ -275,10 +265,13 @@ async def run_eval(
     def _responses_join_text(parts: Any) -> str:
         if isinstance(parts, str):
             return parts
-        parsed_parts = parse_response_parts(parts)
-        if not parsed_parts:
+        if parts is None:
             return ""
-        return "\n".join(iter_resolved_text(parsed_parts))
+        try:
+            parsed_parts = TypeAdapter(list[ResponseContentPart]).validate_python(parts)
+            return "\n".join(iter_resolved_text(parsed_parts))
+        except Exception:
+            return ""
 
     def responses_prev_assistant_index(inp: Any) -> int | None:
         parsed = parse_response_messages(inp)
@@ -311,9 +304,11 @@ async def run_eval(
                 continue
             content = it.content
             if isinstance(content, list):
-                parts = parse_response_parts(content)
-                if parts is not None:
+                try:
+                    parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
                     content = [p.model_dump(mode="json", exclude_none=True) for p in parts]
+                except Exception:
+                    pass
             out.append({"role": role, "content": content})
         return out
 
@@ -606,20 +601,10 @@ async def run_eval(
     }
 
     def compute_and_write_summary(_final: bool = False) -> dict[str, Any]:
-        def _as_int(x: Any) -> int:
-            if isinstance(x, int):
-                return x
-            if isinstance(x, float):
-                return int(x)
-            if isinstance(x, str):
-                with suppress(Exception):
-                    return int(x)
-            return 0
-
         # Secondary metrics helpers
-        total_samples = _as_int(tool_stats.get("total_samples"))
-        text_only = _as_int(tool_stats.get("text_only"))
-        with_tools = _as_int(tool_stats.get("with_tools"))
+        total_samples = tool_stats.get("total_samples", 0)
+        text_only = tool_stats.get("text_only", 0)
+        with_tools = tool_stats.get("with_tools", 0)
         fc = cast(dict[str, int], tool_stats.get("function_counts", {}))
         total_tool_calls = sum(fc.values()) if fc else 0
         function_pct = {k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in fc.items()}
@@ -688,16 +673,16 @@ async def run_eval(
                 # Determine source from message type
                 src = "crush" if isinstance(rec_obj.new_assistant_message, ResponsesAssistantMessage) else "ccr"
                 # Update tool usage stats
-                tool_stats["total_samples"] = _as_int(tool_stats.get("total_samples")) + 1
+                tool_stats["total_samples"] = tool_stats.get("total_samples", 0) + 1
                 # Extract tool calls from ChatAssistantMessage
                 tcs = []
                 if isinstance(rec_obj.new_assistant_message, ChatAssistantMessage):
                     _tcs = rec_obj.new_assistant_message.message.tool_calls
                     tcs = list(_tcs) if _tcs is not None else []
                 if not tcs:
-                    tool_stats["text_only"] = _as_int(tool_stats.get("text_only")) + 1
+                    tool_stats["text_only"] = tool_stats.get("text_only", 0) + 1
                 else:
-                    tool_stats["with_tools"] = _as_int(tool_stats.get("with_tools")) + 1
+                    tool_stats["with_tools"] = tool_stats.get("with_tools", 0) + 1
                     fc_top = cast(dict[str, int], tool_stats["function_counts"])  # type: ignore[index]
                     for tc in tcs:
                         fn = tc.function.name if tc.function else "UNKNOWN"
@@ -705,11 +690,11 @@ async def run_eval(
                 # Per-source tool stats
                 if src in tool_stats_by_source:
                     src_stats = tool_stats_by_source[src]
-                    src_stats["total_samples"] = _as_int(src_stats.get("total_samples")) + 1
+                    src_stats["total_samples"] = src_stats.get("total_samples", 0) + 1
                     if not tcs:
-                        src_stats["text_only"] = _as_int(src_stats.get("text_only")) + 1
+                        src_stats["text_only"] = src_stats.get("text_only", 0) + 1
                     else:
-                        src_stats["with_tools"] = _as_int(src_stats.get("with_tools")) + 1
+                        src_stats["with_tools"] = src_stats.get("with_tools", 0) + 1
                         ts_fc = cast(dict[str, int], src_stats["function_counts"])  # type: ignore[index]
                         for tc in tcs:
                             fn = tc.function.name if tc.function else "UNKNOWN"
@@ -762,19 +747,16 @@ async def run_eval(
         grades_path = report_base / "grades.jsonl"
         report_path = report_base / "report.html"
         # Build grades map
-        grades_map: dict[str, Grade | None] = {}
+        grades_map: dict[str, Grade] = {}
         with grades_path.open("r", encoding="utf-8") as gf:
             for line in gf:
-                grec = json.loads(line)
-                cid = grec.get("correlation_id")
+                grec = EvalGradeRecord.model_validate_json(line)
+                cid = grec.correlation_id
                 if not cid:
                     continue
-                try:
-                    response_obj = parse_response(grec.get("response"))
-                    grade = parse_grade_from_responses(response_obj)
-                    grades_map[cid] = grade
-                except Exception:
-                    grades_map[cid] = None
+                response_obj = parse_response(grec.response)
+                grade = parse_grade_from_responses(response_obj)
+                grades_map[cid] = grade
 
         # Collect rows
         rows: list[dict[str, Any]] = []
