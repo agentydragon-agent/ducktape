@@ -4,12 +4,6 @@ import json
 
 from fastmcp.client.client import CallToolResult
 from mcp import types
-from tests.agent.ui.typed_asserts import (
-    assert_typed_items_have_one,
-    is_assistant_markdown,
-    is_tool_item,
-    is_user_message,
-)
 
 from adgn.agent.server.bus import MimeType
 from adgn.agent.server.protocol import (
@@ -25,6 +19,12 @@ from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import ExecContent, ToolItem, UiState, new_state
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp._shared.naming import build_mcp_function
+from tests.agent.ui.typed_asserts import (
+    assert_typed_items_have_one,
+    is_assistant_markdown,
+    is_tool_item,
+    is_user_message,
+)
 
 
 def test_user_text_appends_user_message():

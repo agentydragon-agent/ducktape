@@ -1,8 +1,8 @@
 from fastmcp.client import Client
-from tests.util.notifications import enable_resources_caps, install_subscription_recorder
 
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
+from tests.util.notifications import enable_resources_caps, install_subscription_recorder
 
 
 async def test_client_resource_subscribe_and_unsubscribe(make_pg_compositor):

@@ -3,12 +3,12 @@ from __future__ import annotations
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, empty, has_item, has_properties
-from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
+from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
 
 class _StubGatewaySession:

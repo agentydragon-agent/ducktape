@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-import re
 from pathlib import Path
+import re
 
 from ember.evals import gitea as gitea_helpers
 from ember.evals.definitions import Scenario, ScenarioSuite

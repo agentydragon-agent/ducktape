@@ -3,17 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterator
 from enum import StrEnum
 import json
-from typing import Annotated, Any, Literal, cast
+from typing import Any, cast
 
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionMessageToolCallParam
-from openai.types.responses import (
-    Response,
-    ResponseFunctionToolCall,
-    ResponseOutputMessage,
-    ResponseOutputRefusal,
-    ResponseOutputText,
-)
-from pydantic import BaseModel, Field, TypeAdapter, model_validator
+from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputRefusal, ResponseOutputText
+from pydantic import TypeAdapter
 
 # Union type for response content parts
 ResponseContentPart = ResponseOutputText | ResponseOutputRefusal
@@ -112,33 +106,7 @@ def chat_param_message_content_as_text(message: ChatCompletionMessageParam) -> s
             raise ValueError(f"Unhandled MessageRole: {role}")
 
 
-# Removed parse_tool_call - no longer needed since we work with typed objects directly
-
-
-def extract_chat_tool_call_info(call: ChatCompletionMessageToolCallParam) -> ToolCallInfo:
-    """Extract structured info from ChatCompletionMessageToolCallParam."""
-    # call is already a validated ChatCompletionMessageToolCallParam TypedDict
-    function = call["function"]
-    return ToolCallInfo(
-        name=function.get("name"),
-        arguments=function.get("arguments"),
-        call_id=call["id"],
-        tool_id=call["id"],
-        status=None,  # Not in this model
-        type=call["type"],
-    )
-
-
-def extract_response_tool_call_info(call: ResponseFunctionToolCall) -> ToolCallInfo:
-    """Extract structured info from ResponseFunctionToolCall."""
-    return ToolCallInfo(
-        name=call.name,
-        arguments=call.arguments,
-        call_id=call.call_id,
-        tool_id=call.id or call.call_id,
-        status=call.status,
-        type="function",
-    )
+# Removed parse_tool_call and extract_*_tool_call_info - no longer needed since we work with typed objects directly
 
 
 def parse_response_messages(messages: Any) -> list[ResponseOutputMessage] | None:
@@ -184,16 +152,3 @@ def parse_tool_params(params: str | dict[str, Any]) -> dict[str, Any]:
 def parse_tools_list(tools: Any) -> list[dict[str, Any]]:
     """Parse a list of tools into validated dicts."""
     return TypeAdapter(list[dict[str, Any]]).validate_python(tools if tools else [])
-
-
-# RESPONSE PROCESSING: Work with proper Response models
-def iter_tool_calls_from_response(response: Response) -> Iterator[ToolCallInfo]:
-    """Extract tool call information from a validated Response.
-
-    In Responses API, tool calls are separate output items, not message attributes.
-    """
-    if not response.output:
-        return
-    for item in response.output:
-        if isinstance(item, ResponseFunctionToolCall):
-            yield extract_response_tool_call_info(item)

@@ -6,11 +6,10 @@ import types
 from typing import Any, Generic, TypeVar, cast, get_origin
 
 from fastmcp.client import Client
-from fastmcp.client.client import CallToolResult as FMCallToolResult
 from fastmcp.server import FastMCP
 from mcp import types as mcp_types
 from mcp.types import CallToolResult
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter
 
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp._shared.client_helpers import extract_error_detail

@@ -10,7 +10,7 @@ import copy
 from dataclasses import dataclass
 import json
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import anyio
 from fastmcp.client import Client

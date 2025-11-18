@@ -42,7 +42,7 @@ repos:
   #
   # IMPORTANT: Run from ansible/ to limit discovery to ansible files only.
   # When ansible-lint runs with no lintables specified, it defaults to *scanning the whole repo* (".").
-  # By passing specific files (pass_filenames: true), we avoid the slow full-repo scan.
+  # With pass_filenames: true, pre-commit passes only modified ansible files for faster checks.
   - repo: https://github.com/ansible/ansible-lint
     rev: v25.7.0
     hooks:

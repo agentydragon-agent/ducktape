@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import platform
 import re
-from typing import Any
 
 import docker
 from fastmcp.client import Client
@@ -20,12 +19,12 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.clients import PolicyReaderStub
-from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.policy_gateway.middleware import install_policy_gateway
+from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp
 from tests.types import McpServerSpecs
 

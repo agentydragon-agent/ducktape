@@ -5,9 +5,9 @@ import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from tests.agent.helpers import start_uvicorn_app
 
 from adgn.agent.server.app import create_app
+from tests.agent.helpers import start_uvicorn_app
 
 # Auto-apply e2e marker to all tests in this directory
 pytestmark = [pytest.mark.e2e]

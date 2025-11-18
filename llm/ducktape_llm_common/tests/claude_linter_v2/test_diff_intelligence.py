@@ -1,7 +1,5 @@
 """Tests for diff intelligence module."""
 
-import pytest
-
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
 from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
     CategorizedViolation,
@@ -10,6 +8,7 @@ from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
 )
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
 from ducktape_llm_common.claude_linter_v2.diff.parser import ParsedDiff, ToolCall, parse_tool_response
+import pytest
 
 
 class TestDiffParser:

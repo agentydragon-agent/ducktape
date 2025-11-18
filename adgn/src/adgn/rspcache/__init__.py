@@ -14,12 +14,7 @@ import canonicaljson
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
-from openai.types.responses import (
-    Response as OpenAIResponse,
-    ResponseCreateParams,
-    ResponseStreamEvent,
-    ResponseUsage,
-)
+from openai.types.responses import Response as OpenAIResponse, ResponseCreateParams, ResponseStreamEvent, ResponseUsage
 
 from adgn.rspcache.models import (
     ErrorPayload,

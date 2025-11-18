@@ -13,6 +13,11 @@ dependencies = [
   "PyGObject>=3.40.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["gnome_terminal_profile_switcher*"]

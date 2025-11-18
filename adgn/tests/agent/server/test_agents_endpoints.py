@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import CancelledError
 
 import pytest
+
 from tests.agent.ui_asserts import assert_ui_items_have, item_user_message
 from tests.agent.ws_helpers import assert_finished, drain_until_match, is_ui_state_event
 from tests.llm.support.openai_mock import FakeOpenAIModel

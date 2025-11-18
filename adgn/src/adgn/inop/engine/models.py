@@ -3,10 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Any, Literal, NewType
+from typing import Annotated, Any, Literal, NewType, Self
 
-from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator, ValidationInfo
-from typing_extensions import Self
+from pydantic import BaseModel, Field, ValidationInfo, field_serializer, field_validator, model_validator
 
 # Removed claude_code_sdk dependency - using provider-independent types
 

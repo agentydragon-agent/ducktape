@@ -15,6 +15,7 @@ from openai.types.chat import (
 )
 from openai.types.responses import ResponseOutputMessage
 
+from adgn.llm.anthropic.text_extraction import extract_text_content
 from adgn.llm.anthropic.types import (
     ContentBlock as AnthropicContentBlock,
     Message as AnthropicMessage,
@@ -23,11 +24,9 @@ from adgn.llm.anthropic.types import (
     ToolResultBlock as AnthropicToolResultBlock,
     ToolUseBlock as AnthropicToolUseBlock,
 )
-from adgn.openai_utils.model import InputTextPart, SystemMessage, UserMessage, AssistantMessage as ResponsesAssistantMessage
+from adgn.openai_utils.model import AssistantMessage as ResponsesAssistantMessage, SystemMessage, UserMessage
 
-from adgn.llm.anthropic.text_extraction import extract_text_content
-
-from .openai_typing import dump_response_messages, parse_response_messages
+from .openai_typing import parse_response_messages
 
 
 def _join_texts(texts: list[str]) -> str:

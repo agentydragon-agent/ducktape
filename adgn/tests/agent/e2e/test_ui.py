@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from tests.agent.helpers import api_create_agent
 
 from adgn.mcp._shared.naming import build_mcp_function
+from tests.agent.helpers import api_create_agent
 
 pytestmark = pytest.mark.usefixtures()
 

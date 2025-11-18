@@ -8,9 +8,6 @@ import uuid
 
 from platformdirs import user_cache_dir
 import pytest
-from tests.conftest import make_container_opts
-from tests.fixtures.responses import ResponsesFactory
-from tests.llm.support.openai_mock import FakeOpenAIModel
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
@@ -21,6 +18,9 @@ from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, In
 from adgn.props.docker_env import WORKING_DIR, PropertiesDockerWiring
 from adgn.props.lint_issue import LinterController, LintSubmitState
 from adgn.props.models.issue import Occurrence
+from tests.conftest import make_container_opts
+from tests.fixtures.responses import ResponsesFactory
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 def _make_seq() -> list:

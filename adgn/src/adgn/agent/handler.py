@@ -134,7 +134,7 @@ class BaseHandler:
 
         Default: no-op.
         """
-        return None
+        return
 
     def on_before_sample(self) -> LoopDecision:
         """Called before each model sampling step to control loop behavior.
@@ -151,32 +151,32 @@ class BaseHandler:
 
         Default: no-op.
         """
-        return None
+        return
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
         """Called when assistant generates text.
 
         Default: no-op.
         """
-        return None
+        return
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
         """Called when the model requests a tool call.
 
         Default: no-op.
         """
-        return None
+        return
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         """Called when a tool call completes and returns a result.
 
         Default: no-op.
         """
-        return None
+        return
 
     def on_reasoning(self, item: ReasoningItem) -> None:
         """Called when the model emits reasoning tokens (extended thinking mode).
 
         Default: no-op.
         """
-        return None
+        return

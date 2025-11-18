@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-from collections.abc import Iterable
 from contextlib import suppress
 from datetime import datetime
 from importlib import resources
@@ -18,18 +17,15 @@ from openai import AsyncOpenAI
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageParam,
-    ChatCompletionMessageToolCallParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
-from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage
+from openai.types.responses import ResponseOutputMessage
 from pydantic import BaseModel, TypeAdapter
 import tiktoken
 
 from adgn.llm.anthropic.types import Message as AnthropicMessage, MessageRole as AnthropicMessageRole
 from adgn.openai_utils.client_factory import get_async_openai
-from adgn.openai_utils.model import FunctionCallItem, InputTextPart, ResponsesResult, SystemMessage, UserMessage
+from adgn.openai_utils.model import FunctionCallItem, ResponsesResult, SystemMessage, UserMessage
 from adgn.openai_utils.retry import chat_create_with_retries, responses_create_with_retries
 
 from .constants import TOOLS_HEADER
@@ -40,7 +36,6 @@ from .openai_typing import (
     chat_param_message_role,
     chat_param_message_tool_calls,
     dump_chat_messages,
-    dump_response_messages,
     iter_resolved_text,
     parse_chat_messages,
     parse_response_messages,
@@ -56,13 +51,11 @@ from .schemas import (
     EvalGradeRecord,
     EvalSampleRecord,
     Grade,
-    Request,
     ResponsesAssistantMessage,
     Sample,
 )
 from .templates import validate_template_file
-from .translation import anthropic_messages_to_standard, anthropic_to_chat_messages, anthropic_to_responses_input
-
+from .translation import anthropic_messages_to_standard, anthropic_to_chat_messages
 
 # Config
 DEFAULT_DATASET_PATH = Path(__file__).parent / "data" / "dataset.jsonl"

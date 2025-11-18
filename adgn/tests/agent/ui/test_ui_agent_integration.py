@@ -3,10 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-from tests.agent.ui.typed_asserts import assert_typed_items_have_one, is_assistant_markdown
-from tests.fixtures.responses import ResponsesFactory
-from tests.llm.support.openai_mock import make_mock
-
 from adgn.agent.agent import MiniCodex
 from adgn.agent.handler import ContinueDecision
 from adgn.agent.notifications.types import NotificationsBatch
@@ -15,6 +11,9 @@ from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.ui.server import make_ui_server
+from tests.agent.ui.typed_asserts import assert_typed_items_have_one, is_assistant_markdown
+from tests.fixtures.responses import ResponsesFactory
+from tests.llm.support.openai_mock import make_mock
 
 
 def _make_ui_behavior(rf: ResponsesFactory):

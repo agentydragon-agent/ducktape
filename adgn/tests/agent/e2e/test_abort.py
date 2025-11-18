@@ -4,6 +4,7 @@ import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
+
 from tests.agent.helpers import api_create_agent
 
 pytestmark = pytest.mark.usefixtures()
