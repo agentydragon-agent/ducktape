@@ -7,12 +7,10 @@ External agents connect using MCP-over-HTTP and get policy-gated access to tools
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from enum import StrEnum
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, NewType
+from typing import TYPE_CHECKING
 
 from docker import DockerClient
 from fastapi import FastAPI, Request, Response
@@ -20,6 +18,7 @@ from fastmcp.mcp_config import MCPConfig
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping
+from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.infrastructure import MCPInfrastructure, RunningInfrastructure
 from adgn.agent.runtime.sidecars import SidecarBundle
@@ -29,31 +28,26 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-AgentID = NewType("AgentID", str)
-
-
-class AgentMode(StrEnum):
-    """Agent mode enumeration."""
-
-    LOCAL = "local"
-    BRIDGE = "bridge"
-
 
 class AgentEntry:
-    """Complete agent entry in registry."""
+    """Complete agent entry in registry.
+
+    Can be created as a stub with just locks, then populated with infrastructure later.
+    """
 
     def __init__(
         self,
-        running: RunningInfrastructure,
-        compositor_app: FastAPI,
-        mode: AgentMode,
+        running: RunningInfrastructure | None = None,
+        compositor_app: FastAPI | None = None,
+        mode: AgentMode | None = None,
         local_runtime: LocalAgentRuntime | None = None,
     ):
         self.running = running
         self.compositor_app = compositor_app
         self.mode = mode
         self.local_runtime = local_runtime
-        self.lock = asyncio.Lock()
+        self.creation_lock = asyncio.Lock()
+        self.operation_lock = asyncio.Lock()
 
 
 async def create_bridge_infrastructure(
@@ -94,13 +88,18 @@ class InfrastructureRegistry:
         self.mcp_config = mcp_config
         self.initial_policy = initial_policy
         self._agents: dict[AgentID, AgentEntry] = {}
-        self._creation_locks: defaultdict[AgentID, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     async def get_or_create_infrastructure(self, agent_id: AgentID) -> tuple[RunningInfrastructure, FastAPI]:
         """Get or create infrastructure for an agent_id (creates bridge agent)."""
-        async with self._creation_locks[agent_id]:
-            if agent_id in self._agents:
-                entry = self._agents[agent_id]
+        # Create stub entry if this is first access
+        if agent_id not in self._agents:
+            self._agents[agent_id] = AgentEntry()
+
+        entry = self._agents[agent_id]
+
+        async with entry.creation_lock:
+            # Check if already populated
+            if entry.running is not None and entry.compositor_app is not None:
                 return (entry.running, entry.compositor_app)
 
             logger.info(f"Creating infrastructure for agent_id={agent_id}")
@@ -116,9 +115,11 @@ class InfrastructureRegistry:
 
             compositor_app: FastAPI = running.compositor.http_app()  # type: ignore[assignment]
 
-            self._agents[agent_id] = AgentEntry(
-                running=running, compositor_app=compositor_app, mode=AgentMode.BRIDGE
-            )
+            # Populate existing stub entry
+            entry.running = running
+            entry.compositor_app = compositor_app
+            entry.mode = AgentMode.BRIDGE
+
             logger.info(f"Infrastructure ready for agent_id={agent_id}")
             return (running, compositor_app)
 
@@ -136,16 +137,22 @@ class InfrastructureRegistry:
         return list(self._agents.keys())
 
     async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
-        """Raises KeyError if agent not in registry."""
+        """Raises KeyError if agent not in registry or not yet initialized."""
         if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        return self._agents[agent_id].running
+        running = self._agents[agent_id].running
+        if running is None:
+            raise KeyError(f"Agent {agent_id} infrastructure not yet initialized")
+        return running
 
     def get_agent_mode(self, agent_id: AgentID) -> AgentMode:
-        """Raises KeyError if agent not in registry."""
+        """Raises KeyError if agent not in registry or not yet initialized."""
         if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        return self._agents[agent_id].mode
+        mode = self._agents[agent_id].mode
+        if mode is None:
+            raise KeyError(f"Agent {agent_id} mode not yet initialized")
+        return mode
 
     def get_local_runtime(self, agent_id: AgentID) -> LocalAgentRuntime | None:
         """Returns None if agent is not local. Raises KeyError if agent not in registry."""
@@ -156,9 +163,15 @@ class InfrastructureRegistry:
     def register_local_agent(
         self, agent_id: AgentID, running: RunningInfrastructure, compositor_app: FastAPI, local_runtime: LocalAgentRuntime
     ) -> None:
-        self._agents[agent_id] = AgentEntry(
-            running=running, compositor_app=compositor_app, mode=AgentMode.LOCAL, local_runtime=local_runtime
-        )
+        # Create or update entry
+        if agent_id not in self._agents:
+            self._agents[agent_id] = AgentEntry()
+
+        entry = self._agents[agent_id]
+        entry.running = running
+        entry.compositor_app = compositor_app
+        entry.mode = AgentMode.LOCAL
+        entry.local_runtime = local_runtime
 
 
 async def create_mcp_server_app(auth_tokens_path: Path, registry: InfrastructureRegistry) -> FastAPI:

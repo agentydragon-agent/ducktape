@@ -9,11 +9,12 @@ from datetime import datetime
 from enum import StrEnum
 import json
 import logging
-from typing import TYPE_CHECKING, NewType
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
 from adgn.agent.approvals import ApprovalRequest
+from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist import ApprovalOutcome, ApprovalRecord, PolicyProposal
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -23,8 +24,6 @@ if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.server import InfrastructureRegistry
 
 logger = logging.getLogger(__name__)
-
-AgentID = NewType("AgentID", str)
 
 
 # Helper functions for data conversion
@@ -81,13 +80,6 @@ class DecisionType(StrEnum):
 
     APPROVED = "approved"
     REJECTED = "rejected"
-
-
-class AgentMode(StrEnum):
-    """Agent mode enumeration."""
-
-    LOCAL = "local"
-    BRIDGE = "bridge"
 
 
 # Tool input models
