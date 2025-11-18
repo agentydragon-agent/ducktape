@@ -4,6 +4,23 @@
 
 Replace custom WebSocket channels with a unified **`agents` MCP server** that provides cross-agent management. This single server routes to per-agent infrastructure and can be delegated to other agents for self-orchestration. The frontend becomes a simple MCP client, and the same server can later be given to agents for spawning, approving, and managing other agents.
 
+**Important**: This implementation may break backward compatibility with previous versions. Breaking changes are acceptable to achieve a cleaner architecture and better type safety.
+
+## Known Gaps & Future Work
+
+This plan focuses on **core approval and timeline functionality**. The following features are mentioned in mockups/API but are **out of scope** for initial phases:
+
+**Out of Scope (Phase 1-5)**:
+- Policy proposals resource (`resource://agents/{id}/policy/proposals`) - Policy server handles this
+- UI server blocks resource (`resource://ui/{id}/blocks`) - Will be integrated when UI server is attached
+- `send_message` tool - Only needed when UI server is attached
+- Policy editor UI component - Will reuse existing policy server resources
+
+**Clarifications**:
+- `AgentMode` already exists in `adgn/src/adgn/agent/mcp_bridge/types.py` - import it, don't redefine
+- `ToolCallEntry` (timeline display model) vs `ToolCallRecord` (persistence model) serve different purposes
+- Breaking backward compatibility is acceptable for cleaner architecture
+
 ## Architecture Overview
 
 ```
@@ -1560,6 +1577,14 @@ client.on('elicitation', async (request) => {
 - [ ] **Code quality**: No `getattr`, `hasattr`, or `setattr` - use proper attribute access
 - [ ] **Code quality**: Everything typed properly - no `Any` types
 - [ ] **Code quality**: No code smells flagged by `prompts/scans/*.md` prompts
+- [ ] **Data model refactors**: All TODOs from "Data Model Improvements & Bug Fixes" section completed:
+  - [ ] Fixed middleware bug (USER outcomes recorded correctly, not as POLICY outcomes)
+  - [ ] Tool arguments passed to `record_approval()` calls
+  - [ ] Execution start/completion tracked in middleware
+  - [ ] Typed fields added to persistence (Decision, ToolCallExecution models)
+  - [ ] Database schema updated for new fields
+  - [ ] `list_approvals()` returns enriched ToolCallRecord models
+  - [ ] ApprovalRecord renamed to ToolCallRecord (or kept with clear rationale)
 
 ### Phase 2 (Frontend)
 - [ ] MCP SDK installed
@@ -1607,6 +1632,23 @@ client.on('elicitation', async (request) => {
 
 ## Data Model Improvements & Bug Fixes
 
+### Type Consolidation
+
+**ApprovalToolCall vs ToolCall:**
+
+Two similar types exist:
+- `ApprovalToolCall` in `adgn/src/adgn/agent/approvals.py`: `{name, call_id, args_json}`
+- `ToolCall` in `adgn/src/adgn/agent/server/protocol.py`: `{type, name, call_id, args_json}`
+
+**Decision**: Consolidate to use `ToolCall` from `protocol.py` or rename `ApprovalToolCall` to `ToolCall` in `approvals.py`. The `protocol.py` version has an extra `type` discriminator field for union types. For the approval/persistence use case, we likely don't need the discriminator.
+
+**Recommendation**: Keep `ApprovalToolCall` in `approvals.py` but rename it to `ToolCall` since it's the simpler version without the discriminator. Update all references accordingly. If `protocol.py` needs the discriminated version, it can keep its own `ToolCall` with the discriminator.
+
+**TODO**:
+- [ ] Rename `ApprovalToolCall` → `ToolCall` in `approvals.py`
+- [ ] Update all imports and references (middleware, persistence, plan)
+- [ ] Verify no conflicts with `protocol.py` version
+
 ### ApprovalRecord Enhancement
 
 **Current Issues:**
@@ -1619,15 +1661,21 @@ client.on('elicitation', async (request) => {
 
 ```python
 class Decision(BaseModel):
-    """Decision made about a tool call (jointly optional fields)."""
-    outcome: ApprovalOutcome  # POLICY_ALLOW, USER_APPROVE, etc.
-    decided_at: datetime  # Also serves as execution start time
-    reason: str | None  # For denials/rejections
+    """Decision made about a tool call.
+
+    All fields are REQUIRED. The entire Decision object is optional on ToolCallRecord.
+    """
+    outcome: ApprovalOutcome  # POLICY_ALLOW, USER_APPROVE, etc. (required)
+    decided_at: datetime  # Also serves as execution start time (required)
+    reason: str | None  # For denials/rejections (required, but value can be None)
 
 class ToolCallExecution(BaseModel):
-    """Tool execution result (jointly optional fields)."""
-    completed_at: datetime
-    output: mcp_types.CallToolResult
+    """Tool execution result.
+
+    All fields are REQUIRED. The entire ToolCallExecution object is optional on ToolCallRecord.
+    """
+    completed_at: datetime  # Required
+    output: mcp_types.CallToolResult  # Required
 
 # TODO: Rename ApprovalRecord → ToolCallRecord
 class ToolCallRecord(BaseModel):
@@ -1636,8 +1684,8 @@ class ToolCallRecord(BaseModel):
     run_id: str | None
     agent_id: str | None
 
-    # Tool call info (reuse existing ApprovalToolCall type)
-    tool_call: ApprovalToolCall  # {name, call_id, args_json}
+    # Tool call info (reuse ToolCall type - formerly ApprovalToolCall)
+    tool_call: ToolCall  # {name, call_id, args_json}
 
     # Decision info (None if not yet decided)
     # decision.decided_at also serves as execution start time
@@ -1649,6 +1697,7 @@ class ToolCallRecord(BaseModel):
 ```
 
 **TODOs:**
+- [ ] **Type consolidation**: Rename `ApprovalToolCall` → `ToolCall` in `approvals.py` and update all references
 - [ ] Fix middleware bug: Lines 242, 254 in `adgn/src/adgn/mcp/policy_gateway/middleware.py`
   - USER approvals currently recorded as `POLICY_ALLOW` (should be `USER_APPROVE`)
   - USER rejections currently recorded as `POLICY_DENY_ABORT` (should be `USER_DENY_ABORT`)
@@ -1692,6 +1741,7 @@ These features would improve production deployment:
 - [ ] **MCP Elicitations**: Replace tool-based approvals with standardized elicitation workflow (Phase 6+)
 - [ ] **SQLAlchemy Migration**: Migrate from raw aiosqlite to SQLAlchemy ORM for better type safety and migrations
 - [ ] **Remove SidecarBundle**: Eliminate SidecarBundle abstraction - currently a no-op for external agents, adds unnecessary complexity
+- [ ] **Detailed Agent State**: Instead of state priority logic (WAITING_APPROVAL > EXECUTING > SAMPLING > IDLE), track detailed state including lists of pending approvals, executing tools, etc. This would provide richer UI information without needing priority resolution.
 
 ## References
 
