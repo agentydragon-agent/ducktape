@@ -278,8 +278,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             await app.state.stack.aclose()
             # Continue shutdown on errors; they will be logged by the caller
         for container in app.state.registry.list():
-            if container.ui:
-                await container.ui.manager.flush()
+            if container._ui_manager:
+                await container._ui_manager.flush()
         await app.state.registry.close_all()
 
     # Helper functions to reduce boilerplate
@@ -292,9 +292,9 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     def get_session(container, agent_id: str) -> AgentSession:
         """Get session from container, raising AgentSessionNotReadyError if not initialized."""
-        if container.session is None:
+        if container.runtime.session is None:
             raise AgentSessionNotReadyError(agent_id)
-        return container.session
+        return container.runtime.session
 
     @app.get("/", response_model=None)
     async def index() -> Response:
@@ -508,14 +508,14 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     async def api_set_policy(agent_id: str, body: SetPolicyBody = Body(...)) -> SimpleOk:  # noqa: B008
         container = await get_container(agent_id)
         try:
-            await container.policy_approver.set_policy_text(SetPolicyTextArgs(source=body.content))
+            await container.running.policy_approver.set_policy_text(SetPolicyTextArgs(source=body.content))
         except Exception as e:
             raise PolicyOperationError("policy_set", str(e)) from e
         # If proposal id provided, delete it from store
         if body.proposal_id:
             await app.state.persistence.delete_policy_proposal(agent_id, body.proposal_id)
         # Push snapshot (do not swallow errors)
-        if container.ui is not None:
+        if container._ui_manager is not None:
             sess = get_session(container, agent_id)
             await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
@@ -528,7 +528,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         if body.call_id not in sess.approval_hub._requests:
             raise ApprovalNotFoundError(body.call_id)
         sess.approval_hub.resolve(body.call_id, ContinueDecision())
-        if container.ui is not None:
+        if container._ui_manager is not None:
             await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
 
@@ -540,7 +540,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             raise ApprovalNotFoundError(body.call_id)
         # Map deny-continue to abort semantics at the middleware boundary
         sess.approval_hub.resolve(body.call_id, AbortTurnDecision(reason=f"User denied: {body.call_id}"))
-        if container.ui is not None:
+        if container._ui_manager is not None:
             await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
 
@@ -549,12 +549,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     async def api_approve_proposal(agent_id: str, proposal_id: str) -> SimpleOk:
         container = await get_container(agent_id)
         try:
-            await container.policy_approver.approve_proposal(ApproveProposalArgs(id=proposal_id))
+            await container.running.policy_approver.approve_proposal(ApproveProposalArgs(id=proposal_id))
         except Exception as e:
             raise PolicyOperationError("approve_proposal", str(e)) from e
         await app.state.persistence.approve_policy_proposal(agent_id, proposal_id)
         # Push snapshot update to UIs (do not swallow errors)
-        if container.ui is not None:
+        if container._ui_manager is not None:
             sess = get_session(container, agent_id)
             await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
@@ -563,7 +563,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     async def api_reject_proposal(agent_id: str, proposal_id: str) -> SimpleOk:
         container = await get_container(agent_id)
         try:
-            await container.policy_approver.reject_proposal(RejectProposalArgs(id=proposal_id))
+            await container.running.policy_approver.reject_proposal(RejectProposalArgs(id=proposal_id))
         except Exception as e:
             raise PolicyOperationError("reject_proposal", str(e)) from e
         return SimpleOk(ok=True)
@@ -575,7 +575,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         if body.call_id not in sess.approval_hub._requests:
             raise ApprovalNotFoundError(body.call_id)
         sess.approval_hub.resolve(body.call_id, AbortTurnDecision(reason="ui_deny"))
-        if container.ui is not None:
+        if container._ui_manager is not None:
             await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
 
@@ -672,9 +672,9 @@ def run_uvicorn(host: str = "127.0.0.1", port: int = 8765) -> None:
 
 # Small helpers to dedupe snapshot send pattern
 async def _send_snapshot(container, sess, sampling=None) -> None:
-    if container.ui is None:
+    if container._ui_manager is None:
         raise RuntimeError("UI manager not available for snapshot send")
-    await container.ui.manager.send_payload(await sess.build_snapshot(sampling=sampling))
+    await container._ui_manager.send_payload(await sess.build_snapshot(sampling=sampling))
 
 
 async def _send_snapshot_latest(container, sess) -> None:

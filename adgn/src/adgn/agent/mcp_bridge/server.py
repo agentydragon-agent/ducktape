@@ -55,7 +55,14 @@ async def create_bridge_infrastructure(
     return running
 
 
+def create_http_app(running):
+    """Create ASGI app from the compositor.
+
+    The compositor is already a FastMCP server, so we just expose it via HTTP.
+    """
+    return running.compositor.http_app()
+
+
 # TODO: Add authentication middleware for token → agent_id mapping
-# TODO: Add FastAPI app with /mcp SSE endpoint that proxies to running.compositor
 # TODO: Handle multi-tenancy (multiple external agents with different agent_ids)
 # TODO: Add cleanup for idle infrastructure instances
