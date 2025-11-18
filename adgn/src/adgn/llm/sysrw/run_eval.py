@@ -29,7 +29,7 @@ import tiktoken
 
 from adgn.llm.anthropic.types import Message as AnthropicMessage, MessageRole as AnthropicMessageRole
 from adgn.openai_utils.client_factory import get_async_openai
-from adgn.openai_utils.model import FunctionCallItem, ResponsesResult
+from adgn.openai_utils.model import FunctionCallItem, InputTextPart, ResponsesResult, SystemMessage, UserMessage
 from adgn.openai_utils.retry import chat_create_with_retries, responses_create_with_retries
 
 from .constants import TOOLS_HEADER
@@ -240,10 +240,9 @@ def parse_grade_from_responses(response: ResponsesResult) -> Grade:
 
     for item in response.output:
         if isinstance(item, FunctionCallItem) and item.name == "grade":
-            args = item.arguments
-            if isinstance(args, str):
-                return Grade.model_validate_json(args)
-            return Grade.model_validate(args or {})
+            if item.arguments is None:
+                return Grade.model_validate({})
+            return Grade.model_validate_json(item.arguments)
     raise RuntimeError("No grade tool call in responses output")
 
 
@@ -442,7 +441,7 @@ async def run_eval(
                     return None, None
                 input_prefix = responses_slice_prefix(request_input, prev_assistant_index)
                 # Prepend rewritten system entry
-                responses_input = [{"role": "system", "content": [{"type": "input_text", "text": new_system}]}, *input_prefix]
+                responses_input = [SystemMessage.text(new_system).model_dump(), *input_prefix]
                 base_request: dict[str, Any] = dict(payload) if isinstance(payload, dict) else {}
                 base_request["input"] = responses_input
                 if not base_request.get("model"):
@@ -508,11 +507,8 @@ async def run_eval(
             )
             grader_messages = build_grader_prompt(prefix_messages, bad_branch, new_assistant_message)
             grader_request_messages = [
-                {"role": msg["role"], "content": msg["content"]}
-                for msg in [
-                    {"role": "system", "content": grader_messages[0]["content"]},
-                    {"role": "user", "content": grader_messages[1]["content"]},
-                ]
+                SystemMessage.text(grader_messages[0]["content"]).model_dump(),
+                UserMessage.text(grader_messages[1]["content"]).model_dump(),
             ]
             input_tokens_grader = tokens_for_chat_messages(grader_request_messages)
             if input_tokens_grader > MAX_INPUT_TOKENS:
