@@ -29,13 +29,7 @@ from tests.agent.ws_helpers import (
     wait_for_accepted,
 )
 from tests.llm.support.openai_mock import FakeOpenAIModel
-
-# --- Type aliases ---
-
-# MCP server specs: either typed specs (BaseModel) or in-process server instances (FastMCP)
-# Typed specs are sent over HTTP and rehydrated server-side
-# FastMCP instances are mounted directly in-process
-McpServerSpecs = dict[str, BaseModel | FastMCP]
+from tests.types import McpServerSpecs
 
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
 
@@ -47,32 +41,44 @@ class _AgentHttp:
         self._c = client
         self._id = agent_id
 
+    def _url(self, path: str) -> str:
+        """Build agent-specific URL path."""
+        return f"/api/agents/{self._id}/{path}"
+
+    def post(self, path: str, **kwargs):
+        """POST to agent-specific endpoint."""
+        return self._c.post(self._url(path), **kwargs)
+
+    def get(self, path: str, **kwargs):
+        """GET from agent-specific endpoint."""
+        return self._c.get(self._url(path), **kwargs)
+
     # Chat
     def prompt(self, text: str):
-        return self._c.post(f"/api/agents/{self._id}/prompt", json={"text": text})
+        return self.post("prompt", json={"text": text})
 
     def abort(self):
-        return self._c.post(f"/api/agents/{self._id}/abort")
+        return self.post("abort")
 
     def snapshot(self):
-        return self._c.get(f"/api/agents/{self._id}/snapshot")
+        return self.get("snapshot")
 
     # Approvals
     def approve(self, call_id: str):
-        return self._c.post(f"/api/agents/{self._id}/approve", json={"call_id": call_id})
+        return self.post("approve", json={"call_id": call_id})
 
     def deny_continue(self, call_id: str):
-        return self._c.post(f"/api/agents/{self._id}/deny_continue", json={"call_id": call_id})
+        return self.post("deny_continue", json={"call_id": call_id})
 
     def deny_abort(self, call_id: str):
-        return self._c.post(f"/api/agents/{self._id}/deny_abort", json={"call_id": call_id})
+        return self.post("deny_abort", json={"call_id": call_id})
 
     # Policy
     def set_policy(self, content: str, proposal_id: str | None = None):
         body: dict[str, object] = {"content": content}
         if proposal_id is not None:
             body["proposal_id"] = proposal_id
-        return self._c.post(f"/api/agents/{self._id}/policy", json=body)
+        return self.post("policy", json=body)
 
 
 # Note: approval_engine fixture is provided globally in tests/conftest.py
@@ -292,8 +298,8 @@ def ws_hub(agent_app_client, patch_agent_build_client, responses_factory):
 
 
 @pytest.fixture
-def make_spy_spec() -> Callable[[list[str]], dict[str, FastMCP]]:
-    def _spec(counter: list[str]) -> dict[str, FastMCP]:
+def make_spy_spec() -> Callable[[list[str]], McpServerSpecs]:
+    def _spec(counter: list[str]) -> McpServerSpecs:
         mcp = FastMCP("spy")
 
         @mcp.tool()
@@ -421,10 +427,8 @@ def agent_ws_box(ws_session, make_agent_http):
                     if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
                         print(f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}")
                     # Auto-approve via REST when requested
-                    if getattr(p, "type", None) == "approval_pending" and auto_approve:
-                        # Type narrow to ApprovalPendingEvt
-                        if isinstance(p, ApprovalPendingEvt):
-                            http.approve(p.call_id)
+                    if isinstance(p, ApprovalPendingEvt) and auto_approve:
+                        http.approve(p.call_id)
                         out.append(p)
                         continue
                     out.append(p)

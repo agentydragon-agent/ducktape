@@ -26,6 +26,7 @@ from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.policy_gateway.middleware import install_policy_gateway
 from adgn.mcp.testing.simple_servers import make_simple_mcp
+from tests.types import McpServerSpecs
 
 # Top-level imports for fixtures
 from adgn.mcp.testing.typed_stubs import TypedClient
@@ -172,7 +173,7 @@ def make_pg_compositor(approval_hub: ApprovalHub):
     """
 
     @asynccontextmanager
-    async def _open(servers: dict[str, FastMCP], *, notifier=None):
+    async def _open(servers: McpServerSpecs, *, notifier=None):
         comp = Compositor("comp")
         # Mount all provided servers under the compositor
         for name, srv in servers.items():
@@ -212,7 +213,7 @@ def make_compositor():
     """
 
     @asynccontextmanager
-    async def _open(servers: dict[str, FastMCP]):
+    async def _open(servers: McpServerSpecs):
         comp = Compositor("comp")
         for name, srv in servers.items():
             if not isinstance(srv, FastMCP):
@@ -282,7 +283,7 @@ def make_buffered_client():
     """
 
     @asynccontextmanager
-    async def _open(servers: dict[str, FastMCP]):
+    async def _open(servers: McpServerSpecs):
         comp = Compositor("comp")
         for name, srv in servers.items():
             if not isinstance(srv, FastMCP):
@@ -407,10 +408,10 @@ def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemera
 
 
 @pytest.fixture
-def make_echo_spec(make_backend_server) -> Callable[[], dict[str, FastMCP]]:
+def make_echo_spec(make_backend_server) -> Callable[[], McpServerSpecs]:
     """Return a factory that produces in-proc FastMCP servers for echo tests."""
 
-    def _spec() -> dict[str, FastMCP]:
+    def _spec() -> McpServerSpecs:
         return {"echo": make_backend_server("echo")}
 
     return _spec
