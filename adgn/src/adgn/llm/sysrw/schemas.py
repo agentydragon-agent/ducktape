@@ -9,7 +9,7 @@ from openai.types.responses import ResponseCreateParams
 from pydantic import BaseModel, Field
 
 from adgn.llm.anthropic.types import Message as AnthropicMessage
-from adgn.openai_utils.model import ResponsesResult
+from adgn.openai_utils.model import InputItem, ResponsesResult
 
 # ------------------------
 # Crush (OpenAI Responses)
@@ -77,7 +77,7 @@ class ResponsesAssistantMessage(BaseModel):
     """Responses API assistant message from Crush samples."""
 
     kind: Literal["responses"] = "responses"
-    responses_input: list[dict[str, Any]]
+    responses_input: list[InputItem]
     responses_output: ResponsesResult
 
 
