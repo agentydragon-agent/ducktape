@@ -18,7 +18,6 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel, ConfigDict, TypeAdapter, field_serializer
 
-FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
 RESPONSE_ADAPTER: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
 ERROR_ADAPTER: TypeAdapter[ResponseError] = TypeAdapter(ResponseError)
 USAGE_ADAPTER: TypeAdapter[ResponseUsage] = TypeAdapter(ResponseUsage)

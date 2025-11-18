@@ -104,6 +104,11 @@ class ResponseFrame(Base):
 
     response: Mapped[Response] = relationship(back_populates="frames")
 
+    @property
+    def typed_frame(self) -> ResponseStreamEvent:
+        """Return the frame as a typed ResponseStreamEvent."""
+        return ResponseStreamEvent.model_validate(self.frame)
+
 
 class Response(Base):
     __tablename__ = "responses"
