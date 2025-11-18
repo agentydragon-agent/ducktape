@@ -91,6 +91,7 @@ async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | Non
 
     if runtime._channel_bundle is None:
         runtime._channel_bundle = ChannelBundle.for_agent_runtime(runtime)
+    assert runtime._channel_bundle is not None  # for mypy
     return runtime._channel_bundle
 
 

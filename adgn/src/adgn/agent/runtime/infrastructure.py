@@ -13,9 +13,9 @@ Sidecars (runtime, UI, chat, loop) are attached separately to RunningInfrastruct
 
 from __future__ import annotations
 
-import asyncio
 from contextlib import AsyncExitStack
 from datetime import UTC, datetime
+import json
 import logging
 import os
 
@@ -23,16 +23,12 @@ from docker import DockerClient
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 
-from adgn.agent.approvals import (
-    ApprovalHub,
-    ApprovalPolicyEngine,
-    load_default_policy_source,
-    make_policy_engine,
-)
+from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, load_default_policy_source, make_policy_engine
 from adgn.agent.persist import ApprovalOutcome
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.running import RunningInfrastructure
+from adgn.agent.server.channels.approvals import ApprovalBrief
 from adgn.agent.server.protocol import ApprovalPendingEvt
 from adgn.agent.server.runtime import ConnectionManager
 from adgn.mcp._shared.constants import (
@@ -120,15 +116,10 @@ class MCPInfrastructure:
             )
 
             # Phase 5: Install policy gateway
-            await self._install_policy_gateway(
-                compositor, approval_hub, policy_reader
-            )
+            await self._install_policy_gateway(compositor, approval_hub, policy_reader)
 
             # Phase 6: Mount standard meta servers (resources, compositor_meta, compositor_admin)
-            await mount_standard_inproc_servers(
-                compositor=compositor,
-                gateway_client=compositor_client,
-            )
+            await mount_standard_inproc_servers(compositor=compositor, gateway_client=compositor_client)
 
             return RunningInfrastructure(
                 compositor=compositor,
@@ -147,9 +138,7 @@ class MCPInfrastructure:
             await stack.aclose()
             raise
 
-    async def _setup_approval_infrastructure(
-        self,
-    ) -> tuple[ApprovalPolicyEngine, ApprovalHub]:
+    async def _setup_approval_infrastructure(self) -> tuple[ApprovalPolicyEngine, ApprovalHub]:
         """Resolves the initial policy source (from preset, initial_policy parameter,
         or default) and constructs the approval policy engine.
         """
@@ -159,29 +148,18 @@ class MCPInfrastructure:
         if row and row.metadata is not None:
             preset_name = row.metadata.preset
 
-        presets = (
-            discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
-            if preset_name
-            else {}
-        )
+        presets = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR")) if preset_name else {}
         preset = presets.get(preset_name) if preset_name else None
 
         chosen = (
             self.initial_policy
-            or (
-                preset.approval_policy
-                if (preset and preset.approval_policy)
-                else None
-            )
+            or (preset.approval_policy if (preset and preset.approval_policy) else None)
             or load_default_policy_source()
         )
 
         # Construct the approval engine with the chosen initial policy
         approval_engine = make_policy_engine(
-            agent_id=self.agent_id,
-            persistence=self.persistence,
-            docker_client=self.docker_client,
-            policy_source=chosen,
+            agent_id=self.agent_id, persistence=self.persistence, docker_client=self.docker_client, policy_source=chosen
         )
 
         # Create approval hub
@@ -190,10 +168,7 @@ class MCPInfrastructure:
         return (approval_engine, approval_hub)
 
     async def _mount_approval_policy_servers(
-        self,
-        compositor: Compositor,
-        approval_engine: ApprovalPolicyEngine,
-        stack: AsyncExitStack,
+        self, compositor: Compositor, approval_engine: ApprovalPolicyEngine, stack: AsyncExitStack
     ) -> tuple[PolicyReaderStub, PolicyApproverStub]:
         """Mounts:
             - approval_policy_reader (resources + decide tool)
@@ -204,30 +179,17 @@ class MCPInfrastructure:
             - policy_approver: for HTTP admin API
         """
         # Create and mount reader server
-        reader_server = ApprovalPolicyServer(
-            approval_engine,
-            name=APPROVAL_POLICY_SERVER_NAME_READER,
-        )
-        await compositor.mount_inproc(
-            APPROVAL_POLICY_SERVER_NAME_READER,
-            reader_server,
-        )
+        reader_server = ApprovalPolicyServer(approval_engine, name=APPROVAL_POLICY_SERVER_NAME_READER)
+        await compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_READER, reader_server)
 
         # Create and mount proposer server
         proposer_server = ApprovalPolicyProposerServer(
-            engine=approval_engine,
-            name=APPROVAL_POLICY_SERVER_NAME_PROPOSER,
+            engine=approval_engine, name=APPROVAL_POLICY_SERVER_NAME_PROPOSER
         )
-        await compositor.mount_inproc(
-            APPROVAL_POLICY_SERVER_NAME_PROPOSER,
-            proposer_server,
-        )
+        await compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_PROPOSER, proposer_server)
 
         # Create approver server (admin only, not mounted in compositor)
-        approver_server = ApprovalPolicyAdminServer(
-            engine=approval_engine,
-            name=APPROVAL_POLICY_SERVER_NAME_APPROVER,
-        )
+        approver_server = ApprovalPolicyAdminServer(engine=approval_engine, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
 
         # Create internal client to reader for policy gateway
         reader_client = Client(reader_server)
@@ -242,29 +204,21 @@ class MCPInfrastructure:
         return (policy_reader, policy_approver)
 
     async def _install_policy_gateway(
-        self,
-        compositor: Compositor,
-        approval_hub: ApprovalHub,
-        policy_reader: PolicyReaderStub,
+        self, compositor: Compositor, approval_hub: ApprovalHub, policy_reader: PolicyReaderStub
     ) -> None:
         """The policy gateway intercepts all tool calls and evaluates them
         against the active approval policy before execution.
         """
 
-        async def _pending_notifier(
-            call_id: str, tool_key: str, args_json: str | None
-        ) -> None:
+        async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
             """Notify UI of pending approval requests."""
             if self._connection_manager is not None:
+                args = json.loads(args_json) if args_json else {}
                 await self._connection_manager.send_payload(
-                    ApprovalPendingEvt(
-                        call_id=call_id, tool_key=tool_key, args_json=args_json
-                    )
+                    ApprovalPendingEvt(approval=ApprovalBrief(call_id=call_id, tool_key=tool_key, args=args))
                 )
 
-        async def _record_outcome(
-            call_id: str, tool_key: str, outcome: ApprovalOutcome
-        ) -> None:
+        async def _record_outcome(call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
             """Record approval outcome to persistence.
 
             Note: run_id is None since policy gateway doesn't have run context.
