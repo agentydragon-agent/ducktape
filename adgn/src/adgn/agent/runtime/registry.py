@@ -27,9 +27,10 @@ class UiFacet:
 
 @dataclass
 class AgentRuntime:
-    """Replaces the old AgentContainer with the new architecture:
-    - RunningInfrastructure (core MCP + policy gateway)
-    - LocalAgentRuntime (MiniCodex agent)
+    """Combines infrastructure and runtime for a running agent.
+
+    - RunningInfrastructure: Core MCP + policy gateway
+    - LocalAgentRuntime: MiniCodex agent
     """
 
     agent_id: str
@@ -141,10 +142,10 @@ class AgentRuntime:
 
 @dataclass
 class AgentRegistry:
-    """Registry for managing agent runtimes (new architecture).
+    """Registry for managing agent runtimes.
 
-    This uses the new MCPInfrastructure + LocalAgentRuntime architecture
-    instead of the old monolithic AgentContainer.
+    Uses MCPInfrastructure + LocalAgentRuntime architecture for
+    clean separation between infrastructure and agent layers.
     """
 
     persistence: SQLitePersistence
