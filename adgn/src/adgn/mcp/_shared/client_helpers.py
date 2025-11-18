@@ -106,7 +106,6 @@ async def call_tool_typed(
     out_type: type[T_Out],
     *,
     exclude_none: bool = True,
-    input_model: type[T_In] | None = None,
 ) -> T_Out:
     """Call an MCP tool with a Pydantic input and parse a Pydantic output.
 
@@ -118,7 +117,6 @@ async def call_tool_typed(
         payload: Pydantic model instance (validated input)
         out_type: Expected output model type
         exclude_none: Whether to exclude None values from serialization
-        input_model: Optional type to validate payload against
 
     Returns:
         Validated output model instance
@@ -126,10 +124,7 @@ async def call_tool_typed(
     Raises:
         ValidationError: If output doesn't match out_type
         RuntimeError: If server doesn't return structuredContent
-        TypeError: If input_model is specified and payload doesn't match
     """
-    if input_model is not None and not isinstance(payload, input_model):
-        raise TypeError(f"{name} expects {input_model.__name__}, got {type(payload).__name__}")
     args = payload.model_dump(exclude_none=exclude_none)
     _result, structured = await _call_structured(session, name, args)
     return TypeAdapter(out_type).validate_python(structured)

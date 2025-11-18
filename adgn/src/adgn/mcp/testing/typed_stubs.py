@@ -38,13 +38,11 @@ class ToolStub(Generic[T_Out]):
         out_type: type[T_Out],
         *,
         exclude_none: bool = True,
-        input_model: type[T_In] | None = None,
     ) -> None:
         self._session = session
         self._name = name
         self._out_type = out_type
         self._exclude_none = exclude_none
-        self._input_model: type[T_In] | None = input_model
 
     async def __call__(self, payload: T_In) -> T_Out:
         return await call_tool_typed(
@@ -53,7 +51,6 @@ class ToolStub(Generic[T_Out]):
             payload,
             self._out_type,
             exclude_none=self._exclude_none,
-            input_model=self._input_model,
         )
 
 
@@ -112,14 +109,11 @@ class TypedClient:
         self._models: dict[str, ToolModels] = {}
 
     def stub(self, name: str, out_type: type[T_Out]) -> ToolStub[T_Out]:
-        meta = self._models.get(name)
-        input_model = meta.Input if meta else None
         return ToolStub(
             self._session,
             name,
             out_type,
             exclude_none=self._exclude_none,
-            input_model=input_model,
         )
 
     @property
