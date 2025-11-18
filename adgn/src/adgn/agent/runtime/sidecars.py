@@ -1,106 +1,26 @@
 """Sidecar implementations for RunningInfrastructure.
 
 Sidecars add optional functionality to the core MCP infrastructure:
-- RuntimeExecSidecar: Docker-based code execution
 - UISidecar: WebSocket UI integration
 - ChatSidecar: Persisted conversation history
 - LoopControlSidecar: Agent loop control (local agents only)
 
 Each sidecar is composable - attach only what you need.
+
+Note: Docker execution is NOT a sidecar - it's configured via MCPConfig
+      as a standard MCP server (stdio transport to docker-exec-mcp).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from adgn.agent.runtime.images import resolve_runtime_image
 from adgn.agent.runtime.running import RunningInfrastructure, Sidecar
 from adgn.agent.server.bus import ServerBus
-from adgn.mcp._shared.constants import (
-    RUNTIME_EXEC_TOOL_NAME,
-    RUNTIME_SERVER_NAME,
-    UI_SERVER_NAME,
-)
-from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.constants import UI_SERVER_NAME
 from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.loop.server import make_loop_server
-from adgn.mcp.runtime.server import make_runtime_server
 from adgn.mcp.ui.server import make_ui_server
-
-
-class RuntimeExecSidecar(Sidecar):
-    """Sidecar for Docker-based runtime execution.
-
-    Provides a policy-gated `runtime_exec` tool that runs commands in
-    isolated Docker containers.
-
-    Args:
-        runtime_image: Docker image to use (default: resolve from config)
-        mount_repo: Whether to mount the repository into containers
-        repo_path: Path to repository (default: current working directory)
-        repo_bind: Container path to bind repo to (default: /workspace)
-        repo_mode: Mount mode - 'rw' or 'ro' (default: ro for safety)
-        scratch_path: Optional writable scratch directory in repo
-        scratch_bind: Container path for scratch directory (default: /scratch)
-    """
-
-    def __init__(
-        self,
-        runtime_image: str | None = None,
-        mount_repo: bool = False,
-        repo_path: Path | None = None,
-        repo_bind: str = "/workspace",
-        repo_mode: str = "ro",
-        scratch_path: Path | None = None,
-        scratch_bind: str = "/scratch",
-    ):
-        self.runtime_image = runtime_image
-        self.mount_repo = mount_repo
-        self.repo_path = repo_path
-        self.repo_bind = repo_bind
-        self.repo_mode = repo_mode
-        self.scratch_path = scratch_path
-        self.scratch_bind = scratch_bind
-
-    async def attach(self, running: RunningInfrastructure) -> None:
-        """Mount runtime exec server into compositor."""
-        image = self.runtime_image or resolve_runtime_image()
-
-        # Build volumes configuration
-        volumes = None
-        if self.mount_repo:
-            repo = self.repo_path or Path.cwd()
-            volumes = {
-                str(repo): {
-                    "bind": self.repo_bind,
-                    "mode": self.repo_mode,
-                }
-            }
-
-            # Add writable scratch directory if specified
-            if self.scratch_path:
-                scratch = repo / self.scratch_path
-                scratch.mkdir(parents=True, exist_ok=True)
-                volumes[str(scratch)] = {
-                    "bind": self.scratch_bind,
-                    "mode": "rw",
-                }
-
-        opts = ContainerOptions(
-            image=image,
-            volumes=volumes,
-            ephemeral=True,
-        )
-
-        runtime_server = make_runtime_server(opts)
-
-        # Verify expected tool name
-        tools = await runtime_server._tool_manager.list_tools()
-        assert RUNTIME_EXEC_TOOL_NAME in [t.name for t in tools], \
-            f"Expected tool {RUNTIME_EXEC_TOOL_NAME} not found in runtime server"
-
-        await running.compositor.mount_inproc(RUNTIME_SERVER_NAME, runtime_server)
 
 
 class UISidecar(Sidecar):
@@ -159,71 +79,49 @@ class SidecarBundle:
     """A collection of sidecars to attach together.
 
     Provides preset bundles for common configurations.
+
+    Note: Docker exec is NOT included in sidecars - configure it via
+          MCPConfig as a standard server. See examples in presets.
     """
 
     sidecars: list[Sidecar]
 
     @classmethod
-    def for_local_agent(
-        cls,
-        ui_bus: ServerBus,
-        mount_repo: bool = False,
-        repo_path: Path | None = None,
-    ) -> "SidecarBundle":
-        """Sidecars for a local agent: runtime, UI, chat, loop.
+    def for_local_agent(cls, ui_bus: ServerBus) -> "SidecarBundle":
+        """Sidecars for a local agent: UI, chat, loop.
 
         Args:
             ui_bus: ServerBus for WebSocket UI
-            mount_repo: Whether to mount repository into runtime containers
-            repo_path: Path to repository (default: cwd)
+
+        Note: Add docker exec via MCPConfig if needed:
+            {
+              "mcpServers": {
+                "docker": {
+                  "transport": "stdio",
+                  "command": "docker-exec-mcp",
+                  "args": ["--mount", "/path/to/repo:/workspace:ro"]
+                }
+              }
+            }
         """
-        return cls(
-            [
-                RuntimeExecSidecar(
-                    mount_repo=mount_repo,
-                    repo_path=repo_path,
-                    repo_mode="ro",  # Read-only for safety
-                    scratch_path=Path(".agent-scratch") if mount_repo else None,
-                ),
-                UISidecar(ui_bus),
-                ChatSidecar(),
-                LoopControlSidecar(),
-            ]
-        )
+        return cls([UISidecar(ui_bus), ChatSidecar(), LoopControlSidecar()])
 
     @classmethod
-    def for_external_agent(
-        cls,
-        mount_repo: bool = False,
-        repo_path: Path | None = None,
-        repo_mode: str = "ro",
-    ) -> "SidecarBundle":
-        """Sidecars for external agent: just runtime.
+    def for_external_agent(cls) -> "SidecarBundle":
+        """Sidecars for external agent: none needed.
 
-        Args:
-            mount_repo: Whether to mount repository into runtime containers
-            repo_path: Path to repository (default: cwd)
-            repo_mode: Mount mode - 'ro' (recommended) or 'rw'
+        External agents should configure docker exec via MCPConfig.
+        No UI, chat, or loop control needed for external agents.
         """
-        return cls(
-            [
-                RuntimeExecSidecar(
-                    mount_repo=mount_repo,
-                    repo_path=repo_path,
-                    repo_mode=repo_mode,
-                    scratch_path=Path(".agent-scratch") if mount_repo else None,
-                )
-            ]
-        )
+        return cls([])
 
     @classmethod
-    def for_testing(cls, mount_repo: bool = False) -> "SidecarBundle":
-        """Minimal sidecars for testing: just runtime.
+    def for_testing(cls) -> "SidecarBundle":
+        """Minimal sidecars for testing: none.
 
-        Args:
-            mount_repo: Whether to mount repository (usually False for tests)
+        Configure docker exec via MCPConfig if needed for tests.
         """
-        return cls([RuntimeExecSidecar(mount_repo=mount_repo)])
+        return cls([])
 
     async def attach_all(self, running: RunningInfrastructure) -> None:
         """Attach all sidecars in this bundle to the running infrastructure."""
