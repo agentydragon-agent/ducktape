@@ -46,45 +46,60 @@ class FinalResponseSnapshot(BaseModel):
 
 
 def stream_event_event_id(event: ResponseStreamEvent) -> str | None:
-    payload = event.model_dump(mode="python")
-    event_id = payload.get("event_id")
+    event_id = getattr(event, "event_id", None)
     return event_id if isinstance(event_id, str) else None
 
 
 def stream_event_response_id(event: ResponseStreamEvent) -> str | None:
-    payload = event.model_dump(mode="python")
-    response_id = payload.get("response_id")
+    # Try response_id first
+    response_id = getattr(event, "response_id", None)
     if isinstance(response_id, str):
         return response_id
-    response = payload.get("response")
+
+    # Try response.id
+    response = getattr(event, "response", None)
     if isinstance(response, Mapping):
         value = response.get("id")
         if isinstance(value, str):
             return value
+    elif hasattr(response, "id"):
+        value = getattr(response, "id", None)
+        if isinstance(value, str):
+            return value
+
     return None
 
 
 def stream_event_usage(event: ResponseStreamEvent) -> ResponseUsage | None:
-    payload = event.model_dump(mode="python")
-    usage_candidate = payload.get("usage")
+    # Try event.usage first
+    usage_candidate = getattr(event, "usage", None)
     if isinstance(usage_candidate, ResponseUsage):
         return usage_candidate
     if isinstance(usage_candidate, Mapping):
         return parse_usage(usage_candidate)
-    response = payload.get("response")
+
+    # Try event.response.usage
+    response = getattr(event, "response", None)
     if isinstance(response, Mapping):
         usage_value = response.get("usage")
         if isinstance(usage_value, ResponseUsage):
             return usage_value
         if isinstance(usage_value, Mapping):
             return parse_usage(usage_value)
+    elif hasattr(response, "usage"):
+        usage_value = getattr(response, "usage", None)
+        if isinstance(usage_value, ResponseUsage):
+            return usage_value
+        if isinstance(usage_value, Mapping):
+            return parse_usage(usage_value)
+
     return None
 
 
 def stream_event_final_response(event: ResponseStreamEvent) -> OpenAIResponse | None:
-    payload = event.model_dump(mode="python")
-    if (response_payload := payload.get("response")) is not None:
-        return parse_response(response_payload)
+    response = getattr(event, "response", None)
+    if response is not None:
+        return parse_response(response)
     return None
 
 
