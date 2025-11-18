@@ -2,7 +2,7 @@
 firecrawl_project_path: "/opt/firecrawl"
 firecrawl_port: 3002
 firecrawl_redis_port: 6379
-firecrawl_enable: true
+firecrawl_enable: false
 
 # Firecrawl configuration
 firecrawl_use_db_auth: "false"

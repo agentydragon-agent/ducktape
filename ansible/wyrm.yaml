@@ -87,9 +87,9 @@
       ansible.builtin.file:
         path: /code
         state: directory
-        owner: root
-        group: root
-        mode: '0755'
+        owner: "{{ my_user }}"
+        group: "{{ my_user }}"
+        mode: 0775
       become: true
       tags: [storage]
 
@@ -103,12 +103,22 @@
       become: true
       tags: [storage]
 
+    - name: Ensure /code is writable by {{ my_user }}
+      ansible.builtin.file:
+        path: /code
+        state: directory
+        owner: "{{ my_user }}"
+        group: "{{ my_user }}"
+        mode: 0775
+      become: true
+      tags: [storage]
+
     - name: Remove legacy Docker daemon configuration
       ansible.builtin.file:
         path: /etc/docker/daemon.json
         state: absent
       become: true
-      notify: restart docker
+      notify: Restart docker
       tags: [storage, docker]
 
     # pnpm is installed in dev_env-user.yml via github_release_install

@@ -46,6 +46,8 @@
           | .browser_download_url' {{ latest_release_json_path }}
       register: font_download_url
       changed_when: false
+      args:
+        executable: /bin/bash
 
     - name: Assert URL was found for {{ item }}
       ansible.builtin.assert:

@@ -78,14 +78,16 @@
 
 - name: VSCode
   install_handler:
-    ansible.builtin.apt: code
-    community.general.snap: { name: code, classic: true }
+    apt: code
+    snap:
+      name: code
+      classic: true
     use: snap
 
 - name: FreeCAD
   install_handler:
-    ansible.builtin.apt: freecad
-    community.general.snap: freecad
+    apt: freecad
+    snap: freecad
     use: snap
 
 
@@ -111,8 +113,8 @@
 
 - name: Telegram
   install_handler:
-    ansible.builtin.apt: telegram-desktop
-    community.general.snap: telegram-desktop
+    apt: telegram-desktop
+    snap: telegram-desktop
     flatpak: com.telegram.desktop
     # trying out on 2023-11-24: install Telegram as snap
     # if it still works in a couple months, keep it like this
@@ -124,8 +126,8 @@
 
 - name: Slack
   install_handler:
-    ansible.builtin.apt: slack-desktop
-    community.general.snap: slack
+    apt: slack-desktop
+    snap: slack
     # Slack has to be installed as an APT package, not as a Snap.
     #
     # Slack Snap on Pop OS won't start because it's confined from reading
@@ -139,9 +141,6 @@
   ansible.builtin.apt:
     name: discord
     state: present
-- name: Install WezTerm terminal
-  ansible.builtin.include_tasks: wezterm.yml
-
 # GNOME terminal configuration moved to legacy_without_home_manager/gui role
 
 # wm_datetime_format.yml removed - datetime configuration moved to legacy_without_home_manager/gui role

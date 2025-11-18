@@ -6,6 +6,8 @@
       ansible.builtin.shell: |
         set -o pipefail
         dbus-launch dconf dump /org/gnome/terminal/legacy/profiles:/ | grep visible-name
+      args:
+        executable: /bin/bash
       register: dconf_out
       changed_when: false
 

@@ -6,19 +6,32 @@
     - name: Assert role is not targeting root
       ansible.builtin.assert:
         that:
-          - ansible_user_id != root
+          - cli_effective_user != "root"
         fail_msg: "cli role must run under a non-root user"
 
     - name: Debug - Check if ducktape exists
       ansible.builtin.stat:
         path: "{{ cli_ducktape_path }}"
+        follow: true
       register: cli_ducktape_stat
+      become: true
+      become_user: "{{ cli_effective_user }}"
+      changed_when: false
+
+    - name: Debug - Report resolved ducktape path
+      ansible.builtin.debug:
+        msg: >-
+          Expecting Ducktape repo at {{ cli_ducktape_path }}
+          (exists={{ cli_ducktape_stat.stat.exists | default(false) }},
+          isdir={{ cli_ducktape_stat.stat.isdir | default(false) }},
+          owner={{ cli_ducktape_stat.stat.pw_name | default(unknown) }})
 
     - name: Assert ducktape repository exists
       ansible.builtin.assert:
         that:
-          - cli_ducktape_stat.stat.exists
-          - cli_ducktape_stat.stat.isdir
+          - cli_ducktape_stat.stat.exists | default(false)
+          - (cli_ducktape_stat.stat.isdir | default(false))
+            or (cli_ducktape_stat.stat.islnk | default(false))
         fail_msg: >-
           Ducktape repository must be cloned to {{ cli_ducktape_path }} before
           running this playbook. Run:
@@ -38,12 +51,12 @@
       args:
         executable: python3
       environment:
-        HOME: "/home/{{ cli_user | default(ansible_user_id) }}"
-        USER: "{{ cli_user | default(ansible_user_id) }}"
+        HOME: "{{ cli_effective_home }}"
+        USER: "{{ cli_effective_user }}"
         RCRC: "{{ cli_ducktape_path }}/dotfiles/rcrc"
       timeout: 10
       become: true
-      become_user: "{{ cli_user | default(ansible_user_id) }}"
+      become_user: "{{ cli_effective_user }}"
       register: cli_rcup_result
       failed_when: cli_rcup_result.rc != 0
       ignore_errors: true

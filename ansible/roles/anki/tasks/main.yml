@@ -85,7 +85,6 @@
 
     - name: Get latest Anki release URL
       ansible.builtin.shell: |
-        set -o pipefail
         jq --raw-output '
           .assets[]
           | select(.name | test("anki-launcher.tar.zst"))
