@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from openai.types.chat import (
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
 )
+
+from .schemas import AssistantMessage
 
 
 GRADER_SYSTEM_PROMPT = """You are an evaluator of AI coding assistants.
@@ -36,14 +37,14 @@ NEW_ASSISTANT_REPLY_JSON:
 
 def build_grader_prompt(
     prefix_messages: list[ChatCompletionMessageParam],
-    raw_bad_branch: list[ChatCompletionMessageParam],
-    raw_new_asst_obj: dict[str, Any],
+    bad_branch: list[ChatCompletionMessageParam],
+    new_asst_obj: AssistantMessage,
 ) -> list[ChatCompletionMessageParam]:
     """Build grader prompt from conversation prefix, bad branch, and new assistant response."""
     user_content = GRADER_USER_TEMPLATE.format(
         prefix_json=json.dumps(prefix_messages, ensure_ascii=False),
-        bad_branch_json=json.dumps(raw_bad_branch if raw_bad_branch is not None else [], ensure_ascii=False),
-        new_asst_json=json.dumps(raw_new_asst_obj or {}, ensure_ascii=False),
+        bad_branch_json=json.dumps(bad_branch, ensure_ascii=False),
+        new_asst_json=json.dumps(new_asst_obj.model_dump(), ensure_ascii=False),
     )
     return [
         ChatCompletionSystemMessageParam(role="system", content=GRADER_SYSTEM_PROMPT),

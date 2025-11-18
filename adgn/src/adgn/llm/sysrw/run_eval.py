@@ -40,7 +40,6 @@ from .openai_typing import (
     dump_chat_messages,
     dump_response_messages,
     iter_resolved_text,
-    message_content,
     parse_chat_messages,
     parse_response,
     parse_response_messages,
@@ -310,7 +309,7 @@ async def run_eval(
             role = response_message_role(it)
             if role not in (MessageRole.USER, MessageRole.ASSISTANT):
                 continue
-            content = message_content(it)
+            content = it.content
             if isinstance(content, list):
                 parts = parse_response_parts(content)
                 if parts is not None:
@@ -481,12 +480,11 @@ async def run_eval(
 
             # 4) Build grading inputs
             msgs = msgs_for_grader
-            raw_new_asst_obj = new_asst_obj.model_dump()
             base_prefix = msgs[:-2] if len(msgs) >= 2 else []
             base_prefix = [m for m in base_prefix if m.role != MessageRole.SYSTEM]
             # Compute bad branch (inclusive of complaint)
             complaint_idx = len(msgs) - 1
-            raw_bad_branch = msgs[prev_asst_idx_for_grader : complaint_idx + 1]
+            bad_branch = msgs[prev_asst_idx_for_grader : complaint_idx + 1]
             # Keep first 5 and last 5; truncate middle to fit token budget
             first = base_prefix[:5]
             tail = base_prefix[-5:] if len(base_prefix) > 5 else []
@@ -494,12 +492,12 @@ async def run_eval(
 
             # Build a provisional grader input to compute tokens; start from minimal
             prefix_msgs = [*first]  # start with first only
-            gi = build_grader_prompt(prefix_msgs + tail, raw_bad_branch, raw_new_asst_obj)
+            gi = build_grader_prompt(prefix_msgs + tail, bad_branch, new_asst_obj)
             tok = tokens_for_chat_messages(gi)
             # Greedily add middle messages until we hit budget
             added = 0
             for m in middle:
-                trial = build_grader_prompt([*prefix_msgs, m, *tail], raw_bad_branch, raw_new_asst_obj)
+                trial = build_grader_prompt([*prefix_msgs, m, *tail], bad_branch, new_asst_obj)
                 trial_tok = tokens_for_chat_messages(trial)
                 if trial_tok <= TARGET_PREFIX_TOKENS:
                     prefix_msgs.append(m)
@@ -524,7 +522,7 @@ async def run_eval(
                     "token_estimate": tok,
                 }
             )
-            grader_messages = build_grader_prompt(prefix_msgs, raw_bad_branch, raw_new_asst_obj)
+            grader_messages = build_grader_prompt(prefix_msgs, bad_branch, new_asst_obj)
             grader_input = [
                 {"role": m["role"], "content": m["content"]}
                 for m in [

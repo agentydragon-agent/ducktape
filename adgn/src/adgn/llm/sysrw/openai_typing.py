@@ -37,16 +37,7 @@ def response_message_role(message: ResponseOutputMessage) -> MessageRole:
 
 def chat_param_message_role(message: ChatCompletionMessageParam) -> MessageRole:
     """Extract role from a ChatCompletionMessageParam."""
-    role_str = message["role"]
-    try:
-        return MessageRole(role_str)
-    except ValueError as e:
-        raise ValueError(f"Unknown ChatCompletionMessageParam role: {role_str}") from e
-
-
-def message_content(message: ResponseOutputMessage) -> Any:
-    """Extract content from a validated ResponseOutputMessage."""
-    return message.content
+    return MessageRole(message["role"])
 
 
 def parse_response_parts(content: Any) -> list[ResponseContentPart] | None:
@@ -68,10 +59,7 @@ def iter_resolved_text(parts: list[ResponseContentPart]) -> Iterator[str]:
 def chat_param_message_tool_calls(message: ChatCompletionMessageParam) -> list[ChatCompletionMessageToolCallParam]:
     """Extract tool calls from a ChatCompletionMessageParam."""
     # Only assistant messages can have tool_calls
-    try:
-        role = MessageRole(message["role"])
-    except ValueError as e:
-        raise ValueError(f"Unknown ChatCompletionMessageParam role: {message['role']}") from e
+    role = MessageRole(message["role"])
 
     match role:
         case MessageRole.ASSISTANT:
@@ -102,10 +90,7 @@ def response_message_content_as_text(message: ResponseOutputMessage) -> str:
 
 def chat_param_message_content_as_text(message: ChatCompletionMessageParam) -> str:
     """Extract text content from a ChatCompletionMessageParam."""
-    try:
-        role = MessageRole(message["role"])
-    except ValueError as e:
-        raise ValueError(f"Unknown ChatCompletionMessageParam role: {message['role']}") from e
+    role = MessageRole(message["role"])
 
     match role:
         case MessageRole.ASSISTANT:
