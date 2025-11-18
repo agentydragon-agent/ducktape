@@ -163,7 +163,7 @@ class SessionChannelManager(ChannelConnectionManager):
     async def _build_snapshot(self, session: AgentSession) -> SessionSnapshot:
         """Build session snapshot from session state."""
         session_state = SessionState(
-            session_id=session.session_id if hasattr(session, "session_id") else "default",
+            session_id=getattr(session, "session_id", "default"),
             version="1.0.0",
             capabilities=[],
         )
@@ -177,3 +177,29 @@ class SessionChannelManager(ChannelConnectionManager):
             )
 
         return SessionSnapshot(session_state=session_state, run_state=run_state)
+
+
+# ============================================================================
+# WebSocket Endpoint
+# ============================================================================
+
+
+def register_endpoint(app):
+    """Register session channel WebSocket endpoint."""
+    from fastapi import FastAPI, WebSocket
+
+    from adgn.agent.server.channels.common import handle_channel_ws
+
+    @app.websocket("/ws/session")
+    async def ws_session(ws: WebSocket) -> None:
+        """Session channel - agent execution state and transcript."""
+        await handle_channel_ws(
+            ws,
+            "session",
+            ws.query_params.get("agent_id"),
+            lambda b: b.session,
+            lambda b, aid: b.session.send_snapshot(app.state.registry.get(aid).runtime.session)
+            if app.state.registry.get(aid) and app.state.registry.get(aid).runtime.session
+            else None,
+            app,
+        )
