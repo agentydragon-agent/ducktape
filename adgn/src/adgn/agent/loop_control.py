@@ -23,8 +23,6 @@ from adgn.openai_utils.model import (
     AssistantMessage,
     AssistantMessageOut,
     FunctionCallItem,
-    FunctionCallOutputItem,
-    InputItem,
     SystemMessage,
     UserMessage,
 )
@@ -80,7 +78,8 @@ class NoLoopDecision:
 NormalInjectableItem = UserMessage | AssistantMessage | SystemMessage | FunctionCallItem
 
 # Items valid for skip-sampling path (skip_sampling=True): treated as synthetic model output
-SyntheticOutputItem = AssistantMessageOut | FunctionCallItem | FunctionCallOutputItem
+# Note: FunctionCallOutputItem excluded - those only come from actual model responses or MCP execution
+SyntheticOutputItem = AssistantMessageOut | FunctionCallItem
 
 # Union of all injectable items (ReasoningItem excluded - must come from model)
 InjectableItem = NormalInjectableItem | SyntheticOutputItem
