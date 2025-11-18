@@ -2,56 +2,30 @@ from __future__ import annotations
 
 from typing import Final
 
-from fastmcp.client import Client
-
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
-from adgn.mcp._shared.client_helpers import call_simple_ok
 from adgn.mcp._shared.constants import APPROVAL_POLICY_SERVER_NAME_APPROVER, APPROVAL_POLICY_SERVER_NAME_READER
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.testing.server_stubs import ServerStub
-from adgn.mcp.testing.typed_stubs import TypedClient
 
 READER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME_READER
 APPROVER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME_APPROVER
 
 
-class PolicyReaderClient(ServerStub):
+class PolicyReaderStub(ServerStub):
     """Typed stub for the approval policy reader MCP server."""
 
     async def decide(self, input: PolicyRequest) -> PolicyResponse:
         raise NotImplementedError  # Auto-wired at runtime
 
-    @classmethod
-    def from_client(cls, client: Client) -> PolicyReaderClient:
-        """Create a PolicyReaderClient from a raw MCP client."""
-        return cls(TypedClient(client))
 
+class PolicyApproverStub(ServerStub):
+    """Typed stub for the approval policy approver MCP server."""
 
-class PolicyApproverClient:
-    """Typed wrapper for the approval policy approver MCP client."""
+    async def set_policy_text(self, input: SetPolicyTextArgs) -> None:
+        raise NotImplementedError  # Auto-wired at runtime
 
-    def __init__(self, client: Client) -> None:
-        self._client = client
+    async def approve_proposal(self, input: ApproveProposalArgs) -> None:
+        raise NotImplementedError  # Auto-wired at runtime
 
-    @property
-    def name(self) -> str:
-        return APPROVER_SERVER_NAME
-
-    @property
-    def client(self) -> Client:
-        return self._client
-
-    async def set_policy_text(self, source: str) -> None:
-        """Set active policy text directly after self-check.
-
-        Accepts raw policy source; constructs the server's typed input.
-        """
-        await call_simple_ok(
-            self._client, name="set_policy_text", arguments=SetPolicyTextArgs(source=source).model_dump()
-        )
-
-    async def approve_proposal(self, args: ApproveProposalArgs) -> None:
-        await call_simple_ok(self._client, name="approve_proposal", arguments=args.model_dump())
-
-    async def reject_proposal(self, args: RejectProposalArgs) -> None:
-        await call_simple_ok(self._client, name="reject_proposal", arguments=args.model_dump())
+    async def reject_proposal(self, input: RejectProposalArgs) -> None:
+        raise NotImplementedError  # Auto-wired at runtime

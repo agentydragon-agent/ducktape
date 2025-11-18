@@ -26,7 +26,7 @@ from adgn.mcp._shared.constants import (
     POLICY_EVALUATOR_ERROR_MSG,
     POLICY_GATEWAY_STAMP_KEY,
 )
-from adgn.mcp.approval_policy.clients import PolicyReaderClient
+from adgn.mcp.approval_policy.clients import PolicyReaderStub
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ class PolicyGatewayMiddleware(Middleware):
         hub: ApprovalHub,
         pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
         record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
-        policy_reader: PolicyReaderClient,
+        policy_reader: PolicyReaderStub,
     ) -> None:
         self._hub = hub
         self._notify = pending_notifier
@@ -268,7 +268,7 @@ def install_policy_gateway(
     comp: Any,
     *,
     hub: ApprovalHub,
-    policy_reader: PolicyReaderClient,
+    policy_reader: PolicyReaderStub,
     pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
     record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
 ) -> None:

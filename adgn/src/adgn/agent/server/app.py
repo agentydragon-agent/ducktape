@@ -34,8 +34,8 @@ from adgn.agent.server.runtime import AgentSession
 from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
 from adgn.agent.server.ws import register_ws
 from adgn.mcp._shared.types import SimpleOk
-from adgn.mcp.approval_policy.clients import PolicyApproverClient
-from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs
+from adgn.mcp.approval_policy.clients import PolicyApproverStub
+from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 
 PROTOCOL_VERSION = "1.0.0"
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -474,9 +474,9 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
         except KeyError as e:
             raise HTTPException(status_code=404, detail="agent_not_found") from e
-        approver_client: PolicyApproverClient = container.policy_approver
+        approver_client: PolicyApproverStub = container.policy_approver
         try:
-            await approver_client.set_policy_text(body.content)
+            await approver_client.set_policy_text(SetPolicyTextArgs(source=body.content))
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"policy_set_failed: {e}") from e
         # If proposal id provided, delete it from store
@@ -531,7 +531,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
         except KeyError as e:
             raise HTTPException(status_code=404, detail="agent_not_found") from e
-        approver_client: PolicyApproverClient = container.policy_approver
+        approver_client: PolicyApproverStub = container.policy_approver
         try:
             await approver_client.approve_proposal(ApproveProposalArgs(id=proposal_id))
         except Exception as e:
@@ -551,7 +551,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             container = await app.state.registry.ensure_live(agent_id, with_ui=True)
         except KeyError as e:
             raise HTTPException(status_code=404, detail="agent_not_found") from e
-        approver_client: PolicyApproverClient = container.policy_approver
+        approver_client: PolicyApproverStub = container.policy_approver
         try:
             await approver_client.reject_proposal(RejectProposalArgs(id=proposal_id))
         except Exception as e:

@@ -35,7 +35,8 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp.approval_policy.clients import PolicyApproverClient, PolicyReaderClient
+from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
+from adgn.mcp.testing.typed_stubs import TypedClient
 from adgn.mcp.approval_policy.server import (
     ApprovalPolicyAdminServer,
     ApprovalPolicyProposerServer,
@@ -184,11 +185,11 @@ class AgentContainer:
     _mcp_client: Client | None = field(default=None, init=False)
     # No direct reference to resources server; mounted via helper
     # Policy clients (managed via AsyncExitStack)
-    _policy_reader: PolicyReaderClient | None = field(default=None, init=False)
-    _policy_approver: PolicyApproverClient | None = field(default=None, init=False)
+    _policy_reader: PolicyReaderStub | None = field(default=None, init=False)
+    _policy_approver: PolicyApproverStub | None = field(default=None, init=False)
 
     @property
-    def policy_approver(self) -> PolicyApproverClient:
+    def policy_approver(self) -> PolicyApproverStub:
         if self._policy_approver is None:
             raise RuntimeError("policy approver client not initialized")
         return self._policy_approver
@@ -510,12 +511,12 @@ class AgentContainer:
         # Create in-proc client to the reader for policy gateway middleware
         _policy_reader_client = Client(reader_server)
         await self._stack.enter_async_context(_policy_reader_client)
-        policy_reader = PolicyReaderClient.from_client(_policy_reader_client)
+        policy_reader = PolicyReaderStub(TypedClient(_policy_reader_client))
         self._policy_reader = policy_reader
         # Create in-proc client for admin operations and keep on container
         _policy_approver_client = Client(approver_server)
         await self._stack.enter_async_context(_policy_approver_client)
-        self._policy_approver = PolicyApproverClient(_policy_approver_client)
+        self._policy_approver = PolicyApproverStub(TypedClient(_policy_approver_client))
 
         if self.with_ui and ui_bus is not None:
             # UI server (in-proc)

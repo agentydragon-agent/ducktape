@@ -9,6 +9,7 @@ from tests.fixtures.responses import ResponsesFactory
 from tests.llm.support.openai_mock import make_mock
 
 from adgn.agent.runtime.container import build_container
+from adgn.mcp.approval_policy.server import SetPolicyTextArgs
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult
 
 
@@ -41,7 +42,7 @@ async def test_notifications_handler_in_container_inserts_system_message(
 
     try:
         # Trigger a policy update via admin MCP client (out-of-band notification)
-        await container.policy_approver.set_policy_text(policy_allow_all)
+        await container.policy_approver.set_policy_text(SetPolicyTextArgs(source=policy_allow_all))
 
         # Run one turn; first sampling triggers notifier tool; second should include notification insert
         assert container.session is not None
