@@ -1628,8 +1628,9 @@ class ToolCallRecord(BaseModel):
 
     # Execution tracking (enables EXECUTING state detection)
     execution_started_at: datetime | None
-    execution_completed_at: datetime | None
-    tool_output: mcp_types.CallToolResult | None  # Tool execution result
+    execution_completed_at: datetime | None  # Jointly optional with tool_output
+    tool_output: mcp_types.CallToolResult | None  # Jointly optional with execution_completed_at
+    # Note: If execution_completed_at is set, tool_output should also be set (and vice versa)
 ```
 
 **TODOs:**
@@ -1661,7 +1662,7 @@ class ToolCallRecord(BaseModel):
 GET resource://agents/{id}/state
   → {
       agent_id: string,
-      state: "WAITING_APPROVAL" | "EXECUTING" | "SAMPLING" | "IDLE",
+      state: "waiting_approval" | "executing" | "sampling" | "idle",
       pending_approvals_count: number,
       executing_tools: string[],  // call_ids of executing tools
       is_sampling: boolean  // local agents only
