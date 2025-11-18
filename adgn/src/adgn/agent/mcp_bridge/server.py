@@ -26,19 +26,7 @@ async def create_bridge_infrastructure(
     mcp_config: MCPConfig,
     initial_policy: str | None = None,
 ):
-    """Create and start infrastructure for HTTP MCP bridge.
-
-    Args:
-        agent_id: Agent identifier (from auth token mapping)
-        persistence: SQLite persistence layer
-        docker_client: Docker client for policy evaluation
-        mcp_config: MCP servers to mount (e.g., docker exec with repo mount)
-        initial_policy: Optional initial policy (defaults to built-in)
-
-    Returns:
-        RunningInfrastructure ready to be exposed via HTTP
-
-    Example mcp_config for repo-mounted docker exec:
+    """Example mcp_config for repo-mounted docker exec:
         {
           "mcpServers": {
             "docker": {

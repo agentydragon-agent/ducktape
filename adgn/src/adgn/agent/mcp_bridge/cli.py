@@ -61,12 +61,7 @@ def serve(
     port: int,
     initial_policy: Path | None,
 ):
-    """Start HTTP MCP Bridge server.
-
-    The server exposes a Compositor (FastMCP server) over HTTP/SSE transport.
-    External agents connect via MCP-over-HTTP and get policy-gated access to tools.
-
-    Example:
+    """Example:
         # Minimal (no docker exec)
         adgn-mcp-bridge serve --agent-id external-agent
 
@@ -117,7 +112,6 @@ async def _run_server(
     port: int,
     initial_policy: str | None,
 ):
-    """Run the HTTP MCP bridge server."""
     # Initialize persistence
     db_path.parent.mkdir(parents=True, exist_ok=True)
     persistence = SQLitePersistence(str(db_path))

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from docker import DockerClient
-from fastmcp.mcp_config import MCPConfig
+from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.local_runtime import LocalAgentRuntime
@@ -16,9 +17,7 @@ from .builder import build_local_agent
 
 @dataclass
 class AgentRuntime:
-    """Container for running agent (infrastructure + runtime).
-
-    This replaces the old AgentContainer with the new architecture:
+    """Replaces the old AgentContainer with the new architecture:
     - RunningInfrastructure (core MCP + policy gateway)
     - LocalAgentRuntime (MiniCodex agent)
     """
@@ -26,11 +25,96 @@ class AgentRuntime:
     agent_id: str
     running: RunningInfrastructure
     runtime: LocalAgentRuntime
+    _ui_manager = None  # Set from builder if UI attached
+    _ui_bus = None  # Set from builder if UI attached
 
-    async def close(self) -> None:
-        """Close agent runtime and infrastructure."""
+    @property
+    def ui(self):
+        """UI facet for backward compatibility."""
+        if self._ui_manager is None or self._ui_bus is None:
+            return None
+        from adgn.agent.runtime.container import UiFacet
+        return UiFacet(manager=self._ui_manager, ui_bus=self._ui_bus)
+
+    @property
+    def session(self):
+        """Agent session from runtime."""
+        return self.runtime.session
+
+    @property
+    def policy_approver(self):
+        """Policy approver stub from infrastructure."""
+        return self.running.policy_approver
+
+    async def close(self):
+        """Close both runtime and infrastructure."""
         await self.runtime.close()
-        await self.running.close()
+        result = await self.running.close()
+        return {"drained": result.drained, "error": result.error}
+
+    async def reconfigure_mcp(
+        self,
+        *,
+        mcp_config: MCPConfig | None = None,
+        attach: dict[str, MCPConfig] | None = None,
+        detach: list[str] | None = None,
+    ) -> None:
+        """Reconfigure MCP servers at runtime."""
+        from adgn.mcp.compositor.clients import CompositorAdminClient
+
+        admin = CompositorAdminClient(self.running.compositor_client)
+        current_specs = await self.running.compositor.mount_specs()
+
+        # Full replace
+        if mcp_config is not None:
+            desired = mcp_config.mcpServers or {}
+            # Detach missing
+            miss = list(set(current_specs.keys()) - set(desired.keys()))
+            if miss:
+                await asyncio.gather(*(admin.detach_server(name=n) for n in miss))
+            # Attach new or changed
+            attach_args: list[tuple[str, MCPServerTypes]] = []
+            for name, spec in desired.items():
+                prev = current_specs.get(name)
+                if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
+                    attach_args.append((name, spec))
+            if attach_args:
+                await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args))
+
+        # Incremental detach
+        if detach:
+            await asyncio.gather(*(admin.detach_server(name=n) for n in detach))
+
+        # Incremental attach
+        if attach:
+            for _, cfg in attach.items():
+                latest_specs = await self.running.compositor.mount_specs()
+                attach_args2: list[tuple[str, MCPServerTypes]] = []
+                for name, spec in (cfg.mcpServers or {}).items():
+                    prev = latest_specs.get(name)
+                    if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
+                        attach_args2.append((name, spec))
+                if attach_args2:
+                    await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args2))
+
+    async def attach_mcp(self, name: str, spec: MCPServerTypes) -> None:
+        """Attach a single MCP server (policy-gated)."""
+        await self.running.attach_mcp(name, spec)
+
+    async def detach_mcp(self, name: str) -> None:
+        """Detach a single MCP server (policy-gated)."""
+        await self.running.detach_mcp(name)
+
+    async def sampling_snapshot(self):
+        """Get sampling snapshot from compositor."""
+        return await self.running.compositor.sampling_snapshot()
+
+    async def sampling_snapshot_incremental(self) -> None:
+        """Send incremental sampling snapshot to UI."""
+        if not self.ui or not self.session:
+            return
+        snap = await self.running.compositor.sampling_snapshot()
+        await self.ui.manager.send_payload(await self.session.build_snapshot(sampling=snap))
 
 
 @dataclass
@@ -63,17 +147,12 @@ class AgentRegistry:
         connection_manager=None,
         system: str | None = None,
     ) -> AgentRuntime:
-        """Create and start a new agent runtime.
+        # Create ui_bus if needed for UI
+        if with_ui and ui_bus is None:
+            from adgn.agent.server.bus import ServerBus
+            ui_bus = ServerBus()
 
-        Args:
-            agent_id: Agent identifier
-            mcp_config: MCP servers to mount
-            with_ui: Whether to attach UI sidecar
-            ui_bus: ServerBus for UI (required if with_ui=True)
-            connection_manager: Connection manager for UI notifications
-            system: Optional system prompt override
-        """
-        running, runtime = await build_local_agent(
+        running, runtime, ui_bus_out, conn_mgr_out = await build_local_agent(
             agent_id=agent_id,
             mcp_config=mcp_config,
             persistence=self.persistence,
@@ -87,6 +166,9 @@ class AgentRegistry:
         )
 
         agent_runtime = AgentRuntime(agent_id=agent_id, running=running, runtime=runtime)
+        # Set UI components for backward compatibility
+        agent_runtime._ui_manager = conn_mgr_out
+        agent_runtime._ui_bus = ui_bus_out
         self._items[agent_id] = agent_runtime
         return agent_runtime
 
@@ -98,10 +180,7 @@ class AgentRegistry:
         ui_bus=None,
         connection_manager=None,
     ) -> AgentRuntime:
-        """Return a live agent runtime, starting it from persisted specs if needed.
-
-        Raises KeyError if the agent does not exist in persistence.
-        """
+        """Raises KeyError if the agent does not exist in persistence."""
         if (agent_runtime := self.get(agent_id)) is not None:
             return agent_runtime
 
