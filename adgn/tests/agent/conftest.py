@@ -47,36 +47,32 @@ class _AgentHttp:
         self._c = client
         self._id = agent_id
 
-    def _ep(self, suffix: str | None = None) -> str:
-        base = f"/api/agents/{self._id}"
-        return f"{base}/{suffix}" if suffix else base
-
     # Chat
     def prompt(self, text: str):
-        return self._c.post(self._ep("prompt"), json={"text": text})
+        return self._c.post(f"/api/agents/{self._id}/prompt", json={"text": text})
 
     def abort(self):
-        return self._c.post(self._ep("abort"))
+        return self._c.post(f"/api/agents/{self._id}/abort")
 
     def snapshot(self):
-        return self._c.get(self._ep("snapshot"))
+        return self._c.get(f"/api/agents/{self._id}/snapshot")
 
     # Approvals
     def approve(self, call_id: str):
-        return self._c.post(self._ep("approve"), json={"call_id": call_id})
+        return self._c.post(f"/api/agents/{self._id}/approve", json={"call_id": call_id})
 
     def deny_continue(self, call_id: str):
-        return self._c.post(self._ep("deny_continue"), json={"call_id": call_id})
+        return self._c.post(f"/api/agents/{self._id}/deny_continue", json={"call_id": call_id})
 
     def deny_abort(self, call_id: str):
-        return self._c.post(self._ep("deny_abort"), json={"call_id": call_id})
+        return self._c.post(f"/api/agents/{self._id}/deny_abort", json={"call_id": call_id})
 
     # Policy
     def set_policy(self, content: str, proposal_id: str | None = None):
         body: dict[str, object] = {"content": content}
         if proposal_id is not None:
             body["proposal_id"] = proposal_id
-        return self._c.post(self._ep("policy"), json=body)
+        return self._c.post(f"/api/agents/{self._id}/policy", json=body)
 
 
 # Note: approval_engine fixture is provided globally in tests/conftest.py
