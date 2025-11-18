@@ -4,7 +4,18 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
-from openai.types.responses import Response as OpenAIResponse, ResponseError, ResponseStreamEvent, ResponseUsage
+from openai.types.responses import (
+    Response as OpenAIResponse,
+    ResponseCompletedEvent,
+    ResponseCreatedEvent,
+    ResponseError,
+    ResponseFailedEvent,
+    ResponseIncompleteEvent,
+    ResponseInProgressEvent,
+    ResponseQueuedEvent,
+    ResponseStreamEvent,
+    ResponseUsage,
+)
 from pydantic import BaseModel, ConfigDict, TypeAdapter, field_serializer
 
 FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
@@ -46,72 +57,54 @@ class FinalResponseSnapshot(BaseModel):
 
 
 def stream_event_event_id(event: ResponseStreamEvent) -> str | None:
-    event_id = getattr(event, "event_id", None)
-    return event_id if isinstance(event_id, str) else None
+    # ResponseStreamEvent doesn't have an event_id field in the OpenAI SDK
+    # All event types have sequence_number, using that as identifier
+    return str(event.sequence_number)
 
 
 def stream_event_response_id(event: ResponseStreamEvent) -> str | None:
-    # Try response_id first
-    response_id = getattr(event, "response_id", None)
-    if isinstance(response_id, str):
-        return response_id
-
-    # Try response.id
-    response = getattr(event, "response", None)
-    if isinstance(response, Mapping):
-        value = response.get("id")
-        if isinstance(value, str):
-            return value
-    elif hasattr(response, "id"):
-        value = getattr(response, "id", None)
-        if isinstance(value, str):
-            return value
-
+    if isinstance(
+        event,
+        (
+            ResponseCreatedEvent,
+            ResponseCompletedEvent,
+            ResponseFailedEvent,
+            ResponseInProgressEvent,
+            ResponseIncompleteEvent,
+            ResponseQueuedEvent,
+        ),
+    ):
+        return event.response.id
     return None
 
 
 def stream_event_usage(event: ResponseStreamEvent) -> ResponseUsage | None:
-    # Try event.usage first
-    usage_candidate = getattr(event, "usage", None)
-    if isinstance(usage_candidate, ResponseUsage):
-        return usage_candidate
-    if isinstance(usage_candidate, Mapping):
-        return parse_usage(usage_candidate)
-
-    # Try event.response.usage
-    response = getattr(event, "response", None)
-    if isinstance(response, Mapping):
-        usage_value = response.get("usage")
-        if isinstance(usage_value, ResponseUsage):
-            return usage_value
-        if isinstance(usage_value, Mapping):
-            return parse_usage(usage_value)
-    elif hasattr(response, "usage"):
-        usage_value = getattr(response, "usage", None)
-        if isinstance(usage_value, ResponseUsage):
-            return usage_value
-        if isinstance(usage_value, Mapping):
-            return parse_usage(usage_value)
-
+    if isinstance(
+        event,
+        (
+            ResponseCreatedEvent,
+            ResponseCompletedEvent,
+            ResponseFailedEvent,
+            ResponseInProgressEvent,
+            ResponseIncompleteEvent,
+            ResponseQueuedEvent,
+        ),
+    ):
+        return event.response.usage
     return None
 
 
 def stream_event_final_response(event: ResponseStreamEvent) -> OpenAIResponse | None:
-    response = getattr(event, "response", None)
-    if response is not None:
-        return parse_response(response)
+    if isinstance(
+        event,
+        (
+            ResponseCreatedEvent,
+            ResponseCompletedEvent,
+            ResponseFailedEvent,
+            ResponseInProgressEvent,
+            ResponseIncompleteEvent,
+            ResponseQueuedEvent,
+        ),
+    ):
+        return event.response
     return None
-
-
-def parse_response(value: OpenAIResponse | Mapping[str, object]) -> OpenAIResponse:
-    if value is None:
-        raise ValueError("response payload cannot be None")
-    if isinstance(value, OpenAIResponse):
-        return value
-    return RESPONSE_ADAPTER.validate_python(value)
-
-
-def parse_usage(value: ResponseUsage | Mapping[str, object]) -> ResponseUsage:
-    if isinstance(value, ResponseUsage):
-        return value
-    return USAGE_ADAPTER.validate_python(value)

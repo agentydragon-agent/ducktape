@@ -66,12 +66,8 @@ def load_task_definitions(
         raise FileNotFoundError(f"Seeds file not found: {file_path}")
 
     with file_path.open() as f:
-        config = TaskDefinitionsYaml.model_validate(yaml.safe_load(f))
-
-    # Validate task types if provided
-    if task_types:
-        for task in config.tasks:
-            if task.type not in task_types:
-                raise ValueError(f"Task {task.id} has unknown type: {task.type}")
+        config = TaskDefinitionsYaml.model_validate(
+            yaml.safe_load(f), context={"task_types": task_types} if task_types else None
+        )
 
     return config.tasks

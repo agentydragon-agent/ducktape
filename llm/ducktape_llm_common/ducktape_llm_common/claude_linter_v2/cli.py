@@ -15,6 +15,7 @@ import sys
 from typing import Any
 
 import click
+import humanize
 from pytimeparse import parse as parse_duration
 
 from . import __version__
@@ -320,16 +321,7 @@ def session_list(all: bool) -> None:
 
 def _display_session(session_info: SessionInfo) -> None:
     """Display a single session's information."""
-    # Calculate time ago
-    now = datetime.now()
-    delta = now - session_info.last_seen
-    if delta.total_seconds() < 60:
-        ago = f"{int(delta.total_seconds())}s ago"
-    elif delta.total_seconds() < 3600:
-        ago = f"{int(delta.total_seconds() / 60)}m ago"
-    else:
-        ago = f"{int(delta.total_seconds() / 3600)}h ago"
-
+    ago = humanize.naturaltime(session_info.last_seen)
     click.echo(f"  {session_info.id[:8]}... - last seen {ago}")
 
     # Show active rules

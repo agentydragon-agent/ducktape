@@ -5,7 +5,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal, NewType
 
-from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator, ValidationInfo
+from typing_extensions import Self
 
 # Removed claude_code_sdk dependency - using provider-independent types
 
@@ -429,3 +430,13 @@ class TaskDefinitionsYaml(BaseModel):
     """Root YAML structure for seeds.yaml."""
 
     tasks: list[TaskDefinition]
+
+    @model_validator(mode="after")
+    def validate_task_types(self, info: ValidationInfo) -> Self:
+        """Validate that all task types are known."""
+        task_types = info.context.get("task_types") if info.context else None
+        if task_types:
+            for task in self.tasks:
+                if task.type not in task_types:
+                    raise ValueError(f"Task {task.id} has unknown type: {task.type}")
+        return self

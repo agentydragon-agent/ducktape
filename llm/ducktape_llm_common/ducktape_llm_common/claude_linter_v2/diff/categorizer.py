@@ -97,13 +97,10 @@ class ViolationCategorizer:
     ) -> defaultdict[ViolationCategory, list[CategorizedViolation]]:
         """Group categorized violations by their category."""
         groups: defaultdict[ViolationCategory, list[CategorizedViolation]] = defaultdict(list)
-
         for cv in categorized:
             groups[cv.category].append(cv)
-
         # Sort near-diff by distance
         groups[ViolationCategory.NEAR_DIFF].sort(key=lambda cv: cv.distance_from_change or 0)
-
         return groups
 
     def filter_by_priority(

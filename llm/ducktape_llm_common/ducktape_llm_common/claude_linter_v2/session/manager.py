@@ -178,30 +178,26 @@ class SessionManager:
         Returns:
             List of session info objects
         """
-        current_dir = str(Path.cwd().resolve())
+        current_dir = Path.cwd().resolve()
         results = []
 
         # Scan all session files
         for session_file in self.sessions_dir.glob("*.json"):
             session_id = SessionID(session_file.stem)
-            try:
-                session_data = self._load_session(session_id)
+            session_data = self._load_session(session_id)
 
-                # Skip sessions in other directories unless requested
-                session_dir = str(session_data.directory) if session_data.directory else ""
-                if not all_dirs and session_dir and not session_dir.startswith(current_dir):
-                    continue
+            # Skip sessions in other directories unless requested
+            if not all_dirs and session_data.directory and not session_data.directory.is_relative_to(current_dir):
+                continue
 
-                results.append(
-                    SessionInfo(
-                        id=session_id,
-                        directory=session_data.directory,
-                        last_seen=session_data.last_seen or session_data.created,
-                        rules=session_data.rules,
-                    )
+            results.append(
+                SessionInfo(
+                    id=session_id,
+                    directory=session_data.directory,
+                    last_seen=session_data.last_seen or session_data.created,
+                    rules=session_data.rules,
                 )
-            except (json.JSONDecodeError, OSError, ValueError) as e:
-                logger.error(f"Failed to load session {session_id}: {e}")
+            )
 
         # Sort by last seen time (most recent first)
         results.sort(key=lambda x: x.last_seen, reverse=True)
