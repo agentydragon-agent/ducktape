@@ -24,6 +24,7 @@ from .config import AutofixCategory
 from .hooks.exceptions import HookBugError
 from .hooks.handler import HOOK_REQUEST_TYPES, handle
 from .session import SessionManager
+from .session.manager import SessionInfo
 
 logger = logging.getLogger(__name__)
 
@@ -317,14 +318,11 @@ def session_list(all: bool) -> None:
                 _display_session(session_info)
 
 
-def _display_session(session_info: dict[str, Any]) -> None:
+def _display_session(session_info: SessionInfo) -> None:
     """Display a single session's information."""
-    session_id = session_info["id"]
-    last_seen = session_info["last_seen"]
-
     # Calculate time ago
     now = datetime.now()
-    delta = now - datetime.fromisoformat(last_seen)
+    delta = now - session_info.last_seen
     if delta.total_seconds() < 60:
         ago = f"{int(delta.total_seconds())}s ago"
     elif delta.total_seconds() < 3600:
@@ -332,14 +330,14 @@ def _display_session(session_info: dict[str, Any]) -> None:
     else:
         ago = f"{int(delta.total_seconds() / 3600)}h ago"
 
-    click.echo(f"  {session_id[:8]}... - last seen {ago}")
+    click.echo(f"  {session_info.id[:8]}... - last seen {ago}")
 
     # Show active rules
-    if (rules := session_info.get("rules", [])):
-        for rule in rules:
-            action = "✓" if rule["action"] == "allow" else "✗"
-            expires = f" (expires {rule['expires']})" if rule.get("expires") else ""
-            click.echo(f"    {action} {rule['predicate']}{expires}")
+    if session_info.rules:
+        for rule in session_info.rules:
+            action = "✓" if rule.action == "allow" else "✗"
+            expires = f" (expires {rule.expires})" if rule.expires else ""
+            click.echo(f"    {action} {rule.predicate}{expires}")
 
 
 @cli.group()

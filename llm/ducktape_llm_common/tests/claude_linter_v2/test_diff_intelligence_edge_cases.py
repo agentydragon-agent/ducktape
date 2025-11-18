@@ -191,22 +191,18 @@ class TestDiffIntelligenceEdgeCases:
         di = DiffIntelligence()
 
         # Create many out-of-diff violations
-        out_diff_violations = [
-            CategorizedViolation(
-                violation=Violation(rule=f"E{i}", line=i * 10, column=0, message=f"Error {i}"),
-                category=ViolationCategory.OUT_OF_DIFF,
-                distance_from_change=None,
-            )
-            for i in range(1, 11)  # 10 violations
-        ]
-
-        groups = {
-            ViolationCategory.IN_DIFF: [],
-            ViolationCategory.NEAR_DIFF: [],
-            ViolationCategory.OUT_OF_DIFF: out_diff_violations,
-        }
-
-        formatted = di.format_violations_by_category(groups)
+        formatted = di.format_violations_by_category(
+            {
+                ViolationCategory.OUT_OF_DIFF: [
+                    CategorizedViolation(
+                        violation=Violation(rule=f"E{i}", line=i * 10, column=0, message=f"Error {i}"),
+                        category=ViolationCategory.OUT_OF_DIFF,
+                        distance_from_change=None,
+                    )
+                    for i in range(1, 11)  # 10 violations
+                ]
+            }
+        )
 
         # Should only show first 3 out-of-diff
         assert "Line 10:" in formatted

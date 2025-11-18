@@ -35,6 +35,17 @@ class SessionData(BaseModel):
     notification_id: int | None = None
 
 
+class SessionInfo(BaseModel):
+    """Session information for listing."""
+
+    model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
+
+    id: str
+    directory: Path | None
+    last_seen: datetime
+    rules: list[Rule] = Field(default_factory=list)
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -157,7 +168,7 @@ class SessionManager:
 
         return affected
 
-    def list_sessions(self, all_dirs: bool = False) -> list[dict]:
+    def list_sessions(self, all_dirs: bool = False) -> list[SessionInfo]:
         """
         List all sessions.
 
@@ -165,7 +176,7 @@ class SessionManager:
             all_dirs: If True, show all sessions. If False, only current directory.
 
         Returns:
-            List of session info dicts
+            List of session info objects
         """
         current_dir = str(Path.cwd().resolve())
         results = []
@@ -182,18 +193,18 @@ class SessionManager:
                     continue
 
                 results.append(
-                    {
-                        "id": session_id,
-                        "directory": session_data.directory,
-                        "last_seen": session_data.last_seen or session_data.created,
-                        "rules": session_data.rules,
-                    }
+                    SessionInfo(
+                        id=session_id,
+                        directory=session_data.directory,
+                        last_seen=session_data.last_seen or session_data.created,
+                        rules=session_data.rules,
+                    )
                 )
             except (json.JSONDecodeError, OSError, ValueError) as e:
                 logger.error(f"Failed to load session {session_id}: {e}")
 
         # Sort by last seen time (most recent first)
-        results.sort(key=lambda x: x["last_seen"], reverse=True)
+        results.sort(key=lambda x: x.last_seen, reverse=True)
 
         return results
 
