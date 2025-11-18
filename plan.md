@@ -1412,6 +1412,7 @@ These features would improve production deployment:
 - [ ] **Metrics**: Per-agent usage metrics (tool calls, approvals, policy evaluations)
 - [ ] **MCP Elicitations**: Replace tool-based approvals with standardized elicitation workflow (Phase 6+)
 - [ ] **SQLAlchemy Migration**: Migrate from raw aiosqlite to SQLAlchemy ORM for better type safety and migrations
+- [ ] **Remove SidecarBundle**: Eliminate SidecarBundle abstraction - currently a no-op for external agents, adds unnecessary complexity
 
 ## References
 

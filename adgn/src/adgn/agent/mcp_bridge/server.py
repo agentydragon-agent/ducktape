@@ -66,6 +66,7 @@ async def create_bridge_infrastructure(
     # Start core infrastructure
     running = await builder.start(mcp_config)
 
+    # TODO: Remove SidecarBundle concept - this is effectively a no-op for external agents
     # Attach sidecars (none for external agents)
     bundle = SidecarBundle.for_external_agent()
     await bundle.attach_all(running)
