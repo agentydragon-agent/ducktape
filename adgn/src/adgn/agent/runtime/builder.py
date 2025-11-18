@@ -1,7 +1,8 @@
-"""Builder functions for creating agent infrastructure using the new architecture.
+"""Builder functions for creating agent infrastructure.
 
-This module provides builder functions that replace the old AgentContainer
-with the new MCPInfrastructure + LocalAgentRuntime architecture.
+Provides build_local_agent() which creates:
+- MCPInfrastructure: Core MCP server setup + policy gateway
+- LocalAgentRuntime: MiniCodex agent wrapper
 """
 
 from __future__ import annotations
