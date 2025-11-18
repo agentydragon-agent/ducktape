@@ -22,7 +22,7 @@ T_Out = TypeVar("T_Out")
 
 
 def _structured_content(result: CallToolResult, *, tool_name: str) -> dict[str, Any]:
-    sc = cast(dict[str, Any] | None, result.structuredContent)
+    sc = result.structuredContent
     if sc is None:
         raise RuntimeError(f"{tool_name!r} did not return structuredContent; tests require structured outputs")
     return sc
