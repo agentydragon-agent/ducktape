@@ -19,7 +19,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from adgn.openai_utils.model import AssistantMessageOut, FunctionCallItem, FunctionCallOutputItem, InputItem
+from adgn.openai_utils.model import (
+    AssistantMessage,
+    AssistantMessageOut,
+    FunctionCallItem,
+    FunctionCallOutputItem,
+    InputItem,
+    SystemMessage,
+    UserMessage,
+)
 
 # ---------------------------------------------------------------------------
 # Tool policy algebraic types (what the model is allowed/required to do next)
@@ -67,6 +75,17 @@ class NoLoopDecision:
     """
 
 
+# Type aliases for Continue.inserts_input
+# Items valid for normal path (skip_sampling=False): appended to transcript as input
+NormalInjectableItem = UserMessage | AssistantMessage | SystemMessage | FunctionCallItem
+
+# Items valid for skip-sampling path (skip_sampling=True): treated as synthetic model output
+SyntheticOutputItem = AssistantMessageOut | FunctionCallItem | FunctionCallOutputItem
+
+# Union of all injectable items (ReasoningItem excluded - must come from model)
+InjectableItem = NormalInjectableItem | SyntheticOutputItem
+
+
 @dataclass(frozen=True)
 class Continue:
     """Proceed with the agent loop under a specific tool policy.
@@ -93,14 +112,12 @@ class Continue:
     """
 
     tool_policy: ToolPolicy
-    # Input-side items to add to the next request or treat as synthetic output.
-    # Normal path (skip_sampling=False): Only UserMessage, AssistantMessage, SystemMessage, and
-    # FunctionCallItem are appended to transcript (runtime check enforces this at agent.py:396).
-    # Skip-sampling path (skip_sampling=True): Caller must ensure inserts_input contains only
-    # output-side items (FunctionCallItem, FunctionCallOutputItem, AssistantMessageOut).
-    # ReasoningItem MUST be produced by the SDK/model, not injected here.
-    # Type annotation enforces the intersection: items valid for normal path.
-    inserts_input: tuple[UserMessage | AssistantMessage | SystemMessage | FunctionCallItem, ...] = ()
+    # Items to inject into the agent loop.
+    # - Normal path (skip_sampling=False): Must be NormalInjectableItem types, appended to transcript
+    # - Skip-sampling path (skip_sampling=True): Must be SyntheticOutputItem types, treated as model output
+    # Type annotation accepts the union; caller must ensure items match the skip_sampling mode.
+    # ReasoningItem MUST be produced by the SDK/model, never injected.
+    inserts_input: tuple[InjectableItem, ...] = ()
     # When True: do NOT call the model this phase; execute directly from inserts_input
     skip_sampling: bool = False
 
