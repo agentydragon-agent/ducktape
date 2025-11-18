@@ -5,7 +5,6 @@
     - vars/common_vars.yml
   vars:
     rcup_computer: agentydragon
-    ducktape_path: "{{ ansible_user_dir }}/code/ducktape"
     firecrawl_enable: false
   # TODO: vars_files: agentydragon_gitlab_token.yml
   remote_user: "{{ my_user }}"

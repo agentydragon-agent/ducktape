@@ -5,7 +5,6 @@
     - vars/common_vars.yml
   vars:
     rcup_computer: wyrm
-    ducktape_path: "{{ ansible_user_dir }}/code/ducktape"
   remote_user: "{{ my_user }}"
 
   handlers:

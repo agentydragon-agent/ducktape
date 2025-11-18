@@ -4,12 +4,21 @@
   pkgs,
   lib,
   enableGui ? true,
+  solarizedLight ? null,
+  solarizedDark ? null,
+  terminalFont ? { family = "JetBrainsMono Nerd Font"; size = 11; },
   ...
 }: let
   # Import nix-colors for Solarized color schemes
-  nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};
-  solarizedLight = nix-colors.colorSchemes.solarized-light;
-  solarizedDark = nix-colors.colorSchemes.solarized-dark;
+  nix-colors = import (fetchTarball https://github.com/Misterio77/nix-colors/archive/main.tar.gz) {};
+  solarizedLightScheme =
+    if solarizedLight == null
+    then nix-colors.colorSchemes.solarized-light
+    else solarizedLight;
+  solarizedDarkScheme =
+    if solarizedDark == null
+    then nix-colors.colorSchemes.solarized-dark
+    else solarizedDark;
 in {
   # Install Night Theme Switcher extension and theme switching utility
   home.packages = with pkgs;
@@ -75,13 +84,13 @@ in {
           visibleName = "Solarized Light";
           default = true;
           colors = {
-            foregroundColor = "#${solarizedLight.palette.base05}";
-            backgroundColor = "#${solarizedLight.palette.base07}";
-            boldColor = "#${solarizedLight.palette.base04}";
-            palette = mkTerminalPalette solarizedLight;
+            foregroundColor = "#${solarizedLightScheme.palette.base05}";
+            backgroundColor = "#${solarizedLightScheme.palette.base07}";
+            boldColor = "#${solarizedLightScheme.palette.base04}";
+            palette = mkTerminalPalette solarizedLightScheme;
             cursor = {
-              foreground = "#${solarizedLight.palette.base07}";
-              background = "#${solarizedLight.palette.base05}";
+              foreground = "#${solarizedLightScheme.palette.base07}";
+              background = "#${solarizedLightScheme.palette.base05}";
             };
           };
         };
@@ -90,24 +99,25 @@ in {
         "5083e06b-024e-46be-9cd2-892b814f1fc8" = {
           visibleName = "Solarized Dark";
           colors = {
-            foregroundColor = "#${solarizedDark.palette.base05}";
-            backgroundColor = "#${solarizedDark.palette.base00}";
-            boldColor = "#${solarizedDark.palette.base06}";
-            palette = mkTerminalPalette solarizedDark;
+            foregroundColor = "#${solarizedDarkScheme.palette.base05}";
+            backgroundColor = "#${solarizedDarkScheme.palette.base00}";
+            boldColor = "#${solarizedDarkScheme.palette.base06}";
+            palette = mkTerminalPalette solarizedDarkScheme;
             cursor = {
-              foreground = "#${solarizedDark.palette.base00}";
-              background = "#${solarizedDark.palette.base05}";
+              foreground = "#${solarizedDarkScheme.palette.base00}";
+              background = "#${solarizedDarkScheme.palette.base05}";
             };
           };
         };
       };
-      # Apply common settings to every profile: scroll-on-output=false and JetBrainsMono Nerd Font
+      fontString = "${terminalFont.family} ${builtins.toString terminalFont.size}";
+      # Apply common settings to every profile: scroll-on-output=false and shared font
     in
       builtins.mapAttrs (_: profile:
         profile
         // {
           scrollOnOutput = false;
-          font = "JetBrainsMono Nerd Font 11";
+          font = fontString;
         })
       baseProfiles;
   };

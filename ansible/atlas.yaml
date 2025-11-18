@@ -5,7 +5,6 @@
     - vars/common_vars.yml
   vars:
     rcup_computer: atlas
-    ducktape_path: "/home/{{ my_user }}/code/ducktape"
     docker_state: absent  # Proxmox host doesn't need Docker
     skip_ubuntu_ppas: true  # Debian-based Proxmox can't use Ubuntu PPAs
     include_heavy_dev_packages: false
@@ -46,7 +45,7 @@
     - name: Clone ducktape repository if not present  # noqa: latest[git]
       ansible.builtin.git:
         repo: "git@gitlab.com:agentydragon/ducktape"
-        dest: "{{ ducktape_path }}"
+        dest: "{{ cli_ducktape_path }}"
         accept_hostkey: true
       become: true
       become_user: "{{ my_user }}"

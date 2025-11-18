@@ -3,6 +3,12 @@
   tags:
     - dotfiles
   block:
+    - name: Assert role is not targeting root
+      ansible.builtin.assert:
+        that:
+          - ansible_user_id != root
+        fail_msg: "cli role must run under a non-root user"
+
     - name: Debug - Check if ducktape exists
       ansible.builtin.stat:
         path: "{{ cli_ducktape_path }}"

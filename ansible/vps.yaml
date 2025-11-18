@@ -339,7 +339,6 @@
       tags: [user-setup]
       vars:
         my_user: agentydragon
-        ducktape_path: "/home/agentydragon/code/ducktape"
       block:
         - name: Check if SSH key exists for agentydragon user
           ansible.builtin.stat:
@@ -373,7 +372,7 @@
           become_user: agentydragon
           ansible.builtin.git:
             repo: git@github.com:agentydragon/ducktape.git
-            dest: "{{ ducktape_path }}"
+            dest: "{{ cli_ducktape_path }}"
             version: devel
             accept_hostkey: true
             depth: 1  # Shallow clone for speed
@@ -384,7 +383,6 @@
         name: cli
       vars:
         cli_user: agentydragon
-        cli_ducktape_path: "/home/agentydragon/code/ducktape"
       tags: [dotfiles]
       # CLI role tasks that need root will handle their own become
 

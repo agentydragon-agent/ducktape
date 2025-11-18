@@ -30,6 +30,8 @@ let
   oldPkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-23.11.tar.gz") nixpkgsConfig;
   unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") nixpkgsConfig;
   nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};
+  solarizedLight = nix-colors.colorSchemes.solarized-light;
+  solarizedDark = nix-colors.colorSchemes.solarized-dark;
   homeManagerMaster = fetchTarball {
     url = "https://github.com/nix-community/home-manager/archive/82b58f38202540bce4e5e00759d115c5a43cab85.tar.gz";
     sha256 = "1glrqwsg3imzadm6w036jazi9lwpsi30lkfgnnqzd7fkk0526004";
@@ -75,6 +77,10 @@ let
   commonShellInit = builtins.readFile ./shell/common-init.sh;
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.sh;
+  terminalFont = {
+    family = "JetBrainsMono Nerd Font";
+    size = 11;
+  };
 in {
   imports =
     [
@@ -82,7 +88,8 @@ in {
       ./packages/google-drive-service.nix
       "${homeManagerMaster}/modules/programs/codex.nix"
       ./codex
-      (import ./modules/solarized.nix {inherit pkgs lib enableGui;})
+      (import ./modules/solarized.nix {inherit pkgs lib enableGui solarizedLight solarizedDark terminalFont;})
+      (import ./terminals {inherit config pkgs lib enableGui unstablePkgs solarizedLight solarizedDark terminalFont;})
     ]
     ++ lib.optionals enableGui [
       ./modules/gnome-workspace-shortcuts.nix
@@ -253,8 +260,7 @@ in {
     source = ./config/nvim;
     recursive = true;
   };
-
-  home.file.".config/bazel/bazelrc" = {
+  xdg.configFile."bazel/bazelrc" = {
     source = ./config/bazelrc;
   };
 
@@ -825,7 +831,7 @@ in {
         ];
         ask = ["Bash(*)"];
         deny = [];
-        defaultMode = "ask";
+        defaultMode = "default";
       };
     };
   };
