@@ -213,6 +213,20 @@ async def create_management_ui_app(
         """Health check endpoint."""
         return {"status": "ok"}
 
+    @ui_app.get("/api/capabilities")
+    async def api_capabilities():
+        """Report which components are active in MCP bridge mode."""
+        return {
+            "mode": "mcp_bridge",
+            "components": {
+                "mcp": True,  # MCP tools available
+                "approvals": True,  # Approval/policy management
+                "chat": False,  # No chat interface in bridge mode
+                "agent_state": False,  # No agent state (external agents)
+                "ui": False,  # Minimal UI (just approvals/policy)
+            },
+        }
+
     return ui_app
 
 

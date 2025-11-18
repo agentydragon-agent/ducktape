@@ -8,6 +8,23 @@ export function backendOrigin(): string {
   return window.location.origin
 }
 
+export interface ServerCapabilities {
+  mode: 'full_agent' | 'mcp_bridge'
+  components: {
+    mcp: boolean
+    approvals: boolean
+    chat: boolean
+    agent_state: boolean
+    ui: boolean
+  }
+}
+
+export async function getCapabilities(): Promise<ServerCapabilities> {
+  const res = await fetch(backendOrigin() + '/api/capabilities')
+  if (!res.ok) throw new Error('getCapabilities http ' + res.status)
+  return res.json()
+}
+
 export async function listAgents(): Promise<AgentListResponse> {
   const res = await fetch(backendOrigin() + '/api/agents')
   if (!res.ok) throw new Error('listAgents http ' + res.status)

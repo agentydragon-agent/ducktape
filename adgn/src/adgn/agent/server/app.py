@@ -319,6 +319,20 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             return Response(content="", media_type="image/svg+xml", status_code=404)
         return FileResponse(svg)
 
+    @app.get("/api/capabilities")
+    async def api_capabilities():
+        """Report which components are active in this server mode."""
+        return {
+            "mode": "full_agent",
+            "components": {
+                "mcp": True,  # MCP tools available
+                "approvals": True,  # Approval/policy management
+                "chat": True,  # Chat interface
+                "agent_state": True,  # Agent running/idle state
+                "ui": True,  # Full UI with all features
+            },
+        }
+
     # -----------------------
     # Agents/Runs API (alpha)
     # -----------------------
