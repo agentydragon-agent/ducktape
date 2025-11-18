@@ -15,7 +15,7 @@ from fastmcp.client.client import CallToolResult
 from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
 from pydantic import BaseModel
 
-from adgn.agent.loop_control import NoLoopDecision
+from adgn.agent.loop_control import LoopDecision, NoLoopDecision
 from adgn.openai_utils.model import ReasoningItem
 
 
@@ -118,7 +118,7 @@ class BaseHandler:
     def on_response(self, evt: Response) -> None:  # default no-op
         return None
 
-    def on_before_sample(self) -> NoLoopDecision:  # default: no decision
+    def on_before_sample(self) -> LoopDecision:  # default: no decision
         return NoLoopDecision()
 
     def on_user_text_event(self, evt: UserText) -> None:  # default no-op

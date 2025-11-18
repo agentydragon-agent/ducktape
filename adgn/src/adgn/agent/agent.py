@@ -388,13 +388,12 @@ class MiniCodex:
             # Skip sampling: treat handler-provided inserts_input as if they were
             # model output items for this phase and process them via the normal
             # output path (adds assistant text, enqueues tool calls, etc.).
-            out_items: list[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] = []
+            resp_output = []
             for it in list(decision.inserts_input):
                 if isinstance(it, FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut):
-                    out_items.append(it)
+                    resp_output.append(it)
                 else:
                     raise TypeError(f"Unsupported skip_sampling inserts_input item type: {type(it).__name__}")
-            resp_output = out_items
         elif isinstance(decision, Continue):
             # Inject any handler-provided pre-sample inserts into transcript
             for it in decision.inserts_input:
