@@ -1,10 +1,18 @@
 """Categorize violations based on their proximity to diff changes."""
 
 from dataclasses import dataclass, field
-from typing import Literal
+from enum import StrEnum
 
 from ..config.models import Violation
 from .parser import ParsedDiff
+
+
+class ViolationCategory(StrEnum):
+    """Category of a violation based on its relationship to diff changes."""
+
+    IN_DIFF = "in-diff"
+    NEAR_DIFF = "near-diff"
+    OUT_OF_DIFF = "out-of-diff"
 
 
 @dataclass
@@ -12,7 +20,7 @@ class CategorizedViolation:
     """A violation categorized by its relationship to diff changes."""
 
     violation: Violation
-    category: Literal["in-diff", "near-diff", "out-of-diff"]
+    category: ViolationCategory
     distance_from_change: int | None  # For near-diff
 
 
@@ -53,7 +61,8 @@ class ViolationCategorizer:
         if parsed_diff is None:
             # No diff info - all violations are out-of-diff
             return [
-                CategorizedViolation(violation=v, category="out-of-diff", distance_from_change=None) for v in violations
+                CategorizedViolation(violation=v, category=ViolationCategory.OUT_OF_DIFF, distance_from_change=None)
+                for v in violations
             ]
 
         # Build set of all changed lines and their neighbors
@@ -71,20 +80,20 @@ class ViolationCategorizer:
 
         for violation in violations:
             if violation.line in changed_lines:
-                category = "in-diff"
+                category = ViolationCategory.IN_DIFF
                 distance = 0
             elif violation.line in near_lines:
-                category = "near-diff"
+                category = ViolationCategory.NEAR_DIFF
                 # Calculate minimum distance to any changed line
                 distance = min(abs(violation.line - changed_line) for changed_line in changed_lines)
             else:
-                category = "out-of-diff"
+                category = ViolationCategory.OUT_OF_DIFF
                 distance = None
 
             categorized.append(
                 CategorizedViolation(
                     violation=violation,
-                    category=category,  # type: ignore[arg-type]
+                    category=category,
                     distance_from_change=distance,
                 )
             )
@@ -96,11 +105,11 @@ class ViolationCategorizer:
         groups = CategorizedGroups()
 
         for cv in categorized:
-            if cv.category == "in-diff":
+            if cv.category == ViolationCategory.IN_DIFF:
                 groups.in_diff.append(cv)
-            elif cv.category == "near-diff":
+            elif cv.category == ViolationCategory.NEAR_DIFF:
                 groups.near_diff.append(cv)
-            else:  # "out-of-diff"
+            else:  # OUT_OF_DIFF
                 groups.out_of_diff.append(cv)
 
         # Sort near-diff by distance

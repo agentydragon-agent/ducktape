@@ -3,22 +3,10 @@
 from pathlib import Path
 from typing import Any
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 import yaml
 
-from adgn.inop.engine.models import (
-    ComparisonGrading,
-    DockerConfig,
-    FileBasedGrading,
-    GitCloneConfig,
-    GradingConfig,
-    MessageBasedGrading,
-    SandboxConfig,
-    TaskDefinition,
-    TaskSetup,
-    TaskTypeConfig,
-    TaskTypeName,
-)
+from adgn.inop.engine.models import GradingConfig, TaskDefinition, TaskSetup, TaskTypeConfig, TaskTypeName
 
 
 def parse_setup_config(config: dict[str, Any]) -> TaskSetup | None:
@@ -30,36 +18,15 @@ def parse_setup_config(config: dict[str, Any]) -> TaskSetup | None:
     if not config:
         return None
 
-    docker_cfg = None
-    git_cfg = None
-    sandbox_cfg = None
-
-    if docker_data := config.get("docker"):
-        docker_cfg = DockerConfig(
-            image=docker_data["image"],
-            volumes=docker_data.get("volumes", {}),
-            env=docker_data.get("env", {}),
-            network_enabled=docker_data.get("network_enabled", True),
-        )
-
-    if (git_data := config.get("git_clone")) and git_data.get("repo") and git_data.get("commit"):
-        git_cfg = GitCloneConfig(repo=git_data["repo"], commit=git_data["commit"], subdir=git_data.get("subdir"))
-
-    if sandbox_data := config.get("sandbox"):
-        sandbox_cfg = SandboxConfig(
-            enabled=sandbox_data.get("enabled", True),
-            read_only_paths=sandbox_data.get("read_only_paths", []),
-            read_write_paths=sandbox_data.get("read_write_paths", []),
-            allow_network=sandbox_data.get("allow_network", False),
-            bind_system=sandbox_data.get("bind_system", True),
-        )
-
-    # Return TaskSetup with whatever is configured (all are optional)
-    return TaskSetup(git_clone=git_cfg, docker=docker_cfg, sandbox=sandbox_cfg)
+    return TypeAdapter(TaskSetup).validate_python(config)
 
 
 def parse_grading_config(config: dict[str, Any]) -> GradingConfig | None:
-    """Parse grading configuration from YAML data."""
+    """Parse grading configuration from YAML data.
+
+    Returns None if config is empty, strategy is missing, or for incomplete
+    comparison grading (missing reference at task type level).
+    """
     if not config:
         return None
 
@@ -67,16 +34,14 @@ def parse_grading_config(config: dict[str, Any]) -> GradingConfig | None:
     if not strategy:
         return None
 
-    if strategy == "file_based":
-        return FileBasedGrading(criteria_file=config.get("criteria_file"), criteria=config.get("criteria"))
-    if strategy == "message_based":
-        return MessageBasedGrading(criteria_file=config.get("criteria_file"), criteria=config.get("criteria"))
-    if strategy == "comparison":
-        # For comparison, we may not have reference at task type level
-        if (reference := config.get("reference", "")):
-            return ComparisonGrading(reference=reference, criteria=config.get("criteria", []))
-        return None  # Incomplete - will be filled by tasks
-    raise ValueError(f"Unknown grading strategy: {strategy}")
+    try:
+        return TypeAdapter(GradingConfig).validate_python(config)
+    except ValidationError:
+        # For comparison strategy, reference may be incomplete at task type level
+        # and filled in by individual tasks
+        if strategy == "comparison" and not config.get("reference"):
+            return None  # Incomplete - will be filled by tasks
+        raise
 
 
 def load_task_types(file_path: Path | str) -> dict[str, TaskTypeConfig]:

@@ -1,7 +1,12 @@
 """Tests for diff intelligence module."""
 
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
-from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedGroups, CategorizedViolation, ViolationCategorizer
+from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
+    CategorizedGroups,
+    CategorizedViolation,
+    ViolationCategorizer,
+    ViolationCategory,
+)
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
 from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser, ParsedDiff
 
@@ -86,9 +91,9 @@ class TestViolationCategorizer:
         categorized = categorizer.categorize_violations(violations, parsed_diff)
 
         assert len(categorized) == 2
-        assert categorized[0].category == "in-diff"
+        assert categorized[0].category == ViolationCategory.IN_DIFF
         assert categorized[0].distance_from_change == 0
-        assert categorized[1].category == "out-of-diff"
+        assert categorized[1].category == ViolationCategory.OUT_OF_DIFF
         assert categorized[1].distance_from_change is None
 
     def test_categorize_near_diff(self):
@@ -107,11 +112,11 @@ class TestViolationCategorizer:
 
         categorized = categorizer.categorize_violations(violations, parsed_diff)
 
-        assert categorized[0].category == "near-diff"
+        assert categorized[0].category == ViolationCategory.NEAR_DIFF
         assert categorized[0].distance_from_change == 2
-        assert categorized[1].category == "near-diff"
+        assert categorized[1].category == ViolationCategory.NEAR_DIFF
         assert categorized[1].distance_from_change == 3
-        assert categorized[2].category == "out-of-diff"
+        assert categorized[2].category == ViolationCategory.OUT_OF_DIFF
 
     def test_filter_by_priority(self):
         """Test filtering violations by priority."""
@@ -120,17 +125,17 @@ class TestViolationCategorizer:
         categorized = [
             CategorizedViolation(
                 violation=Violation(rule="E1", line=1, column=0, message="Out"),
-                category="out-of-diff",
+                category=ViolationCategory.OUT_OF_DIFF,
                 distance_from_change=None,
             ),
             CategorizedViolation(
                 violation=Violation(rule="E2", line=10, column=0, message="In"),
-                category="in-diff",
+                category=ViolationCategory.IN_DIFF,
                 distance_from_change=0,
             ),
             CategorizedViolation(
                 violation=Violation(rule="E3", line=8, column=0, message="Near"),
-                category="near-diff",
+                category=ViolationCategory.NEAR_DIFF,
                 distance_from_change=2,
             ),
         ]
@@ -138,8 +143,8 @@ class TestViolationCategorizer:
         filtered = categorizer.filter_by_priority(categorized, max_violations=2)
 
         assert len(filtered) == 2
-        assert filtered[0].category == "in-diff"
-        assert filtered[1].category == "near-diff"
+        assert filtered[0].category == ViolationCategory.IN_DIFF
+        assert filtered[1].category == ViolationCategory.NEAR_DIFF
 
 
 class TestDiffIntelligence:
@@ -153,14 +158,14 @@ class TestDiffIntelligence:
             in_diff=[
                 CategorizedViolation(
                     violation=Violation(rule="E722", line=10, column=0, message="Bare except"),
-                    category="in-diff",
+                    category=ViolationCategory.IN_DIFF,
                     distance_from_change=0,
                 )
             ],
             near_diff=[
                 CategorizedViolation(
                     violation=Violation(rule="W293", line=8, column=0, message="Trailing whitespace"),
-                    category="near-diff",
+                    category=ViolationCategory.NEAR_DIFF,
                     distance_from_change=2,
                 )
             ],

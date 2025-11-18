@@ -1,7 +1,11 @@
 """Edge case tests for diff intelligence module."""
 
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
-from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedGroups, CategorizedViolation
+from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
+    CategorizedGroups,
+    CategorizedViolation,
+    ViolationCategory,
+)
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
 from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser
 
@@ -191,7 +195,7 @@ class TestDiffIntelligenceEdgeCases:
         out_diff_violations = [
             CategorizedViolation(
                 violation=Violation(rule=f"E{i}", line=i * 10, column=0, message=f"Error {i}"),
-                category="out-of-diff",
+                category=ViolationCategory.OUT_OF_DIFF,
                 distance_from_change=None,
             )
             for i in range(1, 11)  # 10 violations
