@@ -104,12 +104,7 @@ class AgentRegistry:
         return agent_runtime
 
     async def ensure_live(
-        self,
-        agent_id: str,
-        *,
-        with_ui: bool = True,
-        ui_bus=None,
-        connection_manager=None,
+        self, agent_id: str, *, with_ui: bool = True, ui_bus=None, connection_manager=None
     ) -> AgentRuntime:
         """Raises KeyError if the agent does not exist in persistence."""
         if (agent_runtime := self.get(agent_id)) is not None:
@@ -120,11 +115,7 @@ class AgentRegistry:
             raise KeyError(f"agent not found: {agent_id}")
 
         return await self.create(
-            agent_id,
-            row.mcp_config,
-            with_ui=with_ui,
-            ui_bus=ui_bus,
-            connection_manager=connection_manager,
+            agent_id, row.mcp_config, with_ui=with_ui, ui_bus=ui_bus, connection_manager=connection_manager
         )
 
     def remove(self, agent_id: str) -> None:

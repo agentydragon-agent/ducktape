@@ -329,7 +329,11 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     async def api_list_agents() -> AgentsList:
         rows = await app.state.persistence.list_agents()
         live = {c.agent_id: c for c in app.state.registry.list()}
-        working_ids = {cid for cid, c in live.items() if (c.runtime.session is not None and c.runtime.session.active_run is not None)}
+        working_ids = {
+            cid
+            for cid, c in live.items()
+            if (c.runtime.session is not None and c.runtime.session.active_run is not None)
+        }
         last_map = await app.state.persistence.list_agents_last_activity()
         # Build enriched list and sort by last activity desc (fallback to created_at)
         items: list[tuple[str, datetime, AgentDescriptor]] = []
