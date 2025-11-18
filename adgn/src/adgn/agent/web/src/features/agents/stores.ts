@@ -1,7 +1,7 @@
 import { writable, get } from 'svelte/store'
 import type { AgentRow, AgentStatus } from '../../shared/types'
 import { z } from 'zod'
-import { backendOrigin, listAgents, getAgentStatus } from './api'
+import { backendOrigin, listAgents, getAgentStatus, getCapabilities, type ServerCapabilities } from './api'
 import { currentAgentId, setAgentId } from '../../shared/router'
 
 export const agents = writable<AgentRow[]>([])
@@ -9,9 +9,33 @@ export { currentAgentId, setAgentId }
 export const agentStatus = writable<AgentStatus | null>(null)
 export const agentStatusError = writable<string | null>(null)
 
+// Server capabilities (what components are active)
+export const serverCapabilities = writable<ServerCapabilities | null>(null)
+
 let _timer: any = null
 let _statusTimer: any = null
 let _ws: WebSocket | null = null
+
+// Load server capabilities on startup
+export async function loadServerCapabilities() {
+  try {
+    const caps = await getCapabilities()
+    serverCapabilities.set(caps)
+  } catch (err) {
+    console.error('Failed to load server capabilities:', err)
+    // Fallback to default full agent capabilities if fetch fails
+    serverCapabilities.set({
+      mode: 'full_agent',
+      components: {
+        mcp: true,
+        approvals: true,
+        chat: true,
+        agent_state: true,
+        ui: true
+      }
+    })
+  }
+}
 
 export function startAgentsPolling(intervalMs = 2500) {
   stopAgentsPolling()
