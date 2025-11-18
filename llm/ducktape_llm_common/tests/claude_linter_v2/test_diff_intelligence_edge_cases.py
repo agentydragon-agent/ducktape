@@ -8,7 +8,7 @@ from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
     ViolationCategory,
 )
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
-from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser
+from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser, ToolCall
 
 
 class TestDiffParserEdgeCases:
@@ -36,7 +36,7 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
 
         assert parsed is not None
         assert parsed.added_lines == {12}  # Only the + line
@@ -65,7 +65,7 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response("MultiEdit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(ToolCall(tool_name="MultiEdit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
 
         assert parsed is not None
         assert parsed.added_lines == {10, 11, 12, 22}
@@ -76,7 +76,7 @@ class TestDiffParserEdgeCases:
 
         # Empty patch array
         tool_response = {"structuredPatch": []}
-        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
         assert parsed is not None
         assert len(parsed.hunks) == 0
         assert len(parsed.added_lines) == 0
@@ -87,7 +87,7 @@ class TestDiffParserEdgeCases:
 
         # No structuredPatch field
         tool_response = {"someOtherField": "value"}
-        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
         assert parsed is None
 
     def test_parse_special_diff_markers(self):
@@ -110,7 +110,7 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
 
         assert parsed is not None
         assert parsed.added_lines == {10}
@@ -131,15 +131,13 @@ class TestDiffIntelligenceEdgeCases:
         }
 
         groups = di.analyze(
-            tool_name="Edit",
-            tool_input={"file_path": "/test.py"},
-            tool_response=tool_response,
+            tool_call=ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response),
             violations=[],  # No violations
         )
 
-        assert groups.get(ViolationCategory.IN_DIFF, []) == []
-        assert groups.get(ViolationCategory.NEAR_DIFF, []) == []
-        assert groups.get(ViolationCategory.OUT_OF_DIFF, []) == []
+        assert groups[ViolationCategory.IN_DIFF] == []
+        assert groups[ViolationCategory.NEAR_DIFF] == []
+        assert groups[ViolationCategory.OUT_OF_DIFF] == []
 
     def test_overlapping_near_regions(self):
         """Test when multiple changes create overlapping near-diff regions."""
@@ -160,11 +158,12 @@ class TestDiffIntelligenceEdgeCases:
         violations = [Violation(rule="E1", line=12, column=0, message="Between changes")]
 
         groups = di.analyze(
-            tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response, violations=violations
+            tool_call=ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response),
+            violations=violations,
         )
 
         # Line 12 is within 3 lines of both line 10 and line 11
-        assert len(groups.get(ViolationCategory.NEAR_DIFF, [])) == 1
+        assert len(groups[ViolationCategory.NEAR_DIFF]) == 1
         assert groups[ViolationCategory.NEAR_DIFF][0].distance_from_change == 1  # Closest distance
 
     def test_pretooluse_all_out_of_diff(self):
@@ -177,16 +176,18 @@ class TestDiffIntelligenceEdgeCases:
         ]
 
         groups = di.analyze(
-            tool_name="Edit",
-            tool_input={"file_path": "/test.py", "old_string": "foo", "new_string": "bar"},
-            tool_response=None,  # PreToolUse has no response
+            tool_call=ToolCall(
+                tool_name="Edit",
+                tool_input={"file_path": "/test.py", "old_string": "foo", "new_string": "bar"},
+                tool_response=None,  # PreToolUse has no response
+            ),
             violations=violations,
         )
 
         # Without tool_response, we can't know what will change
-        assert len(groups.get(ViolationCategory.IN_DIFF, [])) == 0
-        assert len(groups.get(ViolationCategory.NEAR_DIFF, [])) == 0
-        assert len(groups.get(ViolationCategory.OUT_OF_DIFF, [])) == 2
+        assert len(groups[ViolationCategory.IN_DIFF]) == 0
+        assert len(groups[ViolationCategory.NEAR_DIFF]) == 0
+        assert len(groups[ViolationCategory.OUT_OF_DIFF]) == 2
 
     def test_format_many_violations(self):
         """Test formatting with many violations doesn't overwhelm output."""

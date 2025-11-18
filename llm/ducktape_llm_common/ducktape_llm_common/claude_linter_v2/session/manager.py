@@ -1,6 +1,7 @@
 """Session management for tracking Claude Code sessions and their permissions."""
 
 from datetime import datetime
+from enum import StrEnum
 import json
 import logging
 from pathlib import Path
@@ -11,13 +12,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..types import SessionID
 
 
+class RuleAction(StrEnum):
+    """Permission rule actions."""
+
+    ALLOW = "allow"
+    DENY = "deny"
+
+
 class Rule(BaseModel):
     """Session-specific permission rule."""
 
     model_config = ConfigDict(frozen=False)
 
     predicate: str
-    action: str
+    action: RuleAction
     created: datetime
     expires: datetime | None = None
 
@@ -35,15 +43,6 @@ class SessionData(BaseModel):
     notification_id: int | None = None
 
 
-class SessionInfo(BaseModel):
-    """Session information for listing."""
-
-    model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
-
-    id: str
-    directory: Path | None
-    last_seen: datetime
-    rules: list[Rule] = Field(default_factory=list)
 
 
 logger = logging.getLogger(__name__)
@@ -119,24 +118,12 @@ class SessionManager:
     def add_rule(
         self,
         predicate: str,
-        action: str,
+        action: RuleAction,
         expires: datetime | None = None,
         session_id: SessionID | None = None,
         directory: Path | None = None,
     ) -> int:
-        """
-        Add a permission rule to session(s).
-
-        Args:
-            predicate: Python predicate expression
-            action: "allow" or "deny"
-            expires: When the rule expires
-            session_id: Specific session ID, or None for all in directory
-            directory: Directory to affect (default: current)
-
-        Returns:
-            Number of sessions affected
-        """
+        """Add a permission rule to session(s)."""
         directory = directory or Path.cwd()
         directory_str = str(directory.resolve())
 
@@ -168,16 +155,8 @@ class SessionManager:
 
         return affected
 
-    def list_sessions(self, all_dirs: bool = False) -> list[SessionInfo]:
-        """
-        List all sessions.
-
-        Args:
-            all_dirs: If True, show all sessions. If False, only current directory.
-
-        Returns:
-            List of session info objects
-        """
+    def list_sessions(self, all_dirs: bool = False) -> list[SessionData]:
+        """List all sessions."""
         current_dir = Path.cwd().resolve()
         results = []
 
@@ -190,17 +169,10 @@ class SessionManager:
             if not all_dirs and session_data.directory and not session_data.directory.is_relative_to(current_dir):
                 continue
 
-            results.append(
-                SessionInfo(
-                    id=session_id,
-                    directory=session_data.directory,
-                    last_seen=session_data.last_seen or session_data.created,
-                    rules=session_data.rules,
-                )
-            )
+            results.append(session_data)
 
         # Sort by last seen time (most recent first)
-        results.sort(key=lambda x: x.last_seen, reverse=True)
+        results.sort(key=lambda x: x.last_seen or x.created, reverse=True)
 
         return results
 

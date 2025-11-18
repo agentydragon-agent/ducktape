@@ -1,5 +1,7 @@
 """Tests for diff intelligence module."""
 
+import pytest
+
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
 from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
     CategorizedViolation,
@@ -7,7 +9,7 @@ from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
     ViolationCategory,
 )
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
-from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser, ParsedDiff
+from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser, ParsedDiff, ToolCall
 
 
 class TestDiffParser:
@@ -17,15 +19,17 @@ class TestDiffParser:
         """Test parsing Edit tool response."""
         parser = DiffParser()
 
-        tool_input = {"file_path": "/test.py", "old_string": "def foo():", "new_string": "def bar():"}
+        tool_call = ToolCall(
+            tool_name="Edit",
+            tool_input={"file_path": "/test.py", "old_string": "def foo():", "new_string": "def bar():"},
+            tool_response={
+                "structuredPatch": [
+                    {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-def foo():", "+def bar():"]}
+                ]
+            },
+        )
 
-        tool_response = {
-            "structuredPatch": [
-                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-def foo():", "+def bar():"]}
-            ]
-        }
-
-        parsed = parser.parse_tool_response("Edit", tool_input, tool_response)
+        parsed = parser.parse_tool_response(tool_call)
 
         assert parsed is not None
         assert parsed.added_lines == {10}
@@ -36,39 +40,38 @@ class TestDiffParser:
         """Test parsing MultiEdit tool with multiple hunks."""
         parser = DiffParser()
 
-        tool_input = {
-            "file_path": "/test.py",
-            "edits": [{"old_string": "foo", "new_string": "bar"}, {"old_string": "baz", "new_string": "qux"}],
-        }
+        tool_call = ToolCall(
+            tool_name="MultiEdit",
+            tool_input={
+                "file_path": "/test.py",
+                "edits": [{"old_string": "foo", "new_string": "bar"}, {"old_string": "baz", "new_string": "qux"}],
+            },
+            tool_response={
+                "structuredPatch": [
+                    {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-foo", "+bar"]},
+                    {"oldStart": 20, "oldLines": 1, "newStart": 20, "newLines": 1, "lines": ["-baz", "+qux"]},
+                ]
+            },
+        )
 
-        tool_response = {
-            "structuredPatch": [
-                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-foo", "+bar"]},
-                {"oldStart": 20, "oldLines": 1, "newStart": 20, "newLines": 1, "lines": ["-baz", "+qux"]},
-            ]
-        }
-
-        parsed = parser.parse_tool_response("MultiEdit", tool_input, tool_response)
+        parsed = parser.parse_tool_response(tool_call)
 
         assert parsed is not None
         assert parsed.added_lines == {10, 20}
         assert len(parsed.hunks) == 2
 
-    def test_parse_other_tools_returns_none(self):
+    @pytest.mark.parametrize(
+        ("tool_name", "tool_input"),
+        [
+            ("Write", {"file_path": "/test.py", "content": "hello"}),
+            ("Read", {"file_path": "/test.py"}),
+            ("Bash", {"command": "ls"}),
+        ],
+    )
+    def test_parse_other_tools_returns_none(self, tool_name, tool_input):
         """Test that non-Edit/MultiEdit tools return None."""
         parser = DiffParser()
-
-        # Write tool should return None
-        write_input = {"file_path": "/test.py", "content": "hello"}
-        assert parser.parse_tool_response("Write", write_input, None) is None
-
-        # Read tool should return None
-        read_input = {"file_path": "/test.py"}
-        assert parser.parse_tool_response("Read", read_input, None) is None
-
-        # Bash tool should return None
-        bash_input = {"command": "ls"}
-        assert parser.parse_tool_response("Bash", bash_input, None) is None
+        assert parser.parse_tool_response(ToolCall(tool_name=tool_name, tool_input=tool_input, tool_response=None)) is None
 
 
 class TestViolationCategorizer:

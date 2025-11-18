@@ -5,7 +5,7 @@ from typing import Any
 
 from ..config.models import Violation
 from .categorizer import CategorizedViolation, ViolationCategorizer, ViolationCategory
-from .parser import DiffParser
+from .parser import DiffParser, ToolCall
 
 
 class DiffIntelligence:
@@ -31,25 +31,12 @@ class DiffIntelligence:
 
     def analyze(
         self,
-        tool_name: str,
-        tool_input: dict[str, Any],
-        tool_response: dict[str, Any] | None,
+        tool_call: ToolCall,
         violations: list[Violation],
     ) -> defaultdict[ViolationCategory, list[CategorizedViolation]]:
-        """
-        Analyze violations in context of tool changes.
-
-        Args:
-            tool_name: Name of the tool (Edit, MultiEdit, Write)
-            tool_input: Tool input parameters
-            tool_response: Tool response (None for PreToolUse)
-            violations: List of violations found
-
-        Returns:
-            defaultdict mapping violation categories to lists of categorized violations
-        """
+        """Analyze violations in context of tool changes."""
         # Parse diff information
-        parsed_diff = self.parser.parse_tool_response(tool_name, tool_input, tool_response)
+        parsed_diff = self.parser.parse_tool_response(tool_call)
 
         # Categorize violations
         categorized = self.categorizer.categorize_violations(violations, parsed_diff)
@@ -59,30 +46,13 @@ class DiffIntelligence:
 
     def get_priority_violations(
         self,
-        tool_name: str,
-        tool_input: dict[str, Any],
-        tool_response: dict[str, Any] | None,
+        tool_call: ToolCall,
         violations: list[Violation],
         max_violations: int = 10,
     ) -> list[CategorizedViolation]:
-        """
-        Get violations prioritized by their relationship to changes.
-
-        In-diff violations (code Claude just added) are shown first,
-        followed by near-diff, then out-of-diff.
-
-        Args:
-            tool_name: Name of the tool
-            tool_input: Tool input parameters
-            tool_response: Tool response (None for PreToolUse)
-            violations: List of violations found
-            max_violations: Maximum number to return
-
-        Returns:
-            Prioritized list of categorized violations
-        """
+        """Get violations prioritized by their relationship to changes."""
         # Parse and categorize
-        parsed_diff = self.parser.parse_tool_response(tool_name, tool_input, tool_response)
+        parsed_diff = self.parser.parse_tool_response(tool_call)
         categorized = self.categorizer.categorize_violations(violations, parsed_diff)
 
         # Filter by priority
@@ -91,15 +61,7 @@ class DiffIntelligence:
     def format_violations_by_category(
         self, categorized_groups: defaultdict[ViolationCategory, list[CategorizedViolation]]
     ) -> str:
-        """
-        Format categorized violations for display.
-
-        Args:
-            categorized_groups: Violations grouped by category
-
-        Returns:
-            Formatted string for display
-        """
+        """Format categorized violations for display."""
         parts = []
 
         # In-diff violations (most important)
