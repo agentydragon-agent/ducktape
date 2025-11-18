@@ -13,7 +13,7 @@ The MCP Bridge allows external agents to connect to your local infrastructure an
 
 ## Usage
 
-### Basic (No Docker Exec)
+### Single-Agent Mode (Simple)
 
 ```bash
 adgn-mcp-bridge serve --agent-id external-agent
@@ -23,6 +23,27 @@ This starts the bridge at `http://127.0.0.1:8080` with:
 - Core infrastructure (compositor, policy gateway, approval policy)
 - No docker exec (add via `--mcp-config` if needed)
 - Default policy (allows resources, denies compositor_admin by default)
+- All connections share the same agent infrastructure
+
+### Multi-Agent Mode (Token Authentication)
+
+1. Create `tokens.json`:
+```json
+{
+  "secret-token-123": "chatgpt-agent",
+  "secret-token-456": "claude-agent"
+}
+```
+
+2. Start bridge:
+```bash
+adgn-mcp-bridge serve --auth-tokens ./tokens.json
+```
+
+This enables multiple agents on the same bridge:
+- Each token maps to a unique agent_id
+- Infrastructure is created lazily per agent_id
+- Requests must include `Authorization: Bearer <token>` header
 
 ### With Repo-Mounted Docker Exec
 
@@ -74,6 +95,8 @@ Mounted MCP Servers (via MCPConfig)
 
 ## External Agent Configuration
 
+### Single-Agent Mode
+
 External agents connect using standard MCP-over-HTTP configuration:
 
 ```json
@@ -83,6 +106,25 @@ External agents connect using standard MCP-over-HTTP configuration:
       "transport": "http",
       "url": "http://localhost:8080/mcp",
       "timeout_secs": 30
+    }
+  }
+}
+```
+
+### Multi-Agent Mode
+
+When using token authentication, include the Authorization header:
+
+```json
+{
+  "mcpServers": {
+    "my-infrastructure": {
+      "transport": "http",
+      "url": "http://localhost:8080/mcp",
+      "timeout_secs": 30,
+      "headers": {
+        "Authorization": "Bearer secret-token-123"
+      }
     }
   }
 }
@@ -107,13 +149,15 @@ When mounting your repository:
 ### Network Exposure
 
 - Default binds to `127.0.0.1` (localhost only)
-- For external access, use reverse proxy (nginx, caddy) with TLS + auth
-- TODO: Add built-in token authentication (token → agent_id mapping)
+- For external access, use reverse proxy (nginx, caddy) with TLS
+- Use `--auth-tokens` for built-in token authentication (token → agent_id mapping)
+- Token auth enables safe multi-agent deployment on single port
 
 ## CLI Options
 
 ```
---agent-id          Agent identifier (required)
+--agent-id          Agent identifier for single-agent mode (mutually exclusive with --auth-tokens)
+--auth-tokens       Path to JSON token mapping file for multi-agent mode (mutually exclusive with --agent-id)
 --db-path           SQLite database path (default: XDG user data dir)
 --mcp-config        Path to .mcp.json (servers to mount)
 --host              Bind host (default: 127.0.0.1)
@@ -121,31 +165,35 @@ When mounting your repository:
 --initial-policy    Path to initial policy .py file
 ```
 
+**Note**: Must provide exactly one of `--agent-id` or `--auth-tokens`.
+
 ## Status
 
-**Core Functionality: ✅ Complete (Single Agent)**
+**Core Functionality: ✅ Complete**
 
-The HTTP MCP Bridge is fully functional for a single external agent:
+The HTTP MCP Bridge is fully functional with support for both single-agent and multi-agent deployments:
 - ✅ HTTP/SSE transport endpoint (via FastMCP's `http_app()`)
 - ✅ Policy-gated tool execution
 - ✅ Compositor with mounted MCP servers
 - ✅ Approval policy engine (Docker-based evaluation)
 - ✅ Standard MCP server resources and tools
+- ✅ Token authentication for multi-tenancy
+- ✅ Lazy infrastructure creation per agent_id
 
-**Current Limitation**: Single agent per bridge instance. The `agent_id` is configured at startup via CLI, and all connections share the same infrastructure. For multiple external agents, run separate bridge instances on different ports.
+**Deployment Modes**:
+- **Single-agent**: Simple mode with `--agent-id` (all connections share infrastructure)
+- **Multi-agent**: Token auth mode with `--auth-tokens` (separate infrastructure per agent_id)
 
 ## Future Enhancements
 
 These features would improve production deployment:
 
-- [ ] **Token Authentication + Multi-Tenancy**:
-  - Read `Authorization: Bearer <token>` header to determine agent_id
-  - Create/cache separate infrastructure per agent_id
-  - Enables multiple external agents connecting to single bridge instance
-  - Example: ChatGPT on port 8080, Claude.ai on same port, different tokens
+- [ ] **Idle Cleanup**: Auto-shutdown infrastructure after N minutes of inactivity per agent_id
 
-- [ ] **Idle Cleanup**: Auto-shutdown infrastructure after N minutes of inactivity
+- [ ] **Token Reload**: Hot-reload token mapping file without restart (watch file for changes)
 
 - [ ] **Unified Instructions**: Merge server instructions in initialization message
 
 - [ ] **Web UI**: Browser-based approval management (human-in-the-loop oversight)
+
+- [ ] **Metrics**: Per-agent usage metrics (tool calls, approvals, policy evaluations)
