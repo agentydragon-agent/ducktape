@@ -246,6 +246,145 @@ def parse_grade_from_responses(response: ResponsesResult) -> Grade:
     raise RuntimeError("No grade tool call in responses output")
 
 
+def responses_prev_assistant_index(inp: Any) -> int | None:
+    """Find index of previous assistant message in Responses API input."""
+    parsed = parse_response_messages(inp)
+    if parsed is None:
+        return None
+    for i in range(len(parsed) - 2, -1, -1):
+        if response_message_role(parsed[i]) == MessageRole.ASSISTANT:
+            return i
+    return None
+
+
+def responses_extract_system_text(inp: Any) -> str:
+    """Extract and join all system message text from Responses API input."""
+    parsed = parse_response_messages(inp)
+    if parsed is None:
+        return ""
+    buf: list[str] = []
+    for it in parsed:
+        if response_message_role(it) != MessageRole.SYSTEM:
+            continue
+        buf.append(response_message_content_as_text(it))
+    return "\n\n".join([t for t in buf if t])
+
+
+def responses_slice_prefix(inp: Any, end_idx: int) -> list[dict[str, Any]]:
+    """Slice Responses API input up to end_idx, excluding system messages."""
+    out: list[dict[str, Any]] = []
+    parsed = parse_response_messages(inp)
+    if parsed is None:
+        return out
+    for it in parsed[:end_idx]:
+        role = response_message_role(it)
+        if role not in (MessageRole.USER, MessageRole.ASSISTANT):
+            continue
+        content = it.content
+        if isinstance(content, list):
+            parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
+            content = [p.model_dump(mode="json", exclude_none=True) for p in parts]
+        out.append({"role": role, "content": content})
+    return out
+
+
+def responses_to_ccr_messages(inp: list[ResponseOutputMessage]) -> list[ChatCompletionMessageParam]:
+    """Convert Responses API messages to Chat Completion format (simplified text-only)."""
+    msgs: list[ChatCompletionMessageParam] = []
+    for it in inp:
+        role = response_message_role(it)
+        if role in (MessageRole.USER, MessageRole.ASSISTANT) and (txt := response_message_content_as_text(it).strip()):
+            if role == MessageRole.USER:
+                msgs.append(ChatCompletionUserMessageParam(role="user", content=txt))
+            else:  # MessageRole.ASSISTANT
+                msgs.append(ChatCompletionAssistantMessageParam(role="assistant", content=txt))
+    return msgs
+
+
+def generate_html_report(report_base: Path):
+    """Generate HTML report from samples and grades JSONL files."""
+    samples_path = report_base / "samples.jsonl"
+    grades_path = report_base / "grades.jsonl"
+    report_path = report_base / "report.html"
+    # Build grades map
+    grades_map: dict[str, Grade] = {}
+    with grades_path.open("r", encoding="utf-8") as grades_file:
+        for line in grades_file:
+            grade_record = EvalGradeRecord.model_validate_json(line)
+            correlation_id = grade_record.correlation_id
+            if not correlation_id:
+                continue
+            grade = parse_grade_from_responses(grade_record.response)
+            grades_map[correlation_id] = grade
+
+    # Collect rows
+    rows: list[dict[str, Any]] = []
+
+    summary: dict[str, Any] = {}
+    with (report_base / "summary.json").open("r", encoding="utf-8") as summary_file:
+        summary = json.load(summary_file)
+
+    template_file = report_base / "template.txt"
+
+    with samples_path.open("r", encoding="utf-8") as samples_file:
+        for line in samples_file:
+            sample_json = json.loads(line)
+            sample_record = EvalSampleRecord.model_validate(sample_json)
+            correlation_id = sample_record.correlation_id or ""
+
+            # Two display paths depending on source
+            if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage):
+                # Crush item: reconstruct minimal views from responses_input
+                responses_input = sample_record.new_assistant_message.responses_input
+                original_system = responses_extract_system_text(responses_input)
+                rewritten_system = rewrite_system_with_template(original_system or "", template_file)
+                parsed_responses_input = parse_response_messages(responses_input)
+                display_messages = responses_to_ccr_messages(parsed_responses_input) if parsed_responses_input else []
+                last_assistant_index = index_of_last_assistant_before_final(display_messages)
+                if last_assistant_index is None:
+                    shared_prefix = display_messages
+                    bad_branch = []
+                else:
+                    shared_prefix = [msg for msg in (display_messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM]
+                    bad_branch = display_messages[last_assistant_index:]
+            else:
+                # CCR item - validate and use typed Anthropic structures
+                if sample_record.anthropic_request is None:
+                    continue
+                original_system = sample_record.anthropic_request.system or ""
+                rewritten_system = rewrite_system_with_template(original_system, template_file)
+                messages = anthropic_messages_to_standard(sample_record.anthropic_request.messages)
+                last_assistant_index = index_of_last_assistant_before_final(messages)
+                if last_assistant_index is None:
+                    shared_prefix = messages
+                    bad_branch = []
+                else:
+                    shared_prefix = [msg for msg in (messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM]
+                    bad_branch = messages[last_assistant_index:]
+            grade = grades_map.get(correlation_id)
+            rows.append(
+                {
+                    "correlation_id": correlation_id,
+                    "timestamp": sample_record.timestamp,
+                    "original_system": original_system,
+                    "rewritten_system": rewritten_system,
+                    "shared_prefix": shared_prefix,
+                    "bad_branch": bad_branch,
+                    "alternative": sample_record.new_assistant_message.model_dump(),
+                    "grade": grade,
+                }
+            )
+
+    # Jinja2 template
+    env = Environment(
+        loader=FileSystemLoader(str(Path(__file__).parent / "templates")),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    template = env.get_template("report.html.j2")
+    html_text = template.render(rows=rows, summary=summary)
+    report_path.write_text(html_text, encoding="utf-8")
+
+
 async def run_eval(
     template_path: Path,
     dataset_paths: list[Path],
@@ -256,64 +395,6 @@ async def run_eval(
     client: AsyncOpenAI,
 ):
     """Run eval pipeline. `client` (AsyncOpenAI) is required and must be injected by caller."""
-
-    # ---- Helpers for Responses-native inputs ----
-    def _responses_join_text(parts: Any) -> str:
-        if isinstance(parts, str):
-            return parts
-        if parts is None:
-            return ""
-        parsed_parts = TypeAdapter(list[ResponseContentPart]).validate_python(parts)
-        return "\n".join(iter_resolved_text(parsed_parts))
-
-    def responses_prev_assistant_index(inp: Any) -> int | None:
-        parsed = parse_response_messages(inp)
-        if parsed is None:
-            return None
-        for i in range(len(parsed) - 2, -1, -1):
-            if response_message_role(parsed[i]) == MessageRole.ASSISTANT:
-                return i
-        return None
-
-    def responses_extract_system_text(inp: Any) -> str:
-        parsed = parse_response_messages(inp)
-        if parsed is None:
-            return ""
-        buf: list[str] = []
-        for it in parsed:
-            if response_message_role(it) != MessageRole.SYSTEM:
-                continue
-            buf.append(response_message_content_as_text(it))
-        return "\n\n".join([t for t in buf if t])
-
-    def responses_slice_prefix(inp: Any, end_idx: int) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        parsed = parse_response_messages(inp)
-        if parsed is None:
-            return out
-        for it in parsed[:end_idx]:
-            role = response_message_role(it)
-            if role not in (MessageRole.USER, MessageRole.ASSISTANT):
-                continue
-            content = it.content
-            if isinstance(content, list):
-                parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
-                content = [p.model_dump(mode="json", exclude_none=True) for p in parts]
-            out.append({"role": role, "content": content})
-        return out
-
-    def responses_to_ccr_messages(inp: list[ResponseOutputMessage]) -> list[ChatCompletionMessageParam]:
-        msgs: list[ChatCompletionMessageParam] = []
-        for it in inp:
-            role = response_message_role(it)
-            if role in (MessageRole.USER, MessageRole.ASSISTANT) and (
-                txt := response_message_content_as_text(it).strip()
-            ):
-                if role == MessageRole.USER:
-                    msgs.append(ChatCompletionUserMessageParam(role="user", content=txt))
-                else:  # MessageRole.ASSISTANT
-                    msgs.append(ChatCompletionAssistantMessageParam(role="assistant", content=txt))
-        return msgs
 
     validate_template_file(template_path)
     # Determine output directory
@@ -368,7 +449,7 @@ async def run_eval(
         raise ValueError("run_eval requires a non-None AsyncOpenAI client injected by caller")
     sem = asyncio.Semaphore(max(1, int(concurrency)))
 
-    async def process(item: Sample) -> tuple[dict | None, dict | None]:
+    async def process(item: Sample) -> tuple[EvalSampleRecord | None, EvalGradeRecord | None]:
         async with sem:
             log_event({"event": "process_start", "cid": item.correlation_id})
             # Branch by source without coercing persisted formats
@@ -547,24 +628,21 @@ async def run_eval(
                 return None, None
 
             # Return combined records for saving
-            sample_record_dict: dict[str, Any] = {
-                "request": sample_request,
-                "response": sample.model_dump(),
-                "new_assistant_message": new_assistant_message,
-                "correlation_id": item.correlation_id,
-                "timestamp": item.timestamp,
-            }
-            if isinstance(item, CCRSample):
-                sample_record_dict["anthropic_request"] = item.anthropic_request
-            return (
-                sample_record_dict,
-                {
-                    "request": grade_request,
-                    "response": grade_response,
-                    "correlation_id": item.correlation_id,
-                    "timestamp": item.timestamp,
-                },
+            sample_record = EvalSampleRecord(
+                request=sample_request,
+                response=sample.model_dump(),
+                new_assistant_message=new_assistant_message,
+                correlation_id=item.correlation_id,
+                timestamp=item.timestamp,
+                anthropic_request=item.anthropic_request if isinstance(item, CCRSample) else None,
             )
+            grade_record = EvalGradeRecord(
+                request=grade_request,
+                response=grade_response,
+                correlation_id=item.correlation_id,
+                timestamp=item.timestamp,
+            )
+            return (sample_record, grade_record)
 
     # Build tasks and run aggregator loop (dedented from process)
     tasks = [process(item) for item in dataset]
@@ -649,11 +727,10 @@ async def run_eval(
     with samples_out.open("w", encoding="utf-8") as samples_output, grades_out.open("w", encoding="utf-8") as grades_output:
         log_event({"event": "as_completed_start", "count": len(tasks)})
         for fut in asyncio.as_completed(tasks):
-            sample_rec, grade_rec = await fut
+            sample_record, grade_record = await fut
             # Determine source from sampling record shape
             source = None
-            if sample_rec:
-                sample_record = EvalSampleRecord.model_validate(sample_rec)
+            if sample_record:
                 samples_output.write(json.dumps(sample_record.model_dump(), sort_keys=True) + "\n")
                 # Determine source from message type
                 source = "crush" if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage) else "ccr"
@@ -684,8 +761,7 @@ async def run_eval(
                         for tool_call in tool_calls:
                             function_name = tool_call.function.name if tool_call.function else "UNKNOWN"
                             source_function_counts[function_name] = source_function_counts.get(function_name, 0) + 1
-            if grade_rec:
-                grade_record = EvalGradeRecord.model_validate(grade_rec)
+            if grade_record:
                 grades_output.write(json.dumps(grade_record.model_dump(), sort_keys=True) + "\n")
                 try:
                     grade = parse_grade_from_responses(grade_record.response)
@@ -726,89 +802,7 @@ async def run_eval(
     )
 
     # Generate HTML report summarizing sequences per sample
-    def _generate_html_report(report_base: Path):
-        samples_path = report_base / "samples.jsonl"
-        grades_path = report_base / "grades.jsonl"
-        report_path = report_base / "report.html"
-        # Build grades map
-        grades_map: dict[str, Grade] = {}
-        with grades_path.open("r", encoding="utf-8") as grades_file:
-            for line in grades_file:
-                grade_record = EvalGradeRecord.model_validate_json(line)
-                correlation_id = grade_record.correlation_id
-                if not correlation_id:
-                    continue
-                grade = parse_grade_from_responses(grade_record.response)
-                grades_map[correlation_id] = grade
-
-        # Collect rows
-        rows: list[dict[str, Any]] = []
-
-        summary: dict[str, Any] = {}
-        with (report_base / "summary.json").open("r", encoding="utf-8") as summary_file:
-            summary = json.load(summary_file)
-
-        template_file = report_base / "template.txt"
-
-        with samples_path.open("r", encoding="utf-8") as samples_file:
-            for line in samples_file:
-                sample_json = json.loads(line)
-                sample_record = EvalSampleRecord.model_validate(sample_json)
-                correlation_id = sample_record.correlation_id or ""
-
-                # Two display paths depending on source
-                if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage):
-                    # Crush item: reconstruct minimal views from responses_input
-                    responses_input = sample_record.new_assistant_message.responses_input
-                    original_system = responses_extract_system_text(responses_input)
-                    rewritten_system = rewrite_system_with_template(original_system or "", template_file)
-                    parsed_responses_input = parse_response_messages(responses_input)
-                    display_messages = responses_to_ccr_messages(parsed_responses_input) if parsed_responses_input else []
-                    last_assistant_index = index_of_last_assistant_before_final(display_messages)
-                    if last_assistant_index is None:
-                        shared_prefix = display_messages
-                        bad_branch = []
-                    else:
-                        shared_prefix = [msg for msg in (display_messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM]
-                        bad_branch = display_messages[last_assistant_index:]
-                else:
-                    # CCR item - validate and use typed Anthropic structures
-                    if sample_record.anthropic_request is None:
-                        continue
-                    original_system = sample_record.anthropic_request.system or ""
-                    rewritten_system = rewrite_system_with_template(original_system, template_file)
-                    messages = anthropic_messages_to_standard(sample_record.anthropic_request.messages)
-                    last_assistant_index = index_of_last_assistant_before_final(messages)
-                    if last_assistant_index is None:
-                        shared_prefix = messages
-                        bad_branch = []
-                    else:
-                        shared_prefix = [msg for msg in (messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM]
-                        bad_branch = messages[last_assistant_index:]
-                grade = grades_map.get(correlation_id)
-                rows.append(
-                    {
-                        "correlation_id": correlation_id,
-                        "timestamp": sample_record.timestamp,
-                        "original_system": original_system,
-                        "rewritten_system": rewritten_system,
-                        "shared_prefix": shared_prefix,
-                        "bad_branch": bad_branch,
-                        "alternative": sample_record.new_assistant_message.model_dump(),
-                        "grade": grade,
-                    }
-                )
-
-        # Jinja2 template
-        env = Environment(
-            loader=FileSystemLoader(str(Path(__file__).parent / "templates")),
-            autoescape=select_autoescape(["html", "xml"]),
-        )
-        template = env.get_template("report.html.j2")
-        html_text = template.render(rows=rows, summary=summary)
-        report_path.write_text(html_text, encoding="utf-8")
-
-    _generate_html_report(out_dir)
+    generate_html_report(out_dir)
     # Emit report path for convenience
     report_path = out_dir / "report.html"
     print(json.dumps({"event": "report_written", "path": str(report_path)}))

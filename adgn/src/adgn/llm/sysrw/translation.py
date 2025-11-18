@@ -22,6 +22,7 @@ from adgn.llm.anthropic.types import (
     ToolResultBlock as AnthropicToolResultBlock,
     ToolUseBlock as AnthropicToolUseBlock,
 )
+from adgn.openai_utils.model import InputTextPart, SystemMessage, UserMessage, AssistantMessage as ResponsesAssistantMessage
 
 from adgn.llm.anthropic.text_extraction import extract_text_content
 
@@ -116,7 +117,7 @@ def anthropic_to_responses_input(
 
     raw_messages: list[dict[str, Any]] = []
     if system:
-        raw_messages.append({"role": "system", "content": [{"type": "input_text", "text": system}]})
+        raw_messages.append(SystemMessage.text(system).model_dump())
 
     for msg in messages:
         if msg.role not in (AnthropicMessageRole.USER, AnthropicMessageRole.ASSISTANT):
@@ -124,7 +125,10 @@ def anthropic_to_responses_input(
 
         text = _join_text_content(msg.content) if isinstance(msg.content, list) else msg.content
         if text.strip():
-            raw_messages.append({"role": msg.role.value, "content": [{"type": "input_text", "text": text}]})
+            if msg.role == AnthropicMessageRole.USER:
+                raw_messages.append(UserMessage.text(text).model_dump())
+            else:  # ASSISTANT
+                raw_messages.append(ResponsesAssistantMessage.text(text).model_dump())
 
     validated = parse_response_messages(raw_messages)
     if validated is None:
@@ -139,8 +143,7 @@ def anthropic_messages_to_standard(messages: list[AnthropicMessage]) -> list[Cha
     """
     result: list[ChatCompletionMessageParam] = []
     for msg in messages:
-        text_content = extract_text_content(msg).strip()
-        if not text_content:
+        if not (text_content := extract_text_content(msg).strip()):
             continue
 
         if msg.role == AnthropicMessageRole.USER:
