@@ -11,7 +11,6 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from .config import get_settings
-from .shared import clear_db_state, set_db_engine, set_db_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +24,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     Args:
         app: FastAPI application instance
+
+    Resources stored on app.state:
+        - db_engine: AsyncEngine
+        - db_session_factory: async_sessionmaker[AsyncSession]
     """
     # Startup
     logger.info("Starting Gatelet server...")
@@ -34,14 +37,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     engine = create_async_engine(
         str(settings.database.dsn), echo=False, future=True, pool_pre_ping=True
     )
-    set_db_engine(engine)
+    app.state.db_engine = engine
     logger.info(f"Database engine created for: {settings.database.dsn}")
 
     # Create session factory
     session_factory = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
     )
-    set_db_session_factory(session_factory)
+    app.state.db_session_factory = session_factory
     logger.info("Database session factory created")
 
     yield
@@ -49,5 +52,4 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown
     logger.info("Shutting down Gatelet server...")
     await engine.dispose()
-    clear_db_state()
     logger.info("Database engine disposed")
