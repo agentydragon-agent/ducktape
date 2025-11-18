@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from adgn.agent.agent import MiniCodex
 from adgn.agent.loop_control import Abort, Auto, Continue
 from adgn.agent.reducer import BaseHandler, Reducer
-from adgn.openai_utils.model import InputTextPart, UserMessage
+from adgn.openai_utils.model import FunctionCallItem, InputTextPart, UserMessage
 from tests.agent.helpers import extract_input_text_content
 
 
@@ -43,3 +44,30 @@ def test_aggregating_continue_and_abort_conflict():
     ctrl = Reducer([_ContinueOnlyHandler(), _AbortHandler()])
     with pytest.raises(RuntimeError):
         _ = ctrl.on_before_sample()
+
+
+class _InvalidFunctionCallInjectHandler(BaseHandler):
+    """Handler that incorrectly injects FunctionCallItem without skip_sampling=True."""
+
+    def on_before_sample(self):
+        fc = FunctionCallItem(type="function_call", name="test", call_id="test_call", arguments="{}")
+        return Continue(Auto(), inserts_input=(fc,))  # Missing skip_sampling=True
+
+
+async def test_function_call_inject_without_skip_sampling_raises(
+    fake_openai_client_factory, make_compositor
+):
+    """Verify runtime check prevents FunctionCallItem injection without skip_sampling=True."""
+    client = fake_openai_client_factory([])
+    async with make_compositor({}) as (mcp_client, _comp):
+        agent = await MiniCodex.create(
+            model="test",
+            system="test",
+            mcp_client=mcp_client,
+            client=client,
+            handlers=[_InvalidFunctionCallInjectHandler()],
+        )
+        with pytest.raises(
+            TypeError, match="FunctionCallItem not allowed in inserts_input when skip_sampling=False"
+        ):
+            await agent.run("test")

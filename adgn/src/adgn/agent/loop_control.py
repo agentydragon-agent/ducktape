@@ -67,19 +67,10 @@ class NoLoopDecision:
     """
 
 
-# Type aliases for Continue.inserts_input
-# Items valid for normal path (skip_sampling=False): appended to transcript as input
-# FunctionCallItem excluded - would create unresolved function call in API request
-# TODO: Consider re-adding AssistantMessage, SystemMessage if production use cases emerge
-NormalInjectableItem = UserMessage
-
-# Items valid for skip-sampling path (skip_sampling=True): treated as synthetic model output
-# FunctionCallItem allowed here - gets executed locally without calling OpenAI API
-# FunctionCallOutputItem excluded - only comes from actual model responses or MCP execution
-# TODO: Consider re-adding AssistantMessageOut if production use cases emerge
-SyntheticOutputItem = FunctionCallItem
-
-# Union of all injectable items (ReasoningItem excluded - must come from model)
+# Type alias for Continue.inserts_input
+# Valid types: UserMessage, FunctionCallItem
+# Constraint (enforced at runtime): FunctionCallItem ONLY allowed when skip_sampling=True
+# Rationale: FunctionCallItem in normal path would create unresolved function call in API request
 InjectableItem = UserMessage | FunctionCallItem
 
 
