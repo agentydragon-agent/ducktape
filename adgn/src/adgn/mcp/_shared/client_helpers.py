@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import json
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
@@ -71,7 +71,7 @@ async def call_simple_ok(client: Client, *, name: str, arguments: dict) -> None:
 
 # Type alias matching MCP spec for CallToolResult.structuredContent.
 # Both mcp.types.CallToolResult and fastmcp.client.CallToolResult define this as dict[str, Any] | None.
-StructuredContent = dict[str, object] | None
+StructuredContent = dict[str, Any] | None
 
 
 def _structured_content(result: mcp_types.CallToolResult, *, tool_name: str) -> StructuredContent:

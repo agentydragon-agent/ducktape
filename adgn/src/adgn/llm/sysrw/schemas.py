@@ -7,7 +7,7 @@ from anthropic.types.tool_param import ToolParam
 from openai.types.responses import ResponseCreateParams
 from pydantic import BaseModel, Field
 
-from adgn.llm.anthropic.types import AnthropicMessage
+from adgn.llm.anthropic.types import Message as AnthropicMessage
 
 # ------------------------
 # Crush (OpenAI Responses)
@@ -41,8 +41,8 @@ class CrushSample(BaseModel):
 # ------------------------
 
 
-class CCRRequest(BaseModel):
-    """CCR request with Pydantic-validated Anthropic messages.
+class Request(BaseModel):
+    """Anthropic API request with Pydantic-validated messages.
 
     Uses adgn.llm.anthropic types (Pydantic) instead of anthropic.types (TypedDicts).
     """
@@ -56,7 +56,7 @@ class CCRSample(BaseModel):
     kind: Literal["ccr"] = "ccr"
     correlation_id: str | None = None
     timestamp: int | None = None
-    anthropic_request: CCRRequest
+    anthropic_request: Request
 
 
 # ------------------------
@@ -70,7 +70,7 @@ class EvalSampleRecord(BaseModel):
     new_assistant_message: dict[str, Any]
     correlation_id: str | None = None
     timestamp: int | None = None
-    anthropic_request: CCRRequest | None = None
+    anthropic_request: Request | None = None
     grade: dict[str, Any] | None = None
 
 

@@ -13,25 +13,12 @@ from mcp.types import CallToolResult
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from adgn.mcp._shared.calltool import to_pydantic
-from adgn.mcp._shared.client_helpers import extract_error_detail
-
-# Type alias matching MCP spec for CallToolResult.structuredContent.
-# Both mcp.types.CallToolResult and fastmcp.client.CallToolResult define this as dict[str, Any] | None.
-StructuredContent = dict[str, Any] | None
+from adgn.mcp._shared.client_helpers import StructuredContent, extract_error_detail
 
 # We use the concrete FastMCP Client type for sessions in tests
 
 
 T_Out = TypeVar("T_Out")
-
-_CALL_RESULT_TYPE_ERR = "expected fastmcp.client CallToolResult, got {typename}"
-
-
-def _normalize_result(raw: object, *, tool_name: str) -> CallToolResult:
-    """Normalize FastMCP client results to the canonical Pydantic CallToolResult."""
-    if not isinstance(raw, FMCallToolResult):
-        raise TypeError(f"{tool_name!r}: {_CALL_RESULT_TYPE_ERR.format(typename=type(raw).__name__)}")
-    return to_pydantic(raw)
 
 
 def _structured_content(result: CallToolResult, *, tool_name: str) -> StructuredContent:
@@ -76,7 +63,7 @@ async def call_tool_typed(
     )
     # Call tool and normalize result to Pydantic CallToolResult
     raw = await session.call_tool(name=name, arguments=args)
-    result = _normalize_result(raw, tool_name=name)
+    result = to_pydantic(raw)
     # Extract structured content
     structured = _structured_content(result, tool_name=name)
     # Validate and parse output
@@ -288,7 +275,7 @@ class TypedClient:
             # Call; FastMCP raises on tool error by default. Capture and return message.
             try:
                 raw = await session.call_tool(name=name, arguments=args_dict)
-                result = _normalize_result(raw, tool_name=name)
+                result = to_pydantic(raw)
             except Exception as exc:
                 return str(exc)
             if not result.isError:

@@ -15,16 +15,24 @@ from typing import Any, cast
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletionMessageParam
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionMessageParam,
+    ChatCompletionMessageToolCallParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionToolMessageParam,
+    ChatCompletionUserMessageParam,
+)
 from pydantic import BaseModel, TypeAdapter
 import tiktoken
 
+from adgn.llm.anthropic.text_extraction import extract_text_content
 from adgn.llm.anthropic.types import (
-    AnthropicMessage,
-    AnthropicMessageRole,
-    AnthropicTextBlock,
-    AnthropicToolResultBlock,
-    AnthropicToolUseBlock,
+    Message as AnthropicMessage,
+    MessageRole as AnthropicMessageRole,
+    TextBlock as AnthropicTextBlock,
+    ToolResultBlock as AnthropicToolResultBlock,
+    ToolUseBlock as AnthropicToolUseBlock,
 )
 from adgn.openai_utils.client_factory import get_async_openai
 from adgn.openai_utils.retry import chat_create_with_retries, responses_create_with_retries
@@ -51,7 +59,7 @@ from .openai_typing import (
     response_message_content_as_text,
     response_message_role,
 )
-from .schemas import CCRRequest, CCRSample, CrushSample, EvalGradeRecord, EvalSampleRecord, Sample
+from .schemas import CCRSample, CrushSample, EvalGradeRecord, EvalSampleRecord, Sample
 from .templates import validate_template_file
 
 
@@ -121,24 +129,10 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
             rec = json.loads(line)
             # Support both CCR (anthropic_request) and Crush (oai_request) entries
             if "anthropic_request" in rec:
-                # Validate CCR sample via Pydantic model
-                ccr = CCRSample(
-                    correlation_id=rec.get("correlation_id"),
-                    timestamp=rec.get("timestamp"),
-                    anthropic_request=CCRRequest.model_validate(rec["anthropic_request"]),  # type: ignore[arg-type]
-                )
-                items.append(ccr)
+                items.append(CCRSample.model_validate(rec))
                 continue
             if "oai_request" in rec:
-                # For ingest, keep unvalidated payload; some test fixtures include relaxed shapes
-                payload = rec["oai_request"]
-                crush = CrushSample(
-                    correlation_id=rec.get("correlation_id"),
-                    timestamp=rec.get("timestamp"),
-                    oai_request=payload,  # type: ignore[arg-type]
-                    wirelog=rec.get("wirelog"),
-                )
-                items.append(crush)
+                items.append(CrushSample.model_validate(rec))
                 continue
     return items
 
@@ -227,8 +221,7 @@ def anthropic_messages_to_standard(messages: list[AnthropicMessage]) -> list[Sta
     """Convert Anthropic messages to StandardMessage list for grader context."""
     result: list[StandardMessage] = []
     for msg in messages:
-        # Use .text_content property for convenience
-        text_content = msg.text_content.strip()
+        text_content = extract_text_content(msg).strip()
         if not text_content:
             continue
 
@@ -255,44 +248,50 @@ def anthro_to_openai_messages(
     messages: list[AnthropicMessage], new_system_text: str | None
 ) -> list[ChatCompletionMessageParam]:
     """Translate Anthropic messages into OpenAI Chat format."""
-    raw_messages: list[dict[str, Any]] = []
+    result: list[ChatCompletionMessageParam] = []
     if new_system_text:
-        raw_messages.append({"role": "system", "content": new_system_text})
+        result.append(ChatCompletionSystemMessageParam(role="system", content=new_system_text))
 
     for message in messages:
         if isinstance(message.content, str):
             if message.content.strip():
-                raw_messages.append({"role": message.role.value, "content": message.content})
+                if message.role == AnthropicMessageRole.USER:
+                    result.append(ChatCompletionUserMessageParam(role="user", content=message.content))
+                elif message.role == AnthropicMessageRole.ASSISTANT:
+                    result.append(ChatCompletionAssistantMessageParam(role="assistant", content=message.content))
             continue
 
-        # message.content is list[AnthropicContentBlock] - Pydantic models
+        # message.content is list[ContentBlock] - Pydantic models
         content_blocks = message.content
 
         if message.role == AnthropicMessageRole.ASSISTANT:
             text_buf: list[str] = []
-            tool_calls: list[dict[str, Any]] = []
+            tool_calls: list[ChatCompletionMessageToolCallParam] = []
             for block in content_blocks:
                 if isinstance(block, AnthropicTextBlock):
                     text_buf.append(block.text)
                 elif isinstance(block, AnthropicToolUseBlock):
                     args_str = json.dumps(block.input, ensure_ascii=False, separators=(",", ":"))
-                    tool_call: dict[str, Any] = {
-                        "type": "function",
-                        "function": {"name": block.name, "arguments": args_str},
-                        "id": block.id,
-                    }
+                    tool_call = ChatCompletionMessageToolCallParam(
+                        type="function",
+                        function={"name": block.name, "arguments": args_str},
+                        id=block.id,
+                    )
                     tool_calls.append(tool_call)
             if text_buf or tool_calls:
-                msg: dict[str, Any] = {"role": "assistant"}
-                if text_buf:
-                    msg["content"] = "\n".join(text_buf)
+                content = "\n".join(text_buf) if text_buf else None
                 if tool_calls:
-                    msg["tool_calls"] = tool_calls
-                raw_messages.append(msg)
+                    result.append(
+                        ChatCompletionAssistantMessageParam(
+                            role="assistant", content=content, tool_calls=tool_calls
+                        )
+                    )
+                elif content:
+                    result.append(ChatCompletionAssistantMessageParam(role="assistant", content=content))
 
         elif message.role == AnthropicMessageRole.USER:
             text_parts: list[str] = []
-            tool_msgs: list[dict[str, Any]] = []
+            tool_msgs: list[ChatCompletionToolMessageParam] = []
             for block in content_blocks:
                 if isinstance(block, AnthropicTextBlock):
                     text_parts.append(block.text)
@@ -300,15 +299,18 @@ def anthro_to_openai_messages(
                     if isinstance(block.content, str):
                         tool_text = block.content
                     else:
-                        # list[AnthropicTextBlock]
+                        # list[TextBlock]
                         tool_text = "\n".join(b.text for b in block.content)
-                    tool_msgs.append({"role": "tool", "tool_call_id": block.tool_use_id, "content": tool_text})
-            raw_messages.extend(tool_msgs)
+                    tool_msgs.append(
+                        ChatCompletionToolMessageParam(
+                            role="tool", tool_call_id=block.tool_use_id, content=tool_text
+                        )
+                    )
+            result.extend(tool_msgs)
             if text_parts:
-                raw_messages.append({"role": "user", "content": "\n".join(text_parts)})
+                result.append(ChatCompletionUserMessageParam(role="user", content="\n".join(text_parts)))
 
-    parsed = parse_chat_messages(raw_messages)
-    return parsed or []
+    return result
 
 
 def anthro_to_responses_input(body: dict[str, Any], new_system_text: str | None) -> list[dict[str, Any]]:

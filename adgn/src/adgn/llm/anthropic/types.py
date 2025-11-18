@@ -18,7 +18,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field
 
 
-class AnthropicMessageRole(StrEnum):
+class MessageRole(StrEnum):
     """Message role enum.
 
     Corresponds to the 'role' field in anthropic.types.MessageParam.
@@ -29,14 +29,14 @@ class AnthropicMessageRole(StrEnum):
     # Note: "system" is not a message role in Anthropic API - it's a separate parameter
 
 
-class AnthropicTextBlock(BaseModel):
+class TextBlock(BaseModel):
     """Text content block. Corresponds to anthropic.types.TextBlockParam."""
 
     type: Literal["text"] = "text"
     text: str
 
 
-class AnthropicToolUseBlock(BaseModel):
+class ToolUseBlock(BaseModel):
     """Tool use content block. Corresponds to anthropic.types.ToolUseBlockParam."""
 
     type: Literal["tool_use"] = "tool_use"
@@ -45,48 +45,28 @@ class AnthropicToolUseBlock(BaseModel):
     input: dict[str, Any]
 
 
-class AnthropicToolResultBlock(BaseModel):
+class ToolResultBlock(BaseModel):
     """Tool result content block. Corresponds to anthropic.types.ToolResultBlockParam."""
 
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
-    content: str | list[AnthropicTextBlock]
+    content: str | list[TextBlock]
     is_error: bool = False
 
 
 # Discriminated union for content blocks (corresponds to ContentBlockParam)
-AnthropicContentBlock = Annotated[
-    AnthropicTextBlock | AnthropicToolUseBlock | AnthropicToolResultBlock,
+ContentBlock = Annotated[
+    TextBlock | ToolUseBlock | ToolResultBlock,
     Field(discriminator="type"),
 ]
 
 
-class AnthropicMessage(BaseModel):
+class Message(BaseModel):
     """A message in the Anthropic Messages API format.
 
     Pydantic wrapper for anthropic.types.MessageParam TypedDict.
     Provides runtime validation and proper attribute access instead of dict.get().
-
-    Usage:
-        msg = AnthropicMessage(role=AnthropicMessageRole.USER, content="Hello")
-        assert msg.role == AnthropicMessageRole.USER  # Attribute access, not .get()
-
-    Anthropic SDK equivalent (TypedDict):
-        msg: MessageParam = {"role": "user", "content": "Hello"}
-        role = msg.get("role")  # Dict access with .get()
     """
 
-    role: AnthropicMessageRole
-    content: str | list[AnthropicContentBlock]
-
-    @property
-    def text_content(self) -> str:
-        """Extract all text content from the message, joining multiple blocks."""
-        if isinstance(self.content, str):
-            return self.content
-
-        texts: list[str] = []
-        for block in self.content:
-            if isinstance(block, AnthropicTextBlock):
-                texts.append(block.text)
-        return "\n".join(texts)
+    role: MessageRole
+    content: str | list[ContentBlock]
