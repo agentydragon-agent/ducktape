@@ -16,7 +16,7 @@ from openai.types.responses import (
 from pydantic import BaseModel, Field, TypeAdapter, model_validator
 
 # Union type for response content parts
-type ResponseContentPart = ResponseOutputText | ResponseOutputRefusal
+ResponseContentPart = ResponseOutputText | ResponseOutputRefusal
 
 
 class MessageRole(StrEnum):
@@ -26,121 +26,6 @@ class MessageRole(StrEnum):
     TOOL = "tool"
     FUNCTION = "function"
     DEVELOPER = "developer"
-
-
-class ToolCallInfo(BaseModel):
-    """Structured tool call information extracted from responses."""
-
-    name: str | None
-    arguments: str | None
-    call_id: str | None
-    tool_id: str | None
-    status: str | None
-    type: str | None
-
-
-class StandardUserMessage(BaseModel):
-    type: Literal["user"] = "user"
-    role: MessageRole = MessageRole.USER
-    content: str
-
-
-class StandardSystemMessage(BaseModel):
-    type: Literal["system"] = "system"
-    role: MessageRole = MessageRole.SYSTEM
-    content: str
-
-
-class StandardAssistantMessage(BaseModel):
-    type: Literal["assistant"] = "assistant"
-    role: MessageRole = MessageRole.ASSISTANT
-    content: str | None = None
-    tool_calls: list[ToolCallInfo] = []
-
-    @model_validator(mode="after")
-    def validate_not_empty(self) -> StandardAssistantMessage:
-        if self.content is None and not self.tool_calls:
-            raise ValueError("Assistant message must have content or tool_calls")
-        return self
-
-
-class StandardAssistantRefusal(BaseModel):
-    type: Literal["refusal"] = "refusal"
-    role: MessageRole = MessageRole.ASSISTANT
-    refusal: str
-
-
-class StandardToolMessage(BaseModel):
-    type: Literal["tool"] = "tool"
-    role: MessageRole = MessageRole.TOOL
-    content: str
-    tool_call_id: str
-
-
-class StandardFunctionMessage(BaseModel):
-    type: Literal["function"] = "function"
-    role: MessageRole = MessageRole.FUNCTION
-    content: str
-    name: str
-
-
-StandardMessage = Annotated[
-    StandardUserMessage
-    | StandardSystemMessage
-    | StandardAssistantMessage
-    | StandardAssistantRefusal
-    | StandardToolMessage
-    | StandardFunctionMessage,
-    Field(discriminator="type"),
-]
-
-
-def chat_param_to_standard_message(msg: ChatCompletionMessageParam) -> StandardMessage:
-    """Convert ChatCompletionMessageParam to StandardMessage."""
-    role = chat_param_message_role(msg)
-
-    match role:
-        case MessageRole.USER:
-            return StandardUserMessage(content=chat_param_message_content_as_text(msg))
-        case MessageRole.SYSTEM:
-            return StandardSystemMessage(content=chat_param_message_content_as_text(msg))
-        case MessageRole.ASSISTANT:
-            # Check for refusal first (only assistant messages can have refusal)
-            refusal = msg.get("refusal")
-            if refusal and isinstance(refusal, str):
-                return StandardAssistantRefusal(refusal=refusal)
-
-            content_text = chat_param_message_content_as_text(msg)
-            content = content_text if content_text else None
-            tool_calls = [extract_chat_tool_call_info(call) for call in chat_param_message_tool_calls(msg)]
-
-            # Handle legacy function_call (convert to tool call, only for assistant)
-            function_call = msg.get("function_call")
-            if function_call and isinstance(function_call, dict):
-                name = function_call.get("name")
-                arguments = function_call.get("arguments")
-                tool_calls.append(
-                    ToolCallInfo(
-                        name=name if isinstance(name, str) else None,
-                        arguments=arguments if isinstance(arguments, str) else None,
-                        call_id=None,  # Legacy function calls don't have IDs
-                        tool_id=None,
-                        status=None,
-                        type="function",
-                    )
-                )
-
-            return StandardAssistantMessage(content=content, tool_calls=tool_calls)
-        case MessageRole.TOOL:
-            tool_call_id = msg.get("tool_call_id")
-            tool_call_id_str = tool_call_id if isinstance(tool_call_id, str) else ""
-            return StandardToolMessage(content=chat_param_message_content_as_text(msg), tool_call_id=tool_call_id_str)
-        case MessageRole.FUNCTION:
-            name = msg.get("name")
-            name_str = name if isinstance(name, str) else ""
-            return StandardFunctionMessage(content=chat_param_message_content_as_text(msg), name=name_str)
-        case _:
-            raise ValueError(f"Unhandled MessageRole: {role}")
 
 
 # DATA EXTRACTION: Work with validated models only

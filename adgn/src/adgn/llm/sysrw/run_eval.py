@@ -40,9 +40,6 @@ from adgn.openai_utils.retry import chat_create_with_retries, responses_create_w
 from .constants import TOOLS_HEADER
 from .openai_typing import (
     MessageRole,
-    StandardAssistantMessage,
-    StandardMessage,
-    StandardUserMessage,
     chat_param_message_content_as_text,
     chat_param_message_role,
     chat_param_message_tool_calls,
@@ -200,11 +197,32 @@ ENV_INTRO = "Here is useful information about the environment you are running in
 MODEL_PREFIX = "You are powered by the model"
 MCP_HEADER = "# MCP Server Instructions"
 
+GRADER_SYSTEM_PROMPT = """You are an evaluator of AI coding assistants.
 
-def index_of_last_assistant_before_final(msgs: list[StandardMessage]) -> int | None:
+You will be given a past conversation between user and an AI coding assistant. The conversation ends with a turn where assistant's next action or response was bad quality, and user marked that by the marker token '<bad>' in their subsequent message along with some explanation of what assistant did wrong. You will be given a counterfactual NEW alternative response that assistant could have sent or immediate next action assistant could have taken instead of the bad actions. Your task is to evaluate whether the alternative action/response would be better to take as an immediate action than the action the user complained about.
+
+Note that in the alternative action branch, you only see 1 next action - if it contains a tool use, assistant would have been able to potentially follow it up with further actions.
+
+A "tool_calls" key in the alternative action JSON indicates that assistant would have used a tool. After that tool use, it would then have opportunity to potentially continue with further actions. If the alternative action does not have any "tool_calls", then assistant would have stopped after this action/message.
+
+Use the rubric: 1=worse/still bad; 2=minor/no improvement; 3=partially improved; 4=mostly fixed; 5=completely fixed.
+
+Read the conversation for context, read the original bad branch and the new assistant action/response, and use the 'grade' tool to return a 1-5 score of the new response and a rationale."""
+
+GRADER_USER_TEMPLATE = """The following is a past conversation between user and an AI coding assistant:
+{prefix_json}
+
+BAD_BRANCH_JSON (from bad assistant turn through the user's complaint, inclusive):
+{bad_branch_json}
+
+NEW_ASSISTANT_REPLY_JSON:
+{new_asst_json}"""
+
+
+def index_of_last_assistant_before_final(msgs: list[ChatCompletionMessageParam]) -> int | None:
     """Find index of last assistant message before the final message."""
     for i in range(len(msgs) - 2, -1, -1):
-        if msgs[i].role == MessageRole.ASSISTANT:
+        if chat_param_message_role(msgs[i]) == MessageRole.ASSISTANT:
             return i
     return None
 
@@ -217,18 +235,18 @@ def index_of_last_assistant_in_anthropic_messages(messages: list[AnthropicMessag
     return None
 
 
-def anthropic_messages_to_standard(messages: list[AnthropicMessage]) -> list[StandardMessage]:
-    """Convert Anthropic messages to StandardMessage list for grader context."""
-    result: list[StandardMessage] = []
+def anthropic_messages_to_standard(messages: list[AnthropicMessage]) -> list[ChatCompletionMessageParam]:
+    """Convert Anthropic messages to ChatCompletionMessageParam for grader context."""
+    result: list[ChatCompletionMessageParam] = []
     for msg in messages:
         text_content = extract_text_content(msg).strip()
         if not text_content:
             continue
 
         if msg.role == AnthropicMessageRole.USER:
-            result.append(StandardUserMessage(content=text_content))
+            result.append(ChatCompletionUserMessageParam(role="user", content=text_content))
         elif msg.role == AnthropicMessageRole.ASSISTANT:
-            result.append(StandardAssistantMessage(content=text_content))
+            result.append(ChatCompletionAssistantMessageParam(role="assistant", content=text_content))
 
     return result
 
@@ -346,47 +364,19 @@ def anthro_to_responses_input(body: dict[str, Any], new_system_text: str | None)
 
 
 def build_grader_prompt(
-    prefix_messages: list[StandardMessage], raw_bad_branch: list[StandardMessage], raw_new_asst_obj: dict[str, Any]
-) -> list[dict[str, Any]]:
-    sys = {
-        "role": "system",
-        "content": (
-            "You are an evaluator of AI coding assistants.\n\n"
-            "You will be given a past conversation between user and an AI coding assistant."
-            " The conversation ends with a turn where assistant's next action or response was bad quality, and user"
-            " marked that by the marker token '<bad>' in their subsequent message along with some explanation of"
-            " what assistant did wrong. You will be given a counterfactual NEW alternative response that assistant"
-            " could have sent or immediate next action assistant could have taken instead of the bad actions."
-            " Your task is to evaluate whether the alternative action/response would be better to take as an immediate action"
-            " than the action the user complained about.\n\n"
-            " Note that in the alternative action branch, you only see 1 next action - if it contains a tool use,"
-            " assistant would have been able to potentially follow it up with further actions.\n\n"
-            'A "tool_calls" key in the alternative action JSON indicates that assistant would have used a tool.'
-            " After that tool use, it would then have opportunity to potentially continue with further actions."
-            ' If the alternative action does not have any "tool_calls", then assistant would have stopped after this action/message.'
-            "\n\n"
-            " Use the rubric: 1=worse/still bad; 2=minor/no improvement; 3=partially improved;"
-            " 4=mostly fixed; 5=completely fixed.\n\n"
-            "Read the conversation for context, read the original bad branch and the new assistant action/response,"
-            " and use the 'grade' tool to return a 1-5 score of the new response and a rationale."
-        ),
-    }
-    user = {
-        "role": "user",
-        "content": (
-            "The following is a past conversation between user and an AI coding assistant:\n"
-            + json.dumps([msg.model_dump() for msg in prefix_messages], ensure_ascii=False)
-            + "\n\n"
-            + "BAD_BRANCH_JSON (from bad assistant turn through the user's complaint, inclusive):\n"
-            + json.dumps(
-                [msg.model_dump() for msg in raw_bad_branch] if raw_bad_branch is not None else [], ensure_ascii=False
-            )
-            + "\n\n"
-            + "NEW_ASSISTANT_REPLY_JSON:\n"
-            + json.dumps(raw_new_asst_obj or {}, ensure_ascii=False)
-        ),
-    }
-    return [sys, user]
+    prefix_messages: list[ChatCompletionMessageParam],
+    raw_bad_branch: list[ChatCompletionMessageParam],
+    raw_new_asst_obj: dict[str, Any],
+) -> list[ChatCompletionMessageParam]:
+    user_content = GRADER_USER_TEMPLATE.format(
+        prefix_json=json.dumps(prefix_messages, ensure_ascii=False),
+        bad_branch_json=json.dumps(raw_bad_branch if raw_bad_branch is not None else [], ensure_ascii=False),
+        new_asst_json=json.dumps(raw_new_asst_obj or {}, ensure_ascii=False),
+    )
+    return [
+        ChatCompletionSystemMessageParam(role="system", content=GRADER_SYSTEM_PROMPT),
+        ChatCompletionUserMessageParam(role="user", content=user_content),
+    ]
 
 
 GRADE_TOOL = {
@@ -477,8 +467,8 @@ async def run_eval(
             out.append({"role": role, "content": content})
         return out
 
-    def responses_to_ccr_messages(inp: Any) -> list[StandardMessage]:
-        msgs: list[StandardMessage] = []
+    def responses_to_ccr_messages(inp: Any) -> list[ChatCompletionMessageParam]:
+        msgs: list[ChatCompletionMessageParam] = []
         parsed = parse_response_messages(inp)
         if parsed is None:
             return msgs
@@ -488,9 +478,9 @@ async def run_eval(
                 txt := response_message_content_as_text(it).strip()
             ):
                 if role == MessageRole.USER:
-                    msgs.append(StandardUserMessage(content=txt))
+                    msgs.append(ChatCompletionUserMessageParam(role="user", content=txt))
                 else:  # MessageRole.ASSISTANT
-                    msgs.append(StandardAssistantMessage(content=txt))
+                    msgs.append(ChatCompletionAssistantMessageParam(role="assistant", content=txt))
         return msgs
 
     validate_template_file(template_path)
@@ -603,7 +593,7 @@ async def run_eval(
                     log_event(msg)
                     return None, None
                 new_asst_obj = samp.choices[0].message.model_dump()
-                # For grader context: convert full Anthropic message list to StandardMessage
+                # For grader context: convert full Anthropic message list to ChatCompletionMessageParam
                 msgs_for_grader = anthropic_messages_to_standard(ar.messages)
                 prev_asst_idx_for_grader: int = prev_asst_idx
             else:
@@ -652,17 +642,13 @@ async def run_eval(
             middle = base_prefix[5 : len(base_prefix) - len(tail)] if len(base_prefix) > 10 else []
 
             # Build a provisional grader input to compute tokens; start from minimal
-            def mk_grader_input(prefix_subset: list[StandardMessage]) -> list[dict[str, Any]]:
-                gm = build_grader_prompt(prefix_subset, raw_bad_branch, raw_new_asst_obj)
-                return [{"role": "system", "content": gm[0]["content"]}, {"role": "user", "content": gm[1]["content"]}]
-
             prefix_msgs = [*first]  # start with first only
-            gi = mk_grader_input(prefix_msgs + tail)
+            gi = build_grader_prompt(prefix_msgs + tail, raw_bad_branch, raw_new_asst_obj)
             tok = tokens_for_chat_messages(gi)
             # Greedily add middle messages until we hit budget
             added = 0
             for m in middle:
-                trial = mk_grader_input([*prefix_msgs, m, *tail])
+                trial = build_grader_prompt([*prefix_msgs, m, *tail], raw_bad_branch, raw_new_asst_obj)
                 trial_tok = tokens_for_chat_messages(trial)
                 if trial_tok <= TARGET_PREFIX_TOKENS:
                     prefix_msgs.append(m)
