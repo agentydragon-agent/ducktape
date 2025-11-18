@@ -72,10 +72,13 @@ Agent A → spawn_agent(...), approve_tool_call(...), update_policy(...)
 resource://agents/list                          # All agents + capabilities
 resource://agents/{agent_id}/state              # Sampling state (local only)
 resource://agents/{agent_id}/approvals/pending  # Per-agent pending approvals
+resource://agents/{agent_id}/approvals/history  # Historical approval timeline
 resource://approvals/pending                     # GLOBAL mailbox (all agents)
 ```
 
-**Global mailbox** shows all pending approvals across all agents - useful for UI overview.
+**Global mailbox** returns content blocks with both URIs and inline content - each approval is a separate content block.
+
+**Historical timeline** serves as activity log for external agents - shows what tool calls were approved/rejected, when, and by whom.
 
 ### 3. Tool Routing Pattern ✅
 
@@ -175,7 +178,10 @@ class InfrastructureRegistry:
 ```python
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from pydantic import BaseModel
+from datetime import datetime
+from typing import Literal
 
+# Tool input models
 class ApproveToolCallArgs(BaseModel):
     agent_id: str
     call_id: str
@@ -187,6 +193,17 @@ class RejectToolCallArgs(BaseModel):
 
 class AbortAgentArgs(BaseModel):
     agent_id: str
+
+# Historical approval timeline models
+class ApprovalHistoryEntry(BaseModel):
+    """Single approval decision in the timeline."""
+    call_id: str
+    tool: str
+    args: dict
+    decision: Literal["approved", "rejected"]
+    reason: str | None = None  # Only for rejections
+    timestamp: datetime
+    decided_by: str  # "human" or agent ID
 
 def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
     """Unified cross-agent management server."""
@@ -270,25 +287,79 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         "resource://approvals/pending",
         name="approvals.pending.global",
         mime_type="application/json",
-        description="Global mailbox: all pending approvals across all agents"
+        description="Global mailbox: all pending approvals across all agents (returns content blocks)"
     )
     async def approvals_pending_global():
-        """Get all pending approvals (global mailbox)."""
-        all_pending = []
+        """Get all pending approvals as content blocks (global mailbox).
+
+        Returns MCP content blocks - each approval is a separate block with:
+        - uri: unique resource URI for this approval
+        - mimeType: application/json
+        - text: inline JSON content with approval details
+        """
+        import json
+        contents = []
         for agent_id in registry.known_agents():
             try:
                 infra = await registry.get_infrastructure(agent_id)
                 pending = await infra.approval_engine.get_pending()
                 for approval in pending:
-                    all_pending.append({
-                        "agent_id": agent_id,
-                        **approval
+                    # Each approval becomes a content block with both URI and inline content
+                    approval_uri = f"resource://agents/{agent_id}/approvals/{approval['call_id']}"
+                    contents.append({
+                        "uri": approval_uri,
+                        "mimeType": "application/json",
+                        "text": json.dumps({
+                            "agent_id": agent_id,
+                            "call_id": approval['call_id'],
+                            "tool": approval['tool'],
+                            "args": approval['args'],
+                            "timestamp": approval.get('timestamp'),
+                        })
                     })
             except Exception as e:
                 # Skip agents that don't have approval engines
                 logger.debug(f"Skipping {agent_id}: {e}")
                 continue
-        return {"pending": all_pending}
+        return {"contents": contents}
+
+    @server.resource(
+        "resource://agents/{agent_id}/approvals/history",
+        name="agent.approvals.history",
+        mime_type="application/json",
+        description="Historical approval timeline for an agent (activity log)"
+    )
+    async def agent_approvals_history(agent_id: str):
+        """Get historical approval timeline for an agent.
+
+        Serves as activity log for external agents - shows what tool calls
+        were approved/rejected, when, and by whom (human or which agent).
+        All data routed through Pydantic models for type safety.
+        """
+        infra = await registry.get_infrastructure(agent_id)
+
+        # Get history from approval engine (returns list[ApprovalHistoryEntry])
+        history_entries = await infra.approval_engine.get_history()
+
+        # Convert Pydantic models to JSON-serializable dicts
+        timeline = [
+            {
+                "call_id": entry.call_id,
+                "tool": entry.tool,
+                "args": entry.args,
+                "decision": entry.decision,
+                "reason": entry.reason,
+                "timestamp": entry.timestamp.isoformat(),
+                "decided_by": entry.decided_by,
+            }
+            for entry in history_entries
+        ]
+
+        return {
+            "agent_id": agent_id,
+            "timeline": timeline,
+            "count": len(timeline),
+        }
 
     # Tools
 
@@ -356,12 +427,15 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 - [ ] `resource://agents/list` returns all agents with correct capabilities
 - [ ] `resource://agents/{id}/state` works for local agents, errors for bridge agents
 - [ ] `resource://agents/{id}/approvals/pending` returns pending approvals
-- [ ] `resource://approvals/pending` aggregates all pending approvals
+- [ ] `resource://agents/{id}/approvals/history` returns historical timeline with Pydantic models
+- [ ] `resource://approvals/pending` returns content blocks (each approval as separate block)
+- [ ] Content blocks include both URI and inline JSON content
 - [ ] `approve_tool_call` routes to correct agent and approves
 - [ ] `reject_tool_call` routes to correct agent and rejects
 - [ ] `abort_agent` routes to correct agent and aborts
 - [ ] Resource notifications fire when approvals change
 - [ ] Resource notifications fire when agent state changes
+- [ ] Historical timeline entries use Pydantic models throughout
 - [ ] Test with 2+ agents (local and bridge)
 
 #### 1.3 Token Authentication
@@ -648,8 +722,17 @@ async function refreshGlobalApprovals() {
     params: { uri: 'resource://approvals/pending' }
   })
 
-  const data = JSON.parse(result.contents[0].text)
-  globalApprovals.set(data.pending)
+  // Global mailbox returns content blocks - each is a separate approval
+  const mainContent = JSON.parse(result.contents[0].text)
+  const approvals = mainContent.contents.map((block: any) => {
+    // Each block has uri + inline JSON content
+    const approval = JSON.parse(block.text)
+    return {
+      ...approval,
+      uri: block.uri  // Keep the URI for reference
+    }
+  })
+  globalApprovals.set(approvals)
 }
 
 export async function approveToolCall(agentId: string, callId: string) {
@@ -687,17 +770,32 @@ export async function abortAgent(agentId: string) {
     }
   })
 }
+
+export async function getAgentHistory(agentId: string): Promise<any[]> {
+  if (!agentsClient) throw new Error('Not connected')
+
+  const result = await agentsClient.request({
+    method: 'resources/read',
+    params: { uri: `resource://agents/${agentId}/approvals/history` }
+  })
+
+  const data = JSON.parse(result.contents[0].text)
+  return data.timeline  // Array of historical approval entries
+}
 ```
 
 **Acceptance**:
 - [ ] Connects to agents server successfully
 - [ ] Fetches agent list
-- [ ] Fetches global approvals
+- [ ] Fetches global approvals (handles content blocks correctly)
+- [ ] Parses content blocks to extract individual approvals
+- [ ] Fetches agent history timeline
 - [ ] Subscribes to resource updates
 - [ ] Receives notifications and refreshes data
 - [ ] `approveToolCall` works
 - [ ] `rejectToolCall` works
 - [ ] `abortAgent` works
+- [ ] `getAgentHistory` returns timeline data
 
 #### 2.5 UI Components
 
@@ -783,10 +881,11 @@ npm install --save-dev pydantic-to-typescript
 Ensure all frontend-facing models are exported:
 - `ApprovalBrief`
 - `ApprovalPendingEvt`
+- `ApprovalHistoryEntry` (historical timeline)
 - `ServerCapabilities`
 - `SamplingSnapshot`
 - `ServerEntry` (discriminated union)
-- Tool input/output schemas
+- Tool input/output schemas (ApproveToolCallArgs, RejectToolCallArgs, AbortAgentArgs)
 
 **Acceptance**:
 - [ ] `npm run generate-types` succeeds
@@ -823,9 +922,34 @@ async def test_agents_server_basic():
     state = await client.read_resource(local_agent["state_uri"])
     assert "ts" in state  # SamplingSnapshot
 
-    # Test: Global approvals mailbox
-    approvals = await client.read_resource("resource://approvals/pending")
-    assert "pending" in approvals
+    # Test: Global approvals mailbox (content blocks)
+    approvals_result = await client.read_resource("resource://approvals/pending")
+    approvals_data = json.loads(approvals_result.contents[0].text)
+    assert "contents" in approvals_data
+    # Verify content blocks structure
+    for block in approvals_data["contents"]:
+        assert "uri" in block
+        assert "mimeType" in block
+        assert block["mimeType"] == "application/json"
+        assert "text" in block
+        approval = json.loads(block["text"])
+        assert "agent_id" in approval
+        assert "call_id" in approval
+
+    # Test: Agent history timeline
+    history_result = await client.read_resource(f"resource://agents/{local_agent['agent_id']}/approvals/history")
+    history_data = json.loads(history_result.contents[0].text)
+    assert "timeline" in history_data
+    assert "count" in history_data
+    # Verify history entry structure (Pydantic models)
+    if history_data["timeline"]:
+        entry = history_data["timeline"][0]
+        assert "call_id" in entry
+        assert "tool" in entry
+        assert "decision" in entry
+        assert entry["decision"] in ["approved", "rejected"]
+        assert "timestamp" in entry
+        assert "decided_by" in entry
 
     # Test: Approve tool call
     result = await client.call_tool("approve_tool_call", {
@@ -871,6 +995,24 @@ async def test_token_auth():
     # Valid token: succeeds
     # Invalid token: 401
     # No token: 401
+
+async def test_content_blocks_structure():
+    """Test global approvals mailbox content blocks."""
+    # Setup with multiple agents with pending approvals
+    # Read resource://approvals/pending
+    # Verify returns {"contents": [...]}
+    # Verify each block has uri, mimeType, text
+    # Verify each text is valid JSON with approval details
+
+async def test_historical_timeline_pydantic():
+    """Test historical timeline uses Pydantic models."""
+    # Setup agent with approval history
+    # Create ApprovalHistoryEntry instances via approval engine
+    # Read resource://agents/{id}/approvals/history
+    # Verify timeline entries match Pydantic schema
+    # Verify timestamp is ISO format
+    # Verify decision is literal "approved" or "rejected"
+    # Verify decided_by is "human" or agent ID
 ```
 
 **Acceptance**:
@@ -909,6 +1051,20 @@ describe('MCP Client', () => {
     // Subscribe to resource
     // Trigger notification
     // Assert store updated
+  })
+
+  it('handles content blocks in global approvals', async () => {
+    // Connect
+    // Fetch global approvals
+    // Verify content blocks parsed correctly
+    // Verify each approval has uri, agent_id, call_id, tool, args
+  })
+
+  it('fetches agent history timeline', async () => {
+    // Connect
+    // Call getAgentHistory(agent_id)
+    // Verify returns timeline array
+    // Verify each entry has required fields (call_id, tool, decision, timestamp, decided_by)
   })
 })
 ```
