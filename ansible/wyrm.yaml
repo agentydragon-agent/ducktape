@@ -89,7 +89,7 @@
         state: directory
         owner: "{{ my_user }}"
         group: "{{ my_user }}"
-        mode: 0775
+        mode: "0o775"
       become: true
       tags: [storage]
 
@@ -109,7 +109,7 @@
         state: directory
         owner: "{{ my_user }}"
         group: "{{ my_user }}"
-        mode: 0775
+        mode: "0o775"
       become: true
       tags: [storage]
 

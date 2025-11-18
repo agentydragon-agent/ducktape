@@ -11,8 +11,8 @@ from ..access.context import PredicateContext
 from ..access.rule_engine import RuleEngine
 from ..check_python import check_python_file
 from ..checkers_v2 import filter_violations
-from ..cli import close_desktop_notification, send_desktop_notification
 from ..config import ConfigLoader
+from ..notifications import close_desktop_notification, send_desktop_notification
 from ..config.clean_models import ModularConfig
 from ..config.models import (
     AutofixCategory,
@@ -716,19 +716,14 @@ class HookHandler:
                     tool_response = request.tool_response if request.tool_response is not None else request.tool_result
 
                 tool_call = ToolCall(
-                    tool_name=request.tool_name,
-                    tool_input=request.tool_input.model_dump(),
-                    tool_response=tool_response,
+                    tool_name=request.tool_name, tool_input=request.tool_input.model_dump(), tool_response=tool_response
                 )
-                categorized_groups = self.diff_intelligence.analyze(
-                    tool_call=tool_call,
-                    violations=all_violations,
-                )
+                categorized_groups = self.diff_intelligence.analyze(tool_call=tool_call, violations=all_violations)
 
                 # Only track in-diff and near-diff violations as important
-                important_violations = categorized_groups[ViolationCategory.IN_DIFF] + categorized_groups[
-                    ViolationCategory.NEAR_DIFF
-                ]
+                important_violations = (
+                    categorized_groups[ViolationCategory.IN_DIFF] + categorized_groups[ViolationCategory.NEAR_DIFF]
+                )
 
                 if important_violations:
                     # Convert back to plain violations for tracker

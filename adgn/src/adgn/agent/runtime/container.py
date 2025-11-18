@@ -241,10 +241,7 @@ class AgentContainer:
 
         # Construct the approval engine with the chosen initial policy (DI)
         approval_engine = make_policy_engine(
-            agent_id=self.agent_id,
-            persistence=self.persistence,
-            docker_client=self.docker_client,
-            policy_source=chosen,
+            agent_id=self.agent_id, persistence=self.persistence, docker_client=self.docker_client, policy_source=chosen
         )
         # approval_hub is constructed at init; ensure it exists
         assert self.approval_hub is not None
@@ -252,10 +249,7 @@ class AgentContainer:
         return (approval_engine, self.approval_hub)
 
     async def _setup_mcp_infrastructure(
-        self,
-        approval_engine: ApprovalPolicyEngine,
-        approval_hub: ApprovalHub,
-        mcp_config: MCPConfig,
+        self, approval_engine: ApprovalPolicyEngine, approval_hub: ApprovalHub, mcp_config: MCPConfig
     ) -> tuple[Compositor, Client, NotificationsBuffer, PolicyReaderStub, PolicyApproverStub]:
         """Phase 2: Set up MCP infrastructure.
 
@@ -320,9 +314,7 @@ class AgentContainer:
 
         async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
             if self._cm is not None and self.session is not None:
-                await self._cm.send_payload(
-                    ApprovalPendingEvt(call_id=call_id, tool_key=tool_key, args_json=args_json)
-                )
+                await self._cm.send_payload(ApprovalPendingEvt(call_id=call_id, tool_key=tool_key, args_json=args_json))
 
         install_policy_gateway(
             comp,
@@ -441,16 +433,11 @@ class AgentContainer:
                     self._notif_buffer,
                     self._policy_reader,
                     self._policy_approver,
-                ) = await self._setup_mcp_infrastructure(
-                    self.approval_engine, self.approval_hub, mcp_cfg
-                )
+                ) = await self._setup_mcp_infrastructure(self.approval_engine, self.approval_hub, mcp_cfg)
 
                 # Phase 3: Agent runtime
                 self.session, self.agent = await self._setup_agent_runtime(
-                    self._compositor_client,
-                    self._notif_buffer,
-                    self.approval_hub,
-                    self.approval_engine,
+                    self._compositor_client, self._notif_buffer, self.approval_hub, self.approval_engine
                 )
 
                 return None

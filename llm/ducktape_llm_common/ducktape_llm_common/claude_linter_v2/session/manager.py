@@ -43,8 +43,6 @@ class SessionData(BaseModel):
     notification_id: int | None = None
 
 
-
-
 logger = logging.getLogger(__name__)
 
 

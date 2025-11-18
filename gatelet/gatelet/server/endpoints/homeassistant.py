@@ -39,11 +39,7 @@ async def fetch_states(settings: Settings = Depends(get_settings)) -> list[dict[
 
 
 @router.get("/ha/", response_class=HTMLResponse)
-async def list_entities(
-    request: Request,
-    auth: Auth,
-    settings: Settings = Depends(get_settings),
-) -> HTMLResponse:
+async def list_entities(request: Request, auth: Auth, settings: Settings = Depends(get_settings)) -> HTMLResponse:
     """List configured Home Assistant entity states."""
     states = await fetch_states(settings)
     is_human = auth.auth_type == "admin"
@@ -63,10 +59,7 @@ async def list_entities(
 
 @router.get("/ha/{entity_id}", response_class=HTMLResponse)
 async def entity_details(
-    request: Request,
-    entity_id: str,
-    auth: Auth,
-    settings: Settings = Depends(get_settings),
+    request: Request, entity_id: str, auth: Auth, settings: Settings = Depends(get_settings)
 ) -> HTMLResponse:
     """Display details for a single entity."""
     states = await fetch_states(settings)

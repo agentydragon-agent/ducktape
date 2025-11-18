@@ -22,9 +22,10 @@ from . import __version__
 from .checker import FileChecker
 from .config import AutofixCategory
 from .hooks.exceptions import HookBugError
-from .hooks.handler import HOOK_REQUEST_TYPES, handle
+from .hooks.handler import handle
+from .hooks.requests import HOOK_REQUEST_TYPES
 from .session import SessionManager
-from .session.manager import SessionInfo
+from .session.manager import SessionData
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +319,7 @@ def session_list(all: bool) -> None:
                 _display_session(session_info)
 
 
-def _display_session(session_info: SessionInfo) -> None:
+def _display_session(session_info: SessionData) -> None:
     """Display a single session's information."""
     ago = humanize.naturaltime(session_info.last_seen)
     click.echo(f"  {session_info.id[:8]}... - last seen {ago}")

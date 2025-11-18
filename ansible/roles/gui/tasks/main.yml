@@ -100,14 +100,14 @@
 
 - name: Install snaps
   become: true
-  community.general.snap:
+  community.general.snap:  # noqa: syntax-check[unknown-module]
     name:
       - whatsdesk
       - yt-dlp
 
 - name: Ensure no youtube-dl (deprecated)
   become: true
-  community.general.snap:
+  community.general.snap:  # noqa: syntax-check[unknown-module]
     name: youtube-dl
     state: absent
 

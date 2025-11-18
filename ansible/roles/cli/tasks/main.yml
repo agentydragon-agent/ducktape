@@ -72,7 +72,7 @@
 
 - name: Install snaps
   become: true
-  community.general.snap:
+  community.general.snap:  # noqa: syntax-check[unknown-module]
     name: tio
     classic: true
 

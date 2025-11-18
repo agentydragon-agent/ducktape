@@ -1,7 +1,7 @@
 ---
 - name: Update font version file
   ansible.builtin.copy:
-    content: "{{ nerd_fonts_version.stdout }}"
+    content: "{{ legacy_nerd_fonts_version.stdout }}"
     dest: "{{ installed_version_path }}"
     owner: root
     group: root
@@ -9,4 +9,4 @@
 
 - name: Mark fonts updated
   ansible.builtin.set_fact:
-    fonts_updated: true
+    legacy_nerd_fonts_fonts_updated: true

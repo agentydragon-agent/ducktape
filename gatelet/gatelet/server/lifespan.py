@@ -39,16 +39,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
 
     # Create database engine
-    engine = create_async_engine(
-        str(settings.database.dsn), echo=False, future=True, pool_pre_ping=True
-    )
+    engine = create_async_engine(str(settings.database.dsn), echo=False, future=True, pool_pre_ping=True)
     app.state.db_engine = engine
     logger.info(f"Database engine created for: {settings.database.dsn}")
 
     # Create session factory
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
-    )
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
     app.state.db_session_factory = session_factory
     logger.info("Database session factory created")
 

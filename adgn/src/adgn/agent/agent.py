@@ -409,8 +409,7 @@ class MiniCodex:
                 store=True,
                 parallel_tool_calls=self._parallel_tool_calls,
                 tools=[
-                    FunctionToolParam(name=t.name, description=t.description, parameters=t.inputSchema)
-                    for t in tools
+                    FunctionToolParam(name=t.name, description=t.description, parameters=t.inputSchema) for t in tools
                 ],
                 reasoning=reasoning_param,
             )

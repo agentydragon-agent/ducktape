@@ -71,10 +71,7 @@ async def _new_challenge(key: AuthKey, db_session: AsyncSession, settings: Setti
 
 @router.get("/cr/{key_id}", response_class=HTMLResponse)
 async def start_challenge(
-    key_id: int,
-    request: Request,
-    db_session: AsyncSession = DB_SESSION,
-    settings: Settings = Depends(get_settings),
+    key_id: int, request: Request, db_session: AsyncSession = DB_SESSION, settings: Settings = Depends(get_settings)
 ):
     key = await _validate_key(key_id, db_session, settings)
     nonce, _, options = await _new_challenge(key, db_session, settings)
@@ -93,11 +90,7 @@ async def start_challenge(
 
 
 async def _render_new_challenge(
-    request: Request,
-    key: AuthKey,
-    db_session: AsyncSession,
-    message: str,
-    settings: Settings,
+    request: Request, key: AuthKey, db_session: AsyncSession, message: str, settings: Settings
 ):
     nonce, _, options = await _new_challenge(key, db_session, settings)
     return request.app.state.templates.TemplateResponse(

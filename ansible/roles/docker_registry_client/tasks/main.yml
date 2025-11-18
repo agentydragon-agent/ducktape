@@ -46,14 +46,14 @@
     docker_registry_client_daemon_config: >-
       {{
         (
-          docker_registry_client_daemon_raw[content] | b64decode | from_json
+          docker_registry_client_daemon_raw['content'] | b64decode | from_json
           if docker_registry_client_daemon_json.stat.exists else {}
         )
         | combine(
             {
-              tlscacert: /etc/docker/certs.d/registry.k3s.agentydragon.com/ca.crt,
-              registry-mirrors: [],
-              insecure-registries: []
+              'tlscacert': '/etc/docker/certs.d/registry.k3s.agentydragon.com/ca.crt',
+              'registry-mirrors': [],
+              'insecure-registries': []
             },
             recursive=True
           )

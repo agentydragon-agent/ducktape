@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ViolationTracker:
     """Tracks violations found during a session for quality gate."""
 
-    def __init__(self, session_manager: SessionManager) -> None:
+    def __init__(self, session_manager: "SessionManager") -> None:
         self.session_manager = session_manager
         self._violations: dict[
             SessionID, dict[tuple[str, int, str], dict[str, Any]]

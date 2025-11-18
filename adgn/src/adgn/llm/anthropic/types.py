@@ -55,10 +55,7 @@ class ToolResultBlock(BaseModel):
 
 
 # Discriminated union for content blocks (corresponds to ContentBlockParam)
-ContentBlock = Annotated[
-    TextBlock | ToolUseBlock | ToolResultBlock,
-    Field(discriminator="type"),
-]
+ContentBlock = Annotated[TextBlock | ToolUseBlock | ToolResultBlock, Field(discriminator="type")]
 
 
 class Message(BaseModel):

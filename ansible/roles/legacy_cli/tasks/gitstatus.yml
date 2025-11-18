@@ -30,7 +30,7 @@
     creates: "~/.cache/gitstatus/gitstatusd-{{ ansible_system | lower }}-{{ ansible_machine }}"
   become: true
   become_user: "{{ my_user | default(ansible_user_id) }}"
-  register: gitstatus_install
+  register: legacy_cli_gitstatus_install
   ignore_errors: true  # May fail on unsupported platforms
 
 - name: Find downloaded gitstatusd binary
@@ -40,15 +40,15 @@
     file_type: file
   become: true
   become_user: "{{ my_user | default(ansible_user_id) }}"
-  register: gitstatusd_files
+  register: legacy_cli_gitstatusd_files
 
 - name: Create symlink in ~/.local/bin for gitstatusd
   ansible.builtin.file:
-    src: "{{ gitstatusd_files.files[0].path }}"
+    src: "{{ legacy_cli_gitstatusd_files.files[0].path }}"
     dest: "~/.local/bin/gitstatusd"
     state: link
   become: true
   become_user: "{{ my_user | default(ansible_user_id) }}"
   when:
-    - gitstatusd_files.files | length > 0
-    - gitstatusd_files.files[0].path is defined
+    - legacy_cli_gitstatusd_files.files | length > 0
+    - legacy_cli_gitstatusd_files.files[0].path is defined

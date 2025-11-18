@@ -181,3 +181,7 @@ def get_settings() -> Settings:
     For tests, call get_settings.cache_clear() to reset.
     """
     return Settings.from_file(CONFIG_PATH)
+
+
+# Module-level instance for direct access when dependency injection is not available
+settings = get_settings()

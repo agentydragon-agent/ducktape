@@ -217,11 +217,7 @@ class ScenarioExecutor:
                 raise
             finally:
                 result = ScenarioResult(
-                    id=scenario.id,
-                    description=scenario.description,
-                    status=status,
-                    steps=scenario.results,
-                    error=error,
+                    id=scenario.id, description=scenario.description, status=status, steps=scenario.results, error=error
                 )
                 try:
                     await scenario.teardown(result)
@@ -248,5 +244,6 @@ class ScenarioExecutor:
                 f"Failed to read file {path}: {result.stderr.strip() if result.stderr else result.stdout}"
             )
         return result.stdout
+
 
 __all__ = ["ScenarioExecutionError", "ScenarioExecutor", "ScenarioSkipped"]

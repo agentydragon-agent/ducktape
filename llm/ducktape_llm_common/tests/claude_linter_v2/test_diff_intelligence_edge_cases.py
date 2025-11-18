@@ -31,7 +31,9 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(
+            ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response)
+        )
 
         assert parsed is not None
         assert parsed.added_lines == {12}  # Only the + line
@@ -58,7 +60,9 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parse_tool_response(ToolCall(tool_name="MultiEdit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(
+            ToolCall(tool_name="MultiEdit", tool_input={"file_path": "/test.py"}, tool_response=tool_response)
+        )
 
         assert parsed is not None
         assert parsed.added_lines == {10, 11, 12, 22}
@@ -67,7 +71,9 @@ class TestDiffParserEdgeCases:
         """Test handling empty structuredPatch."""
         # Empty patch array
         tool_response = {"structuredPatch": []}
-        parsed = parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(
+            ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response)
+        )
         assert parsed is not None
         assert len(parsed.hunks) == 0
         assert len(parsed.added_lines) == 0
@@ -76,7 +82,9 @@ class TestDiffParserEdgeCases:
         """Test handling missing structuredPatch field."""
         # No structuredPatch field
         tool_response = {"someOtherField": "value"}
-        parsed = parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(
+            ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response)
+        )
         assert parsed is None
 
     def test_parse_special_diff_markers(self):
@@ -97,7 +105,9 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(
+            ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response)
+        )
 
         assert parsed is not None
         assert parsed.added_lines == {10}

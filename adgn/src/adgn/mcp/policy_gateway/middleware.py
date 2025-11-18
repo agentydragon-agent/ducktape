@@ -170,12 +170,11 @@ class PolicyGatewayMiddleware(Middleware):
                         return call_result
 
                     # Check if error uses reserved policy codes/messages
-                    stamped_downstream = (
-                        isinstance(ed.data, dict) and ed.data.get(POLICY_GATEWAY_STAMP_KEY) is True
-                    )
+                    stamped_downstream = isinstance(ed.data, dict) and ed.data.get(POLICY_GATEWAY_STAMP_KEY) is True
                     if (
                         stamped_downstream
-                        or ed.code in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
+                        or ed.code
+                        in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
                         or ed.message
                         in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG)
                     ):
@@ -183,11 +182,7 @@ class PolicyGatewayMiddleware(Middleware):
                             ErrorData(
                                 code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
                                 message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
-                                data={
-                                    POLICY_GATEWAY_STAMP_KEY: True,
-                                    "name": name,
-                                    "backend_code": ed.code,
-                                },
+                                data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": ed.code},
                             )
                         )
                 return call_result

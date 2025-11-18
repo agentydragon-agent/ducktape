@@ -69,7 +69,10 @@
 
     - name: Get latest Anki release version
       ansible.builtin.shell: |
+        set -o pipefail
         jq --raw-output '.tag_name' {{ anki_tmp_path }}/latest-release.json
+      args:
+        executable: /bin/bash
       register: anki_latest_release_version
       changed_when: false
 
@@ -85,11 +88,14 @@
 
     - name: Get latest Anki release URL
       ansible.builtin.shell: |
+        set -o pipefail
         jq --raw-output '
           .assets[]
           | select(.name | test("anki-launcher.tar.zst"))
           | .browser_download_url
         ' {{ anki_tmp_path }}/latest-release.json
+      args:
+        executable: /bin/bash
       register: anki_latest_release_url_raw
       changed_when: false
 
