@@ -163,7 +163,7 @@ class SessionChannelManager(ChannelConnectionManager):
     async def _build_snapshot(self, session: AgentSession) -> SessionSnapshot:
         """Build session snapshot from session state."""
         session_state = SessionState(
-            session_id=getattr(session, "session_id", "default"),
+            session_id=session._manager._session_id,
             version="1.0.0",
             capabilities=[],
         )
