@@ -393,8 +393,7 @@ class MiniCodex:
         elif isinstance(decision, Continue):
             # Inject any handler-provided pre-sample inserts into transcript
             # Type system enforces that inserts_input only contains valid types
-            for it in decision.inserts_input:
-                self._transcript.append(it)
+            self._transcript.extend(decision.inserts_input)
             raw_tc = _tool_choice_from_policy(decision.tool_policy)
             if isinstance(raw_tc, dict) and raw_tc.get("type") == "function" and isinstance(raw_tc.get("name"), str):
                 tool_choice_typed: ToolChoice = ToolChoiceFunction(name=raw_tc["name"])

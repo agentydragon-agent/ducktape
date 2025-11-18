@@ -1,6 +1,7 @@
 """Configuration management for Gatelet server."""
 
 from datetime import timedelta
+from functools import lru_cache
 import logging
 import os
 from pathlib import Path
@@ -168,43 +169,15 @@ class Settings(BaseModel):
 # Path to the active configuration file
 CONFIG_PATH = Path(os.getenv("GATELET_CONFIG", "gatelet.toml"))
 
-# Global settings instance (lazy-loaded)
-_settings_instance: Settings | None = None
 
-
+@lru_cache
 def get_settings() -> Settings:
-    """Get the global Settings instance (lazy-loaded, cached).
+    """Get application settings (cached).
 
-    This function provides dependency injection for settings across the application.
-    Tests can override settings by calling set_settings() before importing modules
-    that use get_settings().
+    This is the proper dependency injection pattern for FastAPI.
+    Use as: settings: Settings = Depends(get_settings)
 
-    For FastAPI endpoints, use: settings: Settings = Depends(get_settings)
-    For other code: settings = get_settings()
+    The @lru_cache decorator ensures settings are loaded once and reused.
+    For tests, call get_settings.cache_clear() to reset.
     """
-    global _settings_instance
-    if _settings_instance is None:
-        _settings_instance = Settings.from_file(CONFIG_PATH)
-    return _settings_instance
-
-
-def set_settings(settings: Settings) -> None:
-    """Override the global settings instance (primarily for testing).
-
-    Args:
-        settings: Settings instance to use globally
-    """
-    global _settings_instance
-    _settings_instance = settings
-
-
-def reset_settings() -> None:
-    """Clear the cached settings instance, forcing reload on next get_settings()."""
-    global _settings_instance
-    _settings_instance = None
-
-
-# Deprecated: Import settings directly is discouraged.
-# Use get_settings() for dependency injection instead.
-# This exists for backward compatibility during migration.
-settings = get_settings()
+    return Settings.from_file(CONFIG_PATH)

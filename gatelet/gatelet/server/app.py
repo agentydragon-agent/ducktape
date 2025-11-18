@@ -18,17 +18,22 @@ from .auth.dependencies import (
 )
 from .auth.handlers import AuthHandlerError
 from .auth.webhook_auth import AuthError
-from .config import settings
+from .config import Settings, get_settings
 from .database import get_db_session
 from .endpoints import activitywatch, admin, challenge, homeassistant, webhook_receive, webhook_view
 from .endpoints.homeassistant import fetch_states
 from .endpoints.webhook_view import get_latest_payloads
+from .lifespan import lifespan
 from .models import AdminSession
 from .shared import BASE_DIR, templates
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Gatelet", description="LLM-friendly API for Home Assistant and webhooks")
+app = FastAPI(
+    title="Gatelet",
+    description="LLM-friendly API for Home Assistant and webhooks",
+    lifespan=lifespan,
+)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 # Include routers
@@ -94,6 +99,8 @@ def register_with_all_auth_methods(path: str, handler: Callable, register_admin:
         handler: Handler function to register
         register_admin: Whether to expose this handler for admin sessions
     """
+    settings = get_settings()
+
     # Key in path auth
     if settings.auth.key_in_url.enabled:
         app.add_api_route(
