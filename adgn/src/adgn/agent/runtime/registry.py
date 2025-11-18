@@ -19,13 +19,6 @@ from .builder import build_local_agent
 
 
 @dataclass
-class UiFacet:
-    """UI manager + bus wrapper for backward compatibility."""
-    manager: ConnectionManager
-    ui_bus: ServerBus
-
-
-@dataclass
 class AgentRuntime:
     """Combines infrastructure and runtime for a running agent.
 
@@ -38,33 +31,6 @@ class AgentRuntime:
     runtime: LocalAgentRuntime
     _ui_manager = None  # Set from builder if UI attached
     _ui_bus = None  # Set from builder if UI attached
-
-    @property
-    def ui(self):
-        """UI facet for backward compatibility."""
-        if self._ui_manager is None or self._ui_bus is None:
-            return None
-        return UiFacet(manager=self._ui_manager, ui_bus=self._ui_bus)
-
-    @property
-    def session(self):
-        """Agent session from runtime."""
-        return self.runtime.session
-
-    @property
-    def policy_approver(self):
-        """Policy approver stub from infrastructure."""
-        return self.running.policy_approver
-
-    @property
-    def compositor_client(self):
-        """Compositor client from infrastructure."""
-        return self.running.compositor_client
-
-    @property
-    def runtime_ephemeral(self):
-        """Runtime ephemeral flag (always False for new architecture)."""
-        return False
 
     async def list_mcp_entries(self):
         """List MCP server entries via compositor_meta."""
@@ -134,10 +100,10 @@ class AgentRuntime:
 
     async def sampling_snapshot_incremental(self) -> None:
         """Send incremental sampling snapshot to UI."""
-        if not self.ui or not self.session:
+        if not self._ui_manager or not self.runtime.session:
             return
         snap = await self.running.compositor.sampling_snapshot()
-        await self.ui.manager.send_payload(await self.session.build_snapshot(sampling=snap))
+        await self._ui_manager.send_payload(await self.runtime.session.build_snapshot(sampling=snap))
 
 
 @dataclass

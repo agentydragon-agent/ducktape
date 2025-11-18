@@ -47,9 +47,9 @@ class WsContext:
     def __init__(self, app: FastAPI, container: AgentRuntime):
         self.app = app
         self.container = container
-        assert container.ui is not None
-        self.cm = container.ui.manager
-        self.session = container.session
+        assert container._ui_manager is not None
+        self.cm = container._ui_manager
+        self.session = container.runtime.session
 
 
 async def _persist_user_approval(ctx: WsContext, call_id: str, outcome: ApprovalOutcome) -> None:
@@ -162,13 +162,13 @@ def register_ws(app: FastAPI) -> None:
             await ws.close()
             return
 
-        if not container.ui:
-            logger.error("ws: container missing UI facet", extra={"agent_id": container.agent_id})
-            await _ws_send(ws, ErrorEvt(code=ErrorCode.AGENT_ERROR, message="agent missing UI facet"))
+        if not container._ui_manager:
+            logger.error("ws: container missing UI manager", extra={"agent_id": container.agent_id})
+            await _ws_send(ws, ErrorEvt(code=ErrorCode.AGENT_ERROR, message="agent missing UI manager"))
             await ws.close()
             return
-        cm = container.ui.manager
-        session = container.session
+        cm = container._ui_manager
+        session = container.runtime.session
 
         # Send Accepted only after container is ensured live so callers waiting for
         # Accepted can proceed with a consistent view (e.g., HTTP /api/agents shows live)

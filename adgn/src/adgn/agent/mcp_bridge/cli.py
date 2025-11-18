@@ -21,9 +21,8 @@ import docker
 from fastmcp.mcp_config import MCPConfig
 from platformdirs import user_data_dir
 
+from adgn.agent.mcp_bridge.server import create_bridge_infrastructure, create_http_app
 from adgn.agent.persist.sqlite import SQLitePersistence
-from adgn.agent.runtime.infrastructure import MCPInfrastructure
-from adgn.agent.runtime.sidecars import SidecarBundle
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +111,8 @@ async def _run_server(
     port: int,
     initial_policy: str | None,
 ):
+    import uvicorn
+
     # Initialize persistence
     db_path.parent.mkdir(parents=True, exist_ok=True)
     persistence = SQLitePersistence(str(db_path))
@@ -121,35 +122,31 @@ async def _run_server(
     docker_client = docker.from_env()
 
     try:
-        # Create infrastructure
-        builder = MCPInfrastructure(
+        # Create infrastructure with sidecars
+        running = await create_bridge_infrastructure(
             agent_id=agent_id,
             persistence=persistence,
             docker_client=docker_client,
+            mcp_config=mcp_config,
             initial_policy=initial_policy,
         )
 
-        running = await builder.start(mcp_config)
+        # Create HTTP app from compositor
+        app = create_http_app(running)
 
-        # Attach sidecars (none for external agents)
-        bundle = SidecarBundle.for_external_agent()
-        await bundle.attach_all(running)
-
-        # TODO: Expose running.compositor over HTTP/SSE transport
-        # The compositor is already a FastMCP server - we just need to serve it via HTTP
-        #
-        # Options:
-        # 1. Use FastMCP's built-in HTTP transport (if available)
-        # 2. Create FastAPI app with SSE endpoint that proxies to compositor
-        # 3. Use mcp.server.sse.SseServerTransport
-        #
-        # For now, log and keep alive
         logger.info(f"HTTP MCP Bridge started for agent_id={agent_id}")
-        logger.info(f"Compositor ready with {len(mcp_config.mcpServers)} external servers")
-        logger.info(f"TODO: Expose compositor at http://{host}:{port}/mcp")
+        logger.info(f"Compositor ready with {len(mcp_config.mcpServers or {})} external servers")
+        logger.info(f"MCP server available at http://{host}:{port}/mcp")
 
-        # Keep alive
-        await asyncio.Event().wait()
+        # Run HTTP server
+        config = uvicorn.Config(
+            app=app,
+            host=host,
+            port=port,
+            log_level="info",
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
 
     finally:
         await running.close()
