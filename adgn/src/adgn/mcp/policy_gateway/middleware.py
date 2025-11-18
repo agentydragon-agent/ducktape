@@ -151,9 +151,12 @@ class PolicyGatewayMiddleware(Middleware):
 
         if decision is ApprovalDecision.ALLOW:
             if self._record is not None:
+                # TODO: Pass tool args to record_approval (currently not stored)
+                # TODO: Track execution start here
                 await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_ALLOW)
             try:
                 call_result = await call_next(context)
+                # TODO: Track execution completion here
                 # If downstream returned an error ToolResult instead of raising,
                 # remap reserved policy codes/messages here using typed parsing when available.
                 if bool(call_result.is_error):
@@ -239,6 +242,8 @@ class PolicyGatewayMiddleware(Middleware):
 
         if isinstance(decision_obj, ContinueDecision):
             if self._record is not None:
+                # TODO: Bug - USER approvals recorded as POLICY_ALLOW
+                # Should be: ApprovalOutcome.USER_APPROVE
                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
             try:
                 return await call_next(context)
@@ -247,6 +252,8 @@ class PolicyGatewayMiddleware(Middleware):
                 raise
         if isinstance(decision_obj, AbortTurnDecision):
             if self._record is not None:
+                # TODO: Bug - USER rejections recorded as POLICY_DENY_ABORT
+                # Should be: ApprovalOutcome.USER_DENY_ABORT
                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
             raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, decision_obj.reason)
             # No separate deny-continue decision; only abort is supported explicitly.
