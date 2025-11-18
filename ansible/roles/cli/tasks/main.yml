@@ -1,6 +1,7 @@
 ---
 # Include system inspection sudo permissions for all systems
-- import_role:
+- name: Include system inspection sudo permissions
+  ansible.builtin.import_role:
     name: system_inspection_nopasswd
   tags: [sudo, system]
 

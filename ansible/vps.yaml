@@ -30,7 +30,7 @@
     # Route to cluster ingress VIP (LoadBalancer external IP)
     # 10.0.3.2 is the ingress-nginx-controller LoadBalancer VIP
     test_cluster_stream_backend: "10.0.3.2:443"
-    test_cluster_stream_sni_pattern: "~^.+\\.test-cluster\\.agentydragon\\.com$"
+    test_cluster_stream_sni_pattern: "*.test-cluster.agentydragon.com"
     test_cluster_stream_proxy_connect_timeout: 15s
     test_cluster_stream_proxy_timeout: 300s
 
@@ -292,7 +292,7 @@
           ansible.builtin.file:
             path: "/etc/nginx/{{ item }}"
             state: directory
-            mode: 0755
+            mode: '0755'
           loop:
             - streams-available
             - streams-enabled
@@ -301,7 +301,7 @@
           ansible.builtin.template:
             src: nginx-streams/{{ item }}.j2
             dest: /etc/nginx/streams-available/{{ item }}
-            mode: 0644
+            mode: '0644'
           loop:
             - https-sni-router
           notify:
