@@ -239,13 +239,11 @@ def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[Standar
     """Convert Anthropic MessageParam list to StandardMessage list for grader context.
 
     Extracts text content from Anthropic content blocks and flattens to simple string content.
-    Assumes messages are already validated through parent Pydantic model (e.g., CCRRequest).
+    Messages are already validated MessageParam instances (TypedDicts) from CCRRequest.
     """
     result: list[StandardMessage] = []
     for msg in messages:
-        if not isinstance(msg, dict):
-            continue
-
+        # MessageParam is a TypedDict validated by parent Pydantic model
         role = msg.get("role")
         content = msg.get("content")
 
@@ -254,6 +252,7 @@ def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[Standar
         if isinstance(content, str):
             text_content = content
         elif isinstance(content, list):
+            # content is list[ContentBlockParam] - validated TypedDicts
             texts: list[str] = []
             for block in content:
                 if isinstance(block, dict) and block.get("type") in ("text", "input_text"):
@@ -289,7 +288,7 @@ def anthro_to_openai_messages(
 ) -> list[ChatCompletionMessageParam]:
     """Translate Anthropic MessageParam list into OpenAI Chat format, returning SDK models.
 
-    Assumes messages are already validated through parent Pydantic model (e.g., CCRRequest).
+    Messages are already validated MessageParam instances (TypedDicts) from CCRRequest.
     """
 
     def _join_text_parts(parts: Iterable[dict[str, Any]]) -> str:
@@ -310,9 +309,7 @@ def anthro_to_openai_messages(
         raw_messages.append({"role": "system", "content": new_system_text})
 
     for message in messages:
-        if not isinstance(message, dict):
-            continue
-
+        # MessageParam is a TypedDict validated by parent Pydantic model
         role = message.get("role")
         content = message.get("content")
 
@@ -322,7 +319,7 @@ def anthro_to_openai_messages(
             continue
 
         if isinstance(content, list):
-            # Content is list of blocks (already validated by parent model)
+            # content is list[ContentBlockParam] - validated TypedDicts
             content_blocks: list[ContentBlockParam] = []
             for part in content:
                 if isinstance(part, dict):
