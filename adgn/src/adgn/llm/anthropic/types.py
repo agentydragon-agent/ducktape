@@ -12,13 +12,13 @@ Corresponds to:
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class AnthropicMessageRole(str, Enum):
+class AnthropicMessageRole(StrEnum):
     """Message role enum.
 
     Corresponds to the 'role' field in anthropic.types.MessageParam.
