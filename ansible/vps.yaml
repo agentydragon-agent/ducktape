@@ -24,6 +24,15 @@
     # Disable heavy dev packages on VPS
     include_heavy_dev_packages: false
     headscale_health_host: agentydragon.com
+    # TLS stream routing defaults
+    nginx_https_listener_port: 4443
+    nginx_stream_default_backend: "127.0.0.1:{{ nginx_https_listener_port }}"
+    # Route to cluster ingress VIP (LoadBalancer external IP)
+    # 10.0.3.2 is the ingress-nginx-controller LoadBalancer VIP
+    test_cluster_stream_backend: "10.0.3.2:443"
+    test_cluster_stream_sni_pattern: "~^.+\\.test-cluster\\.agentydragon\\.com$"
+    test_cluster_stream_proxy_connect_timeout: 15s
+    test_cluster_stream_proxy_timeout: 300s
 
   roles:
     - role: common
@@ -249,6 +258,7 @@
             - adgn.link
             - atlas.agentydragon.com
             - k3s.agentydragon.com
+            - test-cluster.agentydragon.com
           notify:
             - Reload nginx
 
@@ -271,6 +281,39 @@
             - adgn.link
             - atlas.agentydragon.com
             - k3s.agentydragon.com
+            - test-cluster.agentydragon.com
+          notify:
+            - Reload nginx
+
+    - name: Nginx stream configs
+      tags: [nginx]
+      block:
+        - name: Ensure nginx stream config directories exist
+          ansible.builtin.file:
+            path: "/etc/nginx/{{ item }}"
+            state: directory
+            mode: 0755
+          loop:
+            - streams-available
+            - streams-enabled
+
+        - name: "Render nginx stream configuration from template"
+          ansible.builtin.template:
+            src: nginx-streams/{{ item }}.j2
+            dest: /etc/nginx/streams-available/{{ item }}
+            mode: 0644
+          loop:
+            - https-sni-router
+          notify:
+            - Reload nginx
+
+        - name: Enable nginx stream configs
+          ansible.builtin.file:
+            state: link
+            src: /etc/nginx/streams-available/{{ item }}
+            dest: /etc/nginx/streams-enabled/{{ item }}
+          loop:
+            - https-sni-router
           notify:
             - Reload nginx
 
