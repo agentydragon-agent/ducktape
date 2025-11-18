@@ -181,34 +181,41 @@ class UIBlock(BaseModel):
 - **If no UI server**: Show only tool call timeline
 - **Display logic**: Single scrollable timeline, different card types
 
-### API Endpoints
+### MCP API
 
+**Resources:**
 ```typescript
 // Core agent info
-GET resource://agents/list
+resource://agents/list
   → { agents: AgentInfo[] }
 
 // Policy gate timeline (ALWAYS available, both agent types)
-GET resource://agents/{id}/approvals/history
+resource://agents/{id}/approvals/history
   → { timeline: ToolCallEntry[], pending: PendingApproval[] }
 
 // Active policy
-GET resource://approval-policy/policy.py
+resource://approval-policy/policy.py
   → Python source code (string)
 
 // Policy proposals
-GET resource://agents/{id}/policy/proposals
+resource://agents/{id}/policy/proposals
   → { proposals: PolicyProposalInfo[], active_policy_uri: string }
 
 // UI server blocks (OPTIONAL - only if UI server attached)
-GET resource://ui/{id}/blocks
+resource://ui/{id}/blocks
   → { blocks: UIBlock[] }
 
-// Agent controls
-POST approve_tool_call(agent_id, call_id) → void
-POST reject_tool_call(agent_id, call_id, reason) → void
-POST abort_agent(agent_id) → void  // Only for local agents
-POST send_message(agent_id, content) → void  // Only if UI server attached
+// Agent state (for sidebar badges)
+resource://agents/{id}/state
+  → { agent_id: string, state: "waiting_approval" | "executing" | "sampling" | "idle" }
+```
+
+**Tools:**
+```typescript
+approve_tool_call(agent_id, call_id) → void
+reject_tool_call(agent_id, call_id, reason) → void
+abort_agent(agent_id) → void  // Only for local agents
+send_message(agent_id, content) → void  // Only if UI server attached
 ```
 
 ### Component Structure
@@ -1611,6 +1618,17 @@ client.on('elicitation', async (request) => {
 **Required Changes:**
 
 ```python
+class Decision(BaseModel):
+    """Decision made about a tool call (jointly optional fields)."""
+    outcome: ApprovalOutcome  # POLICY_ALLOW, USER_APPROVE, etc.
+    decided_at: datetime  # Also serves as execution start time
+    reason: str | None  # For denials/rejections
+
+class ToolCallExecution(BaseModel):
+    """Tool execution result (jointly optional fields)."""
+    completed_at: datetime
+    output: mcp_types.CallToolResult
+
 # TODO: Rename ApprovalRecord → ToolCallRecord
 class ToolCallRecord(BaseModel):
     """Complete tool call record from policy gate (tracks ALL calls through gate)."""
@@ -1621,16 +1639,13 @@ class ToolCallRecord(BaseModel):
     # Tool call info (reuse existing ApprovalToolCall type)
     tool_call: ApprovalToolCall  # {name, call_id, args_json}
 
-    # Decision info
-    outcome: ApprovalOutcome  # POLICY_ALLOW, USER_APPROVE, etc.
-    decided_at: datetime
-    reason: str | None  # Separate field for denial/rejection reasons
+    # Decision info (None if not yet decided)
+    # decision.decided_at also serves as execution start time
+    decision: Decision | None
 
-    # Execution tracking (enables EXECUTING state detection)
-    execution_started_at: datetime | None
-    execution_completed_at: datetime | None  # Jointly optional with tool_output
-    tool_output: mcp_types.CallToolResult | None  # Jointly optional with execution_completed_at
-    # Note: If execution_completed_at is set, tool_output should also be set (and vice versa)
+    # Execution result (None if not completed)
+    # State detection: decision!=None && execution==None → EXECUTING
+    execution: ToolCallExecution | None
 ```
 
 **TODOs:**
@@ -1651,15 +1666,15 @@ class ToolCallRecord(BaseModel):
 | State | Color | Meaning | Detection |
 |-------|-------|---------|-----------|
 | **WAITING_APPROVAL** | 🔴 Red | Has pending approvals | `len(approval_hub.pending) > 0` |
-| **EXECUTING** | 🟡 Yellow | Tool call in flight | `execution_started_at != None && execution_completed_at == None` |
+| **EXECUTING** | 🟡 Yellow | Tool call in flight | `decision != None && execution == None` |
 | **SAMPLING** | 🔵 Blue | Agent loop active (local only) | `local_runtime.agent.is_running()` |
 | **IDLE** | 🟢 Green | No pending work | Default state |
 
 **State Priority** (if multiple apply): WAITING_APPROVAL > EXECUTING > SAMPLING > IDLE
 
-**API Addition:**
+**MCP Resource:**
 ```typescript
-GET resource://agents/{id}/state
+resource://agents/{id}/state
   → {
       agent_id: string,
       state: "waiting_approval" | "executing" | "sampling" | "idle"
