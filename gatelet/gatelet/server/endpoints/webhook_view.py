@@ -12,13 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..auth.dependencies import Auth
-from ..config import get_settings
+from ..config import Settings, get_settings
 from ..database import get_db_session
 from ..models import WebhookIntegration, WebhookPayload
-from ..shared import get_jinja_templates
-
-settings = get_settings()
-templates = get_jinja_templates()
 
 router = APIRouter(tags=["webhook_view"])
 
@@ -26,9 +22,6 @@ DB_SESSION = Depends(get_db_session)
 
 # JSON formatter for consistent output
 json_formatter = Formatter(indent_spaces=2, max_inline_length=70, max_inline_complexity=10)
-
-# Default page size from config
-DEFAULT_PAGE_SIZE = settings.webhook.default_page_size
 
 
 class PayloadSummary(BaseModel):
@@ -68,7 +61,7 @@ async def get_webhook_integration(integration_name: str, db_session: AsyncSessio
 
 
 async def get_webhook_payloads(
-    db_session: AsyncSession, integration_name: str | None = None, page: int = 1, page_size: int = DEFAULT_PAGE_SIZE
+    db_session: AsyncSession, integration_name: str | None = None, page: int = 1, page_size: int | None = None, settings: Settings | None = None
 ) -> dict[str, Any]:
     """Get webhook payloads with pagination.
 
@@ -76,11 +69,18 @@ async def get_webhook_payloads(
         db_session: Database session
         integration_name: Optional integration name to filter by
         page: Page number (starting from 1)
-        page_size: Number of items per page
+        page_size: Number of items per page (defaults to settings.webhook.default_page_size)
+        settings: Settings instance (required if page_size not provided)
 
     Returns:
         Dict with template context variables
     """
+    # Set default page size from settings if not provided
+    if page_size is None:
+        if settings is None:
+            raise ValueError("settings must be provided when page_size is None")
+        page_size = settings.webhook.default_page_size
+
     # Build base query
     join_condition = WebhookPayload.integration_id == WebhookIntegration.id
     count_query = select(func.count()).select_from(WebhookPayload).join(WebhookIntegration, join_condition)
@@ -148,8 +148,9 @@ async def list_all_payloads(
     request: Request,
     auth: Auth,
     page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = DEFAULT_PAGE_SIZE,
+    page_size: Annotated[int, Query(ge=1, le=100)] | None = None,
     db_session: AsyncSession = DB_SESSION,
+    settings: Settings = Depends(get_settings),
 ):
     """List all webhook integrations and payloads."""
     # Get webhook integrations
@@ -169,10 +170,10 @@ async def list_all_payloads(
     ]
 
     # Get payloads with pagination
-    context = await get_webhook_payloads(db_session, None, page, page_size)
+    context = await get_webhook_payloads(db_session, None, page, page_size, settings)
 
     # Add request-specific context
-    return templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(
         "webhook_payloads.html",
         context
         | {
@@ -190,18 +191,19 @@ async def list_integration_payloads(
     integration_name: str,
     auth: Auth,
     page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = DEFAULT_PAGE_SIZE,
+    page_size: Annotated[int, Query(ge=1, le=100)] | None = None,
     db_session: AsyncSession = DB_SESSION,
+    settings: Settings = Depends(get_settings),
 ):
     """List webhook payloads for a specific integration."""
     # Check if integration exists and is enabled
     integration = await get_webhook_integration(integration_name, db_session)
 
     # Get payloads with pagination
-    context = await get_webhook_payloads(db_session, integration_name, page, page_size)
+    context = await get_webhook_payloads(db_session, integration_name, page, page_size, settings)
 
     # Add request-specific context
-    return templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(
         "webhook_payloads.html",
         context
         | {

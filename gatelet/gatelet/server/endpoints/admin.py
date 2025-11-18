@@ -12,17 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import Auth, get_admin_auth_with_context
-from ..config import get_settings
+from ..config import Settings, get_settings
 from ..database import get_db_session
 from ..endpoints import activitywatch
 from ..endpoints.homeassistant import fetch_states
 from ..endpoints.webhook_view import get_latest_payloads
 from ..models import AdminSession, AuthCRSession, AuthKey
 from ..security import verify_password
-from ..shared import get_jinja_templates
-
-settings = get_settings()
-templates = get_jinja_templates()
 
 router = APIRouter(tags=["admin"])
 
@@ -31,14 +27,15 @@ CSRF = Depends()
 
 
 class _CsrfSettings(BaseModel):
-    secret_key: str = settings.security.csrf_secret
+    secret_key: str
     token_location: str = "body"
     token_key: str = "csrf_token"
 
 
 @CsrfProtect.load_config
 def _get_csrf_config():
-    return _CsrfSettings()
+    settings = get_settings()
+    return _CsrfSettings(secret_key=settings.security.csrf_secret)
 
 
 SESSION_DURATION = timedelta(hours=1)
@@ -63,11 +60,15 @@ ADMIN_SESSION = Depends(_get_admin_session)
 
 @router.post("/admin/login", response_class=HTMLResponse)
 async def login(
-    request: Request, password: str = Form(...), db_session: AsyncSession = DB_SESSION, csrf_protect: CsrfProtect = CSRF
+    request: Request,
+    password: str = Form(...),
+    db_session: AsyncSession = DB_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     await csrf_protect.validate_csrf(request)
     if not verify_password(password, settings.admin.password_hash):
-        return templates.TemplateResponse(
+        return request.app.state.templates.TemplateResponse(
             "public.html",
             {
                 "request": request,
@@ -92,12 +93,12 @@ async def login(
 
 
 @router.get("/admin/", response_class=HTMLResponse, dependencies=[Depends(get_admin_auth_with_context)])
-async def admin_root(request: Request, auth: Auth) -> HTMLResponse:
-    async with get_db_session() as db_session:
+async def admin_root(request: Request, auth: Auth, settings: Settings = Depends(get_settings)) -> HTMLResponse:
+    async with get_db_session(request) as db_session:
         recent = await get_latest_payloads(db_session, limit=5)
-    ha_states = await fetch_states()
+    ha_states = await fetch_states(settings)
     aw_summary = await activitywatch.fetch_recent_activity()
-    return templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(
         "index.html",
         {
             "request": request,
@@ -118,7 +119,7 @@ async def list_keys(
 ) -> HTMLResponse:
     keys = (await db_session.execute(select(AuthKey).order_by(AuthKey.id))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = templates.TemplateResponse("admin_keys.html", {"request": request, "keys": keys, "csrf_token": token})
+    response = request.app.state.templates.TemplateResponse("admin_keys.html", {"request": request, "keys": keys, "csrf_token": token})
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 
@@ -128,7 +129,7 @@ async def new_key_form(
     request: Request, admin_session: AdminSession = ADMIN_SESSION, csrf_protect: CsrfProtect = CSRF
 ) -> HTMLResponse:
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = templates.TemplateResponse("admin_key_new.html", {"request": request, "csrf_token": token})
+    response = request.app.state.templates.TemplateResponse("admin_key_new.html", {"request": request, "csrf_token": token})
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 
@@ -146,7 +147,7 @@ async def create_key(
     db_session.add(key)
     await db_session.flush()
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = templates.TemplateResponse(
+    response = request.app.state.templates.TemplateResponse(
         "admin_key_created.html", {"request": request, "key": key, "csrf_token": token}
     )
     csrf_protect.set_csrf_cookie(signed, response)
@@ -179,7 +180,7 @@ async def list_admin_sessions(
 ) -> HTMLResponse:
     sessions = (await db_session.execute(select(AdminSession).order_by(AdminSession.created_at))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = templates.TemplateResponse(
+    response = request.app.state.templates.TemplateResponse(
         "admin_sessions.html", {"request": request, "sessions": sessions, "csrf_token": token, "session_type": "admin"}
     )
     csrf_protect.set_csrf_cookie(signed, response)
@@ -216,7 +217,7 @@ async def list_llm_sessions(
 ) -> HTMLResponse:
     sessions = (await db_session.execute(select(AuthCRSession).order_by(AuthCRSession.created_at))).scalars().all()
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = templates.TemplateResponse(
+    response = request.app.state.templates.TemplateResponse(
         "admin_sessions.html", {"request": request, "sessions": sessions, "csrf_token": token, "session_type": "llm"}
     )
     csrf_protect.set_csrf_cookie(signed, response)
@@ -242,7 +243,12 @@ async def invalidate_llm_session(
 
 
 @router.get("/admin/logs/", response_class=HTMLResponse)
-async def view_logs(request: Request, lines: int = 200, admin_session: AdminSession = ADMIN_SESSION) -> HTMLResponse:
+async def view_logs(
+    request: Request,
+    lines: int = 200,
+    admin_session: AdminSession = ADMIN_SESSION,
+    settings: Settings = Depends(get_settings),
+) -> HTMLResponse:
     """Display the last ``lines`` lines of the server log file."""
     log_path = Path(settings.server.log_file)
     if log_path.exists():
@@ -252,4 +258,4 @@ async def view_logs(request: Request, lines: int = 200, admin_session: AdminSess
             log_text = "<unable to read log file>"
     else:
         log_text = "<log file not found>"
-    return templates.TemplateResponse("admin_logs.html", {"request": request, "log_text": log_text, "lines": lines})
+    return request.app.state.templates.TemplateResponse("admin_logs.html", {"request": request, "log_text": log_text, "lines": lines})
