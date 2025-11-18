@@ -478,6 +478,9 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 - [ ] Resource notifications fire when history changes (both local and bridge agents)
 - [ ] Historical timeline entries use Pydantic models throughout
 - [ ] Test with 2+ agents (local and bridge)
+- [ ] **Code quality**: No `getattr`, `hasattr`, or `setattr` - use proper attribute access
+- [ ] **Code quality**: Everything typed properly - no `Any` types
+- [ ] **Code quality**: No code smells flagged by any `prompts/scans/*.md` prompts
 
 #### 1.3 Token Authentication
 
@@ -1313,6 +1316,9 @@ client.on('elicitation', async (request) => {
 - [ ] Token auth works
 - [ ] CLI prints Management UI URL with token
 - [ ] All backend tests pass
+- [ ] **Code quality**: No `getattr`, `hasattr`, or `setattr` - use proper attribute access
+- [ ] **Code quality**: Everything typed properly - no `Any` types
+- [ ] **Code quality**: No code smells flagged by `prompts/scans/*.md` prompts
 
 ### Phase 2 (Frontend)
 - [ ] MCP SDK installed
