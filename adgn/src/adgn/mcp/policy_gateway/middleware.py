@@ -157,46 +157,27 @@ class PolicyGatewayMiddleware(Middleware):
                 # If downstream returned an error ToolResult instead of raising,
                 # remap reserved policy codes/messages here using typed parsing when available.
                 if bool(getattr(call_result, "is_error", False)):
-                    # Attempt to parse structured error details
-                    msg: str | None = None
-                    code_val: int | None = None
-                    stamped_downstream: bool = False
+                    # Parse error details - ErrorData guarantees code: int per MCP/JSON-RPC spec
                     err = getattr(call_result, "error", None)
-                    if err is not None:
-                        # Prefer typed validation if raw dict
-                        if isinstance(err, dict):
-                            try:
-                                ed = mtypes.ErrorData.model_validate(err)
-                                msg = ed.message
-                                try:
-                                    code_val = int(ed.code)
-                                except Exception:
-                                    code_val = None
-                                try:
-                                    data = getattr(ed, "data", None)
-                                    if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
-                                        stamped_downstream = True
-                                except Exception:
-                                    stamped_downstream = False
-                            except Exception:
-                                # Fallback to minimal extraction
-                                msg = err.get("message")
-                        else:
-                            msg = getattr(err, "message", None)
-                            try:
-                                # err.code could be int, str, or other types
-                                code_val = int(err.code) if err.code is not None else None
-                            except (ValueError, TypeError):
-                                code_val = None
-                    if msg is None:
-                        msg = getattr(call_result, "message", None)
+                    if err is None:
+                        return call_result
+
+                    # Try parsing as ErrorData (validates code is int, message is str)
+                    try:
+                        ed = mtypes.ErrorData.model_validate(err)
+                    except Exception:
+                        # Non-conforming error format - pass through
+                        return call_result
+
+                    # Check if error uses reserved policy codes/messages
+                    stamped_downstream = (
+                        isinstance(ed.data, dict) and ed.data.get(POLICY_GATEWAY_STAMP_KEY) is True
+                    )
                     if (
                         stamped_downstream
-                        or (
-                            code_val
-                            in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
-                        )
-                        or (msg in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG))
+                        or ed.code in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
+                        or ed.message
+                        in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG)
                     ):
                         raise McpError(
                             ErrorData(
@@ -205,7 +186,7 @@ class PolicyGatewayMiddleware(Middleware):
                                 data={
                                     POLICY_GATEWAY_STAMP_KEY: True,
                                     "name": name,
-                                    "backend_code": code_val if code_val is not None else "unknown",
+                                    "backend_code": ed.code,
                                 },
                             )
                         )
