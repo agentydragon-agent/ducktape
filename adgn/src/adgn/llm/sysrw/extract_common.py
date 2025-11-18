@@ -50,18 +50,16 @@ def find_last_user_text_from_msg(msg: ResponseOutputMessage) -> str | None:
 
 
 def find_last_user_text_from_messages(messages: list[ResponseOutputMessage] | Any) -> str | None:
-    """Extract last user text from a list of messages (OpenAI chat/Responses)."""
+    """Extract last user text from a list of messages (OpenAI chat/Responses).
+
+    Returns None if messages cannot be parsed or last message is not from user.
+    """
     parsed = parse_response_messages(messages)
-    if parsed:
-        last = parsed[-1]
-        if response_message_role(last) == MessageRole.USER:
-            return response_message_content_as_text(last) or None
+    if not parsed:
         return None
-    if not isinstance(messages, list) or not messages:
-        return None
-    last = messages[-1]
-    if isinstance(last, dict) and (last.get("role") or "").lower() == "user":
-        return join_text_parts(last.get("content")) or None
+    last = parsed[-1]
+    if response_message_role(last) == MessageRole.USER:
+        return response_message_content_as_text(last) or None
     return None
 
 
