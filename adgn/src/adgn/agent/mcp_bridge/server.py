@@ -45,6 +45,7 @@ async def create_bridge_infrastructure(
     return running
 
 
-# TODO: Add authentication middleware for token → agent_id mapping
-# TODO: Handle multi-tenancy (multiple external agents with different agent_ids)
-# TODO: Add cleanup for idle infrastructure instances
+# Future enhancements (core functionality is complete):
+# - Add authentication middleware for token → agent_id mapping
+# - Handle multi-tenancy (multiple external agents with different agent_ids)
+# - Add cleanup for idle infrastructure instances

@@ -121,11 +121,25 @@ When mounting your repository:
 --initial-policy    Path to initial policy .py file
 ```
 
-## TODO
+## Status
 
-- [ ] Implement HTTP/SSE endpoint (currently just infrastructure setup)
-- [ ] Add token authentication (Bearer token → agent_id)
-- [ ] Multi-tenancy (multiple external agents, per-agent infrastructure)
-- [ ] Idle cleanup (shutdown infrastructure after N minutes of inactivity)
-- [ ] Union of server instructions in initialization message (optional)
-- [ ] Web UI for managing approvals (optional, for human oversight)
+**Core Functionality: ✅ Complete**
+
+The HTTP MCP Bridge is fully functional:
+- ✅ HTTP/SSE transport endpoint (via FastMCP's `http_app()`)
+- ✅ Policy-gated tool execution
+- ✅ Compositor with mounted MCP servers
+- ✅ Approval policy engine (Docker-based evaluation)
+- ✅ Standard MCP server resources and tools
+
+External agents can connect immediately using the MCP-over-HTTP protocol.
+
+## Future Enhancements
+
+These features would improve production deployment but are not required for basic usage:
+
+- [ ] **Token Authentication**: Bearer token → agent_id mapping for secure external access
+- [ ] **Multi-Tenancy**: Support multiple concurrent external agents with isolated infrastructure
+- [ ] **Idle Cleanup**: Auto-shutdown infrastructure after N minutes of inactivity
+- [ ] **Unified Instructions**: Merge server instructions in initialization message
+- [ ] **Web UI**: Browser-based approval management (human-in-the-loop oversight)
