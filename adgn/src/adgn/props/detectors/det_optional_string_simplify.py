@@ -38,7 +38,7 @@ def _collect_optional_str(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[s
                 isinstance(ann, ast.Subscript)
                 and isinstance(ann.value, ast.Name)
                 and ann.value.id in {"Optional", "Union"}
-                and "str" in (unparsed := ast.unparse(ann.slice))  # Available since Python 3.9
+                and "str" in (unparsed := ast.unparse(ann.slice))
                 and "None" in unparsed
             ):
                 # Optional[str] or Union[str, None]

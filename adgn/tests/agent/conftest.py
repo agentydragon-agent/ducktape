@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import docker
 from fastapi.testclient import TestClient
@@ -176,7 +176,7 @@ def create_live_agent():
     def _create(client, *, specs: dict[str, Any] | None = None) -> str:
         specs = specs or {}
         # Split into typed JSON specs vs runtime slot specs
-        typed: dict[str, Any] = {}
+        typed: dict[str, BaseModel] = {}
         inproc: dict[str, FastMCP] = {}
         for k, v in list(specs.items()):
             if isinstance(v, FastMCP):
@@ -192,11 +192,8 @@ def create_live_agent():
             # Enforce one format: ALL typed specs must be Pydantic models (McpServerSpec variants).
             if not all(isinstance(v, BaseModel) for v in typed.values()):
                 raise AssertionError("Typed MCP specs must be provided as Pydantic models only")
-            attach_json: dict[str, Any] = {
-                name: spec.model_dump(mode="json") for name, spec in cast(dict[str, BaseModel], typed).items()
-            }
-            # Send over HTTP; server rehydrates to typed McpServerSpec
-            r = client.patch(f"/api/agents/{agent_id}/mcp", json={"attach": attach_json})
+            # Send over HTTP; server rehydrates to typed McpServerSpec (TestClient handles Pydantic serialization)
+            r = client.patch(f"/api/agents/{agent_id}/mcp", json={"attach": typed})
             assert r.status_code == 200, r.text
         if inproc:
 

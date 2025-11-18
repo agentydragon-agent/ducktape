@@ -525,7 +525,7 @@ class ResponsesDB:
         await session.flush()
         return assigned_ordinal
 
-    async def get_cached_response_payload(self, key: str) -> dict[str, Any] | None:
+    async def get_cached_response_payload(self, key: str) -> OpenAIResponse | None:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
@@ -535,9 +535,7 @@ class ResponsesDB:
             snapshot_model = snapshot.to_model()
             if snapshot_model.status != ResponseStatus.COMPLETE or snapshot_model.response is None:
                 return None
-            # model_dump with mode="json" returns dict[str, Any]
-            result: dict[str, Any] = snapshot_model.response.model_dump(mode="json")
-            return result
+            return snapshot_model.response
 
     async def get_response_detail(self, identifier: str) -> ResponseDetail | None:
         if self._session_factory is None:

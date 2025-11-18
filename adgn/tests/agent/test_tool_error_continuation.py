@@ -14,8 +14,7 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
-from adgn.agent.loop_control import Auto, Continue
-from adgn.agent.reducer import BaseHandler
+from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ws_helpers import assert_function_call_output_structured
 from tests.llm.support.openai_mock import FakeOpenAIModel
@@ -51,11 +50,6 @@ async def test_tool_error_continues_turn(
         mcp_client,
         _comp,
     ):
-
-        class _AutoHandler(BaseHandler):
-            def on_before_sample(self):
-                return Continue(Auto())
-
         rec = RecordingHandler()
 
         # Simulate the agent trying with wrong mime, then correcting itself
@@ -79,7 +73,7 @@ async def test_tool_error_continues_turn(
             mcp_client=mcp_client,
             system="You are a helpful assistant. Use the validator tools.",
             client=client,
-            handlers=[_AutoHandler(), rec],
+            handlers=[AutoHandler(), rec],
         )
 
         result = await agent.run("Send a greeting")

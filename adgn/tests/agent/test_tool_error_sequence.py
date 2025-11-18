@@ -7,8 +7,7 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
-from adgn.agent.loop_control import Auto, Continue
-from adgn.agent.reducer import BaseHandler
+from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ws_helpers import assert_function_call_output_structured
 from tests.llm.support.openai_mock import FakeOpenAIModel
@@ -35,11 +34,6 @@ async def test_tool_error_is_surfaced_in_sequence(
         _comp,
     ):
         # Create agent and run one turn
-
-        class _AutoHandler(BaseHandler):
-            def on_before_sample(self):
-                return Continue(Auto())
-
         rec = RecordingHandler()
 
         client = FakeOpenAIModel(
@@ -53,7 +47,7 @@ async def test_tool_error_is_surfaced_in_sequence(
             mcp_client=mcp_client,
             system="You are a code agent.",
             client=client,
-            handlers=[_AutoHandler(), rec],
+            handlers=[AutoHandler(), rec],
         )
         await agent.run("call failing tool once")
 
