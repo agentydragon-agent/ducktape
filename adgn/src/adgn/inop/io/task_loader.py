@@ -6,13 +6,7 @@ from typing import Any
 from pydantic import TypeAdapter
 import yaml
 
-from adgn.inop.engine.models import (
-    TaskDefinition,
-    TaskDefinitionsYaml,
-    TaskTypeConfig,
-    TaskTypeName,
-    TaskTypesYaml,
-)
+from adgn.inop.engine.models import TaskDefinition, TaskDefinitionsYaml, TaskTypeConfig, TaskTypeName, TaskTypesYaml
 
 
 def load_task_types(file_path: Path | str) -> dict[str, TaskTypeConfig]:
@@ -74,24 +68,10 @@ def load_task_definitions(
     with file_path.open() as f:
         config = TaskDefinitionsYaml.model_validate(yaml.safe_load(f))
 
-    tasks = []
-    for task_yaml in config.tasks:
-        # Convert YAML model to domain model
-        task = TaskDefinition(
-            id=task_yaml.id,
-            prompt=task_yaml.prompt,
-            type=task_yaml.type,
-            setup_overrides=task_yaml.setup_overrides,
-            grading_overrides=task_yaml.grading_overrides,
-            description=task_yaml.description,
-            allowed_tools=task_yaml.allowed_tools,
-            pre_task_commands=task_yaml.pre_task_commands,
-        )
+    # Validate task types if provided
+    if task_types:
+        for task in config.tasks:
+            if task.type not in task_types:
+                raise ValueError(f"Task {task.id} has unknown type: {task.type}")
 
-        # Validate task type if provided
-        if task_types and task.type not in task_types:
-            raise ValueError(f"Task {task.id} has unknown type: {task.type}")
-
-        tasks.append(task)
-
-    return tasks
+    return config.tasks

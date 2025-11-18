@@ -425,20 +425,7 @@ class TaskTypesYaml(BaseModel):
     task_types: dict[str, TaskTypeYamlConfig]
 
 
-class TaskDefinitionYaml(BaseModel):
-    """YAML configuration for a single task definition."""
-
-    id: str
-    prompt: str
-    type: TaskTypeName = TaskTypeName("coding")
-    setup_overrides: TaskSetup | None = None
-    grading_overrides: GradingConfig | None = None
-    description: str | None = None
-    allowed_tools: list[str] | None = None
-    pre_task_commands: str | None = None
-
-
 class TaskDefinitionsYaml(BaseModel):
     """Root YAML structure for seeds.yaml."""
 
-    tasks: list[TaskDefinitionYaml]
+    tasks: list[TaskDefinition]
