@@ -956,7 +956,10 @@ Ensure all frontend-facing models are exported:
 
 **Full acceptance testing** - no incomplete features.
 
-**Testing Strategy**: For local testing, mock out the OpenAI API using `unittest.mock` or `pytest-mock`. This avoids actual API calls and allows testing of infrastructure routing, approval flows, and UI integration without needing live LLM responses.
+**Testing Strategy**:
+- For local testing, mock out the OpenAI API using `unittest.mock` or `pytest-mock`. This avoids actual API calls and allows testing of infrastructure routing, approval flows, and UI integration without needing live LLM responses.
+- Tests should **reuse common fixtures** to avoid duplication across test files
+- Use **PyHamcrest matchers** for test assertions to avoid complex or duplicated matcher code
 
 #### 4.1 Backend Tests
 
@@ -1084,6 +1087,8 @@ async def test_historical_timeline_pydantic():
 - [ ] Tool calls route correctly
 - [ ] Notifications fire correctly
 - [ ] Auth works correctly
+- [ ] Tests use PyHamcrest matchers for readable assertions
+- [ ] Common fixtures are extracted and reused across test files
 
 #### 4.2 Frontend Tests
 
