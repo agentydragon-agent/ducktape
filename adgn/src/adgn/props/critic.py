@@ -343,5 +343,4 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):
 
 @render_to_rich.register
 def _render_critic_error_payload(obj: CriticErrorPayload):
-    body: RenderableType = Markdown(obj.message)
-    return Panel(body, title="Critic error", border_style="red")
+    return Panel(Markdown(obj.message), title="Critic error", border_style="red")

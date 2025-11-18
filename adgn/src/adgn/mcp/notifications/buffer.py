@@ -20,11 +20,9 @@ class _Handler(MessageHandler):
 
     # Override with narrower types than base MessageHandler (which accepts Any)
     async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
-        # Do not swallow errors; let them propagate for visibility
         await self._buffer._on_updated(message)
 
     async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
-        # Do not swallow errors; let them propagate for visibility
         await self._buffer._on_list_changed(message)
 
 

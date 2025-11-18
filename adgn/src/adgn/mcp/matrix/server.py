@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 import logging
 from typing import Any, cast
 
+from aiohttp import ClientSession
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 from mautrix.api import HTTPAPI
@@ -129,16 +130,15 @@ class _MatrixClient:
         self.inbox = inbox
         self._notify = notify
         self._client: MautrixClient | None = None
-        self._http_session: Any | None = None  # aiohttp.ClientSession
+        self._http_session: ClientSession | None = None
         self._room_id: RoomID | None = None
         self._sync_task: asyncio.Future[Any] | None = None
         self._state_store: StateStore | None = None
 
     async def start(self) -> None:
-        from aiohttp import ClientSession
-
         state_store = FileStateStore(self.cfg.store_path) if self.cfg.store_path else None
         self._state_store = state_store
+        # Create HTTP session that we'll manage explicitly (HTTPAPI doesn't close it)
         self._http_session = ClientSession()
         api = HTTPAPI(self.cfg.homeserver, client_session=self._http_session)
         self._client = MautrixClient(mxid=UserID(self.cfg.user_id), api=api, state_store=state_store)
