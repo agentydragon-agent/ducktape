@@ -35,6 +35,12 @@ return temp.lower()
 config = load_config()
 processor = DataProcessor(config)
 return processor
+
+# BAD: Path variable used once for single method call
+out = base_dir / "critique.json"
+s = submit_state.result.model_dump_json(indent=2)
+out.write_text(s, encoding="utf-8")
+print(f"Saved critique JSON: {out}")
 ```
 
 ### GOOD: Direct usage when clear
@@ -51,7 +57,53 @@ return value.strip().lower()
 
 # GOOD: Direct construction
 return DataProcessor(load_config())
+
+# GOOD: Fully inline if path not needed later
+(base_dir / "critique.json").write_text(
+    submit_state.result.model_dump_json(indent=2), encoding="utf-8"
+)
+print(f"Saved critique JSON: {base_dir / 'critique.json'}")
+
+# BETTER: Keep variable if used multiple times (avoids repeating path construction)
+critique_path = base_dir / "critique.json"
+critique_path.write_text(submit_state.result.model_dump_json(indent=2), encoding="utf-8")
+print(f"Saved critique JSON: {critique_path}")
 ```
+
+### Subpattern: Redundant Field Storage
+
+Don't store references to sub-fields when you already have the parent object stored.
+
+```python
+# BAD: Storing both parent and its fields
+class Server:
+    def __init__(self, engine: Engine):
+        self._engine = engine
+        self._agent_id = engine.agent_id  # Redundant
+        self._persistence = engine.persistence  # Redundant
+        self._docker = engine.docker_client  # Redundant
+
+    async def handle(self, id: str):
+        # Creates multiple paths to same dependency
+        await self._persistence.get(self._agent_id, id)
+
+# GOOD: Access through parent
+class Server:
+    def __init__(self, engine: Engine):
+        self._engine = engine
+
+    async def handle(self, id: str):
+        # Single path to dependency
+        await self._engine.persistence.get(self._engine.agent_id, id)
+```
+
+**Why this is bad**:
+- **Multiple paths**: Creates redundant ways to access same downstream dependency
+- **Synchronization risk**: If engine internals change, cached fields become stale
+- **Unnecessary fields**: Pollutes class namespace with redundant state
+- **Maintenance burden**: More fields to track and understand
+
+**No performance exception**: Python is not for performance-critical code. Don't cache fields for "performance" - the overhead is negligible and the complexity isn't worth it.
 
 ### When Intermediate Variables ARE Good
 
@@ -114,6 +166,157 @@ def has_permission(self) -> bool:
     return self.user.is_admin or self.user.id == self.owner_id
 ```
 
+## Pattern 2.5: Redundant Type Annotations with TypeVars
+
+When a function uses TypeVars that are inferred from arguments, explicit type annotations on the result are redundant.
+
+### BAD: Redundant type annotation when TypeVar provides inference
+
+```python
+# BAD: Type annotation duplicates what TypeVar already provides
+T_Out = TypeVar("T_Out")
+
+async def call_tool_typed(
+    session: Client,
+    name: str,
+    payload: BaseModel,
+    out_type: type[T_Out],
+) -> T_Out:
+    ...
+
+# Type checker already knows result is BaseExecResult from out_type argument
+result: BaseExecResult = await call_tool_typed(sess, "exec", payload, BaseExecResult)
+```
+
+### GOOD: Let TypeVar inference work
+
+```python
+# GOOD: Type inferred from out_type argument
+result = await call_tool_typed(sess, "exec", payload, BaseExecResult)
+# Type checker knows: result is BaseExecResult
+```
+
+**Principle**: If a function signature already provides full type information through TypeVars, don't duplicate it with explicit annotations at call sites. Let type inference work.
+
+## Pattern 2.7: Verbose Default Derivation
+
+When a parameter accepts None to mean "derive a default", use the concise `if not x: x = ...` pattern.
+
+### BAD: Verbose default derivation
+
+```python
+# BAD: Separate variable + conditional
+def configure(url: str | None = None, token: str | None = None):
+    actual_url = url
+    if actual_url is None:
+        actual_url = os.getenv("API_URL")
+
+    actual_token = token
+    if actual_token is None:
+        actual_token = os.getenv("API_TOKEN")
+
+    if actual_url is None or actual_token is None:
+        raise ValueError("Missing config")
+
+    return Config(url=actual_url, token=actual_token)
+
+# BAD: Ternary for simple None check
+def configure(url: str | None = None):
+    actual_url = url if url is not None else os.getenv("API_URL")
+    return Config(url=actual_url)
+
+# BAD: Nested conditionals
+def configure(url: str | None = None):
+    if url is None:
+        url = os.getenv("API_URL")
+        if url is None:
+            raise ValueError("Missing URL")
+    return Config(url=url)
+```
+
+### GOOD: Concise default derivation
+
+```python
+# GOOD: Direct reassignment pattern
+def configure(url: str | None = None, token: str | None = None):
+    if not url:
+        url = os.getenv("API_URL")
+    if not token:
+        token = os.getenv("API_TOKEN")
+
+    if not url or not token:
+        raise ValueError("Missing config")
+
+    return Config(url=url, token=token)
+
+# GOOD: Works for any default derivation, not just os.getenv
+def process(data: list | None = None, config: Config | None = None):
+    if not data:
+        data = fetch_default_data()
+    if not config:
+        config = load_default_config()
+
+    return run_processing(data, config)
+
+# GOOD: Chain multiple fallbacks
+def get_api_key(override: str | None = None) -> str:
+    key = override
+    if not key:
+        key = os.getenv("API_KEY")
+    if not key:
+        key = load_from_keyring("api-key")
+    if not key:
+        raise ValueError("No API key found")
+    return key
+```
+
+**Pattern generalization:**
+- Parameter accepts None to mean "use default"
+- Default is derived (not a constant)
+- Pattern: `if not x: x = derive_default()`
+
+**When to use:**
+- Environment variable fallback (`os.getenv`)
+- Function call fallback (`load_config()`)
+- Complex derivation (`compute_from_system_state()`)
+- Multiple fallback levels
+
+**When NOT to use:**
+- Default is a simple constant → use parameter default value instead:
+  ```python
+  # GOOD: Simple constant default
+  def process(timeout: int = 30):
+      ...
+
+  # BAD: Overcomplicated for constant
+  def process(timeout: int | None = None):
+      if not timeout:
+          timeout = 30
+  ```
+
+- Empty string/0/False are valid values → use `is None` check instead:
+  ```python
+  # GOOD: Allow empty string
+  def process(prefix: str | None = None):
+      if prefix is None:
+          prefix = os.getenv("PREFIX", "")
+
+  # BAD: Empty string would be replaced
+  def process(prefix: str | None = None):
+      if not prefix:  # ❌ Would replace ""
+          prefix = os.getenv("PREFIX", "")
+  ```
+
+**Detection:**
+```bash
+# Find verbose None checks with assignment
+rg --type py -U 'if.*is None:.*\n.*=.*getenv' --multiline
+rg --type py 'if .* is not None else'
+
+# Find potential simplification candidates
+rg --type py 'actual_\w+ = \w+'
+```
+
 ## Pattern 3: Redundant Conditionals
 
 ### BAD: Checking what's already guaranteed
@@ -135,6 +338,28 @@ def get_status(self):
         return "complete"
     else:  # Unnecessary else
         return "pending"
+
+# BAD: Unnecessary empty-collection check before operations that handle empty naturally
+if tool_tasks:
+    async with asyncio.TaskGroup() as tg:
+        for name, task in tool_tasks.items():
+            tg.create_task(handle(name, task))
+
+# BAD: Early return for empty input in aggregation
+def sum_values(items):
+    if not items:
+        return 0
+    total = 0
+    for item in items:
+        total += item
+    return total
+
+# BAD: Early return for empty input in map operation
+def process_all(things):
+    if not things:
+        return
+    for thing in things:
+        process(thing)
 ```
 
 ### GOOD: Minimal necessary checks
@@ -153,7 +378,34 @@ def get_status(self):
     if self.is_complete:
         return "complete"
     return "pending"
+
+# GOOD: Let TaskGroup handle empty dict (it's a no-op)
+async with asyncio.TaskGroup() as tg:
+    for name, task in tool_tasks.items():
+        tg.create_task(handle(name, task))
+
+# GOOD: Natural handling of empty input
+def sum_values(items):
+    total = 0
+    for item in items:
+        total += item
+    return total
+
+# GOOD: Loop handles empty collection naturally
+def process_all(things):
+    for thing in things:
+        process(thing)
 ```
+
+### Principle: Prefer Code That Handles All Cases
+
+**Avoid special-casing empty inputs** when the general case already handles them correctly. Operations like loops, TaskGroups, comprehensions, and aggregations naturally handle empty collections without explicit checks. Adding `if not items: return` is:
+
+- **Unnecessary**: The loop/operation is a no-op anyway for empty inputs
+- **Verbose**: Adds extra line and indentation
+- **Not worth it**: Any "micro-optimization" is negligible in Python
+
+**Write one thing that handles all cases** rather than branching for edge cases that don't need special treatment.
 
 ## Pattern 4: Verbose Exception Handling
 

@@ -89,7 +89,7 @@ class SeatbeltExecMCP(NotifyingFastMCP):
 
         # Register sandbox_exec tool
         @self.flat_model()
-        async def sandbox_exec(input: SandboxExecArgs) -> SandboxExecResult:  # type: ignore[unused-ignore]
+        async def sandbox_exec(input: SandboxExecArgs) -> SandboxExecResult:
             """Execute a command via macOS seatbelt (sandbox-exec). Provide a full SBPL policy per call."""
             # Platform precheck
             if sys.platform != "darwin":
@@ -132,7 +132,7 @@ class SeatbeltExecMCP(NotifyingFastMCP):
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     ) as proc:
-                        loop = asyncio.get_event_loop()
+                        loop = asyncio.get_running_loop()
                         start = loop.time()
                         total_secs = max(0.001, float(input.timeout_ms) / 1000.0)
                         deadline = start + total_secs

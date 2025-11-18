@@ -132,6 +132,7 @@ def _parse_structured_patch(file_path: str, structured_patch: list[HunkData]) ->
         for line in hunk.lines:
             if line.change_type == "added":
                 added_lines.add(line.line_number)
+                current_new_line += 1
             elif line.change_type == "removed":
                 removed_lines.add(current_old_line)
                 current_old_line += 1

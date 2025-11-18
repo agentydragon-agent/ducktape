@@ -8,6 +8,7 @@ from adgn.agent.agent import AgentResult, MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, Exited
+from adgn.mcp.testing.typed_stubs import call_tool_typed
 from adgn.openai_utils.client_factory import build_client
 
 # Use /bin/echo -n for portability and to avoid trailing newline
@@ -18,9 +19,7 @@ SERVER_NAME = "box"
 
 async def _assert_exec_echo(sess) -> None:
     # Call via compositor using namespaced tool key
-    from adgn.mcp.testing.typed_stubs import call_tool_typed
-
-    res: BaseExecResult = await call_tool_typed(
+    res = await call_tool_typed(
         sess, build_mcp_function(SERVER_NAME, "exec"), ExecInput(cmd=ECHO_CMD, timeout_ms=10_000), BaseExecResult
     )
     assert isinstance(res.exit, Exited)
@@ -29,7 +28,6 @@ async def _assert_exec_echo(sess) -> None:
     assert (res.stderr or "") == ""
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_exec_roundtrip_echo(make_pg_compositor_box) -> None:
     """Spin up real Docker container and roundtrip an echo via exec."""
@@ -39,7 +37,6 @@ async def test_exec_roundtrip_echo(make_pg_compositor_box) -> None:
 
 @pytest.mark.live_llm
 @pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Requires OpenAI API key")
-@pytest.mark.asyncio
 async def test_live_llm_exec_echo(make_pg_compositor_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
 

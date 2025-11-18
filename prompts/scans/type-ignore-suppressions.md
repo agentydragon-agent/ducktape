@@ -7,13 +7,13 @@
 
 Type checker suppressions (`# type: ignore`, `# noqa`) silence warnings without fixing underlying issues. Most can be eliminated through proper typing, revealing and preventing bugs.
 
-**Key principle**: The goal is NOT just to remove type: ignore comments, but to IMPROVE the code. Use this hierarchy:
+**Key principle**: The goal is NOT just to remove type: ignore comments, but to improve the code. Use this hierarchy:
 
-1. **BEST**: Clean code with no hacks for typechecker (proper types, refactoring, library upgrades)
-2. **GOOD**: Type assertions/narrowing that make typechecker happy (`cast()`, `isinstance()`, `assert`, `getattr()`)
-3. **ACCEPTABLE**: Well-documented `type: ignore` with clear explanation of why it's necessary
+1. **BEST**: Clean code with no hacks for the type checker (proper types, refactoring, library upgrades)
+2. **GOOD**: Type assertions/narrowing that make the type checker happy (`cast()`, `isinstance()`, `assert`, `getattr()`)
+3. **ACCEPTABLE**: Well-documented `type: ignore` with a clear explanation of why it's necessary
 
-Every suppression should either be eliminated through better code design, replaced with type assertions, or documented with a clear reason why it's necessary.
+Every suppression should either be eliminated through better code design, replaced with type assertions, or—if truly unavoidable—documented with a clear reason why it must remain.
 
 ## Why Suppressions Are Problematic
 
@@ -191,7 +191,7 @@ async def post(input: PostInput) -> PostResult:
 
 For each suppression found, apply this hierarchy:
 
-1. **Read context**: Understand what error is being suppressed
+1. **Read context**: Understand what error is being suppressed.
 2. **Research the BEST fix** (clean code, no hacks):
    - Check if type conversion function exists
    - Check if proper type can be imported

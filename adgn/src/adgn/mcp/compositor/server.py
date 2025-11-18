@@ -26,7 +26,6 @@ from mcp import types as mcp_types
 from adgn.mcp.snapshots import (
     FailedServerEntry,
     InitializingServerEntry,
-    McpServerState,
     RunningServerEntry,
     SamplingSnapshot,
     ServerEntry,
@@ -136,17 +135,17 @@ class Compositor(FastMCP):
     # ---- Child notifications capture (origin attribution) -----------------
     class _ChildHandler(MessageHandler):
         def __init__(self, owner: Compositor, name: str) -> None:
-            self._o = owner
+            self._compositor = owner
             self._name = name
 
-        async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:  # type: ignore[override]
-            self._o._pending_list_changed.add(self._name)
+        async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
+            self._compositor._pending_list_changed.add(self._name)
             # No forwarding here; child client handles forwarding via proxy
-            await self._o._notify_list_changed(self._name)
+            await self._compositor._notify_list_changed(self._name)
 
-        async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
+        async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
             # Forward to listeners with origin attribution
-            await self._o._notify_resource_updated(self._name, str(message.params.uri))
+            await self._compositor._notify_resource_updated(self._name, str(message.params.uri))
 
     def pop_recent_list_changed(self) -> list[str]:
         names = sorted(self._pending_list_changed)
@@ -163,22 +162,18 @@ class Compositor(FastMCP):
         # Phase 1: capture init results and schedule tool enumeration concurrently
         async with self._lock:
             items = list(self._mounts.items())
-        per_name: dict[str, dict[str, object | None]] = {}
+        per_name: dict[str, ServerEntry] = {}
         tool_tasks: dict[str, asyncio.Task[list[mcp_types.Tool]]] = {}
         for name, mount in items:
-            state = McpServerState.INITIALIZING
-            error: str | None = None
-            init_view: mcp_types.InitializeResult | None = None
             if mount.proxy is not None:
                 try:
                     init = mount.cached_init
                     if init is None:
-                        client_factory = mount.proxy.client_factory  # type: ignore[attr-defined]
+                        client_factory = mount.proxy.client_factory
                         client = client_factory()
                         async with client as c:
                             init = c.initialize_result
                             mount.cached_init = init
-                    init_view = init
 
                     # Schedule list_tools via proxy client for parallel enumeration
                     async def _list_tools_via_client(cf):
@@ -187,42 +182,29 @@ class Compositor(FastMCP):
                             return await cli.list_tools()
 
                     tool_tasks[name] = asyncio.create_task(_list_tools_via_client(mount.proxy.client_factory))
-                    state = McpServerState.RUNNING
+                    per_name[name] = RunningServerEntry(initialize=init, tools=[])
                 except Exception as e:
-                    error = f"{type(e).__name__}: {e}"
-                    state = McpServerState.FAILED
-            per_name[name] = {"state": state, "init": init_view, "error": error, "tools": None}
-
-        # Phase 2: resolve tool enumeration tasks (per-server failure captured individually)
-        if tool_tasks:
-            order = list(tool_tasks.keys())
-            results = await asyncio.gather(*(tool_tasks[n] for n in order), return_exceptions=True)
-            for nm, res in zip(order, results, strict=False):
-                rec = per_name.get(nm)
-                if rec is None:
-                    continue
-                if isinstance(res, Exception):
-                    rec["state"] = McpServerState.FAILED
-                    rec["error"] = f"{type(res).__name__}: {res}"
-                else:
-                    rec["tools"] = res
-                per_name[nm] = rec
-
-        # Phase 3: build the discriminated-union entries map
-        entries: dict[str, ServerEntry] = {}
-        for name, rec in per_name.items():
-            st = rec.get("state")
-            if st == McpServerState.INITIALIZING:
-                entries[name] = InitializingServerEntry()
-            elif st == McpServerState.RUNNING:
-                init_val = rec.get("init")
-                assert init_val is not None
-                tools_val = rec.get("tools") or []
-                entries[name] = RunningServerEntry(initialize=init_val, tools=tools_val)  # type: ignore[arg-type]
+                    per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
             else:
-                err = rec.get("error")
-                entries[name] = FailedServerEntry(error=err if isinstance(err, str) else None)
-        return entries
+                per_name[name] = InitializingServerEntry()
+
+        # Phase 2: resolve tool enumeration in parallel with structured concurrency
+        async def _handle_tools(name: str, task: asyncio.Task, entry: RunningServerEntry):
+            try:
+                tools = await task
+                per_name[name] = RunningServerEntry(initialize=entry.initialize, tools=tools)
+            except Exception as e:
+                per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
+
+        async with asyncio.TaskGroup() as tg:
+            for name, task in tool_tasks.items():
+                entry = per_name[name]
+                assert isinstance(entry, RunningServerEntry), (
+                    f"Expected RunningServerEntry for {name}, got {type(entry)}"
+                )
+                tg.create_task(_handle_tools(name, task, entry))
+
+        return per_name
 
     async def sampling_snapshot(self) -> SamplingSnapshot:
         """Return a SamplingSnapshot mirroring the manager's shape, aggregated over children."""
@@ -230,9 +212,16 @@ class Compositor(FastMCP):
         return SamplingSnapshot(ts=datetime.now(UTC).isoformat(), servers=entries_map)
 
     async def mount_specs(self) -> dict[str, MCPServerTypes]:
-        """Return a snapshot of current mount specs keyed by name."""
+        """Return a snapshot of current mount specs keyed by name.
+
+        Only includes spec-based mounts; in-process mounts (spec=None) are excluded.
+        """
         async with self._lock:
-            return {k: v.spec for k, v in self._mounts.items() if v.spec is not None}  # type: ignore[dict-item]
+            result: dict[str, MCPServerTypes] = {}
+            for k, v in self._mounts.items():
+                if v.spec is not None:
+                    result[k] = v.spec
+            return result
 
     # No resource helper methods: resources are aggregated and served via the
     # mounted proxy. Callers should use a client connected to this Compositor

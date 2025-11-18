@@ -1,11 +1,12 @@
 import asyncio
+from collections import defaultdict
 from datetime import UTC, datetime
 from importlib import resources
 import logging
 
 from fastmcp.server.context import ServerSession
 from jinja2 import Template
-from pydantic import BaseModel
+from pydantic import AnyUrl, BaseModel
 
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.models.proposal_status import ProposalStatus
@@ -78,10 +79,6 @@ class ApprovalPolicyServer(NotifyingFastMCP):
     def __init__(self, engine: ApprovalPolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER) -> None:
         super().__init__(name=name, instructions=_load_instructions())
         self._engine = engine
-        # Required backend context must come from the engine
-        self._agent_id = engine.agent_id
-        self._persistence = engine.persistence
-        self._docker = engine.docker_client
         # Broadcast coordination for deterministic waits (tests)
         self._broadcast_version: int = 0
         self._broadcast_cond: asyncio.Condition = asyncio.Condition()
@@ -103,20 +100,20 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         # and maintain a minimal per-session index. Notifications are broadcast
         # by the server regardless of subscriptions, but handlers ensure that
         # capability gating reflects true support and calls succeed.
-        self._session_subscriptions: dict[ServerSession, set[str]] = {}
-        ll = self._mcp_server
+        self._session_subscriptions: defaultdict[ServerSession, set[AnyUrl]] = defaultdict(set)
+        mcp_server = self._mcp_server
 
-        @ll.subscribe_resource()
-        async def _subscribe(uri):  # type: ignore[no-redef]
-            ctx = ll.request_context
-            sess = ctx.session
-            self._session_subscriptions.setdefault(sess, set()).add(str(uri))
+        def _subscriptions() -> set[AnyUrl]:
+            """Return subscription set for current session context."""
+            return self._session_subscriptions[mcp_server.request_context.session]
 
-        @ll.unsubscribe_resource()
-        async def _unsubscribe(uri):  # type: ignore[no-redef]
-            ctx = ll.request_context
-            sess = ctx.session
-            self._session_subscriptions.get(sess, set()).discard(str(uri))
+        @mcp_server.subscribe_resource()
+        async def _subscribe(uri: AnyUrl):
+            _subscriptions().add(uri)
+
+        @mcp_server.unsubscribe_resource()
+        async def _unsubscribe(uri: AnyUrl):
+            _subscriptions().discard(uri)
             # Do not error if unknown; protocol allows idempotent unsubscribe
 
         # Do not expose a server-local "list subscriptions" resource; the
@@ -141,7 +138,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
 
         @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
         async def proposal_item(id: str) -> str:
-            if (got := await self._persistence.get_policy_proposal(self._agent_id, id)) is None:
+            if (got := await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)) is None:
                 raise KeyError(id)
             return got.content
 
@@ -149,7 +146,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         async def decide(input: PolicyRequest) -> PolicyResponse:
             """Evaluate a policy decision for a single tool call via Docker-backed evaluator."""
             evaluator = ContainerPolicyEvaluator(
-                agent_id=self._agent_id, docker_client=self._docker, engine=self._engine
+                agent_id=self._engine.agent_id, docker_client=self._engine.docker_client, engine=self._engine
             )
             # Pass through input directly; it's already a PolicyRequest
             return await evaluator.decide(input)

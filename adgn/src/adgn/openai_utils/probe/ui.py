@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from rich import box
 from rich.console import Group
@@ -14,6 +14,9 @@ from textual.widgets import Footer, Header, Static
 
 from . import store as probe_store
 from .core import FAMILY_PRIORITY, FATAL_CODES, ErrorCode, Family, ModelProbe, ProbeRun, build_cell, family_of
+
+if TYPE_CHECKING:
+    from .main import ProbeResult
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +41,7 @@ class ProbeTUI(App):
     def __init__(
         self,
         *,
-        out_q: asyncio.Queue[Any],
+        out_q: asyncio.Queue[tuple[str, str, ProbeResult | None]],
         total_runners: int,
         filtered: list[str],
         repeats: int,
@@ -169,7 +172,7 @@ class ProbeTUI(App):
             model_ratio=3,
         )
 
-        def render_row(table: Table, r: Any, end_section: bool):
+        def render_row(table: Table, r: ModelProbe, end_section: bool):
             rcell, rcode, rdesc = build_cell(r.responses.calls)
             ccell, ccode, cdesc = build_cell(r.chat.calls)
             if rcode and rdesc:
@@ -196,8 +199,8 @@ class ProbeTUI(App):
         for mid2 in sorted(self.filtered, key=lambda m: (family_of(m).value, m)):
             if not self._filter_mid(mid2):
                 continue
-            rc2, _, _ = build_cell(self.acc[mid2]["responses"])  # type: ignore[index]
-            cc2, _, _ = build_cell(self.acc[mid2]["chat"])  # type: ignore[index]
+            rc2, _, _ = build_cell(self.acc[mid2]["responses"])
+            cc2, _, _ = build_cell(self.acc[mid2]["chat"])
             if rc2 != "[yellow]waiting…[/yellow]" or cc2 != "[yellow]waiting…[/yellow]":
                 partials_resp.append((family_of(mid2).value, mid2, rc2))
                 partials_chat.append((family_of(mid2).value, mid2, cc2))
@@ -218,8 +221,8 @@ class ProbeTUI(App):
                 title="Other models (unclassified)", header_style="bold magenta", model_ratio=3
             )
             for mid7 in others_all:
-                rc, _, _ = build_cell(self.acc[mid7]["responses"])  # type: ignore[index]
-                cc, _, _ = build_cell(self.acc[mid7]["chat"])  # type: ignore[index]
+                rc, _, _ = build_cell(self.acc[mid7]["responses"])
+                cc, _, _ = build_cell(self.acc[mid7]["chat"])
                 others_table.add_row(mid7, rc, cc)
             renderables.append(others_table)
 
@@ -264,7 +267,12 @@ class ProbeTUI(App):
 
 
 async def consume_stream_textual(
-    out_q: asyncio.Queue[Any], total_runners: int, filtered: list[str], repeats: int, *, show_fatal: bool = False
+    out_q: asyncio.Queue[tuple[str, str, ProbeResult | None]],
+    total_runners: int,
+    filtered: list[str],
+    repeats: int,
+    *,
+    show_fatal: bool = False,
 ) -> None:
     app = ProbeTUI(
         out_q=out_q, total_runners=total_runners, filtered=filtered, repeats=repeats, initial_show_fatal=show_fatal

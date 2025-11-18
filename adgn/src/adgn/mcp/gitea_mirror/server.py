@@ -23,6 +23,19 @@ class MirrorConfig:
     base_url: str
     token: str
 
+    @classmethod
+    def resolve(cls, base_url: str | None, token: str | None) -> MirrorConfig:
+        """Resolve config from parameters with environment variable fallback."""
+        if not base_url:
+            base_url = os.getenv("GITEA_BASE_URL")
+        if not token:
+            token = os.getenv("GITEA_TOKEN")
+
+        if not base_url or not token:
+            raise ValueError("Gitea mirror MCP requires GITEA_BASE_URL and GITEA_TOKEN")
+
+        return cls(base_url=base_url, token=token)
+
 
 class MirrorError(RuntimeError):
     pass
@@ -52,7 +65,6 @@ class _GiteaRepositoryFields(BaseModel):
     """
 
     model_config = ConfigDict(extra="ignore")  # Lenient parsing - ignore unknown fields
-
     # Core repository identity
     id: int
     name: str = Field(description="Repository name. Mirror path for cloning: '{owner}/{name}.git'")
@@ -167,6 +179,12 @@ class _UserInfo(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class _RepositoryInfo(_GiteaRepositoryFields):
+    """Internal model for parsing Gitea's /repos/{owner}/{repo} response."""
+
+    model_config = ConfigDict(extra="ignore")  # Ignore fields we haven't declared
+
+
 T_Model = TypeVar("T_Model", bound=BaseModel)
 
 
@@ -226,12 +244,7 @@ def _resolve_owner(base_url: str, token: str) -> str:
 
 
 def make_gitea_mirror_server(*, base_url: str | None = None, token: str | None = None) -> NotifyingFastMCP:
-    cfg = MirrorConfig(
-        base_url=str(base_url or os.environ.get("GITEA_BASE_URL", "")),
-        token=str(token or os.environ.get("GITEA_TOKEN", "")),
-    )
-    if not cfg.base_url or not cfg.token:
-        raise ValueError("Gitea mirror MCP requires GITEA_BASE_URL and GITEA_TOKEN")
+    cfg = MirrorConfig.resolve(base_url, token)
 
     server = NotifyingFastMCP(
         "Gitea Mirror",

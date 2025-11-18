@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 import hashlib
 import json
 import os
 import time
-from typing import Any
+from typing import Any, NewType
 
+import canonicaljson
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
-from openai.types.responses import Response as OpenAIResponse, ResponseStreamEvent, ResponseUsage
+from openai.types.responses import (
+    Response as OpenAIResponse,
+    ResponseCreateParams,
+    ResponseStreamEvent,
+    ResponseUsage,
+)
 
 from adgn.rspcache.models import (
     ErrorPayload,
@@ -26,31 +31,95 @@ from adgn.rspcache.models import (
 )
 from adgn.rspcache.responses_db import APIKeyRecord, ResponsesDB
 
+CacheKey = NewType("CacheKey", str)
 
-@asynccontextmanager
-async def record_errors_to_db(
-    db: ResponsesDB, key: str, response_id: str | None = None, error_reason: str | None = None
-):
-    """Context manager to automatically record exceptions to database.
 
-    Args:
-        db: Database instance
-        key: Cache key
-        response_id: Optional response ID
-        error_reason: Default error reason if not provided by exception
-    """
-    try:
-        yield
-    except HTTPException:
-        # Don't record HTTPExceptions from FastAPI - they're user-facing errors
-        raise
-    except asyncio.CancelledError:
-        # Don't record cancellations
-        raise
-    except Exception as exc:
-        reason = error_reason or str(exc)
-        await db.record_error(key, error_reason=reason, response_id=response_id, error=ErrorPayload(message=reason))
-        raise
+class StreamingContext:
+    """Shared context for streaming response handling with automatic cleanup."""
+
+    def __init__(self, db: ResponsesDB, key: CacheKey, *, client: httpx.AsyncClient | None = None):
+        self.db = db
+        self.key = key
+        self.response_id: str | None = None
+        self._client = client
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is not None:
+                if exc_type in (HTTPException, asyncio.CancelledError):
+                    return False  # Don't handle these
+                await self.db.record_error(
+                    self.key,
+                    error_reason="Streaming proxy failure",
+                    response_id=self.response_id,
+                    error=ErrorPayload(message=str(exc_val)),
+                )
+        finally:
+            if self._client:
+                await self._client.aclose()
+        return False  # Don't suppress exceptions
+
+    async def proxy_stream(self, resp: httpx.Response, start_time: float) -> AsyncIterator[bytes]:
+        """Stream response chunks while recording frames to database."""
+        text_buffer = ""
+        ordinal = 0
+        token_usage: ResponseUsage | None = None
+        latest_response: OpenAIResponse | None = None
+        try:
+            async for chunk in resp.aiter_bytes():
+                if not chunk:
+                    continue
+                yield chunk
+                try:
+                    decoded = chunk.decode("utf-8")
+                except UnicodeDecodeError:
+                    continue
+                text_buffer += decoded
+                text_buffer, parsed = _extract_frames(text_buffer)
+                if not parsed:
+                    continue
+                for frame in parsed:
+                    frame_payload = ResponseStreamEvent.model_validate(frame)
+                    ordinal += 1
+                    if (
+                        maybe_response_id := stream_event_response_id(frame_payload)
+                    ) and self.response_id != maybe_response_id:
+                        self.response_id = maybe_response_id
+                        await self.db.mark_in_progress(self.key, self.response_id)
+                    if usage := stream_event_usage(frame_payload):
+                        token_usage = usage
+                    if (response_candidate := stream_event_final_response(frame_payload)) is not None:
+                        latest_response = response_candidate
+                    await self.db.append_frame(self.key, frame_payload, ordinal=ordinal, response_id=self.response_id)
+            trailing_frames = _extract_remaining(text_buffer)
+            for frame in trailing_frames:
+                frame_payload = ResponseStreamEvent.model_validate(frame)
+                ordinal += 1
+                if (
+                    maybe_response_id := stream_event_response_id(frame_payload)
+                ) and self.response_id != maybe_response_id:
+                    self.response_id = maybe_response_id
+                    await self.db.mark_in_progress(self.key, self.response_id)
+                if usage := stream_event_usage(frame_payload):
+                    token_usage = usage
+                if (response_candidate := stream_event_final_response(frame_payload)) is not None:
+                    latest_response = response_candidate
+                await self.db.append_frame(self.key, frame_payload, ordinal=ordinal, response_id=self.response_id)
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            if latest_response is not None and latest_response.usage is not None:
+                token_usage = latest_response.usage
+            await self.db.finalize_response(
+                self.key,
+                response_id=self.response_id,
+                response_obj=latest_response,
+                latency_ms=latency_ms,
+                token_usage=token_usage,
+            )
+        finally:
+            await resp.aclose()
 
 
 HTTP_ERROR_MIN = 400
@@ -105,17 +174,15 @@ def _extract_client_token(request: Request, authorization: str | None, x_api_key
     return None
 
 
-def canonical_json(obj: Any) -> str:
-    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+def compute_cache_key(body: ResponseCreateParams) -> CacheKey:
+    """Compute cache key from OpenAI request body.
 
-
-def make_key_from_body(body: dict[str, Any]) -> str:
-    keyed = {
-        k: body[k] for k in sorted(body.keys()) if k not in {"request_id", "request_timestamp", "nonce", "__meta__"}
-    }
-    digest = hashlib.sha256()
-    digest.update(canonical_json(keyed).encode("utf-8"))
-    return digest.hexdigest()
+    Excludes non-deterministic fields via model_copy for validation.
+    """
+    # Use model_copy to exclude non-deterministic fields, benefiting from Pydantic validation
+    cacheable = body.model_copy(update={"request_id": None, "request_timestamp": None, "nonce": None})
+    keyed = cacheable.model_dump(mode="json", exclude_none=True, exclude_unset=True)
+    return CacheKey(hashlib.sha256(canonicaljson.encode_canonical_json(keyed)).hexdigest())
 
 
 def _extract_frames(buffer: str) -> tuple[str, list[dict[str, Any]]]:
@@ -263,10 +330,13 @@ async def responses_endpoint(
     upstream_key = _resolve_openai_api_key(upstream_alias)
 
     cache_skip = body.get("cache_skip") in (True, "true", "True", 1)
+
+    # Validate request body structure and generate cache key
     try:
-        key = make_key_from_body(body)
+        validated_body = ResponseCreateParams.model_validate(body)
+        key = compute_cache_key(validated_body)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=f"Invalid request: {exc}") from exc
 
     is_stream = bool(body.get("stream"))
     if not cache_skip:
@@ -311,11 +381,9 @@ async def responses_endpoint(
             return _relay_error_response(upstream_error)
 
         async def event_stream() -> AsyncIterator[bytes]:
-            try:
-                async for chunk in _proxy_stream(resp, db=db, key=key, response_id=None, start_time=start_time):
+            async with StreamingContext(db=db, key=key, client=client) as ctx:
+                async for chunk in ctx.proxy_stream(resp, start_time=start_time):
                     yield chunk
-            finally:
-                await client.aclose()
 
         return StreamingResponse(
             event_stream(), media_type="text/event-stream", headers={"X-Cache-Hit": "0", "X-Cache-Key": key}

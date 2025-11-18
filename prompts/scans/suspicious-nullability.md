@@ -9,6 +9,167 @@ Nullability (`T | None`) that is misused, propagated through too many layers, or
 
 **Key principle**: Handle None at boundaries, not in business logic. Functions deep in the call stack should work with non-None values.
 
+## Fix Philosophy: Propagate Non-Nullability Upward
+
+**CRITICAL**: When you find `assert x is not None`, the fix is usually NOT to keep the assertion or add type: ignore comments. Instead:
+
+1. **Question the type declaration**: Why is `x` typed as `T | None` in the first place?
+2. **Propagate non-nullability upward**: Change the type signature so `x` is `T`, not `T | None`
+3. **Handle None at the source**: If a value comes from a nullable source, handle the None case there, then pass non-None values downstream
+
+**Common mistake**: Treating assertions as "necessary for mypy" and leaving nullable types everywhere.
+
+**Correct approach**: Fix the root cause by making the type system reflect reality - if a value is never actually None in practice, it shouldn't be typed as nullable.
+
+**Important**: Suspicious nullability often points to a **design problem**, not just a typing problem. You usually cannot fix it by changing 1-2 annotations. Instead, you may need to:
+- Refactor data flow to handle None at boundaries
+- Restructure function call chains to eliminate None propagation
+- Rethink API design to make optional vs required explicit
+- Create type-narrowing helpers or wrapper types
+
+**This is architectural work, not just annotation fixes.**
+
+## Core Principle: Optional at ONE Branch Point, Not Infecting 500 Inner Points
+
+**The Goal**: `Maybe<OneBigOptionalModule>` where module contains `{Foo, Bar, Baz}`
+- Optionality exists at **ONE** outer layer
+- Once you unwrap the Maybe, everything inside is non-optional
+- Handle None **once** at the branch point, then work with non-None values downstream
+
+**The Problem**: `OptionalModule` with `Maybe<Foo>, Maybe<Bar>, Maybe<Baz>`
+- Optionality "infects" every single field
+- Every function touching Foo must handle None
+- Every function touching Bar must handle None
+- Every function touching Baz must handle None
+- None checks scattered across 500 different points in the codebase
+
+### Haskell Analogy
+
+```haskell
+-- GOOD: Optional at one branch point
+data Config = Config { host :: String, port :: Int, database :: String }
+
+loadConfig :: IO (Maybe Config)
+
+useConfig :: Config -> IO ()
+useConfig cfg = connectToDB (host cfg) (port cfg) (database cfg)
+  -- host, port, database are all non-Maybe!
+
+main = do
+  maybeConfig <- loadConfig
+  case maybeConfig of
+    Just config -> useConfig config  -- Handle Maybe ONCE
+    Nothing -> putStrLn "No config"
+
+-- BAD: Infecting inner points
+data BadConfig = BadConfig
+  { host :: Maybe String
+  , port :: Maybe Int
+  , database :: Maybe String
+  }
+
+useBadConfig :: BadConfig -> IO ()
+useBadConfig cfg =
+  case (host cfg, port cfg, database cfg) of  -- None checks everywhere!
+    (Just h, Just p, Just d) -> connectToDB h p d
+    _ -> error "Missing config"
+```
+
+### Python Translation
+
+```python
+# GOOD: Optional at ONE branch point
+class DatabaseConfig:
+    host: str       # Non-optional!
+    port: int       # Non-optional!
+    database: str   # Non-optional!
+
+def load_config() -> DatabaseConfig | None:
+    """Returns None if config file missing, otherwise complete config."""
+    ...
+
+def connect_to_db(config: DatabaseConfig) -> Connection:
+    # Zero None checks here! config.host, config.port, config.database all guaranteed non-None
+    return Connection(config.host, config.port, config.database)
+
+# Usage: Handle None ONCE
+config = load_config()
+if config is not None:
+    conn = connect_to_db(config)
+    # 500 downstream functions work with non-None values
+    process_data(conn, config.host)
+    validate_schema(conn, config.database)
+    # ... no None checks needed in any of these
+
+
+# BAD: Infecting 500 inner points
+class BadDatabaseConfig:
+    host: str | None
+    port: int | None
+    database: str | None
+
+def connect_to_db_bad(config: BadDatabaseConfig) -> Connection:
+    # None infection spreads here
+    if config.host is None or config.port is None or config.database is None:
+        raise ValueError("Missing config")
+    return Connection(config.host, config.port, config.database)
+
+def process_data_bad(conn: Connection, host: str | None) -> None:
+    # None infection spreads to every function!
+    if host is None:
+        raise ValueError("Missing host")
+    ...
+
+def validate_schema_bad(conn: Connection, database: str | None) -> None:
+    # None infection spreads to every function!
+    if database is None:
+        raise ValueError("Missing database")
+    ...
+
+# Usage: None checks at 500+ different points
+config = load_bad_config()
+conn = connect_to_db_bad(config)  # None check #1
+process_data_bad(conn, config.host)  # None check #2
+validate_schema_bad(conn, config.database)  # None check #3
+# ... 497 more None checks scattered across the codebase
+```
+
+**The fix**: Restructure so optionality is handled at the boundary (loading the config), then everything downstream works with complete, non-None values.
+
+### Example: Before (Wrong Approach)
+
+```python
+class Container:
+    id: str | None  # Docker API says it can be None
+
+def process_container(container: Container) -> None:
+    container_id = container.id
+    assert container_id is not None  # "Needed for mypy"
+    use_container_id(container_id)
+```
+
+**Problem**: Accepting nullable type and working around it with assertions.
+
+### Example: After (Propagate Non-Nullability)
+
+```python
+class Container:
+    id: str | None  # Docker API says it can be None
+
+def _require_container_id(container: Container) -> str:
+    """Get container ID after creation (when it's guaranteed non-None)."""
+    if container.id is None:
+        raise RuntimeError("Container has no ID - must be created first")
+    return container.id
+
+def process_container(container: Container) -> None:
+    # Propagate non-nullability: container_id is str, not str | None
+    container_id = _require_container_id(container)
+    use_container_id(container_id)  # No assertion needed!
+```
+
+**Better**: Create a type-narrowing helper that returns non-None type, propagating non-nullability to all downstream code.
+
 ## Examples of Antipatterns
 
 ### BAD: Parameter typed as `T | None` but immediately fails if None

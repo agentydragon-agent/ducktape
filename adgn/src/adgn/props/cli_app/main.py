@@ -215,8 +215,7 @@ async def _run_specimen_minicodex_async(
     mode: str,
     final_only: bool,
     output_final_message: Path | None,
-    client: OpenAIModelProto | None,
-    model: str = "gpt-5",
+    client: OpenAIModelProto,
 ) -> int:
     rec = SpecimenRegistry.load_strict(specimen)
     man = rec.manifest
@@ -262,10 +261,10 @@ async def _run_specimen_minicodex_async(
 
         async with Client(comp) as mcp_client:
             agent = await MiniCodex.create(
-                model=model,
+                model=client.model,
                 mcp_client=mcp_client,
                 system="You are a code agent. Be concise.",
-                client=client,  # type: ignore[arg-type]
+                client=client,
                 handlers=[GateUntil(_ready_state), DisplayEventsHandler(max_lines=10)],
                 parallel_tool_calls=True,
             )
@@ -286,7 +285,7 @@ async def _run_specimen_minicodex_async(
             out_dir = _critique_output_dir(origin="specimen", label=specimen, ts=ts_str)
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / "critique.json"
-            s = submit_state.result.model_dump_json(indent=2)  # type: ignore[attr-defined]
+            s = submit_state.result.model_dump_json(indent=2)
             out_path.write_text(s, encoding="utf-8")
             print(f"Saved critique JSON: {out_path}")
         return 0
@@ -325,7 +324,7 @@ async def cmd_specimen_discover(
         mode="discover",
         final_only=final_only,
         output_final_message=output_final_message,
-        client=(None if dry_run else build_client("gpt-5")),
+        client=build_client("gpt-5"),
     )
     raise typer.Exit(code=rc)
 
@@ -719,7 +718,6 @@ async def _exec_agent(
     submit_state = CriticSubmitState() if structured else None
     if structured and submit_state is not None:
         await attach_critic_submit(comp, submit_state)
-        assert submit_state is not None
 
         def _ready_state() -> bool:
             return (submit_state.result is not None) or (submit_state.error is not None)
@@ -741,13 +739,11 @@ async def _exec_agent(
         elif not final_only and (result.text or ""):
             print(result.text)
         # Persist structured critique as JSON when available
-        if structured and submit_state is not None:
-            assert submit_state is not None
-            if (submit_state.error is None) and (submit_state.result is not None):
-                out = base_dir / "critique.json"
-                s = submit_state.result.model_dump_json(indent=2)  # type: ignore[attr-defined]
-                out.write_text(s, encoding="utf-8")
-                print(f"Saved critique JSON: {out}")
+        if structured and submit_state is not None and submit_state.error is None and submit_state.result is not None:
+            out = base_dir / "critique.json"
+            s = submit_state.result.model_dump_json(indent=2)
+            out.write_text(s, encoding="utf-8")
+            print(f"Saved critique JSON: {out}")
 
 
 # --- Unified run command (structured/freeform; preset/prompt-file/text) ---
@@ -777,7 +773,7 @@ def _load_preset_text(name: str) -> str:
     # Resources are relative to the adgn.props package root
     res = resources.files("adgn.props").joinpath(rel)
     try:
-        return res.read_text(encoding="utf-8")  # type: ignore[attr-defined]
+        return res.read_text(encoding="utf-8")
     except Exception as e:
         raise typer.BadParameter(f"Failed to load preset '{name}' from resources: {rel} ({e})") from e
 

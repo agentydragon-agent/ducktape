@@ -5,7 +5,6 @@ import html
 from http import HTTPStatus
 
 from httpx import AsyncClient
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +17,6 @@ from gatelet.server.models import (  # type: ignore[import] - Runtime-only impor
 )
 
 
-@pytest.mark.asyncio
 async def test_start_challenge_creates_nonce(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
     response = await client.get(f"/cr/{test_auth_key.id}")
     assert response.status_code == HTTPStatus.OK
@@ -27,7 +25,6 @@ async def test_start_challenge_creates_nonce(client: AsyncClient, db_session: As
     assert nonce.is_valid
 
 
-@pytest.mark.asyncio
 async def test_answer_challenge_success(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
     await client.get(f"/cr/{test_auth_key.id}")
     nonce = (await db_session.execute(select(AuthNonce).order_by(AuthNonce.id.desc()))).scalars().first()
@@ -41,7 +38,6 @@ async def test_answer_challenge_success(client: AsyncClient, db_session: AsyncSe
     assert session.auth_key_id == test_auth_key.id
 
 
-@pytest.mark.asyncio
 async def test_session_extension(client: AsyncClient, db_session: AsyncSession, test_auth_session: AuthCRSession):
     original_exp = datetime.now() + timedelta(seconds=1)
     test_auth_session.expires_at = original_exp
@@ -51,7 +47,6 @@ async def test_session_extension(client: AsyncClient, db_session: AsyncSession, 
     assert test_auth_session.expires_at > original_exp
 
 
-@pytest.mark.asyncio
 async def test_challenge_template_contains_code(client: AsyncClient, test_auth_key: AuthKey):
     response = await client.get(f"/cr/{test_auth_key.id}")
     assert response.status_code == HTTPStatus.OK

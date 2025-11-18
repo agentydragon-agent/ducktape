@@ -14,6 +14,11 @@ from adgn.llm.sysrw.schemas import CCRSample, CrushSample
 ROOT = Path(str(resources.files("adgn.llm.sysrw")))
 DATA = ROOT / "data" / "_test"
 
+# TODO: Add test datasets to repo
+# Currently these tests are skipped because test datasets (ccr_min.jsonl, crush_min.jsonl)
+# are not checked into the repository. Need to add minimal test datasets to
+# adgn/src/adgn/llm/sysrw/data/_test/ directory and ensure they're included in package.
+
 
 def text_block_contains(fragment: str):
     """Return a matcher that finds a text content block containing ``fragment``."""
@@ -21,7 +26,6 @@ def text_block_contains(fragment: str):
     return has_item(has_entries(type="text", text=contains_string(fragment)))
 
 
-@pytest.mark.asyncio
 @pytest.mark.skipif(not (DATA / "ccr_min.jsonl").exists(), reason="ccr_min.jsonl test dataset missing")
 async def test_read_ccr_min():
     ds = await read_dataset(DATA / "ccr_min.jsonl")
@@ -47,7 +51,6 @@ async def test_read_ccr_min():
     )
 
 
-@pytest.mark.asyncio
 @pytest.mark.skipif(not (DATA / "crush_min.jsonl").exists(), reason="crush_min.jsonl test dataset missing")
 async def test_read_crush_min():
     ds = await read_dataset(DATA / "crush_min.jsonl")
