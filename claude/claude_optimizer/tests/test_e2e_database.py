@@ -13,75 +13,11 @@ from claude_optimizer.database.models import (
     RolloutFile,
     SeedTask,
     SystemPrompt,
-    create_database,
 )
 import pytest
 import yaml
 
 from .test_types import OptimizationRunStatus
-
-
-@pytest.fixture
-def temp_db():
-    """Create a temporary in-memory database for testing."""
-    session_local = create_database("sqlite:///:memory:")
-    session = session_local()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-@pytest.fixture
-def sample_seeds_yaml(tmp_path):
-    """Create a sample seeds.yaml file with required fields."""
-    seeds_data = [
-        {
-            "id": "test_task_001",
-            "prompt": "Create a simple REST API client that makes HTTP requests.",
-            "description": "Basic HTTP client test",
-            "docker_image": "claude-dev:python",
-            "allowed_tools": ["Read", "Write", "Edit"],
-        },
-        {
-            "id": "test_task_002",
-            "prompt": "Build a configuration loader that reads from multiple sources.",
-            "description": "Configuration management test",
-            "docker_image": "claude-dev:python",
-            "allowed_tools": ["Read", "Write", "Edit"],
-        },
-    ]
-
-    seeds_file = tmp_path / "seeds.yaml"
-    with seeds_file.open("w") as f:
-        yaml.dump(seeds_data, f)
-
-    return seeds_file
-
-
-@pytest.fixture
-def sample_graders_yaml(tmp_path):
-    """Create a sample graders.yaml file."""
-    graders_data = {
-        "graders": [
-            {
-                "name": "type_safety_test",
-                "description": "Test type safety and data design",
-                "evaluation_criteria": "Check for proper type annotations and data structures.",
-            },
-            {
-                "name": "code_quality_test",
-                "description": "Test code quality and clarity",
-                "evaluation_criteria": "Evaluate code readability and modern practices.",
-            },
-        ]
-    }
-
-    graders_file = tmp_path / "graders.yaml"
-    with graders_file.open("w") as f:
-        yaml.dump(graders_data, f)
-
-    return graders_file
 
 
 class TestYamlDatabaseSync:
@@ -102,12 +38,12 @@ class TestYamlDatabaseSync:
         assert len(tasks) == 2
 
         task_ids = [t.task_id for t in tasks]
-        assert "test_task_001" in task_ids
-        assert "test_task_002" in task_ids
+        assert "test_rest_api" in task_ids
+        assert "test_config_loader" in task_ids
 
-        task_001 = session.query(SeedTask).filter_by(task_id="test_task_001").first()
+        task_001 = session.query(SeedTask).filter_by(task_id="test_rest_api").first()
         assert "REST API client" in task_001.prompt
-        assert task_001.description == "Basic HTTP client test"
+        assert task_001.description == "Test REST API implementation"
         assert task_001.is_active is True
 
     def test_sync_grading_criteria(self, temp_db, sample_graders_yaml):
@@ -118,18 +54,19 @@ class TestYamlDatabaseSync:
         stats = yaml_loader.sync_grading_criteria(session)
         session.commit()
 
-        assert stats["graders_added"] == 2
+        assert stats["graders_added"] == 3
         assert stats["graders_updated"] == 0
 
         criteria = session.query(GradingCriteria).all()
-        assert len(criteria) == 2
+        assert len(criteria) == 3
 
         names = [c.name for c in criteria]
-        assert "type_safety_test" in names
-        assert "code_quality_test" in names
+        assert "type_safety_data_design" in names
+        assert "code_quality_clarity" in names
+        assert "robustness_error_handling" in names
 
-        type_safety = session.query(GradingCriteria).filter_by(name="type_safety_test").first()
-        assert "type annotations" in type_safety.evaluation_criteria
+        type_safety = session.query(GradingCriteria).filter_by(name="type_safety_data_design").first()
+        assert "Type annotations" in type_safety.evaluation_criteria
         assert type_safety.is_active is True
 
     def test_content_hash_change_detection(self, temp_db, sample_seeds_yaml):
@@ -140,7 +77,7 @@ class TestYamlDatabaseSync:
         yaml_loader.sync_seed_tasks(session)
         session.commit()
 
-        task = session.query(SeedTask).filter_by(task_id="test_task_001").first()
+        task = session.query(SeedTask).filter_by(task_id="test_rest_api").first()
         original_hash = task.content_hash
 
         with sample_seeds_yaml.open() as f:
@@ -155,7 +92,7 @@ class TestYamlDatabaseSync:
         assert stats["seeds_added"] == 0
         assert stats["seeds_updated"] == 1
 
-        task = session.query(SeedTask).filter_by(task_id="test_task_001").first()
+        task = session.query(SeedTask).filter_by(task_id="test_rest_api").first()
         assert task.content_hash != original_hash
         assert "MODIFIED:" in task.prompt
 

@@ -1,7 +1,26 @@
 """Pytest configuration and shared fixtures."""
 
+from pathlib import Path
+
 from claude_optimizer.config import OptimizerConfig
+from claude_optimizer.database.models import create_database
 import pytest
+import yaml
+from pydantic import BaseModel
+
+
+class SeedTask(BaseModel):
+    id: str
+    prompt: str
+    description: str
+    docker_image: str
+    allowed_tools: list[str]
+
+
+class GradingCriterion(BaseModel):
+    name: str
+    description: str
+    evaluation_criteria: str
 
 
 @pytest.fixture
@@ -24,13 +43,21 @@ def test_config() -> OptimizerConfig:
 
 
 @pytest.fixture
+def temp_db():
+    session_local = create_database("sqlite:///:memory:")
+    session = session_local()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@pytest.fixture
 def sample_task_yaml() -> str:
     """Sample task YAML content for testing."""
     return """
 - id: test_task_001
-  prompt: |
-    Create a simple Python function that adds two numbers.
-    Write working Python code to files.
+  prompt: "Create a Python function that adds two numbers."
   description: "Basic function creation test"
   docker_image: "claude-dev:python"
   allowed_tools: ["Read", "Write", "Edit"]
@@ -44,7 +71,58 @@ def sample_grader_yaml() -> str:
     return """
 correctness:
   description: "Evaluates functional correctness of the solution"
-  evaluation_criteria: |
-    Check if the code produces correct output for given inputs.
-    Look for proper error handling and edge cases.
+  evaluation_criteria: "Check if code produces correct output and handles edge cases."
 """
+
+
+@pytest.fixture
+def sample_seeds_yaml(tmp_path) -> Path:
+    seeds = [
+        SeedTask(
+            id="test_rest_api",
+            prompt="Create a REST API client that calls backends A and B in parallel.",
+            description="Test REST API implementation",
+            docker_image="claude-dev:python",
+            allowed_tools=["Read", "Write", "Edit"],
+        ),
+        SeedTask(
+            id="test_config_loader",
+            prompt="Build a configuration loader that reads from files, env vars, and CLI.",
+            description="Test configuration management",
+            docker_image="claude-dev:python",
+            allowed_tools=["Read", "Write", "Edit"],
+        ),
+    ]
+
+    seeds_file = tmp_path / "seeds.yaml"
+    with seeds_file.open("w") as f:
+        yaml.dump([seed.model_dump() for seed in seeds], f)
+
+    return seeds_file
+
+
+@pytest.fixture
+def sample_graders_yaml(tmp_path) -> Path:
+    graders = [
+        GradingCriterion(
+            name="type_safety_data_design",
+            description="Use the type system to make invalid states unrepresentable",
+            evaluation_criteria="Type annotations everywhere. Use specific types and enums.",
+        ),
+        GradingCriterion(
+            name="code_quality_clarity",
+            description="Code should be readable, modern, and refined",
+            evaluation_criteria="Readable code with idiomatic features and early returns.",
+        ),
+        GradingCriterion(
+            name="robustness_error_handling",
+            description="Fail fast and loudly on unexpected conditions",
+            evaluation_criteria="Catch handleable exceptions only. Let bugs crash.",
+        ),
+    ]
+
+    graders_file = tmp_path / "graders.yaml"
+    with graders_file.open("w") as f:
+        yaml.dump({"graders": [grader.model_dump() for grader in graders]}, f)
+
+    return graders_file
