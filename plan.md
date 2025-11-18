@@ -46,6 +46,202 @@ Replace custom WebSocket channels with a unified **`agents` MCP server** that pr
 └──────────────────────────────────────────────────────────────┘
 ```
 
+## UI Organization & API Structure
+
+### Frontend Layout
+
+The UI uses a **side-by-side layout** with tool call timeline and policy editor. For local agents with UI server attached, a message composer appears below.
+
+#### Agent WITH UI Server (Local Loop)
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ Agent: agent-1                                [LOCAL] [Agent Loop ✓]│
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  ┌──────────────────────────────┐  ┌─────────────────────────────┐│
+│  │   TOOL CALL TIMELINE         │  │   POLICY EDITOR             ││
+│  │                              │  │                             ││
+│  │ ┌──────────────────────────┐ │  │ ```python                   ││
+│  │ │✓ exec("ls")              │ │  │ def decide(call):           ││
+│  │ │  Auto-approved           │ │  │   if "rm -rf" in call.args: ││
+│  │ │  14:23:11                │ │  │     return DENY             ││
+│  │ └──────────────────────────┘ │  │   return ALLOW              ││
+│  │                              │  │ ```                         ││
+│  │ ┌──────────────────────────┐ │  │                             ││
+│  │ │⏸️ exec("rm -rf /")        │ │  │ [Save Policy]               ││
+│  │ │  PENDING                 │ │  │                             ││
+│  │ │  [Approve] [Reject]      │ │  │ Proposals (2 pending)       ││
+│  │ └──────────────────────────┘ │  │ • Allow git operations      ││
+│  │                              │  │ • Restrict network access   ││
+│  │ ┌──────────────────────────┐ │  │ [View All]                  ││
+│  │ │💬 [UI Block from UI srv] │ │  │                             ││
+│  │ │  "Build completed ✓"     │ │  │                             ││
+│  │ │  14:24:05                │ │  │                             ││
+│  │ └──────────────────────────┘ │  │                             ││
+│  │                              │  │                             ││
+│  │ ┌──────────────────────────┐ │  │                             ││
+│  │ │✗ curl("evil.com")        │ │  │                             ││
+│  │ │  Rejected by policy      │ │  │                             ││
+│  │ │  14:25:01                │ │  │                             ││
+│  │ └──────────────────────────┘ │  │                             ││
+│  │                              │  │                             ││
+│  └──────────────────────────────┘  └─────────────────────────────┘│
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐ │
+│  │ MESSAGE COMPOSER                                             │ │
+│  │ ┌──────────────────────────────────────────────────────────┐ │ │
+│  │ │ Type a message...                                        │ │ │
+│  │ └──────────────────────────────────────────────────────────┘ │ │
+│  │                                           [Send] [Abort Agent]│ │
+│  └──────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+#### Agent WITHOUT UI Server (Remote/Bridge)
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ Agent: chatgpt-session-xyz                           [BRIDGE]      │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  ┌──────────────────────────────┐  ┌─────────────────────────────┐│
+│  │   TOOL CALL TIMELINE         │  │   POLICY EDITOR             ││
+│  │                              │  │                             ││
+│  │ ┌──────────────────────────┐ │  │ ```python                   ││
+│  │ │✓ read_file("/etc/passwd")│ │  │ def decide(call):           ││
+│  │ │  Auto-approved           │ │  │   if "rm -rf" in call.args: ││
+│  │ │  14:23:11                │ │  │     return DENY             ││
+│  │ │  [Details]               │ │  │   return ALLOW              ││
+│  │ └──────────────────────────┘ │  │ ```                         ││
+│  │                              │  │                             ││
+│  │ ┌──────────────────────────┐ │  │ [Save Policy]               ││
+│  │ │✓ exec("git status")      │ │  │                             ││
+│  │ │  Approved by human       │ │  │ Proposals (2 pending)       ││
+│  │ │  14:24:33                │ │  │ • Allow git operations      ││
+│  │ └──────────────────────────┘ │  │ • Restrict network access   ││
+│  │                              │  │ [View All]                  ││
+│  │ ┌──────────────────────────┐ │  │                             ││
+│  │ │⏸️ exec("npm install")     │ │  │                             ││
+│  │ │  PENDING APPROVAL        │ │  │                             ││
+│  │ │  [Approve] [Reject]      │ │  │                             ││
+│  │ └──────────────────────────┘ │  │                             ││
+│  │                              │  │                             ││
+│  │ ┌──────────────────────────┐ │  │                             ││
+│  │ │✗ curl("evil.com")        │ │  │                             ││
+│  │ │  Rejected by policy      │ │  │                             ││
+│  │ │  Reason: Blocked domain  │ │  │                             ││
+│  │ │  14:25:01                │ │  │                             ││
+│  │ └──────────────────────────┘ │  │                             ││
+│  │                              │  │                             ││
+│  └──────────────────────────────┘  └─────────────────────────────┘│
+│                                                                    │
+│  (no message composer - external agent)                           │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### Timeline Data Sources (Unbundled)
+
+**Key insight**: Tool call timeline is **independent** of UI server attachment.
+
+#### 1. Policy Gate Timeline (Always Present)
+- **Source**: Policy enforcement layer (not UI server)
+- **Captures**: ALL tool calls passing through policy gate
+- **Includes**: Auto-approved, user-approved, rejected calls
+- **API**: `resource://agents/{id}/approvals/history`
+
+```python
+class ToolCallEntry(BaseModel):
+    """Tool call from policy gate timeline."""
+    call_id: str
+    tool: str
+    args: dict
+    decision: DecisionType  # APPROVED / REJECTED
+    decision_method: DecisionMethod  # AUTO / USER / POLICY
+    reason: str | None  # For rejections
+    timestamp: datetime
+    decided_by: str  # "policy" | "human" | agent_id
+```
+
+#### 2. UI Server Blocks (Optional)
+- **Source**: UI MCP server (when attached)
+- **Provides**: Agent-generated UI elements (messages, cards, structured data)
+- **Orthogonal to**: Local/remote agent loop distinction
+- **API**: `resource://ui/{id}/blocks` (if UI server attached)
+
+```python
+class UIBlock(BaseModel):
+    """UI block from optional UI MCP server."""
+    block_id: str
+    block_type: str  # "message" | "card" | "data"
+    content: dict  # Type-specific content
+    timestamp: datetime
+```
+
+#### 3. Frontend Timeline Rendering
+- **If UI server attached**: Merge tool calls + UI blocks chronologically
+- **If no UI server**: Show only tool call timeline
+- **Display logic**: Single scrollable timeline, different card types
+
+### API Endpoints
+
+```typescript
+// Core agent info
+GET resource://agents/list
+  → { agents: AgentInfo[] }
+
+// Policy gate timeline (ALWAYS available, both agent types)
+GET resource://agents/{id}/approvals/history
+  → { timeline: ToolCallEntry[], pending: PendingApproval[] }
+
+// Active policy
+GET resource://approval-policy/policy.py
+  → Python source code (string)
+
+// Policy proposals
+GET resource://agents/{id}/policy/proposals
+  → { proposals: PolicyProposalInfo[], active_policy_uri: string }
+
+// UI server blocks (OPTIONAL - only if UI server attached)
+GET resource://ui/{id}/blocks
+  → { blocks: UIBlock[] }
+
+// Agent controls
+POST approve_tool_call(agent_id, call_id) → void
+POST reject_tool_call(agent_id, call_id, reason) → void
+POST abort_agent(agent_id) → void  // Only for local agents
+POST send_message(agent_id, content) → void  // Only if UI server attached
+```
+
+### Component Structure
+
+```typescript
+// Top-level agent view
+<AgentView agent={agentInfo}>
+  <SideBySide>
+    <TimelinePanel agent={agentInfo} />
+    <PolicyPanel agent={agentInfo} />
+  </SideBySide>
+
+  {agentInfo.has_ui_server && (
+    <MessageComposer
+      onSend={sendMessage}
+      showAbort={agentInfo.mode === 'LOCAL'}
+    />
+  )}
+</AgentView>
+
+// Timeline merges policy gate + UI blocks
+<TimelinePanel>
+  {mergeChronologically(
+    policyGateTimeline,  // Always present
+    uiServerBlocks       // Only if UI server attached
+  ).map(entry =>
+    entry.type === 'tool_call'
+      ? <ToolCallCard {...entry} />
+      : <UIBlockCard {...entry} />
+  )}
+</TimelinePanel>
+```
+
 ## Key Architectural Decisions
 
 ### 1. Unified "agents" Server ✅
