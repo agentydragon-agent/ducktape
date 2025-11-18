@@ -172,7 +172,7 @@ SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
 MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024  # 10 MiB
 
 
-def _tool_choice_from_policy(policy: ToolPolicy) -> str | dict[str, Any]:
+def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
     """Map a ToolPolicy to Responses API tool_choice value.
 
     Exhaustive and strict: raises on unknown policy; RequireSpecific supports exactly one name.
@@ -185,7 +185,7 @@ def _tool_choice_from_policy(policy: ToolPolicy) -> str | dict[str, Any]:
         return "none"
     if isinstance(policy, RequireSpecific):
         if len(policy.names) == 1:
-            return {"type": "function", "name": policy.names[0]}
+            return ToolChoiceFunction(name=policy.names[0])
         raise ValueError("RequireSpecific with multiple names is not supported for Responses.tool_choice")
     raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
@@ -396,31 +396,22 @@ class MiniCodex:
             if any(isinstance(item, FunctionCallItem) for item in decision.inserts_input):
                 raise TypeError("FunctionCallItem requires skip_sampling=True")
             self._transcript.extend(decision.inserts_input)
-            raw_tc = _tool_choice_from_policy(decision.tool_policy)
-            if isinstance(raw_tc, dict) and raw_tc.get("type") == "function" and isinstance(raw_tc.get("name"), str):
-                tool_choice_typed: ToolChoice = ToolChoiceFunction(name=raw_tc["name"])
-            else:
-                tool_choice_typed = cast(ToolChoice, raw_tc)
-
+            tool_choice = _tool_choice_from_policy(decision.tool_policy)
             reasoning_param = build_reasoning_params(self._reasoning_effort, self._reasoning_summary)
             # Build OpenAI Responses tools list via Policy Gateway client (proxy aggregates downstream)
             tools = await self._mcp_client.list_tools()
-            # Note: mcp.types.Tool has description: str | None and inputSchema: dict[str, Any]
-            # FunctionToolParam accepts description: str | None and parameters: dict[str, Any]
-            # Pass through types as-is; no defensive defaults needed
-            tools_payload = [
-                FunctionToolParam(name=t.name, description=t.description, parameters=t.inputSchema)
-                for t in tools
-            ]
 
             req = ResponsesRequest(
                 input=self._to_openai_input_items(),
                 instructions=await self._build_effective_instructions(),
                 stream=False,
-                tool_choice=tool_choice_typed,
+                tool_choice=tool_choice,
                 store=True,
                 parallel_tool_calls=self._parallel_tool_calls,
-                tools=tools_payload,
+                tools=[
+                    FunctionToolParam(name=t.name, description=t.description, parameters=t.inputSchema)
+                    for t in tools
+                ],
                 reasoning=reasoning_param,
             )
             resp = await self._client.responses_create(req)
