@@ -11,16 +11,16 @@ from tests.agent.ws_helpers import assert_finished, collect_payloads_until_finis
 from tests.llm.support.openai_mock import FakeOpenAIModel, make_mock
 
 
-@pytest.mark.skip(reason="Monolithic /ws endpoint removed - needs rewrite for modular channels")
 @pytest.mark.timeout(10)
 def test_ws_restore_existing_agent_across_app_restart(
     monkeypatch, tmp_path, responses_factory, make_agent_http, patch_agent_build_client
 ):
     """
     Persist an agent (via HTTP), restart the app (new FastAPI instance pointing to the
-    same SQLite DB), then connect WS to lazily start the live container and run a turn.
+    same SQLite DB), then connect to modular channels to lazily start the live container
+    and run a turn.
 
-    This exercises: run -> save -> load -> resume with WS.
+    This exercises: run -> save -> load -> resume with modular channels.
     """
 
     db_path = tmp_path / "agent.sqlite"
@@ -60,36 +60,46 @@ def test_ws_restore_existing_agent_across_app_restart(
 
         patch_agent_build_client(make_mock(responses_create))
 
-        # Open WS and run two turns to persist history
-        with c1.websocket_connect(f"/ws?agent_id={agent_id}") as ws1:
-            wait_for_accepted(ws1)
-            # Start turns via REST; WS carries server-originated events
-            http1 = make_agent_http(c1, agent_id)
-            r1 = http1.prompt("hi")
-            assert r1.status_code == 200
-            assert (r1.json() or {}).get("ok") is True
-            collect_payloads_until_finished(ws1, limit=200)
-            r2 = http1.prompt("again")
-            assert r2.status_code == 200
-            assert (r2.json() or {}).get("ok") is True
-            collect_payloads_until_finished(ws1, limit=200)
+        # Open session and UI channels, run two turns to persist history
+        with c1.websocket_connect(f"/ws/session?agent_id={agent_id}") as ws_session:
+            with c1.websocket_connect(f"/ws/ui?agent_id={agent_id}") as ws_ui:
+                # Session channel sends Accepted on connect
+                sess_env = Envelope.model_validate(ws_session.receive_json())
+                assert sess_env.payload.type == "accepted"
 
-    # Second app: same DB; WS connect should lazily start the container and snapshot should include all prior UI state
+                # UI channel sends Accepted on connect
+                ui_env = Envelope.model_validate(ws_ui.receive_json())
+                assert ui_env.payload.type == "accepted"
+
+                # Start turns via REST; session channel carries run events
+                http1 = make_agent_http(c1, agent_id)
+                r1 = http1.prompt("hi")
+                assert r1.status_code == 200
+                assert (r1.json() or {}).get("ok") is True
+                collect_payloads_until_finished(ws_session, limit=200)
+
+                r2 = http1.prompt("again")
+                assert r2.status_code == 200
+                assert (r2.json() or {}).get("ok") is True
+                collect_payloads_until_finished(ws_session, limit=200)
+
+    # Second app: same DB; connect to UI channel to verify restored state
     app2 = create_app(require_static_assets=False)
     with TestClient(app2) as c2:
         # Optional: patch model, though we only snapshot (no turn yet)
         fake_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
         patch_agent_build_client(fake_client)
 
-        with c2.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
+        with c2.websocket_connect(f"/ws/ui?agent_id={agent_id}") as ws_ui:
             # Should receive initial Accepted from server
-            wait_for_accepted(ws)
+            ui_env = Envelope.model_validate(ws_ui.receive_json())
+            assert ui_env.payload.type == "accepted"
 
             # On connect, server pushes UiStateSnapshot; verify prior messages are present
             saw_snapshot = False
             msgs: list[str] = []
             for _ in range(200):
-                env = Envelope.model_validate(ws.receive_json())
+                env = Envelope.model_validate(ws_ui.receive_json())
                 if isinstance(env.payload, UiStateSnapshot):
                     saw_snapshot = True
                     for it in env.payload.state.items:
@@ -101,9 +111,14 @@ def test_ws_restore_existing_agent_across_app_restart(
             assert "**r2**" in msgs, f"missing restored message r2: {msgs}"
 
             # Finally, run a prompt via REST to confirm live container works
-            http2 = make_agent_http(c2, agent_id)
-            r3 = http2.prompt("hi")
-            assert r3.status_code == 200
-            assert (r3.json() or {}).get("ok") is True
-            payloads = collect_payloads_until_finished(ws, limit=100)
-            assert_finished(payloads)
+            # Connect session channel for run events
+            with c2.websocket_connect(f"/ws/session?agent_id={agent_id}") as ws_session:
+                sess_env = Envelope.model_validate(ws_session.receive_json())
+                assert sess_env.payload.type == "accepted"
+
+                http2 = make_agent_http(c2, agent_id)
+                r3 = http2.prompt("hi")
+                assert r3.status_code == 200
+                assert (r3.json() or {}).get("ok") is True
+                payloads = collect_payloads_until_finished(ws_session, limit=100)
+                assert_finished(payloads)

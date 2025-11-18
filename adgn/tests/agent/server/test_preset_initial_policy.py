@@ -5,12 +5,11 @@ from pydantic import TypeAdapter
 import yaml
 
 from adgn.agent.presets import AgentPreset
-from adgn.agent.server.protocol import Snapshot
+from adgn.agent.server.protocol import Envelope, Snapshot
 from tests.agent.ws_helpers import wait_for_accepted
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
-@pytest.mark.skip(reason="Monolithic /ws endpoint removed - needs rewrite for modular channels")
 def test_preset_initial_policy_loaded_into_engine(
     agent_app_client, tmp_path, monkeypatch, policy_ui_send_message_allow, patch_agent_build_client, responses_factory
 ):
@@ -36,25 +35,26 @@ def test_preset_initial_policy_loaded_into_engine(
     r = c.post("/api/agents", json={"preset": "policytest"})
     assert r.status_code == 200, r.text
     agent_id = r.json()["id"]
-    # Open WS and request snapshot; verify approval_policy content matches
-    with c.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
-        # accepted
-        wait_for_accepted(ws)
-        # The server pushes a Snapshot on connect; read until we see it
+
+    # Connect to policy channel to verify initial policy is loaded
+    with c.websocket_connect(f"/ws/policy?agent_id={agent_id}") as ws_policy:
+        # Policy channel sends Accepted on connect
+        env = Envelope.model_validate(ws_policy.receive_json())
+        assert env.payload.type == "accepted"
+
+        # The server pushes a PolicySnapshot on connect
         for _ in range(20):
-            env = ws.receive_json()
-            payload = env.get("payload", {})
-            if payload.get("type") == "snapshot":
-                snap = TypeAdapter(Snapshot).validate_python(payload)
-                content = snap.approval_policy.content if snap.approval_policy else ""
+            env = Envelope.model_validate(ws_policy.receive_json())
+            if env.payload.type == "policy_snapshot":
+                policy = env.payload.policy
+                content = policy.content
                 assert "class ApprovalPolicy" in content
                 assert "TEST_CASES" in content
                 break
         else:
-            raise AssertionError("snapshot not received")
+            raise AssertionError("policy_snapshot not received")
 
 
-@pytest.mark.skip(reason="Monolithic /ws endpoint removed - needs rewrite for modular channels")
 def test_preset_policy_with_failing_tests_falls_back(
     agent_app_client, tmp_path, monkeypatch, policy_failing_tests, patch_agent_build_client, responses_factory
 ):
@@ -82,17 +82,22 @@ def test_preset_policy_with_failing_tests_falls_back(
     r = c.post("/api/agents", json={"preset": "policyfail"})
     assert r.status_code == 200, r.text
     agent_id = r.json()["id"]
-    # Open WS and request snapshot; verify we do NOT see the marker from failing policy
-    with c.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
-        wait_for_accepted(ws)
+
+    # Connect to policy channel to verify fallback policy is loaded (not the failing one)
+    with c.websocket_connect(f"/ws/policy?agent_id={agent_id}") as ws_policy:
+        # Policy channel sends Accepted on connect
+        env = Envelope.model_validate(ws_policy.receive_json())
+        assert env.payload.type == "accepted"
+
+        # The server pushes a PolicySnapshot on connect
         for _ in range(20):
-            env = ws.receive_json()
-            payload = env.get("payload", {})
-            if payload.get("type") == "snapshot":
-                snap = TypeAdapter(Snapshot).validate_python(payload)
-                content = snap.approval_policy.content if snap.approval_policy else ""
+            env = Envelope.model_validate(ws_policy.receive_json())
+            if env.payload.type == "policy_snapshot":
+                policy = env.payload.policy
+                content = policy.content
+                # Verify we do NOT see the marker from failing policy
                 assert marker not in content
                 assert "class ApprovalPolicy" in content
                 break
         else:
-            raise AssertionError("snapshot not received")
+            raise AssertionError("policy_snapshot not received")
