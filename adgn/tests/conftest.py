@@ -98,6 +98,12 @@ async def sqlite_persistence(tmp_path):
 
 
 @pytest.fixture
+def docker_client():
+    """Provide Docker client for tests."""
+    return docker.from_env()
+
+
+@pytest.fixture
 def make_policy_engine(sqlite_persistence, request: pytest.FixtureRequest):
     """Factory producing ApprovalPolicyEngine instances with per-test defaults."""
 
