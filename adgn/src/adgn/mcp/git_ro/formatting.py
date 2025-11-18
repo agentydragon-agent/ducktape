@@ -114,7 +114,7 @@ def diff_to_changed_files(diff: pygit2.Diff) -> list[ChangedFileItem]:
             path=((d.new_file.path or d.old_file.path) if d.new_file else d.old_file.path),
             status=_status_char(d.status),
         )
-        for p in diff  # type: ignore[assignment]  # pygit2.Diff iteration typing incomplete in stubs
+        for p in diff
         for d in [p.delta]
     ]
 
