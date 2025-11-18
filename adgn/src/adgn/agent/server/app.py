@@ -29,12 +29,17 @@ from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
 from adgn.agent.runtime.container import default_client_factory
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
+from adgn.agent.server.exceptions import (
+    AgentNotFoundError,
+    AgentSessionNotReadyError,
+    ApprovalNotFoundError,
+    PolicyOperationError,
+)
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession
 from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
 from adgn.agent.server.ws import register_ws
 from adgn.mcp._shared.types import SimpleOk
-from adgn.mcp.approval_policy.clients import PolicyApproverStub
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 
 PROTOCOL_VERSION = "1.0.0"
@@ -180,6 +185,23 @@ class BootAgentResult(BaseModel):
 def create_app(*, require_static_assets: bool = True) -> FastAPI:
     app = FastAPI()
 
+    # Register exception handlers for domain exceptions
+    @app.exception_handler(AgentNotFoundError)
+    async def handle_agent_not_found(request, exc: AgentNotFoundError):
+        raise HTTPException(status_code=404, detail="agent_not_found") from exc
+
+    @app.exception_handler(AgentSessionNotReadyError)
+    async def handle_session_not_ready(request, exc: AgentSessionNotReadyError):
+        raise HTTPException(status_code=500, detail="no_session") from exc
+
+    @app.exception_handler(PolicyOperationError)
+    async def handle_policy_operation_error(request, exc: PolicyOperationError):
+        raise HTTPException(status_code=400, detail=f"{exc.operation}_failed: {exc.reason}") from exc
+
+    @app.exception_handler(ApprovalNotFoundError)
+    async def handle_approval_not_found(request, exc: ApprovalNotFoundError):
+        raise HTTPException(status_code=404, detail="unknown_call") from exc
+
     def _mount_static(path: str, directory: Path, name: str) -> None:
         if not directory.exists():
             if require_static_assets:
@@ -253,6 +275,20 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             if container.ui:
                 await container.ui.manager.flush()
         await app.state.registry.close_all()
+
+    # Helper functions to reduce boilerplate
+    async def get_container(agent_id: str):
+        """Get live container for agent, raising AgentNotFoundError if missing."""
+        try:
+            return await app.state.registry.ensure_live(agent_id, with_ui=True)
+        except KeyError as e:
+            raise AgentNotFoundError(agent_id) from e
+
+    def get_session(container, agent_id: str) -> AgentSession:
+        """Get session from container, raising AgentSessionNotReadyError if not initialized."""
+        if container.session is None:
+            raise AgentSessionNotReadyError(agent_id)
+        return container.session
 
     @app.get("/", response_model=None)
     async def index() -> Response:
@@ -448,13 +484,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # Pull current snapshot for an agent
     @app.get("/api/agents/{agent_id}/snapshot", response_model=Snapshot)
     async def api_get_snapshot(agent_id: str) -> Snapshot:
-        try:
-            container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            raise HTTPException(status_code=404, detail="agent not found") from e
-        sess: AgentSession | None = container.session
-        if sess is None:
-            raise HTTPException(status_code=500, detail="no session")
+        container = await get_container(agent_id)
+        sess = get_session(container, agent_id)
         sampling = await container.sampling_snapshot()
         return await sess.build_snapshot(sampling=sampling)
 
@@ -469,39 +500,27 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # --- Policy: set active content (optionally from proposal) ---
     @app.post("/api/agents/{agent_id}/policy", response_model=SimpleOk)
     async def api_set_policy(agent_id: str, body: SetPolicyBody = Body(...)) -> SimpleOk:  # noqa: B008
-        # Route through the agent container's policy approver client
+        container = await get_container(agent_id)
         try:
-            container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            raise HTTPException(status_code=404, detail="agent_not_found") from e
-        approver_client: PolicyApproverStub = container.policy_approver
-        try:
-            await approver_client.set_policy_text(SetPolicyTextArgs(source=body.content))
+            await container.policy_approver.set_policy_text(SetPolicyTextArgs(source=body.content))
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"policy_set_failed: {e}") from e
+            raise PolicyOperationError("policy_set", str(e)) from e
         # If proposal id provided, delete it from store
         if body.proposal_id:
             await app.state.persistence.delete_policy_proposal(agent_id, body.proposal_id)
         # Push snapshot (do not swallow errors)
         if container.ui is not None:
-            sess = container.session
-            if sess is None:
-                raise HTTPException(status_code=500, detail="no_session")
+            sess = get_session(container, agent_id)
             await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
 
     # --- Approvals (user decisions) ---
     @app.post("/api/agents/{agent_id}/approve", response_model=SimpleOk)
     async def api_approve(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
-        try:
-            container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            raise HTTPException(status_code=404, detail="agent_not_found") from e
-        sess = container.session
-        if sess is None:
-            raise HTTPException(status_code=500, detail="no_session")
+        container = await get_container(agent_id)
+        sess = get_session(container, agent_id)
         if body.call_id not in sess.approval_hub._requests:
-            raise HTTPException(status_code=404, detail="unknown_call")
+            raise ApprovalNotFoundError(body.call_id)
         sess.approval_hub.resolve(body.call_id, ContinueDecision())
         if container.ui is not None:
             await _send_snapshot_latest(container, sess)
@@ -509,15 +528,10 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     @app.post("/api/agents/{agent_id}/deny_continue", response_model=SimpleOk)
     async def api_deny_continue(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
-        try:
-            container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            raise HTTPException(status_code=404, detail="agent_not_found") from e
-        sess = container.session
-        if sess is None:
-            raise HTTPException(status_code=500, detail="no_session")
+        container = await get_container(agent_id)
+        sess = get_session(container, agent_id)
         if body.call_id not in sess.approval_hub._requests:
-            raise HTTPException(status_code=404, detail="unknown_call")
+            raise ApprovalNotFoundError(body.call_id)
         # Map deny-continue to abort semantics at the middleware boundary
         sess.approval_hub.resolve(body.call_id, AbortTurnDecision(reason=f"User denied: {body.call_id}"))
         if container.ui is not None:
@@ -527,48 +541,33 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # --- Policy proposals: approve/reject -----------------------------------
     @app.post("/api/agents/{agent_id}/proposals/{proposal_id}/approve", response_model=SimpleOk)
     async def api_approve_proposal(agent_id: str, proposal_id: str) -> SimpleOk:
+        container = await get_container(agent_id)
         try:
-            container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            raise HTTPException(status_code=404, detail="agent_not_found") from e
-        approver_client: PolicyApproverStub = container.policy_approver
-        try:
-            await approver_client.approve_proposal(ApproveProposalArgs(id=proposal_id))
+            await container.policy_approver.approve_proposal(ApproveProposalArgs(id=proposal_id))
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"approve_proposal_failed: {e}") from e
+            raise PolicyOperationError("approve_proposal", str(e)) from e
         await app.state.persistence.approve_policy_proposal(agent_id, proposal_id)
         # Push snapshot update to UIs (do not swallow errors)
         if container.ui is not None:
-            sess = container.session
-            if sess is None:
-                raise HTTPException(status_code=500, detail="no_session")
+            sess = get_session(container, agent_id)
             await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
 
     @app.post("/api/agents/{agent_id}/proposals/{proposal_id}/reject", response_model=SimpleOk)
     async def api_reject_proposal(agent_id: str, proposal_id: str) -> SimpleOk:
+        container = await get_container(agent_id)
         try:
-            container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            raise HTTPException(status_code=404, detail="agent_not_found") from e
-        approver_client: PolicyApproverStub = container.policy_approver
-        try:
-            await approver_client.reject_proposal(RejectProposalArgs(id=proposal_id))
+            await container.policy_approver.reject_proposal(RejectProposalArgs(id=proposal_id))
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"reject_proposal_failed: {e}") from e
+            raise PolicyOperationError("reject_proposal", str(e)) from e
         return SimpleOk(ok=True)
 
     @app.post("/api/agents/{agent_id}/deny_abort", response_model=SimpleOk)
     async def api_deny_abort(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
-        try:
-            container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            raise HTTPException(status_code=404, detail="agent_not_found") from e
-        sess = container.session
-        if sess is None:
-            raise HTTPException(status_code=500, detail="no_session")
+        container = await get_container(agent_id)
+        sess = get_session(container, agent_id)
         if body.call_id not in sess.approval_hub._requests:
-            raise HTTPException(status_code=404, detail="unknown_call")
+            raise ApprovalNotFoundError(body.call_id)
         sess.approval_hub.resolve(body.call_id, AbortTurnDecision(reason="ui_deny"))
         if container.ui is not None:
             await _send_snapshot_latest(container, sess)
@@ -577,15 +576,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # --- Prompt/Abort ---
     @app.post("/api/agents/{agent_id}/prompt", response_model=SimpleOk)
     async def api_prompt(agent_id: str, body: PromptBody = Body(...)) -> SimpleOk:  # noqa: B008
-        try:
-            container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            logger.info("api_prompt: agent_not_found", extra={"agent_id": agent_id})
-            raise HTTPException(status_code=404, detail="agent_not_found") from e
-        sess = container.session
-        if sess is None:
-            logger.info("api_prompt: no session", extra={"agent_id": agent_id})
-            raise HTTPException(status_code=500, detail="no_session")
+        container = await get_container(agent_id)
+        sess = get_session(container, agent_id)
         # Start run (session schedules the long task internally)
         await sess.run(body.text)
         logger.info("api_prompt: started", extra={"agent_id": agent_id, "text": body.text[:64]})
@@ -593,13 +585,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     @app.post("/api/agents/{agent_id}/abort", response_model=SimpleOk)
     async def api_abort(agent_id: str) -> SimpleOk:
-        try:
-            container = await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            raise HTTPException(status_code=404, detail="agent_not_found") from e
-        sess = container.session
-        if sess is None:
-            raise HTTPException(status_code=500, detail="no_session")
+        container = await get_container(agent_id)
+        sess = get_session(container, agent_id)
         if sess.active_run is not None:
             await sess.cancel_active_run()
             return SimpleOk(ok=True)
