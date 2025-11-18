@@ -127,14 +127,7 @@ class TurnDone(BaseModel):
 
 
 SessionMessage = Annotated[
-    SessionSnapshot
-    | UserText
-    | AssistantText
-    | ToolCall
-    | ToolResult
-    | ReasoningChunk
-    | RunStatusEvt
-    | TurnDone,
+    SessionSnapshot | UserText | AssistantText | ToolCall | ToolResult | ReasoningChunk | RunStatusEvt | TurnDone,
     Field(discriminator="type"),
 ]
 
@@ -162,18 +155,12 @@ class SessionChannelManager(ChannelConnectionManager):
 
     async def _build_snapshot(self, session: AgentSession) -> SessionSnapshot:
         """Build session snapshot from session state."""
-        session_state = SessionState(
-            session_id=session._manager._session_id,
-            version="1.0.0",
-            capabilities=[],
-        )
+        session_state = SessionState(session_id=session._manager._session_id, version="1.0.0", capabilities=[])
 
         run_state = None
         if session.active_run:
             run_state = RunState(
-                run_id=session.active_run.run_id,
-                status=RunStatus.RUNNING,
-                started_at=session.active_run.started_at,
+                run_id=session.active_run.run_id, status=RunStatus.RUNNING, started_at=session.active_run.started_at
             )
 
         return SessionSnapshot(session_state=session_state, run_state=run_state)
@@ -186,7 +173,7 @@ class SessionChannelManager(ChannelConnectionManager):
 
 def register_endpoint(app):
     """Register session channel WebSocket endpoint."""
-    from fastapi import FastAPI, WebSocket
+    from fastapi import WebSocket
 
     from adgn.agent.server.channels.common import handle_channel_ws
 

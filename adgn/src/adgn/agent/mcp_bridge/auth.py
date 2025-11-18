@@ -6,10 +6,10 @@ Enables multi-tenancy: different tokens → different agent_ids → isolated inf
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import json
 import logging
 from pathlib import Path
-from typing import Awaitable, Callable
 
 from fastapi import HTTPException, Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -71,9 +71,7 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.token_mapping = token_mapping
 
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         # Extract Authorization header
         auth_header = request.headers.get("Authorization")
         if not auth_header:
@@ -98,9 +96,7 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         agent_id = self.token_mapping.get_agent_id(token)
         if agent_id is None:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-                headers={"WWW-Authenticate": "Bearer"},
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"}
             )
 
         # Inject agent_id into request state

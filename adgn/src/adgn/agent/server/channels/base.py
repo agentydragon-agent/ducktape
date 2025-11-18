@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
-from typing import Any
 
 from fastapi import WebSocket
 from pydantic import BaseModel
@@ -47,10 +45,7 @@ class ChannelConnectionManager:
             return
 
         envelope = ChannelEnvelope(
-            channel=self.channel_name,
-            event_id=self._next_event_id(),
-            event_at=datetime.now(UTC),
-            payload=payload,
+            channel=self.channel_name, event_id=self._next_event_id(), event_at=datetime.now(UTC), payload=payload
         )
 
         try:
@@ -65,10 +60,7 @@ class ChannelConnectionManager:
             return
 
         envelope = ChannelEnvelope(
-            channel=self.channel_name,
-            event_id=self._next_event_id(),
-            event_at=datetime.now(UTC),
-            payload=payload,
+            channel=self.channel_name, event_id=self._next_event_id(), event_at=datetime.now(UTC), payload=payload
         )
 
         data = envelope.model_dump(mode="json")
@@ -86,7 +78,6 @@ class ChannelConnectionManager:
 
     async def flush(self) -> None:
         """Flush any pending messages (no-op for base implementation)."""
-        pass
 
     @property
     def client_count(self) -> int:

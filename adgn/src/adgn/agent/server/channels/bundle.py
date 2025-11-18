@@ -62,13 +62,7 @@ class ChannelBundle:
         if runtime._ui_manager is not None:
             ui = UiChannelManager()
 
-        return cls(
-            mcp=mcp,
-            approvals=approvals,
-            policy=policy,
-            session=session,
-            ui=ui,
-        )
+        return cls(mcp=mcp, approvals=approvals, policy=policy, session=session, ui=ui)
 
     async def send_initial_snapshots(self, runtime: AgentRuntime) -> None:
         """Send initial state snapshots on all available channels."""

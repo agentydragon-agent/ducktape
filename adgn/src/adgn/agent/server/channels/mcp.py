@@ -47,10 +47,7 @@ class McpServerDetached(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-McpMessage = Annotated[
-    McpSnapshot | McpServerAttached | McpServerDetached,
-    Field(discriminator="type"),
-]
+McpMessage = Annotated[McpSnapshot | McpServerAttached | McpServerDetached, Field(discriminator="type")]
 
 
 # ============================================================================
@@ -82,7 +79,7 @@ class McpChannelManager(ChannelConnectionManager):
 
 def register_endpoint(app):
     """Register MCP channel WebSocket endpoint."""
-    from fastapi import FastAPI, WebSocket
+    from fastapi import WebSocket
 
     from adgn.agent.server.channels.common import handle_channel_ws
 

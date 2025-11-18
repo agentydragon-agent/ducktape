@@ -7,9 +7,9 @@ External agents connect using MCP-over-HTTP and get policy-gated access to tools
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import logging
 from pathlib import Path
-from typing import Awaitable, Callable
 
 from docker import DockerClient
 from fastapi import FastAPI, Request, Response
@@ -34,10 +34,7 @@ async def create_bridge_infrastructure(
     """Create RunningInfrastructure for external agent HTTP bridge."""
     # Create infrastructure builder
     builder = MCPInfrastructure(
-        agent_id=agent_id,
-        persistence=persistence,
-        docker_client=docker_client,
-        initial_policy=initial_policy,
+        agent_id=agent_id, persistence=persistence, docker_client=docker_client, initial_policy=initial_policy
     )
 
     # Start core infrastructure
@@ -98,9 +95,7 @@ async def create_multi_tenant_app(
     class CompositorRoutingMiddleware(BaseHTTPMiddleware):
         """Routes requests to the appropriate agent's compositor app."""
 
-        async def dispatch(
-            self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-        ) -> Response:
+        async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
             # Get agent_id set by TokenAuthMiddleware
             agent_id = request.state.agent_id
 
