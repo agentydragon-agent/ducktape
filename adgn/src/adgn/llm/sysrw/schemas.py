@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 from anthropic.types.tool_param import ToolParam
-from openai.types.responses import ResponseCreateParams
+from openai.types.chat.chat_completion_message import ChatCompletionMessage
+from openai.types.responses import Response, ResponseCreateParams
 from pydantic import BaseModel, Field
 
 from adgn.llm.anthropic.types import Message as AnthropicMessage
@@ -64,6 +65,27 @@ class CCRSample(BaseModel):
 # ------------------------
 
 
+class ChatAssistantMessage(BaseModel):
+    """Chat completion assistant message from CCR samples."""
+
+    kind: Literal["chat"] = "chat"
+    message: ChatCompletionMessage
+
+
+class ResponsesAssistantMessage(BaseModel):
+    """Responses API assistant message from Crush samples."""
+
+    kind: Literal["responses"] = "responses"
+    responses_input: list[dict[str, Any]]
+    responses_output: Response
+
+
+AssistantMessage = Annotated[
+    ChatAssistantMessage | ResponsesAssistantMessage,
+    Field(discriminator="kind"),
+]
+
+
 class Grade(BaseModel):
     """Grade result from the grader model."""
 
@@ -74,7 +96,7 @@ class Grade(BaseModel):
 class EvalSampleRecord(BaseModel):
     request: dict[str, Any]
     response: dict[str, Any]
-    new_assistant_message: dict[str, Any]
+    new_assistant_message: AssistantMessage
     correlation_id: str | None = None
     timestamp: int | None = None
     anthropic_request: Request | None = None
