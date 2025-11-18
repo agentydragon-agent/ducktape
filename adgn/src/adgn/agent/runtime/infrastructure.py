@@ -56,9 +56,7 @@ logger = logging.getLogger(__name__)
 
 
 class MCPInfrastructure:
-    """Builder for core MCP infrastructure (compositor + policy gateway).
-
-    Creates minimal core infrastructure - does NOT include optional sidecars
+    """Creates minimal core infrastructure - does NOT include optional sidecars
     (UI, chat, loop, runtime). Those are attached to RunningInfrastructure.
 
     Example:
@@ -92,15 +90,6 @@ class MCPInfrastructure:
         initial_policy: str | None = None,
         connection_manager: ConnectionManager | None = None,
     ):
-        """Create infrastructure builder.
-
-        Args:
-            agent_id: Unique identifier for this agent
-            persistence: SQLite persistence layer
-            docker_client: Docker client for container operations
-            initial_policy: Optional policy source (defaults to built-in)
-            connection_manager: Optional connection manager for UI notifications
-        """
         self.agent_id = agent_id
         self.persistence = persistence
         self.docker_client = docker_client
@@ -108,19 +97,6 @@ class MCPInfrastructure:
         self._connection_manager = connection_manager
 
     async def start(self, mcp_config: MCPConfig) -> RunningInfrastructure:
-        """Initialize and start infrastructure, returning running state.
-
-        This performs the following phases:
-        1. Setup approval infrastructure (engine + hub)
-        2. Create compositor and mount external servers
-        3. Create MCP client and notifications buffer
-        4. Mount approval policy servers
-        5. Install policy gateway middleware
-        6. Mount standard meta servers (resources, compositor_meta, compositor_admin)
-
-        Returns:
-            RunningInfrastructure with all components initialized and ready.
-        """
         stack = AsyncExitStack()
         await stack.__aenter__()
 
@@ -174,13 +150,8 @@ class MCPInfrastructure:
     async def _setup_approval_infrastructure(
         self,
     ) -> tuple[ApprovalPolicyEngine, ApprovalHub]:
-        """Phase 1: Set up approval infrastructure.
-
-        Resolves the initial policy source (from preset, initial_policy parameter,
+        """Resolves the initial policy source (from preset, initial_policy parameter,
         or default) and constructs the approval policy engine.
-
-        Returns:
-            tuple: (approval_engine, approval_hub)
         """
         # Resolve initial policy source via preset/persistence/override
         row = await self.persistence.get_agent(self.agent_id)
@@ -224,18 +195,13 @@ class MCPInfrastructure:
         approval_engine: ApprovalPolicyEngine,
         stack: AsyncExitStack,
     ) -> tuple[PolicyReaderStub, PolicyApproverStub]:
-        """Mount approval policy servers and create internal clients.
-
-        Mounts:
+        """Mounts:
             - approval_policy_reader (resources + decide tool)
             - approval_policy_proposer (create/withdraw proposal tools)
 
         Creates internal clients (not mounted):
             - policy_reader: for policy gateway middleware
             - policy_approver: for HTTP admin API
-
-        Returns:
-            tuple: (policy_reader, policy_approver)
         """
         # Create and mount reader server
         reader_server = ApprovalPolicyServer(
@@ -281,9 +247,7 @@ class MCPInfrastructure:
         approval_hub: ApprovalHub,
         policy_reader: PolicyReaderStub,
     ) -> None:
-        """Install policy gateway middleware on compositor.
-
-        The policy gateway intercepts all tool calls and evaluates them
+        """The policy gateway intercepts all tool calls and evaluates them
         against the active approval policy before execution.
         """
 

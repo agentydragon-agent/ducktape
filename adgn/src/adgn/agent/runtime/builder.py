@@ -34,32 +34,9 @@ async def build_local_agent(
     connection_manager: ConnectionManager | None = None,
     system_override: str | None = None,
     initial_policy: str | None = None,
-) -> tuple[RunningInfrastructure, LocalAgentRuntime]:
-    """Build local agent using new architecture.
-
-    This replaces the old build_container() function with the new architecture:
-    - MCPInfrastructure (core MCP + policy gateway)
-    - Sidecars (UI, chat, loop)
-    - LocalAgentRuntime (MiniCodex agent)
-
-    Args:
-        agent_id: Agent identifier
-        mcp_config: MCP servers to mount
-        persistence: SQLite persistence layer
-        model: OpenAI model name
-        client_factory: Factory to create OpenAI client
-        docker_client: Docker client for policy evaluation
-        with_ui: Whether to attach UI sidecar
-        ui_bus: ServerBus for UI (required if with_ui=True)
-        connection_manager: Connection manager for UI notifications
-        system_override: Optional system prompt override
-        initial_policy: Optional initial policy source
-
-    Returns:
-        Tuple of (running_infrastructure, local_runtime)
-
-    Example:
-        running, runtime = await build_local_agent(
+) -> tuple[RunningInfrastructure, LocalAgentRuntime, ServerBus | None, ConnectionManager | None]:
+    """Example:
+        running, runtime, ui_bus, conn_mgr = await build_local_agent(
             agent_id="my-agent",
             mcp_config=config,
             persistence=persistence,
@@ -77,9 +54,12 @@ async def build_local_agent(
         await runtime.close()
         await running.close()
     """
-    # Validate UI requirements
-    if with_ui and ui_bus is None:
-        raise ValueError("ui_bus required when with_ui=True")
+    # Validate UI requirements and create connection manager if needed
+    if with_ui:
+        if ui_bus is None:
+            raise ValueError("ui_bus required when with_ui=True")
+        if connection_manager is None:
+            connection_manager = ConnectionManager()
 
     # Create infrastructure builder
     builder = MCPInfrastructure(
@@ -107,14 +87,16 @@ async def build_local_agent(
         )
     await bundle.attach_all(running)
 
-    # Create local agent runtime
+    # Create local agent runtime with UI components
     runtime = LocalAgentRuntime(
         running=running,
         model=model,
         client_factory=client_factory,
         system_override=system_override,
+        ui_bus=ui_bus,
+        connection_manager=connection_manager,
     )
 
     await runtime.start()
 
-    return (running, runtime)
+    return (running, runtime, ui_bus, connection_manager)

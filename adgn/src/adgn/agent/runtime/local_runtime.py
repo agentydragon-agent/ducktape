@@ -30,9 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class LocalAgentRuntime:
-    """Local agent runtime wrapping RunningInfrastructure with MiniCodex.
-
-    Consumes RunningInfrastructure's compositor_client and adds:
+    """Consumes RunningInfrastructure's compositor_client and adds:
     - MiniCodex agent (OpenAI Responses API)
     - AgentSession (run/event management)
     - UI integration (WebSocket protocol)
@@ -67,19 +65,9 @@ class LocalAgentRuntime:
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool = True,
         extra_handlers: Iterable[BaseHandler] | None = None,
+        ui_bus = None,
+        connection_manager = None,
     ):
-        """Create local agent runtime.
-
-        Args:
-            running: Running infrastructure to consume
-            model: OpenAI model name (e.g., "o4-mini")
-            client_factory: Factory function to create OpenAI client
-            system_override: Optional system prompt override
-            reasoning_effort: Optional reasoning effort parameter
-            reasoning_summary: Optional reasoning summary parameter
-            parallel_tool_calls: Whether to enable parallel tool calls
-            extra_handlers: Additional handlers to register
-        """
         self.running = running
         self.model = model
         self._client_factory = client_factory
@@ -88,21 +76,21 @@ class LocalAgentRuntime:
         self._reasoning_summary = reasoning_summary
         self._parallel_tool_calls = parallel_tool_calls
         self._extra_handlers = list(extra_handlers or [])
+        self._ui_bus = ui_bus
+        self._connection_manager = connection_manager
 
         # Initialized by start()
         self.session: AgentSession | None = None
         self.agent: MiniCodex | None = None
 
     async def start(self) -> None:
-        """Start agent runtime and create MiniCodex agent."""
-        # Create session
-        # Note: UI bus comes from UISidecar if attached
+        # Create session with UI components if provided
         sess = AgentSession(
-            manager=None,  # TODO: Wire connection manager if UI sidecar attached
+            manager=self._connection_manager,
             approval_hub=self.running.approval_hub,
             persistence=self.running.approval_engine.persistence,
             agent_id=self.running.agent_id,
-            ui_bus=None,  # TODO: Wire UI bus if UI sidecar attached
+            ui_bus=self._ui_bus,
             approval_engine=self.running.approval_engine,
         )
 
@@ -116,13 +104,13 @@ class LocalAgentRuntime:
         # Build handlers
         handlers, persist_handler = build_handlers(
             poll_notifications=self.running.notifications_buffer.poll,
-            manager=None,  # TODO: Wire connection manager
+            manager=self._connection_manager,
             persistence=self.running.approval_engine.persistence,
             approval_engine=self.running.approval_engine,
             approval_hub=self.running.approval_hub,
             get_run_id=_get_run_id,
             agent_id=self.running.agent_id,
-            ui_bus=None,  # TODO: Wire UI bus
+            ui_bus=self._ui_bus,
         )
 
         # Add extra handlers if provided
@@ -162,26 +150,14 @@ class LocalAgentRuntime:
         self.agent = agent
 
     async def run(self, user_text: str) -> AgentResult:
-        """Run agent turn with user input.
-
-        Args:
-            user_text: User message text
-
-        Returns:
-            AgentResult with assistant response
-
-        Raises:
-            RuntimeError: If agent not started
-        """
+        """Raises RuntimeError if agent not started."""
         if self.agent is None:
             raise RuntimeError("agent not started - call start() first")
 
         return await self.agent.run(user_text)
 
     async def close(self) -> None:
-        """Close agent session and cleanup.
-
-        Note: This does NOT close the underlying RunningInfrastructure.
+        """Does NOT close the underlying RunningInfrastructure.
         Call running.close() separately if needed.
         """
         if self.session is not None:

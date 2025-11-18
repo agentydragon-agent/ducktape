@@ -22,18 +22,13 @@ from adgn.mcp.notifications.buffer import NotificationsBuffer
 
 @dataclass
 class CloseResult:
-    """Result of closing infrastructure."""
-
     drained: bool
     error: str | None = None
 
 
 @dataclass
 class RunningInfrastructure:
-    """Running MCP infrastructure - all components initialized and non-optional.
-
-    Obtained by calling MCPInfrastructure.start(). Provides type-safe access
-    to all infrastructure components without Optional checks.
+    """Obtained by calling MCPInfrastructure.start().
 
     Sidecars can attach to this infrastructure to add optional functionality
     (UI, chat, loop control, etc.) without coupling to the core.
@@ -60,24 +55,16 @@ class RunningInfrastructure:
     _sidecars: list["Sidecar"] = None  # type: ignore
 
     def __post_init__(self) -> None:
-        """Initialize mutable fields."""
         if self._sidecars is None:
             object.__setattr__(self, "_sidecars", [])
 
     async def attach_sidecar(self, sidecar: "Sidecar") -> None:
-        """Attach a sidecar to this running infrastructure.
-
-        The sidecar's attach() method will be called immediately, and it
-        will be detached in reverse order when close() is called.
-        """
+        """Sidecars are detached in reverse order when close() is called."""
         await sidecar.attach(self)
         self._sidecars.append(sidecar)
 
     async def close(self) -> CloseResult:
-        """Shutdown infrastructure and all attached sidecars.
-
-        Sidecars are detached in reverse order of attachment.
-        """
+        """Sidecars are detached in reverse order of attachment."""
         errors: list[str] = []
 
         # Detach sidecars in reverse order
@@ -98,33 +85,23 @@ class RunningInfrastructure:
         return CloseResult(drained=True)
 
     async def attach_mcp(self, name: str, spec: MCPServerTypes) -> None:
-        """Attach an MCP server at runtime via compositor_admin.
-
-        This is policy-gated - the active approval policy will decide whether
-        to allow the attachment.
-        """
+        """Policy-gated via active approval policy."""
         from adgn.mcp.compositor.clients import CompositorAdminClient
 
         admin = CompositorAdminClient(self.compositor_client)
         await admin.attach_server(name=name, spec=spec)
 
     async def detach_mcp(self, name: str) -> None:
-        """Detach an MCP server at runtime via compositor_admin.
-
-        This is policy-gated - the active approval policy will decide whether
-        to allow the detachment.
-        """
+        """Policy-gated via active approval policy."""
         from adgn.mcp.compositor.clients import CompositorAdminClient
 
         admin = CompositorAdminClient(self.compositor_client)
         await admin.detach_server(name=name)
 
     async def __aenter__(self) -> "RunningInfrastructure":
-        """Support async context manager protocol."""
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Cleanup on context manager exit."""
         await self.close()
 
 
