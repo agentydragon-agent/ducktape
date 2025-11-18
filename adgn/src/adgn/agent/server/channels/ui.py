@@ -15,7 +15,6 @@ from adgn.agent.server.bus import MimeType
 from adgn.agent.server.channels.base import ChannelConnectionManager
 from adgn.agent.server.state import UiState
 
-
 # ============================================================================
 # Protocol Messages
 # ============================================================================
@@ -64,10 +63,7 @@ class UiEndTurnEvt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-UiMessage = Annotated[
-    UiStateSnapshot | UiStateUpdated | UiMessageEvt | UiEndTurnEvt,
-    Field(discriminator="type"),
-]
+UiMessage = Annotated[UiStateSnapshot | UiStateUpdated | UiMessageEvt | UiEndTurnEvt, Field(discriminator="type")]
 
 
 # ============================================================================
@@ -98,7 +94,7 @@ class UiChannelManager(ChannelConnectionManager):
 
 def register_endpoint(app):
     """Register UI channel WebSocket endpoint."""
-    from fastapi import FastAPI, WebSocket
+    from fastapi import WebSocket
 
     from adgn.agent.server.channels.common import handle_channel_ws
 
@@ -111,11 +107,4 @@ def register_endpoint(app):
     @app.websocket("/ws/ui")
     async def ws_ui(ws: WebSocket) -> None:
         """UI channel - UI state and custom messages."""
-        await handle_channel_ws(
-            ws,
-            "ui",
-            ws.query_params.get("agent_id"),
-            lambda b: b.ui,
-            _send_ui_snapshot,
-            app,
-        )
+        await handle_channel_ws(ws, "ui", ws.query_params.get("agent_id"), lambda b: b.ui, _send_ui_snapshot, app)

@@ -21,7 +21,6 @@ import docker
 from fastmcp.mcp_config import MCPConfig
 from platformdirs import user_data_dir
 
-from adgn.agent.mcp_bridge.server import create_bridge_infrastructure
 from adgn.agent.persist.sqlite import SQLitePersistence
 
 logger = logging.getLogger(__name__)
@@ -33,31 +32,23 @@ DEFAULT_DB_PATH = Path(user_data_dir("adgn", "agentydragon")) / "mcp-bridge.db"
 @click.group()
 def cli():
     """HTTP MCP Bridge - expose policy-gated infrastructure to external agents."""
-    pass
 
 
 @cli.command()
 @click.option(
     "--agent-id",
-    help="Agent identifier for single-agent mode (e.g., 'external-chatgpt'). "
-         "Mutually exclusive with --auth-tokens.",
+    help="Agent identifier for single-agent mode (e.g., 'external-chatgpt'). Mutually exclusive with --auth-tokens.",
 )
 @click.option(
     "--auth-tokens",
     type=Path,
-    help="Path to JSON token mapping file for multi-agent mode (token → agent_id). "
-         "Mutually exclusive with --agent-id.",
+    help="Path to JSON token mapping file for multi-agent mode (token → agent_id). Mutually exclusive with --agent-id.",
 )
 @click.option(
-    "--db-path",
-    type=Path,
-    default=DEFAULT_DB_PATH,
-    help=f"SQLite database path (default: {DEFAULT_DB_PATH})",
+    "--db-path", type=Path, default=DEFAULT_DB_PATH, help=f"SQLite database path (default: {DEFAULT_DB_PATH})"
 )
 @click.option(
-    "--mcp-config",
-    type=Path,
-    help="Path to .mcp.json config (servers to mount, e.g., docker exec with repo mount)",
+    "--mcp-config", type=Path, help="Path to .mcp.json config (servers to mount, e.g., docker exec with repo mount)"
 )
 @click.option("--host", default="127.0.0.1", help="Bind host")
 @click.option("--port", type=int, default=8080, help="Bind port")
@@ -122,64 +113,56 @@ async def _run_server(
 
     # Initialize persistence
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    persistence = SQLitePersistence(str(db_path))
+    persistence = SQLitePersistence(db_path)
 
     # Initialize Docker client
     docker_client = docker.from_env()
 
-    async with persistence:
-        if agent_id:
-            # Single-agent mode: create infrastructure at startup
-            from adgn.agent.mcp_bridge.server import create_bridge_infrastructure
+    # Ensure database schema
+    await persistence.ensure_schema()
 
-            running = await create_bridge_infrastructure(
-                agent_id=agent_id,
-                persistence=persistence,
-                docker_client=docker_client,
-                mcp_config=mcp_config,
-                initial_policy=initial_policy,
-            )
+    if agent_id:
+        # Single-agent mode: create infrastructure at startup
+        from adgn.agent.mcp_bridge.server import create_bridge_infrastructure
 
-            async with running:
-                app = running.compositor.http_app()
+        running = await create_bridge_infrastructure(
+            agent_id=agent_id,
+            persistence=persistence,
+            docker_client=docker_client,
+            mcp_config=mcp_config,
+            initial_policy=initial_policy,
+        )
 
-                logger.info(f"HTTP MCP Bridge started (single-agent mode)")
-                logger.info(f"Agent ID: {agent_id}")
-                logger.info(f"Compositor ready with {len(mcp_config.mcpServers or {})} external servers")
-                logger.info(f"MCP server available at http://{host}:{port}/sse")
+        async with running:
+            app = running.compositor.http_app()
 
-                config = uvicorn.Config(
-                    app=app,
-                    host=host,
-                    port=port,
-                    log_level="info",
-                )
-                server = uvicorn.Server(config)
-                await server.serve()
-        else:
-            # Multi-agent mode: create app with auth middleware
-            assert auth_tokens_path is not None
-            app = await create_multi_tenant_app(
-                auth_tokens_path=auth_tokens_path,
-                persistence=persistence,
-                docker_client=docker_client,
-                mcp_config=mcp_config,
-                initial_policy=initial_policy,
-            )
-
-            logger.info(f"HTTP MCP Bridge started (multi-agent mode)")
-            logger.info(f"Token mapping: {auth_tokens_path}")
+            logger.info("HTTP MCP Bridge started (single-agent mode)")
+            logger.info(f"Agent ID: {agent_id}")
+            logger.info(f"Compositor ready with {len(mcp_config.mcpServers or {})} external servers")
             logger.info(f"MCP server available at http://{host}:{port}/sse")
-            logger.info("Requires: Authorization: Bearer <token>")
 
-            config = uvicorn.Config(
-                app=app,
-                host=host,
-                port=port,
-                log_level="info",
-            )
+            config = uvicorn.Config(app=app, host=host, port=port, log_level="info")
             server = uvicorn.Server(config)
             await server.serve()
+    else:
+        # Multi-agent mode: create app with auth middleware
+        assert auth_tokens_path is not None
+        app = await create_multi_tenant_app(
+            auth_tokens_path=auth_tokens_path,
+            persistence=persistence,
+            docker_client=docker_client,
+            mcp_config=mcp_config,
+            initial_policy=initial_policy,
+        )
+
+        logger.info("HTTP MCP Bridge started (multi-agent mode)")
+        logger.info(f"Token mapping: {auth_tokens_path}")
+        logger.info(f"MCP server available at http://{host}:{port}/sse")
+        logger.info("Requires: Authorization: Bearer <token>")
+
+        config = uvicorn.Config(app=app, host=host, port=port, log_level="info")
+        server = uvicorn.Server(config)
+        await server.serve()
 
 
 if __name__ == "__main__":

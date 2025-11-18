@@ -58,10 +58,7 @@ class ApprovalDecisionEvt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-ApprovalsMessage = Annotated[
-    ApprovalsSnapshot | ApprovalPendingEvt | ApprovalDecisionEvt,
-    Field(discriminator="type"),
-]
+ApprovalsMessage = Annotated[ApprovalsSnapshot | ApprovalPendingEvt | ApprovalDecisionEvt, Field(discriminator="type")]
 
 
 # ============================================================================
@@ -96,7 +93,7 @@ class ApprovalsChannelManager(ChannelConnectionManager):
 
 def register_endpoint(app):
     """Register approvals channel WebSocket endpoint."""
-    from fastapi import FastAPI, WebSocket
+    from fastapi import WebSocket
 
     from adgn.agent.server.channels.common import handle_channel_ws
 

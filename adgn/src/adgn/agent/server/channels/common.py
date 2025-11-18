@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import logging
+import contextlib
 from datetime import UTC, datetime
 from enum import StrEnum
+import logging
 from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, WebSocket
 
     from adgn.agent.server.channels.bundle import ChannelBundle
 
@@ -69,18 +70,10 @@ class HeartbeatEvt(BaseModel):
 
 async def send_envelope(ws: WebSocket, channel: str, payload: Accepted | ErrorEvt) -> None:
     """Send envelope to client, ignoring errors."""
-    from fastapi import WebSocket
 
-    envelope = ChannelEnvelope(
-        channel=channel,
-        event_id=0,
-        event_at=datetime.now(UTC),
-        payload=payload,
-    )
-    try:
+    envelope = ChannelEnvelope(channel=channel, event_id=0, event_at=datetime.now(UTC), payload=payload)
+    with contextlib.suppress(Exception):
         await ws.send_json(envelope.model_dump(mode="json"))
-    except Exception:
-        pass
 
 
 async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | None:
@@ -102,15 +95,10 @@ async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | Non
 
 
 async def handle_channel_ws(
-    ws: WebSocket,
-    channel: str,
-    agent_id: str | None,
-    get_manager,
-    send_initial_snapshot,
-    app: FastAPI,
+    ws: WebSocket, channel: str, agent_id: str | None, get_manager, send_initial_snapshot, app: FastAPI
 ):
     """Common WebSocket handler pattern for all channels."""
-    from fastapi import WebSocket, WebSocketDisconnect
+    from fastapi import WebSocketDisconnect
 
     await ws.accept()
     try:

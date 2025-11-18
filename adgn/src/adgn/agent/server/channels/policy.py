@@ -67,10 +67,7 @@ class PolicyProposalEvt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-PolicyMessage = Annotated[
-    PolicySnapshot | PolicyUpdated | PolicyProposalEvt,
-    Field(discriminator="type"),
-]
+PolicyMessage = Annotated[PolicySnapshot | PolicyUpdated | PolicyProposalEvt, Field(discriminator="type")]
 
 
 # ============================================================================
@@ -99,7 +96,7 @@ class PolicyChannelManager(ChannelConnectionManager):
                 id=p.id,
                 status=ProposalStatus(p.status),
                 docstring=None,  # TODO: Extract from content if needed
-                tests=None,      # TODO: Parse test results if available
+                tests=None,  # TODO: Parse test results if available
             )
             for p in db_proposals
         ]
@@ -116,7 +113,7 @@ class PolicyChannelManager(ChannelConnectionManager):
 
 def register_endpoint(app):
     """Register policy channel WebSocket endpoint."""
-    from fastapi import FastAPI, WebSocket
+    from fastapi import WebSocket
 
     from adgn.agent.server.channels.common import handle_channel_ws
 
