@@ -1,6 +1,7 @@
 """Configuration management for Gatelet server."""
 
 from datetime import timedelta
+from functools import lru_cache
 import logging
 import os
 from pathlib import Path
@@ -168,5 +169,15 @@ class Settings(BaseModel):
 # Path to the active configuration file
 CONFIG_PATH = Path(os.getenv("GATELET_CONFIG", "gatelet.toml"))
 
-# Load settings
-settings = Settings.from_file(CONFIG_PATH)
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get application settings (cached).
+
+    This is the proper dependency injection pattern for FastAPI.
+    Use as: settings: Settings = Depends(get_settings)
+
+    The @lru_cache decorator ensures settings are loaded once and reused.
+    For tests, call get_settings.cache_clear() to reset.
+    """
+    return Settings.from_file(CONFIG_PATH)

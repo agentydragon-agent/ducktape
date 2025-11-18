@@ -13,10 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.handlers import AuthHandlerError
-from ..config import settings
+from ..config import Settings, get_settings
 from ..database import get_db_session
 from ..models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import] - Runtime-only import (SQLAlchemy models)
-from ..shared import templates
 
 MAX_OPTIONS = 256
 
@@ -48,7 +47,7 @@ router = APIRouter(tags=["auth"])
 DB_SESSION = Depends(get_db_session)
 
 
-async def _validate_key(key_id: int, db_session: AsyncSession) -> AuthKey:
+async def _validate_key(key_id: int, db_session: AsyncSession, settings: Settings) -> AuthKey:
     stmt = select(AuthKey).where(AuthKey.id == key_id)
     result = await db_session.execute(stmt)
     key: AuthKey | None = result.scalar_one_or_none()
@@ -57,7 +56,7 @@ async def _validate_key(key_id: int, db_session: AsyncSession) -> AuthKey:
     return key
 
 
-async def _new_challenge(key: AuthKey, db_session: AsyncSession):
+async def _new_challenge(key: AuthKey, db_session: AsyncSession, settings: Settings):
     nonce_value = uuid.uuid4().hex
     nonce = AuthNonce(
         nonce_value=nonce_value, expires_at=datetime.now() + settings.auth.challenge_response.nonce_validity
@@ -71,10 +70,15 @@ async def _new_challenge(key: AuthKey, db_session: AsyncSession):
 
 
 @router.get("/cr/{key_id}", response_class=HTMLResponse)
-async def start_challenge(key_id: int, request: Request, db_session: AsyncSession = DB_SESSION):
-    key = await _validate_key(key_id, db_session)
-    nonce, _, options = await _new_challenge(key, db_session)
-    return templates.TemplateResponse(
+async def start_challenge(
+    key_id: int,
+    request: Request,
+    db_session: AsyncSession = DB_SESSION,
+    settings: Settings = Depends(get_settings),
+):
+    key = await _validate_key(key_id, db_session, settings)
+    nonce, _, options = await _new_challenge(key, db_session, settings)
+    return request.app.state.templates.TemplateResponse(
         "challenge.html",
         {
             "request": request,
@@ -88,9 +92,15 @@ async def start_challenge(key_id: int, request: Request, db_session: AsyncSessio
     )
 
 
-async def _render_new_challenge(request: Request, key: AuthKey, db_session: AsyncSession, message: str):
-    nonce, _, options = await _new_challenge(key, db_session)
-    return templates.TemplateResponse(
+async def _render_new_challenge(
+    request: Request,
+    key: AuthKey,
+    db_session: AsyncSession,
+    message: str,
+    settings: Settings,
+):
+    nonce, _, options = await _new_challenge(key, db_session, settings)
+    return request.app.state.templates.TemplateResponse(
         "challenge.html",
         {
             "request": request,
@@ -106,20 +116,25 @@ async def _render_new_challenge(request: Request, key: AuthKey, db_session: Asyn
 
 @router.get("/cr/{key_id}/{nonce_value}/{answer}", response_class=HTMLResponse)
 async def answer_challenge(
-    key_id: int, nonce_value: str, answer: str, request: Request, db_session: AsyncSession = DB_SESSION
+    key_id: int,
+    nonce_value: str,
+    answer: str,
+    request: Request,
+    db_session: AsyncSession = DB_SESSION,
+    settings: Settings = Depends(get_settings),
 ):
-    key = await _validate_key(key_id, db_session)
+    key = await _validate_key(key_id, db_session, settings)
     stmt = select(AuthNonce).where(AuthNonce.nonce_value == nonce_value)
     nonce = (await db_session.execute(stmt)).scalar_one_or_none()
     if not nonce or not nonce.is_valid:
-        return await _render_new_challenge(request, key, db_session, "Invalid or expired challenge")
+        return await _render_new_challenge(request, key, db_session, "Invalid or expired challenge", settings)
 
     nonce.used_at = datetime.now()
     await db_session.flush()
 
     correct_idx = compute_correct_option(key.key_value, nonce_value, settings.auth.challenge_response.num_options)
     if answer != str(correct_idx):
-        return await _render_new_challenge(request, key, db_session, "Incorrect answer")
+        return await _render_new_challenge(request, key, db_session, "Incorrect answer", settings)
 
     now = datetime.now()
     session = AuthCRSession(

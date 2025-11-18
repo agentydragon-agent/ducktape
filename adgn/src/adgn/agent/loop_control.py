@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from adgn.openai_utils.model import AssistantMessageOut, FunctionCallItem, FunctionCallOutputItem, InputItem
+from adgn.openai_utils.model import FunctionCallItem, UserMessage
 
 # ---------------------------------------------------------------------------
 # Tool policy algebraic types (what the model is allowed/required to do next)
@@ -67,6 +67,13 @@ class NoLoopDecision:
     """
 
 
+# Type alias for Continue.inserts_input
+# Valid types: UserMessage, FunctionCallItem
+# Constraint (enforced at runtime): FunctionCallItem ONLY allowed when skip_sampling=True
+# Rationale: FunctionCallItem in normal path would create unresolved function call in API request
+InjectableItem = UserMessage | FunctionCallItem
+
+
 @dataclass(frozen=True)
 class Continue:
     """Proceed with the agent loop under a specific tool policy.
@@ -93,13 +100,12 @@ class Continue:
     """
 
     tool_policy: ToolPolicy
-    # Input-side items to add to the next request (adapter-only).
-    # Normal path: accept InputItem (UserMessage, AssistantMessage, SystemMessage,
-    # FunctionCallItem, FunctionCallOutputItem).
-    # Skip-sampling path: accept adapter ResponseOut items (FunctionCallItem,
-    # FunctionCallOutputItem, AssistantMessageOut). ReasoningItem MUST be produced
-    # by the SDK/model, not injected here.
-    inserts_input: tuple[InputItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut, ...] = ()
+    # Items to inject into the agent loop.
+    # - Normal path (skip_sampling=False): Must be NormalInjectableItem types, appended to transcript
+    # - Skip-sampling path (skip_sampling=True): Must be SyntheticOutputItem types, treated as model output
+    # Type annotation accepts the union; caller must ensure items match the skip_sampling mode.
+    # ReasoningItem MUST be produced by the SDK/model, never injected.
+    inserts_input: tuple[InjectableItem, ...] = ()
     # When True: do NOT call the model this phase; execute directly from inserts_input
     skip_sampling: bool = False
 

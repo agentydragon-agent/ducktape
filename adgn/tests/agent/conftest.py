@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager, contextmanager
-from datetime import UTC
+from datetime import UTC, datetime
 import os
 from pathlib import Path
 from typing import Any
 
 import docker
 from fastapi.testclient import TestClient
+from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
+from starlette.testclient import WebSocketTestSession
 
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.policies.loader import approve_all_policy_text
@@ -19,7 +21,7 @@ from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt
 from adgn.mcp.editor_server import make_editor_server
-from adgn.openai_utils.model import ResponsesResult
+from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.agent.ws_helpers import (
     _short_payload,
@@ -28,8 +30,56 @@ from tests.agent.ws_helpers import (
     wait_for_accepted,
 )
 from tests.llm.support.openai_mock import FakeOpenAIModel
+from tests.types import McpServerSpecs
 
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
+
+
+class _AgentHttp:
+    """HTTP helper for agent API endpoints."""
+
+    def __init__(self, client, agent_id: str) -> None:
+        self._c = client
+        self._id = agent_id
+
+    def _url(self, path: str) -> str:
+        """Build agent-specific URL path."""
+        return f"/api/agents/{self._id}/{path}"
+
+    def post(self, path: str, **kwargs):
+        """POST to agent-specific endpoint."""
+        return self._c.post(self._url(path), **kwargs)
+
+    def get(self, path: str, **kwargs):
+        """GET from agent-specific endpoint."""
+        return self._c.get(self._url(path), **kwargs)
+
+    # Chat
+    def prompt(self, text: str):
+        return self.post("prompt", json={"text": text})
+
+    def abort(self):
+        return self.post("abort")
+
+    def snapshot(self):
+        return self.get("snapshot")
+
+    # Approvals
+    def approve(self, call_id: str):
+        return self.post("approve", json={"call_id": call_id})
+
+    def deny_continue(self, call_id: str):
+        return self.post("deny_continue", json={"call_id": call_id})
+
+    def deny_abort(self, call_id: str):
+        return self.post("deny_abort", json={"call_id": call_id})
+
+    # Policy
+    def set_policy(self, content: str, proposal_id: str | None = None):
+        body: dict[str, object] = {"content": content}
+        if proposal_id is not None:
+            body["proposal_id"] = proposal_id
+        return self.post("policy", json=body)
 
 
 # Note: approval_engine fixture is provided globally in tests/conftest.py
@@ -173,15 +223,17 @@ def typed_editor_factory(tmp_path: Path):
 # Helper: create a live agent via HTTP on a TestClient and return its id
 @pytest.fixture
 def create_live_agent():
-    def _create(client, *, specs: dict[str, Any] | None = None) -> str:
+    def _create(client, *, specs: McpServerSpecs | None = None) -> str:
         specs = specs or {}
         # Split into typed JSON specs vs runtime slot specs
-        typed: dict[str, BaseModel] = {}
+        typed: dict[str, MCPServerTypes] = {}
         inproc: dict[str, FastMCP] = {}
         for k, v in list(specs.items()):
             if isinstance(v, FastMCP):
                 inproc[k] = v
                 continue
+            # Must be MCPServerTypes at this point
+            assert isinstance(v, BaseModel), f"Expected MCPServerTypes or FastMCP, got {type(v)}"
             typed[k] = v
         # Create agent via API using a preset
         resp = client.post("/api/agents", json={"preset": "default"})
@@ -189,10 +241,10 @@ def create_live_agent():
         agent_id = str(resp.json()["id"])
         # Attach typed specs via HTTP reconfigure, then runtime slots in-process
         if typed:
-            # Enforce one format: ALL typed specs must be Pydantic models (McpServerSpec variants).
+            # Enforce one format: ALL typed specs must be Pydantic models (MCPServerTypes).
             if not all(isinstance(v, BaseModel) for v in typed.values()):
                 raise AssertionError("Typed MCP specs must be provided as Pydantic models only")
-            # Send over HTTP; server rehydrates to typed McpServerSpec (TestClient handles Pydantic serialization)
+            # Send over HTTP; server rehydrates to typed MCPServerTypes (TestClient handles Pydantic serialization)
             r = client.patch(f"/api/agents/{agent_id}/mcp", json={"attach": typed})
             assert r.status_code == 200, r.text
         if inproc:
@@ -214,13 +266,13 @@ def create_live_agent():
 
 
 @pytest.fixture
-def patch_agent_build_client(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], None]:
+def patch_agent_build_client(monkeypatch: pytest.MonkeyPatch) -> Callable[[OpenAIModelProto], None]:
     """Return a function to patch container.build_client to a provided fake client.
 
     Keeps model patching independent from agent creation, so tests can opt-in.
     """
 
-    def _patch(fake_model: Any) -> None:
+    def _patch(fake_model: OpenAIModelProto) -> None:
         monkeypatch.setattr("adgn.agent.runtime.container.build_client", lambda *a, **k: fake_model)
 
     return _patch
@@ -247,8 +299,8 @@ def ws_hub(agent_app_client, patch_agent_build_client, responses_factory):
 
 
 @pytest.fixture
-def make_spy_spec() -> Callable[[list[str]], dict[str, Any]]:
-    def _spec(counter: list[str]) -> dict[str, Any]:
+def make_spy_spec() -> Callable[[list[str]], McpServerSpecs]:
+    def _spec(counter: list[str]) -> McpServerSpecs:
         mcp = FastMCP("spy")
 
         @mcp.tool()
@@ -283,9 +335,9 @@ def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
 
     @contextmanager
     def _open(
-        model_client: Any,
+        model_client: OpenAIModelProto,
         *,
-        specs: dict[str, Any] | None = None,
+        specs: McpServerSpecs | None = None,
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):
@@ -323,43 +375,6 @@ def make_agent_http():
         http.deny_continue(call_id)
         http.deny_abort(call_id)
     """
-
-    class _AgentHttp:
-        def __init__(self, client, agent_id: str) -> None:
-            self._c = client
-            self._id = agent_id
-
-        def _ep(self, suffix: str | None = None) -> str:
-            base = f"/api/agents/{self._id}"
-            return f"{base}/{suffix}" if suffix else base
-
-        # Chat
-        def prompt(self, text: str):
-            return self._c.post(self._ep("prompt"), json={"text": text})
-
-        def abort(self):
-            return self._c.post(self._ep("abort"))
-
-        def snapshot(self):
-            return self._c.get(self._ep("snapshot"))
-
-        # Approvals
-        def approve(self, call_id: str):
-            return self._c.post(self._ep("approve"), json={"call_id": call_id})
-
-        def deny_continue(self, call_id: str):
-            return self._c.post(self._ep("deny_continue"), json={"call_id": call_id})
-
-        def deny_abort(self, call_id: str):
-            return self._c.post(self._ep("deny_abort"), json={"call_id": call_id})
-
-        # Policy
-        def set_policy(self, content: str, proposal_id: str | None = None):
-            body: dict[str, object] = {"content": content}
-            if proposal_id is not None:
-                body["proposal_id"] = proposal_id
-            return self._c.post(self._ep("policy"), json=body)
-
     return _AgentHttp
 
 
@@ -382,19 +397,17 @@ def agent_ws_box(ws_session, make_agent_http):
 
     @dataclass
     class Box:
-        client: Any
-        ws: Any
+        client: TestClient
+        ws: WebSocketTestSession
         collect: Callable[[int], list]
         agent_id: str
-        http: Any
-
-    from contextlib import contextmanager
+        http: _AgentHttp
 
     @contextmanager
     def _open(
-        model_client: Any,
+        model_client: OpenAIModelProto,
         *,
-        specs: dict[str, Any] | None = None,
+        specs: McpServerSpecs | None = None,
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):
@@ -412,20 +425,11 @@ def agent_ws_box(ws_session, make_agent_http):
                     env = Envelope.model_validate(ws.receive_json())
                     p = env.payload
                     # Optional trace for visibility when debugging CI flakes
-                    try:
-                        import os
-
-                        if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
-                            from datetime import datetime
-
-                            print(f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}")
-                    except Exception:
-                        pass
+                    if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
+                        print(f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}")
                     # Auto-approve via REST when requested
-                    if getattr(p, "type", None) == "approval_pending" and auto_approve:
-                        # Type narrow to ApprovalPendingEvt
-                        if isinstance(p, ApprovalPendingEvt):
-                            http.approve(p.call_id)
+                    if isinstance(p, ApprovalPendingEvt) and auto_approve:
+                        http.approve(p.call_id)
                         out.append(p)
                         continue
                     out.append(p)

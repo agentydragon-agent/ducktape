@@ -18,17 +18,21 @@ from .auth.dependencies import (
 )
 from .auth.handlers import AuthHandlerError
 from .auth.webhook_auth import AuthError
-from .config import settings
+from .config import Settings, get_settings
 from .database import get_db_session
 from .endpoints import activitywatch, admin, challenge, homeassistant, webhook_receive, webhook_view
 from .endpoints.homeassistant import fetch_states
 from .endpoints.webhook_view import get_latest_payloads
+from .lifespan import lifespan, BASE_DIR
 from .models import AdminSession
-from .shared import BASE_DIR, templates
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Gatelet", description="LLM-friendly API for Home Assistant and webhooks")
+app = FastAPI(
+    title="Gatelet",
+    description="LLM-friendly API for Home Assistant and webhooks",
+    lifespan=lifespan,
+)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 # Include routers
@@ -43,7 +47,7 @@ app.include_router(homeassistant.router)
 @app.exception_handler(AuthHandlerError)
 async def auth_error_handler(request: Request, exc: AuthHandlerError):
     """Handle all auth errors in HTML-friendly way."""
-    return templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(
         "error.html",
         {"request": request, "status_code": status.HTTP_401_UNAUTHORIZED, "detail": "Authentication failed"},
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,14 +69,14 @@ async def root(request: Request, session: str | None = Cookie(None), csrf_protec
     """Root endpoint with service information and authentication options."""
     # Check if already authenticated via cookie
     if session:
-        async with get_db_session() as db_session:
+        async with get_db_session(request) as db_session:
             stmt = select(AdminSession).where(AdminSession.session_token == session)
             admin_session = (await db_session.execute(stmt)).scalar_one_or_none()
             if admin_session and admin_session.expires_at > datetime.now():
                 return RedirectResponse("/admin/", status_code=302)
 
     token, signed = csrf_protect.generate_csrf_tokens()
-    response = templates.TemplateResponse(
+    response = request.app.state.templates.TemplateResponse(
         "public.html",
         {
             "request": request,
@@ -94,6 +98,8 @@ def register_with_all_auth_methods(path: str, handler: Callable, register_admin:
         handler: Handler function to register
         register_admin: Whether to expose this handler for admin sessions
     """
+    settings = get_settings()
+
     # Key in path auth
     if settings.auth.key_in_url.enabled:
         app.add_api_route(
@@ -125,13 +131,13 @@ def register_with_all_auth_methods(path: str, handler: Callable, register_admin:
 
 
 # Create auth-method-agnostic route handlers for each endpoint type
-async def authenticated_root_handler(request: Request, auth: Auth):
+async def authenticated_root_handler(request: Request, auth: Auth, settings: Settings = Depends(get_settings)):
     """Shared handler for authenticated root endpoint."""
-    async with get_db_session() as db_session:
+    async with get_db_session(request) as db_session:
         recent = await get_latest_payloads(db_session, limit=5)
-    ha_states = await fetch_states()
+    ha_states = await fetch_states(settings)
     aw_summary = await activitywatch.fetch_recent_activity()
-    return templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(
         "index.html",
         {
             "request": request,

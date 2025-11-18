@@ -172,7 +172,7 @@ SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
 MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024  # 10 MiB
 
 
-def _tool_choice_from_policy(policy: ToolPolicy) -> str | dict[str, Any]:
+def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
     """Map a ToolPolicy to Responses API tool_choice value.
 
     Exhaustive and strict: raises on unknown policy; RequireSpecific supports exactly one name.
@@ -185,7 +185,7 @@ def _tool_choice_from_policy(policy: ToolPolicy) -> str | dict[str, Any]:
         return "none"
     if isinstance(policy, RequireSpecific):
         if len(policy.names) == 1:
-            return {"type": "function", "name": policy.names[0]}
+            return ToolChoiceFunction(name=policy.names[0])
         raise ValueError("RequireSpecific with multiple names is not supported for Responses.tool_choice")
     raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
@@ -392,32 +392,26 @@ class MiniCodex:
             resp_output = list(decision.inserts_input)  # Trust type system
         elif isinstance(decision, Continue):
             # Inject any handler-provided pre-sample inserts into transcript
-            for it in decision.inserts_input:
-                if isinstance(it, UserMessage | AssistantMessage | SystemMessage | FunctionCallItem):
-                    self._transcript.append(it)
-            raw_tc = _tool_choice_from_policy(decision.tool_policy)
-            if isinstance(raw_tc, dict) and raw_tc.get("type") == "function" and isinstance(raw_tc.get("name"), str):
-                tool_choice_typed: ToolChoice = ToolChoiceFunction(name=raw_tc["name"])
-            else:
-                tool_choice_typed = cast(ToolChoice, raw_tc)
-
+            # Runtime check: FunctionCallItem only allowed with skip_sampling=True
+            if any(isinstance(item, FunctionCallItem) for item in decision.inserts_input):
+                raise TypeError("FunctionCallItem requires skip_sampling=True")
+            self._transcript.extend(decision.inserts_input)
+            tool_choice = _tool_choice_from_policy(decision.tool_policy)
             reasoning_param = build_reasoning_params(self._reasoning_effort, self._reasoning_summary)
             # Build OpenAI Responses tools list via Policy Gateway client (proxy aggregates downstream)
-            tools_payload: list[FunctionToolParam] = []
             tools = await self._mcp_client.list_tools()
-            for t in tools:
-                tools_payload.append(
-                    FunctionToolParam(name=t.name, description=t.description or "", parameters=t.inputSchema or {})
-                )
 
             req = ResponsesRequest(
                 input=self._to_openai_input_items(),
                 instructions=await self._build_effective_instructions(),
                 stream=False,
-                tool_choice=tool_choice_typed,
+                tool_choice=tool_choice,
                 store=True,
                 parallel_tool_calls=self._parallel_tool_calls,
-                tools=tools_payload,
+                tools=[
+                    FunctionToolParam(name=t.name, description=t.description, parameters=t.inputSchema)
+                    for t in tools
+                ],
                 reasoning=reasoning_param,
             )
             resp = await self._client.responses_create(req)

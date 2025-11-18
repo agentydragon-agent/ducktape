@@ -26,6 +26,7 @@ from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.policy_gateway.middleware import install_policy_gateway
 from adgn.mcp.testing.simple_servers import make_simple_mcp
+from tests.types import McpServerSpecs
 
 # Top-level imports for fixtures
 from adgn.mcp.testing.typed_stubs import TypedClient
@@ -162,6 +163,24 @@ def approval_hub() -> ApprovalHub:
     return ApprovalHub()
 
 
+async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
+    """Mount all servers from McpServerSpecs dict onto a compositor.
+
+    Validates that all servers are FastMCP instances and mounts them in-process.
+
+    Args:
+        comp: Compositor instance to mount servers on
+        servers: Dict of server name -> FastMCP instance
+
+    Raises:
+        TypeError: If any server is not a FastMCP instance
+    """
+    for name, srv in servers.items():
+        if not isinstance(srv, FastMCP):
+            raise TypeError(f"invalid server for {name!r}: {type(srv).__name__}")
+        await comp.mount_inproc(name, srv)
+
+
 @pytest.fixture
 def make_pg_compositor(approval_hub: ApprovalHub):
     """Async helper to open a Compositor with policy gateway middleware.
@@ -172,13 +191,9 @@ def make_pg_compositor(approval_hub: ApprovalHub):
     """
 
     @asynccontextmanager
-    async def _open(servers: dict[str, FastMCP], *, notifier=None):
+    async def _open(servers: McpServerSpecs, *, notifier=None):
         comp = Compositor("comp")
-        # Mount all provided servers under the compositor
-        for name, srv in servers.items():
-            if not isinstance(srv, FastMCP):
-                raise TypeError(f"invalid server for {name!r}: {type(srv).__name__}")
-            await comp.mount_inproc(name, srv)
+        await _mount_servers(comp, servers)
         # Install policy gateway with managed reader client; approval_policy is required
         reader = servers.get("approval_policy")
         if reader is None:
@@ -212,12 +227,9 @@ def make_compositor():
     """
 
     @asynccontextmanager
-    async def _open(servers: dict[str, FastMCP]):
+    async def _open(servers: McpServerSpecs):
         comp = Compositor("comp")
-        for name, srv in servers.items():
-            if not isinstance(srv, FastMCP):
-                raise TypeError(f"invalid server for {name!r}: {type(srv).__name__}")
-            await comp.mount_inproc(name, srv)
+        await _mount_servers(comp, servers)
         async with Client(comp) as sess:
             yield sess, comp
 
@@ -282,12 +294,9 @@ def make_buffered_client():
     """
 
     @asynccontextmanager
-    async def _open(servers: dict[str, FastMCP]):
+    async def _open(servers: McpServerSpecs):
         comp = Compositor("comp")
-        for name, srv in servers.items():
-            if not isinstance(srv, FastMCP):
-                raise TypeError(f"invalid server for {name!r}: {type(srv).__name__}")
-            await comp.mount_inproc(name, srv)
+        await _mount_servers(comp, servers)
         from adgn.mcp.notifications.buffer import NotificationsBuffer
 
         buf = NotificationsBuffer(compositor=comp)
@@ -407,10 +416,10 @@ def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemera
 
 
 @pytest.fixture
-def make_echo_spec(make_backend_server) -> Callable[[], dict[str, Any]]:
+def make_echo_spec(make_backend_server) -> Callable[[], McpServerSpecs]:
     """Return a factory that produces in-proc FastMCP servers for echo tests."""
 
-    def _spec() -> dict[str, object]:
+    def _spec() -> McpServerSpecs:
         return {"echo": make_backend_server("echo")}
 
     return _spec

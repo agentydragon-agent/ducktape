@@ -1,27 +1,21 @@
 """Database session management for Gatelet server."""
 
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from .config import settings
-
-# Create async engine
-engine = create_async_engine(str(settings.database.dsn), echo=False, future=True, pool_pre_ping=True)
-
-# Create async session factory
-async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
+from fastapi import Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
-@asynccontextmanager
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Get a database session.
+async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    """Get a database session (FastAPI dependency).
 
-    Returns:
-        AsyncSession: Database session.
+    Use as: db: AsyncSession = Depends(get_db_session)
+
+    The session factory is managed by the application lifespan and stored on app.state.
+    Sessions are created per-request and automatically committed/rolled back.
     """
-    async with async_session_factory() as session:
+    factory = request.app.state.db_session_factory
+    async with factory() as session:
         try:
             yield session
             await session.commit()

@@ -8,7 +8,6 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.models import WebhookIntegration, WebhookPayload
-from gatelet.server.shared import templates
 from gatelet.server.tests.utils import persist
 
 
@@ -24,9 +23,6 @@ async def _admin_login(client: AsyncClient) -> str:
     response = await client.post("/admin/login", data={"password": "gatelet", "csrf_token": token})
     assert response.status_code == HTTPStatus.FOUND
     return response.cookies["admin_session"]
-
-
-templates.env.globals.update({"max": max, "min": min})
 
 
 async def test_list_all_payloads_key_auth(client: AsyncClient, db_session: AsyncSession, test_auth_key, monkeypatch):

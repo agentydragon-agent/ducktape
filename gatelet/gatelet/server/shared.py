@@ -1,30 +1,25 @@
-"""Shared resources for the Gatelet server."""
+"""Shared resources and utilities for the Gatelet server.
 
-from datetime import timedelta
-from pathlib import Path
+This module provides template helper utilities.
+App-level resources (database, templates) are managed via FastAPI app.state in lifespan.py.
+"""
 
-from fastapi.templating import Jinja2Templates
-
-from .config import settings
-
-BASE_DIR = Path(__file__).parent
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
+from .config import Settings
 
 
-def ha_history_url(entity_id: str) -> str:
-    """Build direct link to Home Assistant history page."""
-    base = settings.home_assistant.api_url.rstrip("/")
-    return f"{base}/history?entity_id={entity_id}"
+def make_ha_history_url(settings: Settings):
+    """Create ha_history_url helper function bound to settings.
 
+    Returns a function that can be passed to template context.
+    Usage in templates: {{ ha_history_url(entity_id) }}
 
-templates.env.globals["ha_history_url"] = ha_history_url
+    Args:
+        settings: Settings instance to bind to the helper
 
-
-def format_minutes(td: timedelta) -> str:
-    """Return a human readable minutes string for ``td``."""
-
-    minutes = td.total_seconds() / 60
-    return f"{round(minutes)} min"
-
-
-templates.env.filters["minutes"] = format_minutes
+    Returns:
+        Callable that takes entity_id and returns URL string
+    """
+    def helper(entity_id: str) -> str:
+        base = settings.home_assistant.api_url.rstrip("/")
+        return f"{base}/history?entity_id={entity_id}"
+    return helper
