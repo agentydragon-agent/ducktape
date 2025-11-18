@@ -35,6 +35,7 @@ class TriggerMirrorSyncArgs(BaseModel):
 
 class TriggerMirrorSyncResponse(BaseModel):
     """Response matching Gitea's mirror-sync behavior (returns nothing)."""
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -49,6 +50,9 @@ class _GiteaRepositoryFields(BaseModel):
 
     Shared by both the public response model and internal parsing model.
     """
+
+    model_config = ConfigDict(extra="ignore")  # Lenient parsing - ignore unknown fields
+
     # Core repository identity
     id: int
     name: str = Field(description="Repository name. Mirror path for cloning: '{owner}/{name}.git'")
@@ -134,6 +138,7 @@ class GetRepoInfoResponse(_GiteaRepositoryFields):
     All fields from Gitea's Repository object are explicitly declared in base class.
     Mirror-relevant fields have detailed descriptions.
     """
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -160,11 +165,6 @@ class _UserInfo(BaseModel):
     # The user payload includes many fields we do not consume; ignore them so schema changes
     # surface via targeted validation rather than mass field definitions.
     model_config = ConfigDict(extra="ignore")
-
-
-class _RepositoryInfo(_GiteaRepositoryFields):
-    """Internal model for parsing Gitea's /repos/{owner}/{repo} response."""
-    model_config = ConfigDict(extra="ignore")  # Ignore fields we haven't declared
 
 
 T_Model = TypeVar("T_Model", bound=BaseModel)
@@ -209,11 +209,11 @@ def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
         raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}")
 
 
-def _get_repo_info(cfg: MirrorConfig, owner: str, repo: str) -> _RepositoryInfo:
+def _get_repo_info(cfg: MirrorConfig, owner: str, repo: str) -> _GiteaRepositoryFields:
     """Get current repository info including mirror status and last update time."""
     repo_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}"
     try:
-        data = _get_typed_json(repo_url, cfg.token, _RepositoryInfo)
+        data = _get_typed_json(repo_url, cfg.token, _GiteaRepositoryFields)
     except requests.RequestException as exc:
         raise MirrorError("failed to fetch repository metadata") from exc
     return data
@@ -225,11 +225,7 @@ def _resolve_owner(base_url: str, token: str) -> str:
     return data.login
 
 
-def make_gitea_mirror_server(
-    *,
-    base_url: str | None = None,
-    token: str | None = None,
-) -> NotifyingFastMCP:
+def make_gitea_mirror_server(*, base_url: str | None = None, token: str | None = None) -> NotifyingFastMCP:
     cfg = MirrorConfig(
         base_url=str(base_url or os.environ.get("GITEA_BASE_URL", "")),
         token=str(token or os.environ.get("GITEA_TOKEN", "")),

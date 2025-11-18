@@ -28,7 +28,7 @@ def test_typer_cli_invokes_execute_without_sys(
     # Invoke the CLI entrypoint directly to avoid Click/Typer internals
     exit_code = 0
     try:
-        main([str(p), prompt, "--model", "o4-mini"])  # type: ignore[list-item]
+        main([str(p), prompt, "--model", "o4-mini"])
     except SystemExit as e:  # Typer raises Exit to signal return code
         exit_code = e.code if isinstance(e.code, int) else 0
 

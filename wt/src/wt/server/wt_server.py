@@ -171,11 +171,7 @@ class WtDaemon:
             return self.known_worktrees.get(p)
 
         self.gitstatusd_service = GitstatusdService(
-            get_client=lambda p: (
-                self.gitstatusd_clients.get(get_known_worktree(p).wtid)  # type: ignore[return-value]
-                if get_known_worktree(p)
-                else None
-            ),
+            get_client=lambda p: (self.gitstatusd_clients.get(wt.wtid) if (wt := get_known_worktree(p)) else None),
             iter_client_paths=lambda: list(self.known_worktrees.keys()),
             ensure_watcher_for_path=lambda p: (
                 self._ensure_git_watcher(get_known_worktree(p)) if get_known_worktree(p) else asyncio.sleep(0)
@@ -431,7 +427,7 @@ class WtDaemon:
                 self._discovery_kick = asyncio.create_task(self._run_discovery_once())
 
             # Handle request via RPC registry only
-            response = await self._method_handlers.dispatch(request, self, writer, start_time)  # type: ignore[attr-defined]
+            response = await self._method_handlers.dispatch(request, self, writer, start_time)
             await self._send_response(writer, response)
             return
 

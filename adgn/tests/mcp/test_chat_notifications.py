@@ -13,6 +13,7 @@ class _Capture(MessageHandler):
     def __init__(self) -> None:
         self.updated: list[str] = []
 
+    # Override with narrower type than base MessageHandler (which accepts Any)
     async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
         self.updated.append(str(message.params.uri))
 

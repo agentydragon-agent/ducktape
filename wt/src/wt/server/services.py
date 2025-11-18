@@ -102,8 +102,8 @@ class GitstatusdService:
         self._ensure_watcher_for_path = ensure_watcher_for_path
         self._list_watchers = list_watchers
         self._clear_watchers = clear_watchers
-        # Squash trivial wrapper: expose provided callable directly
-        self.get_client = get_client  # type: ignore[assignment]
+        # Squash trivial wrapper: expose provided callable directly (method-to-attribute assignment)
+        self.get_client = get_client  # type: ignore[assignment]  # Expose callable as attribute
 
     def get_cached_status(self, path: Path) -> GitstatusWorkingSummary:
         client = self._get_client(path)
@@ -215,7 +215,7 @@ class StatusService:
     def __init__(self, repo_status: RepoStatus) -> None:
         # Squash trivial wrapper by exposing underlying method directly
         self._status = repo_status
-        self.summarize_status = repo_status.summarize_status  # type: ignore[assignment]
+        self.summarize_status = repo_status.summarize_status  # type: ignore[assignment]  # Expose bound method as attribute
 
 
 class DiscoveryService:
@@ -228,8 +228,8 @@ class DiscoveryService:
         self._is_scanning = is_scanning
         self._periodic = periodic
         self._cancel = cancel_periodic
-        # Squash trivial wrapper: expose provided callable directly
-        self.is_scanning = is_scanning  # type: ignore[assignment]
+        # Squash trivial wrapper: expose provided callable directly (method-to-attribute assignment)
+        self.is_scanning = is_scanning  # type: ignore[assignment]  # Expose callable as attribute
 
     async def start(self) -> None:
         if self._periodic:

@@ -16,6 +16,7 @@ class _Recorder(MessageHandler):
         self._evt_updated = anyio.Event()
         self._evt_list = anyio.Event()
 
+    # Override with narrower type than base MessageHandler (which accepts Any)
     async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
         # Record and signal
         try:

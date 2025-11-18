@@ -95,5 +95,5 @@ class ConfigLoader:
     def config(self) -> ModularConfig:
         """Get the loaded configuration."""
         if self._config is None:
-            self.load()
-        return self._config  # type: ignore[return-value]
+            return self.load()
+        return self._config

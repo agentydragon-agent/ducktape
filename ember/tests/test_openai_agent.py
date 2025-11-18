@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from openai import AsyncOpenAI
 from openai.types.responses import FunctionTool, Response, ResponseFunctionToolCall, ResponseReasoningItem, Tool
@@ -59,7 +59,7 @@ def matrix_client() -> FakeMatrixClient:
 def _make_openai_client(api_key: str, responses: list[Response]) -> AsyncOpenAI:
     client = AsyncOpenAI(api_key=api_key)
 
-    async def _create(**kwargs):  # type: ignore[no-untyped-def]
+    async def _create(**kwargs: Any) -> Response:
         if responses:
             return responses.pop(0)
         raise RuntimeError("Unexpected additional model request")
@@ -70,7 +70,7 @@ def _make_openai_client(api_key: str, responses: list[Response]) -> AsyncOpenAI:
 
 @pytest.fixture
 def agent_factory(settings: OpenAISettings, history: ConversationHistory, matrix_client: FakeMatrixClient):
-    workspace_path = history.path.parent  # type: ignore[attr-defined]
+    workspace_path = history.path.parent
 
     def factory(client: AsyncOpenAI) -> OpenAIAgent:
         return OpenAIAgent(settings, history, client, matrix_client, workspace_path, None)

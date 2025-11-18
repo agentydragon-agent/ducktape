@@ -14,17 +14,18 @@ from adgn.mcp.compositor.server import Compositor
 logger = logging.getLogger(__name__)
 
 
-class _Handler(MessageHandler):
+class _ResourceNotificationHandler(MessageHandler):
+    """Message handler that forwards resource notifications to NotificationsBuffer."""
+
     def __init__(self, owner: NotificationsBuffer) -> None:
-        self._o = owner
+        self._buffer = owner
 
-    async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
-        # Do not swallow errors; let them propagate for visibility
-        await self._o._on_updated(message)
+    # Override with narrower types than base MessageHandler (which accepts Any)
+    async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
+        await self._buffer._on_updated(message)
 
-    async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:  # type: ignore[override]
-        # Do not swallow errors; let them propagate for visibility
-        await self._o._on_list_changed(message)
+    async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
+        await self._buffer._on_list_changed(message)
 
 
 class NotificationsBuffer:
@@ -43,7 +44,7 @@ class NotificationsBuffer:
         self._list_changed: set[str] = set()
         self._raw: list[mcp_types.ResourceUpdatedNotification | mcp_types.ResourceListChangedNotification] = []
         self._hooks: list[Callable[[], Awaitable[None]]] = []
-        self.handler: MessageHandler = _Handler(self)
+        self.handler: MessageHandler = _ResourceNotificationHandler(self)
         # Subscribe to compositor-level notifications when available so we don't
         # rely solely on client message forwarding (which may be disabled for
         # in-proc mounts).

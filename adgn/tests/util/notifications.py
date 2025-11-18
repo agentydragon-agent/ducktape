@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import json
+from typing import Any
 
 from fastmcp.client.messages import MessageHandler
 from mcp import types
@@ -13,6 +14,7 @@ class CaptureUpdates(MessageHandler):
     def __init__(self) -> None:
         self.updated: list[str] = []
 
+    # Override with narrower type than base MessageHandler (which accepts Any)
     async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
         self.updated.append(str(message.params.uri))
 
@@ -56,7 +58,7 @@ def parse_system_notification_payload(message: str | UserMessage) -> dict:
     return result
 
 
-def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed: bool | None = None) -> None:  # type: ignore[no-untyped-def]
+def enable_resources_caps(server: Any, *, subscribe: bool | None = None, list_changed: bool | None = None) -> None:
     """Monkeypatch a FastMCP/NotifyingFastMCP server to advertise resources capabilities.
 
     This wraps the server's low-level create_initialization_options() to inject
@@ -70,7 +72,9 @@ def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed
     base_create = ll.create_initialization_options
     base_get_caps = ll.get_capabilities
 
-    def patched_create_initialization_options(notification_options=None, experimental_capabilities=None, **kwargs):  # type: ignore[no-untyped-def]
+    def patched_create_initialization_options(
+        notification_options: Any = None, experimental_capabilities: Any = None, **kwargs: Any
+    ) -> Any:
         caps = dict(experimental_capabilities or {})
         res = dict(caps.get("resources") or {})
         if subscribe is not None:
@@ -83,7 +87,7 @@ def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed
 
     ll.create_initialization_options = patched_create_initialization_options
 
-    def patched_get_capabilities(notification_options, experimental_capabilities):  # type: ignore[no-untyped-def]
+    def patched_get_capabilities(notification_options: Any, experimental_capabilities: Any) -> types.ServerCapabilities:
         caps = base_get_caps(notification_options, experimental_capabilities)
         res_caps = caps.resources
         if subscribe is not None or list_changed is not None:
@@ -121,7 +125,7 @@ class SubscriptionRecorder:
         self.unsubscribed: list[str] = []
 
 
-def install_subscription_recorder(server) -> SubscriptionRecorder:  # type: ignore[no-untyped-def]
+def install_subscription_recorder(server: Any) -> SubscriptionRecorder:
     """Register lightweight subscribe/unsubscribe handlers that record URIs."""
     ll = getattr(server, "_mcp_server", None)
     if ll is None:
@@ -129,11 +133,11 @@ def install_subscription_recorder(server) -> SubscriptionRecorder:  # type: igno
     recorder = SubscriptionRecorder()
 
     @ll.subscribe_resource()
-    async def _record_subscribe(uri):
+    async def _record_subscribe(uri: str) -> None:
         recorder.subscribed.append(str(uri))
 
     @ll.unsubscribe_resource()
-    async def _record_unsubscribe(uri):
+    async def _record_unsubscribe(uri: str) -> None:
         recorder.unsubscribed.append(str(uri))
 
     return recorder

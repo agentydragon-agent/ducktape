@@ -213,6 +213,7 @@ def _apply_wrapper_metadata(
     wrapper: Callable[..., Any], *, model_in: type[BaseModel], model_out: Any, context_param: inspect.Parameter | None
 ) -> None:
     signature = _make_flat_signature_from_model(model_in, return_type=model_out, context_param=context_param)
+    # Replace wrapper's signature with flattened model parameters for FastMCP
     wrapper.__signature__ = signature  # type: ignore[attr-defined]
 
     def _build_param_annotations(model: type[BaseModel], *, return_type: Any) -> dict[str, Any]:

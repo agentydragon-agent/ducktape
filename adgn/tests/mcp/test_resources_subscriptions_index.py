@@ -17,10 +17,10 @@ class _StubGatewaySession:
         self.subscribed: list[str] = []
         self.unsubscribed: list[str] = []
 
-    async def subscribe_resource(self, uri):  # type: ignore[no-untyped-def]
+    async def subscribe_resource(self, uri: str) -> None:
         self.subscribed.append(str(uri))
 
-    async def unsubscribe_resource(self, uri):  # type: ignore[no-untyped-def]
+    async def unsubscribe_resource(self, uri: str) -> None:
         self.unsubscribed.append(str(uri))
 
 

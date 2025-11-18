@@ -34,7 +34,7 @@ class ContainerPolicyEvaluator:
         if not agent_id:
             raise ValueError("ContainerPolicyEvaluator requires agent_id")
         self.agent_id = agent_id
-        self.image: str = image or resolve_runtime_image()  # type: ignore[assignment]
+        self.image: str = image or resolve_runtime_image()
         self.timeout_secs = (
             timeout_secs if timeout_secs is not None else float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
         )

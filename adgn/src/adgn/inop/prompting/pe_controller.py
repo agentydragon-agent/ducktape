@@ -25,7 +25,7 @@ class ProposePromptNTimes(BaseHandler):
         self._n = n
         self._k = 0
 
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         if self._k < self._n:
             self._k += 1
             return Continue(RequireAny())

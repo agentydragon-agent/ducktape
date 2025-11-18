@@ -22,12 +22,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 os.environ.setdefault("GATELET_CONFIG", str(Path(__file__).resolve().parent.parent.parent / "gatelet.toml"))
 # pylint: disable=wrong-import-position
-
-from gatelet.server.app import app  # type: ignore[import]
-from gatelet.server.config import settings  # type: ignore[import]
-from gatelet.server.database import get_db_session  # type: ignore[import]
-from gatelet.server.models import AuthCRSession, AuthKey, Base  # type: ignore[import]
-from gatelet.server.tests.utils import persist  # type: ignore[import]
+# Imports must follow environment setup so modules see configured GATELET_CONFIG
+from gatelet.server.app import app  # type: ignore[import] - Imports after env setup (required for config)
+from gatelet.server.config import settings  # type: ignore[import] - Imports after env setup (required for config)
+from gatelet.server.database import (
+    get_db_session,  # type: ignore[import] - Imports after env setup (required for config)
+)
+from gatelet.server.models import (  # type: ignore[import] - Imports after env setup (required for config)
+    AuthCRSession,
+    AuthKey,
+    Base,
+)
+from gatelet.server.tests.utils import persist  # type: ignore[import] - Imports after env setup (required for config)
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 

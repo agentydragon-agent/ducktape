@@ -40,7 +40,7 @@ async def test_resources_list_changed_notification():
             # Trigger session capture by invoking list
             await client.list_resources()
             # Broadcast list changed from server and ensure the client receives it
-            await server.broadcast_resource_list_changed()  # type: ignore[attr-defined]
+            await server.broadcast_resource_list_changed()
             # Allow the event loop to deliver the notification
             for _ in range(10):
                 if catcher.events:

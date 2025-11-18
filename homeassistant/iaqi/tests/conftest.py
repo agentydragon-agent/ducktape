@@ -32,7 +32,7 @@ _SENTINEL_PREFIX = "__editable__."
 _orig_iterdir = pathlib.Path.iterdir
 
 
-def _safe_iterdir(self: pathlib.Path):  # type: ignore[override]
+def _safe_iterdir(self: pathlib.Path):  # type: ignore[override]  # Monkey-patch for Path.iterdir (test utility)
     """A replacement for *Path.iterdir()* that is tolerant of fake paths."""
 
     if str(self).startswith(_SENTINEL_PREFIX):
@@ -42,7 +42,7 @@ def _safe_iterdir(self: pathlib.Path):  # type: ignore[override]
     return _orig_iterdir(self)
 
 
-pathlib.Path.iterdir = _safe_iterdir  # type: ignore[assignment]
+pathlib.Path.iterdir = _safe_iterdir  # type: ignore[assignment]  # Intentional monkey-patch for testing
 
 
 # ---------------------------------------------------------------------------

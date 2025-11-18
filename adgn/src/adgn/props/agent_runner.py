@@ -57,7 +57,4 @@ async def run_prompt_async(
         )
         res_any = await agent.run(prompt)
 
-    # MiniCodex.run returns AgentResult with a text field
-    final_text = res_any.text  # type: ignore[attr-defined]
-
-    return AgentResult(final_text=final_text, transcript=transcript)
+    return AgentResult(final_text=res_any.text, transcript=transcript)

@@ -79,7 +79,7 @@ def _parse_hunk(hunk_data: HunkData, hunk_idx: int) -> DiffHunk:
             continue
 
         if raw_line.startswith("-"):
-            change_type = "removed"
+            change_type: Literal["added", "removed", "context"] = "removed"
             content = raw_line[1:]
             line_number = -1  # Not in final file
         elif raw_line.startswith("+"):
@@ -98,7 +98,7 @@ def _parse_hunk(hunk_data: HunkData, hunk_idx: int) -> DiffHunk:
             DiffLine(
                 line_number=line_number,
                 content=content,
-                change_type=change_type,  # type: ignore[arg-type]
+                change_type=change_type,
                 hunk_index=hunk_idx,
             )
         )
@@ -132,7 +132,6 @@ def _parse_structured_patch(file_path: str, structured_patch: list[HunkData]) ->
         for line in hunk.lines:
             if line.change_type == "added":
                 added_lines.add(line.line_number)
-                current_new_line += 1
             elif line.change_type == "removed":
                 removed_lines.add(current_old_line)
                 current_old_line += 1

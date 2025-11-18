@@ -12,19 +12,19 @@ class _InsertsHandler(BaseHandler):
     def __init__(self, msg_id: str) -> None:
         self._msg_id = msg_id
 
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         # Insert as input message (user role), not output message
         msg = UserMessage(role="user", content=[InputTextPart(text=f"payload:{self._msg_id}")])
         return Continue(Auto(), inserts_input=(msg,))
 
 
 class _ContinueOnlyHandler(BaseHandler):
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         return Continue(Auto())
 
 
 class _AbortHandler(BaseHandler):
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         return Abort()
 
 

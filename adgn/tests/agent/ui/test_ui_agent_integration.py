@@ -76,7 +76,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
             pass
         await orig_send_json(payload)
 
-    mgr.send_json = _capture  # type: ignore[assignment]
+    mgr.send_json = _capture  # type: ignore[assignment]  # Test fixture: replace method for capturing
 
     async with make_pg_compositor({"ui": ui_server, "approval_policy": approval_policy_reader_stub}) as (
         mcp_client,

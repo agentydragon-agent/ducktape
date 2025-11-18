@@ -73,8 +73,8 @@ def _monkey_patch_claude_sdk_for_containerization():
     """
     # Override _find_cli to use claude_binary from options
     # Replace the options class so we can pass claude_binary
-    claude_code_sdk.types.ClaudeCodeOptions = ContainerizedClaudeCodeOptions  # type: ignore[misc]
-    claude_code_sdk.ClaudeCodeOptions = ContainerizedClaudeCodeOptions  # type: ignore[misc]
+    claude_code_sdk.types.ClaudeCodeOptions = ContainerizedClaudeCodeOptions
+    claude_code_sdk.ClaudeCodeOptions = ContainerizedClaudeCodeOptions
 
     def _patched_find_cli(self) -> str:
         if not isinstance(self._options, ContainerizedClaudeCodeOptions):
@@ -84,7 +84,7 @@ def _monkey_patch_claude_sdk_for_containerization():
             raise RuntimeError("claude_binary not set in options")
         return bin_path
 
-    SubprocessCLITransport._find_cli = _patched_find_cli  # type: ignore[method-assign]
+    SubprocessCLITransport._find_cli = _patched_find_cli
 
 
 # Apply monkeypatch once at module level

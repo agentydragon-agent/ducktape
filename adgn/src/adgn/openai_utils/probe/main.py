@@ -88,23 +88,6 @@ def _log_event(event_type: str, **fields: Any) -> None:
         sys.stderr.write(f"[probe-log] failed to serialize log event {event_type}: {e}\n")
 
 
-def _model_dump_like(obj: Any, *, exclude_none: bool = True) -> dict[str, Any] | None:
-    """Return a JSON-serializable dict from SDK/Pydantic or plain dict objects.
-
-    - If `obj` provides `model_dump`, call it with the given `exclude_none` flag.
-    - If `obj` is already a dict, return it as-is.
-    - Otherwise, return None.
-    """
-    if isinstance(obj, BaseModel):
-        try:
-            return obj.model_dump(exclude_none=exclude_none)  # type: ignore[no-any-return]
-        except Exception:
-            return None
-    if isinstance(obj, dict):
-        return obj
-    return None
-
-
 class ErrorInfo(BaseModel):
     type: str | None = None
     message: str | None = None

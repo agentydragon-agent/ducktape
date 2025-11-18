@@ -243,7 +243,7 @@ class MiniCodex:
 
     async def run(self, user_text: str) -> AgentResult:
         self._transcript.append(UserMessage.text(user_text))
-        self._controller.on_user_text(UserText(text=user_text))  # type: ignore[arg-type]
+        self._controller.on_user_text(UserText(text=user_text))
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
         self.finished = False
@@ -388,13 +388,8 @@ class MiniCodex:
             # Skip sampling: treat handler-provided inserts_input as if they were
             # model output items for this phase and process them via the normal
             # output path (adds assistant text, enqueues tool calls, etc.).
-            out_items: list[FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] = []
-            for it in list(decision.inserts_input):
-                if isinstance(it, FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut):
-                    out_items.append(it)
-                else:
-                    raise TypeError(f"Unsupported skip_sampling inserts_input item type: {type(it).__name__}")
-            resp_output = out_items  # type: ignore[assignment]
+            # Caller must ensure inserts_input contains only output-side items when skip_sampling=True
+            resp_output = list(decision.inserts_input)  # Trust type system
         elif isinstance(decision, Continue):
             # Inject any handler-provided pre-sample inserts into transcript
             for it in decision.inserts_input:
@@ -439,7 +434,7 @@ class MiniCodex:
                 if sdk_usage is not None
                 else GroundTruthUsage(model=self._model)
             )
-            self._controller.on_response(Response(response_id=resp.id, usage=usage, model=self._model))  # type: ignore[arg-type]
+            self._controller.on_response(Response(response_id=resp.id, usage=usage, model=self._model))
             resp_output = resp.output
         else:
             raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")

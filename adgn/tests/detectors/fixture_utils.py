@@ -4,7 +4,7 @@ from importlib import resources
 from pathlib import Path
 
 
-def _copy_tree(trav: resources.abc.Traversable, dest: Path) -> None:  # type: ignore[attr-defined]
+def _copy_tree(trav: resources.abc.Traversable, dest: Path) -> None:
     if trav.is_file():
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(trav.read_text(encoding="utf-8"), encoding="utf-8")

@@ -207,7 +207,8 @@ def register_agents_ws(app: FastAPI) -> None:
     Requires app.state.agents_ws_hub to be initialized by the app factory.
     """
     try:
-        _ = app.state.agents_ws_hub  # type: ignore[attr-defined]
+        # FastAPI app.state is a dynamic namespace; agents_ws_hub is set during app startup
+        _ = app.state.agents_ws_hub
     except AttributeError as e:
         raise RuntimeError("agents_ws_hub not initialized; app must set it during startup") from e
 

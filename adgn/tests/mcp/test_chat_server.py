@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
@@ -34,14 +34,20 @@ def user_markdown_message(content: str, *, id: Matcher[str] | None = None) -> Ma
     """Matcher for user markdown messages."""
     if id is None:
         id = anything()
-    return has_properties(author=ChatAuthor.USER, mime="text/markdown", content=content, id=id)  # type: ignore[return-value]
+    # hamcrest has_properties returns untyped Matcher; cast to preserve type safety
+    return cast(
+        Matcher[ChatMessage], has_properties(author=ChatAuthor.USER, mime="text/markdown", content=content, id=id)
+    )
 
 
 def assistant_markdown_message(content: str, *, id: Matcher[str] | None = None) -> Matcher[ChatMessage]:
     """Matcher for assistant markdown messages."""
     if id is None:
         id = anything()
-    return has_properties(author=ChatAuthor.ASSISTANT, mime="text/markdown", content=content, id=id)  # type: ignore[return-value]
+    # hamcrest has_properties returns untyped Matcher; cast to preserve type safety
+    return cast(
+        Matcher[ChatMessage], has_properties(author=ChatAuthor.ASSISTANT, mime="text/markdown", content=content, id=id)
+    )
 
 
 @pytest.mark.asyncio
@@ -63,12 +69,7 @@ async def test_chat_flow_user_to_agent_then_agent_to_user() -> None:
 
         # Assistant reads pending (should get both user messages once)
         page = await a.read_pending_messages(ReadPendingInput(limit=100))
-        assert_that(
-            page.messages,
-            contains(  # type: ignore[misc]
-                user_markdown_message("hello"), user_markdown_message("world")
-            ),
-        )
+        assert_that(page.messages, contains(user_markdown_message("hello"), user_markdown_message("world")))
 
         # Second read should be empty (HWM advanced)
         page2 = await a.read_pending_messages(ReadPendingInput(limit=100))
@@ -78,13 +79,14 @@ async def test_chat_flow_user_to_agent_then_agent_to_user() -> None:
         reply = await a.post(PostInput(mime="text/markdown", content="roger"))
         assert_that(reply, has_properties(id=is_not(none())))
         hpage = await h.read_pending_messages(ReadPendingInput(limit=100))
-        assert_that(hpage.messages, contains(assistant_markdown_message("roger")))  # type: ignore[misc]
+        assert_that(hpage.messages, contains(assistant_markdown_message("roger")))
 
 
 class _Capture(MessageHandler):
     def __init__(self) -> None:
         self.updated: list[str] = []
 
+    # Override with narrower type than base MessageHandler (which accepts Any)
     async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
         self.updated.append(str(message.params.uri))
 

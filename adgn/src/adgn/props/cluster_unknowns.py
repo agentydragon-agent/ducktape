@@ -98,7 +98,7 @@ async def cluster_unknowns_async(
 
     def _builder(s: NotifyingFastMCP) -> None:
         @s.tool()
-        def submit_result(payload: ClusterSubmitPayload) -> str:  # type: ignore[no-redef]
+        def submit_result(payload: ClusterSubmitPayload) -> str:
             # Validate coverage: every uid appears in >=1 submitted cluster
             seen: set[str] = set()
             for c in payload.clusters:
