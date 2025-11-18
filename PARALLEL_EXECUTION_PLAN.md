@@ -380,14 +380,207 @@ Agent 5.2.V1: Final Verification
 
 ---
 
+### PHASE FINAL: Comprehensive Code Quality Enforcement (4-6 hours)
+
+**Note**: Runs after Phase 5 complete. Applies all code quality standards to entire adgn codebase.
+
+#### Wave FINAL.1 (28 parallel agents - Scan & Report)
+**Depends on**: Phase 5 complete
+```
+Agent F.1: Scan walrus-get-pattern
+  Prompt: "Run prompts/scans/walrus-get-pattern.md over all adgn/ code.
+          Report all violations found. Do not fix yet, just report."
+
+Agent F.2: Scan useless-test-classes
+  Prompt: "Run prompts/scans/useless-test-classes.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.3: Scan useless-documentation
+  Prompt: "Run prompts/scans/useless-documentation.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.4: Scan unnecessary-verbosity
+  Prompt: "Run prompts/scans/unnecessary-verbosity.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.5: Scan useless-comments-and-docs
+  Prompt: "Run prompts/scans/useless-comments-and-docs.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.6: Scan timestamp-naming
+  Prompt: "Run prompts/scans/timestamp-naming.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.7: Scan type-ignore-suppressions
+  Prompt: "Run prompts/scans/type-ignore-suppressions.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.8: Scan trivial-forwarders
+  Prompt: "Run prompts/scans/trivial-forwarders.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.9: Scan trivial-forwarder-methods
+  Prompt: "Run prompts/scans/trivial-forwarder-methods.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.10: Scan suspicious-nullability
+  Prompt: "Run prompts/scans/suspicious-nullability.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.11: Scan stringly-typed
+  Prompt: "Run prompts/scans/stringly-typed.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.12: Scan suspicious-defaults
+  Prompt: "Run prompts/scans/suspicious-defaults.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.13: Scan test-assertions
+  Prompt: "Run prompts/scans/test-assertions.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.14: Scan pygit2-patterns
+  Prompt: "Run prompts/scans/pygit2-patterns.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.15: Scan pytest-tmp-paths
+  Prompt: "Run prompts/scans/pytest-tmp-paths.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.16: Scan pydantic-antipatterns
+  Prompt: "Run prompts/scans/pydantic-antipatterns.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.17: Scan manual-serde-needs-pydantic
+  Prompt: "Run prompts/scans/manual-serde-needs-pydantic.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.18: Scan methods-vs-freestanding
+  Prompt: "Run prompts/scans/methods-vs-freestanding.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.19: Scan mypy-appeasing-code
+  Prompt: "Run prompts/scans/mypy-appeasing-code.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.20: Scan overly-loose-typing
+  Prompt: "Run prompts/scans/overly-loose-typing.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.21: Scan functional-over-imperative
+  Prompt: "Run prompts/scans/functional-over-imperative.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.22: Scan library-type-misuse
+  Prompt: "Run prompts/scans/library-type-misuse.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.23: Scan duplicated-test-code
+  Prompt: "Run prompts/scans/duplicated-test-code.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.24: Scan denormalized-computed-fields
+  Prompt: "Run prompts/scans/denormalized-computed-fields.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.25: Scan api-model-design
+  Prompt: "Run prompts/scans/api-model-design.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.26: Scan asyncio-antipatterns
+  Prompt: "Run prompts/scans/asyncio-antipatterns.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.27: Scan identifier-naming
+  Prompt: "Run prompts/scans/identifier-naming.md over all adgn/ code.
+          Report all violations found."
+
+Agent F.28: Scan fastmcp-documentation-patterns
+  Prompt: "Run prompts/scans/fastmcp-documentation-patterns.md over all adgn/ code.
+          Report all violations found."
+```
+
+#### Wave FINAL.2 (Consolidation - 1 agent)
+**Depends on**: Wave FINAL.1 complete
+```
+Agent F.CONSOLIDATE: Consolidate Violation Reports
+  Prompt: "Review all 28 scan reports from Wave FINAL.1.
+          Consolidate into priority-ordered list:
+          - Critical: Type safety, async correctness, API design
+          - High: Code clarity, maintainability
+          - Medium: Naming, documentation
+          - Low: Style preferences
+          Group by file for efficient fixing.
+          Return consolidated report with fix priority."
+```
+
+#### Wave FINAL.3 (28 parallel agents - Fix Violations)
+**Depends on**: Wave FINAL.2 complete
+```
+Agent F.FIX.1: Fix walrus-get-pattern violations
+  Dependencies: Consolidated report
+  Prompt: "Fix all walrus-get-pattern violations in adgn/ code.
+          Use consolidated report for context.
+          Make minimal, focused changes.
+          Run tests after each file change.
+          Commit with descriptive message."
+
+Agent F.FIX.2: Fix useless-test-classes violations
+  Dependencies: Consolidated report
+  Prompt: "Fix all useless-test-classes violations.
+          Run tests to ensure no breakage.
+          Commit changes."
+
+[... agents F.FIX.3 through F.FIX.28 for each scan type ...]
+
+Agent F.FIX.28: Fix fastmcp-documentation-patterns violations
+  Dependencies: Consolidated report
+  Prompt: "Fix all fastmcp-documentation-patterns violations.
+          Run tests. Commit changes."
+```
+
+#### Wave FINAL.4 (Verification - 3 parallel agents)
+**Depends on**: Wave FINAL.3 complete
+```
+Agent F.V1: Re-run All Scans
+  Prompt: "Re-run all 28 code quality scans.
+          Verify zero violations remain.
+          Report any remaining issues."
+
+Agent F.V2: Run Full Test Suite
+  Prompt: "Run complete test suite after all fixes.
+          Ensure no regressions.
+          Check code coverage maintained ≥80%."
+
+Agent F.V3: Type Check & Quality Gates
+  Prompt: "Run mypy on entire adgn/ codebase.
+          Run ruff check.
+          Verify all quality gates pass.
+          Return comprehensive quality report."
+```
+
+#### Wave FINAL.5 (Final Commit - 1 agent)
+**Depends on**: Wave FINAL.4 complete
+```
+Agent F.FINAL: Create Quality Enforcement Commit
+  Prompt: "Create final commit consolidating all quality fixes.
+          Commit message should summarize:
+          - Number of violations fixed by category
+          - Files affected
+          - Test results
+          - Quality metrics improvement
+          Push to remote branch."
+```
+
+---
+
 ## Summary: Critical Path & Parallelism
 
 ### Critical Path (Sequential Dependencies)
 ```
-Phase 0 (0.1-0.5) → Phase 1 (1.1-1.4) → Phase 3 (3.1-3.3) → Phase 4 (4.1-4.3) → Phase 5 (5.1-5.2)
-                         ↓
-                    Phase 2 (2.1-2.4) ────────────────────────┘
-                    (starts after 1.2)
+Phase 0 → Phase 1 → Phase 3 → Phase 4 → Phase 5 → Phase FINAL
+            ↓
+       Phase 2 (overlaps after 1.2) ────────────┘
 ```
 
 ### Maximum Parallelism by Wave
@@ -415,28 +608,58 @@ Phase 0 (0.1-0.5) → Phase 1 (1.1-1.4) → Phase 3 (3.1-3.3) → Phase 4 (4.1-4
 | 4.3 | 2 | 0.5 day | 4.2 |
 | 5.1 | 3 | 0.5 day | Phase 4 |
 | 5.2 | 1 | 0.25 day | 5.1 |
+| **FINAL.1** | **28** | **2 hours** | **Phase 5** (scan all code) |
+| FINAL.2 | 1 | 0.5 hour | FINAL.1 (consolidate) |
+| **FINAL.3** | **28** | **2-3 hours** | **FINAL.2** (fix violations) |
+| FINAL.4 | 3 | 1 hour | FINAL.3 (verify) |
+| FINAL.5 | 1 | 0.25 hour | FINAL.4 (commit) |
 
 ### Timeline
 
-**Sequential**: 17-20 days
-**Parallel**: 7-9 days
+**Sequential**: 20-23 days
+**Parallel**: 8-10 days
 
 **Speedup**: ~2.5x
 
 ### Resource Requirements
 
-**Peak concurrency**: 5 agents (Wave 0.5, potentially Wave 4.1)
-**Average concurrency**: 2-3 agents
-**Total agents**: 87 agents across all waves
+**Peak concurrency**: 28 agents (Wave FINAL.1, FINAL.3 - code quality scans)
+**Average concurrency**: 2-4 agents
+**Total agents**: 147 agents across all waves (28 waves total)
 
 ## Execution Strategy
 
-1. **Phase 0**: Full autonomous execution (as discussed)
-2. **Phase 1**: Can pause after Wave 1.2 for checkpoint
-3. **Phase 2**: Starts early (overlaps with Phase 1)
-4. **Phase 3**: Quick type generation pass
-5. **Phase 4**: Comprehensive testing phase
-6. **Phase 5**: Final cleanup and docs
+1. **Phase 0**: Full autonomous execution (4-6 hours)
+   - Type consolidation, persistence models, DB schema, middleware fixes
+   - 5 waves, 16 agents
+
+2. **Phase 1**: Backend MCP server implementation (3-4 days)
+   - Infrastructure, resources, tools, notifications
+   - 4 waves, 15 agents
+   - Can pause after Wave 1.2 for checkpoint
+
+3. **Phase 2**: Frontend UI implementation (2-3 days)
+   - Starts early (overlaps with Phase 1 after Wave 1.2)
+   - MCP client, UI components, real-time updates
+   - 4 waves, 14 agents
+
+4. **Phase 3**: Shared type generation (1 day)
+   - Python → TypeScript type generation
+   - 3 waves, 5 agents
+
+5. **Phase 4**: Comprehensive testing (2-3 days)
+   - Unit, integration, E2E, performance, security tests
+   - 3 waves, 9 agents
+
+6. **Phase 5**: Cleanup and documentation (1 day)
+   - Remove WebSocket code, finalize docs
+   - 2 waves, 4 agents
+
+7. **Phase FINAL**: Code quality enforcement (4-6 hours)
+   - Run all 28 code quality scans in parallel
+   - Consolidate violations, fix in parallel
+   - Re-verify, final commit
+   - 5 waves, 60 agents (28 scan, 1 consolidate, 28 fix, 3 verify, 1 commit)
 
 ## Next Steps
 
