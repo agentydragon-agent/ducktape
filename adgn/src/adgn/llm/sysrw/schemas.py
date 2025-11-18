@@ -42,10 +42,9 @@ class CrushSample(BaseModel):
 
 
 class CCRRequest(BaseModel):
-    """CCR request using Pydantic-validated Anthropic message types.
+    """CCR request with Pydantic-validated Anthropic messages.
 
-    Uses adgn.anthropic_utils types (Pydantic BaseModels) instead of
-    anthropic.types TypedDicts for stronger typing and runtime validation.
+    Uses adgn.llm.anthropic types (Pydantic) instead of anthropic.types (TypedDicts).
     """
 
     system: str | None = None

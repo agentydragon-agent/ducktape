@@ -216,10 +216,7 @@ def index_of_last_assistant_before_final(msgs: list[StandardMessage]) -> int | N
 
 
 def index_of_last_assistant_in_anthropic_messages(messages: list[AnthropicMessage]) -> int | None:
-    """Find index of last assistant message before the final message.
-
-    Uses Pydantic AnthropicMessage models (adgn.llm.anthropic.types).
-    """
+    """Find index of last assistant message before the final message."""
     for i in range(len(messages) - 2, -1, -1):
         if messages[i].role == AnthropicMessageRole.ASSISTANT:
             return i
@@ -227,11 +224,7 @@ def index_of_last_assistant_in_anthropic_messages(messages: list[AnthropicMessag
 
 
 def anthropic_messages_to_standard(messages: list[AnthropicMessage]) -> list[StandardMessage]:
-    """Convert Anthropic messages to StandardMessage list for grader context.
-
-    Uses Pydantic AnthropicMessage models (adgn.llm.anthropic.types).
-    No dict wrangling - proper attribute access on validated Pydantic models.
-    """
+    """Convert Anthropic messages to StandardMessage list for grader context."""
     result: list[StandardMessage] = []
     for msg in messages:
         # Use .text_content property for convenience
@@ -261,11 +254,7 @@ def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, 
 def anthro_to_openai_messages(
     messages: list[AnthropicMessage], new_system_text: str | None
 ) -> list[ChatCompletionMessageParam]:
-    """Translate Anthropic messages into OpenAI Chat format, returning SDK models.
-
-    Uses Pydantic AnthropicMessage models (adgn.llm.anthropic.types).
-    No dict wrangling - proper attribute access on validated Pydantic models.
-    """
+    """Translate Anthropic messages into OpenAI Chat format."""
     raw_messages: list[dict[str, Any]] = []
     if new_system_text:
         raw_messages.append({"role": "system", "content": new_system_text})
