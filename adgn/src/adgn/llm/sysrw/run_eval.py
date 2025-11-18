@@ -154,11 +154,8 @@ def flatten_system_string(sys: Any) -> str:
     if isinstance(sys, str):
         return sys
     if isinstance(sys, list):
-        try:
-            parts = TypeAdapter(list[ResponseContentPart]).validate_python(sys)
-            return "\n\n".join(iter_resolved_text(parts))
-        except Exception:
-            pass
+        parts = TypeAdapter(list[ResponseContentPart]).validate_python(sys)
+        return "\n\n".join(iter_resolved_text(parts))
     return ""
 
 
@@ -267,11 +264,8 @@ async def run_eval(
             return parts
         if parts is None:
             return ""
-        try:
-            parsed_parts = TypeAdapter(list[ResponseContentPart]).validate_python(parts)
-            return "\n".join(iter_resolved_text(parsed_parts))
-        except Exception:
-            return ""
+        parsed_parts = TypeAdapter(list[ResponseContentPart]).validate_python(parts)
+        return "\n".join(iter_resolved_text(parsed_parts))
 
     def responses_prev_assistant_index(inp: Any) -> int | None:
         parsed = parse_response_messages(inp)
@@ -304,11 +298,8 @@ async def run_eval(
                 continue
             content = it.content
             if isinstance(content, list):
-                try:
-                    parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
-                    content = [p.model_dump(mode="json", exclude_none=True) for p in parts]
-                except Exception:
-                    pass
+                parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
+                content = [p.model_dump(mode="json", exclude_none=True) for p in parts]
             out.append({"role": role, "content": content})
         return out
 
@@ -565,7 +556,7 @@ async def run_eval(
             sample_rec: dict[str, Any] = {
                 "request": samp_req,
                 "response": samp.model_dump(),
-                "new_assistant_message": raw_new_asst_obj,
+                "new_assistant_message": new_asst_obj,
                 "correlation_id": item.correlation_id,
                 "timestamp": item.timestamp,
             }

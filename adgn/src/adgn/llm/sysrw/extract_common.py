@@ -27,41 +27,20 @@ def join_text_parts(content: Any) -> str:
     """
     if isinstance(content, str):
         return content
-    if content is not None:
-        try:
-            parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
-            return "\n".join(iter_resolved_text(parts))
-        except Exception:
-            pass
-    if isinstance(content, list):
-        texts: list[str] = []
-        for part in content:
-            if isinstance(part, dict):
-                txt = part.get("text") or part.get("input_text") or part.get("content")
-                if isinstance(txt, str):
-                    texts.append(txt)
-        if texts:
-            return "\n".join(texts)
-    return ""
+    if content is None:
+        return ""
+    parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
+    return "\n".join(iter_resolved_text(parts))
 
 
 def sys_has_tools_header(system: Any) -> bool:
     """Return True if system text (string or list-of-parts) contains tools header."""
     if isinstance(system, str):
         return TOOLS_HEADER in system
-    if system is not None:
-        try:
-            parts = TypeAdapter(list[ResponseContentPart]).validate_python(system)
-            return any(TOOLS_HEADER in text for text in iter_resolved_text(parts))
-        except Exception:
-            pass
-    if isinstance(system, list):
-        for item in system:
-            if isinstance(item, dict):
-                txt = item.get("text")
-                if isinstance(txt, str) and TOOLS_HEADER in txt:
-                    return True
-    return False
+    if system is None:
+        return False
+    parts = TypeAdapter(list[ResponseContentPart]).validate_python(system)
+    return any(TOOLS_HEADER in text for text in iter_resolved_text(parts))
 
 
 def find_last_user_text_from_msg(msg: Any) -> str | None:
