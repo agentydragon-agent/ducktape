@@ -13,14 +13,19 @@ import subprocess
 import sys
 from typing import Any, cast
 
-from anthropic.types import ContentBlockParam, MessageParam
-from anthropic.types.text_block_param import TextBlockParam
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, TypeAdapter
 import tiktoken
 
+from adgn.llm.anthropic.types import (
+    AnthropicMessage,
+    AnthropicMessageRole,
+    AnthropicTextBlock,
+    AnthropicToolResultBlock,
+    AnthropicToolUseBlock,
+)
 from adgn.openai_utils.client_factory import get_async_openai
 from adgn.openai_utils.retry import chat_create_with_retries, responses_create_with_retries
 
@@ -172,22 +177,6 @@ def flatten_system_string(sys: Any) -> str:
     return ""
 
 
-def extract_anthropic_system_text(system: str | list[TextBlockParam] | None) -> str:
-    """Extract text from Anthropic system parameter (str or list of TextBlockParam)."""
-    if isinstance(system, str):
-        return system
-    if isinstance(system, list):
-        # System is list[TextBlockParam] where each block has {"type": "text", "text": "..."}
-        texts: list[str] = []
-        for block in system:
-            if isinstance(block, dict) and block.get("type") == "text":
-                text = block.get("text")
-                if isinstance(text, str):
-                    texts.append(text)
-        return "\n\n".join(texts)
-    return ""
-
-
 def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
     """Rewrite the system prompt via Node apply script.
     Fails clearly if Node.js is not available or the script errors out.
@@ -226,47 +215,33 @@ def index_of_last_assistant_before_final(msgs: list[StandardMessage]) -> int | N
     return None
 
 
-def index_of_last_assistant_in_anthropic_messages(messages: list[MessageParam]) -> int | None:
-    """Find index of last assistant message in Anthropic MessageParam list before the final message."""
+def index_of_last_assistant_in_anthropic_messages(messages: list[AnthropicMessage]) -> int | None:
+    """Find index of last assistant message before the final message.
+
+    Uses Pydantic AnthropicMessage models (adgn.llm.anthropic.types).
+    """
     for i in range(len(messages) - 2, -1, -1):
-        msg = messages[i]
-        if isinstance(msg, dict) and msg.get("role") == "assistant":
+        if messages[i].role == AnthropicMessageRole.ASSISTANT:
             return i
     return None
 
 
-def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[StandardMessage]:
-    """Convert Anthropic MessageParam list to StandardMessage list for grader context.
+def anthropic_messages_to_standard(messages: list[AnthropicMessage]) -> list[StandardMessage]:
+    """Convert Anthropic messages to StandardMessage list for grader context.
 
-    Extracts text content from Anthropic content blocks and flattens to simple string content.
-    Messages are already validated MessageParam instances (TypedDicts) from CCRRequest.
+    Uses Pydantic AnthropicMessage models (adgn.llm.anthropic.types).
+    No dict wrangling - proper attribute access on validated Pydantic models.
     """
     result: list[StandardMessage] = []
     for msg in messages:
-        # MessageParam is a TypedDict validated by parent Pydantic model
-        role = msg.get("role")
-        content = msg.get("content")
-
-        # Extract text from content
-        text_content = ""
-        if isinstance(content, str):
-            text_content = content
-        elif isinstance(content, list):
-            # content is list[ContentBlockParam] - validated TypedDicts
-            texts: list[str] = []
-            for block in content:
-                if isinstance(block, dict) and block.get("type") in ("text", "input_text"):
-                    text = block.get("text")
-                    if isinstance(text, str):
-                        texts.append(text)
-            text_content = "\n".join(texts)
-
-        if not text_content.strip():
+        # Use .text_content property for convenience
+        text_content = msg.text_content.strip()
+        if not text_content:
             continue
 
-        if role == "user":
+        if msg.role == AnthropicMessageRole.USER:
             result.append(StandardUserMessage(content=text_content))
-        elif role == "assistant":
+        elif msg.role == AnthropicMessageRole.ASSISTANT:
             result.append(StandardAssistantMessage(content=text_content))
 
     return result
@@ -284,116 +259,64 @@ def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, 
 
 
 def anthro_to_openai_messages(
-    messages: list[MessageParam], new_system_text: str | None
+    messages: list[AnthropicMessage], new_system_text: str | None
 ) -> list[ChatCompletionMessageParam]:
-    """Translate Anthropic MessageParam list into OpenAI Chat format, returning SDK models.
+    """Translate Anthropic messages into OpenAI Chat format, returning SDK models.
 
-    Messages are already validated MessageParam instances (TypedDicts) from CCRRequest.
+    Uses Pydantic AnthropicMessage models (adgn.llm.anthropic.types).
+    No dict wrangling - proper attribute access on validated Pydantic models.
     """
-
-    def _join_text_parts(parts: Iterable[dict[str, Any]]) -> str:
-        texts: list[str] = []
-        for part in parts:
-            if not isinstance(part, dict):
-                continue
-            ptype = part.get("type")
-            if ptype in {"text", "input_text"} and isinstance(part.get("text"), str):
-                texts.append(part["text"])
-                continue
-            if isinstance(part.get("content"), str):
-                texts.append(part["content"])
-        return "\n".join(texts)
-
     raw_messages: list[dict[str, Any]] = []
     if new_system_text:
         raw_messages.append({"role": "system", "content": new_system_text})
 
     for message in messages:
-        # MessageParam is a TypedDict validated by parent Pydantic model
-        role = message.get("role")
-        content = message.get("content")
-
-        if isinstance(content, str):
-            if role in ("user", "assistant") and content.strip():
-                raw_messages.append({"role": role, "content": content})
+        if isinstance(message.content, str):
+            if message.content.strip():
+                raw_messages.append({"role": message.role.value, "content": message.content})
             continue
 
-        if isinstance(content, list):
-            # content is list[ContentBlockParam] - validated TypedDicts
-            content_blocks: list[ContentBlockParam] = []
-            for part in content:
-                if isinstance(part, dict):
-                    content_blocks.append(part)  # type: ignore[arg-type]
+        # message.content is list[AnthropicContentBlock] - Pydantic models
+        content_blocks = message.content
 
-            if role == "assistant":
-                text_buf: list[str] = []
-                tool_calls: list[dict[str, Any]] = []
-                for part in content_blocks:
-                    ptype = part.get("type")
-                    if ptype == "text" and isinstance(part.get("text"), str):
-                        text_buf.append(part["text"])
-                    elif ptype == "tool_use":
-                        name = part.get("name")
-                        args = part.get("input")
-                        tcid = part.get("id") or part.get("tool_use_id")
-                        if isinstance(args, list) and len(args) == 1:
-                            args = args[0]
-                        if isinstance(args, str):
-                            args_str = args
-                        else:
-                            args_str = json.dumps(
-                                args if args is not None else {}, ensure_ascii=False, separators=(",", ":")
-                            )
-                        tool_call: dict[str, Any] = {
-                            "type": "function",
-                            "function": {"name": name or "unknown", "arguments": args_str},
-                        }
-                        if tcid:
-                            tool_call["id"] = str(tcid)
-                        tool_calls.append(tool_call)
-                if text_buf or tool_calls:
-                    msg: dict[str, Any] = {"role": "assistant"}
-                    if text_buf:
-                        msg["content"] = "\n".join(text_buf)
-                    if tool_calls:
-                        msg["tool_calls"] = tool_calls
-                    raw_messages.append(msg)
-                continue
+        if message.role == AnthropicMessageRole.ASSISTANT:
+            text_buf: list[str] = []
+            tool_calls: list[dict[str, Any]] = []
+            for block in content_blocks:
+                if isinstance(block, AnthropicTextBlock):
+                    text_buf.append(block.text)
+                elif isinstance(block, AnthropicToolUseBlock):
+                    args_str = json.dumps(block.input, ensure_ascii=False, separators=(",", ":"))
+                    tool_call: dict[str, Any] = {
+                        "type": "function",
+                        "function": {"name": block.name, "arguments": args_str},
+                        "id": block.id,
+                    }
+                    tool_calls.append(tool_call)
+            if text_buf or tool_calls:
+                msg: dict[str, Any] = {"role": "assistant"}
+                if text_buf:
+                    msg["content"] = "\n".join(text_buf)
+                if tool_calls:
+                    msg["tool_calls"] = tool_calls
+                raw_messages.append(msg)
 
-            if role == "user":
-                text_parts: list[dict[str, Any]] = []
-                tool_msgs: list[dict[str, Any]] = []
-                for part in content_blocks:
-                    ptype = part.get("type")
-                    if ptype in {"text", "input_text"}:
-                        text_parts.append(part)
-                    elif ptype == "tool_result":
-                        tcid = part.get("tool_use_id") or part.get("id")
-                        tcontent = part.get("content")
-                        if isinstance(tcontent, str):
-                            tool_text = tcontent
-                        elif isinstance(tcontent, list):
-                            tool_text = _join_text_parts([item if isinstance(item, dict) else {} for item in tcontent])
-                        else:
-                            tool_text = json.dumps(tcontent, ensure_ascii=False, sort_keys=True)
-                        if tcid:
-                            tool_msgs.append({"role": "tool", "tool_call_id": str(tcid), "content": tool_text or ""})
-                raw_messages.extend(tool_msgs)
-                txt = _join_text_parts(text_parts)
-                if txt.strip():
-                    raw_messages.append({"role": "user", "content": txt})
-                continue
-
-            if role == "tool":
-                tcid = message.get("tool_call_id") or message.get("tool_use_id") or message.get("id")
-                if not tcid:
-                    continue
-                content_val = ""
-                if isinstance(content, str):
-                    content_val = content
-                elif content_blocks:
-                    content_val = _join_text_parts(content_blocks)
-                raw_messages.append({"role": "tool", "tool_call_id": str(tcid), "content": content_val})
+        elif message.role == AnthropicMessageRole.USER:
+            text_parts: list[str] = []
+            tool_msgs: list[dict[str, Any]] = []
+            for block in content_blocks:
+                if isinstance(block, AnthropicTextBlock):
+                    text_parts.append(block.text)
+                elif isinstance(block, AnthropicToolResultBlock):
+                    if isinstance(block.content, str):
+                        tool_text = block.content
+                    else:
+                        # list[AnthropicTextBlock]
+                        tool_text = "\n".join(b.text for b in block.content)
+                    tool_msgs.append({"role": "tool", "tool_call_id": block.tool_use_id, "content": tool_text})
+            raw_messages.extend(tool_msgs)
+            if text_parts:
+                raw_messages.append({"role": "user", "content": "\n".join(text_parts)})
 
     parsed = parse_chat_messages(raw_messages)
     return parsed or []
@@ -639,7 +562,7 @@ async def run_eval(
             if isinstance(item, CCRSample):  # CCR
                 # 1) Rewrite system via Node apply script
                 ar = item.anthropic_request
-                sys_val = extract_anthropic_system_text(ar.system)
+                sys_val = ar.system or ""
                 new_sys = rewrite_system_with_template(sys_val, template_path)
                 # 2) Find last assistant message in Anthropic messages (before final user complaint)
                 prev_asst_idx = index_of_last_assistant_in_anthropic_messages(ar.messages)
@@ -1057,7 +980,7 @@ async def run_eval(
                 else:
                     # CCR item - validate and use typed Anthropic structures
                     ccr_req = CCRRequest.model_validate(ar)
-                    orig_sys = extract_anthropic_system_text(ccr_req.system)
+                    orig_sys = ccr_req.system or ""
                     rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
                     msgs = anthropic_messages_to_standard(ccr_req.messages)
                     idx = index_of_last_assistant_before_final(msgs)
