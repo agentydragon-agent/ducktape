@@ -1,8 +1,8 @@
 """Categorize violations based on their proximity to diff changes."""
 
+from collections import defaultdict
 from dataclasses import dataclass
 from enum import StrEnum
-from itertools import groupby
 
 from ..config.models import Violation
 from .parser import ParsedDiff
@@ -94,17 +94,15 @@ class ViolationCategorizer:
 
     def group_by_category(
         self, categorized: list[CategorizedViolation]
-    ) -> dict[ViolationCategory, list[CategorizedViolation]]:
+    ) -> defaultdict[ViolationCategory, list[CategorizedViolation]]:
         """Group categorized violations by their category."""
-        # Sort by category first (required for groupby)
-        categorized_sorted = sorted(categorized, key=lambda cv: cv.category)
+        groups: defaultdict[ViolationCategory, list[CategorizedViolation]] = defaultdict(list)
 
-        # Group by category
-        groups = {category: list(items) for category, items in groupby(categorized_sorted, key=lambda cv: cv.category)}
+        for cv in categorized:
+            groups[cv.category].append(cv)
 
         # Sort near-diff by distance
-        if ViolationCategory.NEAR_DIFF in groups:
-            groups[ViolationCategory.NEAR_DIFF].sort(key=lambda cv: cv.distance_from_change or 0)
+        groups[ViolationCategory.NEAR_DIFF].sort(key=lambda cv: cv.distance_from_change or 0)
 
         return groups
 
@@ -131,16 +129,16 @@ class ViolationCategorizer:
         result = []
 
         # Add all in-diff violations
-        result.extend(groups.get(ViolationCategory.IN_DIFF, []))
+        result.extend(groups[ViolationCategory.IN_DIFF])
 
         # Add near-diff violations if room
         remaining = max_violations - len(result)
         if remaining > 0:
-            result.extend(groups.get(ViolationCategory.NEAR_DIFF, [])[:remaining])
+            result.extend(groups[ViolationCategory.NEAR_DIFF][:remaining])
 
         # Add out-of-diff violations if room
         remaining = max_violations - len(result)
         if remaining > 0:
-            result.extend(groups.get(ViolationCategory.OUT_OF_DIFF, [])[:remaining])
+            result.extend(groups[ViolationCategory.OUT_OF_DIFF][:remaining])
 
         return result[:max_violations]

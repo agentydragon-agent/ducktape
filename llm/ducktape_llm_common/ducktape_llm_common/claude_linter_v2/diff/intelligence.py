@@ -1,5 +1,6 @@
 """Main diff intelligence module for smart violation filtering."""
 
+from collections import defaultdict
 from typing import Any
 
 from ..config.models import Violation
@@ -34,7 +35,7 @@ class DiffIntelligence:
         tool_input: dict[str, Any],
         tool_response: dict[str, Any] | None,
         violations: list[Violation],
-    ) -> dict[ViolationCategory, list[CategorizedViolation]]:
+    ) -> defaultdict[ViolationCategory, list[CategorizedViolation]]:
         """
         Analyze violations in context of tool changes.
 
@@ -45,7 +46,7 @@ class DiffIntelligence:
             violations: List of violations found
 
         Returns:
-            Dictionary mapping violation categories to lists of categorized violations
+            defaultdict mapping violation categories to lists of categorized violations
         """
         # Parse diff information
         parsed_diff = self.parser.parse_tool_response(tool_name, tool_input, tool_response)
@@ -88,7 +89,7 @@ class DiffIntelligence:
         return self.categorizer.filter_by_priority(categorized, max_violations)
 
     def format_violations_by_category(
-        self, categorized_groups: dict[ViolationCategory, list[CategorizedViolation]]
+        self, categorized_groups: defaultdict[ViolationCategory, list[CategorizedViolation]]
     ) -> str:
         """
         Format categorized violations for display.
@@ -102,14 +103,14 @@ class DiffIntelligence:
         parts = []
 
         # In-diff violations (most important)
-        if in_diff := categorized_groups.get(ViolationCategory.IN_DIFF, []):
+        if in_diff := categorized_groups[ViolationCategory.IN_DIFF]:
             parts.append("Issues in code you just added:")
             for cv in in_diff:
                 v = cv.violation
                 parts.append(f"  Line {v.line}: {v.message}")
 
         # Near-diff violations
-        if near_diff := categorized_groups.get(ViolationCategory.NEAR_DIFF, []):
+        if near_diff := categorized_groups[ViolationCategory.NEAR_DIFF]:
             if parts:
                 parts.append("")  # Blank line
             parts.append("Issues near your changes:")
@@ -119,7 +120,7 @@ class DiffIntelligence:
                 parts.append(f"  Line {v.line} ({distance} lines away): {v.message}")
 
         # Out-of-diff violations (least important)
-        if (out_diff := categorized_groups.get(ViolationCategory.OUT_OF_DIFF, [])) and len(parts) < 20:
+        if (out_diff := categorized_groups[ViolationCategory.OUT_OF_DIFF]) and len(parts) < 20:
             if parts:
                 parts.append("")  # Blank line
             parts.append("Existing issues in file:")
