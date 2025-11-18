@@ -19,13 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from adgn.openai_utils.model import (
-    AssistantMessage,
-    AssistantMessageOut,
-    FunctionCallItem,
-    SystemMessage,
-    UserMessage,
-)
+from adgn.openai_utils.model import FunctionCallItem, UserMessage
 
 # ---------------------------------------------------------------------------
 # Tool policy algebraic types (what the model is allowed/required to do next)
@@ -76,15 +70,17 @@ class NoLoopDecision:
 # Type aliases for Continue.inserts_input
 # Items valid for normal path (skip_sampling=False): appended to transcript as input
 # FunctionCallItem excluded - would create unresolved function call in API request
-NormalInjectableItem = UserMessage | AssistantMessage | SystemMessage
+# TODO: Consider re-adding AssistantMessage, SystemMessage if production use cases emerge
+NormalInjectableItem = UserMessage
 
 # Items valid for skip-sampling path (skip_sampling=True): treated as synthetic model output
 # FunctionCallItem allowed here - gets executed locally without calling OpenAI API
 # FunctionCallOutputItem excluded - only comes from actual model responses or MCP execution
-SyntheticOutputItem = AssistantMessageOut | FunctionCallItem
+# TODO: Consider re-adding AssistantMessageOut if production use cases emerge
+SyntheticOutputItem = FunctionCallItem
 
 # Union of all injectable items (ReasoningItem excluded - must come from model)
-InjectableItem = NormalInjectableItem | SyntheticOutputItem
+InjectableItem = UserMessage | FunctionCallItem
 
 
 @dataclass(frozen=True)
