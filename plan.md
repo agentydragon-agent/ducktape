@@ -1,36 +1,41 @@
-# MCP-Based Management UI Plan
+# MCP-Based Management UI - Unified "agents" Server
 
 ## Executive Summary
 
-Replace custom WebSocket channels with MCP protocol for the Management UI. The frontend will be an MCP client connecting to multiple independent MCP servers via Streamable HTTP. This provides a clean security boundary, reuses MCP infrastructure, and enables future features like elicitations for approvals.
+Replace custom WebSocket channels with a unified **`agents` MCP server** that provides cross-agent management. This single server routes to per-agent infrastructure and can be delegated to other agents for self-orchestration. The frontend becomes a simple MCP client, and the same server can later be given to agents for spawning, approving, and managing other agents.
 
 ## Architecture Overview
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                     Frontend (Browser)                       │
-│  - Multiple MCP clients (Streamable HTTP)                   │
+│  - Single MCP client (Streamable HTTP)                      │
 │  - Token in URL → localStorage                              │
-│  - Clients:                                                  │
-│    • agents (cross-agent management)                        │
-│    • state_{agent_id} (per local agent)                     │
-│    • approvals_{agent_id} (per agent)                       │
-│    • compositor_meta_{agent_id} (per agent)                 │
+│  - Connects to: agents server                              │
 └──────────────┬───────────────────────────────────────────────┘
                │ HTTP GET /ui?token=...
-               │ Streamable HTTP to MCP endpoints
+               │ Streamable HTTP
                ▼
 ┌──────────────────────────────────────────────────────────────┐
 │           Management UI Server (Port 8081)                   │
 │  - Serves static files + token auth                         │
-│  - Path-based routing to MCP servers:                       │
-│    GET /mcp/agents → agents server                          │
-│    GET /mcp/{id}/state → state server (local only)          │
-│    GET /mcp/{id}/approvals → approval server                │
-│    GET /mcp/{id}/compositor → compositor_meta server        │
+│  - Single endpoint: GET /mcp/agents                         │
+│                                                              │
+│  Unified "agents" MCP Server:                               │
+│  ├─ Resources (flat structure):                             │
+│  │  ├─ resource://agents/list                               │
+│  │  ├─ resource://agents/{id}/state                         │
+│  │  ├─ resource://agents/{id}/approvals/pending            │
+│  │  └─ resource://approvals/pending (GLOBAL mailbox)       │
+│  │                                                           │
+│  └─ Tools (route to per-agent infrastructure):             │
+│     ├─ approve_tool_call(agent_id, call_id)                │
+│     ├─ reject_tool_call(agent_id, call_id, reason)         │
+│     ├─ abort_agent(agent_id)                               │
+│     └─ (future: spawn_agent, update_policy, ...)           │
 └──────────────▲───────────────────────────────────────────────┘
                │ InfrastructureRegistry
-               │ (per-agent infrastructure)
+               │ Routes: approve(123) → lookup(123).approval_engine.approve()
                │
 ┌──────────────────────────────────────────────────────────────┐
 │              MCP Server (Port 8080)                          │
@@ -40,174 +45,179 @@ Replace custom WebSocket channels with MCP protocol for the Management UI. The f
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## Key Decisions to Make
+## Key Architectural Decisions
 
-### 1. Architecture: Multiple Servers vs. Single Compositor
+### 1. Unified "agents" Server ✅
 
-**Option A: Multiple Independent MCP Servers** (RECOMMENDED)
-- ✅ Each server has specific purpose with bespoke UI rendering
-- ✅ Clean separation of concerns
-- ✅ Matches existing pattern (approval_policy split into reader/proposer/approver)
-- ✅ Easier to understand security boundaries
-- ✅ Frontend can handle each server type differently
-- ❌ More connections to manage
-
-**Option B: Single Meta Compositor**
-- ✅ Single connection for all admin operations
-- ✅ Can dynamically advertise capabilities (local vs bridge mode)
-- ❌ Mixed concerns in one server
-- ❌ Less clear security model
-
-**Decision**: **Option C** - Multiple independent servers PLUS a cross-agent management server.
-- **`agents` server**: Global server listing all agents and their states
-- **Per-agent servers**: `approvals_{agent_id}`, `compositor_meta_{agent_id}`, etc.
-- Clean separation of concerns with discoverability via meta-server
-
-### 2. Per-Agent Routing
-
-**Decision**: Path-based routing with dedicated endpoints per server.
-
-**Routes**:
-```
-/mcp/agents                   → Cross-agent management (lists all agents + states)
-/mcp/{agent_id}/approvals     → Per-agent approval server
-/mcp/{agent_id}/compositor    → Per-agent MCP server list (compositor_meta)
-/mcp/{agent_id}/state         → Per-agent sampling state (for local agents)
-```
-
-More RESTful, clearer routing logic, easier to debug.
-
-### 3. Authentication & Security
-
-**Requirements**:
-- Management UI must be token-protected (only human can access)
-- Token auto-generated on boot, printed to CLI
-- Token passed via URL query param, auto-inserted by frontend
-- Secure against unauthorized access
-
-**Implementation**:
-```python
-# On server boot:
-ui_token = secrets.token_urlsafe(32)
-print(f"Management UI: http://localhost:8081/ui?token={ui_token}")
-
-# Frontend receives token from URL:
-const params = new URLSearchParams(window.location.search)
-const uiToken = params.get('token')
-
-# All MCP requests include token:
-headers: { 'Authorization': `Bearer ${uiToken}` }
-```
-
-**Decision**:
-- **Session-based** token (valid for server lifetime)
-- **Generate new token on each boot** (or allow env var override for configured secret)
-- **Store in localStorage** for convenience (optional, graceful fallback if auth fails)
-- **No expiry** during server lifetime
-
-### 4. MCP Elicitations for Approvals
-
-MCP elicitations are **perfect** for approval flows:
-
-**Standard Approval Flow (Current)**:
-1. Tool call blocked by policy
-2. Approval request sent to UI via WebSocket
-3. UI shows approval dialog
-4. User approves/denies
-5. Result sent back, tool call proceeds/fails
-
-**Elicitation-Based Flow (Future)**:
-1. Tool call blocked by policy
-2. Agent requests elicitation with approval details
-3. MCP client (UI) shows native approval dialog
-4. User accepts/declines/cancels (3-action model)
-5. Response includes approval decision
+**Decision**: Single MCP server instead of multiple independent servers.
 
 **Benefits**:
+- ✅ Single connection for frontend (much simpler)
+- ✅ Can be delegated to other agents for self-orchestration
+- ✅ Agent actions subject to policy (when Agent A uses this server, its actions are governed by Agent A's approval predicate)
+- ✅ Future: Agent A can spawn agents, approve/deny actions, update policies
+- ✅ Clean routing pattern: `tool(agent_id) → lookup_infrastructure(agent_id).component.method()`
+
+**Future Vision**:
+```
+User → gives "agents" server to Agent A
+Agent A → spawn_agent(...), approve_tool_call(...), update_policy(...)
+       → BUT: Agent A's actions subject to Agent A's approval predicate
+       → Example: "Agent A can only approve Agent B's policy if it's one of these 5"
+```
+
+### 2. Resource Structure (Flat) ✅
+
+```
+resource://agents/list                          # All agents + capabilities
+resource://agents/{agent_id}/state              # Sampling state (local only)
+resource://agents/{agent_id}/approvals/pending  # Per-agent pending approvals
+resource://approvals/pending                     # GLOBAL mailbox (all agents)
+```
+
+**Global mailbox** shows all pending approvals across all agents - useful for UI overview.
+
+### 3. Tool Routing Pattern ✅
+
+```python
+# Tool call pattern
+approve_tool_call(agent_id="foo", call_id="123")
+
+# Routes to:
+infra = registry.lookup_agent_infrastructure(agent_id="foo")
+await infra.approval_engine.approve(call_id="123")
+```
+
+All tools take `agent_id` as first parameter and route to appropriate per-agent infrastructure.
+
+### 4. Token Management ✅
+
+- **Session-based** token (valid for server lifetime)
+- **Generate new on each boot** (or env var `UI_TOKEN` override)
+- **Store in localStorage** for convenience (graceful fallback on auth failure)
+- **No expiry** during server lifetime
+- **CLI output**: `Management UI: http://localhost:8081/ui?token=<token>`
+
+### 5. Approvals: Tools Now, Elicitations Later ✅
+
+**Phase 1** (current): Tool-based approvals
+- `approve_tool_call(agent_id, call_id)`
+- `reject_tool_call(agent_id, call_id, reason)`
+- Callable by agents (subject to policy) or frontend (human)
+
+**Phase 2** (future): MCP Elicitations
+- Server sends elicitation request to client
+- Client shows native approval dialog (3-action model: accept/decline/cancel)
 - Standardized human-in-the-loop workflow
-- Three-action model (accept/decline/cancel) built-in
-- Clients control UX (no server-dictated UI)
-- Security: server can't request PII/credentials
+- Server can't request PII/credentials (security)
 
-**Decision**:
-- **Phase in later** (after basic MCP migration works - Phase 5+)
-- **Keep current approval engine**, add elicitation layer on top when ready
-- This allows us to prove out the MCP architecture first before adding elicitations
+Elicitations are perfect for human approvals, but we start with tools to prove out the architecture first.
 
-### 5. Shared Pydantic/TypeScript Models (SSOT)
+### 6. Agent Mode Detection ✅
 
-**Problem**: Duplicate type definitions between Python (Pydantic) and TypeScript
+Check **two factors**:
+- (a) Has chat/UI component
+- (b) Agent loop is under our control
 
-**Options**:
+**Local agents**: Have agent loop → expose sampling state
+**Bridge agents**: No agent loop → no sampling state available
 
-**Option A: Generate TypeScript from Pydantic**
-- Use `pydantic-to-typescript` or similar
-- Python is SSOT
-- Automated generation in build step
+### 7. Shared Models ✅
 
-**Option B: Generate Pydantic from TypeScript**
-- TypeScript is SSOT
-- Less common tooling
+**Auto-generate TypeScript from Pydantic** (Python is SSOT)
 
-**Option C: Shared JSON Schema**
-- Both Python and TypeScript generate from JSON Schema
-- Most flexible but more complex
-
-**Option D: Manual maintenance with validation tests**
-- Write types in both languages
-- Runtime validation tests ensure compatibility
-
-**Decision**: **Auto-generate TypeScript from Pydantic** (Python is SSOT).
-
-**Scope**: All models that define MCP inputs/outputs that the frontend uses:
+Include all MCP inputs/outputs:
 - `ApprovalBrief`, `ApprovalPendingEvt`
 - `ServerCapabilities`
-- `SamplingSnapshot`, `ServerEntry` (discriminated union)
+- `SamplingSnapshot`, `ServerEntry`
 - Policy models (`PolicyRequest`, `PolicyResponse`)
-- Any other MCP resource/tool schemas
+- Tool input/output schemas
 
-**Implementation**:
-```bash
-# Add to package.json
-"scripts": {
-  "generate-types": "pydantic2ts --module adgn.agent.server.protocol --output src/types/protocol.ts"
-}
-```
+### 8. Browser Compatibility ✅
+
+Modern browsers only (Chrome/Firefox/Safari/Edge last 2 versions)
 
 ## Implementation Plan
 
-### Phase 1: Backend - Independent MCP Servers
+### Phase 1: Unified "agents" Server (Backend)
 
-**1.1 Cross-Agent Management Server** (`agents`)
+**No stub implementations** - full working implementation required for phase completion.
 
-Exposes list of all known agents with their capabilities and states.
+#### 1.1 Infrastructure Registry Enhancement
+
+**File**: `adgn/src/adgn/agent/mcp_bridge/server.py`
 
 ```python
-# adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+class InfrastructureRegistry:
+    """Registry for managing per-agent infrastructure."""
 
+    def known_agents(self) -> list[str]:
+        """Return list of all known agent IDs."""
+        # Implementation required - no stub
+        async with self._lock:
+            return list(self._infra_cache.keys())
+
+    async def get_infrastructure(self, agent_id: str) -> RunningInfrastructure:
+        """Get infrastructure for agent (must exist)."""
+        infra, _ = await self.get_or_create_infrastructure(agent_id)
+        return infra
+```
+
+**Acceptance**:
+- [ ] `known_agents()` returns all agent IDs from cache
+- [ ] `get_infrastructure()` raises error if agent doesn't exist
+- [ ] Test with multiple agents
+
+#### 1.2 Unified "agents" MCP Server
+
+**File**: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
+
+```python
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from pydantic import BaseModel
+
+class ApproveToolCallArgs(BaseModel):
+    agent_id: str
+    call_id: str
+
+class RejectToolCallArgs(BaseModel):
+    agent_id: str
+    call_id: str
+    reason: str
+
+class AbortAgentArgs(BaseModel):
+    agent_id: str
 
 def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
-    """Cross-agent management: list all agents and their states."""
+    """Unified cross-agent management server."""
     server = NotifyingFastMCP(
         name="agents",
-        instructions="Cross-agent management metadata."
+        instructions="""Multi-agent management server.
+
+        Provides cross-agent visibility and control:
+        - List all agents with their capabilities
+        - View sampling state for local agents
+        - Approve/reject tool calls
+        - Abort running agents
+
+        Future: spawn agents, update policies, delegate work."""
     )
+
+    # Resources
 
     @server.resource(
         "resource://agents/list",
         name="agents.list",
-        mime_type="application/json"
+        mime_type="application/json",
+        description="List all agents with capabilities and state"
     )
     async def list_agents():
-        """List all known agents with capabilities and state."""
+        """List all known agents."""
         agents = []
         for agent_id in registry.known_agents():
-            infra, _ = await registry.get_or_create_infrastructure(agent_id)
+            infra = await registry.get_infrastructure(agent_id)
 
-            # Detect agent type based on two factors:
-            # (a) Has chat/UI component
-            # (b) Agent loop is under our control
+            # Detect mode
             has_chat = hasattr(infra, 'chat_component') and infra.chat_component is not None
             has_agent_loop = hasattr(infra, 'agent_loop') and infra.agent_loop is not None
 
@@ -220,100 +230,149 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
                 "mode": "local" if has_agent_loop else "bridge",
             }
 
-            # Only local agents have sampling state available
-            # (we have no way to know external agents' sampling states)
             if has_agent_loop:
-                # Link to per-agent state resource
-                agent_info["state_uri"] = f"resource://{agent_id}/state"
+                agent_info["state_uri"] = f"resource://agents/{agent_id}/state"
+                agent_info["approvals_uri"] = f"resource://agents/{agent_id}/approvals/pending"
 
             agents.append(agent_info)
-        return agents
-
-    return server
-```
-
-**Notes**:
-- Agent mode detection considers both chat component and agent loop control
-- External agents (bridge mode) have no sampling state
-- Sampling state accessed via per-agent `/mcp/{agent_id}/state` endpoint
-
-**1.2 Per-Agent Approval Server** (`approvals_{agent_id}`)
-
-Reuse existing `ApprovalPolicyServer` with minor modifications:
-
-```python
-# Mount per-agent approval servers
-async def mount_approval_server_for_agent(app: FastAPI, agent_id: str, registry: InfrastructureRegistry):
-    """Mount approval server at /mcp/{agent_id}/approvals"""
-    infra, _ = await registry.get_or_create_infrastructure(agent_id)
-
-    # Reuse existing ApprovalPolicyServer
-    approval_server = ApprovalPolicyServer(infra.approval_engine, name=f"approvals_{agent_id}")
-
-    # Serve via Streamable HTTP at dedicated path
-    # TODO: Implement path-based routing middleware
-```
-
-**1.3 Per-Agent Compositor Meta Server** (`compositor_meta_{agent_id}`)
-
-Reuse existing `compositor_meta` server pattern:
-
-```python
-# Already exists! Just mount per-agent:
-infra, _ = await registry.get_or_create_infrastructure(agent_id)
-meta_server = make_compositor_meta_server(compositor=infra.compositor, name=f"compositor_meta_{agent_id}")
-```
-
-**1.4 Per-Agent State Server** (`state_{agent_id}`)
-
-Expose sampling state for local agents (agents where we control the loop).
-
-```python
-# adgn/src/adgn/agent/mcp_bridge/servers/state.py
-
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-
-def make_state_server(agent_id: str, registry: InfrastructureRegistry) -> NotifyingFastMCP:
-    """Expose sampling state for a local agent."""
-    server = NotifyingFastMCP(
-        name=f"state_{agent_id}",
-        instructions=f"Sampling state for agent {agent_id}."
-    )
+        return {"agents": agents}
 
     @server.resource(
-        f"resource://{agent_id}/state",
-        name="sampling.state",
-        mime_type="application/json"
+        "resource://agents/{agent_id}/state",
+        name="agent.state",
+        mime_type="application/json",
+        description="Sampling state for a local agent"
     )
-    async def get_sampling_state():
-        """Get current sampling state."""
-        infra, _ = await registry.get_or_create_infrastructure(agent_id)
+    async def agent_state(agent_id: str):
+        """Get sampling state for local agent."""
+        infra = await registry.get_infrastructure(agent_id)
 
-        # Only available for local agents with agent loop
         if not hasattr(infra, 'agent_loop') or infra.agent_loop is None:
-            raise ValueError(f"Agent {agent_id} has no agent loop")
+            raise ValueError(f"Agent {agent_id} has no agent loop (not a local agent)")
 
-        # Return sampling snapshot (matches existing WebSocket format)
         return await infra.compositor.sampling_snapshot()
 
-    # Listen to agent state changes and broadcast updates
-    # (Hook into agent loop state machine transitions)
+    @server.resource(
+        "resource://agents/{agent_id}/approvals/pending",
+        name="agent.approvals.pending",
+        mime_type="application/json",
+        description="Pending approvals for a specific agent"
+    )
+    async def agent_approvals_pending(agent_id: str):
+        """Get pending approvals for agent."""
+        infra = await registry.get_infrastructure(agent_id)
+
+        # Get pending approvals from approval engine
+        pending = await infra.approval_engine.get_pending()
+        return {"agent_id": agent_id, "pending": pending}
+
+    @server.resource(
+        "resource://approvals/pending",
+        name="approvals.pending.global",
+        mime_type="application/json",
+        description="Global mailbox: all pending approvals across all agents"
+    )
+    async def approvals_pending_global():
+        """Get all pending approvals (global mailbox)."""
+        all_pending = []
+        for agent_id in registry.known_agents():
+            try:
+                infra = await registry.get_infrastructure(agent_id)
+                pending = await infra.approval_engine.get_pending()
+                for approval in pending:
+                    all_pending.append({
+                        "agent_id": agent_id,
+                        **approval
+                    })
+            except Exception as e:
+                # Skip agents that don't have approval engines
+                logger.debug(f"Skipping {agent_id}: {e}")
+                continue
+        return {"pending": all_pending}
+
+    # Tools
+
+    @server.flat_model()
+    async def approve_tool_call(input: ApproveToolCallArgs) -> dict:
+        """Approve a pending tool call.
+
+        Routes to: lookup_infrastructure(agent_id).approval_engine.approve(call_id)
+        """
+        infra = await registry.get_infrastructure(input.agent_id)
+        await infra.approval_engine.approve(input.call_id)
+        return {"status": "approved", "agent_id": input.agent_id, "call_id": input.call_id}
+
+    @server.flat_model()
+    async def reject_tool_call(input: RejectToolCallArgs) -> dict:
+        """Reject a pending tool call.
+
+        Routes to: lookup_infrastructure(agent_id).approval_engine.reject(call_id, reason)
+        """
+        infra = await registry.get_infrastructure(input.agent_id)
+        await infra.approval_engine.reject(input.call_id, input.reason)
+        return {"status": "rejected", "agent_id": input.agent_id, "call_id": input.call_id}
+
+    @server.flat_model()
+    async def abort_agent(input: AbortAgentArgs) -> dict:
+        """Abort a running agent.
+
+        Routes to: lookup_infrastructure(agent_id).agent_loop.abort()
+        """
+        infra = await registry.get_infrastructure(input.agent_id)
+
+        if not hasattr(infra, 'agent_loop') or infra.agent_loop is None:
+            raise ValueError(f"Agent {input.agent_id} has no agent loop (cannot abort)")
+
+        await infra.agent_loop.abort()
+        return {"status": "aborted", "agent_id": input.agent_id}
+
+    # Wire up notifications
+    # - Listen to approval engine events → broadcast resource://approvals/pending updates
+    # - Listen to agent loop state changes → broadcast resource://agents/{id}/state updates
+
+    async def _on_approval_change(agent_id: str):
+        """Approval engine notification handler."""
+        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/pending")
+        await server.broadcast_resource_updated("resource://approvals/pending")
+
+    async def _on_agent_state_change(agent_id: str):
+        """Agent loop state change notification handler."""
+        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/state")
+
+    # Hook up listeners for all agents
+    for agent_id in registry.known_agents():
+        try:
+            infra = await registry.get_infrastructure(agent_id)
+            infra.approval_engine.add_listener(lambda: _on_approval_change(agent_id))
+            if hasattr(infra, 'agent_loop') and infra.agent_loop:
+                infra.agent_loop.add_state_listener(lambda: _on_agent_state_change(agent_id))
+        except Exception as e:
+            logger.warning(f"Failed to hook listeners for {agent_id}: {e}")
 
     return server
 ```
 
-**Notes**:
-- Only available for local agents (where we control the agent loop)
-- External agents (bridge mode) get 404 on this endpoint
-- Resource notifications broadcast when agent state changes (idle ↔ running)
+**Acceptance**:
+- [ ] `resource://agents/list` returns all agents with correct capabilities
+- [ ] `resource://agents/{id}/state` works for local agents, errors for bridge agents
+- [ ] `resource://agents/{id}/approvals/pending` returns pending approvals
+- [ ] `resource://approvals/pending` aggregates all pending approvals
+- [ ] `approve_tool_call` routes to correct agent and approves
+- [ ] `reject_tool_call` routes to correct agent and rejects
+- [ ] `abort_agent` routes to correct agent and aborts
+- [ ] Resource notifications fire when approvals change
+- [ ] Resource notifications fire when agent state changes
+- [ ] Test with 2+ agents (local and bridge)
 
-**1.5 Token Authentication Middleware**
+#### 1.3 Token Authentication
+
+**File**: `adgn/src/adgn/agent/mcp_bridge/server.py`
 
 ```python
-# adgn/src/adgn/agent/mcp_bridge/server.py
+import secrets
 
 class UITokenAuthMiddleware:
-    """Validates UI token from Authorization header."""
+    """Token auth for Management UI."""
 
     def __init__(self, app, ui_token: str):
         self.app = app
@@ -323,66 +382,98 @@ class UITokenAuthMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        # Extract token from Authorization header
         headers = dict(scope["headers"])
         auth = headers.get(b"authorization", b"").decode()
 
         if not auth.startswith("Bearer "):
-            return await send_401(send)
+            return await self._send_401(send)
 
-        token = auth[7:]  # Remove "Bearer "
+        token = auth[7:]
         if token != self.ui_token:
-            return await send_401(send)
+            return await self._send_401(send)
 
-        # Token valid, proceed
         await self.app(scope, receive, send)
+
+    async def _send_401(self, send):
+        await send({
+            "type": "http.response.start",
+            "status": 401,
+            "headers": [[b"content-type", b"application/json"]],
+        })
+        await send({
+            "type": "http.response.body",
+            "body": b'{"error": "unauthorized"}',
+        })
+
+def generate_ui_token() -> str:
+    """Generate UI token (from env or random)."""
+    import os
+    if token := os.environ.get("UI_TOKEN"):
+        return token
+    return secrets.token_urlsafe(32)
 ```
 
-**1.6 Path-Based Routing to MCP Servers**
+**Acceptance**:
+- [ ] Token loaded from `UI_TOKEN` env var if present
+- [ ] Token generated randomly if env var not set
+- [ ] Requests with valid token succeed
+- [ ] Requests with invalid token get 401
+- [ ] Requests with no token get 401
+
+#### 1.4 Server Setup & CLI
+
+**File**: `adgn/src/adgn/agent/mcp_bridge/cli.py`
 
 ```python
-# Route requests to correct MCP server based on path
+async def _run_server(...):
+    # Generate UI token
+    ui_token = generate_ui_token()
 
-@app.get("/mcp/agents")
-async def agents_endpoint():
-    # Serve cross-agent management server via Streamable HTTP
-    pass
+    # Create unified agents server
+    agents_server = make_agents_server(registry)
 
-@app.get("/mcp/{agent_id}/approvals")
-async def approval_endpoint(agent_id: str):
-    # Serve approval server for agent_id
-    pass
+    # Create UI app with token auth
+    ui_app = create_management_ui_app(agents_server, ui_token)
 
-@app.get("/mcp/{agent_id}/compositor")
-async def compositor_endpoint(agent_id: str):
-    # Serve compositor_meta server for agent_id
-    pass
+    # Print Management UI URL with token
+    ui_url = f"http://localhost:{ui_port}/ui?token={ui_token}"
+    print(f"\n{'='*60}")
+    print(f"Management UI: {ui_url}")
+    print(f"{'='*60}\n")
 
-@app.get("/mcp/{agent_id}/state")
-async def state_endpoint(agent_id: str):
-    # Serve sampling state server for agent_id (local agents only)
-    # Returns 404 for bridge mode agents
-    pass
+    # Run servers
+    await asyncio.gather(
+        mcp_server.serve(),
+        ui_server.serve()
+    )
 ```
 
-**Implementation Approach**:
-- Use `fastmcp.server.run_streamable_http` per-server
-- FastAPI sub-apps mounted at different paths for clean routing
+**Acceptance**:
+- [ ] CLI prints Management UI URL with token
+- [ ] Token is consistent across server lifetime
+- [ ] Servers start successfully
+- [ ] Can access UI at printed URL
 
-### Phase 2: Frontend - MCP Client
+### Phase 2: Frontend MCP Client
 
-**2.1 Install SDK**
+**No stub implementations** - full working frontend required.
+
+#### 2.1 Install MCP SDK
 
 ```bash
-cd src/adgn/agent/web
+cd adgn/src/adgn/agent/web
 npm install @modelcontextprotocol/sdk
 ```
 
-**2.2 Create MCP Client Utilities**
+**Acceptance**:
+- [ ] Package installed successfully
+- [ ] TypeScript types available
+
+#### 2.2 MCP Client Utilities
+
+**File**: `adgn/src/adgn/agent/web/src/features/mcp/client.ts`
 
 ```typescript
-// src/features/mcp/client.ts
-
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
@@ -405,22 +496,85 @@ export async function createMCPClient(config: MCPClientConfig): Promise<Client> 
     version: '1.0.0'
   }, {
     capabilities: {
-      resources: { subscribe: true }
+      resources: { subscribe: true }  // Enable resource subscriptions
     }
   })
 
   await client.connect(transport)
   return client
 }
+
+// MCP SDK provides:
+// - client.request({ method: 'resources/read', params: { uri } })
+// - client.request({ method: 'resources/subscribe', params: { uri } })
+// - client.request({ method: 'tools/call', params: { name, arguments } })
+// - client.on('notification', handler)  // For resource update notifications
 ```
 
-**2.3 Agents Client** (Cross-Agent Management)
+**Acceptance**:
+- [ ] Client connects successfully with token
+- [ ] Client can read resources
+- [ ] Client can subscribe to resources
+- [ ] Client receives notifications
+
+#### 2.3 Token Management
+
+**File**: `adgn/src/adgn/agent/web/src/features/auth/token.ts`
 
 ```typescript
-// src/features/agents/mcpClient.ts
+const TOKEN_KEY = 'ducktape_ui_token'
 
+export function getTokenFromURL(): string | null {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('token')
+}
+
+export function getTokenFromStorage(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function saveTokenToStorage(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token)
+  } catch (e) {
+    console.warn('Failed to save token to localStorage:', e)
+  }
+}
+
+export function getToken(): string | null {
+  // Priority: URL param > localStorage
+  return getTokenFromURL() || getTokenFromStorage()
+}
+
+export function handleAuthFailure(): void {
+  // Clear invalid token
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+  } catch {}
+
+  // Redirect to get new token (user must restart server)
+  alert('Authentication failed. Please use the Management UI URL from server startup.')
+}
+```
+
+**Acceptance**:
+- [ ] Token extracted from URL on first load
+- [ ] Token saved to localStorage
+- [ ] Token retrieved from localStorage on subsequent loads
+- [ ] Auth failure clears token and shows message
+
+#### 2.4 Agents Client
+
+**File**: `adgn/src/adgn/agent/web/src/features/agents/mcpClient.ts`
+
+```typescript
 import { createMCPClient } from '../mcp/client'
 import { writable } from 'svelte/store'
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 
 export interface AgentInfo {
   agent_id: string
@@ -429,16 +583,16 @@ export interface AgentInfo {
     agent_loop: boolean
   }
   mode: 'local' | 'bridge'
-  state_uri?: string  // Only present for local agents
+  state_uri?: string
+  approvals_uri?: string
 }
 
 export const agentList = writable<AgentInfo[]>([])
+export const globalApprovals = writable<any[]>([])
 
 let agentsClient: Client | null = null
-const perAgentStateClients: Map<string, Client> = new Map()
 
 export async function connectAgents(token: string) {
-  // Connect to cross-agent management server
   agentsClient = await createMCPClient({
     name: 'agents',
     url: 'http://localhost:8081/mcp/agents',
@@ -447,17 +601,29 @@ export async function connectAgents(token: string) {
 
   // Initial fetch
   await refreshAgentList()
+  await refreshGlobalApprovals()
 
-  // Subscribe to agent list updates
+  // Subscribe to updates
   await agentsClient.request({
     method: 'resources/subscribe',
     params: { uri: 'resource://agents/list' }
   })
+  await agentsClient.request({
+    method: 'resources/subscribe',
+    params: { uri: 'resource://approvals/pending' }
+  })
 
-  // Listen for agent list changes
-  agentsClient.on('notification', (notif) => {
+  // Listen for resource updates
+  agentsClient.on('notification', async (notif: any) => {
     if (notif.method === 'notifications/resources/updated') {
-      refreshAgentList()
+      const uri = notif.params.uri
+      if (uri === 'resource://agents/list') {
+        await refreshAgentList()
+      } else if (uri === 'resource://approvals/pending') {
+        await refreshGlobalApprovals()
+      } else if (uri.startsWith('resource://agents/') && uri.endsWith('/state')) {
+        // State changed for specific agent - could refresh detail view
+      }
     }
   })
 }
@@ -470,258 +636,459 @@ async function refreshAgentList() {
     params: { uri: 'resource://agents/list' }
   })
 
-  const agents: AgentInfo[] = JSON.parse(result.contents[0].text)
-  agentList.set(agents)
+  const data = JSON.parse(result.contents[0].text)
+  agentList.set(data.agents)
+}
 
-  // Connect to state endpoints for local agents
-  for (const agent of agents) {
-    if (agent.state_uri && !perAgentStateClients.has(agent.agent_id)) {
-      await connectAgentState(agent.agent_id, token)
+async function refreshGlobalApprovals() {
+  if (!agentsClient) return
+
+  const result = await agentsClient.request({
+    method: 'resources/read',
+    params: { uri: 'resource://approvals/pending' }
+  })
+
+  const data = JSON.parse(result.contents[0].text)
+  globalApprovals.set(data.pending)
+}
+
+export async function approveToolCall(agentId: string, callId: string) {
+  if (!agentsClient) throw new Error('Not connected')
+
+  await agentsClient.request({
+    method: 'tools/call',
+    params: {
+      name: 'approve_tool_call',
+      arguments: { agent_id: agentId, call_id: callId }
     }
-  }
+  })
 }
 
-async function connectAgentState(agentId: string, token: string) {
-  const client = await createMCPClient({
-    name: `state_${agentId}`,
-    url: `http://localhost:8081/mcp/${agentId}/state`,
-    token
-  })
+export async function rejectToolCall(agentId: string, callId: string, reason: string) {
+  if (!agentsClient) throw new Error('Not connected')
 
-  // Subscribe to state updates
-  await client.request({
-    method: 'resources/subscribe',
-    params: { uri: `resource://${agentId}/state` }
+  await agentsClient.request({
+    method: 'tools/call',
+    params: {
+      name: 'reject_tool_call',
+      arguments: { agent_id: agentId, call_id: callId, reason }
+    }
   })
-
-  perAgentStateClients.set(agentId, client)
 }
-```
 
-**2.4 Approvals Client**
+export async function abortAgent(agentId: string) {
+  if (!agentsClient) throw new Error('Not connected')
 
-```typescript
-// src/features/approvals/mcpClient.ts
-
-export async function connectApprovals(agentId: string, token: string) {
-  const client = await createMCPClient({
-    name: `approvals_${agentId}`,
-    url: `http://localhost:8081/mcp/${agentId}/approvals`,
-    token
+  await agentsClient.request({
+    method: 'tools/call',
+    params: {
+      name: 'abort_agent',
+      arguments: { agent_id: agentId }
+    }
   })
-
-  // Subscribe to approval updates
-  await client.request({
-    method: 'resources/subscribe',
-    params: { uri: 'resource://approval-policy/approvals' }
-  })
-
-  return client
 }
 ```
 
-**2.5 Update UI Components**
+**Acceptance**:
+- [ ] Connects to agents server successfully
+- [ ] Fetches agent list
+- [ ] Fetches global approvals
+- [ ] Subscribes to resource updates
+- [ ] Receives notifications and refreshes data
+- [ ] `approveToolCall` works
+- [ ] `rejectToolCall` works
+- [ ] `abortAgent` works
 
-Replace WebSocket usage with MCP client calls:
+#### 2.5 UI Components
 
-```typescript
-// Before (WebSocket):
-const ws = new WebSocket('ws://localhost:8081/ws/approvals')
-ws.onmessage = (msg) => { /* handle approval */ }
+**File**: `adgn/src/adgn/agent/web/src/App.svelte`
 
-// After (MCP):
-const client = await connectApprovals(agentId, token)
-client.on('notification', async (notif) => {
-  if (notif.method === 'notifications/resources/updated') {
-    // Refresh approvals from resource
-    const approvals = await client.request({
-      method: 'resources/read',
-      params: { uri: notif.params.uri }
-    })
-    // Update UI
-  }
-})
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte'
+  import { getToken, handleAuthFailure } from './features/auth/token'
+  import { connectAgents, agentList, globalApprovals } from './features/agents/mcpClient'
+
+  let loading = true
+  let error: string | null = null
+
+  onMount(async () => {
+    const token = getToken()
+    if (!token) {
+      error = 'No authentication token found. Please use the Management UI URL from server startup.'
+      loading = false
+      return
+    }
+
+    try {
+      await connectAgents(token)
+      loading = false
+    } catch (e) {
+      console.error('Failed to connect:', e)
+      handleAuthFailure()
+      error = 'Authentication failed'
+      loading = false
+    }
+  })
+</script>
+
+{#if loading}
+  <div>Loading...</div>
+{:else if error}
+  <div class="error">{error}</div>
+{:else}
+  <div class="app">
+    <!-- Agent list, approvals UI, etc. -->
+    <AgentList agents={$agentList} />
+    <ApprovalsList approvals={$globalApprovals} />
+  </div>
+{/if}
 ```
 
-### Phase 3: Shared Models (Pydantic → TypeScript)
+**Acceptance**:
+- [ ] Shows loading state on startup
+- [ ] Extracts token from URL
+- [ ] Connects to MCP server
+- [ ] Displays agents and approvals
+- [ ] Shows error on auth failure
 
-**3.1 Install Generator**
+### Phase 3: Shared Models
+
+**No stub implementations** - full type generation required.
+
+#### 3.1 Install Generator
 
 ```bash
+cd adgn/src/adgn/agent/web
 npm install --save-dev pydantic-to-typescript
 ```
 
-**3.2 Configure Generation**
+#### 3.2 Configure Generation
+
+**File**: `adgn/src/adgn/agent/web/package.json`
 
 ```json
-// package.json
 {
   "scripts": {
     "generate-types": "pydantic2ts --module adgn.agent.server.protocol --output src/types/protocol.ts",
-    "generate-types:watch": "pydantic2ts --module adgn.agent.server.protocol --output src/types/protocol.ts --watch"
+    "prebuild": "npm run generate-types"
   }
 }
 ```
 
-**3.3 Mark Pydantic Models for Export**
+#### 3.3 Export Pydantic Models
 
-Ensure key models are exported:
+**File**: `adgn/src/adgn/agent/server/protocol.py`
+
+Ensure all frontend-facing models are exported:
 - `ApprovalBrief`
 - `ApprovalPendingEvt`
 - `ServerCapabilities`
 - `SamplingSnapshot`
-- `ServerEntry` (and discriminated union variants)
+- `ServerEntry` (discriminated union)
+- Tool input/output schemas
 
-**3.4 Validation Tests**
+**Acceptance**:
+- [ ] `npm run generate-types` succeeds
+- [ ] Generated TypeScript types match Pydantic models
+- [ ] Frontend can import and use generated types
+- [ ] Test type compatibility with actual API responses
+
+### Phase 4: End-to-End Testing
+
+**Full acceptance testing** - no incomplete features.
+
+#### 4.1 Backend Tests
+
+**File**: `adgn/tests/agent/mcp_bridge/test_agents_server.py`
 
 ```python
-# tests/agent/test_type_compatibility.py
+async def test_agents_server_basic():
+    """Test unified agents server basic functionality."""
+    # Setup: Create registry with 2 agents (1 local, 1 bridge)
+    registry = ...
+    agents_server = make_agents_server(registry)
 
-def test_typescript_types_match_pydantic():
-    """Ensure generated TypeScript matches Python models."""
-    # Compare generated JSON schemas
-    # Fail if drift detected
+    # Connect MCP client
+    client = ...
+
+    # Test: List agents
+    result = await client.read_resource("resource://agents/list")
+    agents = json.loads(result.contents[0].text)["agents"]
+    assert len(agents) == 2
+    assert agents[0]["mode"] in ["local", "bridge"]
+
+    # Test: Read local agent state
+    local_agent = [a for a in agents if a["mode"] == "local"][0]
+    state = await client.read_resource(local_agent["state_uri"])
+    assert "ts" in state  # SamplingSnapshot
+
+    # Test: Global approvals mailbox
+    approvals = await client.read_resource("resource://approvals/pending")
+    assert "pending" in approvals
+
+    # Test: Approve tool call
+    result = await client.call_tool("approve_tool_call", {
+        "agent_id": "test_agent",
+        "call_id": "test_call"
+    })
+    assert result["status"] == "approved"
+
+async def test_resource_notifications():
+    """Test resource update notifications."""
+    # Setup
+    registry = ...
+    agents_server = make_agents_server(registry)
+    client = ...
+
+    # Subscribe to global approvals
+    await client.subscribe_resource("resource://approvals/pending")
+
+    # Trigger approval change
+    # (via approval engine event)
+
+    # Assert notification received
+    # Assert resource updated
+
+async def test_routing_to_agent_infrastructure():
+    """Test tool routing to per-agent infrastructure."""
+    # Setup with mock infrastructure
+    # Call approve_tool_call(agent_id="foo", ...)
+    # Verify called infra.approval_engine.approve()
+
+async def test_abort_agent():
+    """Test agent abort routing."""
+    # Setup local agent
+    # Call abort_agent(agent_id="foo")
+    # Verify called infra.agent_loop.abort()
+
+    # Test error for bridge agent
+    # Call abort_agent(agent_id="bridge_agent")
+    # Assert raises error
+
+async def test_token_auth():
+    """Test UI token authentication."""
+    # Valid token: succeeds
+    # Invalid token: 401
+    # No token: 401
 ```
 
-### Phase 4: Migration & Cleanup
+**Acceptance**:
+- [ ] All backend tests pass
+- [ ] Resource reads work
+- [ ] Tool calls route correctly
+- [ ] Notifications fire correctly
+- [ ] Auth works correctly
 
-**4.1 Remove WebSocket Stubs**
+#### 4.2 Frontend Tests
 
-Delete stub endpoints:
-- `/ws/policy`
-- `/ws/approvals`
-- `/ws/mcp`
+**File**: `adgn/src/adgn/agent/web/src/features/agents/mcpClient.test.ts`
 
-**4.2 Update Tests**
+```typescript
+describe('MCP Client', () => {
+  it('connects with valid token', async () => {
+    // Mock MCP server
+    // Connect with token
+    // Assert connected
+  })
 
-- Remove WebSocket test fixtures
-- Add MCP client test fixtures
-- Test resource subscriptions
-- Test notifications
+  it('fetches agent list', async () => {
+    // Connect
+    // Fetch agents
+    // Assert correct data
+  })
 
-**4.3 Documentation**
+  it('approves tool call', async () => {
+    // Connect
+    // Call approveToolCall
+    // Assert tool called with correct args
+  })
 
-Update docs to reflect MCP-based architecture.
+  it('receives resource notifications', async () => {
+    // Connect
+    // Subscribe to resource
+    // Trigger notification
+    // Assert store updated
+  })
+})
+```
 
-## Decisions Summary
+**Acceptance**:
+- [ ] All frontend tests pass
+- [ ] Client connects successfully
+- [ ] Resources fetched correctly
+- [ ] Tools called correctly
+- [ ] Notifications received and handled
 
-### 1. Token Management ✅
-- **Session-based** token (valid for server lifetime)
-- **Generate new on each boot** (or env var override for configured secret)
-- **Store in localStorage** for convenience (graceful fallback if auth fails)
-- **No expiry** during server lifetime
+#### 4.3 Integration Tests
 
-### 2. Architecture ✅
-- **Multiple independent MCP servers** + cross-agent management server
-- **`agents` server** for global agent list
-- **Per-agent servers** for approvals, compositor, state
-- **Path-based routing** (`/mcp/{agent_id}/approvals`)
+**File**: `adgn/tests/agent/mcp_bridge/test_e2e_integration.py`
 
-### 3. Elicitations ✅
-- **Phase in later** (Phase 5+)
-- **Keep current approval engine**, add elicitation layer when ready
+```python
+async def test_full_approval_flow():
+    """End-to-end approval flow test."""
+    # 1. Start server with agents
+    # 2. Connect frontend client
+    # 3. Trigger tool call (blocked by policy)
+    # 4. Verify appears in global approvals
+    # 5. Approve via frontend client
+    # 6. Verify tool call proceeds
+    # 7. Verify approval removed from pending
 
-### 4. Shared Models ✅
-- **Auto-generate TypeScript from Pydantic**
-- Include all MCP inputs/outputs frontend uses
-- Models: `ApprovalBrief`, `ServerCapabilities`, `SamplingSnapshot`, `ServerEntry`, policy models
+async def test_multi_agent_orchestration():
+    """Test with multiple agents."""
+    # 1. Create 3 agents (2 local, 1 bridge)
+    # 2. Each agent has pending approvals
+    # 3. Verify global mailbox shows all
+    # 4. Approve from different agents
+    # 5. Verify correct routing
 
-### 5. Agent Mode Detection ✅
-- Check **two factors**:
-  - (a) Has chat/UI component
-  - (b) Agent loop is under our control
-- **Local agents**: Have agent loop + sampling state resource
-- **Bridge agents**: No agent loop, no sampling state
+async def test_agent_state_updates():
+    """Test agent state change notifications."""
+    # 1. Start local agent (idle)
+    # 2. Subscribe to state
+    # 3. Start agent loop (running)
+    # 4. Verify notification received
+    # 5. Abort agent
+    # 6. Verify notification received
+```
 
-### 6. External Agent Sampling State ✅
-- **No sampling state** for external agents (we have no way to know)
-- Only local agents expose `/mcp/{agent_id}/state` endpoint
+**Acceptance**:
+- [ ] Full approval flow works end-to-end
+- [ ] Multi-agent scenarios work
+- [ ] State updates propagate correctly
+- [ ] All integration tests pass
 
-### 7. Compositor Forwarding ✅
-- Add **basic integration test** for URL translation
-- Confirm notifications propagate with correct prefixes
+### Phase 5: Migration & Cleanup
 
-### 8. Browser Compatibility ✅
-- **Modern browsers only** (Chrome/Firefox/Safari/Edge last 2 versions)
-- No legacy browser support needed
+#### 5.1 Remove WebSocket Code
 
-## Open Questions / Research Needed
+**Files to delete**:
+- `/ws/policy` endpoint
+- `/ws/approvals` endpoint
+- `/ws/mcp` endpoint
+- WebSocket test fixtures
 
-1. **MCP SDK Browser Bundle Size**: How large is `@modelcontextprotocol/sdk` after bundling?
-2. **Streamable HTTP Session Management**: How does SDK handle reconnection?
-3. **Resource Notification Performance**: What's the latency for resource updates?
-4. **Multiple Concurrent Clients**: Can one frontend have multiple MCP clients open?
-   - Research: Yes, one client per server is fine
-5. **Compositor URL Translation**: Verify FastMCP proxy correctly prefixes resource URIs
-   - From code review: `_ChildHandler` attributes origin, proxy handles prefixing
-   - **Confirmed**: Compositor forwards notifications with URL translation
+**Acceptance**:
+- [ ] All WebSocket code removed
+- [ ] No dead code remains
+- [ ] Tests updated to use MCP
 
-## Implementation Stubs Needed
+#### 5.2 Documentation
 
-### Backend Stubs
-- [ ] `InfrastructureRegistry.known_agents()` - list all agent IDs
-- [ ] **`agents` server** - cross-agent management (lists agents + capabilities)
-- [ ] **`state_{agent_id}` server** - per-agent sampling state (local agents only)
-- [ ] Path-based routing middleware for MCP servers
-- [ ] UI token generation (on boot, with env var override)
-- [ ] UI token auth middleware
-- [ ] CLI output: print Management UI URL with token
-- [ ] Hook agent loop state changes to broadcast state resource updates
+Update docs:
+- Architecture overview
+- API reference for `agents` server
+- Frontend integration guide
+- Deployment guide
 
-### Frontend Stubs
-- [ ] MCP client utilities (`createMCPClient`)
-- [ ] Token extraction from URL query param
-- [ ] Token storage in localStorage (with auth failure fallback)
-- [ ] **Agents client** with subscriptions (cross-agent management)
-- [ ] **Per-agent state clients** with subscriptions (for local agents)
-- [ ] Approvals client with subscriptions
-- [ ] Compositor meta client with subscriptions
+**Acceptance**:
+- [ ] Documentation complete and accurate
+- [ ] Examples work
+- [ ] No outdated information
 
-### Shared Infrastructure
-- [ ] Pydantic → TypeScript generator setup
-- [ ] Validation tests for type compatibility
-- [ ] **Integration test** for compositor URL translation/notification forwarding
+## Future: MCP Elicitations
+
+### Elicitation-Based Approvals (Phase 6+)
+
+**Why elicitations are perfect for approvals**:
+- Standardized human-in-the-loop workflow
+- 3-action model (accept/decline/cancel) built-in
+- Client controls UX (native approval dialog)
+- Server can't request PII/credentials (security)
+
+**How it would work**:
+
+```python
+# Backend: Server sends elicitation
+@server.elicitation()
+async def request_approval(call_id: str, tool: str, args: dict):
+    """Request user approval for tool call."""
+    return {
+        "type": "approval",
+        "call_id": call_id,
+        "tool": tool,
+        "arguments": args,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "approved": {"type": "boolean"},
+                "reason": {"type": "string", "optional": True}
+            }
+        }
+    }
+
+# Frontend: Client receives elicitation
+client.on('elicitation', async (request) => {
+  // Show native approval dialog
+  const result = await showApprovalDialog(request)
+
+  // Respond with accept/decline/cancel
+  await client.respondToElicitation(request.id, {
+    action: result.approved ? 'accept' : 'decline',
+    content: { approved: result.approved, reason: result.reason }
+  })
+})
+```
+
+**Migration path**:
+1. Keep tool-based approvals (backward compat)
+2. Add elicitation support to `agents` server
+3. Frontend detects elicitation capability and uses it
+4. Eventually deprecate tool-based approvals
 
 ## Success Metrics
 
-- [ ] Frontend connects to all MCP servers successfully
-- [ ] Resource subscriptions work (notifications received)
-- [ ] Approvals flow works end-to-end via MCP
-- [ ] Policy updates propagate to UI in real-time
-- [ ] MCP server list updates dynamically
-- [ ] Token auth prevents unauthorized access
-- [ ] No WebSocket code remains
-- [ ] TypeScript types match Pydantic models (validated)
+### Phase 1 (Backend)
+- [ ] Unified `agents` server implemented (no stubs)
+- [ ] All resources work (`agents/list`, `agents/{id}/state`, `approvals/pending`)
+- [ ] All tools work (`approve_tool_call`, `reject_tool_call`, `abort_agent`)
+- [ ] Resource notifications fire correctly
+- [ ] Token auth works
+- [ ] CLI prints Management UI URL with token
+- [ ] All backend tests pass
+
+### Phase 2 (Frontend)
+- [ ] MCP SDK installed
+- [ ] Client connects successfully
+- [ ] Token management works (URL → localStorage)
+- [ ] Agent list displays
+- [ ] Global approvals mailbox displays
+- [ ] Approve/reject/abort actions work
+- [ ] Notifications update UI in real-time
+- [ ] All frontend tests pass
+
+### Phase 3 (Shared Models)
+- [ ] TypeScript types auto-generated from Pydantic
+- [ ] Type compatibility validated
+- [ ] No manual type duplication
+
+### Phase 4 (Testing)
+- [ ] All backend tests pass
+- [ ] All frontend tests pass
+- [ ] All integration tests pass
+- [ ] End-to-end approval flow works
+- [ ] Multi-agent scenarios work
+
+### Phase 5 (Cleanup)
+- [ ] WebSocket code removed
+- [ ] Documentation complete
+- [ ] No dead code
+- [ ] No stub implementations
 
 ## Timeline Estimate
 
-- **Phase 1** (Backend): 2-3 days
+- **Phase 1** (Backend): 3-4 days
 - **Phase 2** (Frontend): 2-3 days
 - **Phase 3** (Shared Models): 1 day
-- **Phase 4** (Migration & Cleanup): 1 day
-- **Total**: ~1 week
+- **Phase 4** (Testing): 2-3 days
+- **Phase 5** (Cleanup): 1 day
+- **Total**: ~2 weeks
 
 ## References
 
-- [MCP Elicitation Spec](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation)
+- [MCP Specification](https://modelcontextprotocol.io/specification/2025-06-18/)
 - [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
-- [FastMCP Docs](https://github.com/jlowin/fastmcp)
+- [MCP Elicitations](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation)
 - [Streamable HTTP Transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
-
-## Notes
-
-- **Compositor notification forwarding**: Verified in `compositor/server.py:121-148`
-  - `add_resource_updated_listener` receives notifications from children
-  - `_ChildHandler` captures `on_resource_updated` with origin attribution
-  - FastMCP proxy handles URI prefixing automatically
-
-- **Existing patterns**: `compositor_meta` server already demonstrates this architecture
-  - Uses `NotifyingFastMCP` for broadcasting
-  - Listens to compositor mount events
-  - Broadcasts resource updates via `broadcast_resource_updated`
-
-- **Resource subscriptions**: Already implemented in `approval_policy/server.py:100-117`
-  - `@mcp_server.subscribe_resource()` and `@mcp_server.unsubscribe_resource()` handlers
-  - Per-session subscription tracking
-  - Works with `NotifyingFastMCP.broadcast_resource_updated()`
