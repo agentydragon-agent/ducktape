@@ -105,33 +105,78 @@ def to_jsonl_record(evt: EventType) -> JsonlRecord:
 
 
 class BaseHandler:
-    """Base handler protocol with no-op implementations (typed-only).
+    """Base class for agent event handlers with no-op default implementations.
 
-    Implementations must be fast and non-blocking. Exceptions should propagate.
+    Subclasses override specific methods to react to agent loop events. All methods
+    have sensible defaults so handlers only implement what they need.
+
+    **Contract**:
+    - Implementations MUST be fast and non-blocking (use async/await for I/O)
+    - Exceptions propagate to the agent loop (fail-fast by default)
+    - Return values from hooks influence loop control (e.g., on_before_sample)
+
+    **Common use cases**:
+    - Display progress/events to UI (on_user_text_event, on_assistant_text_event)
+    - Log transcripts (on_tool_call_event, on_tool_result_event)
+    - Control sampling behavior (on_before_sample returns LoopDecision)
+    - Persist agent state (on_response)
     """
 
     def on_error(self, exc: Exception) -> None:
-        """Hook for fatal agent errors. Default: propagate exception (fail-fast)."""
+        """Called when the agent encounters a fatal error.
+
+        Default: re-raise exception (fail-fast). Override to log or suppress errors.
+        """
         raise exc
 
-    # Typed hooks (final API)
-    def on_response(self, evt: Response) -> None:  # default no-op
+    def on_response(self, evt: Response) -> None:
+        """Called after receiving a complete model response with usage stats.
+
+        Default: no-op.
+        """
         return None
 
-    def on_before_sample(self) -> LoopDecision:  # default: no decision
+    def on_before_sample(self) -> LoopDecision:
+        """Called before each model sampling step to control loop behavior.
+
+        Default: no decision (let other handlers or agent decide).
+
+        Returns:
+            LoopDecision: Continue | Abort | NoLoopDecision
+        """
         return NoLoopDecision()
 
-    def on_user_text_event(self, evt: UserText) -> None:  # default no-op
+    def on_user_text_event(self, evt: UserText) -> None:
+        """Called when user text is added to the conversation.
+
+        Default: no-op.
+        """
         return None
 
-    def on_assistant_text_event(self, evt: AssistantText) -> None:  # default no-op
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
+        """Called when assistant generates text.
+
+        Default: no-op.
+        """
         return None
 
-    def on_tool_call_event(self, evt: ToolCall) -> None:  # default no-op
+    def on_tool_call_event(self, evt: ToolCall) -> None:
+        """Called when the model requests a tool call.
+
+        Default: no-op.
+        """
         return None
 
-    def on_tool_result_event(self, evt: ToolCallOutput) -> None:  # default no-op
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
+        """Called when a tool call completes and returns a result.
+
+        Default: no-op.
+        """
         return None
 
-    def on_reasoning(self, item: ReasoningItem) -> None:  # default no-op
+    def on_reasoning(self, item: ReasoningItem) -> None:
+        """Called when the model emits reasoning tokens (extended thinking mode).
+
+        Default: no-op.
+        """
         return None
