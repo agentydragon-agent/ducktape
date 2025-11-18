@@ -31,7 +31,7 @@ def run_policy_source(
     client = docker_client
     try:
         client.images.get(img)
-    except docker.errors.ImageNotFound as e:  # type: ignore[attr-defined]
+    except docker.errors.ImageNotFound as e:  # type: ignore[attr-defined]  # docker-py stubs incomplete
         raise RuntimeError(f"policy eval image not found: {img}") from e
 
     # Avoid attach_socket/stdin I/O (flaky on some Docker backends e.g., Colima).
@@ -80,5 +80,5 @@ def run_policy_source(
     finally:
         try:
             container.remove(force=True)
-        except (docker.errors.APIError, docker.errors.NotFound) as e:  # type: ignore[attr-defined]
+        except (docker.errors.APIError, docker.errors.NotFound) as e:  # type: ignore[attr-defined]  # docker-py stubs incomplete
             logger.warning("policy eval container cleanup failed", exc_info=e)

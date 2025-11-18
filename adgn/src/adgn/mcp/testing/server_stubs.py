@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 import inspect
-from typing import TYPE_CHECKING, Any, TypeVar, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 from .typed_stubs import TypedClient
 
-T = TypeVar("T")
+T = TypeVar("T", bound="ServerStub")
 
 
 class ServerStub:
@@ -87,7 +87,8 @@ class ServerStub:
     def from_server(cls: type[T], server: FastMCP, session: Client) -> T:
         """Create a typed stub from a FastMCP server and session."""
         client = TypedClient.from_server(server, session)
-        return cls(client)  # type: ignore[call-arg]
+        # TypeVar bound to ServerStub ensures cls() accepts TypedClient
+        return cast(T, cls(client))
 
     def _stub(self, name: str, output_type: type):
         """Create a typed stub for a tool."""

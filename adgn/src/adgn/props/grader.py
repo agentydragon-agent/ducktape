@@ -257,7 +257,7 @@ def make_grader_submit_server_from_inputs(
 
 
 @render_to_rich.register
-def _render_grade_submit_payload(obj: GradeSubmitPayload):  # type: ignore[misc]
+def _render_grade_submit_payload(obj: GradeSubmitPayload):
     """Rich renderer for GradeSubmitPayload (concise summary)."""
     bits: list[RenderableType] = []
 

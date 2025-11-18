@@ -97,7 +97,7 @@ async def _run_critic_for_specimen(
                 self._done: bool = False
                 self._emitted: bool = False
 
-            def on_before_sample(self):  # type: ignore[override]
+            def on_before_sample(self):
                 if self._done:
                     return NoLoopDecision()
                 # First cycle: emit synthetic calls, but do NOT mark done yet
@@ -144,12 +144,12 @@ async def _run_critic_for_specimen(
     out_dir = run_dir / specimen
     out_dir.mkdir(parents=True, exist_ok=True)
     if critic_state.error is not None:
-        (out_dir / "critic_error.json").write_text(critic_state.error.model_dump_json(indent=2), encoding="utf-8")  # type: ignore[attr-defined]
+        (out_dir / "critic_error.json").write_text(critic_state.error.model_dump_json(indent=2), encoding="utf-8")
         raise RuntimeError(
             f"critic error: {critic_state.error.message}"
         )  # surfaced to caller; per-round errors.json aggregates
     assert critic_state.result is not None
-    (out_dir / "critic.json").write_text(critic_state.result.model_dump_json(indent=2), encoding="utf-8")  # type: ignore[attr-defined]
+    (out_dir / "critic.json").write_text(critic_state.result.model_dump_json(indent=2), encoding="utf-8")
     return critic_state.result
 
 

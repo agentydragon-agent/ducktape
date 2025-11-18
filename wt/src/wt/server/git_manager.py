@@ -102,7 +102,7 @@ class GitManager:
         repo = self.get_repo(worktree)
         try:
             # Resolve reference to commit object in the given repo
-            resolved = repo.resolve_refish(ref)  # type: ignore[attr-defined]
+            resolved = repo.resolve_refish(ref)  # type: ignore[attr-defined]  # pygit2 stubs incomplete for resolve_refish
             commit = resolved[0]
         except KeyError as e:
             raise NoSuchRefError(f"Cannot get commit object for {ref}: {e}") from e
@@ -121,7 +121,7 @@ class GitManager:
 
     def verify_ref_exists(self, ref: str) -> str:
         try:
-            resolved = self._main_repo.resolve_refish(ref)  # type: ignore[attr-defined]
+            resolved = self._main_repo.resolve_refish(ref)  # type: ignore[attr-defined]  # pygit2 stubs incomplete for resolve_refish
             return str(resolved[0].id)
         except KeyError as e:
             raise NoSuchRefError(f"Reference does not exist: {ref}") from e
@@ -199,7 +199,7 @@ class GitManager:
 
     def verify_branch_exists(self, branch: str) -> str:
         try:
-            resolved = self._main_repo.resolve_refish(f"refs/heads/{branch}")  # type: ignore[attr-defined]
+            resolved = self._main_repo.resolve_refish(f"refs/heads/{branch}")  # type: ignore[attr-defined]  # pygit2 stubs incomplete for resolve_refish
             return str(resolved[0].id)
         except KeyError as e:
             raise NoSuchBranchError(f"Branch {branch} does not exist") from e

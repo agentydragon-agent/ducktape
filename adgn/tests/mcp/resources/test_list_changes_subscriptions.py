@@ -11,10 +11,10 @@ from adgn.mcp.resources.server import make_resources_server
 
 
 class _StubGatewaySession:
-    async def subscribe_resource(self, uri):  # type: ignore[no-untyped-def]
+    async def subscribe_resource(self, uri: str) -> None:
         return None
 
-    async def unsubscribe_resource(self, uri):  # type: ignore[no-untyped-def]
+    async def unsubscribe_resource(self, uri: str) -> None:
         return None
 
 

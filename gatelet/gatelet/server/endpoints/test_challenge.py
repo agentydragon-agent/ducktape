@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.config import settings
 from gatelet.server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_option
-from gatelet.server.models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
+from gatelet.server.models import (  # type: ignore[import] - Runtime-only import (SQLAlchemy models)
+    AuthCRSession,
+    AuthKey,
+    AuthNonce,
+)
 
 
 @pytest.mark.asyncio

@@ -48,6 +48,7 @@ class ServiceManager:
         bus = await MessageBus(bus_address=self.bus_address).connect()
         introspection = await bus.introspect("org.example.TestService", "/org/example/TestObject")
         obj = bus.get_proxy_object("org.example.TestService", "/org/example/TestObject", introspection)
+        # dbus-fast dynamically generates proxy methods from introspection XML
         interface = obj.get_interface("org.example.TestInterface")  # type: ignore[attr-defined]
         await interface.call_emit_signal(msg)  # type: ignore[attr-defined]
         bus.disconnect()
@@ -58,6 +59,7 @@ class ServiceManager:
         bus = await MessageBus(bus_address=self.bus_address).connect()
         introspection = await bus.introspect("org.example.TestService", "/org/example/TestObject")
         obj = bus.get_proxy_object("org.example.TestService", "/org/example/TestObject", introspection)
+        # dbus-fast dynamically generates proxy methods from introspection XML
         interface = obj.get_interface("org.example.TestInterface")  # type: ignore[attr-defined]
         await interface.call_quit()  # type: ignore[attr-defined]
         bus.disconnect()

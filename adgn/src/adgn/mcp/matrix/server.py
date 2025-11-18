@@ -129,14 +129,18 @@ class _MatrixClient:
         self.inbox = inbox
         self._notify = notify
         self._client: MautrixClient | None = None
+        self._http_session: Any | None = None  # aiohttp.ClientSession
         self._room_id: RoomID | None = None
         self._sync_task: asyncio.Future[Any] | None = None
         self._state_store: StateStore | None = None
 
     async def start(self) -> None:
+        from aiohttp import ClientSession
+
         state_store = FileStateStore(self.cfg.store_path) if self.cfg.store_path else None
         self._state_store = state_store
-        api = HTTPAPI(self.cfg.homeserver)
+        self._http_session = ClientSession()
+        api = HTTPAPI(self.cfg.homeserver, client_session=self._http_session)
         self._client = MautrixClient(mxid=UserID(self.cfg.user_id), api=api, state_store=state_store)
         c = self._client
 
@@ -209,17 +213,11 @@ class _MatrixClient:
             task.cancel()
             with suppress(Exception):
                 await task
-        session = None
-        try:
-            session = c.api.session  # type: ignore[attr-defined]
-        except AttributeError:
-            session = None
-        except Exception as exc:
-            logger.warning("matrix HTTP session lookup failed", exc_info=exc)
-        if session is not None:
+        # Close HTTP session
+        if self._http_session is not None:
             try:
-                if not session.closed:
-                    await session.close()
+                if not self._http_session.closed:
+                    await self._http_session.close()
             except Exception as exc:
                 logger.warning("matrix HTTP session close failed", exc_info=exc)
         if self._state_store is not None:

@@ -535,7 +535,8 @@ class ResponsesDB:
             snapshot_model = snapshot.to_model()
             if snapshot_model.status != ResponseStatus.COMPLETE or snapshot_model.response is None:
                 return None
-            result: dict[str, Any] = snapshot_model.response.model_dump(mode="json")  # type: ignore[assignment]
+            # model_dump with mode="json" returns dict[str, Any]
+            result: dict[str, Any] = snapshot_model.response.model_dump(mode="json")
             return result
 
     async def get_response_detail(self, identifier: str) -> ResponseDetail | None:

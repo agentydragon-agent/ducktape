@@ -56,7 +56,7 @@ class BaseNode(BaseModel):
     model_config = ConfigDict(extra="allow", frozen=True, arbitrary_types_allowed=True)
 
     @property
-    def name(self) -> str | None:  # type: ignore[override]
+    def name(self) -> str | None:  # type: ignore[override]  # Narrows return type from Pydantic's BaseModel.name (ModelPrivateAttr)
         return self.props.name
 
     @property

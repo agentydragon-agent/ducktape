@@ -47,7 +47,7 @@ class LintSubmitState:
 
 # Register Rich renderer for LintSubmitPayload here to avoid import cycles
 @render_to_rich.register
-def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
+def _render_lint_submit_payload(obj: LintSubmitPayload):
     # Anchors table - derive corrections from findings (AnchorIncorrect) when present
     anchors_tbl = Table(title=None, show_lines=False, expand=True)
     anchors_tbl.add_column("Path", style="cyan")
@@ -281,7 +281,7 @@ class LinterController(BaseHandler):
                     make_nl_tool_call(self._wiring.server_name, cont_path, f"bootstrap:prop:{i + 1}")
                 )
 
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         # Stop immediately once submit_result was called
         if self._state.result is not None:
             return Abort()

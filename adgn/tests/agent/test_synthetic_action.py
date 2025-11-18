@@ -14,7 +14,7 @@ class SyntheticOnceHandler(BaseHandler):
         self._done = False
         self._outputs = list(outputs)
 
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         if self._done:
             return Abort()
         self._done = True

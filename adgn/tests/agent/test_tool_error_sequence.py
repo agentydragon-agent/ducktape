@@ -37,7 +37,7 @@ async def test_tool_error_is_surfaced_in_sequence(
         # Create agent and run one turn
 
         class _AutoHandler(BaseHandler):
-            def on_before_sample(self):  # type: ignore[override]
+            def on_before_sample(self):
                 return Continue(Auto())
 
         rec = RecordingHandler()

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.handlers import AuthHandlerError
 from ..config import settings
 from ..database import get_db_session
-from ..models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
+from ..models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import] - Runtime-only import (SQLAlchemy models)
 from ..shared import templates
 
 MAX_OPTIONS = 256

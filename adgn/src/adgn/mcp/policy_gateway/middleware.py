@@ -184,8 +184,9 @@ class PolicyGatewayMiddleware(Middleware):
                         else:
                             msg = getattr(err, "message", None)
                             try:
-                                code_val = int(err.code)  # type: ignore[arg-type]
-                            except Exception:
+                                # err.code could be int, str, or other types
+                                code_val = int(err.code) if err.code is not None else None
+                            except (ValueError, TypeError):
                                 code_val = None
                     if msg is None:
                         msg = getattr(call_result, "message", None)

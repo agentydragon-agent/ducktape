@@ -108,5 +108,5 @@ def test_structured_requires_return_annotation():
     with pytest.raises(TypeError):
 
         @mcp_flat_model(m, structured_output=True)
-        def bad(input: InModel):  # type: ignore[no-redef]
+        def bad(input: InModel):
             return {"ok": True}

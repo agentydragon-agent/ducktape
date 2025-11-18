@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, cast
 
 from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
 from tana.domain.nodes import DOC_CLASS, BaseNode, TupleNode, UnknownNode
@@ -173,7 +173,8 @@ def main():
 
     def _make_node(raw: dict[str, Any]) -> BaseNode:
         node_model = DOC_CLASS.get(raw["props"].get("_docType"), UnknownNode)
-        return node_model.model_validate(raw)  # type: ignore[return-value]
+        # All DOC_CLASS values are BaseNode subclasses; model_validate returns the specific type
+        return cast(BaseNode, node_model.model_validate(raw))
 
     tracking_store = TrackingGraph({NodeId(str(doc["id"])): _make_node(doc) for doc in original_data["docs"]})
 

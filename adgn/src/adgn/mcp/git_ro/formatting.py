@@ -114,7 +114,7 @@ def diff_to_changed_files(diff: pygit2.Diff) -> list[ChangedFileItem]:
             path=((d.new_file.path or d.old_file.path) if d.new_file else d.old_file.path),
             status=_status_char(d.status),
         )
-        for p in diff  # type: ignore[assignment]
+        for p in diff  # type: ignore[assignment]  # pygit2.Diff iteration typing incomplete in stubs
         for d in [p.delta]
     ]
 
@@ -154,7 +154,7 @@ def _count_patch_lines(patch: pygit2.Patch) -> tuple[int, int]:
 
 def diff_to_file_stats(diff: pygit2.Diff) -> list[StatItem]:
     out: list[StatItem] = []
-    for patch in diff:  # type: ignore[assignment]
+    for patch in diff:  # type: ignore[assignment]  # pygit2.Diff iteration typing incomplete in stubs
         delta = patch.delta
         path = (delta.new_file.path or delta.old_file.path) if delta.new_file else delta.old_file.path
         additions, deletions = _count_patch_lines(patch)

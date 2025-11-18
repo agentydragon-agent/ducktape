@@ -12,7 +12,7 @@ class _SkipHandler(BaseHandler):
         self._inserts = inserts or ()
         self._policy = policy or Auto()
 
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         return Continue(self._policy, inserts_input=self._inserts, skip_sampling=self._skip)
 
 

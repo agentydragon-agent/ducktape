@@ -26,15 +26,15 @@ def render_to_rich(obj: Any):
 
 
 @render_to_rich.register
-def _render_pydantic(obj: BaseModel):  # type: ignore[misc]
+def _render_pydantic(obj: BaseModel):
     return JSON.from_data(obj.model_dump())
 
 
 @render_to_rich.register
-def _render_dict(obj: dict):  # type: ignore[misc]
+def _render_dict(obj: dict):
     return JSON.from_data(obj)
 
 
 @render_to_rich.register
-def _render_list(obj: list):  # type: ignore[misc]
+def _render_list(obj: list):
     return JSON.from_data(obj)

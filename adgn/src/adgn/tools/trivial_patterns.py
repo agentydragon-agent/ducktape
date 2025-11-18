@@ -256,7 +256,7 @@ class FileAnalyzer(ast.NodeVisitor):
                 return
 
         try:
-            func_expr = ast.unparse(call.func)  # type: ignore[attr-defined]
+            func_expr = ast.unparse(call.func)  # Available since Python 3.9
         except Exception:  # pragma: no cover
             func_expr = call.func.id if isinstance(call.func, ast.Name) else "<call>"
 

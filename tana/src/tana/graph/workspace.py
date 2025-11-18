@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
-from typing import Any
+from typing import Any, cast
 
 from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
 from tana.domain.nodes import DOC_CLASS, BaseNode, TupleNode, UnknownNode
@@ -54,7 +54,8 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
         def _make_node(raw: dict[str, Any]) -> BaseNode:
             doc_type = raw.get("props", {}).get("_docType")
             node_model = DOC_CLASS.get(doc_type, UnknownNode)
-            return node_model.model_validate(raw)  # type: ignore[return-value]
+            # All DOC_CLASS values are BaseNode subclasses; model_validate returns the specific type
+            return cast(BaseNode, node_model.model_validate(raw))
 
         mapping = {NodeId(str(doc["id"])): _make_node(doc) for doc in documents}
         return cls(mapping)

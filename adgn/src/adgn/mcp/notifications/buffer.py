@@ -16,15 +16,16 @@ logger = logging.getLogger(__name__)
 
 class _Handler(MessageHandler):
     def __init__(self, owner: NotificationsBuffer) -> None:
-        self._o = owner
+        self._buffer = owner
 
-    async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
+    # Override with narrower types than base MessageHandler (which accepts Any)
+    async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
         # Do not swallow errors; let them propagate for visibility
-        await self._o._on_updated(message)
+        await self._buffer._on_updated(message)
 
-    async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:  # type: ignore[override]
+    async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
         # Do not swallow errors; let them propagate for visibility
-        await self._o._on_list_changed(message)
+        await self._buffer._on_list_changed(message)
 
 
 class NotificationsBuffer:

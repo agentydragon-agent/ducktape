@@ -148,7 +148,7 @@ class CommitController(BaseHandler):
             ]
             self._bootstrap.extend(extra_boots)
 
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         if self._state.result is not None:
             return Abort()
         self._step += 1

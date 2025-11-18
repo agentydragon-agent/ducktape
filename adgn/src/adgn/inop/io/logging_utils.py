@@ -28,7 +28,8 @@ class ToolAwareConsoleRenderer(structlog.dev.ConsoleRenderer):
                 )
             ):
                 formatted_tools: list[str] = []
-                for tool in tools:  # type: ignore[assignment]
+                # Type narrowing: tools is list[dict] at this point
+                for tool in cast(list[dict[str, Any]], tools):
                     # Format args with truncation for console
                     args_parts = []
                     for k, v in tool["args"].items():

@@ -296,7 +296,7 @@ async def attach_critic_submit(comp: Compositor, state: CriticSubmitState) -> No
 
 
 @render_to_rich.register
-def _render_critic_submit_payload(obj: CriticSubmitPayload):  # type: ignore[misc]
+def _render_critic_submit_payload(obj: CriticSubmitPayload):
     bits: list[RenderableType] = []
     # Candidate issues table (no properties column)
     tbl = Table(title="Candidate Issues", show_lines=False, expand=True)
@@ -342,6 +342,6 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):  # type: ignore[mis
 
 
 @render_to_rich.register
-def _render_critic_error_payload(obj: CriticErrorPayload):  # type: ignore[misc]
+def _render_critic_error_payload(obj: CriticErrorPayload):
     body: RenderableType = Markdown(obj.message)
     return Panel(body, title="Critic error", border_style="red")

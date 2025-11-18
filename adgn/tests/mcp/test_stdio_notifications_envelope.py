@@ -29,7 +29,7 @@ async def test_stdio_child_notifications_envelope(tmp_path: Path):
             m = NotifyingFastMCP("stdio_child")
 
             @m.tool(name="emit")
-            async def emit():  # type: ignore[empty-body]
+            async def emit():  # type: ignore[empty-body] - Test tool defined in dynamic code block
                 await m.broadcast_resource_list_changed()
                 await m.broadcast_resource_updated("resource://dummy")
                 return True

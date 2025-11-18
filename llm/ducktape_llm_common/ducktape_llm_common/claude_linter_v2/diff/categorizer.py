@@ -71,6 +71,7 @@ class ViolationCategorizer:
         categorized = []
 
         for violation in violations:
+            category: Literal["in-diff", "near-diff", "out-of-diff"]
             if violation.line in changed_lines:
                 category = ViolationCategory.IN_DIFF
                 distance = 0

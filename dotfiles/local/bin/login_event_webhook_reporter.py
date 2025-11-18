@@ -110,7 +110,7 @@ def _flush() -> bool:
 
         if not _post(body):
             # Failed - prepend unsent events back to queue in original order.
-            queue[:0] = batch  # type: ignore[slice-assignment]
+            queue[:0] = batch  # type: ignore[slice-assignment] - Prepend batch to queue (collections.deque)
             break
 
         # Success.

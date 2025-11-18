@@ -97,7 +97,7 @@ def _model_dump_like(obj: Any, *, exclude_none: bool = True) -> dict[str, Any] |
     """
     if isinstance(obj, BaseModel):
         try:
-            return obj.model_dump(exclude_none=exclude_none)  # type: ignore[no-any-return]
+            return obj.model_dump(exclude_none=exclude_none)
         except Exception:
             return None
     if isinstance(obj, dict):
