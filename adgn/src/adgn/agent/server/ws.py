@@ -216,12 +216,11 @@ def register_ws(app: FastAPI) -> None:
                 await router.dispatch(ctx, im)
 
         except WebSocketDisconnect:
-            try:
-                await cm.flush()
-            finally:
-                await cm.disconnect(ws)
+            pass
         except Exception:
             # Harden against races where the socket transitions before receive_text accepts
+            pass
+        finally:
             try:
                 await cm.flush()
             finally:
