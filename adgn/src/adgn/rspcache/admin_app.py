@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
 from adgn.openai_utils.model import ResponsesRequest
-from adgn.rspcache.models import FRAME_ADAPTER, FinalResponseSnapshot, ResponseStatus, stream_event_event_id
+from adgn.rspcache.models import FRAME_ADAPTER, FinalResponseSnapshot, ResponseStatus
 from adgn.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponseFrame, ResponsesDB
 
 DEFAULT_LIST_LIMIT = 50
@@ -174,8 +174,8 @@ def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:
     payload = FRAME_ADAPTER.validate_python(frame.frame)
     return FrameRecordModel(
         ordinal=frame.ordinal,
-        frame_type=frame.frame_type or payload.type,
-        event_id=frame.event_id or stream_event_event_id(payload),
+        frame_type=frame.frame_type,
+        event_id=frame.event_id,
         created_at=frame.created_at,
         frame=payload.model_dump(mode="json"),
     )

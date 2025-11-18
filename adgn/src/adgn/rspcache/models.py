@@ -56,12 +56,6 @@ class FinalResponseSnapshot(BaseModel):
         return value.value
 
 
-def stream_event_event_id(event: ResponseStreamEvent) -> str | None:
-    # ResponseStreamEvent doesn't have an event_id field in the OpenAI SDK
-    # All event types have sequence_number, using that as identifier
-    return str(event.sequence_number)
-
-
 def stream_event_response_id(event: ResponseStreamEvent) -> str | None:
     if isinstance(
         event,
