@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
@@ -18,6 +19,10 @@ from adgn.agent.persist import ApprovalOutcome
 from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifications.buffer import NotificationsBuffer
+
+if TYPE_CHECKING:
+    from adgn.agent.runtime.sidecar import Sidecar
+    from adgn.mcp.compositor.clients import CompositorAdminClient
 
 
 @dataclass
@@ -52,13 +57,25 @@ class RunningInfrastructure:
     _stack: AsyncExitStack
 
     # Attached sidecars (for lifecycle management)
-    _sidecars: list["Sidecar"] = None  # type: ignore
+    _sidecars: list[Sidecar] = None  # type: ignore
+
+    # Cached clients
+    _admin_client: CompositorAdminClient | None = None
 
     def __post_init__(self) -> None:
         if self._sidecars is None:
             object.__setattr__(self, "_sidecars", [])
 
-    async def attach_sidecar(self, sidecar: "Sidecar") -> None:
+    @property
+    def admin_client(self) -> CompositorAdminClient:
+        """Get or create compositor admin client."""
+        if self._admin_client is None:
+            from adgn.mcp.compositor.clients import CompositorAdminClient
+
+            object.__setattr__(self, "_admin_client", CompositorAdminClient(self.compositor_client))
+        return self._admin_client
+
+    async def attach_sidecar(self, sidecar: Sidecar) -> None:
         """Sidecars are detached in reverse order when close() is called."""
         await sidecar.attach(self)
         self._sidecars.append(sidecar)
@@ -86,49 +103,14 @@ class RunningInfrastructure:
 
     async def attach_mcp(self, name: str, spec: MCPServerTypes) -> None:
         """Policy-gated via active approval policy."""
-        from adgn.mcp.compositor.clients import CompositorAdminClient
-
-        admin = CompositorAdminClient(self.compositor_client)
-        await admin.attach_server(name=name, spec=spec)
+        await self.admin_client.attach_server(name=name, spec=spec)
 
     async def detach_mcp(self, name: str) -> None:
         """Policy-gated via active approval policy."""
-        from adgn.mcp.compositor.clients import CompositorAdminClient
-
-        admin = CompositorAdminClient(self.compositor_client)
-        await admin.detach_server(name=name)
+        await self.admin_client.detach_server(name=name)
 
     async def __aenter__(self) -> "RunningInfrastructure":
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.close()
-
-
-# Sidecar protocol imported here to avoid circular imports
-from abc import ABC, abstractmethod
-
-
-class Sidecar(ABC):
-    """A plugin that attaches to RunningInfrastructure.
-
-    Sidecars add optional functionality (UI, chat, loop, runtime exec)
-    without being tightly coupled to the core infrastructure.
-
-    Each sidecar is responsible for:
-    - Mounting its MCP servers into the compositor during attach()
-    - Cleaning up resources during detach()
-    """
-
-    @abstractmethod
-    async def attach(self, running: RunningInfrastructure) -> None:
-        """Attach this sidecar to running infrastructure.
-
-        This method should mount any MCP servers into running.compositor
-        and perform any other initialization needed.
-        """
-        pass
-
-    async def detach(self) -> None:
-        """Cleanup when infrastructure is closing (optional override)."""
-        pass

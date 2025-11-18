@@ -99,13 +99,3 @@ class ChannelBundle:
             await self.session.flush()
         if self.ui is not None:
             await self.ui.flush()
-
-    @property
-    def total_clients(self) -> int:
-        """Total number of connected clients across all channels."""
-        total = self.mcp.client_count + self.approvals.client_count + self.policy.client_count
-        if self.session is not None:
-            total += self.session.client_count
-        if self.ui is not None:
-            total += self.ui.client_count
-        return total

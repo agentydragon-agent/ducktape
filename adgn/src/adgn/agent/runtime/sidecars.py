@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from adgn.agent.runtime.running import RunningInfrastructure, Sidecar
+from adgn.agent.runtime.running import RunningInfrastructure
+from adgn.agent.runtime.sidecar import Sidecar
 from adgn.agent.server.bus import ServerBus
 from adgn.mcp._shared.constants import UI_SERVER_NAME
 from adgn.mcp.chat.server import attach_persisted_chat_servers

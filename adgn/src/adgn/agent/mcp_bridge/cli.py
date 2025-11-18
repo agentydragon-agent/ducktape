@@ -116,12 +116,11 @@ async def _run_server(
     # Initialize persistence
     db_path.parent.mkdir(parents=True, exist_ok=True)
     persistence = SQLitePersistence(str(db_path))
-    await persistence.__aenter__()
 
     # Initialize Docker client
     docker_client = docker.from_env()
 
-    try:
+    async with persistence:
         # Create infrastructure with sidecars
         running = await create_bridge_infrastructure(
             agent_id=agent_id,
@@ -131,26 +130,26 @@ async def _run_server(
             initial_policy=initial_policy,
         )
 
-        # Create HTTP app from compositor
-        app = create_http_app(running)
+        try:
+            # Create HTTP app from compositor
+            app = create_http_app(running)
 
-        logger.info(f"HTTP MCP Bridge started for agent_id={agent_id}")
-        logger.info(f"Compositor ready with {len(mcp_config.mcpServers or {})} external servers")
-        logger.info(f"MCP server available at http://{host}:{port}/mcp")
+            logger.info(f"HTTP MCP Bridge started for agent_id={agent_id}")
+            logger.info(f"Compositor ready with {len(mcp_config.mcpServers or {})} external servers")
+            logger.info(f"MCP server available at http://{host}:{port}/mcp")
 
-        # Run HTTP server
-        config = uvicorn.Config(
-            app=app,
-            host=host,
-            port=port,
-            log_level="info",
-        )
-        server = uvicorn.Server(config)
-        await server.serve()
+            # Run HTTP server
+            config = uvicorn.Config(
+                app=app,
+                host=host,
+                port=port,
+                log_level="info",
+            )
+            server = uvicorn.Server(config)
+            await server.serve()
 
-    finally:
-        await running.close()
-        await persistence.__aexit__(None, None, None)
+        finally:
+            await running.close()
 
 
 if __name__ == "__main__":
