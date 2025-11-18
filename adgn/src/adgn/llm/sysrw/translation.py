@@ -16,6 +16,7 @@ from openai.types.chat import (
 from openai.types.responses import ResponseOutputMessage
 
 from adgn.llm.anthropic.types import (
+    ContentBlock as AnthropicContentBlock,
     Message as AnthropicMessage,
     MessageRole as AnthropicMessageRole,
     TextBlock as AnthropicTextBlock,
@@ -34,19 +35,15 @@ def _join_texts(texts: list[str]) -> str:
     return "\n".join(t for t in texts if t)
 
 
-def _extract_text_from_content(content: str | list[Any]) -> str:
+def _extract_text_from_content(content: str | list[AnthropicContentBlock]) -> str:
     """Extract text from Anthropic message content."""
     if isinstance(content, str):
         return content
-    texts = [
-        item.get("text")
-        for item in content
-        if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str)
-    ]
+    texts = [block.text for block in content if isinstance(block, AnthropicTextBlock)]
     return _join_texts(texts)
 
 
-def _handle_assistant_blocks(blocks: list[Any]) -> tuple[str | None, list[ChatCompletionMessageToolCallParam]]:
+def _handle_assistant_blocks(blocks: list[AnthropicContentBlock]) -> tuple[str | None, list[ChatCompletionMessageToolCallParam]]:
     """Process assistant message blocks, extracting text and tool calls."""
     texts: list[str] = []
     tool_calls: list[ChatCompletionMessageToolCallParam] = []
@@ -70,7 +67,7 @@ def _handle_assistant_blocks(blocks: list[Any]) -> tuple[str | None, list[ChatCo
     return content, tool_calls
 
 
-def _handle_user_blocks(blocks: list[Any]) -> tuple[list[str], list[ChatCompletionToolMessageParam]]:
+def _handle_user_blocks(blocks: list[AnthropicContentBlock]) -> tuple[list[str], list[ChatCompletionToolMessageParam]]:
     """Process user message blocks, extracting text and tool results."""
     texts: list[str] = []
     tool_msgs: list[ChatCompletionToolMessageParam] = []

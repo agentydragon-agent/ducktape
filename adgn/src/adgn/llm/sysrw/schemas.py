@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
+from anthropic.types import Message as AnthropicMessageResponse
 from anthropic.types.tool_param import ToolParam
+from openai.types.chat import ChatCompletion
+from openai.types.chat.chat_completion_create_params import ChatCompletionCreateParams
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.responses import ResponseCreateParams
 from pydantic import BaseModel, Field
@@ -95,8 +98,12 @@ class Grade(BaseModel):
 
 
 class EvalSampleRecord(BaseModel):
-    request: dict[str, Any]
-    response: dict[str, Any]
+    """Eval sample with request, response, and grading information.
+
+    Supports both Chat Completions and Responses API formats.
+    """
+    request: ChatCompletionCreateParams | ResponseCreateParams
+    response: ChatCompletion | ResponsesResult
     new_assistant_message: AssistantMessage
     correlation_id: str | None = None
     timestamp: int | None = None
@@ -105,7 +112,8 @@ class EvalSampleRecord(BaseModel):
 
 
 class EvalGradeRecord(BaseModel):
-    request: dict[str, Any]
+    """Grader's evaluation using Responses API."""
+    request: ResponseCreateParams
     response: ResponsesResult
     correlation_id: str | None = None
     timestamp: int | None = None
