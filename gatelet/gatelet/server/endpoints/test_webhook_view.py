@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.models import WebhookIntegration, WebhookPayload
-from gatelet.server.shared import templates
+from gatelet.server.shared import get_jinja_templates
 from gatelet.server.tests.utils import persist
 
 
@@ -26,6 +26,8 @@ async def _admin_login(client: AsyncClient) -> str:
     return response.cookies["admin_session"]
 
 
+# Configure templates for tests
+templates = get_jinja_templates()
 templates.env.globals.update({"max": max, "min": min})
 
 

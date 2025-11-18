@@ -12,10 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..auth.dependencies import Auth
-from ..config import settings
+from ..config import get_settings
 from ..database import get_db_session
 from ..models import WebhookIntegration, WebhookPayload
-from ..shared import templates
+from ..shared import get_jinja_templates
+
+settings = get_settings()
+templates = get_jinja_templates()
 
 router = APIRouter(tags=["webhook_view"])
 

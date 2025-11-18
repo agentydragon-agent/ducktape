@@ -12,14 +12,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import Auth, get_admin_auth_with_context
-from ..config import settings
+from ..config import get_settings
 from ..database import get_db_session
 from ..endpoints import activitywatch
 from ..endpoints.homeassistant import fetch_states
 from ..endpoints.webhook_view import get_latest_payloads
 from ..models import AdminSession, AuthCRSession, AuthKey
 from ..security import verify_password
-from ..shared import templates
+from ..shared import get_jinja_templates
+
+settings = get_settings()
+templates = get_jinja_templates()
 
 router = APIRouter(tags=["admin"])
 

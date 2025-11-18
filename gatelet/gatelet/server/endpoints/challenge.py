@@ -13,10 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.handlers import AuthHandlerError
-from ..config import settings
+from ..config import get_settings
 from ..database import get_db_session
 from ..models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import] - Runtime-only import (SQLAlchemy models)
-from ..shared import templates
+from ..shared import get_jinja_templates
+
+settings = get_settings()
+templates = get_jinja_templates()
 
 MAX_OPTIONS = 256
 

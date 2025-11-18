@@ -25,9 +25,11 @@ from .endpoints.homeassistant import fetch_states
 from .endpoints.webhook_view import get_latest_payloads
 from .lifespan import lifespan
 from .models import AdminSession
-from .shared import BASE_DIR, templates
+from .shared import BASE_DIR, get_jinja_templates
 
 logger = logging.getLogger(__name__)
+
+templates = get_jinja_templates()
 
 app = FastAPI(
     title="Gatelet",

@@ -8,10 +8,14 @@ from fastapi.responses import HTMLResponse
 import homeassistant_api
 
 from ..auth.dependencies import Auth
-from ..config import settings
-from ..shared import templates
+from ..config import get_settings
+from ..shared import get_jinja_templates, make_ha_history_url
 
 logger = logging.getLogger(__name__)
+
+settings = get_settings()
+templates = get_jinja_templates()
+ha_history_url = make_ha_history_url(settings)
 
 router = APIRouter(tags=["homeassistant"])
 
@@ -45,7 +49,15 @@ async def list_entities(request: Request, auth: Auth) -> HTMLResponse:
     is_human = auth.auth_type == "admin"
     return templates.TemplateResponse(
         "ha_entities.html",
-        {"request": request, "auth": auth, "states": states, "header": "Entities", "is_human": is_human, "history": []},
+        {
+            "request": request,
+            "auth": auth,
+            "states": states,
+            "header": "Entities",
+            "is_human": is_human,
+            "history": [],
+            "ha_history_url": ha_history_url,
+        },
     )
 
 
@@ -64,5 +76,6 @@ async def entity_details(request: Request, entity_id: str, auth: Auth) -> HTMLRe
             "header": f"{entity_id} Details",
             "is_human": is_human,
             "history": [],
+            "ha_history_url": ha_history_url,
         },
     )
