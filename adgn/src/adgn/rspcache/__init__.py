@@ -14,10 +14,9 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
-from openai.types.responses import Response as OpenAIResponse, ResponseUsage
+from openai.types.responses import Response as OpenAIResponse, ResponseStreamEvent, ResponseUsage
 
 from adgn.rspcache.models import (
-    FRAME_ADAPTER,
     ErrorPayload,
     ResponseStatus,
     parse_response,
@@ -176,6 +175,21 @@ async def _proxy_stream(
     ordinal = 0
     token_usage: ResponseUsage | None = None
     latest_response: OpenAIResponse | None = None
+
+    async def _process_frame(frame_dict: dict[str, Any]) -> None:
+        nonlocal ordinal, response_id, token_usage, latest_response
+
+        frame_payload = ResponseStreamEvent.model_validate(frame_dict)
+        ordinal += 1
+        if (maybe_response_id := stream_event_response_id(frame_payload)) and response_id != maybe_response_id:
+            response_id = maybe_response_id
+            await db.mark_in_progress(key, response_id)
+        if usage := stream_event_usage(frame_payload):
+            token_usage = usage
+        if (response_candidate := stream_event_final_response(frame_payload)) is not None:
+            latest_response = response_candidate
+        await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
+
     try:
         async for chunk in resp.aiter_bytes():
             if not chunk:
@@ -190,28 +204,12 @@ async def _proxy_stream(
             if not parsed:
                 continue
             for frame in parsed:
-                frame_payload = FRAME_ADAPTER.validate_python(frame)
-                ordinal += 1
-                if (maybe_response_id := stream_event_response_id(frame_payload)) and response_id != maybe_response_id:
-                    response_id = maybe_response_id
-                    await db.mark_in_progress(key, response_id)
-                if usage := stream_event_usage(frame_payload):
-                    token_usage = usage
-                if (response_candidate := stream_event_final_response(frame_payload)) is not None:
-                    latest_response = response_candidate
-                await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
+                await _process_frame(frame)
+
         trailing_frames = _extract_remaining(text_buffer)
         for frame in trailing_frames:
-            frame_payload = FRAME_ADAPTER.validate_python(frame)
-            ordinal += 1
-            if (maybe_response_id := stream_event_response_id(frame_payload)) and response_id != maybe_response_id:
-                response_id = maybe_response_id
-                await db.mark_in_progress(key, response_id)
-            if usage := stream_event_usage(frame_payload):
-                token_usage = usage
-            if (response_candidate := stream_event_final_response(frame_payload)) is not None:
-                latest_response = response_candidate
-            await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
+            await _process_frame(frame)
+
         latency_ms = int((time.perf_counter() - start_time) * 1000)
         if latest_response is not None and latest_response.usage is not None:
             token_usage = latest_response.usage

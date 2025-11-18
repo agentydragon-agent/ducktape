@@ -137,8 +137,7 @@ async def grade_critic_output(
             if it.id:
                 crit_idx[str(it.id)] = it
         for cid in grader_state.result.unknown_critique_ids:
-            pr_it = crit_idx.get(cid)
-            if not pr_it:
+            if not (pr_it := crit_idx.get(cid)):
                 continue
             orig_id = strip_crit_prefix(str(pr_it.id or ""))
             for i, occ in enumerate(pr_it.occurrences):

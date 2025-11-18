@@ -15,8 +15,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
+from openai.types.responses import ResponseStreamEvent
+
 from adgn.openai_utils.model import ResponsesRequest
-from adgn.rspcache.models import FRAME_ADAPTER, FinalResponseSnapshot, ResponseStatus, stream_event_event_id
+from adgn.rspcache.models import FinalResponseSnapshot, ResponseStatus
 from adgn.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponseFrame, ResponsesDB
 
 DEFAULT_LIST_LIMIT = 50
@@ -59,10 +61,10 @@ class FrameRecordModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     ordinal: int
-    frame_type: str | None = None
-    event_id: str | None = None
+    frame_type: str
+    event_id: int
     created_at: datetime
-    frame: Any
+    typed_frame: ResponseStreamEvent
 
 
 class ResponseRecordModel(BaseModel):
@@ -170,15 +172,6 @@ def _to_response_model(record: Response) -> ResponseRecordModel:
     )
 
 
-def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:
-    payload = FRAME_ADAPTER.validate_python(frame.frame)
-    return FrameRecordModel(
-        ordinal=frame.ordinal,
-        frame_type=frame.frame_type or payload.type,
-        event_id=frame.event_id or stream_event_event_id(payload),
-        created_at=frame.created_at,
-        frame=payload.model_dump(mode="json"),
-    )
 
 
 def _to_api_key_model(record: ClientAPIKey | APIKeyRecord) -> APIKeyModel:
@@ -221,7 +214,7 @@ async def get_frames(
 ) -> FrameListModel:
     frames = await db.get_frames(identifier, limit=limit, after_ordinal=after)
     return FrameListModel(
-        items=[_to_frame_model(frame) for frame in frames], count=len(frames), limit=limit, after=after
+        items=[FrameRecordModel.model_validate(frame) for frame in frames], count=len(frames), limit=limit, after=after
     )
 
 

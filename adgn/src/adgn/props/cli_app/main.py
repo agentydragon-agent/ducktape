@@ -772,8 +772,7 @@ def _print_presets() -> None:
 
 
 def _load_preset_text(name: str) -> str:
-    rel = _PRESET_MAP.get(name)
-    if not rel:
+    if not (rel := _PRESET_MAP.get(name)):
         raise typer.BadParameter(f"Unknown preset: {name}. Use --list-presets to see options.")
     # Resources are relative to the adgn.props package root
     res = resources.files("adgn.props").joinpath(rel)

@@ -1,6 +1,7 @@
 """Session management for tracking Claude Code sessions and their permissions."""
 
 from datetime import datetime
+from enum import StrEnum
 import json
 import logging
 from pathlib import Path
@@ -11,13 +12,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..types import SessionID
 
 
+class RuleAction(StrEnum):
+    """Permission rule actions."""
+
+    ALLOW = "allow"
+    DENY = "deny"
+
+
 class Rule(BaseModel):
     """Session-specific permission rule."""
 
     model_config = ConfigDict(frozen=False)
 
     predicate: str
-    action: str
+    action: RuleAction
     created: datetime
     expires: datetime | None = None
 
@@ -33,6 +41,8 @@ class SessionData(BaseModel):
     directory: Path | None = None
     rules: list[Rule] = Field(default_factory=list)
     notification_id: int | None = None
+
+
 
 
 logger = logging.getLogger(__name__)
@@ -108,24 +118,12 @@ class SessionManager:
     def add_rule(
         self,
         predicate: str,
-        action: str,
+        action: RuleAction,
         expires: datetime | None = None,
         session_id: SessionID | None = None,
         directory: Path | None = None,
     ) -> int:
-        """
-        Add a permission rule to session(s).
-
-        Args:
-            predicate: Python predicate expression
-            action: "allow" or "deny"
-            expires: When the rule expires
-            session_id: Specific session ID, or None for all in directory
-            directory: Directory to affect (default: current)
-
-        Returns:
-            Number of sessions affected
-        """
+        """Add a permission rule to session(s)."""
         directory = directory or Path.cwd()
         directory_str = str(directory.resolve())
 
@@ -157,43 +155,24 @@ class SessionManager:
 
         return affected
 
-    def list_sessions(self, all_dirs: bool = False) -> list[dict]:
-        """
-        List all sessions.
-
-        Args:
-            all_dirs: If True, show all sessions. If False, only current directory.
-
-        Returns:
-            List of session info dicts
-        """
-        current_dir = str(Path.cwd().resolve())
+    def list_sessions(self, all_dirs: bool = False) -> list[SessionData]:
+        """List all sessions."""
+        current_dir = Path.cwd().resolve()
         results = []
 
         # Scan all session files
         for session_file in self.sessions_dir.glob("*.json"):
             session_id = SessionID(session_file.stem)
-            try:
-                session_data = self._load_session(session_id)
+            session_data = self._load_session(session_id)
 
-                # Skip sessions in other directories unless requested
-                session_dir = str(session_data.directory) if session_data.directory else ""
-                if not all_dirs and session_dir and not session_dir.startswith(current_dir):
-                    continue
+            # Skip sessions in other directories unless requested
+            if not all_dirs and session_data.directory and not session_data.directory.is_relative_to(current_dir):
+                continue
 
-                results.append(
-                    {
-                        "id": session_id,
-                        "directory": session_data.directory,
-                        "last_seen": session_data.last_seen or session_data.created,
-                        "rules": session_data.rules,
-                    }
-                )
-            except (json.JSONDecodeError, OSError, ValueError) as e:
-                logger.error(f"Failed to load session {session_id}: {e}")
+            results.append(session_data)
 
         # Sort by last seen time (most recent first)
-        results.sort(key=lambda x: x["last_seen"], reverse=True)
+        results.sort(key=lambda x: x.last_seen or x.created, reverse=True)
 
         return results
 

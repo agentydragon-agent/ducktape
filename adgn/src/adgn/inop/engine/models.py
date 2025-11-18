@@ -5,7 +5,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal, NewType
 
-from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator, ValidationInfo
+from typing_extensions import Self
 
 # Removed claude_code_sdk dependency - using provider-independent types
 
@@ -194,8 +195,8 @@ class ComparisonGrading(BaseModel):
     """Grade by comparing output to reference."""
 
     strategy: Literal["comparison"] = "comparison"
-    reference: str
-    criteria: list[Criterion]
+    reference: str | None = None  # May be None at task type level, filled by tasks
+    criteria: list[Criterion] = Field(default_factory=list)
 
 
 class MessageBasedGrading(BaseModel):
@@ -406,3 +407,48 @@ class GradingContext:
     rollout: Rollout
     task: TaskDefinition
     environment: RunnerEnvironment | None = None
+
+
+# ============================================================================
+# YAML configuration models
+# ============================================================================
+
+
+class TaskTypeYamlConfig(BaseModel):
+    """YAML configuration for a single task type."""
+
+    grading: GradingConfig | None = None
+
+
+class TaskTypesYaml(BaseModel):
+    """Root YAML structure for task_types.yaml."""
+
+    task_types: dict[str, TaskTypeYamlConfig]
+
+
+class RunnerConfig(BaseModel):
+    """Configuration for a single runner."""
+
+    environment: RunnerEnvironment
+
+
+class RunnersYaml(BaseModel):
+    """Root YAML structure for runners.yaml."""
+
+    runners: dict[str, RunnerConfig]
+
+
+class TaskDefinitionsYaml(BaseModel):
+    """Root YAML structure for seeds.yaml."""
+
+    tasks: list[TaskDefinition]
+
+    @model_validator(mode="after")
+    def validate_task_types(self, info: ValidationInfo) -> Self:
+        """Validate that all task types are known."""
+        task_types = info.context.get("task_types") if info.context else None
+        if task_types:
+            for task in self.tasks:
+                if task.type not in task_types:
+                    raise ValueError(f"Task {task.id} has unknown type: {task.type}")
+        return self

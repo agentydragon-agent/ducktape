@@ -43,7 +43,6 @@ from adgn.rspcache.models import (
     ErrorPayload,
     FinalResponseSnapshot,
     ResponseStatus,
-    stream_event_event_id,
     stream_event_response_id,
 )
 
@@ -98,12 +97,17 @@ class ResponseFrame(Base):
     )
     response_id: Mapped[str | None] = mapped_column(String, nullable=True)
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
-    frame_type: Mapped[str | None] = mapped_column(String)
-    event_id: Mapped[str | None] = mapped_column(String)
+    frame_type: Mapped[str] = mapped_column(String, nullable=False)
+    event_id: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     frame: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     response: Mapped[Response] = relationship(back_populates="frames")
+
+    @property
+    def typed_frame(self) -> ResponseStreamEvent:
+        """Return the frame as a typed ResponseStreamEvent."""
+        return ResponseStreamEvent.model_validate(self.frame)
 
 
 class Response(Base):
@@ -346,7 +350,7 @@ class ResponsesDB:
         if response_id is None and derived_response_id is not None:
             response_id = derived_response_id
         frame_type = frame_obj.type
-        event_id = stream_event_event_id(frame_obj)
+        event_id = frame_obj.sequence_number
         async with self._session_factory() as session:
             assigned_ordinal = await self._insert_frame(
                 session,
@@ -497,8 +501,8 @@ class ResponsesDB:
         ordinal: int | None,
         frame_obj: ResponseStreamEvent,
         response_id: str | None,
-        frame_type: str | None,
-        event_id: str | None,
+        frame_type: str,
+        event_id: int,
     ) -> int:
         if ordinal is None:
             result = await session.execute(
@@ -513,7 +517,7 @@ class ResponsesDB:
             cache_key=key,
             response_id=response_id,
             ordinal=assigned_ordinal,
-            frame_type=frame_type or serialized.get("type"),
+            frame_type=frame_type,
             event_id=event_id,
             frame=serialized,
         )

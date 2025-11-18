@@ -4,10 +4,20 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
-from openai.types.responses import Response as OpenAIResponse, ResponseError, ResponseStreamEvent, ResponseUsage
+from openai.types.responses import (
+    Response as OpenAIResponse,
+    ResponseCompletedEvent,
+    ResponseCreatedEvent,
+    ResponseError,
+    ResponseFailedEvent,
+    ResponseIncompleteEvent,
+    ResponseInProgressEvent,
+    ResponseQueuedEvent,
+    ResponseStreamEvent,
+    ResponseUsage,
+)
 from pydantic import BaseModel, ConfigDict, TypeAdapter, field_serializer
 
-FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
 RESPONSE_ADAPTER: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
 ERROR_ADAPTER: TypeAdapter[ResponseError] = TypeAdapter(ResponseError)
 USAGE_ADAPTER: TypeAdapter[ResponseUsage] = TypeAdapter(ResponseUsage)
@@ -45,59 +55,49 @@ class FinalResponseSnapshot(BaseModel):
         return value.value
 
 
-def stream_event_event_id(event: ResponseStreamEvent) -> str | None:
-    payload = event.model_dump(mode="python")
-    event_id = payload.get("event_id")
-    return event_id if isinstance(event_id, str) else None
-
-
 def stream_event_response_id(event: ResponseStreamEvent) -> str | None:
-    payload = event.model_dump(mode="python")
-    response_id = payload.get("response_id")
-    if isinstance(response_id, str):
-        return response_id
-    response = payload.get("response")
-    if isinstance(response, Mapping):
-        value = response.get("id")
-        if isinstance(value, str):
-            return value
+    if isinstance(
+        event,
+        (
+            ResponseCreatedEvent,
+            ResponseCompletedEvent,
+            ResponseFailedEvent,
+            ResponseInProgressEvent,
+            ResponseIncompleteEvent,
+            ResponseQueuedEvent,
+        ),
+    ):
+        return event.response.id
     return None
 
 
 def stream_event_usage(event: ResponseStreamEvent) -> ResponseUsage | None:
-    payload = event.model_dump(mode="python")
-    usage_candidate = payload.get("usage")
-    if isinstance(usage_candidate, ResponseUsage):
-        return usage_candidate
-    if isinstance(usage_candidate, Mapping):
-        return parse_usage(usage_candidate)
-    response = payload.get("response")
-    if isinstance(response, Mapping):
-        usage_value = response.get("usage")
-        if isinstance(usage_value, ResponseUsage):
-            return usage_value
-        if isinstance(usage_value, Mapping):
-            return parse_usage(usage_value)
+    if isinstance(
+        event,
+        (
+            ResponseCreatedEvent,
+            ResponseCompletedEvent,
+            ResponseFailedEvent,
+            ResponseInProgressEvent,
+            ResponseIncompleteEvent,
+            ResponseQueuedEvent,
+        ),
+    ):
+        return event.response.usage
     return None
 
 
 def stream_event_final_response(event: ResponseStreamEvent) -> OpenAIResponse | None:
-    payload = event.model_dump(mode="python")
-    response_payload = payload.get("response")
-    if response_payload is not None:
-        return parse_response(response_payload)
+    if isinstance(
+        event,
+        (
+            ResponseCreatedEvent,
+            ResponseCompletedEvent,
+            ResponseFailedEvent,
+            ResponseInProgressEvent,
+            ResponseIncompleteEvent,
+            ResponseQueuedEvent,
+        ),
+    ):
+        return event.response
     return None
-
-
-def parse_response(value: OpenAIResponse | Mapping[str, object]) -> OpenAIResponse:
-    if value is None:
-        raise ValueError("response payload cannot be None")
-    if isinstance(value, OpenAIResponse):
-        return value
-    return RESPONSE_ADAPTER.validate_python(value)
-
-
-def parse_usage(value: ResponseUsage | Mapping[str, object]) -> ResponseUsage:
-    if isinstance(value, ResponseUsage):
-        return value
-    return USAGE_ADAPTER.validate_python(value)
