@@ -122,20 +122,8 @@ class ViolationCategorizer:
             Filtered list of violations
         """
         groups = self.group_by_category(categorized)
-
-        result = []
-
-        # Add all in-diff violations
-        result.extend(groups[ViolationCategory.IN_DIFF])
-
-        # Add near-diff violations if room
-        remaining = max_violations - len(result)
-        if remaining > 0:
-            result.extend(groups[ViolationCategory.NEAR_DIFF][:remaining])
-
-        # Add out-of-diff violations if room
-        remaining = max_violations - len(result)
-        if remaining > 0:
-            result.extend(groups[ViolationCategory.OUT_OF_DIFF][:remaining])
-
-        return result[:max_violations]
+        return (
+            groups[ViolationCategory.IN_DIFF]
+            + groups[ViolationCategory.NEAR_DIFF]
+            + groups[ViolationCategory.OUT_OF_DIFF]
+        )[:max_violations]
