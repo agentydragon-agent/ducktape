@@ -103,8 +103,8 @@ resource "shell_script" "download_talos_images" {
   lifecycle_commands {
     create = <<-EOT
       mkdir -p ${local.vm_dir}/_out
-      curl -k -x http://127.0.0.1:3128 -L "${data.talos_image_factory_urls.this.urls.kernel}" -o ${local.vm_dir}/_out/vmlinuz-amd64
-      curl -k -x http://127.0.0.1:3128 -L "${data.talos_image_factory_urls.this.urls.initramfs}" -o ${local.vm_dir}/_out/initramfs-amd64.xz
+      curl -L "${data.talos_image_factory_urls.this.urls.kernel}" -o ${local.vm_dir}/_out/vmlinuz-amd64
+      curl -L "${data.talos_image_factory_urls.this.urls.initramfs}" -o ${local.vm_dir}/_out/initramfs-amd64.xz
       echo "downloaded"
     EOT
     read   = "test -f ${local.vm_dir}/_out/vmlinuz-amd64 && test -f ${local.vm_dir}/_out/initramfs-amd64.xz && echo 'downloaded' || echo ''"
