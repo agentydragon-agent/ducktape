@@ -5,7 +5,7 @@ import pytest
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, Exited, TimedOut
-from adgn.mcp.testing.typed_stubs import ToolStub
+from adgn.mcp.stubs.typed_stubs import ToolStub
 from tests.conftest import make_container_opts
 
 

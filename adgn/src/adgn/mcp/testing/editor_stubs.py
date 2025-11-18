@@ -18,7 +18,7 @@ from adgn.mcp.editor_server import (
     SaveArgs,
     SaveResult,
 )
-from adgn.mcp.testing.server_stubs import ServerStub
+from adgn.mcp.stubs.server_stubs import ServerStub
 
 
 class EditorServerStub(ServerStub):
