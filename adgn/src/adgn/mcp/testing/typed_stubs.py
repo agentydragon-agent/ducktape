@@ -17,7 +17,7 @@ from adgn.mcp._shared.client_helpers import StructuredContent, extract_error_det
 
 # We use the concrete FastMCP Client type for sessions in tests
 
-
+T_In = TypeVar("T_In", bound=BaseModel)
 T_Out = TypeVar("T_Out")
 
 
@@ -29,16 +29,16 @@ def _structured_content(result: CallToolResult, *, tool_name: str) -> Structured
 
 
 def _build_arguments(
-    payload: BaseModel | dict[str, object],
+    payload: T_In,
     *,
-    input_model: type[BaseModel] | None,
+    input_model: type[T_In] | None,
     wrapper_field: str | None,
     exclude_none: bool,
     tool_name: str,
 ) -> dict[str, object] | None:
     if input_model is not None and not isinstance(payload, input_model):
         raise TypeError(f"{tool_name} expects {input_model.__name__}, got {type(payload).__name__}")
-    data = payload.model_dump(exclude_none=exclude_none) if isinstance(payload, BaseModel) else payload
+    data = payload.model_dump(exclude_none=exclude_none)
     if wrapper_field:
         return {wrapper_field: data}  # type: ignore[no-any-return]
     return data  # type: ignore[no-any-return]
@@ -47,11 +47,11 @@ def _build_arguments(
 async def call_tool_typed(
     session: Client,
     name: str,
-    payload: BaseModel | dict[str, object],
+    payload: T_In,
     out_type: type[T_Out],
     *,
     exclude_none: bool = True,
-    input_model: type[BaseModel] | None = None,
+    input_model: type[T_In] | None = None,
     wrapper_field: str | None = None,
 ) -> T_Out:
     """Call an MCP tool with a Pydantic input and parse a Pydantic output.
@@ -67,15 +67,7 @@ async def call_tool_typed(
     # Extract structured content
     structured = _structured_content(result, tool_name=name)
     # Validate and parse output
-    adapter: TypeAdapter[T_Out] = TypeAdapter(out_type)
-    try:
-        parsed = adapter.validate_python(structured)
-    except ValidationError:
-        if isinstance(structured, dict) and "result" in structured:
-            parsed = adapter.validate_python(structured["result"])
-        else:
-            raise
-    return parsed
+    return TypeAdapter(out_type).validate_python(structured)
 
 
 class ToolStub(Generic[T_Out]):
@@ -88,17 +80,17 @@ class ToolStub(Generic[T_Out]):
         out_type: type[T_Out],
         *,
         exclude_none: bool = True,
-        input_model: type[BaseModel] | None = None,
+        input_model: type[T_In] | None = None,
         wrapper_field: str | None = None,
     ) -> None:
         self._session = session
         self._name = name
         self._out_type = out_type
         self._exclude_none = exclude_none
-        self._input_model = input_model
+        self._input_model: type[T_In] | None = input_model
         self._wrapper_field = wrapper_field
 
-    async def __call__(self, payload: BaseModel | dict[str, object]) -> T_Out:
+    async def __call__(self, payload: T_In) -> T_Out:
         return await call_tool_typed(
             self._session,
             self._name,

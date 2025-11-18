@@ -122,12 +122,4 @@ async def call_tool_typed(
     """
     args = payload.model_dump(exclude_none=exclude_none)
     _result, structured = await _call_structured(session, name, args)
-    adapter: TypeAdapter[T_Out] = TypeAdapter(out_type)
-    try:
-        parsed = adapter.validate_python(structured)
-    except ValidationError:
-        if isinstance(structured, dict) and "result" in structured:
-            parsed = adapter.validate_python(structured["result"])
-        else:
-            raise
-    return parsed
+    return TypeAdapter(out_type).validate_python(structured)
