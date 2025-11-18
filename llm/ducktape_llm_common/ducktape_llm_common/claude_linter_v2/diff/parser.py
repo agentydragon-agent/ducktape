@@ -1,7 +1,7 @@
 """Parse diff information from Claude tool responses."""
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 

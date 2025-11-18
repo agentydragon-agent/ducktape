@@ -1,7 +1,6 @@
 """Main diff intelligence module for smart violation filtering."""
 
 from collections import defaultdict
-from typing import Any
 
 from ..config.models import Violation
 from .categorizer import CategorizedViolation, ViolationCategorizer, ViolationCategory
