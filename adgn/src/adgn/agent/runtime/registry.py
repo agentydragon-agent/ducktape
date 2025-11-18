@@ -10,9 +10,12 @@ from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.local_runtime import LocalAgentRuntime
 from adgn.agent.runtime.running import RunningInfrastructure
+from adgn.agent.server.bus import ServerBus
+from adgn.mcp.compositor.clients import CompositorAdminClient
 from adgn.openai_utils.model import OpenAIModelProto
 
 from .builder import build_local_agent
+from .container import UiFacet
 
 
 @dataclass
@@ -33,7 +36,6 @@ class AgentRuntime:
         """UI facet for backward compatibility."""
         if self._ui_manager is None or self._ui_bus is None:
             return None
-        from adgn.agent.runtime.container import UiFacet
         return UiFacet(manager=self._ui_manager, ui_bus=self._ui_bus)
 
     @property
@@ -60,8 +62,6 @@ class AgentRuntime:
         detach: list[str] | None = None,
     ) -> None:
         """Reconfigure MCP servers at runtime."""
-        from adgn.mcp.compositor.clients import CompositorAdminClient
-
         admin = CompositorAdminClient(self.running.compositor_client)
         current_specs = await self.running.compositor.mount_specs()
 
@@ -149,7 +149,6 @@ class AgentRegistry:
     ) -> AgentRuntime:
         # Create ui_bus if needed for UI
         if with_ui and ui_bus is None:
-            from adgn.agent.server.bus import ServerBus
             ui_bus = ServerBus()
 
         running, runtime, ui_bus_out, conn_mgr_out = await build_local_agent(
