@@ -14,7 +14,9 @@ Note: Docker execution is NOT a sidecar - it's configured via MCPConfig
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
+from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.running import RunningInfrastructure
 from adgn.agent.runtime.sidecar import Sidecar
 from adgn.agent.server.bus import ServerBus
@@ -43,7 +45,7 @@ class ChatSidecar(Sidecar):
     async def attach(self, running: RunningInfrastructure) -> None:
         await attach_persisted_chat_servers(
             running.compositor,
-            persistence=running.approval_engine.persistence,
+            persistence=cast(SQLitePersistence, running.approval_engine.persistence),
             agent_id=running.agent_id,
         )
 
@@ -70,29 +72,29 @@ class SidecarBundle:
     sidecars: list[Sidecar]
 
     @classmethod
-    def for_local_agent(cls, ui_bus: ServerBus) -> "SidecarBundle":
+    def for_local_agent(cls, ui_bus: ServerBus) -> SidecarBundle:
         """Note: Add docker exec via MCPConfig if needed:
-            {
-              "mcpServers": {
-                "docker": {
-                  "transport": "stdio",
-                  "command": "docker-exec-mcp",
-                  "args": ["--mount", "/path/to/repo:/workspace:ro"]
-                }
-              }
+        {
+          "mcpServers": {
+            "docker": {
+              "transport": "stdio",
+              "command": "docker-exec-mcp",
+              "args": ["--mount", "/path/to/repo:/workspace:ro"]
             }
+          }
+        }
         """
         return cls([UISidecar(ui_bus), ChatSidecar(), LoopControlSidecar()])
 
     @classmethod
-    def for_external_agent(cls) -> "SidecarBundle":
+    def for_external_agent(cls) -> SidecarBundle:
         """External agents should configure docker exec via MCPConfig.
         No UI, chat, or loop control needed for external agents.
         """
         return cls([])
 
     @classmethod
-    def for_testing(cls) -> "SidecarBundle":
+    def for_testing(cls) -> SidecarBundle:
         """Configure docker exec via MCPConfig if needed for tests."""
         return cls([])
 

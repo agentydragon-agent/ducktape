@@ -15,7 +15,6 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
 
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
-from adgn.agent.persist import ApprovalOutcome
 from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifications.buffer import NotificationsBuffer
@@ -73,6 +72,7 @@ class RunningInfrastructure:
             from adgn.mcp.compositor.clients import CompositorAdminClient
 
             object.__setattr__(self, "_admin_client", CompositorAdminClient(self.compositor_client))
+        assert self._admin_client is not None  # for mypy
         return self._admin_client
 
     async def attach_sidecar(self, sidecar: Sidecar) -> None:
@@ -109,7 +109,7 @@ class RunningInfrastructure:
         """Policy-gated via active approval policy."""
         await self.admin_client.detach_server(name=name)
 
-    async def __aenter__(self) -> "RunningInfrastructure":
+    async def __aenter__(self) -> RunningInfrastructure:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:

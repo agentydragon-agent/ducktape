@@ -43,9 +43,7 @@ class ApprovalPendingEvt(BaseModel):
     """New approval request event."""
 
     type: Literal["approval_pending"] = "approval_pending"
-    call_id: str
-    tool_key: str
-    args_json: str | None = None
+    approval: ApprovalBrief
     model_config = ConfigDict(extra="forbid")
 
 
@@ -78,10 +76,13 @@ class ApprovalsChannelManager(ChannelConnectionManager):
 
     async def send_snapshot(self, approval_hub: ApprovalHub) -> None:
         """Send current approvals snapshot to all clients."""
-        pending = [
-            ApprovalBrief(call_id=req.tool_call.call_id, tool_key=req.tool_key, args={})
-            for req in approval_hub._requests.values()
-        ]
+        import json
+
+        pending = []
+        for req in approval_hub._requests.values():
+            args = json.loads(req.tool_call.args_json) if req.tool_call.args_json else {}
+            pending.append(ApprovalBrief(call_id=req.tool_call.call_id, tool_key=req.tool_key, args=args))
+
         snapshot = ApprovalsSnapshot(pending=pending)
         await self.broadcast(snapshot)
 
