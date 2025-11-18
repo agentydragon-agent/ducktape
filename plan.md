@@ -6,6 +6,26 @@ Replace custom WebSocket channels with a unified **`agents` MCP server** that pr
 
 **Important**: This implementation may break backward compatibility with previous versions. Breaking changes are acceptable to achieve a cleaner architecture and better type safety.
 
+## Key Decisions
+
+### Type Organization
+**Decision**: New persistence types (`Decision`, `ToolCallExecution`, `ToolCallRecord`) will live in `adgn/src/adgn/agent/persist/__init__.py` alongside `ApprovalRecord`. This keeps persistence models together.
+
+### Type Consolidation
+**Decision**: Keep two `ToolCall` types (Option B):
+- Simple `ToolCall` in `approvals.py` (renamed from `ApprovalToolCall`) - for persistence/approvals
+- Discriminated `ToolCall` in `protocol.py` (with `type` field) - for wire protocol
+- TODO: Reconsider if this becomes confusing
+
+### Policy Proposals UI Access
+**Decision**: Frontend directly uses existing policy server resources (Option B). No routing through agents server. The policy server already exposes proposals resources that work correctly.
+
+### Agents Server Pattern
+**Decision**: Follow compositor pattern - `agents` server should be a FastMCP proxy doing translation/routing to per-agent MCP servers. This avoids duplicating routing logic 500 times.
+
+### Database Migration Strategy
+**Decision**: Drop and recreate databases (Option B). Document that existing approval history will be lost. Acceptable for personal infrastructure during development phase.
+
 ## Known Gaps & Future Work
 
 This plan focuses on **core approval and timeline functionality**. The following features are mentioned in mockups/API but are **out of scope** for initial phases:
@@ -1562,6 +1582,22 @@ client.on('elicitation', async (request) => {
 
 ## Success Metrics
 
+### Phase 0 (Type Consolidation & Data Models)
+- [ ] `ApprovalToolCall` renamed to `ToolCall` in `approvals.py`
+- [ ] All imports updated (middleware, persistence, plan)
+- [ ] New persistence models defined (`Decision`, `ToolCallExecution`, `ToolCallRecord`)
+- [ ] Database schema updated with new columns
+- [ ] Migration strategy documented
+- [ ] Middleware bugs fixed (USER outcomes recorded correctly)
+- [ ] Tool arguments passed to `record_approval()` calls
+- [ ] Execution tracking implemented (start/completion)
+- [ ] All component tests pass (A-E)
+- [ ] All verification tasks pass (V1-V5, V-final)
+- [ ] Integration tests pass (full approval lifecycle)
+- [ ] Type checking passes (mypy)
+- [ ] Code coverage ≥80% for new code
+- [ ] No code smells flagged by `prompts/scans/*.md`
+
 ### Phase 1 (Backend)
 - [ ] Unified `agents` server implemented (no stubs)
 - [ ] All resources work (`agents/list`, `agents/{id}/state`, `agents/{id}/approvals/pending`, `agents/{id}/approvals/history`, `approvals/pending`)
@@ -1621,14 +1657,297 @@ client.on('elicitation', async (request) => {
 - [ ] No dead code
 - [ ] No stub implementations
 
+## Implementation Phases
+
+### Phase 0: Type Consolidation & Data Models (Foundation)
+
+**Purpose**: Clean up type system and create foundation for persistence improvements.
+
+**Timeline**: 1-2 days (highly parallelizable)
+
+#### Dependency Graph
+
+```
+Group 1 (Fully Parallel):
+├─ Task A: Rename ApprovalToolCall → ToolCall
+└─ Task B: Define persistence models
+
+Group 2 (Depends on Group 1):
+├─ Task C: Update database schema (needs B)
+└─ Task D: Fix middleware bugs (needs A)
+
+Group 3 (Depends on Group 2):
+└─ Task E: Track execution in middleware (needs A, B, C, D)
+
+Verification (Parallel after dependencies):
+├─ Task V1: Verify type consolidation (after A)
+├─ Task V2: Verify persistence models (after B)
+├─ Task V3: Verify database schema (after C)
+├─ Task V4: Verify middleware bugs (after D)
+├─ Task V5: Verify execution tracking (after E)
+└─ Task V-final: Integration verification (after all)
+```
+
+#### Task A: Rename ApprovalToolCall → ToolCall
+
+**Dependencies**: None
+
+**Files**:
+- `adgn/src/adgn/agent/approvals.py`: Rename class
+- `adgn/src/adgn/mcp/policy_gateway/middleware.py`: Update imports
+- `adgn/src/adgn/agent/persist/__init__.py`: Update imports
+- `plan.md`: Update references
+
+**Definition of Done**:
+- [ ] `ApprovalToolCall` renamed to `ToolCall` in `approvals.py`
+- [ ] All imports updated in middleware, persistence
+- [ ] No import errors when importing `ToolCall` from `approvals`
+- [ ] No conflicts with `protocol.py` version (different modules)
+- [ ] TODO added to reconsider if dual names become confusing
+- [ ] **Tests**: All existing tests pass with renamed type
+- [ ] **Tests**: Import test verifies both ToolCall types can coexist
+
+#### Task B: Define Persistence Models
+
+**Dependencies**: None
+
+**Files**:
+- `adgn/src/adgn/agent/persist/__init__.py`: Add new models
+
+**Definition of Done**:
+- [ ] `Decision` model defined with fields: `outcome: ApprovalOutcome`, `decided_at: datetime`, `reason: str | None`
+- [ ] `ToolCallExecution` model defined with fields: `completed_at: datetime`, `output: mcp_types.CallToolResult`
+- [ ] `ToolCallRecord` model defined with fields: `call_id`, `run_id`, `agent_id`, `tool_call: ToolCall`, `decision: Decision | None`, `execution: ToolCallExecution | None`
+- [ ] All models are Pydantic BaseModel subclasses
+- [ ] All fields properly typed (no `Any`)
+- [ ] Docstrings explain "jointly optional" pattern
+- [ ] TODO comment on ApprovalRecord about eventual deprecation
+- [ ] **Tests**: Pydantic model validation tests (valid/invalid inputs)
+- [ ] **Tests**: Test jointly optional pattern (decision=None, execution=None valid)
+- [ ] **Tests**: Test serialization/deserialization (to/from JSON)
+
+#### Task C: Update Database Schema
+
+**Dependencies**: Task B (needs model definitions)
+
+**Files**:
+- `adgn/src/adgn/agent/persist/sqlite.py`: Schema updates
+- Migration documentation
+
+**Definition of Done**:
+- [ ] New tables/columns for `ToolCallRecord` fields
+- [ ] Columns for tool_call: `tool_name`, `tool_args_json`
+- [ ] Columns for decision: `decision_outcome`, `decided_at`, `decision_reason`
+- [ ] Columns for execution: `execution_completed_at`, `execution_output_json`
+- [ ] Migration strategy documented: "Drop old tables, create new. Approval history will be lost."
+- [ ] Schema version incremented
+- [ ] **Tests**: Test database creation with new schema
+- [ ] **Tests**: Test inserting ToolCallRecord instances
+- [ ] **Tests**: Test querying ToolCallRecord instances
+- [ ] **Tests**: Test NULL handling for optional decision/execution
+- [ ] **Tests**: Test migration from scratch (fresh DB)
+
+#### Task D: Fix Middleware Bugs
+
+**Dependencies**: Task A (needs renamed ToolCall type)
+
+**Files**:
+- `adgn/src/adgn/mcp/policy_gateway/middleware.py`: Lines 242, 254, and record_approval calls
+
+**Definition of Done**:
+- [ ] Line 242: USER approvals recorded as `USER_APPROVE` (not `POLICY_ALLOW`)
+- [ ] Line 254: USER rejections recorded as `USER_DENY_ABORT` (not `POLICY_DENY_ABORT`)
+- [ ] Tool args passed to all `record_approval()` calls
+- [ ] Middleware imports `ToolCall` from `approvals` (not `protocol`)
+- [ ] **Tests**: Test USER approval recorded with correct outcome
+- [ ] **Tests**: Test USER rejection recorded with correct outcome
+- [ ] **Tests**: Test POLICY approval still works correctly
+- [ ] **Tests**: Test tool args are captured in approval records
+- [ ] **Tests**: Integration test: approval flow end-to-end
+
+#### Task E: Track Execution in Middleware
+
+**Dependencies**: Tasks A, B, C, D (needs types, schema, and bug fixes)
+
+**Files**:
+- `adgn/src/adgn/mcp/policy_gateway/middleware.py`: Execution tracking
+
+**Definition of Done**:
+- [ ] Track execution start: use `decision.decided_at` (no separate field needed)
+- [ ] Track execution completion: capture timestamp after `call_next()`
+- [ ] Capture tool output from `call_next()` result
+- [ ] Pass execution data to persistence layer
+- [ ] Handle execution errors gracefully
+- [ ] **Tests**: Test execution completion captured
+- [ ] **Tests**: Test execution output saved correctly
+- [ ] **Tests**: Test timing: decided_at < completed_at
+- [ ] **Tests**: Test error handling during tool execution
+- [ ] **Tests**: Integration test: full lifecycle (pending → decided → executing → completed)
+
+#### Task V1-V5: Component Verification
+
+**Dependencies**: Each depends on corresponding task (A-E)
+
+**Definition of Done for Each**:
+- [ ] Run component-specific tests
+- [ ] Check code quality (no `getattr`/`hasattr`/`setattr`, proper typing)
+- [ ] Verify matches plan.md specification
+- [ ] Check for code smells per `prompts/scans/*.md`
+
+#### Task V-final: Integration Verification
+
+**Dependencies**: All tasks A-E complete
+
+**Definition of Done**:
+- [ ] All component tests pass
+- [ ] Integration tests pass (full approval lifecycle)
+- [ ] Type checking passes (mypy)
+- [ ] No regressions in existing functionality
+- [ ] Code coverage for new code ≥80%
+- [ ] Documentation updated
+- [ ] Phase 0 checklist in Success Metrics section fully checked
+
+### Execution Plan: Maximal Parallelism via Task Delegation
+
+**Strategy**: Use Task tool to delegate work with maximum parallelism, then verify.
+
+#### Wave 1: Parallel Foundation Tasks
+Launch **2 agents in parallel** (single message with multiple Task calls):
+
+```
+Agent 1: Task A (Rename ApprovalToolCall → ToolCall)
+  Prompt: "Rename ApprovalToolCall to ToolCall in adgn/src/adgn/agent/approvals.py.
+          Update all imports in middleware.py and persist/__init__.py.
+          Update references in plan.md.
+          Add TODO comment about reconsidering dual names.
+          Run existing tests to ensure no regressions.
+          Add import coexistence test.
+          Return summary of files changed and test results."
+
+Agent 2: Task B (Define Persistence Models)
+  Prompt: "Define new persistence models in adgn/src/adgn/agent/persist/__init__.py:
+          - Decision(outcome: ApprovalOutcome, decided_at: datetime, reason: str | None)
+          - ToolCallExecution(completed_at: datetime, output: CallToolResult)
+          - ToolCallRecord(call_id, run_id, agent_id, tool_call, decision, execution)
+          Use Pydantic BaseModel. Add docstrings explaining jointly optional pattern.
+          Add TODO on ApprovalRecord about deprecation.
+          Write validation tests, serialization tests, jointly optional tests.
+          Return model definitions and test results."
+```
+
+**Wait for Wave 1 completion**, then:
+
+#### Wave 2: Parallel Dependent Tasks
+Launch **3 agents in parallel**:
+
+```
+Agent 3: Task C (Update Database Schema)
+  Dependencies: Agent 2 output (model definitions)
+  Prompt: "Update database schema in adgn/src/adgn/agent/persist/sqlite.py for ToolCallRecord.
+          Add columns: tool_name, tool_args_json, decision_outcome, decided_at, decision_reason,
+          execution_completed_at, execution_output_json.
+          Document migration strategy: drop old tables, create new.
+          Increment schema version.
+          Write tests: DB creation, insert, query, NULL handling, fresh migration.
+          Return schema changes and test results."
+
+Agent 4: Task D (Fix Middleware Bugs)
+  Dependencies: Agent 1 output (ToolCall rename)
+  Prompt: "Fix middleware bugs in adgn/src/adgn/mcp/policy_gateway/middleware.py:
+          - Line 242: Record USER_APPROVE (not POLICY_ALLOW)
+          - Line 254: Record USER_DENY_ABORT (not POLICY_DENY_ABORT)
+          - Pass tool args to all record_approval() calls
+          - Import ToolCall from approvals (not protocol)
+          Write tests: USER approval outcome, USER rejection outcome, POLICY approval,
+          tool args captured, end-to-end approval flow.
+          Return changes and test results."
+
+Agent 5: Task V1 (Verify Task A)
+  Dependencies: Agent 1 output
+  Prompt: "Verify Task A completion:
+          - Check ApprovalToolCall renamed in approvals.py
+          - Check all imports updated
+          - Run import coexistence test
+          - Check for code smells (no getattr/hasattr/setattr)
+          - Verify proper typing (mypy)
+          Return verification report."
+```
+
+**Wait for Wave 2 completion**, then:
+
+#### Wave 3: Parallel Execution & Verification
+Launch **4 agents in parallel**:
+
+```
+Agent 6: Task E (Track Execution in Middleware)
+  Dependencies: Agents 1, 2, 3, 4 outputs
+  Prompt: "Add execution tracking to middleware.py:
+          - Track start: use decision.decided_at (no separate field)
+          - Track completion: capture timestamp after call_next()
+          - Capture tool output from result
+          - Pass execution data to persistence
+          - Handle errors gracefully
+          Write tests: completion captured, output saved, timing validation,
+          error handling, full lifecycle test.
+          Return changes and test results."
+
+Agent 7: Task V2 (Verify Task B)
+  Dependencies: Agent 2 output
+  Prompt: "Verify Task B completion: Check models defined correctly,
+          run validation tests, check code quality. Return verification report."
+
+Agent 8: Task V3 (Verify Task C)
+  Dependencies: Agent 3 output
+  Prompt: "Verify Task C completion: Check schema updated correctly,
+          run DB tests, verify migration docs. Return verification report."
+
+Agent 9: Task V4 (Verify Task D)
+  Dependencies: Agent 4 output
+  Prompt: "Verify Task D completion: Check bugs fixed, test outcomes correct,
+          run middleware tests. Return verification report."
+```
+
+**Wait for Wave 3 completion**, then:
+
+#### Wave 4: Final Verification
+Launch **2 agents in parallel**:
+
+```
+Agent 10: Task V5 (Verify Task E)
+  Dependencies: Agent 6 output
+  Prompt: "Verify Task E completion: Check execution tracking works,
+          run lifecycle tests, verify error handling. Return verification report."
+
+Agent 11: Task V-final (Integration Verification)
+  Dependencies: All agents 1-10 outputs
+  Prompt: "Run integration verification:
+          - All component tests pass
+          - Integration tests pass (full approval lifecycle)
+          - Type checking passes (mypy)
+          - No regressions
+          - Code coverage ≥80%
+          - Documentation updated
+          - Phase 0 checklist complete
+          Return comprehensive verification report with all metrics."
+```
+
+**Total agents**: 11 (max 4 concurrent)
+**Total waves**: 4
+**Estimated time**: 4-6 hours (vs 1-2 days sequential)
+
+### Phase 1-5: (Previous Plan)
+
+See detailed sections below for Phases 1-5 (Backend, Frontend, Shared Models, Testing, Cleanup).
+
 ## Timeline Estimate
 
+- **Phase 0** (Type Consolidation & Data Models): 1-2 days
 - **Phase 1** (Backend): 3-4 days
 - **Phase 2** (Frontend): 2-3 days
 - **Phase 3** (Shared Models): 1 day
 - **Phase 4** (Testing): 2-3 days
 - **Phase 5** (Cleanup): 1 day
-- **Total**: ~2 weeks
+- **Total**: ~2.5 weeks
 
 ## Data Model Improvements & Bug Fixes
 
