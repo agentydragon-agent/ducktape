@@ -98,30 +98,38 @@ data "talos_machine_configuration" "controlplane" {
   ]
 }
 
+# Download Talos kernel and initramfs
+resource "shell_script" "download_talos_images" {
+  lifecycle_commands {
+    create = <<-EOT
+      mkdir -p ${local.vm_dir}/_out
+      curl -k -x ${var.proxy_url} -L "${data.talos_image_factory_urls.this.urls.kernel}" -o ${local.vm_dir}/_out/vmlinuz-amd64
+      curl -k -x ${var.proxy_url} -L "${data.talos_image_factory_urls.this.urls.initramfs}" -o ${local.vm_dir}/_out/initramfs-amd64.xz
+      echo "downloaded"
+    EOT
+    read   = "test -f ${local.vm_dir}/_out/vmlinuz-amd64 && test -f ${local.vm_dir}/_out/initramfs-amd64.xz && echo 'downloaded' || echo ''"
+    delete = "rm -rf ${local.vm_dir}/_out || true"
+  }
+}
+
 # Create disk image
-resource "null_resource" "create_disk" {
-  provisioner "local-exec" {
-    command     = "qemu-img create -f qcow2 ${local.vm_dir}/talos-disk-tf.qcow2 ${var.vm_disk_size}"
-    working_dir = local.vm_dir
+resource "shell_script" "create_disk" {
+  lifecycle_commands {
+    create = "qemu-img create -f qcow2 ${local.vm_dir}/talos-disk-tf.qcow2 ${var.vm_disk_size}"
+    delete = "rm -f ${local.vm_dir}/talos-disk-tf.qcow2 || true"
   }
 
-  provisioner "local-exec" {
-    when        = destroy
-    command     = "rm -f ${self.triggers.disk_path}"
-    on_failure  = continue
-  }
-
-  triggers = {
-    disk_path = "${local.vm_dir}/talos-disk-tf.qcow2"
+  environment = {
+    DISK_PATH = "${local.vm_dir}/talos-disk-tf.qcow2"
   }
 }
 
 # Start VM
-resource "null_resource" "start_vm" {
-  depends_on = [null_resource.create_disk]
+resource "shell_script" "start_vm" {
+  depends_on = [shell_script.create_disk, shell_script.download_talos_images]
 
-  provisioner "local-exec" {
-    command = <<-EOT
+  lifecycle_commands {
+    create = <<-EOT
       nohup qemu-system-x86_64 \
         -name ${var.cluster_name} \
         -machine type=q35 \
@@ -138,46 +146,41 @@ resource "null_resource" "start_vm" {
         -nographic \
         > ${local.vm_dir}/vm-console-tf.log 2>&1 &
       echo $! > ${local.vm_dir}/vm-tf.pid
+      cat ${local.vm_dir}/vm-tf.pid
     EOT
-    working_dir = local.vm_dir
-  }
 
-  provisioner "local-exec" {
-    when       = destroy
-    command    = <<-EOT
-      if [ -f ${self.triggers.pid_file} ]; then
-        kill $(cat ${self.triggers.pid_file}) 2>/dev/null || true
-        rm -f ${self.triggers.pid_file}
+    delete = <<-EOT
+      if [ -f ${local.vm_dir}/vm-tf.pid ]; then
+        kill $(cat ${local.vm_dir}/vm-tf.pid) 2>/dev/null || true
+        rm -f ${local.vm_dir}/vm-tf.pid
       fi
-      pkill -f "qemu.*${self.triggers.cluster_name}" || true
+      pkill -f "qemu.*${var.cluster_name}" || true
     EOT
-    on_failure = continue
+
+    read = "cat ${local.vm_dir}/vm-tf.pid 2>/dev/null || echo ''"
   }
 
-  triggers = {
-    cluster_name = var.cluster_name
-    pid_file     = "${local.vm_dir}/vm-tf.pid"
-    disk_id      = null_resource.create_disk.id
+  environment = {
+    VM_DIR       = local.vm_dir
+    CLUSTER_NAME = var.cluster_name
   }
 }
 
 # Wait for VM to be ready (maintenance mode)
-resource "null_resource" "wait_for_vm" {
-  depends_on = [null_resource.start_vm]
+resource "shell_script" "wait_for_vm" {
+  depends_on = [shell_script.start_vm]
 
-  provisioner "local-exec" {
-    command = "sleep 30"
-  }
-
-  triggers = {
-    vm_id = null_resource.start_vm.id
+  lifecycle_commands {
+    create = "sleep 30 && echo 'ready'"
+    read   = "echo 'ready'"
+    delete = "echo ''"
   }
 }
 
 # Apply machine configuration to the VM
 resource "talos_machine_configuration_apply" "controlplane" {
   depends_on = [
-    null_resource.wait_for_vm
+    shell_script.wait_for_vm
   ]
 
   client_configuration        = talos_machine_secrets.this.client_configuration
@@ -187,22 +190,20 @@ resource "talos_machine_configuration_apply" "controlplane" {
 }
 
 # Wait for installation to complete
-resource "null_resource" "wait_for_install" {
+resource "shell_script" "wait_for_install" {
   depends_on = [talos_machine_configuration_apply.controlplane]
 
-  provisioner "local-exec" {
-    command = "sleep 120"
-  }
-
-  triggers = {
-    config_id = talos_machine_configuration_apply.controlplane.id
+  lifecycle_commands {
+    create = "sleep 120 && echo 'installed'"
+    read   = "echo 'installed'"
+    delete = "echo ''"
   }
 }
 
 # Bootstrap the Kubernetes cluster
 resource "talos_machine_bootstrap" "this" {
   depends_on = [
-    null_resource.wait_for_install
+    shell_script.wait_for_install
   ]
 
   client_configuration = talos_machine_secrets.this.client_configuration
@@ -211,22 +212,20 @@ resource "talos_machine_bootstrap" "this" {
 }
 
 # Wait for cluster to be ready
-resource "null_resource" "wait_for_cluster" {
+resource "shell_script" "wait_for_cluster" {
   depends_on = [talos_machine_bootstrap.this]
 
-  provisioner "local-exec" {
-    command = "sleep 90"
-  }
-
-  triggers = {
-    bootstrap_id = talos_machine_bootstrap.this.id
+  lifecycle_commands {
+    create = "sleep 90 && echo 'ready'"
+    read   = "echo 'ready'"
+    delete = "echo ''"
   }
 }
 
 # Get cluster kubeconfig
 data "talos_cluster_kubeconfig" "this" {
   depends_on = [
-    null_resource.wait_for_cluster
+    shell_script.wait_for_cluster
   ]
 
   client_configuration = talos_machine_secrets.this.client_configuration

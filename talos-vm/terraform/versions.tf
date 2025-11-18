@@ -6,9 +6,9 @@ terraform {
       source  = "siderolabs/talos"
       version = "~> 0.7.0"
     }
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.2.0"
+    shell = {
+      source  = "scottwinkler/shell"
+      version = "~> 1.7.0"
     }
     local = {
       source  = "hashicorp/local"
