@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 from .typed_stubs import TypedClient
 
-T = TypeVar("T", bound="ServerStub")
+TServerStub = TypeVar("TServerStub", bound="ServerStub")
 
 
 class ServerStub:
@@ -84,10 +84,10 @@ class ServerStub:
             setattr(self, name, _call.__get__(self, self.__class__))
 
     @classmethod
-    def from_server(cls: type[T], server: FastMCP, session: Client) -> T:
+    def from_server(cls: type[TServerStub], server: FastMCP, session: Client) -> TServerStub:
         """Create a typed stub from a FastMCP server and session."""
         # TypeVar bound to ServerStub ensures cls() accepts TypedClient
-        return cast(T, cls(TypedClient.from_server(server, session)))
+        return cast(TServerStub, cls(TypedClient.from_server(server, session)))
 
     def _stub(self, name: str, output_type: type):
         """Create a typed stub for a tool."""
