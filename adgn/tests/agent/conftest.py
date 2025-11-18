@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager, contextmanager
-from datetime import UTC
+from datetime import UTC, datetime
 import os
 from pathlib import Path
 from typing import Any
@@ -396,8 +396,6 @@ def agent_ws_box(ws_session, make_agent_http):
         agent_id: str
         http: _AgentHttp
 
-    from contextlib import contextmanager
-
     @contextmanager
     def _open(
         model_client: OpenAIModelProto,
@@ -421,11 +419,7 @@ def agent_ws_box(ws_session, make_agent_http):
                     p = env.payload
                     # Optional trace for visibility when debugging CI flakes
                     try:
-                        import os
-
                         if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
-                            from datetime import datetime
-
                             print(f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}")
                     except Exception:
                         pass
