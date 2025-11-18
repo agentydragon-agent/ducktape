@@ -51,7 +51,8 @@ def cli():
     "--mcp-config", type=Path, help="Path to .mcp.json config (servers to mount, e.g., docker exec with repo mount)"
 )
 @click.option("--host", default="127.0.0.1", help="Bind host")
-@click.option("--port", type=int, default=8080, help="Bind port")
+@click.option("--mcp-port", type=int, default=8080, help="MCP server port (token-authenticated)")
+@click.option("--ui-port", type=int, default=8081, help="Management UI port (WebSocket channels, no token auth)")
 @click.option("--initial-policy", type=Path, help="Path to initial approval policy (Python file)")
 def serve(
     agent_id: str | None,
@@ -59,7 +60,8 @@ def serve(
     db_path: Path,
     mcp_config: Path | None,
     host: str,
-    port: int,
+    mcp_port: int,
+    ui_port: int,
     initial_policy: Path | None,
 ):
     """Start HTTP MCP Bridge server.
@@ -92,7 +94,8 @@ def serve(
             db_path=db_path,
             mcp_config=config,
             host=host,
-            port=port,
+            mcp_port=mcp_port,
+            ui_port=ui_port,
             initial_policy=policy_source,
         )
     )
@@ -104,12 +107,17 @@ async def _run_server(
     db_path: Path,
     mcp_config: MCPConfig,
     host: str,
-    port: int,
+    mcp_port: int,
+    ui_port: int,
     initial_policy: str | None,
 ):
     import uvicorn
 
-    from adgn.agent.mcp_bridge.server import create_multi_tenant_app
+    from adgn.agent.mcp_bridge.server import (
+        InfrastructureRegistry,
+        create_management_ui_app,
+        create_mcp_server_app,
+    )
 
     # Initialize persistence
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -122,7 +130,7 @@ async def _run_server(
     await persistence.ensure_schema()
 
     if agent_id:
-        # Single-agent mode: create infrastructure at startup
+        # Single-agent mode: create infrastructure at startup (no management UI)
         from adgn.agent.mcp_bridge.server import create_bridge_infrastructure
 
         running = await create_bridge_infrastructure(
@@ -134,35 +142,49 @@ async def _run_server(
         )
 
         async with running:
-            app = running.compositor.http_app()
+            mcp_app = running.compositor.http_app()
 
             logger.info("HTTP MCP Bridge started (single-agent mode)")
             logger.info(f"Agent ID: {agent_id}")
             logger.info(f"Compositor ready with {len(mcp_config.mcpServers or {})} external servers")
-            logger.info(f"MCP server available at http://{host}:{port}/sse")
+            logger.info(f"MCP server available at http://{host}:{mcp_port}/sse")
 
-            config = uvicorn.Config(app=app, host=host, port=port, log_level="info")
-            server = uvicorn.Server(config)
-            await server.serve()
+            mcp_config_obj = uvicorn.Config(app=mcp_app, host=host, port=mcp_port, log_level="info")
+            mcp_server = uvicorn.Server(mcp_config_obj)
+            await mcp_server.serve()
     else:
-        # Multi-agent mode: create app with auth middleware
+        # Multi-agent mode: create both MCP server and management UI
         assert auth_tokens_path is not None
-        app = await create_multi_tenant_app(
-            auth_tokens_path=auth_tokens_path,
+
+        # Create shared infrastructure registry
+        registry = InfrastructureRegistry(
             persistence=persistence,
             docker_client=docker_client,
             mcp_config=mcp_config,
             initial_policy=initial_policy,
         )
 
+        # Create both apps
+        mcp_app = await create_mcp_server_app(auth_tokens_path=auth_tokens_path, registry=registry)
+        ui_app = await create_management_ui_app(registry=registry)
+
         logger.info("HTTP MCP Bridge started (multi-agent mode)")
         logger.info(f"Token mapping: {auth_tokens_path}")
-        logger.info(f"MCP server available at http://{host}:{port}/sse")
-        logger.info("Requires: Authorization: Bearer <token>")
+        logger.info(f"MCP server (token auth): http://{host}:{mcp_port}/sse")
+        logger.info(f"Management UI: http://{host}:{ui_port}")
+        logger.info("  - Policy: ws://{host}:{ui_port}/ws/policy?agent_id=<id>")
+        logger.info("  - Approvals: ws://{host}:{ui_port}/ws/approvals?agent_id=<id>")
+        logger.info("  - MCP: ws://{host}:{ui_port}/ws/mcp?agent_id=<id>")
 
-        config = uvicorn.Config(app=app, host=host, port=port, log_level="info")
-        server = uvicorn.Server(config)
-        await server.serve()
+        # Create servers
+        mcp_config_obj = uvicorn.Config(app=mcp_app, host=host, port=mcp_port, log_level="info")
+        mcp_server = uvicorn.Server(mcp_config_obj)
+
+        ui_config_obj = uvicorn.Config(app=ui_app, host=host, port=ui_port, log_level="info")
+        ui_server = uvicorn.Server(ui_config_obj)
+
+        # Run both servers concurrently
+        await asyncio.gather(mcp_server.serve(), ui_server.serve())
 
 
 if __name__ == "__main__":
