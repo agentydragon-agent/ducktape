@@ -109,6 +109,19 @@ class AgentMode(StrEnum):
     BRIDGE = "bridge"
 
 
+class ApprovalStatus(StrEnum):
+    """Approval tool response status."""
+
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class AbortStatus(StrEnum):
+    """Abort tool response status."""
+
+    ABORTED = "aborted"
+
+
 # Tool input models
 class ApproveToolCallArgs(BaseModel):
     """Arguments for approve_tool_call tool."""
@@ -185,6 +198,22 @@ class AgentApprovalsHistoryResponse(BaseModel):
     timeline: list[ApprovalHistoryEntry]
     pending: list[PendingApproval]  # Pending approvals not yet decided
     count: int  # Total count (timeline + pending)
+
+
+# Tool response models
+class ApprovalToolResponse(BaseModel):
+    """Response from approval tools (approve/reject)."""
+
+    status: ApprovalStatus
+    agent_id: str
+    call_id: str
+
+
+class AbortAgentResponse(BaseModel):
+    """Response from abort_agent tool."""
+
+    status: AbortStatus
+    agent_id: str
 
 
 def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
@@ -373,7 +402,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
     # Tools
 
     @server.tool()
-    async def approve_tool_call(agent_id: str, call_id: str) -> dict:
+    async def approve_tool_call(agent_id: str, call_id: str) -> ApprovalToolResponse:
         """Approve a pending tool call.
 
         Args:
@@ -381,7 +410,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
             call_id: Tool call identifier
 
         Returns:
-            Status dict with approval confirmation
+            ApprovalToolResponse with approval confirmation
 
         Routes to: lookup_infrastructure(agent_id).approval_hub.resolve()
         """
@@ -395,10 +424,10 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/history")
         await server.broadcast_resource_updated("resource://approvals/pending")
 
-        return {"status": "approved", "agent_id": agent_id, "call_id": call_id}
+        return ApprovalToolResponse(status=ApprovalStatus.APPROVED, agent_id=agent_id, call_id=call_id)
 
     @server.tool()
-    async def reject_tool_call(agent_id: str, call_id: str, reason: str) -> dict:
+    async def reject_tool_call(agent_id: str, call_id: str, reason: str) -> ApprovalToolResponse:
         """Reject a pending tool call.
 
         Args:
@@ -407,7 +436,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
             reason: Rejection reason
 
         Returns:
-            Status dict with rejection confirmation
+            ApprovalToolResponse with rejection confirmation
 
         Routes to: lookup_infrastructure(agent_id).approval_hub.resolve()
         """
@@ -421,17 +450,17 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/history")
         await server.broadcast_resource_updated("resource://approvals/pending")
 
-        return {"status": "rejected", "agent_id": agent_id, "call_id": call_id}
+        return ApprovalToolResponse(status=ApprovalStatus.REJECTED, agent_id=agent_id, call_id=call_id)
 
     @server.tool()
-    async def abort_agent(agent_id: str) -> dict:
+    async def abort_agent(agent_id: str) -> AbortAgentResponse:
         """Abort a running agent.
 
         Args:
             agent_id: Agent identifier
 
         Returns:
-            Status dict with abort confirmation
+            AbortAgentResponse with abort confirmation
 
         Routes to: local_runtime.agent.abort()
 
@@ -448,7 +477,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
             raise ValueError(f"Agent {agent_id} has no agent loop")
 
         await local_runtime.agent.abort()
-        return {"status": "aborted", "agent_id": agent_id}
+        return AbortAgentResponse(status=AbortStatus.ABORTED, agent_id=agent_id)
 
     # Wire up notifications
     # Note: Notifications are triggered when:
