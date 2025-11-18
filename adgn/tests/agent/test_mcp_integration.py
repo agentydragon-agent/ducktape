@@ -8,7 +8,7 @@ import pytest
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.direct import DirectExecArgs, make_direct_exec_server
 from adgn.mcp.exec.models import BaseExecResult, Exited
-from adgn.mcp.testing.typed_stubs import call_tool_typed
+from adgn.mcp.testing.typed_stubs import ToolStub
 
 # FastMCP stdio client (hard import)
 
@@ -56,8 +56,8 @@ async def test_direct_inprocess_server(make_compositor) -> None:
         tool_name = build_mcp_function("local", "exec")
         assert any(t.name == tool_name for t in tools)
         # Sanity-call exec via the namespaced tool using the typed helper
-        payload = DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100_000, timeout_ms=5000)
-        result = await call_tool_typed(sess, tool_name, payload, BaseExecResult)
+        exec_stub = ToolStub(sess, tool_name, BaseExecResult)
+        result = await exec_stub(DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100_000, timeout_ms=5000))
         # Compare whole exit object
         assert result.exit == Exited(exit_code=0)
 

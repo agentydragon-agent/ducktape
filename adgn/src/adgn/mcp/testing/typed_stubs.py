@@ -13,7 +13,7 @@ from mcp.types import CallToolResult
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from adgn.mcp._shared.calltool import to_pydantic
-from adgn.mcp._shared.client_helpers import StructuredContent, call_tool_typed, extract_error_detail
+from adgn.mcp._shared.client_helpers import StructuredContent, extract_error_detail
 
 # We use the concrete FastMCP Client type for sessions in tests
 
@@ -45,13 +45,11 @@ class ToolStub(Generic[T_Out]):
         self._exclude_none = exclude_none
 
     async def __call__(self, payload: T_In) -> T_Out:
-        return await call_tool_typed(
-            self._session,
-            self._name,
-            payload,
-            self._out_type,
-            exclude_none=self._exclude_none,
-        )
+        args = payload.model_dump(exclude_none=self._exclude_none)
+        result = await self._session.call_tool(name=self._name, arguments=args)
+        pydantic_result = to_pydantic(result)
+        structured = _structured_content(pydantic_result, tool_name=self._name)
+        return TypeAdapter(self._out_type).validate_python(structured)
 
 
 def _resolve_output_type(hinted_output: object, out_model: object) -> type[Any]:

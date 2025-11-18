@@ -5,9 +5,10 @@ from typing import Final
 from fastmcp.client import Client
 
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
-from adgn.mcp._shared.client_helpers import call_simple_ok, call_tool_typed
+from adgn.mcp._shared.client_helpers import call_simple_ok
 from adgn.mcp._shared.constants import APPROVAL_POLICY_SERVER_NAME_APPROVER, APPROVAL_POLICY_SERVER_NAME_READER
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
+from adgn.mcp.testing.typed_stubs import ToolStub
 
 READER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME_READER
 APPROVER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME_APPROVER
@@ -18,6 +19,7 @@ class PolicyReaderClient:
 
     def __init__(self, client: Client) -> None:
         self._client = client
+        self._decide_stub: ToolStub[PolicyResponse] = ToolStub(client, "decide", PolicyResponse)
 
     @property
     def name(self) -> str:
@@ -28,7 +30,7 @@ class PolicyReaderClient:
         return self._client
 
     async def decide(self, args: PolicyRequest) -> PolicyResponse:
-        return await call_tool_typed(self._client, "decide", args, PolicyResponse)
+        return await self._decide_stub(args)
 
 
 class PolicyApproverClient:
