@@ -18,7 +18,7 @@ from anthropic.types.text_block_param import TextBlockParam
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, ValidationError
 import tiktoken
 
 from adgn.openai_utils.client_factory import get_async_openai
@@ -120,7 +120,7 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
                 ccr = CCRSample(
                     correlation_id=rec.get("correlation_id"),
                     timestamp=rec.get("timestamp"),
-                    anthropic_request=CCRRequest.model_validate(rec["anthropic_request"]),
+                    anthropic_request=CCRRequest.model_validate(rec["anthropic_request"]),  # type: ignore[arg-type]
                 )
                 items.append(ccr)
                 continue
@@ -130,7 +130,7 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
                 crush = CrushSample(
                     correlation_id=rec.get("correlation_id"),
                     timestamp=rec.get("timestamp"),
-                    oai_request=payload,
+                    oai_request=payload,  # type: ignore[arg-type]
                     wirelog=rec.get("wirelog"),
                 )
                 items.append(crush)
@@ -218,6 +218,11 @@ MODEL_PREFIX = "You are powered by the model"
 MCP_HEADER = "# MCP Server Instructions"
 
 
+# Type adapters for validating Anthropic SDK types (TypedDicts)
+_MESSAGE_PARAM_ADAPTER: TypeAdapter[MessageParam] = TypeAdapter(MessageParam)
+_CONTENT_BLOCK_PARAM_ADAPTER: TypeAdapter[ContentBlockParam] = TypeAdapter(ContentBlockParam)
+
+
 def index_of_last_assistant_before_final(msgs: list[StandardMessage]) -> int | None:
     """Find index of last assistant message before the final message."""
     for i in range(len(msgs) - 2, -1, -1):
@@ -239,11 +244,17 @@ def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[Standar
     """Convert Anthropic MessageParam list to StandardMessage list for grader context.
 
     Extracts text content from Anthropic content blocks and flattens to simple string content.
+    Uses Pydantic TypeAdapter to validate Anthropic SDK TypedDicts for type safety.
     """
     result: list[StandardMessage] = []
-    for msg in messages:
-        if not isinstance(msg, dict):
+    for raw_msg in messages:
+        # Validate message structure using TypeAdapter
+        try:
+            msg = _MESSAGE_PARAM_ADAPTER.validate_python(raw_msg)
+        except ValidationError:
+            # Skip invalid messages
             continue
+
         role = msg.get("role")
         content = msg.get("content")
 
@@ -253,11 +264,17 @@ def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[Standar
             text_content = content
         elif isinstance(content, list):
             texts: list[str] = []
-            for block in content:
-                if isinstance(block, dict) and block.get("type") in ("text", "input_text"):
-                    text = block.get("text")
-                    if isinstance(text, str):
-                        texts.append(text)
+            for raw_block in content:
+                # Validate content block
+                try:
+                    block = _CONTENT_BLOCK_PARAM_ADAPTER.validate_python(raw_block)
+                    if block.get("type") in ("text", "input_text"):
+                        text = block.get("text")
+                        if isinstance(text, str):
+                            texts.append(text)
+                except ValidationError:
+                    # Skip invalid content blocks
+                    continue
             text_content = "\n".join(texts)
 
         if not text_content.strip():
@@ -285,7 +302,10 @@ def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, 
 def anthro_to_openai_messages(
     messages: list[MessageParam], new_system_text: str | None
 ) -> list[ChatCompletionMessageParam]:
-    """Translate Anthropic MessageParam list into OpenAI Chat format, returning SDK models."""
+    """Translate Anthropic MessageParam list into OpenAI Chat format, returning SDK models.
+
+    Uses Pydantic TypeAdapter to validate Anthropic SDK TypedDicts for type safety.
+    """
 
     def _join_text_parts(parts: Iterable[dict[str, Any]]) -> str:
         texts: list[str] = []
@@ -304,9 +324,14 @@ def anthro_to_openai_messages(
     if new_system_text:
         raw_messages.append({"role": "system", "content": new_system_text})
 
-    for message in messages:
-        if not isinstance(message, dict):
+    for raw_msg in messages:
+        # Validate message structure using TypeAdapter for Anthropic MessageParam
+        try:
+            message = _MESSAGE_PARAM_ADAPTER.validate_python(raw_msg)
+        except ValidationError:
+            # Skip invalid messages
             continue
+
         role = message.get("role")
         content = message.get("content")
 
@@ -316,13 +341,14 @@ def anthro_to_openai_messages(
             continue
 
         if isinstance(content, list):
-            # Content is list[ContentBlockParam] - TypedDict union (dicts at runtime)
-            # Includes TextBlockParam, ToolUseBlockParam, ToolResultBlockParam, etc.
+            # Validate content blocks using TypeAdapter
             content_blocks: list[ContentBlockParam] = []
-            for part in content:
-                if isinstance(part, dict):
-                    content_blocks.append(part)
-                else:
+            for raw_part in content:
+                try:
+                    validated_part = _CONTENT_BLOCK_PARAM_ADAPTER.validate_python(raw_part)
+                    content_blocks.append(validated_part)
+                except ValidationError:
+                    # Skip invalid content blocks
                     continue
 
             if role == "assistant":
@@ -843,7 +869,7 @@ async def run_eval(
 
     scores: list[float] = []
     # Secondary metrics: tooling usage
-    tool_stats: dict[str, Any] = {
+    tool_stats = {
         "total_samples": 0,
         "text_only": 0,
         "with_tools": 0,
@@ -948,7 +974,7 @@ async def run_eval(
                     tool_stats["text_only"] = _as_int(tool_stats.get("text_only")) + 1
                 else:
                     tool_stats["with_tools"] = _as_int(tool_stats.get("with_tools")) + 1
-                    fc_top = cast(dict[str, int], tool_stats["function_counts"])
+                    fc_top = cast(dict[str, int], tool_stats["function_counts"])  # type: ignore[index]
                     for tc in tcs:
                         fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
                         fc_top[fn] = fc_top.get(fn, 0) + 1
@@ -960,7 +986,7 @@ async def run_eval(
                         src_stats["text_only"] = _as_int(src_stats.get("text_only")) + 1
                     else:
                         src_stats["with_tools"] = _as_int(src_stats.get("with_tools")) + 1
-                        ts_fc = cast(dict[str, int], src_stats["function_counts"])
+                        ts_fc = cast(dict[str, int], src_stats["function_counts"])  # type: ignore[index]
                         for tc in tcs:
                             fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
                             ts_fc[fn] = ts_fc.get(fn, 0) + 1
@@ -968,11 +994,11 @@ async def run_eval(
                 g_obj = EvalGradeRecord.model_validate(grade_rec)
                 g_out.write(json.dumps(g_obj.model_dump(), sort_keys=True) + "\n")
                 try:
-                    parsed = parse_grade_from_responses(grade_rec["response"])
+                    parsed = parse_grade_from_responses(grade_rec["response"])  # type: ignore[index]
                     score = float(parsed.get("score", 0))
                     scores.append(score)
                     if src in scores_by_source:
-                        scores_by_source[src].append(score)
+                        scores_by_source[src].append(score)  # type: ignore[index]
                     counters["processed"] += 1
                     summary_data = compute_and_write_summary(False)
                     print(

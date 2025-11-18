@@ -69,7 +69,9 @@ async def call_simple_ok(client: Client, *, name: str, arguments: dict) -> None:
 
 # Type-safe tool calling with Pydantic models
 
-StructuredContent = BaseModel | dict[str, object] | list[object] | str | int | float | bool | None
+# Type alias matching MCP spec for CallToolResult.structuredContent.
+# Both mcp.types.CallToolResult and fastmcp.client.CallToolResult define this as dict[str, Any] | None.
+StructuredContent = dict[str, object] | None
 
 
 def _structured_content(result: mcp_types.CallToolResult, *, tool_name: str) -> StructuredContent:
