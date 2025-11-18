@@ -1598,6 +1598,76 @@ client.on('elicitation', async (request) => {
 - **Phase 5** (Cleanup): 1 day
 - **Total**: ~2 weeks
 
+## Data Model Improvements & Bug Fixes
+
+### ApprovalRecord Enhancement
+
+**Current Issues:**
+1. **Naming**: `ApprovalRecord` tracks all tool calls (not just approvals) - should be `ToolCallRecord`
+2. **Untyped details**: Uses generic `dict[str, JsonValue]` instead of typed fields
+3. **Missing data**: Tool args, outputs, and execution timing not captured
+4. **Middleware bug**: USER approvals/rejections recorded with POLICY outcome codes
+
+**Required Changes:**
+
+```python
+# TODO: Rename ApprovalRecord → ToolCallRecord
+class ToolCallRecord(BaseModel):
+    """Complete tool call record from policy gate (tracks ALL calls through gate)."""
+    call_id: str
+    run_id: str | None
+    agent_id: str | None
+
+    # Tool call info (reuse existing ApprovalToolCall type)
+    tool_call: ApprovalToolCall  # {name, call_id, args_json}
+
+    # Decision info
+    outcome: ApprovalOutcome  # POLICY_ALLOW, USER_APPROVE, etc.
+    decided_at: datetime
+    reason: str | None  # Separate field for denial/rejection reasons
+
+    # Execution tracking (enables EXECUTING state detection)
+    execution_started_at: datetime | None
+    execution_completed_at: datetime | None
+    tool_output: mcp_types.CallToolResult | None  # Tool execution result
+```
+
+**TODOs:**
+- [ ] Fix middleware bug: Lines 242, 254 in `adgn/src/adgn/mcp/policy_gateway/middleware.py`
+  - USER approvals currently recorded as `POLICY_ALLOW` (should be `USER_APPROVE`)
+  - USER rejections currently recorded as `POLICY_DENY_ABORT` (should be `USER_DENY_ABORT`)
+- [ ] Pass tool arguments to `record_approval()` calls in middleware
+- [ ] Track execution start/completion in middleware (before/after `call_next()`)
+- [ ] Add typed fields to ApprovalRecord (or create ToolCallRecord)
+- [ ] Update database schema to support new fields
+- [ ] Update `list_approvals()` to return enriched records
+- [ ] Consider renaming to `ToolCallRecord` for clarity
+
+### Agent State Tracking
+
+**Agent States (for sidebar UI):**
+
+| State | Color | Meaning | Detection |
+|-------|-------|---------|-----------|
+| **WAITING_APPROVAL** | 🔴 Red | Has pending approvals | `len(approval_hub.pending) > 0` |
+| **EXECUTING** | 🟡 Yellow | Tool call in flight | `execution_started_at != None && execution_completed_at == None` |
+| **SAMPLING** | 🔵 Blue | Agent loop active (local only) | `local_runtime.agent.is_running()` |
+| **IDLE** | 🟢 Green | No pending work | Default state |
+
+**State Priority** (if multiple apply): WAITING_APPROVAL > EXECUTING > SAMPLING > IDLE
+
+**API Addition:**
+```typescript
+GET resource://agents/{id}/state
+  → {
+      agent_id: string,
+      state: "WAITING_APPROVAL" | "EXECUTING" | "SAMPLING" | "IDLE",
+      pending_approvals_count: number,
+      executing_tools: string[],  // call_ids of executing tools
+      is_sampling: boolean  // local agents only
+    }
+```
+
 ## Future Enhancements (Beyond Phase 5)
 
 These features would improve production deployment:

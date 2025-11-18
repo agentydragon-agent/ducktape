@@ -73,7 +73,20 @@ class PolicyProposal(BaseModel):
 
 
 class ApprovalRecord(BaseModel):
-    """Historical approval record from persistence."""
+    """Historical approval record from persistence.
+
+    TODO: This tracks tool calls generally, not just approvals. Consider renaming to ToolCallRecord.
+    TODO: Replace 'details' dict with typed fields:
+      - tool_call: ApprovalToolCall (reuse existing type with {name, call_id, args_json})
+      - reason: str | None (denial/rejection reason - separate field)
+      - execution_started_at: datetime | None (when tool execution began)
+      - execution_completed_at: datetime | None (when tool execution finished)
+      - tool_output: mcp_types.CallToolResult | None (tool execution result)
+    This would enable:
+      - Tracking EXECUTING state (started but not completed)
+      - Displaying full tool call timeline with args and outputs
+      - Proper type safety instead of generic dict
+    """
 
     call_id: str
     run_id: str | None
@@ -81,7 +94,7 @@ class ApprovalRecord(BaseModel):
     tool_key: str
     outcome: ApprovalOutcome
     decided_at: datetime
-    details: dict[str, JsonValue] | None = None
+    details: dict[str, JsonValue] | None = None  # TODO: Replace with typed fields above
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
