@@ -510,7 +510,7 @@ class AgentContainer:
         # Create in-proc client to the reader for policy gateway middleware
         _policy_reader_client = Client(reader_server)
         await self._stack.enter_async_context(_policy_reader_client)
-        policy_reader = PolicyReaderClient(_policy_reader_client)
+        policy_reader = PolicyReaderClient.from_client(_policy_reader_client)
         self._policy_reader = policy_reader
         # Create in-proc client for admin operations and keep on container
         _policy_approver_client = Client(approver_server)

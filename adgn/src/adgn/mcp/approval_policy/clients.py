@@ -8,29 +8,23 @@ from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.mcp._shared.client_helpers import call_simple_ok
 from adgn.mcp._shared.constants import APPROVAL_POLICY_SERVER_NAME_APPROVER, APPROVAL_POLICY_SERVER_NAME_READER
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
-from adgn.mcp.testing.typed_stubs import ToolStub
+from adgn.mcp.testing.server_stubs import ServerStub
+from adgn.mcp.testing.typed_stubs import TypedClient
 
 READER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME_READER
 APPROVER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME_APPROVER
 
 
-class PolicyReaderClient:
-    """Typed wrapper for the approval policy reader MCP client."""
+class PolicyReaderClient(ServerStub):
+    """Typed stub for the approval policy reader MCP server."""
 
-    def __init__(self, client: Client) -> None:
-        self._client = client
-        self._decide_stub: ToolStub[PolicyResponse] = ToolStub(client, "decide", PolicyResponse)
+    async def decide(self, input: PolicyRequest) -> PolicyResponse:
+        raise NotImplementedError  # Auto-wired at runtime
 
-    @property
-    def name(self) -> str:
-        return READER_SERVER_NAME
-
-    @property
-    def client(self) -> Client:
-        return self._client
-
-    async def decide(self, args: PolicyRequest) -> PolicyResponse:
-        return await self._decide_stub(args)
+    @classmethod
+    def from_client(cls, client: Client) -> PolicyReaderClient:
+        """Create a PolicyReaderClient from a raw MCP client."""
+        return cls(TypedClient(client))
 
 
 class PolicyApproverClient:

@@ -202,7 +202,7 @@ def make_pg_compositor(approval_hub: ApprovalHub):
         await stack.__aenter__()
         try:
             _reader_client = await stack.enter_async_context(Client(reader))
-            policy_reader = PolicyReaderClient(_reader_client)
+            policy_reader = PolicyReaderClient.from_client(_reader_client)
             install_policy_gateway(comp, hub=approval_hub, policy_reader=policy_reader, pending_notifier=notifier)
             # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
             await mount_standard_inproc_servers(compositor=comp, gateway_client=None)
