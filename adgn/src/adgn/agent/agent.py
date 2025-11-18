@@ -394,10 +394,7 @@ class MiniCodex:
             # Inject any handler-provided pre-sample inserts into transcript
             # Runtime check: FunctionCallItem only allowed with skip_sampling=True
             if any(isinstance(item, FunctionCallItem) for item in decision.inserts_input):
-                raise TypeError(
-                    "FunctionCallItem not allowed in inserts_input when skip_sampling=False. "
-                    "Use skip_sampling=True to inject function calls."
-                )
+                raise TypeError("FunctionCallItem requires skip_sampling=True")
             self._transcript.extend(decision.inserts_input)
             raw_tc = _tool_choice_from_policy(decision.tool_policy)
             if isinstance(raw_tc, dict) and raw_tc.get("type") == "function" and isinstance(raw_tc.get("name"), str):

@@ -67,7 +67,5 @@ async def test_function_call_inject_without_skip_sampling_raises(
             client=client,
             handlers=[_InvalidFunctionCallInjectHandler()],
         )
-        with pytest.raises(
-            TypeError, match="FunctionCallItem not allowed in inserts_input when skip_sampling=False"
-        ):
+        with pytest.raises(TypeError, match="FunctionCallItem requires skip_sampling=True"):
             await agent.run("test")
