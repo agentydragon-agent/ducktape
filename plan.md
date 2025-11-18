@@ -213,17 +213,6 @@ class ApprovalHistoryEntry(BaseModel):
     timestamp: datetime
     decided_by: str  # "human" or agent ID
 
-# Content block models (for global mailbox)
-class ApprovalContentBlock(BaseModel):
-    """Content block for a single approval in global mailbox."""
-    uri: str
-    mimeType: str = "application/json"
-    text: str  # JSON-serialized PendingApproval with agent_id
-
-class GlobalApprovalsResponse(BaseModel):
-    """Response for global approvals mailbox (content blocks)."""
-    contents: list[ApprovalContentBlock]
-
 # Resource response models
 class AgentInfo(BaseModel):
     """Information about a single agent."""
@@ -344,13 +333,14 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         "resource://approvals/pending",
         name="approvals.pending.global",
         mime_type="application/json",
-        description="Global mailbox: all pending approvals across all agents (returns content blocks)"
+        description="Global mailbox: all pending approvals across all agents (returns multiple content blocks)"
     )
-    async def approvals_pending_global() -> GlobalApprovalsResponse:
-        """Get all pending approvals as content blocks (global mailbox).
+    async def approvals_pending_global() -> mcp_types.ReadResourceResult:
+        """Get all pending approvals as MCP content blocks (global mailbox).
 
-        Returns MCP content blocks - each approval is a separate block with:
-        - uri: unique resource URI for this approval
+        Returns mcp_types.ReadResourceResult with multiple TextResourceContents blocks.
+        Each approval is a separate content block with:
+        - uri: unique resource URI for this approval (via annotations)
         - mimeType: application/json
         - text: inline JSON content with approval details
 
@@ -358,7 +348,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         (no exception swallowing).
         """
         import json
-        content_blocks: list[ApprovalContentBlock] = []
+        content_blocks: list[mcp_types.TextResourceContents] = []
 
         for agent_id in registry.known_agents():
             infra = await registry.get_infrastructure(agent_id)
@@ -366,7 +356,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
             pending_approvals: list[PendingApproval] = await infra.approval_engine.get_pending()
 
             for approval in pending_approvals:
-                # Construct content block using Pydantic model
+                # Construct MCP TextResourceContents for each approval
                 approval_uri = f"resource://agents/{agent_id}/approvals/{approval.call_id}"
                 approval_data = {
                     "agent_id": agent_id,
@@ -375,14 +365,16 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
                     "args": approval.args,
                     "timestamp": approval.timestamp.isoformat(),
                 }
-                block = ApprovalContentBlock(
-                    uri=approval_uri,
+                # Use MCP types directly - each block is a TextResourceContents
+                block = mcp_types.TextResourceContents(
+                    uri=approval_uri,  # MCP supports URI in content blocks
                     mimeType="application/json",
                     text=json.dumps(approval_data)
                 )
                 content_blocks.append(block)
 
-        return GlobalApprovalsResponse(contents=content_blocks)
+        # Return ReadResourceResult with multiple content blocks
+        return mcp_types.ReadResourceResult(contents=content_blocks)
 
     @server.resource(
         "resource://agents/{agent_id}/approvals/history",
@@ -476,13 +468,14 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 - [ ] `resource://agents/{id}/state` works for local agents, errors for bridge agents
 - [ ] `resource://agents/{id}/approvals/pending` returns pending approvals
 - [ ] `resource://agents/{id}/approvals/history` returns historical timeline with Pydantic models
-- [ ] `resource://approvals/pending` returns content blocks (each approval as separate block)
-- [ ] Content blocks include both URI and inline JSON content
+- [ ] `resource://approvals/pending` returns `mcp_types.ReadResourceResult` with multiple `TextResourceContents` blocks
+- [ ] Each content block (TextResourceContents) has uri, mimeType, and text (JSON-serialized approval)
 - [ ] `approve_tool_call` routes to correct agent and approves
 - [ ] `reject_tool_call` routes to correct agent and rejects
 - [ ] `abort_agent` routes to correct agent and aborts
-- [ ] Resource notifications fire when approvals change
-- [ ] Resource notifications fire when agent state changes
+- [ ] Resource notifications fire when approvals change (both local and bridge agents)
+- [ ] Resource notifications fire when agent state changes (both local and bridge agents)
+- [ ] Resource notifications fire when history changes (both local and bridge agents)
 - [ ] Historical timeline entries use Pydantic models throughout
 - [ ] Test with 2+ agents (local and bridge)
 
@@ -770,14 +763,15 @@ async function refreshGlobalApprovals() {
     params: { uri: 'resource://approvals/pending' }
   })
 
-  // Global mailbox returns content blocks - each is a separate approval
-  const mainContent = JSON.parse(result.contents[0].text)
-  const approvals = mainContent.contents.map((block: any) => {
-    // Each block has uri + inline JSON content
+  // Global mailbox returns multiple MCP content blocks (TextResourceContents)
+  // Each content block is a separate approval with URI + inline JSON
+  const approvals = result.contents.map((block: any) => {
+    // block.uri: unique resource URI for this approval
+    // block.text: inline JSON content with approval details
     const approval = JSON.parse(block.text)
     return {
       ...approval,
-      uri: block.uri  // Keep the URI for reference
+      uri: block.uri  // Keep the URI for reference/display
     }
   })
   globalApprovals.set(approvals)
@@ -835,11 +829,13 @@ export async function getAgentHistory(agentId: string): Promise<any[]> {
 **Acceptance**:
 - [ ] Connects to agents server successfully
 - [ ] Fetches agent list
-- [ ] Fetches global approvals (handles content blocks correctly)
-- [ ] Parses content blocks to extract individual approvals
+- [ ] Fetches global approvals (handles multiple MCP content blocks from ReadResourceResult)
+- [ ] Parses TextResourceContents blocks to extract individual approvals (each with URI + JSON)
 - [ ] Fetches agent history timeline
 - [ ] Subscribes to resource updates
 - [ ] Receives notifications and refreshes data
+- [ ] Pending approvals view live-updates when agents request approvals (local and bridge)
+- [ ] Historical timeline view live-updates when decisions are made (local and bridge)
 - [ ] `approveToolCall` works
 - [ ] `rejectToolCall` works
 - [ ] `abortAgent` works
@@ -982,19 +978,20 @@ async def test_agents_server_basic():
     state = await client.read_resource(local_agent["state_uri"])
     assert "ts" in state  # SamplingSnapshot
 
-    # Test: Global approvals mailbox (content blocks)
+    # Test: Global approvals mailbox (multiple MCP content blocks)
     approvals_result = await client.read_resource("resource://approvals/pending")
-    approvals_data = json.loads(approvals_result.contents[0].text)
-    assert "contents" in approvals_data
-    # Verify content blocks structure
-    for block in approvals_data["contents"]:
-        assert "uri" in block
-        assert "mimeType" in block
-        assert block["mimeType"] == "application/json"
-        assert "text" in block
-        approval = json.loads(block["text"])
+    # Result.contents is list[TextResourceContents] - each is a separate approval
+    assert len(approvals_result.contents) >= 0  # May be empty if no pending approvals
+    # Verify each content block is a TextResourceContents with approval data
+    for block in approvals_result.contents:
+        assert isinstance(block, mcp_types.TextResourceContents)
+        assert hasattr(block, "uri")  # Each block has its own URI
+        assert block.mimeType == "application/json"
+        approval = json.loads(block.text)
         assert "agent_id" in approval
         assert "call_id" in approval
+        assert "tool" in approval
+        assert "args" in approval
 
     # Test: Agent history timeline
     history_result = await client.read_resource(f"resource://agents/{local_agent['agent_id']}/approvals/history")
@@ -1057,12 +1054,12 @@ async def test_token_auth():
     # No token: 401
 
 async def test_content_blocks_structure():
-    """Test global approvals mailbox content blocks."""
+    """Test global approvals mailbox returns multiple MCP content blocks."""
     # Setup with multiple agents with pending approvals
     # Read resource://approvals/pending
-    # Verify returns {"contents": [...]}
-    # Verify each block has uri, mimeType, text
-    # Verify each text is valid JSON with approval details
+    # Verify returns ReadResourceResult with contents: list[TextResourceContents]
+    # Verify each block is TextResourceContents with uri, mimeType, text
+    # Verify each text is valid JSON with approval details (agent_id, call_id, tool, args)
 
 async def test_historical_timeline_pydantic():
     """Test historical timeline uses Pydantic models."""
@@ -1113,11 +1110,12 @@ describe('MCP Client', () => {
     // Assert store updated
   })
 
-  it('handles content blocks in global approvals', async () => {
+  it('handles multiple MCP content blocks in global approvals', async () => {
     // Connect
-    // Fetch global approvals
-    // Verify content blocks parsed correctly
-    // Verify each approval has uri, agent_id, call_id, tool, args
+    // Fetch resource://approvals/pending
+    // Verify result.contents is array of TextResourceContents
+    // Verify each block parsed correctly (has uri, mimeType, text)
+    // Verify each approval has agent_id, call_id, tool, args
   })
 
   it('fetches agent history timeline', async () => {
@@ -1192,11 +1190,12 @@ async def test_management_ui_approval_flow(page):
     # 6. Verify appears in history timeline
 
 async def test_management_ui_content_blocks(page):
-    """Test global approvals content blocks rendering."""
+    """Test global approvals MCP content blocks rendering."""
     # 1. Navigate to UI
-    # 2. Verify each approval renders with correct data
-    # 3. Verify URIs are accessible
-    # 4. Verify inline content displays correctly
+    # 2. Verify each approval renders with correct data (from MCP TextResourceContents)
+    # 3. Verify each approval shows its URI
+    # 4. Verify inline content displays correctly (agent_id, tool, args)
+    # 5. Verify live-updates when new approvals arrive (both local and bridge agents)
 
 async def test_management_ui_realtime_updates(page):
     """Test real-time resource updates."""
@@ -1320,9 +1319,11 @@ client.on('elicitation', async (request) => {
 - [ ] Client connects successfully
 - [ ] Token management works (URL → localStorage)
 - [ ] Agent list displays
-- [ ] Global approvals mailbox displays (handles content blocks)
+- [ ] Global approvals mailbox displays (handles multiple MCP content blocks)
 - [ ] Historical timeline displays
 - [ ] Approve/reject/abort actions work
+- [ ] **Live-update requirement**: Pending approvals view auto-updates as agents request approvals (both local and bridge agents)
+- [ ] **Live-update requirement**: Historical timeline view auto-updates as decisions are made (both local and bridge agents)
 - [ ] Notifications update UI in real-time
 - [ ] All frontend tests pass
 
@@ -1357,6 +1358,16 @@ client.on('elicitation', async (request) => {
 - **Phase 5** (Cleanup): 1 day
 - **Total**: ~2 weeks
 
+## Future Enhancements (Beyond Phase 5)
+
+These features would improve production deployment:
+
+- [ ] **Idle Cleanup**: Auto-shutdown infrastructure after N minutes of inactivity per agent_id
+- [ ] **Token Reload**: Hot-reload token mapping file without restart (watch file for changes)
+- [ ] **Unified Instructions**: Merge server instructions in initialization message
+- [ ] **Metrics**: Per-agent usage metrics (tool calls, approvals, policy evaluations)
+- [ ] **MCP Elicitations**: Replace tool-based approvals with standardized elicitation workflow (Phase 6+)
+
 ## References
 
 - [MCP Specification](https://modelcontextprotocol.io/specification/2025-06-18/)
@@ -1364,3 +1375,4 @@ client.on('elicitation', async (request) => {
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [MCP Elicitations](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation)
 - [Streamable HTTP Transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
+- [FastMCP Documentation](https://github.com/jlowin/fastmcp)
