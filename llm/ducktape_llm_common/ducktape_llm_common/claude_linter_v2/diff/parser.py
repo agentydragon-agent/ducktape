@@ -59,16 +59,14 @@ class DiffParser:
 
     def _parse_edit_tool(self, file_path: str, tool_response: dict) -> ParsedDiff | None:
         """Parse Edit tool response."""
-        structured_patch = tool_response.get("structuredPatch")
-        if structured_patch is None:
+        if (structured_patch := tool_response.get("structuredPatch")) is None:
             return None
 
         return self._parse_structured_patch(file_path, structured_patch)
 
     def _parse_multiedit_tool(self, file_path: str, tool_response: dict) -> ParsedDiff | None:
         """Parse MultiEdit tool response."""
-        structured_patch = tool_response.get("structuredPatch")
-        if structured_patch is None:
+        if (structured_patch := tool_response.get("structuredPatch")) is None:
             return None
 
         return self._parse_structured_patch(file_path, structured_patch)

@@ -3,7 +3,7 @@
 from typing import Any
 
 from ..config.models import Violation
-from .categorizer import CategorizedViolation, ViolationCategorizer
+from .categorizer import CategorizedGroups, CategorizedViolation, ViolationCategorizer
 from .parser import DiffParser
 
 
@@ -34,7 +34,7 @@ class DiffIntelligence:
         tool_input: dict[str, Any],
         tool_response: dict[str, Any] | None,
         violations: list[Violation],
-    ) -> dict[str, list[CategorizedViolation]]:
+    ) -> CategorizedGroups:
         """
         Analyze violations in context of tool changes.
 
@@ -45,7 +45,7 @@ class DiffIntelligence:
             violations: List of violations found
 
         Returns:
-            Dictionary with categorized violations by type
+            CategorizedGroups with violations organized by type
         """
         # Parse diff information
         parsed_diff = self.parser.parse_tool_response(tool_name, tool_input, tool_response)
@@ -87,7 +87,7 @@ class DiffIntelligence:
         # Filter by priority
         return self.categorizer.filter_by_priority(categorized, max_violations)
 
-    def format_violations_by_category(self, categorized_groups: dict[str, list[CategorizedViolation]]) -> str:
+    def format_violations_by_category(self, categorized_groups: CategorizedGroups) -> str:
         """
         Format categorized violations for display.
 
@@ -100,34 +100,31 @@ class DiffIntelligence:
         parts = []
 
         # In-diff violations (most important)
-        in_diff = categorized_groups.get("in-diff", [])
-        if in_diff:
+        if categorized_groups.in_diff:
             parts.append("Issues in code you just added:")
-            for cv in in_diff:
+            for cv in categorized_groups.in_diff:
                 v = cv.violation
                 parts.append(f"  Line {v.line}: {v.message}")
 
         # Near-diff violations
-        near_diff = categorized_groups.get("near-diff", [])
-        if near_diff:
+        if categorized_groups.near_diff:
             if parts:
                 parts.append("")  # Blank line
             parts.append("Issues near your changes:")
-            for cv in near_diff:
+            for cv in categorized_groups.near_diff:
                 v = cv.violation
                 distance = cv.distance_from_change
                 parts.append(f"  Line {v.line} ({distance} lines away): {v.message}")
 
         # Out-of-diff violations (least important)
-        out_diff = categorized_groups.get("out-of-diff", [])
-        if out_diff and len(parts) < 20:  # Don't overwhelm
+        if categorized_groups.out_of_diff and len(parts) < 20:  # Don't overwhelm
             if parts:
                 parts.append("")  # Blank line
             parts.append("Existing issues in file:")
-            for cv in out_diff[:3]:  # Show max 3
+            for cv in categorized_groups.out_of_diff[:3]:  # Show max 3
                 v = cv.violation
                 parts.append(f"  Line {v.line}: {v.message}")
-            if len(out_diff) > 3:
-                parts.append(f"  ... and {len(out_diff) - 3} more")
+            if len(categorized_groups.out_of_diff) > 3:
+                parts.append(f"  ... and {len(categorized_groups.out_of_diff) - 3} more")
 
         return "\n".join(parts)

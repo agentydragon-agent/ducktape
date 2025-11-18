@@ -1,7 +1,7 @@
 """Tests for diff intelligence module."""
 
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
-from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedViolation, ViolationCategorizer
+from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedGroups, CategorizedViolation, ViolationCategorizer
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
 from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser, ParsedDiff
 
@@ -149,23 +149,23 @@ class TestDiffIntelligence:
         """Test formatting categorized violations."""
         di = DiffIntelligence()
 
-        groups = {
-            "in-diff": [
+        groups = CategorizedGroups(
+            in_diff=[
                 CategorizedViolation(
                     violation=Violation(rule="E722", line=10, column=0, message="Bare except"),
                     category="in-diff",
                     distance_from_change=0,
                 )
             ],
-            "near-diff": [
+            near_diff=[
                 CategorizedViolation(
                     violation=Violation(rule="W293", line=8, column=0, message="Trailing whitespace"),
                     category="near-diff",
                     distance_from_change=2,
                 )
             ],
-            "out-of-diff": [],
-        }
+            out_of_diff=[],
+        )
 
         formatted = di.format_violations_by_category(groups)
 

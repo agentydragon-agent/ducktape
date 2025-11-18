@@ -719,7 +719,7 @@ class HookHandler:
                 )
 
                 # Only track in-diff and near-diff violations as important
-                important_violations = categorized_groups.get("in-diff", []) + categorized_groups.get("near-diff", [])
+                important_violations = categorized_groups.in_diff + categorized_groups.near_diff
 
                 if important_violations:
                     # Convert back to plain violations for tracker

@@ -73,8 +73,7 @@ def parse_grading_config(config: dict[str, Any]) -> GradingConfig | None:
         return MessageBasedGrading(criteria_file=config.get("criteria_file"), criteria=config.get("criteria"))
     if strategy == "comparison":
         # For comparison, we may not have reference at task type level
-        reference = config.get("reference", "")
-        if reference:
+        if (reference := config.get("reference", "")):
             return ComparisonGrading(reference=reference, criteria=config.get("criteria", []))
         return None  # Incomplete - will be filled by tasks
     raise ValueError(f"Unknown grading strategy: {strategy}")

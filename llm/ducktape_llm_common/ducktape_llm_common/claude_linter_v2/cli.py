@@ -150,8 +150,7 @@ def hook(request_json: str | None) -> None:
     hook_type = request_data.get("hook_event_name", "")
 
     # Parse request with appropriate type
-    request_class = HOOK_REQUEST_TYPES.get(hook_type)
-    if not request_class:
+    if not (request_class := HOOK_REQUEST_TYPES.get(hook_type)):
         # Log the error
         logger.error(f"FATAL: Unknown hook type: {hook_type}")
 
@@ -336,8 +335,7 @@ def _display_session(session_info: dict[str, Any]) -> None:
     click.echo(f"  {session_id[:8]}... - last seen {ago}")
 
     # Show active rules
-    rules = session_info.get("rules", [])
-    if rules:
+    if (rules := session_info.get("rules", [])):
         for rule in rules:
             action = "✓" if rule["action"] == "allow" else "✗"
             expires = f" (expires {rule['expires']})" if rule.get("expires") else ""

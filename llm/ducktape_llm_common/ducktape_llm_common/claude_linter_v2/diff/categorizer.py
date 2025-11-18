@@ -1,6 +1,6 @@
 """Categorize violations based on their proximity to diff changes."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from ..config.models import Violation
@@ -14,6 +14,15 @@ class CategorizedViolation:
     violation: Violation
     category: Literal["in-diff", "near-diff", "out-of-diff"]
     distance_from_change: int | None  # For near-diff
+
+
+@dataclass
+class CategorizedGroups:
+    """Groups of violations categorized by their relationship to diff changes."""
+
+    in_diff: list[CategorizedViolation] = field(default_factory=list)
+    near_diff: list[CategorizedViolation] = field(default_factory=list)
+    out_of_diff: list[CategorizedViolation] = field(default_factory=list)
 
 
 class ViolationCategorizer:
@@ -82,15 +91,20 @@ class ViolationCategorizer:
 
         return categorized
 
-    def group_by_category(self, categorized: list[CategorizedViolation]) -> dict[str, list[CategorizedViolation]]:
+    def group_by_category(self, categorized: list[CategorizedViolation]) -> CategorizedGroups:
         """Group categorized violations by their category."""
-        groups: dict[str, list[CategorizedViolation]] = {"in-diff": [], "near-diff": [], "out-of-diff": []}
+        groups = CategorizedGroups()
 
         for cv in categorized:
-            groups[cv.category].append(cv)
+            if cv.category == "in-diff":
+                groups.in_diff.append(cv)
+            elif cv.category == "near-diff":
+                groups.near_diff.append(cv)
+            else:  # "out-of-diff"
+                groups.out_of_diff.append(cv)
 
         # Sort near-diff by distance
-        groups["near-diff"].sort(key=lambda cv: cv.distance_from_change or 0)
+        groups.near_diff.sort(key=lambda cv: cv.distance_from_change or 0)
 
         return groups
 
@@ -117,16 +131,16 @@ class ViolationCategorizer:
         result = []
 
         # Add all in-diff violations
-        result.extend(groups["in-diff"])
+        result.extend(groups.in_diff)
 
         # Add near-diff violations if room
         remaining = max_violations - len(result)
         if remaining > 0:
-            result.extend(groups["near-diff"][:remaining])
+            result.extend(groups.near_diff[:remaining])
 
         # Add out-of-diff violations if room
         remaining = max_violations - len(result)
         if remaining > 0:
-            result.extend(groups["out-of-diff"][:remaining])
+            result.extend(groups.out_of_diff[:remaining])
 
         return result[:max_violations]

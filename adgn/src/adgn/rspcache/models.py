@@ -83,8 +83,7 @@ def stream_event_usage(event: ResponseStreamEvent) -> ResponseUsage | None:
 
 def stream_event_final_response(event: ResponseStreamEvent) -> OpenAIResponse | None:
     payload = event.model_dump(mode="python")
-    response_payload = payload.get("response")
-    if response_payload is not None:
+    if (response_payload := payload.get("response")) is not None:
         return parse_response(response_payload)
     return None
 
