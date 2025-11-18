@@ -375,125 +375,123 @@ async def run_eval(
             # Branch by source without coercing persisted formats
             if isinstance(item, CCRSample):  # CCR
                 # 1) Rewrite system via Node apply script
-                ar = item.anthropic_request
-                new_sys = rewrite_system_with_template(ar.system or "", template_path)
+                anthropic_request = item.anthropic_request
+                new_system = rewrite_system_with_template(anthropic_request.system or "", template_path)
                 # 2) Find last assistant message in Anthropic messages (before final user complaint)
-                prev_asst_idx = index_of_last_assistant_in_anthropic_messages(ar.messages)
-                if prev_asst_idx is None:
+                prev_assistant_index = index_of_last_assistant_in_anthropic_messages(anthropic_request.messages)
+                if prev_assistant_index is None:
                     log_event({"correlation_id": item.correlation_id, "status": "no_prev_assistant"})
                     return None, None
                 # 3) Build OpenAI sampling request BEFORE the bad assistant turn
-                context_messages = ar.messages[:prev_asst_idx]
-                oai_messages = anthropic_to_chat_messages(context_messages, new_sys)
-                in_tokens = tokens_for_chat_messages(oai_messages)
+                context_messages = anthropic_request.messages[:prev_assistant_index]
+                openai_messages = anthropic_to_chat_messages(context_messages, new_system)
+                input_tokens = tokens_for_chat_messages(openai_messages)
                 log_event(
                     {
                         "event": "sampler_tokens",
-                        "cid": item.correlation_id,
-                        "in_tokens": in_tokens,
+                        "correlation_id": item.correlation_id,
+                        "input_tokens": input_tokens,
                         "model": SAMPLER_MODEL,
                     }
                 )
-                if in_tokens > MAX_INPUT_TOKENS:
+                if input_tokens > MAX_INPUT_TOKENS:
                     counters["skipped_input_tokens"] += 1
                     log_event(
                         {
                             "correlation_id": item.correlation_id,
                             "status": "skipped_input_too_large",
-                            "input_tokens": in_tokens,
+                            "input_tokens": input_tokens,
                         }
                     )
                     return None, None
-                samp_max = max(1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS))
-                tools_param = ar.tools
+                max_completion_tokens = max(1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - input_tokens - SAFETY_TOKENS))
+                tools_param = anthropic_request.tools
                 chat_tools = convert_responses_tools_to_chat_functions(tools_param)
-                samp_req = {
+                sample_request = {
                     "model": SAMPLER_MODEL,
-                    "messages": dump_chat_messages(oai_messages),
+                    "messages": dump_chat_messages(openai_messages),
                     "tools": chat_tools,
                     "tool_choice": "auto",
                     "parallel_tool_calls": True,
-                    "max_completion_tokens": samp_max,
+                    "max_completion_tokens": max_completion_tokens,
                 }
                 try:
-                    samp = await chat_create_with_retries(
-                        client, **{k: v for k, v in samp_req.items() if v is not None}
+                    sample = await chat_create_with_retries(
+                        client, **{k: v for k, v in sample_request.items() if v is not None}
                     )
                 except Exception as e:
                     counters["sampler_errors"] += 1
                     msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
                     log_event(msg)
                     return None, None
-                new_asst_obj = ChatAssistantMessage(message=samp.choices[0].message)
+                new_assistant_message = ChatAssistantMessage(message=sample.choices[0].message)
                 # For grader context: convert full Anthropic message list to ChatCompletionMessageParam
-                msgs_for_grader = anthropic_messages_to_standard(ar.messages)
-                prev_asst_idx_for_grader: int = prev_asst_idx
+                messages_for_grader = anthropic_messages_to_standard(anthropic_request.messages)
+                prev_assistant_index_for_grader: int = prev_assistant_index
             else:
                 # Crush / Responses-native path
                 payload = item.oai_request
-                inp = payload.get("input")
+                request_input = payload.get("input")
                 # Extract original system and rewrite via Python fallback
-                orig_sys = responses_extract_system_text(inp)
-                new_sys = rewrite_system_with_template(orig_sys, template_path)
+                original_system = responses_extract_system_text(request_input)
+                new_system = rewrite_system_with_template(original_system, template_path)
                 # Find boundary and build context input (drop original system items)
-                prev_idx = responses_prev_assistant_index(inp)
-                if prev_idx is None:
+                prev_assistant_index = responses_prev_assistant_index(request_input)
+                if prev_assistant_index is None:
                     log_event({"correlation_id": item.correlation_id, "status": "no_prev_assistant"})
                     return None, None
-                input_prefix = responses_slice_prefix(inp, prev_idx)
+                input_prefix = responses_slice_prefix(request_input, prev_assistant_index)
                 # Prepend rewritten system entry
-                resp_input = [{"role": "system", "content": [{"type": "input_text", "text": new_sys}]}, *input_prefix]
-                base_req: dict[str, Any] = dict(payload) if isinstance(payload, dict) else {}
-                base_req["input"] = resp_input
-                if not base_req.get("model"):
-                    base_req["model"] = SAMPLER_MODEL
-                samp_req = cast(dict[str, Any], base_req)
+                responses_input = [{"role": "system", "content": [{"type": "input_text", "text": new_system}]}, *input_prefix]
+                base_request: dict[str, Any] = dict(payload) if isinstance(payload, dict) else {}
+                base_request["input"] = responses_input
+                if not base_request.get("model"):
+                    base_request["model"] = SAMPLER_MODEL
+                sample_request = cast(dict[str, Any], base_request)
                 try:
-                    samp = await responses_create_with_retries(client, **samp_req)
+                    sample = await responses_create_with_retries(client, **sample_request)
                 except Exception as e:
                     counters["sampler_errors"] += 1
                     msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
                     log_event(msg)
                     return None, None
-                new_asst_obj = ResponsesAssistantMessage(responses_input=resp_input, responses_output=samp)
+                new_assistant_message = ResponsesAssistantMessage(responses_input=responses_input, responses_output=sample)
                 # For grader context later, build ephemeral CCR-like messages
-                parsed_inp = parse_response_messages(inp)
-                if parsed_inp is None:
+                parsed_request_input = parse_response_messages(request_input)
+                if parsed_request_input is None:
                     log_event({"correlation_id": item.correlation_id, "status": "invalid_responses_input"})
                     return None, None
-                msgs_for_grader = responses_to_ccr_messages(parsed_inp)
-                prev_asst_idx_for_grader = index_of_last_assistant_before_final(msgs_for_grader) or 0
+                messages_for_grader = responses_to_ccr_messages(parsed_request_input)
+                prev_assistant_index_for_grader = index_of_last_assistant_before_final(messages_for_grader) or 0
 
             # 4) Build grading inputs
-            msgs = msgs_for_grader
-            base_prefix = msgs[:-2] if len(msgs) >= 2 else []
-            base_prefix = [m for m in base_prefix if m.role != MessageRole.SYSTEM]
+            messages = messages_for_grader
+            base_prefix = messages[:-2] if len(messages) >= 2 else []
+            base_prefix = [msg for msg in base_prefix if msg.role != MessageRole.SYSTEM]
             # Compute bad branch (inclusive of complaint)
-            complaint_idx = len(msgs) - 1
-            bad_branch = msgs[prev_asst_idx_for_grader : complaint_idx + 1]
+            complaint_index = len(messages) - 1
+            bad_branch = messages[prev_assistant_index_for_grader : complaint_index + 1]
             # Keep first 5 and last 5; truncate middle to fit token budget
-            first = base_prefix[:5]
-            tail = base_prefix[-5:] if len(base_prefix) > 5 else []
-            middle = base_prefix[5 : len(base_prefix) - len(tail)] if len(base_prefix) > 10 else []
+            first_messages = base_prefix[:5]
+            tail_messages = base_prefix[-5:] if len(base_prefix) > 5 else []
+            middle_messages = base_prefix[5 : len(base_prefix) - len(tail_messages)] if len(base_prefix) > 10 else []
 
             # Build a provisional grader input to compute tokens; start from minimal
-            prefix_msgs = [*first]  # start with first only
-            gi = build_grader_prompt(prefix_msgs + tail, bad_branch, new_asst_obj)
-            tok = tokens_for_chat_messages(gi)
+            prefix_messages = [*first_messages]  # start with first only
+            grader_input = build_grader_prompt(prefix_messages + tail_messages, bad_branch, new_assistant_message)
+            token_count = tokens_for_chat_messages(grader_input)
             # Greedily add middle messages until we hit budget
             added = 0
-            for m in middle:
-                trial = build_grader_prompt([*prefix_msgs, m, *tail], bad_branch, new_asst_obj)
-                trial_tok = tokens_for_chat_messages(trial)
-                if trial_tok <= TARGET_PREFIX_TOKENS:
-                    prefix_msgs.append(m)
-                    gi = trial
-                    tok = trial_tok
+            for message in middle_messages:
+                trial_grader_input = build_grader_prompt([*prefix_messages, message, *tail_messages], bad_branch, new_assistant_message)
+                trial_token_count = tokens_for_chat_messages(trial_grader_input)
+                if trial_token_count <= TARGET_PREFIX_TOKENS:
+                    prefix_messages.append(message)
+                    grader_input = trial_grader_input
+                    token_count = trial_token_count
                     added += 1
                 else:
                     break
-            # Attach tail (already accounted in gi)
-            prefix_msgs = prefix_msgs + tail
             # Log truncation info
             log_event(
                 {
@@ -501,43 +499,43 @@ async def run_eval(
                     "status": "grader_prefix_built",
                     "prefix_counts": {
                         "total": len(base_prefix),
-                        "kept_first": len(first),
-                        "kept_last": len(tail),
+                        "kept_first": len(first_messages),
+                        "kept_last": len(tail_messages),
                         "added_middle": added,
                     },
-                    "token_estimate": tok,
+                    "token_estimate": token_count,
                 }
             )
-            grader_messages = build_grader_prompt(prefix_msgs, bad_branch, new_asst_obj)
-            grader_input = [
-                {"role": m["role"], "content": m["content"]}
-                for m in [
+            grader_messages = build_grader_prompt(prefix_messages, bad_branch, new_assistant_message)
+            grader_request_messages = [
+                {"role": msg["role"], "content": msg["content"]}
+                for msg in [
                     {"role": "system", "content": grader_messages[0]["content"]},
                     {"role": "user", "content": grader_messages[1]["content"]},
                 ]
             ]
-            in_tokens_g = tokens_for_chat_messages(grader_input)
-            if in_tokens_g > MAX_INPUT_TOKENS:
+            input_tokens_grader = tokens_for_chat_messages(grader_request_messages)
+            if input_tokens_grader > MAX_INPUT_TOKENS:
                 counters["skipped_input_tokens"] += 1
                 log_event(
                     {
                         "correlation_id": item.correlation_id,
                         "status": "grader_skipped_input_too_large",
-                        "input_tokens": in_tokens_g,
+                        "input_tokens": input_tokens_grader,
                     }
                 )
                 return None, None
-            grade_max = max(1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens_g - SAFETY_TOKENS))
-            grade_req = {
+            max_output_tokens = max(1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - input_tokens_grader - SAFETY_TOKENS))
+            grade_request = {
                 "model": GRADER_MODEL,
-                "input": grader_input,
+                "input": grader_request_messages,
                 "tools": [GRADE_TOOL],
                 "tool_choice": {"type": "function", "name": "grade"},
                 "parallel_tool_calls": False,
-                "max_output_tokens": grade_max,
+                "max_output_tokens": max_output_tokens,
             }
             try:
-                grade = await responses_create_with_retries(client, **grade_req)
+                grade_response = await responses_create_with_retries(client, **grade_request)
             except Exception as e:
                 counters["grader_errors"] += 1
                 msg = {"correlation_id": item.correlation_id, "status": "grader_error", "error": str(e)}
@@ -545,7 +543,7 @@ async def run_eval(
                 return None, None
             # Validate grade parse
             try:
-                _ = parse_grade_from_responses(grade)
+                _ = parse_grade_from_responses(grade_response)
             except Exception as e:
                 counters["grader_errors"] += 1
                 msg = {"correlation_id": item.correlation_id, "status": "grader_parse_error", "error": str(e)}
@@ -553,20 +551,20 @@ async def run_eval(
                 return None, None
 
             # Return combined records for saving
-            sample_rec: dict[str, Any] = {
-                "request": samp_req,
-                "response": samp.model_dump(),
-                "new_assistant_message": new_asst_obj,
+            sample_record_dict: dict[str, Any] = {
+                "request": sample_request,
+                "response": sample.model_dump(),
+                "new_assistant_message": new_assistant_message,
                 "correlation_id": item.correlation_id,
                 "timestamp": item.timestamp,
             }
             if isinstance(item, CCRSample):
-                sample_rec["anthropic_request"] = item.anthropic_request
+                sample_record_dict["anthropic_request"] = item.anthropic_request
             return (
-                sample_rec,
+                sample_record_dict,
                 {
-                    "request": grade_req,
-                    "response": grade,
+                    "request": grade_request,
+                    "response": grade_response,
                     "correlation_id": item.correlation_id,
                     "timestamp": item.timestamp,
                 },
@@ -596,9 +594,9 @@ async def run_eval(
         total_samples = tool_stats.get("total_samples", 0)
         text_only = tool_stats.get("text_only", 0)
         with_tools = tool_stats.get("with_tools", 0)
-        fc = cast(dict[str, int], tool_stats.get("function_counts", {}))
-        total_tool_calls = sum(fc.values()) if fc else 0
-        function_pct = {k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in fc.items()}
+        function_counts = cast(dict[str, int], tool_stats.get("function_counts", {}))
+        total_tool_calls = sum(function_counts.values()) if function_counts else 0
+        function_pct = {k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in function_counts.items()}
 
         # CI helpers (normal approx, 95%)
         def _mk_basic(scores_list: list[float]) -> tuple[float, float, float, float]:
@@ -652,62 +650,62 @@ async def run_eval(
             json.dump(summary, f, sort_keys=True)
         return summary
 
-    with samples_out.open("w", encoding="utf-8") as s_out, grades_out.open("w", encoding="utf-8") as g_out:
+    with samples_out.open("w", encoding="utf-8") as samples_output, grades_out.open("w", encoding="utf-8") as grades_output:
         log_event({"event": "as_completed_start", "count": len(tasks)})
         for fut in asyncio.as_completed(tasks):
-            samp_rec, grade_rec = await fut
+            sample_rec, grade_rec = await fut
             # Determine source from sampling record shape
-            src = None
-            if samp_rec:
-                rec_obj = EvalSampleRecord.model_validate(samp_rec)
-                s_out.write(json.dumps(rec_obj.model_dump(), sort_keys=True) + "\n")
+            source = None
+            if sample_rec:
+                sample_record = EvalSampleRecord.model_validate(sample_rec)
+                samples_output.write(json.dumps(sample_record.model_dump(), sort_keys=True) + "\n")
                 # Determine source from message type
-                src = "crush" if isinstance(rec_obj.new_assistant_message, ResponsesAssistantMessage) else "ccr"
+                source = "crush" if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage) else "ccr"
                 # Update tool usage stats
                 tool_stats["total_samples"] = tool_stats.get("total_samples", 0) + 1
                 # Extract tool calls from ChatAssistantMessage
-                tcs = []
-                if isinstance(rec_obj.new_assistant_message, ChatAssistantMessage):
-                    _tcs = rec_obj.new_assistant_message.message.tool_calls
-                    tcs = list(_tcs) if _tcs is not None else []
-                if not tcs:
+                tool_calls = []
+                if isinstance(sample_record.new_assistant_message, ChatAssistantMessage):
+                    message_tool_calls = sample_record.new_assistant_message.message.tool_calls
+                    tool_calls = list(message_tool_calls) if message_tool_calls is not None else []
+                if not tool_calls:
                     tool_stats["text_only"] = tool_stats.get("text_only", 0) + 1
                 else:
                     tool_stats["with_tools"] = tool_stats.get("with_tools", 0) + 1
-                    fc_top = cast(dict[str, int], tool_stats["function_counts"])  # type: ignore[index]
-                    for tc in tcs:
-                        fn = tc.function.name if tc.function else "UNKNOWN"
-                        fc_top[fn] = fc_top.get(fn, 0) + 1
+                    function_counts = cast(dict[str, int], tool_stats["function_counts"])  # type: ignore[index]
+                    for tool_call in tool_calls:
+                        function_name = tool_call.function.name if tool_call.function else "UNKNOWN"
+                        function_counts[function_name] = function_counts.get(function_name, 0) + 1
                 # Per-source tool stats
-                if src in tool_stats_by_source:
-                    src_stats = tool_stats_by_source[src]
-                    src_stats["total_samples"] = src_stats.get("total_samples", 0) + 1
-                    if not tcs:
-                        src_stats["text_only"] = src_stats.get("text_only", 0) + 1
+                if source in tool_stats_by_source:
+                    source_stats = tool_stats_by_source[source]
+                    source_stats["total_samples"] = source_stats.get("total_samples", 0) + 1
+                    if not tool_calls:
+                        source_stats["text_only"] = source_stats.get("text_only", 0) + 1
                     else:
-                        src_stats["with_tools"] = src_stats.get("with_tools", 0) + 1
-                        ts_fc = cast(dict[str, int], src_stats["function_counts"])  # type: ignore[index]
-                        for tc in tcs:
-                            fn = tc.function.name if tc.function else "UNKNOWN"
-                            ts_fc[fn] = ts_fc.get(fn, 0) + 1
+                        source_stats["with_tools"] = source_stats.get("with_tools", 0) + 1
+                        source_function_counts = cast(dict[str, int], source_stats["function_counts"])  # type: ignore[index]
+                        for tool_call in tool_calls:
+                            function_name = tool_call.function.name if tool_call.function else "UNKNOWN"
+                            source_function_counts[function_name] = source_function_counts.get(function_name, 0) + 1
             if grade_rec:
-                g_obj = EvalGradeRecord.model_validate(grade_rec)
-                g_out.write(json.dumps(g_obj.model_dump(), sort_keys=True) + "\n")
+                grade_record = EvalGradeRecord.model_validate(grade_rec)
+                grades_output.write(json.dumps(grade_record.model_dump(), sort_keys=True) + "\n")
                 try:
-                    grade = parse_grade_from_responses(g_obj.response)
+                    grade = parse_grade_from_responses(grade_record.response)
                     score = float(grade.score)
                     scores.append(score)
-                    if src in scores_by_source:
-                        scores_by_source[src].append(score)  # type: ignore[index]
+                    if source in scores_by_source:
+                        scores_by_source[source].append(score)  # type: ignore[index]
                     counters["processed"] += 1
                     summary_data = compute_and_write_summary(False)
                     print(
                         json.dumps(
                             {
                                 "event": "grade_parsed",
-                                "cid": g_obj.correlation_id,
+                                "correlation_id": grade_record.correlation_id,
                                 "score": score,
-                                "source": src,
+                                "source": source,
                                 "n": summary_data["n"],
                                 "mean": summary_data["mean"],
                                 "ci95": summary_data["ci95"],
@@ -738,66 +736,66 @@ async def run_eval(
         report_path = report_base / "report.html"
         # Build grades map
         grades_map: dict[str, Grade] = {}
-        with grades_path.open("r", encoding="utf-8") as gf:
-            for line in gf:
-                grec = EvalGradeRecord.model_validate_json(line)
-                cid = grec.correlation_id
-                if not cid:
+        with grades_path.open("r", encoding="utf-8") as grades_file:
+            for line in grades_file:
+                grade_record = EvalGradeRecord.model_validate_json(line)
+                correlation_id = grade_record.correlation_id
+                if not correlation_id:
                     continue
-                grade = parse_grade_from_responses(grec.response)
-                grades_map[cid] = grade
+                grade = parse_grade_from_responses(grade_record.response)
+                grades_map[correlation_id] = grade
 
         # Collect rows
         rows: list[dict[str, Any]] = []
 
         summary: dict[str, Any] = {}
-        with (report_base / "summary.json").open("r", encoding="utf-8") as sf:
-            summary = json.load(sf)
+        with (report_base / "summary.json").open("r", encoding="utf-8") as summary_file:
+            summary = json.load(summary_file)
 
         template_file = report_base / "template.txt"
 
-        with samples_path.open("r", encoding="utf-8") as sf:
-            for line in sf:
-                srec = json.loads(line)
-                sample_record = EvalSampleRecord.model_validate(srec)
-                cid = sample_record.correlation_id or ""
+        with samples_path.open("r", encoding="utf-8") as samples_file:
+            for line in samples_file:
+                sample_json = json.loads(line)
+                sample_record = EvalSampleRecord.model_validate(sample_json)
+                correlation_id = sample_record.correlation_id or ""
 
                 # Two display paths depending on source
                 if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage):
                     # Crush item: reconstruct minimal views from responses_input
-                    rin = sample_record.new_assistant_message.responses_input
-                    orig_sys = responses_extract_system_text(rin)
-                    rewritten_sys = rewrite_system_with_template(orig_sys or "", template_file)
-                    parsed_rin = parse_response_messages(rin)
-                    msgs_disp = responses_to_ccr_messages(parsed_rin) if parsed_rin else []
-                    idx = index_of_last_assistant_before_final(msgs_disp)
-                    if idx is None:
-                        shared_prefix = msgs_disp
+                    responses_input = sample_record.new_assistant_message.responses_input
+                    original_system = responses_extract_system_text(responses_input)
+                    rewritten_system = rewrite_system_with_template(original_system or "", template_file)
+                    parsed_responses_input = parse_response_messages(responses_input)
+                    display_messages = responses_to_ccr_messages(parsed_responses_input) if parsed_responses_input else []
+                    last_assistant_index = index_of_last_assistant_before_final(display_messages)
+                    if last_assistant_index is None:
+                        shared_prefix = display_messages
                         bad_branch = []
                     else:
-                        shared_prefix = [m for m in (msgs_disp[:idx]) if m.role != MessageRole.SYSTEM]
-                        bad_branch = msgs_disp[idx:]
+                        shared_prefix = [msg for msg in (display_messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM]
+                        bad_branch = display_messages[last_assistant_index:]
                 else:
                     # CCR item - validate and use typed Anthropic structures
                     if sample_record.anthropic_request is None:
                         continue
-                    orig_sys = sample_record.anthropic_request.system or ""
-                    rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
-                    msgs = anthropic_messages_to_standard(sample_record.anthropic_request.messages)
-                    idx = index_of_last_assistant_before_final(msgs)
-                    if idx is None:
-                        shared_prefix = msgs
+                    original_system = sample_record.anthropic_request.system or ""
+                    rewritten_system = rewrite_system_with_template(original_system, template_file)
+                    messages = anthropic_messages_to_standard(sample_record.anthropic_request.messages)
+                    last_assistant_index = index_of_last_assistant_before_final(messages)
+                    if last_assistant_index is None:
+                        shared_prefix = messages
                         bad_branch = []
                     else:
-                        shared_prefix = [m for m in (msgs[:idx]) if m.role != MessageRole.SYSTEM]
-                        bad_branch = msgs[idx:]
-                grade = grades_map.get(cid)
+                        shared_prefix = [msg for msg in (messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM]
+                        bad_branch = messages[last_assistant_index:]
+                grade = grades_map.get(correlation_id)
                 rows.append(
                     {
-                        "correlation_id": cid,
+                        "correlation_id": correlation_id,
                         "timestamp": sample_record.timestamp,
-                        "orig_system": orig_sys,
-                        "rewritten_system": rewritten_sys,
+                        "original_system": original_system,
+                        "rewritten_system": rewritten_system,
                         "shared_prefix": shared_prefix,
                         "bad_branch": bad_branch,
                         "alternative": sample_record.new_assistant_message.model_dump(),
