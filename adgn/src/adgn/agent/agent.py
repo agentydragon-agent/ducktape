@@ -402,15 +402,14 @@ class MiniCodex:
 
             reasoning_param = build_reasoning_params(self._reasoning_effort, self._reasoning_summary)
             # Build OpenAI Responses tools list via Policy Gateway client (proxy aggregates downstream)
-            tools_payload: list[FunctionToolParam] = []
             tools = await self._mcp_client.list_tools()
-            for t in tools:
-                # Note: mcp.types.Tool has description: str | None and inputSchema: dict[str, Any]
-                # FunctionToolParam accepts description: str | None and parameters: dict[str, Any]
-                # Pass through types as-is; no defensive defaults needed
-                tools_payload.append(
-                    FunctionToolParam(name=t.name, description=t.description, parameters=t.inputSchema)
-                )
+            # Note: mcp.types.Tool has description: str | None and inputSchema: dict[str, Any]
+            # FunctionToolParam accepts description: str | None and parameters: dict[str, Any]
+            # Pass through types as-is; no defensive defaults needed
+            tools_payload = [
+                FunctionToolParam(name=t.name, description=t.description, parameters=t.inputSchema)
+                for t in tools
+            ]
 
             req = ResponsesRequest(
                 input=self._to_openai_input_items(),
