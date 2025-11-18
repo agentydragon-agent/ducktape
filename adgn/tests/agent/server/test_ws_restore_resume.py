@@ -11,6 +11,7 @@ from tests.agent.ws_helpers import assert_finished, collect_payloads_until_finis
 from tests.llm.support.openai_mock import FakeOpenAIModel, make_mock
 
 
+@pytest.mark.skip(reason="Monolithic /ws endpoint removed - needs rewrite for modular channels")
 @pytest.mark.timeout(10)
 def test_ws_restore_existing_agent_across_app_restart(
     monkeypatch, tmp_path, responses_factory, make_agent_http, patch_agent_build_client

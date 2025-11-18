@@ -91,9 +91,21 @@ class PolicyChannelManager(ChannelConnectionManager):
     async def send_snapshot(self, approval_engine: ApprovalPolicyEngine) -> None:
         """Send current policy snapshot to all clients."""
         content, version = approval_engine.get_policy()
-        # TODO: Load proposals from persistence
+
+        # Load proposals from persistence
+        db_proposals = await approval_engine.persistence.list_policy_proposals(approval_engine.agent_id)
+        proposals = [
+            ProposalInfo(
+                id=p.id,
+                status=ProposalStatus(p.status),
+                docstring=None,  # TODO: Extract from content if needed
+                tests=None,      # TODO: Parse test results if available
+            )
+            for p in db_proposals
+        ]
+
         await self.broadcast(
-            PolicySnapshot(policy=ApprovalPolicyInfo(content=content, version=version, proposals=[]))
+            PolicySnapshot(policy=ApprovalPolicyInfo(content=content, version=version, proposals=proposals))
         )
 
 

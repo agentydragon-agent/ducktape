@@ -39,7 +39,6 @@ from adgn.agent.server.exceptions import (
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession
 from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
-from adgn.agent.server.ws import register_ws
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.compositor.clients import CompositorMetaClient
@@ -684,7 +683,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         return PresetInfo(preset=p if p else None)
 
     # Register websocket routes
-    register_ws(app)
     register_agents_ws(app)
 
     # Register modular channel endpoints
