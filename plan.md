@@ -194,6 +194,14 @@ class RejectToolCallArgs(BaseModel):
 class AbortAgentArgs(BaseModel):
     agent_id: str
 
+# Pending approval models
+class PendingApproval(BaseModel):
+    """A tool call awaiting approval."""
+    call_id: str
+    tool: str
+    args: dict
+    timestamp: datetime
+
 # Historical approval timeline models
 class ApprovalHistoryEntry(BaseModel):
     """Single approval decision in the timeline."""
@@ -204,6 +212,41 @@ class ApprovalHistoryEntry(BaseModel):
     reason: str | None = None  # Only for rejections
     timestamp: datetime
     decided_by: str  # "human" or agent ID
+
+# Content block models (for global mailbox)
+class ApprovalContentBlock(BaseModel):
+    """Content block for a single approval in global mailbox."""
+    uri: str
+    mimeType: str = "application/json"
+    text: str  # JSON-serialized PendingApproval with agent_id
+
+class GlobalApprovalsResponse(BaseModel):
+    """Response for global approvals mailbox (content blocks)."""
+    contents: list[ApprovalContentBlock]
+
+# Resource response models
+class AgentInfo(BaseModel):
+    """Information about a single agent."""
+    agent_id: str
+    capabilities: dict[str, bool]  # e.g., {"chat": True, "agent_loop": False}
+    mode: Literal["local", "bridge"]
+    state_uri: str | None = None
+    approvals_uri: str | None = None
+
+class AgentListResponse(BaseModel):
+    """Response for resource://agents/list."""
+    agents: list[AgentInfo]
+
+class AgentApprovalsPendingResponse(BaseModel):
+    """Response for resource://agents/{id}/approvals/pending."""
+    agent_id: str
+    pending: list[PendingApproval]
+
+class AgentApprovalsHistoryResponse(BaseModel):
+    """Response for resource://agents/{id}/approvals/history."""
+    agent_id: str
+    timeline: list[ApprovalHistoryEntry]
+    count: int
 
 def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
     """Unified cross-agent management server."""
@@ -228,9 +271,12 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         mime_type="application/json",
         description="List all agents with capabilities and state"
     )
-    async def list_agents():
-        """List all known agents."""
-        agents = []
+    async def list_agents() -> AgentListResponse:
+        """List all known agents.
+
+        All data constructed using Pydantic models.
+        """
+        agent_infos: list[AgentInfo] = []
         for agent_id in registry.known_agents():
             infra = await registry.get_infrastructure(agent_id)
 
@@ -238,21 +284,28 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
             has_chat = hasattr(infra, 'chat_component') and infra.chat_component is not None
             has_agent_loop = hasattr(infra, 'agent_loop') and infra.agent_loop is not None
 
-            agent_info = {
-                "agent_id": agent_id,
-                "capabilities": {
-                    "chat": has_chat,
-                    "agent_loop": has_agent_loop,
-                },
-                "mode": "local" if has_agent_loop else "bridge",
+            # Build capabilities dict
+            capabilities = {
+                "chat": has_chat,
+                "agent_loop": has_agent_loop,
             }
 
-            if has_agent_loop:
-                agent_info["state_uri"] = f"resource://agents/{agent_id}/state"
-                agent_info["approvals_uri"] = f"resource://agents/{agent_id}/approvals/pending"
+            # Determine mode and optional URIs
+            mode: Literal["local", "bridge"] = "local" if has_agent_loop else "bridge"
+            state_uri = f"resource://agents/{agent_id}/state" if has_agent_loop else None
+            approvals_uri = f"resource://agents/{agent_id}/approvals/pending" if has_agent_loop else None
 
-            agents.append(agent_info)
-        return {"agents": agents}
+            # Construct Pydantic model
+            agent_info = AgentInfo(
+                agent_id=agent_id,
+                capabilities=capabilities,
+                mode=mode,
+                state_uri=state_uri,
+                approvals_uri=approvals_uri,
+            )
+            agent_infos.append(agent_info)
+
+        return AgentListResponse(agents=agent_infos)
 
     @server.resource(
         "resource://agents/{agent_id}/state",
@@ -275,13 +328,17 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         mime_type="application/json",
         description="Pending approvals for a specific agent"
     )
-    async def agent_approvals_pending(agent_id: str):
-        """Get pending approvals for agent."""
+    async def agent_approvals_pending(agent_id: str) -> AgentApprovalsPendingResponse:
+        """Get pending approvals for agent.
+
+        All data constructed using Pydantic models.
+        """
         infra = await registry.get_infrastructure(agent_id)
 
-        # Get pending approvals from approval engine
-        pending = await infra.approval_engine.get_pending()
-        return {"agent_id": agent_id, "pending": pending}
+        # Get pending approvals from approval engine (returns list[PendingApproval])
+        pending: list[PendingApproval] = await infra.approval_engine.get_pending()
+
+        return AgentApprovalsPendingResponse(agent_id=agent_id, pending=pending)
 
     @server.resource(
         "resource://approvals/pending",
@@ -289,39 +346,43 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         mime_type="application/json",
         description="Global mailbox: all pending approvals across all agents (returns content blocks)"
     )
-    async def approvals_pending_global():
+    async def approvals_pending_global() -> GlobalApprovalsResponse:
         """Get all pending approvals as content blocks (global mailbox).
 
         Returns MCP content blocks - each approval is a separate block with:
         - uri: unique resource URI for this approval
         - mimeType: application/json
         - text: inline JSON content with approval details
+
+        All data constructed using Pydantic models. Crashes if any agent fails
+        (no exception swallowing).
         """
         import json
-        contents = []
+        content_blocks: list[ApprovalContentBlock] = []
+
         for agent_id in registry.known_agents():
-            try:
-                infra = await registry.get_infrastructure(agent_id)
-                pending = await infra.approval_engine.get_pending()
-                for approval in pending:
-                    # Each approval becomes a content block with both URI and inline content
-                    approval_uri = f"resource://agents/{agent_id}/approvals/{approval['call_id']}"
-                    contents.append({
-                        "uri": approval_uri,
-                        "mimeType": "application/json",
-                        "text": json.dumps({
-                            "agent_id": agent_id,
-                            "call_id": approval['call_id'],
-                            "tool": approval['tool'],
-                            "args": approval['args'],
-                            "timestamp": approval.get('timestamp'),
-                        })
-                    })
-            except Exception as e:
-                # Skip agents that don't have approval engines
-                logger.debug(f"Skipping {agent_id}: {e}")
-                continue
-        return {"contents": contents}
+            infra = await registry.get_infrastructure(agent_id)
+            # get_pending() returns list[PendingApproval] (Pydantic models)
+            pending_approvals: list[PendingApproval] = await infra.approval_engine.get_pending()
+
+            for approval in pending_approvals:
+                # Construct content block using Pydantic model
+                approval_uri = f"resource://agents/{agent_id}/approvals/{approval.call_id}"
+                approval_data = {
+                    "agent_id": agent_id,
+                    "call_id": approval.call_id,
+                    "tool": approval.tool,
+                    "args": approval.args,
+                    "timestamp": approval.timestamp.isoformat(),
+                }
+                block = ApprovalContentBlock(
+                    uri=approval_uri,
+                    mimeType="application/json",
+                    text=json.dumps(approval_data)
+                )
+                content_blocks.append(block)
+
+        return GlobalApprovalsResponse(contents=content_blocks)
 
     @server.resource(
         "resource://agents/{agent_id}/approvals/history",
@@ -329,7 +390,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         mime_type="application/json",
         description="Historical approval timeline for an agent (activity log)"
     )
-    async def agent_approvals_history(agent_id: str):
+    async def agent_approvals_history(agent_id: str) -> AgentApprovalsHistoryResponse:
         """Get historical approval timeline for an agent.
 
         Serves as activity log for external agents - shows what tool calls
@@ -339,27 +400,14 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         infra = await registry.get_infrastructure(agent_id)
 
         # Get history from approval engine (returns list[ApprovalHistoryEntry])
-        history_entries = await infra.approval_engine.get_history()
+        history_entries: list[ApprovalHistoryEntry] = await infra.approval_engine.get_history()
 
-        # Convert Pydantic models to JSON-serializable dicts
-        timeline = [
-            {
-                "call_id": entry.call_id,
-                "tool": entry.tool,
-                "args": entry.args,
-                "decision": entry.decision,
-                "reason": entry.reason,
-                "timestamp": entry.timestamp.isoformat(),
-                "decided_by": entry.decided_by,
-            }
-            for entry in history_entries
-        ]
-
-        return {
-            "agent_id": agent_id,
-            "timeline": timeline,
-            "count": len(timeline),
-        }
+        # Return Pydantic response model directly (FastMCP handles serialization)
+        return AgentApprovalsHistoryResponse(
+            agent_id=agent_id,
+            timeline=history_entries,
+            count=len(history_entries),
+        )
 
     # Tools
 
@@ -879,13 +927,25 @@ npm install --save-dev pydantic-to-typescript
 **File**: `adgn/src/adgn/agent/server/protocol.py`
 
 Ensure all frontend-facing models are exported:
-- `ApprovalBrief`
-- `ApprovalPendingEvt`
-- `ApprovalHistoryEntry` (historical timeline)
-- `ServerCapabilities`
-- `SamplingSnapshot`
-- `ServerEntry` (discriminated union)
-- Tool input/output schemas (ApproveToolCallArgs, RejectToolCallArgs, AbortAgentArgs)
+- **Request/response models**:
+  - `PendingApproval` (approval details)
+  - `ApprovalHistoryEntry` (historical timeline entry)
+  - `AgentInfo` (agent metadata)
+  - `AgentListResponse` (agents list)
+  - `AgentApprovalsPendingResponse` (per-agent pending)
+  - `AgentApprovalsHistoryResponse` (per-agent history)
+  - `ApprovalContentBlock` (content block structure)
+  - `GlobalApprovalsResponse` (global mailbox)
+- **Tool schemas**:
+  - `ApproveToolCallArgs`
+  - `RejectToolCallArgs`
+  - `AbortAgentArgs`
+- **Legacy models** (if still needed):
+  - `ApprovalBrief`
+  - `ApprovalPendingEvt`
+  - `ServerCapabilities`
+  - `SamplingSnapshot`
+  - `ServerEntry` (discriminated union)
 
 **Acceptance**:
 - [ ] `npm run generate-types` succeeds
@@ -1115,6 +1175,53 @@ async def test_agent_state_updates():
 - [ ] State updates propagate correctly
 - [ ] All integration tests pass
 
+#### 4.4 Playwright End-to-End Tests
+
+**Note**: The repository already has Playwright tests set up. The new Management UI should be covered by Playwright e2e tests.
+
+**File**: `adgn/tests/e2e/test_management_ui.py` (or similar Playwright test file)
+
+```python
+async def test_management_ui_approval_flow(page):
+    """Test approval flow through the UI."""
+    # 1. Navigate to Management UI with token
+    # 2. Verify agent list renders
+    # 3. Verify global approvals mailbox shows pending
+    # 4. Click approve on an approval
+    # 5. Verify approval disappears from pending
+    # 6. Verify appears in history timeline
+
+async def test_management_ui_content_blocks(page):
+    """Test global approvals content blocks rendering."""
+    # 1. Navigate to UI
+    # 2. Verify each approval renders with correct data
+    # 3. Verify URIs are accessible
+    # 4. Verify inline content displays correctly
+
+async def test_management_ui_realtime_updates(page):
+    """Test real-time resource updates."""
+    # 1. Navigate to UI
+    # 2. Trigger approval change from backend
+    # 3. Verify UI updates without refresh
+    # 4. Verify notifications handled correctly
+
+async def test_management_ui_agent_history(page):
+    """Test historical timeline display."""
+    # 1. Navigate to UI
+    # 2. View agent detail page
+    # 3. Verify history timeline renders
+    # 4. Verify entries show decision, timestamp, decided_by
+    # 5. Verify chronological ordering
+```
+
+**Acceptance**:
+- [ ] Playwright tests cover full user workflows
+- [ ] UI approval flow works end-to-end
+- [ ] Content blocks render correctly
+- [ ] Real-time updates work
+- [ ] Historical timeline displays correctly
+- [ ] All Playwright tests pass
+
 ### Phase 5: Migration & Cleanup
 
 #### 5.1 Remove WebSocket Code
@@ -1197,8 +1304,12 @@ client.on('elicitation', async (request) => {
 
 ### Phase 1 (Backend)
 - [ ] Unified `agents` server implemented (no stubs)
-- [ ] All resources work (`agents/list`, `agents/{id}/state`, `approvals/pending`)
+- [ ] All resources work (`agents/list`, `agents/{id}/state`, `agents/{id}/approvals/pending`, `agents/{id}/approvals/history`, `approvals/pending`)
 - [ ] All tools work (`approve_tool_call`, `reject_tool_call`, `abort_agent`)
+- [ ] All data uses Pydantic models (no raw dicts)
+- [ ] No exception swallowing (crashes on failure)
+- [ ] Content blocks work correctly in global mailbox
+- [ ] Historical timeline returns proper Pydantic models
 - [ ] Resource notifications fire correctly
 - [ ] Token auth works
 - [ ] CLI prints Management UI URL with token
@@ -1209,7 +1320,8 @@ client.on('elicitation', async (request) => {
 - [ ] Client connects successfully
 - [ ] Token management works (URL → localStorage)
 - [ ] Agent list displays
-- [ ] Global approvals mailbox displays
+- [ ] Global approvals mailbox displays (handles content blocks)
+- [ ] Historical timeline displays
 - [ ] Approve/reject/abort actions work
 - [ ] Notifications update UI in real-time
 - [ ] All frontend tests pass
@@ -1223,8 +1335,12 @@ client.on('elicitation', async (request) => {
 - [ ] All backend tests pass
 - [ ] All frontend tests pass
 - [ ] All integration tests pass
+- [ ] All Playwright e2e tests pass
 - [ ] End-to-end approval flow works
 - [ ] Multi-agent scenarios work
+- [ ] Content blocks rendering tested
+- [ ] Historical timeline display tested
+- [ ] Real-time updates tested via Playwright
 
 ### Phase 5 (Cleanup)
 - [ ] WebSocket code removed
