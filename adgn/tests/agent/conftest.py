@@ -418,11 +418,8 @@ def agent_ws_box(ws_session, make_agent_http):
                     env = Envelope.model_validate(ws.receive_json())
                     p = env.payload
                     # Optional trace for visibility when debugging CI flakes
-                    try:
-                        if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
-                            print(f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}")
-                    except Exception:
-                        pass
+                    if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
+                        print(f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}")
                     # Auto-approve via REST when requested
                     if getattr(p, "type", None) == "approval_pending" and auto_approve:
                         # Type narrow to ApprovalPendingEvt
