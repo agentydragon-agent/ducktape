@@ -53,6 +53,7 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
 1. **Deploy ZFS dataset on atlas**
    ```bash
    cd ~/code/ducktape/ansible
+   cd ansible
    ansible-playbook atlas.yaml --tags gitea-mirrors
    ```
    This will:
@@ -62,6 +63,7 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
 
 2. **Configure mounts on k3s nodes**
    ```bash
+   cd ansible
    ansible-playbook k3s-nodes.yaml --tags gitea-mirrors
    ```
    This will:
@@ -124,7 +126,7 @@ quota=200G         # Storage limit
 ```
 ducktape/
 ├── ansible/
-│   ├── atlas.yaml                                    # Updated with gitea-mirrors role
+│   ├── atlas.yaml                           # Updated with gitea-mirrors role
 │   ├── k3s-nodes.yaml                               # Updated with mount configuration
 │   └── roles/
 │       └── gitea-mirrors/

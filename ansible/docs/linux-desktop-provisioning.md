@@ -63,5 +63,6 @@ After these steps, run the playbook to install the GUI packages and XRDP:
 
 ```bash
 cd ~/code/ducktape/ansible
+cd ansible
 ansible-playbook linux-desktop.yaml
 ```
