@@ -36,7 +36,7 @@ from adgn.mcp._shared.constants import (
 )
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
-from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.approval_policy.server import (
     ApprovalPolicyAdminServer,
     ApprovalPolicyProposerServer,

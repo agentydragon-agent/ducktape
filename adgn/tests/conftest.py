@@ -20,7 +20,7 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.clients import PolicyReaderStub
-from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
@@ -30,7 +30,7 @@ from adgn.mcp.testing.simple_servers import make_simple_mcp
 from tests.types import McpServerSpecs
 
 # Top-level imports for fixtures
-from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.mcp.stubs.typed_stubs import TypedClient
 
 # Ensure shared fixtures from tests/fixtures are always registered, even when
 # running a subset of tests or in parallel workers where the module wouldn't be
