@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.server.channels.base import ChannelConnectionManager
+from adgn.agent.server.protocol import ApprovalBrief, ApprovalPendingEvt
 
 if TYPE_CHECKING:
     from adgn.agent.approvals import ApprovalHub
@@ -22,28 +23,11 @@ if TYPE_CHECKING:
 # ============================================================================
 
 
-class ApprovalBrief(BaseModel):
-    """Brief approval request info."""
-
-    call_id: str
-    tool_key: str
-    args: dict = Field(default_factory=dict)
-    model_config = ConfigDict(extra="forbid")
-
-
 class ApprovalsSnapshot(BaseModel):
     """Full approvals state snapshot."""
 
     type: Literal["approvals_snapshot"] = "approvals_snapshot"
     pending: list[ApprovalBrief] = []
-    model_config = ConfigDict(extra="forbid")
-
-
-class ApprovalPendingEvt(BaseModel):
-    """New approval request event."""
-
-    type: Literal["approval_pending"] = "approval_pending"
-    approval: ApprovalBrief
     model_config = ConfigDict(extra="forbid")
 
 

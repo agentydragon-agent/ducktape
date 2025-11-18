@@ -28,8 +28,7 @@ from adgn.agent.persist import ApprovalOutcome
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.running import RunningInfrastructure
-from adgn.agent.server.channels.approvals import ApprovalBrief
-from adgn.agent.server.protocol import ApprovalPendingEvt
+from adgn.agent.server.protocol import ApprovalBrief, ApprovalPendingEvt
 from adgn.agent.server.runtime import ConnectionManager
 from adgn.mcp._shared.constants import (
     APPROVAL_POLICY_SERVER_NAME_APPROVER,

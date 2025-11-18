@@ -9,12 +9,13 @@ import logging
 from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
+from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict
 
-if TYPE_CHECKING:
-    from fastapi import FastAPI, WebSocket
+from adgn.agent.server.channels.bundle import ChannelBundle
 
-    from adgn.agent.server.channels.bundle import ChannelBundle
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +79,6 @@ async def send_envelope(ws: WebSocket, channel: str, payload: Accepted | ErrorEv
 
 async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | None:
     """Get or create channel bundle for agent."""
-    from adgn.agent.server.channels.bundle import ChannelBundle
-
     await app.state.ready.wait()
     try:
         runtime = await app.state.registry.ensure_live(agent_id, with_ui=True)
@@ -91,16 +90,14 @@ async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | Non
 
     if runtime._channel_bundle is None:
         runtime._channel_bundle = ChannelBundle.for_agent_runtime(runtime)
-    assert runtime._channel_bundle is not None  # for mypy
-    return runtime._channel_bundle
+    bundle: ChannelBundle = runtime._channel_bundle  # type: ignore[assignment]
+    return bundle
 
 
 async def handle_channel_ws(
     ws: WebSocket, channel: str, agent_id: str | None, get_manager, send_initial_snapshot, app: FastAPI
 ):
     """Common WebSocket handler pattern for all channels."""
-    from fastapi import WebSocketDisconnect
-
     await ws.accept()
     try:
         if not agent_id:

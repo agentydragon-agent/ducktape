@@ -27,8 +27,6 @@ class Sidecar(ABC):
         This method should mount any MCP servers into running.compositor
         and perform any other initialization needed.
         """
-        pass
 
     async def detach(self) -> None:
         """Cleanup when infrastructure is closing (optional override)."""
-        pass

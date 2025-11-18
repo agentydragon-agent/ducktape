@@ -8,7 +8,8 @@ type-safe access to compositor, policy gateway, and approval infrastructure.
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import cached_property
 from typing import TYPE_CHECKING
 
 from fastmcp.client import Client
@@ -16,12 +17,12 @@ from fastmcp.mcp_config import MCPServerTypes
 
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
+from adgn.mcp.compositor.clients import CompositorAdminClient
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 
 if TYPE_CHECKING:
     from adgn.agent.runtime.sidecar import Sidecar
-    from adgn.mcp.compositor.clients import CompositorAdminClient
 
 
 @dataclass
@@ -56,24 +57,12 @@ class RunningInfrastructure:
     _stack: AsyncExitStack
 
     # Attached sidecars (for lifecycle management)
-    _sidecars: list[Sidecar] = None  # type: ignore
+    _sidecars: list[Sidecar] = field(default_factory=list)
 
-    # Cached clients
-    _admin_client: CompositorAdminClient | None = None
-
-    def __post_init__(self) -> None:
-        if self._sidecars is None:
-            object.__setattr__(self, "_sidecars", [])
-
-    @property
+    @cached_property
     def admin_client(self) -> CompositorAdminClient:
         """Get or create compositor admin client."""
-        if self._admin_client is None:
-            from adgn.mcp.compositor.clients import CompositorAdminClient
-
-            object.__setattr__(self, "_admin_client", CompositorAdminClient(self.compositor_client))
-        assert self._admin_client is not None  # for mypy
-        return self._admin_client
+        return CompositorAdminClient(self.compositor_client)
 
     async def attach_sidecar(self, sidecar: Sidecar) -> None:
         """Sidecars are detached in reverse order when close() is called."""

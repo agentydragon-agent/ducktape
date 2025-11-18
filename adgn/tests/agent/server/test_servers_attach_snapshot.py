@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from fastmcp.server import FastMCP
 from pydantic import TypeAdapter
 

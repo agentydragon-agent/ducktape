@@ -86,7 +86,7 @@ async def create_multi_tenant_app(
             await running.__aenter__()
 
             # Get the compositor's HTTP app
-            compositor_app = running.compositor.http_app()
+            compositor_app: FastAPI = running.compositor.http_app()  # type: ignore[assignment]
 
             infra_cache[agent_id] = (running, compositor_app)
             logger.info(f"Infrastructure ready for agent_id={agent_id}")
