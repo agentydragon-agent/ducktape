@@ -12,7 +12,7 @@ from adgn.agent.reducer import AutoHandler, NotificationsHandler
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.mcp.testing.typed_stubs import ToolStub
+from adgn.mcp.stubs.typed_stubs import ToolStub
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult, UserMessage
 from tests.fixtures.responses import ResponsesFactory
 from tests.llm.support.openai_mock import make_mock

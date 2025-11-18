@@ -8,7 +8,7 @@ from adgn.agent.agent import AgentResult, MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, Exited
-from adgn.mcp.testing.typed_stubs import ToolStub
+from adgn.mcp.stubs.typed_stubs import ToolStub
 from adgn.openai_utils.client_factory import build_client
 
 # Use /bin/echo -n for portability and to avoid trailing newline

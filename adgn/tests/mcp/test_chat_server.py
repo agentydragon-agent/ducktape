@@ -16,8 +16,8 @@ from adgn.mcp.chat.server import (
     ReadPendingInput,
     make_chat_server,
 )
-from adgn.mcp.testing.chat_stubs import ChatServerStub
-from adgn.mcp.testing.typed_stubs import TypedClient
+from adgn.mcp.stubs.chat_stubs import ChatServerStub
+from adgn.mcp.stubs.typed_stubs import TypedClient
 
 
 def create_chat_servers() -> tuple[ChatStore, Any, Any]:

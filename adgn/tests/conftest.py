@@ -29,9 +29,6 @@ from adgn.mcp.policy_gateway.middleware import install_policy_gateway
 from adgn.mcp.testing.simple_servers import make_simple_mcp
 from tests.types import McpServerSpecs
 
-# Top-level imports for fixtures
-from adgn.mcp.stubs.typed_stubs import TypedClient
-
 # Ensure shared fixtures from tests/fixtures are always registered, even when
 # running a subset of tests or in parallel workers where the module wouldn't be
 # imported implicitly.

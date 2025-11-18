@@ -17,7 +17,8 @@ from pathlib import Path
 from openai import AsyncOpenAI
 
 from adgn.openai_utils.http_logging import make_logged_async_openai, make_logger_logged_async_openai
-from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto, RetryingOpenAIModel
+from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto
+from adgn.openai_utils.retry import RetryingOpenAIModel
 from adgn.openai_utils.types import ReasoningEffort
 
 

@@ -8,7 +8,7 @@ import pytest
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.direct import DirectExecArgs, make_direct_exec_server
 from adgn.mcp.exec.models import BaseExecResult, Exited
-from adgn.mcp.testing.typed_stubs import ToolStub
+from adgn.mcp.stubs.typed_stubs import ToolStub
 
 # FastMCP stdio client (hard import)
 

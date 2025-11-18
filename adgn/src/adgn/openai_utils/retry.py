@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass
 import functools
-from typing import Any, ParamSpec, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
 import httpx
 import openai
@@ -10,7 +11,10 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
-from .model import ResponsesResult, convert_sdk_response
+from .model import ResponsesRequest, ResponsesResult, convert_sdk_response
+
+if TYPE_CHECKING:
+    from .model import OpenAIModelProto
 
 # Default retry policy: 5 attempts, exponential backoff with jitter (~0.5s..60s)
 _DEFAULT_ATTEMPTS = 10
@@ -67,3 +71,19 @@ async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> R
 async def chat_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ChatCompletion:
     # kwargs should contain: messages=..., model=..., etc.
     return await client.chat.completions.create(**kwargs)
+
+
+@dataclass
+class RetryingOpenAIModel:
+    """Retry-decorated wrapper around an OpenAIModel-like base implementing our protocol."""
+
+    base: OpenAIModelProto
+
+    @property
+    def model(self) -> str:
+        return self.base.model
+
+    @retry_decorator()
+    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+        result = await self.base.responses_create(req)
+        return cast(ResponsesResult, result)
