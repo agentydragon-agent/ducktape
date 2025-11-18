@@ -76,16 +76,16 @@ class ApprovalRecord(BaseModel):
     """Historical approval record from persistence.
 
     TODO: This tracks tool calls generally, not just approvals. Consider renaming to ToolCallRecord.
-    TODO: Replace 'details' dict with typed fields:
+    TODO: Replace 'details' dict with typed nested models:
       - tool_call: ApprovalToolCall (reuse existing type with {name, call_id, args_json})
-      - reason: str | None (denial/rejection reason - separate field)
-      - execution_started_at: datetime | None (when tool execution began)
-      - execution_completed_at: datetime | None (when tool execution finished)
-      - tool_output: mcp_types.CallToolResult | None (tool execution result)
+      - decision: Decision | None (jointly optional: outcome, decided_at, reason)
+        Note: decision.decided_at also serves as execution start time
+      - execution: ToolCallExecution | None (jointly optional: completed_at, output)
     This would enable:
-      - Tracking EXECUTING state (started but not completed)
+      - Tracking EXECUTING state: decision!=None && execution==None
       - Displaying full tool call timeline with args and outputs
       - Proper type safety instead of generic dict
+      - Clear semantics: decision=None means undecided, execution=None means not completed
     """
 
     call_id: str
