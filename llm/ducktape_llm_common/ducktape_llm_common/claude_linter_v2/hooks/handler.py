@@ -21,6 +21,7 @@ from ..config.models import (
     StopHookConfig,
     Violation,
 )
+from ..diff.categorizer import ViolationCategory
 from ..diff.intelligence import DiffIntelligence
 from ..linters.python_formatter import PythonFormatter
 from ..llm_analyzer import LLMAnalyzer
@@ -719,7 +720,9 @@ class HookHandler:
                 )
 
                 # Only track in-diff and near-diff violations as important
-                important_violations = categorized_groups.in_diff + categorized_groups.near_diff
+                important_violations = categorized_groups.get(ViolationCategory.IN_DIFF, []) + categorized_groups.get(
+                    ViolationCategory.NEAR_DIFF, []
+                )
 
                 if important_violations:
                     # Convert back to plain violations for tracker

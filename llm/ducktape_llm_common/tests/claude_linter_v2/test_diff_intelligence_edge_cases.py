@@ -2,7 +2,6 @@
 
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
 from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
-    CategorizedGroups,
     CategorizedViolation,
     ViolationCategory,
 )
@@ -136,9 +135,9 @@ class TestDiffIntelligenceEdgeCases:
             violations=[],  # No violations
         )
 
-        assert groups.in_diff == []
-        assert groups.near_diff == []
-        assert groups.out_of_diff == []
+        assert groups.get(ViolationCategory.IN_DIFF, []) == []
+        assert groups.get(ViolationCategory.NEAR_DIFF, []) == []
+        assert groups.get(ViolationCategory.OUT_OF_DIFF, []) == []
 
     def test_overlapping_near_regions(self):
         """Test when multiple changes create overlapping near-diff regions."""
@@ -163,8 +162,8 @@ class TestDiffIntelligenceEdgeCases:
         )
 
         # Line 12 is within 3 lines of both line 10 and line 11
-        assert len(groups.near_diff) == 1
-        assert groups.near_diff[0].distance_from_change == 1  # Closest distance
+        assert len(groups.get(ViolationCategory.NEAR_DIFF, [])) == 1
+        assert groups[ViolationCategory.NEAR_DIFF][0].distance_from_change == 1  # Closest distance
 
     def test_pretooluse_all_out_of_diff(self):
         """Test that PreToolUse (no tool_response) marks all as out-of-diff."""
@@ -183,9 +182,9 @@ class TestDiffIntelligenceEdgeCases:
         )
 
         # Without tool_response, we can't know what will change
-        assert len(groups.in_diff) == 0
-        assert len(groups.near_diff) == 0
-        assert len(groups.out_of_diff) == 2
+        assert len(groups.get(ViolationCategory.IN_DIFF, [])) == 0
+        assert len(groups.get(ViolationCategory.NEAR_DIFF, [])) == 0
+        assert len(groups.get(ViolationCategory.OUT_OF_DIFF, [])) == 2
 
     def test_format_many_violations(self):
         """Test formatting with many violations doesn't overwhelm output."""
@@ -201,7 +200,11 @@ class TestDiffIntelligenceEdgeCases:
             for i in range(1, 11)  # 10 violations
         ]
 
-        groups = CategorizedGroups(in_diff=[], near_diff=[], out_of_diff=out_diff_violations)
+        groups = {
+            ViolationCategory.IN_DIFF: [],
+            ViolationCategory.NEAR_DIFF: [],
+            ViolationCategory.OUT_OF_DIFF: out_diff_violations,
+        }
 
         formatted = di.format_violations_by_category(groups)
 

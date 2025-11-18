@@ -1,6 +1,7 @@
 """Categorize violations based on their proximity to diff changes."""
 
-from dataclasses import dataclass, field
+from collections import defaultdict
+from dataclasses import dataclass
 from enum import StrEnum
 
 from ..config.models import Violation
@@ -22,15 +23,6 @@ class CategorizedViolation:
     violation: Violation
     category: ViolationCategory
     distance_from_change: int | None  # For near-diff
-
-
-@dataclass
-class CategorizedGroups:
-    """Groups of violations categorized by their relationship to diff changes."""
-
-    in_diff: list[CategorizedViolation] = field(default_factory=list)
-    near_diff: list[CategorizedViolation] = field(default_factory=list)
-    out_of_diff: list[CategorizedViolation] = field(default_factory=list)
 
 
 class ViolationCategorizer:
@@ -100,22 +92,19 @@ class ViolationCategorizer:
 
         return categorized
 
-    def group_by_category(self, categorized: list[CategorizedViolation]) -> CategorizedGroups:
+    def group_by_category(
+        self, categorized: list[CategorizedViolation]
+    ) -> dict[ViolationCategory, list[CategorizedViolation]]:
         """Group categorized violations by their category."""
-        groups = CategorizedGroups()
+        groups: dict[ViolationCategory, list[CategorizedViolation]] = defaultdict(list)
 
         for cv in categorized:
-            if cv.category == ViolationCategory.IN_DIFF:
-                groups.in_diff.append(cv)
-            elif cv.category == ViolationCategory.NEAR_DIFF:
-                groups.near_diff.append(cv)
-            else:  # OUT_OF_DIFF
-                groups.out_of_diff.append(cv)
+            groups[cv.category].append(cv)
 
         # Sort near-diff by distance
-        groups.near_diff.sort(key=lambda cv: cv.distance_from_change or 0)
+        groups[ViolationCategory.NEAR_DIFF].sort(key=lambda cv: cv.distance_from_change or 0)
 
-        return groups
+        return dict(groups)  # Convert back from defaultdict
 
     def filter_by_priority(
         self, categorized: list[CategorizedViolation], max_violations: int = 10
@@ -140,16 +129,16 @@ class ViolationCategorizer:
         result = []
 
         # Add all in-diff violations
-        result.extend(groups.in_diff)
+        result.extend(groups.get(ViolationCategory.IN_DIFF, []))
 
         # Add near-diff violations if room
         remaining = max_violations - len(result)
         if remaining > 0:
-            result.extend(groups.near_diff[:remaining])
+            result.extend(groups.get(ViolationCategory.NEAR_DIFF, [])[:remaining])
 
         # Add out-of-diff violations if room
         remaining = max_violations - len(result)
         if remaining > 0:
-            result.extend(groups.out_of_diff[:remaining])
+            result.extend(groups.get(ViolationCategory.OUT_OF_DIFF, [])[:remaining])
 
         return result[:max_violations]

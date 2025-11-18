@@ -194,8 +194,8 @@ class ComparisonGrading(BaseModel):
     """Grade by comparing output to reference."""
 
     strategy: Literal["comparison"] = "comparison"
-    reference: str
-    criteria: list[Criterion]
+    reference: str | None = None  # May be None at task type level, filled by tasks
+    criteria: list[Criterion] = Field(default_factory=list)
 
 
 class MessageBasedGrading(BaseModel):

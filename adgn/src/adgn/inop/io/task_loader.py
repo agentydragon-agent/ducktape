@@ -3,45 +3,10 @@
 from pathlib import Path
 from typing import Any
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 import yaml
 
 from adgn.inop.engine.models import GradingConfig, TaskDefinition, TaskSetup, TaskTypeConfig, TaskTypeName
-
-
-def parse_setup_config(config: dict[str, Any]) -> TaskSetup | None:
-    """Parse setup configuration from YAML data.
-
-    Returns a TaskSetup object or None if config is empty/None.
-    Git clone, Docker, and sandbox are orthogonal concerns that can be combined.
-    """
-    if not config:
-        return None
-
-    return TypeAdapter(TaskSetup).validate_python(config)
-
-
-def parse_grading_config(config: dict[str, Any]) -> GradingConfig | None:
-    """Parse grading configuration from YAML data.
-
-    Returns None if config is empty, strategy is missing, or for incomplete
-    comparison grading (missing reference at task type level).
-    """
-    if not config:
-        return None
-
-    strategy = config.get("strategy")
-    if not strategy:
-        return None
-
-    try:
-        return TypeAdapter(GradingConfig).validate_python(config)
-    except ValidationError:
-        # For comparison strategy, reference may be incomplete at task type level
-        # and filled in by individual tasks
-        if strategy == "comparison" and not config.get("reference"):
-            return None  # Incomplete - will be filled by tasks
-        raise
 
 
 def load_task_types(file_path: Path | str) -> dict[str, TaskTypeConfig]:
@@ -63,9 +28,9 @@ def load_task_types(file_path: Path | str) -> dict[str, TaskTypeConfig]:
     task_types = {}
     for name, config in data["task_types"].items():
         # Only grading config for task types (setup is per-task)
-        grading_config = config.get("grading")
-        grading = parse_grading_config(grading_config) if grading_config else None
-
+        grading = (
+            TypeAdapter(GradingConfig).validate_python(config["grading"]) if config.get("grading") else None
+        )
         task_types[name] = TaskTypeConfig(name=TaskTypeName(name), grading=grading)
 
     return task_types
@@ -113,15 +78,15 @@ def load_task_definitions(
 
     tasks = []
     for task_data in data.get("tasks", []):
-        # Parse setup overrides if present
-        setup_overrides = None
-        if "setup_overrides" in task_data:
-            setup_overrides = parse_setup_config(task_data["setup_overrides"])
-
-        # Parse grading overrides if present
-        grading_overrides = None
-        if "grading_overrides" in task_data:
-            grading_overrides = parse_grading_config(task_data["grading_overrides"])
+        # Parse setup and grading overrides if present
+        setup_overrides = (
+            TaskSetup.model_validate(task_data["setup_overrides"]) if "setup_overrides" in task_data else None
+        )
+        grading_overrides = (
+            TypeAdapter(GradingConfig).validate_python(task_data["grading_overrides"])
+            if "grading_overrides" in task_data
+            else None
+        )
 
         task = TaskDefinition(
             id=task_data["id"],
