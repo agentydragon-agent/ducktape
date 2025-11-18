@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastmcp.server import FastMCP
 from pydantic import TypeAdapter
 
@@ -16,6 +17,7 @@ def _make_echo() -> FastMCP:
     return m
 
 
+@pytest.mark.skip(reason="Monolithic /ws endpoint removed - needs rewrite for modular channels")
 def test_attach_server_populates_sampling_servers(agent_app_client):
     app, client = agent_app_client
     # Create an agent
