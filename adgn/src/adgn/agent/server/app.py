@@ -279,8 +279,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             await app.state.stack.aclose()
             # Continue shutdown on errors; they will be logged by the caller
         for container in app.state.registry.list():
+            # Flush legacy UI manager
             if container._ui_manager:
                 await container._ui_manager.flush()
+            # Flush channel bundle if present
+            if container._channel_bundle is not None:
+                await container._channel_bundle.flush_all()
         await app.state.registry.close_all()
 
     # Helper functions to reduce boilerplate
@@ -682,6 +686,11 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # Register websocket routes
     register_ws(app)
     register_agents_ws(app)
+
+    # Register modular channel endpoints
+    from adgn.agent.server.channels.endpoints import register_channel_endpoints
+
+    register_channel_endpoints(app)
 
     return app
 
