@@ -12,7 +12,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from adgn.agent.persist import ApprovalOutcome
-from adgn.agent.runtime.container import AgentContainer
+from adgn.agent.runtime.registry import AgentRuntime
 from adgn.agent.server.agents_ws import AgentsWSHub
 from adgn.agent.server.protocol import Accepted, ApprovalBrief, Envelope, ErrorCode, ErrorEvt, UiStateSnapshot
 
@@ -44,7 +44,7 @@ IncomingMsg = Annotated[HelloIn | ResumeIn | PingIn, Field(discriminator="type")
 
 
 class WsContext:
-    def __init__(self, app: FastAPI, container: AgentContainer):
+    def __init__(self, app: FastAPI, container: AgentRuntime):
         self.app = app
         self.container = container
         assert container.ui is not None
@@ -142,7 +142,7 @@ def register_ws(app: FastAPI) -> None:
         agent_id = ws.query_params.get("agent_id")
         # Note: Do not broadcast live status until ensure_live succeeds below
         # Do not implicitly guess agent id from Referer; require explicit query param
-        container: AgentContainer | None = None
+        container: AgentRuntime | None = None
         if agent_id:
             try:
                 container = await app.state.registry.ensure_live(agent_id, with_ui=True)
