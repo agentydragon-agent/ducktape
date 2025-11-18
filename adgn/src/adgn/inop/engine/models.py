@@ -426,6 +426,18 @@ class TaskTypesYaml(BaseModel):
     task_types: dict[str, TaskTypeYamlConfig]
 
 
+class RunnerConfig(BaseModel):
+    """Configuration for a single runner."""
+
+    environment: RunnerEnvironment
+
+
+class RunnersYaml(BaseModel):
+    """Root YAML structure for runners.yaml."""
+
+    runners: dict[str, RunnerConfig]
+
+
 class TaskDefinitionsYaml(BaseModel):
     """Root YAML structure for seeds.yaml."""
 
