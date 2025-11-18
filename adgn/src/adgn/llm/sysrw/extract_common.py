@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 from typing import Any, TextIO
 
-from pydantic import TypeAdapter
-
 from .constants import TOOLS_HEADER
 from .openai_typing import (
     MessageRole,
@@ -30,8 +28,8 @@ def join_text_parts(content: str | list[ResponseContentPart] | None) -> str:
         return content
     if content is None:
         return ""
-    parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
-    return "\n".join(iter_resolved_text(parts))
+    # content is list[ResponseContentPart] at this point
+    return "\n".join(iter_resolved_text(content))
 
 
 def sys_has_tools_header(system: str | list[ResponseContentPart] | None) -> bool:
@@ -40,16 +38,15 @@ def sys_has_tools_header(system: str | list[ResponseContentPart] | None) -> bool
         return TOOLS_HEADER in system
     if system is None:
         return False
-    parts = TypeAdapter(list[ResponseContentPart]).validate_python(system)
-    return any(TOOLS_HEADER in text for text in iter_resolved_text(parts))
+    # system is list[ResponseContentPart] at this point
+    return any(TOOLS_HEADER in text for text in iter_resolved_text(system))
 
 
 def find_last_user_text_from_msg(msg: ResponseOutputMessage) -> str | None:
     """Extract plain text from a single user message object (CCR-style)."""
     if response_message_role(msg) != MessageRole.USER:
         return None
-    text = response_message_content_as_text(msg)
-    return text or None
+    return response_message_content_as_text(msg) or None
 
 
 def find_last_user_text_from_messages(messages: list[ResponseOutputMessage] | Any) -> str | None:
@@ -58,15 +55,13 @@ def find_last_user_text_from_messages(messages: list[ResponseOutputMessage] | An
     if parsed:
         last = parsed[-1]
         if response_message_role(last) == MessageRole.USER:
-            text = response_message_content_as_text(last)
-            return text or None
+            return response_message_content_as_text(last) or None
         return None
     if not isinstance(messages, list) or not messages:
         return None
     last = messages[-1]
     if isinstance(last, dict) and (last.get("role") or "").lower() == "user":
-        text = join_text_parts(last.get("content"))
-        return text or None
+        return join_text_parts(last.get("content")) or None
     return None
 
 
