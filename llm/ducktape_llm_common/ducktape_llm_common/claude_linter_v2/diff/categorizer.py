@@ -1,8 +1,8 @@
 """Categorize violations based on their proximity to diff changes."""
 
-from collections import defaultdict
 from dataclasses import dataclass
 from enum import StrEnum
+from itertools import groupby
 
 from ..config.models import Violation
 from .parser import ParsedDiff
@@ -96,15 +96,17 @@ class ViolationCategorizer:
         self, categorized: list[CategorizedViolation]
     ) -> dict[ViolationCategory, list[CategorizedViolation]]:
         """Group categorized violations by their category."""
-        groups: dict[ViolationCategory, list[CategorizedViolation]] = defaultdict(list)
+        # Sort by category first (required for groupby)
+        categorized_sorted = sorted(categorized, key=lambda cv: cv.category)
 
-        for cv in categorized:
-            groups[cv.category].append(cv)
+        # Group by category
+        groups = {category: list(items) for category, items in groupby(categorized_sorted, key=lambda cv: cv.category)}
 
         # Sort near-diff by distance
-        groups[ViolationCategory.NEAR_DIFF].sort(key=lambda cv: cv.distance_from_change or 0)
+        if ViolationCategory.NEAR_DIFF in groups:
+            groups[ViolationCategory.NEAR_DIFF].sort(key=lambda cv: cv.distance_from_change or 0)
 
-        return dict(groups)  # Convert back from defaultdict
+        return groups
 
     def filter_by_priority(
         self, categorized: list[CategorizedViolation], max_violations: int = 10

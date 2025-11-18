@@ -6,7 +6,13 @@ from typing import Any
 from pydantic import TypeAdapter
 import yaml
 
-from adgn.inop.engine.models import GradingConfig, TaskDefinition, TaskSetup, TaskTypeConfig, TaskTypeName
+from adgn.inop.engine.models import (
+    TaskDefinition,
+    TaskDefinitionsYaml,
+    TaskTypeConfig,
+    TaskTypeName,
+    TaskTypesYaml,
+)
 
 
 def load_task_types(file_path: Path | str) -> dict[str, TaskTypeConfig]:
@@ -23,17 +29,9 @@ def load_task_types(file_path: Path | str) -> dict[str, TaskTypeConfig]:
         raise FileNotFoundError(f"Task types file not found: {file_path}")
 
     with file_path.open() as f:
-        data = yaml.safe_load(f)
+        config = TaskTypesYaml.model_validate(yaml.safe_load(f))
 
-    task_types = {}
-    for name, config in data["task_types"].items():
-        # Only grading config for task types (setup is per-task)
-        grading = (
-            TypeAdapter(GradingConfig).validate_python(config["grading"]) if config.get("grading") else None
-        )
-        task_types[name] = TaskTypeConfig(name=TaskTypeName(name), grading=grading)
-
-    return task_types
+    return {name: TaskTypeConfig(name=TaskTypeName(name), grading=cfg.grading) for name, cfg in config.task_types.items()}
 
 
 def load_runner_configs(file_path: Path | str) -> dict[str, dict[str, Any]]:
@@ -74,29 +72,20 @@ def load_task_definitions(
         raise FileNotFoundError(f"Seeds file not found: {file_path}")
 
     with file_path.open() as f:
-        data = yaml.safe_load(f)
+        config = TaskDefinitionsYaml.model_validate(yaml.safe_load(f))
 
     tasks = []
-    for task_data in data.get("tasks", []):
-        # Parse setup and grading overrides if present
-        setup_overrides = (
-            TaskSetup.model_validate(task_data["setup_overrides"]) if "setup_overrides" in task_data else None
-        )
-        grading_overrides = (
-            TypeAdapter(GradingConfig).validate_python(task_data["grading_overrides"])
-            if "grading_overrides" in task_data
-            else None
-        )
-
+    for task_yaml in config.tasks:
+        # Convert YAML model to domain model
         task = TaskDefinition(
-            id=task_data["id"],
-            prompt=task_data["prompt"],
-            type=task_data.get("type", "coding"),  # Default to coding
-            setup_overrides=setup_overrides,
-            grading_overrides=grading_overrides,
-            description=task_data.get("description"),
-            allowed_tools=task_data.get("allowed_tools"),
-            pre_task_commands=task_data.get("pre_task_commands"),
+            id=task_yaml.id,
+            prompt=task_yaml.prompt,
+            type=task_yaml.type,
+            setup_overrides=task_yaml.setup_overrides,
+            grading_overrides=task_yaml.grading_overrides,
+            description=task_yaml.description,
+            allowed_tools=task_yaml.allowed_tools,
+            pre_task_commands=task_yaml.pre_task_commands,
         )
 
         # Validate task type if provided
