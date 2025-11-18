@@ -22,7 +22,7 @@
     group: root
     mode: '0644'
   become: true
-  notify: restart powerdns
+  notify: Restart powerdns
 
 
 - name: Create PowerDNS configuration file
@@ -33,7 +33,7 @@
     group: root
     mode: '0644'
   become: true
-  notify: restart powerdns
+  notify: Restart powerdns
 
 
 - name: Start PowerDNS containers
