@@ -26,6 +26,7 @@ Replace custom WebSocket channels with a unified **`agents` MCP server** that pr
 │  │  ├─ resource://agents/list                               │
 │  │  ├─ resource://agents/{id}/state                         │
 │  │  ├─ resource://agents/{id}/approvals/pending            │
+│  │  ├─ resource://agents/{id}/policy/proposals             │
 │  │  └─ resource://approvals/pending (GLOBAL mailbox)       │
 │  │                                                           │
 │  └─ Tools (route to per-agent infrastructure):             │
@@ -490,6 +491,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 - [ ] `resource://agents/{id}/state` works for local agents, errors for bridge agents
 - [ ] `resource://agents/{id}/approvals/pending` returns pending approvals
 - [ ] `resource://agents/{id}/approvals/history` returns historical timeline with Pydantic models
+- [ ] `resource://agents/{id}/policy/proposals` returns policy proposals with URIs to policy server
 - [ ] `resource://approvals/pending` returns `mcp_types.ReadResourceResult` with multiple `TextResourceContents` blocks
 - [ ] Each content block (TextResourceContents) has uri, mimeType, and text (JSON-serialized approval)
 - [ ] `approve_tool_call` routes to correct agent and approves
@@ -503,6 +505,8 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 - [ ] **Code quality**: No `getattr`, `hasattr`, or `setattr` - use proper attribute access
 - [ ] **Code quality**: Everything typed properly - no `Any` types
 - [ ] **Code quality**: No code smells flagged by any `prompts/scans/*.md` prompts
+- [ ] **Code quality**: All imports at top of file, strictly - no exceptions for cyclical references (code written to avoid them)
+- [ ] **Code quality**: Resource URLs are not duplicated - templates/constants defined in exactly one place
 
 #### 1.3 Token Authentication
 
@@ -918,6 +922,10 @@ export async function getAgentHistory(agentId: string): Promise<any[]> {
 - [ ] Connects to MCP server
 - [ ] Displays agents and approvals
 - [ ] Shows error on auth failure
+- [ ] Displays active policy source code for each agent
+- [ ] Allows user to edit and update active policy source code
+- [ ] Displays policy proposals for each agent
+- [ ] Links to individual proposal content in policy server
 
 ### Phase 3: Shared Models
 
@@ -1403,6 +1411,7 @@ These features would improve production deployment:
 - [ ] **Unified Instructions**: Merge server instructions in initialization message
 - [ ] **Metrics**: Per-agent usage metrics (tool calls, approvals, policy evaluations)
 - [ ] **MCP Elicitations**: Replace tool-based approvals with standardized elicitation workflow (Phase 6+)
+- [ ] **SQLAlchemy Migration**: Migrate from raw aiosqlite to SQLAlchemy ORM for better type safety and migrations
 
 ## References
 
