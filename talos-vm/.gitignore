@@ -3,6 +3,11 @@ manual/talos-amd64.iso
 manual/talosctl
 manual/_out/
 
+# Build output directories
+_out/
+_out_final/
+_out_test/
+
 # VM runtime files
 manual/*.qcow2
 manual/*.log
