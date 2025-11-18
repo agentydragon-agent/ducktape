@@ -453,7 +453,7 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
     async def record_approval(
         self,
         *,
-        run_id: UUID,
+        run_id: UUID | None,
         agent_id: str | None,
         call_id: str,
         tool_key: str,
@@ -469,7 +469,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     call_id,
-                    str(run_id),
+                    str(run_id) if run_id is not None else None,
                     agent_id,
                     tool_key,
                     outcome.value,

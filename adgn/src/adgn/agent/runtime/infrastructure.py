@@ -265,10 +265,19 @@ class MCPInfrastructure:
         async def _record_outcome(
             call_id: str, tool_key: str, outcome: ApprovalOutcome
         ) -> None:
-            """Record approval outcome to persistence."""
-            # For now, we don't have run_id context at this level
-            # TODO: Wire run_id through policy gateway or record without it
-            pass
+            """Record approval outcome to persistence.
+
+            Note: run_id is None since policy gateway doesn't have run context.
+            Approvals are still recorded for audit/analytics purposes.
+            """
+            await self.persistence.record_approval(
+                run_id=None,
+                agent_id=self.agent_id,
+                call_id=call_id,
+                tool_key=tool_key,
+                outcome=outcome,
+                decided_at=datetime.now(UTC),
+            )
 
         install_policy_gateway(
             compositor,
