@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
+from starlette.testclient import WebSocketTestSession
 
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.policies.loader import approve_all_policy_text
@@ -19,7 +20,7 @@ from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt
 from adgn.mcp.editor_server import make_editor_server
-from adgn.openai_utils.model import ResponsesResult
+from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.agent.ws_helpers import (
     _short_payload,
@@ -216,13 +217,13 @@ def create_live_agent():
 
 
 @pytest.fixture
-def patch_agent_build_client(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], None]:
+def patch_agent_build_client(monkeypatch: pytest.MonkeyPatch) -> Callable[[OpenAIModelProto], None]:
     """Return a function to patch container.build_client to a provided fake client.
 
     Keeps model patching independent from agent creation, so tests can opt-in.
     """
 
-    def _patch(fake_model: Any) -> None:
+    def _patch(fake_model: OpenAIModelProto) -> None:
         monkeypatch.setattr("adgn.agent.runtime.container.build_client", lambda *a, **k: fake_model)
 
     return _patch
@@ -285,7 +286,7 @@ def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
 
     @contextmanager
     def _open(
-        model_client: Any,
+        model_client: OpenAIModelProto,
         *,
         specs: dict[str, BaseModel | FastMCP] | None = None,
         wait_accepted: bool = True,
@@ -384,17 +385,17 @@ def agent_ws_box(ws_session, make_agent_http):
 
     @dataclass
     class Box:
-        client: Any
-        ws: Any
+        client: TestClient
+        ws: WebSocketTestSession
         collect: Callable[[int], list]
         agent_id: str
-        http: Any
+        http: Any  # _AgentHttp instance (defined below, can't forward reference)
 
     from contextlib import contextmanager
 
     @contextmanager
     def _open(
-        model_client: Any,
+        model_client: OpenAIModelProto,
         *,
         specs: dict[str, BaseModel | FastMCP] | None = None,
         wait_accepted: bool = True,
