@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
-from pydantic import BaseModel
 
-# MCP server specs: either typed specs (BaseModel) or in-process server instances (FastMCP)
-# Typed specs are sent over HTTP and rehydrated server-side
-# FastMCP instances are mounted directly in-process
-McpServerSpecs = dict[str, BaseModel | FastMCP]
+# MCP server specs: either typed specs (MCPServerTypes) or in-process server instances (FastMCP)
+# MCPServerTypes: Pydantic models representing server configs (stdio, http, etc.) - sent over HTTP and rehydrated server-side
+# FastMCP: In-process server instances - mounted directly via compositor without serialization
+McpServerSpecs = dict[str, MCPServerTypes | FastMCP]

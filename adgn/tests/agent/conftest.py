@@ -9,6 +9,7 @@ from typing import Any
 
 import docker
 from fastapi.testclient import TestClient
+from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
@@ -225,14 +226,14 @@ def create_live_agent():
     def _create(client, *, specs: McpServerSpecs | None = None) -> str:
         specs = specs or {}
         # Split into typed JSON specs vs runtime slot specs
-        typed: dict[str, BaseModel] = {}
+        typed: dict[str, MCPServerTypes] = {}
         inproc: dict[str, FastMCP] = {}
         for k, v in list(specs.items()):
             if isinstance(v, FastMCP):
                 inproc[k] = v
                 continue
-            # Must be BaseModel at this point
-            assert isinstance(v, BaseModel), f"Expected BaseModel or FastMCP, got {type(v)}"
+            # Must be MCPServerTypes at this point
+            assert isinstance(v, BaseModel), f"Expected MCPServerTypes or FastMCP, got {type(v)}"
             typed[k] = v
         # Create agent via API using a preset
         resp = client.post("/api/agents", json={"preset": "default"})
@@ -240,10 +241,10 @@ def create_live_agent():
         agent_id = str(resp.json()["id"])
         # Attach typed specs via HTTP reconfigure, then runtime slots in-process
         if typed:
-            # Enforce one format: ALL typed specs must be Pydantic models (McpServerSpec variants).
+            # Enforce one format: ALL typed specs must be Pydantic models (MCPServerTypes).
             if not all(isinstance(v, BaseModel) for v in typed.values()):
                 raise AssertionError("Typed MCP specs must be provided as Pydantic models only")
-            # Send over HTTP; server rehydrates to typed McpServerSpec (TestClient handles Pydantic serialization)
+            # Send over HTTP; server rehydrates to typed MCPServerTypes (TestClient handles Pydantic serialization)
             r = client.patch(f"/api/agents/{agent_id}/mcp", json={"attach": typed})
             assert r.status_code == 200, r.text
         if inproc:
