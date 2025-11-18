@@ -33,6 +33,45 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
 
 
+class _AgentHttp:
+    """HTTP helper for agent API endpoints."""
+
+    def __init__(self, client, agent_id: str) -> None:
+        self._c = client
+        self._id = agent_id
+
+    def _ep(self, suffix: str | None = None) -> str:
+        base = f"/api/agents/{self._id}"
+        return f"{base}/{suffix}" if suffix else base
+
+    # Chat
+    def prompt(self, text: str):
+        return self._c.post(self._ep("prompt"), json={"text": text})
+
+    def abort(self):
+        return self._c.post(self._ep("abort"))
+
+    def snapshot(self):
+        return self._c.get(self._ep("snapshot"))
+
+    # Approvals
+    def approve(self, call_id: str):
+        return self._c.post(self._ep("approve"), json={"call_id": call_id})
+
+    def deny_continue(self, call_id: str):
+        return self._c.post(self._ep("deny_continue"), json={"call_id": call_id})
+
+    def deny_abort(self, call_id: str):
+        return self._c.post(self._ep("deny_abort"), json={"call_id": call_id})
+
+    # Policy
+    def set_policy(self, content: str, proposal_id: str | None = None):
+        body: dict[str, object] = {"content": content}
+        if proposal_id is not None:
+            body["proposal_id"] = proposal_id
+        return self._c.post(self._ep("policy"), json=body)
+
+
 # Note: approval_engine fixture is provided globally in tests/conftest.py
 
 
@@ -326,43 +365,6 @@ def make_agent_http():
         http.deny_continue(call_id)
         http.deny_abort(call_id)
     """
-
-    class _AgentHttp:
-        def __init__(self, client, agent_id: str) -> None:
-            self._c = client
-            self._id = agent_id
-
-        def _ep(self, suffix: str | None = None) -> str:
-            base = f"/api/agents/{self._id}"
-            return f"{base}/{suffix}" if suffix else base
-
-        # Chat
-        def prompt(self, text: str):
-            return self._c.post(self._ep("prompt"), json={"text": text})
-
-        def abort(self):
-            return self._c.post(self._ep("abort"))
-
-        def snapshot(self):
-            return self._c.get(self._ep("snapshot"))
-
-        # Approvals
-        def approve(self, call_id: str):
-            return self._c.post(self._ep("approve"), json={"call_id": call_id})
-
-        def deny_continue(self, call_id: str):
-            return self._c.post(self._ep("deny_continue"), json={"call_id": call_id})
-
-        def deny_abort(self, call_id: str):
-            return self._c.post(self._ep("deny_abort"), json={"call_id": call_id})
-
-        # Policy
-        def set_policy(self, content: str, proposal_id: str | None = None):
-            body: dict[str, object] = {"content": content}
-            if proposal_id is not None:
-                body["proposal_id"] = proposal_id
-            return self._c.post(self._ep("policy"), json=body)
-
     return _AgentHttp
 
 
@@ -389,7 +391,7 @@ def agent_ws_box(ws_session, make_agent_http):
         ws: WebSocketTestSession
         collect: Callable[[int], list]
         agent_id: str
-        http: Any  # _AgentHttp instance (defined below, can't forward reference)
+        http: _AgentHttp
 
     from contextlib import contextmanager
 
