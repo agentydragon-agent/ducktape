@@ -3,6 +3,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
 
 from ..config.models import Violation
 from .parser import ParsedDiff
@@ -71,7 +72,7 @@ class ViolationCategorizer:
         categorized = []
 
         for violation in violations:
-            category: Literal["in-diff", near - diff, out - of - diff]
+            category: Literal["in-diff", "near-diff", "out-of-diff"]
             if violation.line in changed_lines:
                 category = ViolationCategory.IN_DIFF
                 distance = 0
