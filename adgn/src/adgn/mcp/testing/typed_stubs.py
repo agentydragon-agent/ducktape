@@ -15,10 +15,9 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp._shared.client_helpers import extract_error_detail
 
-# Type alias for MCP structured content.
-# MCP's CallToolResult.structuredContent field is typed as Any, but we provide
-# a more restrictive type hint for better type safety in tests.
-StructuredContent = BaseModel | dict[str, Any] | list[Any] | str | int | float | bool | None
+# Type alias matching MCP spec for CallToolResult.structuredContent.
+# Both mcp.types.CallToolResult and fastmcp.client.CallToolResult define this as dict[str, Any] | None.
+StructuredContent = dict[str, Any] | None
 
 # We use the concrete FastMCP Client type for sessions in tests
 

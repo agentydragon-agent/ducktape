@@ -245,15 +245,12 @@ def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[Standar
 
     Extracts text content from Anthropic content blocks and flattens to simple string content.
     Uses Pydantic TypeAdapter to validate Anthropic SDK TypedDicts for type safety.
+    Raises ValidationError if messages don't match the Anthropic SDK format.
     """
     result: list[StandardMessage] = []
     for raw_msg in messages:
-        # Validate message structure using TypeAdapter
-        try:
-            msg = _MESSAGE_PARAM_ADAPTER.validate_python(raw_msg)
-        except ValidationError:
-            # Skip invalid messages
-            continue
+        # Validate message structure - raises ValidationError on invalid input
+        msg = _MESSAGE_PARAM_ADAPTER.validate_python(raw_msg)
 
         role = msg.get("role")
         content = msg.get("content")
@@ -265,16 +262,12 @@ def anthropic_messages_to_standard(messages: list[MessageParam]) -> list[Standar
         elif isinstance(content, list):
             texts: list[str] = []
             for raw_block in content:
-                # Validate content block
-                try:
-                    block = _CONTENT_BLOCK_PARAM_ADAPTER.validate_python(raw_block)
-                    if block.get("type") in ("text", "input_text"):
-                        text = block.get("text")
-                        if isinstance(text, str):
-                            texts.append(text)
-                except ValidationError:
-                    # Skip invalid content blocks
-                    continue
+                # Validate content block - raises ValidationError on invalid input
+                block = _CONTENT_BLOCK_PARAM_ADAPTER.validate_python(raw_block)
+                if block.get("type") in ("text", "input_text"):
+                    text = block.get("text")
+                    if isinstance(text, str):
+                        texts.append(text)
             text_content = "\n".join(texts)
 
         if not text_content.strip():
@@ -305,6 +298,7 @@ def anthro_to_openai_messages(
     """Translate Anthropic MessageParam list into OpenAI Chat format, returning SDK models.
 
     Uses Pydantic TypeAdapter to validate Anthropic SDK TypedDicts for type safety.
+    Raises ValidationError if messages don't match the Anthropic SDK format.
     """
 
     def _join_text_parts(parts: Iterable[dict[str, Any]]) -> str:
@@ -325,12 +319,8 @@ def anthro_to_openai_messages(
         raw_messages.append({"role": "system", "content": new_system_text})
 
     for raw_msg in messages:
-        # Validate message structure using TypeAdapter for Anthropic MessageParam
-        try:
-            message = _MESSAGE_PARAM_ADAPTER.validate_python(raw_msg)
-        except ValidationError:
-            # Skip invalid messages
-            continue
+        # Validate message structure - raises ValidationError on invalid input
+        message = _MESSAGE_PARAM_ADAPTER.validate_python(raw_msg)
 
         role = message.get("role")
         content = message.get("content")
@@ -341,15 +331,11 @@ def anthro_to_openai_messages(
             continue
 
         if isinstance(content, list):
-            # Validate content blocks using TypeAdapter
+            # Validate content blocks - raises ValidationError on invalid input
             content_blocks: list[ContentBlockParam] = []
             for raw_part in content:
-                try:
-                    validated_part = _CONTENT_BLOCK_PARAM_ADAPTER.validate_python(raw_part)
-                    content_blocks.append(validated_part)
-                except ValidationError:
-                    # Skip invalid content blocks
-                    continue
+                validated_part = _CONTENT_BLOCK_PARAM_ADAPTER.validate_python(raw_part)
+                content_blocks.append(validated_part)
 
             if role == "assistant":
                 text_buf: list[str] = []
