@@ -12,9 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adgn.openai_utils.types import ReasoningEffort, ReasoningParams
 
-# Backwards compatibility alias for tests
-Usage = ResponseUsage
-
 # ------------------------------
 # Typed, tolerant input items we compose into Responses API "input"
 # ------------------------------

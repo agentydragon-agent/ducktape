@@ -10,9 +10,6 @@ from mcp import types as mcp_types
 
 from adgn.mcp._shared.calltool import to_pydantic
 
-# Type alias for MCP structuredContent (arbitrary JSON-serializable dict)
-StructuredContent = dict[str, Any]
-
 
 def extract_text_blocks(contents: Iterable[mcp_types.ContentBlock]) -> list[str]:
     return [

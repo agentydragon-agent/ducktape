@@ -13,7 +13,7 @@ from mcp.types import CallToolResult
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from adgn.mcp._shared.calltool import to_pydantic
-from adgn.mcp._shared.client_helpers import StructuredContent, extract_error_detail
+from adgn.mcp._shared.client_helpers import extract_error_detail
 
 # We use the concrete FastMCP Client type for sessions in tests
 
@@ -21,8 +21,8 @@ T_In = TypeVar("T_In", bound=BaseModel)
 T_Out = TypeVar("T_Out")
 
 
-def _structured_content(result: CallToolResult, *, tool_name: str) -> StructuredContent:
-    sc = cast(StructuredContent | None, result.structuredContent)
+def _structured_content(result: CallToolResult, *, tool_name: str) -> dict[str, Any]:
+    sc = cast(dict[str, Any] | None, result.structuredContent)
     if sc is None:
         raise RuntimeError(f"{tool_name!r} did not return structuredContent; tests require structured outputs")
     return sc
