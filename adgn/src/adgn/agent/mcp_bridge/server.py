@@ -26,17 +26,7 @@ async def create_bridge_infrastructure(
     mcp_config: MCPConfig,
     initial_policy: str | None = None,
 ):
-    """Example mcp_config for repo-mounted docker exec:
-        {
-          "mcpServers": {
-            "docker": {
-              "transport": "stdio",
-              "command": "docker-exec-mcp",
-              "args": ["--mount", "/path/to/repo:/workspace:ro"]
-            }
-          }
-        }
-    """
+    """Create RunningInfrastructure for external agent HTTP bridge."""
     # Create infrastructure builder
     builder = MCPInfrastructure(
         agent_id=agent_id,
@@ -53,14 +43,6 @@ async def create_bridge_infrastructure(
     await bundle.attach_all(running)
 
     return running
-
-
-def create_http_app(running):
-    """Create ASGI app from the compositor.
-
-    The compositor is already a FastMCP server, so we just expose it via HTTP.
-    """
-    return running.compositor.http_app()
 
 
 # TODO: Add authentication middleware for token → agent_id mapping

@@ -21,7 +21,7 @@ import docker
 from fastmcp.mcp_config import MCPConfig
 from platformdirs import user_data_dir
 
-from adgn.agent.mcp_bridge.server import create_bridge_infrastructure, create_http_app
+from adgn.agent.mcp_bridge.server import create_bridge_infrastructure
 from adgn.agent.persist.sqlite import SQLitePersistence
 
 logger = logging.getLogger(__name__)
@@ -60,25 +60,7 @@ def serve(
     port: int,
     initial_policy: Path | None,
 ):
-    """Example:
-        # Minimal (no docker exec)
-        adgn-mcp-bridge serve --agent-id external-agent
-
-        # With repo-mounted docker exec
-        adgn-mcp-bridge serve --agent-id external-chatgpt \\
-            --mcp-config ./docker-exec.json
-
-    docker-exec.json example:
-        {
-          "mcpServers": {
-            "docker": {
-              "transport": "stdio",
-              "command": "docker-exec-mcp",
-              "args": ["--mount", "/home/user/ducktape:/workspace:ro"]
-            }
-          }
-        }
-    """
+    """Start HTTP MCP Bridge server."""
     # Load MCP config
     if mcp_config and mcp_config.exists():
         config = MCPConfig.model_validate_json(mcp_config.read_text())
@@ -121,7 +103,6 @@ async def _run_server(
     docker_client = docker.from_env()
 
     async with persistence:
-        # Create infrastructure with sidecars
         running = await create_bridge_infrastructure(
             agent_id=agent_id,
             persistence=persistence,
@@ -130,15 +111,13 @@ async def _run_server(
             initial_policy=initial_policy,
         )
 
-        try:
-            # Create HTTP app from compositor
-            app = create_http_app(running)
+        async with running:
+            app = running.compositor.http_app()
 
             logger.info(f"HTTP MCP Bridge started for agent_id={agent_id}")
             logger.info(f"Compositor ready with {len(mcp_config.mcpServers or {})} external servers")
             logger.info(f"MCP server available at http://{host}:{port}/mcp")
 
-            # Run HTTP server
             config = uvicorn.Config(
                 app=app,
                 host=host,
@@ -147,9 +126,6 @@ async def _run_server(
             )
             server = uvicorn.Server(config)
             await server.serve()
-
-        finally:
-            await running.close()
 
 
 if __name__ == "__main__":
