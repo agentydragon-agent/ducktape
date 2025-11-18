@@ -23,12 +23,13 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
-from openai.types.responses import Response, ResponseFunctionToolCall, ResponseOutputMessage
+from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage
 from pydantic import BaseModel, TypeAdapter
 import tiktoken
 
 from adgn.llm.anthropic.types import Message as AnthropicMessage, MessageRole as AnthropicMessageRole
 from adgn.openai_utils.client_factory import get_async_openai
+from adgn.openai_utils.model import FunctionCallItem, ResponsesResult
 from adgn.openai_utils.retry import chat_create_with_retries, responses_create_with_retries
 
 from .constants import TOOLS_HEADER
@@ -42,7 +43,6 @@ from .openai_typing import (
     dump_response_messages,
     iter_resolved_text,
     parse_chat_messages,
-    parse_response,
     parse_response_messages,
     parse_tools_list,
     response_message_content_as_text,
@@ -230,8 +230,8 @@ GRADE_TOOL = {
 }
 
 
-def parse_grade_from_responses(response: Response) -> Grade:
-    """Parse grade from OpenAI Responses API output.
+def parse_grade_from_responses(response: ResponsesResult) -> Grade:
+    """Parse grade from ResponsesResult output.
 
     Extracts the 'grade' tool call from the response output and validates it as a Grade model.
     """
@@ -239,7 +239,7 @@ def parse_grade_from_responses(response: Response) -> Grade:
         raise RuntimeError("No output in responses")
 
     for item in response.output:
-        if isinstance(item, ResponseFunctionToolCall) and item.name == "grade":
+        if isinstance(item, FunctionCallItem) and item.name == "grade":
             args = item.arguments
             if isinstance(args, str):
                 return Grade.model_validate_json(args)
@@ -566,7 +566,7 @@ async def run_eval(
                 sample_rec,
                 {
                     "request": grade_req,
-                    "response": grade.model_dump(),
+                    "response": grade,
                     "correlation_id": item.correlation_id,
                     "timestamp": item.timestamp,
                 },
@@ -694,8 +694,7 @@ async def run_eval(
                 g_obj = EvalGradeRecord.model_validate(grade_rec)
                 g_out.write(json.dumps(g_obj.model_dump(), sort_keys=True) + "\n")
                 try:
-                    response_obj = parse_response(g_obj.response)
-                    grade = parse_grade_from_responses(response_obj)
+                    grade = parse_grade_from_responses(g_obj.response)
                     score = float(grade.score)
                     scores.append(score)
                     if src in scores_by_source:
@@ -745,8 +744,7 @@ async def run_eval(
                 cid = grec.correlation_id
                 if not cid:
                     continue
-                response_obj = parse_response(grec.response)
-                grade = parse_grade_from_responses(response_obj)
+                grade = parse_grade_from_responses(grec.response)
                 grades_map[cid] = grade
 
         # Collect rows

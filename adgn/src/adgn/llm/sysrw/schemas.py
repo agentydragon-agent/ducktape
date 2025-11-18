@@ -5,10 +5,11 @@ from typing import Annotated, Any, Literal
 
 from anthropic.types.tool_param import ToolParam
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.responses import Response, ResponseCreateParams
+from openai.types.responses import ResponseCreateParams
 from pydantic import BaseModel, Field
 
 from adgn.llm.anthropic.types import Message as AnthropicMessage
+from adgn.openai_utils.model import ResponsesResult
 
 # ------------------------
 # Crush (OpenAI Responses)
@@ -77,7 +78,7 @@ class ResponsesAssistantMessage(BaseModel):
 
     kind: Literal["responses"] = "responses"
     responses_input: list[dict[str, Any]]
-    responses_output: Response
+    responses_output: ResponsesResult
 
 
 AssistantMessage = Annotated[
@@ -105,7 +106,7 @@ class EvalSampleRecord(BaseModel):
 
 class EvalGradeRecord(BaseModel):
     request: dict[str, Any]
-    response: dict[str, Any]
+    response: ResponsesResult
     correlation_id: str | None = None
     timestamp: int | None = None
 
