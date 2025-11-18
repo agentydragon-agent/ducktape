@@ -30,6 +30,13 @@ from tests.agent.ws_helpers import (
 )
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
+# --- Type aliases ---
+
+# MCP server specs: either typed specs (BaseModel) or in-process server instances (FastMCP)
+# Typed specs are sent over HTTP and rehydrated server-side
+# FastMCP instances are mounted directly in-process
+McpServerSpecs = dict[str, BaseModel | FastMCP]
+
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
 
 
@@ -213,7 +220,7 @@ def typed_editor_factory(tmp_path: Path):
 # Helper: create a live agent via HTTP on a TestClient and return its id
 @pytest.fixture
 def create_live_agent():
-    def _create(client, *, specs: dict[str, BaseModel | FastMCP] | None = None) -> str:
+    def _create(client, *, specs: McpServerSpecs | None = None) -> str:
         specs = specs or {}
         # Split into typed JSON specs vs runtime slot specs
         typed: dict[str, BaseModel] = {}
@@ -327,7 +334,7 @@ def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
     def _open(
         model_client: OpenAIModelProto,
         *,
-        specs: dict[str, BaseModel | FastMCP] | None = None,
+        specs: McpServerSpecs | None = None,
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):
@@ -399,7 +406,7 @@ def agent_ws_box(ws_session, make_agent_http):
     def _open(
         model_client: OpenAIModelProto,
         *,
-        specs: dict[str, BaseModel | FastMCP] | None = None,
+        specs: McpServerSpecs | None = None,
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):
