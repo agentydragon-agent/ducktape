@@ -15,12 +15,6 @@ def _runtime_spec_persession(image: str = "alpine:3.19"):
     )
 
 
-async def _run_exec(sess, cmd, timeout_ms: int, shell: bool = True) -> BaseExecResult:
-    # Use known Pydantic IO models by name for clarity and stability
-    stub = ToolStub(sess, "exec", BaseExecResult)
-    return await stub(ExecInput(cmd=cmd, timeout_ms=timeout_ms, shell=shell))
-
-
 @pytest.mark.requires_docker
 async def test_runtime_per_session_timeout_then_next_call_ok(
     make_pg_compositor, approval_policy_reader_allow_all
@@ -35,14 +29,11 @@ async def test_runtime_per_session_timeout_then_next_call_ok(
         # Namespaced exec via Compositor
         stub = ToolStub(sess, build_mcp_function("runtime", "exec"), BaseExecResult)
 
-        async def _run_ns(cmd, timeout_ms: int, shell: bool = True):
-            return await stub(ExecInput(cmd=cmd, timeout_ms=timeout_ms, shell=shell))
-
-        res_timeout = await _run_ns(["sh", "-lc", "sleep 3"], timeout_ms=500, shell=True)
+        res_timeout = await stub(ExecInput(cmd=["sh", "-lc", "sleep 3"], timeout_ms=500, shell=True))
         assert isinstance(res_timeout.exit, TimedOut)
 
         # Next call should work; container should have been restarted
-        res_ok = await _run_ns(["/bin/echo", "-n", "ok"], timeout_ms=5000, shell=False)
+        res_ok = await stub(ExecInput(cmd=["/bin/echo", "-n", "ok"], timeout_ms=5000, shell=False))
         assert isinstance(res_ok.exit, Exited)
         assert res_ok.exit.exit_code == 0
         assert (res_ok.stdout or "") == "ok"
