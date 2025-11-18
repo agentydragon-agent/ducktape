@@ -86,9 +86,8 @@ class ServerStub:
     @classmethod
     def from_server(cls: type[T], server: FastMCP, session: Client) -> T:
         """Create a typed stub from a FastMCP server and session."""
-        client = TypedClient.from_server(server, session)
         # TypeVar bound to ServerStub ensures cls() accepts TypedClient
-        return cast(T, cls(client))
+        return cast(T, cls(TypedClient.from_server(server, session)))
 
     def _stub(self, name: str, output_type: type):
         """Create a typed stub for a tool."""
