@@ -106,13 +106,14 @@
   ansible.builtin.file:
     path: "/home/{{ cli_user | default(ansible_user_id) }}/{{ item.item }}"
     state: absent
-  when: item.matched == 0  # Directory exists but is empty
+  when:
+    - item.matched is defined
+    - item.matched == 0
   loop: "{{ cli_dir_contents.results }}"
+  loop_control:
+    label: "{{ item.path | default('skipped') }}"
   become: true
   become_user: "{{ cli_user | default(ansible_user_id) }}"
-  failed_when:
-    - item.failed is defined and item.failed == false  # Directory exists
-    - item.matched > 0  # And is not empty
 
 # Deploy dotfiles before dev_env to ensure npmrc is in place
 - name: Import dotfiles configuration tasks

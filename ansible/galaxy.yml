@@ -1,0 +1,25 @@
+namespace: agentydragon
+name: ducktape
+version: 0.1.0
+readme: README.md
+description: >
+  Personal infrastructure automation for laptops, desktops, VPS, and ancillary
+  services managed by agentydragon.
+authors:
+  - agentydragon
+license: AGPL-3.0-or-later
+tags:
+  - workstation
+  - infrastructure
+  - personal
+repository: https://gitlab.com/agentydragon/ducktape
+homepage: https://gitlab.com/agentydragon/ducktape
+issues: https://gitlab.com/agentydragon/ducktape/-/issues
+build_ignore:
+  - .ansible
+  - molecule
+  - tools
+  - docs
+  - inventree
+  - tasker
+  - workspace-kb-shortcuts

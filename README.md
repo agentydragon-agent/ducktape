@@ -23,3 +23,17 @@ To format Bazel configuration files:
 ```bash
 bazel run //:buildifier
 ```
+
+## Running GitHub Actions Locally
+
+Use [act](https://github.com/nektos/act) to dry-run `.github/workflows/ci.yml`. With Nix:
+
+```bash
+# From repo root
+nix run nixpkgs#act -- -W .github/workflows/ci.yml \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest
+```
+
+Tips:
+- `act` needs Docker. Make sure `docker pull catthehacker/ubuntu:act-latest` works first.
+- Use `act -j <job-name>` to run a single job.

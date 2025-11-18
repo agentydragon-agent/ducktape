@@ -90,7 +90,7 @@ See: @ansible/README.md
 - `agentydragon.yaml` - Main laptop configuration
 - `vps.yaml` - VPS server deployment
 - `gpd.yaml` - GPD laptop setup
-- `new-vm.yaml` - VM provisioning
+- `wyrm.yaml` - Wyrm desktop provisioning
 
 #### Key Roles
 - **System Base**: `cli/`, `gui/`, `system/`, `user/`

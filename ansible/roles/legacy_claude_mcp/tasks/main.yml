@@ -100,8 +100,8 @@
       Servers that need to be updated: {{ mcp_servers_to_update | join(', ') }}
       {%- endif %}
 
-      To skip all Claude tasks: ansible-playbook playbook.yaml --skip-tags claude
-      To skip only MCP check: ansible-playbook playbook.yaml --skip-tags mcp
+      To skip all Claude tasks: ansible-playbook <hostname>.yaml --skip-tags claude
+      To skip only MCP check: ansible-playbook <hostname>.yaml --skip-tags mcp
 
       To configure manually, run:
         {{ role_path }}/files/apply-mcp-config.py

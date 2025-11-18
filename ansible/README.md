@@ -26,12 +26,18 @@ python3 -c "import secrets; print(secrets.token_urlsafe(32))" | \
 ## To update requirements
 
 ```bash
-ansible-galaxy install -r requirements.yaml
+cd ansible
+ansible-galaxy role install -r requirements.yaml
+ansible-galaxy collection install -r requirements.yaml
 ```
+
+These install into the default `~/.ansible/{roles,collections}` paths so
+third-party content never lands in `ansible/roles` or `ansible/collections`.
 
 ## To deploy
 
 ```bash
+cd ansible
 ansible-playbook agentydragon.yaml --ask-become-pass
 ansible-playbook vps.yaml
 ```
@@ -45,6 +51,7 @@ remote cache `htpasswd` on GPD.
 ## To deploy gpd
 
 ```bash
+cd ansible
 ansible-playbook gpd.yaml --ask-become-pass
 ```
 
@@ -111,7 +118,8 @@ When provisioning a new VM or remote machine:
    ```
 4. Run the playbook from your provisioning machine:
    ```bash
-   ansible-playbook new-vm.yaml --ask-become-pass
+   cd ansible
+   ansible-playbook wyrm.yaml --ask-become-pass
    ```
    When prompted for the BECOME password, enter the sudo password for the agentydragon user on the VM.
 5. If the playbook fails on dotfiles installation, SSH to the machine and run:
@@ -171,6 +179,7 @@ Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the orga
 
 1. **Deploy headscale server to VPS:**
    ```bash
+   cd ansible
    ansible-playbook vps.yaml --tags headscale
    ```
 
@@ -188,6 +197,7 @@ Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the orga
 
 1. **Deploy tailscale client to the device:**
    ```bash
+   cd ansible
    ansible-playbook <hostname>.yaml --tags tailscale
    ```
 

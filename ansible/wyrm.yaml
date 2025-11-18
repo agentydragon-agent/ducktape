@@ -84,30 +84,31 @@
         name: tankshare
       tags: [storage, docker]
 
-    - name: Create Docker storage directory on tankshare
+    - name: Ensure /code mountpoint exists
       ansible.builtin.file:
-        path: /mnt/tankshare/per-vm/wyrm/docker
+        path: /code
         state: directory
         owner: root
         group: root
         mode: '0755'
       become: true
-      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
-      tags: [storage, docker]
+      tags: [storage]
 
-    - name: Configure Docker daemon for tankshare storage
-      ansible.builtin.copy:
-        content: |
-          {
-            "data-root": "/mnt/tankshare/per-vm/wyrm/docker",
-            "storage-driver": "vfs"
-          }
-        dest: /etc/docker/daemon.json
-        owner: root
-        group: root
-        mode: '0644'
+    - name: Mount code virtiofs share
+      ansible.builtin.mount:
+        path: /code
+        src: code
+        fstype: virtiofs
+        opts: defaults,_netdev,nofail
+        state: mounted
       become: true
-      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
+      tags: [storage]
+
+    - name: Remove legacy Docker daemon configuration
+      ansible.builtin.file:
+        path: /etc/docker/daemon.json
+        state: absent
+      become: true
       notify: restart docker
       tags: [storage, docker]
 
@@ -124,7 +125,6 @@
       become: true
       loop:
         - /mnt/tankshare/shared/pip-cache
-        - /mnt/tankshare/per-vm/wyrm/python-user
       when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
       tags: [storage, pip]
 
@@ -151,8 +151,6 @@
         mode: '0644'
       when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
       tags: [storage, pip]
-
-    # PYTHONUSERBASE is now handled via rcm host-specific dotfiles (host-wyrm/profile.machine)
 
     # MOTD configuration for wyrm
     - name: Set wyrm MOTD

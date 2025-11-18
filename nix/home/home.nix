@@ -761,13 +761,14 @@ in {
       # Resize panes with Alt + arrows
       bind -n M-Left  resize-pane -L 5
       bind -n M-Right resize-pane -R 5
-      bind -n M-Up    resize-pane -U 2
+      # M-Up reserved for Codex CLI (queued prompt retrieval), so leave it unbound here.
+      unbind -n M-Up
       bind -n M-Down  resize-pane -D 2
 
       # Clipboard integration
       set -g set-clipboard on
 
-      # Copy mode (vi) key bindings
+      # Copy mode (vi) key bindings (tmux-yank handles clipboard integration via xclip)
       bind -T copy-mode-vi v send -X begin-selection
       bind -T copy-mode-vi y send -X copy-selection-and-cancel
       bind -T copy-mode-vi Y send -X copy-line
@@ -782,6 +783,10 @@ in {
       # prefix-highlight configuration
       set -g @prefix_highlight_show_copy_mode on
       set -g @prefix_highlight_show_sync_mode on
+
+      # Ensure tmux refreshes SSH-related env vars when reattaching locally, so p10k context
+      # doesn't think we're still in an old SSH session.
+      set -g update-environment "DISPLAY SSH_ASKPASS SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION"
 
       # tmux-resurrect settings
       set -g @resurrect-strategy-nvim 'session'

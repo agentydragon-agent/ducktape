@@ -10,6 +10,7 @@
     mode: '0755'
     owner: root
     group: root
+  become: true
 
 - name: Configure passwordless sudo for system inspection commands
   ansible.builtin.template:
@@ -19,3 +20,4 @@
     owner: root
     group: root
     validate: 'visudo -cf %s'
+  become: true

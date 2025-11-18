@@ -46,6 +46,14 @@ jobs:
 
       - uses: ./.github/actions/setup-python-env
 
+      - name: Cache Ansible Galaxy downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.HOME }}/.ansible
+          key: ansible-galaxy-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: |
+            ansible-galaxy-${{ runner.os }}-
+
       - name: Bootstrap Ansible Galaxy dependencies
         run: |
           pip install "ansible-core>=2.18"

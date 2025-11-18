@@ -62,7 +62,7 @@ home-manager switch -f home.nix
 4. **Run Ansible for wyrm** (automatically skips migrated roles):
 ```bash
 cd ~/code/ducktape/ansible
-ansible-playbook wyrm.yaml --ask-become-pass
+ansible-playbook ansible/wyrm.yaml --ask-become-pass
 ```
 
 This will:
@@ -152,7 +152,7 @@ home-manager generations  # List generations
 home-manager rollback     # Go to previous
 
 # Re-enable Ansible tasks (once tags are added)
-ansible-playbook wyrm.yaml --ask-become-pass  # Without skip-tags
+ansible-playbook ansible/wyrm.yaml --ask-become-pass  # Without skip-tags
 ```
 
 ## Benefits of This Approach

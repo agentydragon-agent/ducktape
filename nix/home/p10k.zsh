@@ -28,6 +28,24 @@
   # Zsh >= 5.1 is required.
   autoload -Uz is-at-least && is-at-least 5.1 || return
 
+  # Solarized palette (https://ethanschoonover.com/solarized/)
+  typeset -g P10K_SOLARIZED_BASE03='#002b36'
+  typeset -g P10K_SOLARIZED_BASE02='#073642'
+  typeset -g P10K_SOLARIZED_BASE01='#586e75'
+  typeset -g P10K_SOLARIZED_BASE00='#657b83'
+  typeset -g P10K_SOLARIZED_BASE0='#839496'
+  typeset -g P10K_SOLARIZED_BASE1='#93a1a1'
+  typeset -g P10K_SOLARIZED_BASE2='#eee8d5'
+  typeset -g P10K_SOLARIZED_BASE3='#fdf6e3'
+  typeset -g P10K_SOLARIZED_YELLOW='#b58900'
+  typeset -g P10K_SOLARIZED_ORANGE='#cb4b16'
+  typeset -g P10K_SOLARIZED_RED='#dc322f'
+  typeset -g P10K_SOLARIZED_MAGENTA='#d33682'
+  typeset -g P10K_SOLARIZED_VIOLET='#6c71c4'
+  typeset -g P10K_SOLARIZED_BLUE='#268bd2'
+  typeset -g P10K_SOLARIZED_CYAN='#2aa198'
+  typeset -g P10K_SOLARIZED_GREEN='#859900'
+
   # The list of segments shown on the left. Fill it with the most important segments.
   typeset -g POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(
     context                 # user@hostname
@@ -549,12 +567,12 @@
 
   #######################[ background_jobs: presence of background jobs ]#######################
   # Background jobs color.
-  typeset -g POWERLEVEL9K_BACKGROUND_JOBS_FOREGROUND=6
-  typeset -g POWERLEVEL9K_BACKGROUND_JOBS_BACKGROUND=0
+  typeset -g POWERLEVEL9K_BACKGROUND_JOBS_FOREGROUND=${P10K_SOLARIZED_BASE03}
+  typeset -g POWERLEVEL9K_BACKGROUND_JOBS_BACKGROUND=${P10K_SOLARIZED_ORANGE}
   # Don't show the number of background jobs.
   typeset -g POWERLEVEL9K_BACKGROUND_JOBS_VERBOSE=false
   # Custom icon.
-  # typeset -g POWERLEVEL9K_BACKGROUND_JOBS_VISUAL_IDENTIFIER_EXPANSION='⭐'
+  typeset -g POWERLEVEL9K_BACKGROUND_JOBS_VISUAL_IDENTIFIER_EXPANSION='⏸'
 
   #######################[ direnv: direnv status (https://direnv.net/) ]########################
   # Direnv color.
@@ -1709,8 +1727,8 @@
     p10k segment -t "⚡"
   }
 
-  typeset -g POWERLEVEL9K_SUDO_COOKIE_BACKGROUND=0 # black
-  typeset -g POWERLEVEL9K_SUDO_COOKIE_FOREGROUND=226 # yellow
+  typeset -g POWERLEVEL9K_SUDO_COOKIE_BACKGROUND=${P10K_SOLARIZED_BASE01}
+  typeset -g POWERLEVEL9K_SUDO_COOKIE_FOREGROUND=${P10K_SOLARIZED_YELLOW}
 
 
   # If p10k is already loaded, reload configuration.

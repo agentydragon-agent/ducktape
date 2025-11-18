@@ -11,7 +11,7 @@ curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel.gpg
 ## Building
 
 ```bash
-docker build -t registry.gitlab.com/agentydragon/playbooks/cirunner .
+docker build -t registry.gitlab.com/agentydragon/cirunner .
 ```
 
 ## Pushing
@@ -23,7 +23,7 @@ docker login registry.gitlab.com -u agentydragon -p <token>
 ```
 
 ```bash
-docker push registry.gitlab.com/agentydragon/playbooks/cirunner
+docker push registry.gitlab.com/agentydragon/cirunner
 ```
 
 ## Testing

@@ -11,7 +11,7 @@ inventree_state: "present"
 inventree_project_path: "/srv/inventree/docker-compose"
 
 # Directory in this repository that contains the docker-compose files to copy.
-# (playbook_dir is where the playbook lives – vps.yaml in our case.)
-inventree_compose_source: "{{ playbook_dir }}/inventree"
+# (playbook_dir points at ansible/playbooks, so go one level up.)
+inventree_compose_source: "{{ playbook_dir | dirname }}/inventree"
 
 # Host port is fixed/present inside compose files, so no variable here yet.
