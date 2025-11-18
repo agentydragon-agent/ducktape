@@ -19,7 +19,6 @@ from openai.types.responses import Response as OpenAIResponse, ResponseStreamEve
 from adgn.rspcache.models import (
     ErrorPayload,
     ResponseStatus,
-    parse_response,
     stream_event_final_response,
     stream_event_response_id,
     stream_event_usage,
@@ -349,7 +348,7 @@ async def responses_endpoint(
         )
         raise HTTPException(status_code=502, detail="Upstream returned non-JSON response") from exc
 
-    response_model = parse_response(resp_json)
+    response_model = OpenAIResponse.model_validate(resp_json)
     response_id = response_model.id
     await db.mark_in_progress(key, response_id)
     latency_ms = int((time.perf_counter() - start_time) * 1000)
