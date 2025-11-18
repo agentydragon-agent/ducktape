@@ -23,17 +23,11 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
+from openai.types.responses import ResponseOutputMessage
 from pydantic import BaseModel, TypeAdapter
 import tiktoken
 
-from adgn.llm.anthropic.text_extraction import extract_text_content
-from adgn.llm.anthropic.types import (
-    Message as AnthropicMessage,
-    MessageRole as AnthropicMessageRole,
-    TextBlock as AnthropicTextBlock,
-    ToolResultBlock as AnthropicToolResultBlock,
-    ToolUseBlock as AnthropicToolUseBlock,
-)
+from adgn.llm.anthropic.types import Message as AnthropicMessage, MessageRole as AnthropicMessageRole
 from adgn.openai_utils.client_factory import get_async_openai
 from adgn.openai_utils.retry import chat_create_with_retries, responses_create_with_retries
 
@@ -56,9 +50,10 @@ from .openai_typing import (
     response_message_content_as_text,
     response_message_role,
 )
-from .prompts import GRADER_SYSTEM_PROMPT, GRADER_USER_TEMPLATE
-from .schemas import CCRSample, CrushSample, EvalGradeRecord, EvalSampleRecord, Sample
+from .prompts import build_grader_prompt
+from .schemas import CCRSample, CrushSample, EvalGradeRecord, EvalSampleRecord, Grade, Request, Sample
 from .templates import validate_template_file
+from .translation import anthropic_messages_to_standard, anthropic_to_chat_messages, anthropic_to_responses_input
 
 
 def _as_int(x: Any) -> int:
@@ -215,22 +210,6 @@ def index_of_last_assistant_in_anthropic_messages(messages: list[AnthropicMessag
     return None
 
 
-def anthropic_messages_to_standard(messages: list[AnthropicMessage]) -> list[ChatCompletionMessageParam]:
-    """Convert Anthropic messages to ChatCompletionMessageParam for grader context."""
-    result: list[ChatCompletionMessageParam] = []
-    for msg in messages:
-        text_content = extract_text_content(msg).strip()
-        if not text_content:
-            continue
-
-        if msg.role == AnthropicMessageRole.USER:
-            result.append(ChatCompletionUserMessageParam(role="user", content=text_content))
-        elif msg.role == AnthropicMessageRole.ASSISTANT:
-            result.append(ChatCompletionAssistantMessageParam(role="assistant", content=text_content))
-
-    return result
-
-
 def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, Any]] | None:
     tools = parse_tools_list(tools_val)
     if not tools:
@@ -240,123 +219,6 @@ def convert_responses_tools_to_chat_functions(tools_val: Any) -> list[dict[str, 
         payload = tool.model_dump(mode="json", exclude_none=True) if isinstance(tool, BaseModel) else dict(tool)
         normalized.append(payload)
     return normalized
-
-
-def anthro_to_openai_messages(
-    messages: list[AnthropicMessage], new_system_text: str | None
-) -> list[ChatCompletionMessageParam]:
-    """Translate Anthropic messages into OpenAI Chat format."""
-    result: list[ChatCompletionMessageParam] = []
-    if new_system_text:
-        result.append(ChatCompletionSystemMessageParam(role="system", content=new_system_text))
-
-    for message in messages:
-        if isinstance(message.content, str):
-            if message.content.strip():
-                if message.role == AnthropicMessageRole.USER:
-                    result.append(ChatCompletionUserMessageParam(role="user", content=message.content))
-                elif message.role == AnthropicMessageRole.ASSISTANT:
-                    result.append(ChatCompletionAssistantMessageParam(role="assistant", content=message.content))
-            continue
-
-        # message.content is list[ContentBlock] - Pydantic models
-        content_blocks = message.content
-
-        if message.role == AnthropicMessageRole.ASSISTANT:
-            text_buf: list[str] = []
-            tool_calls: list[ChatCompletionMessageToolCallParam] = []
-            for block in content_blocks:
-                if isinstance(block, AnthropicTextBlock):
-                    text_buf.append(block.text)
-                elif isinstance(block, AnthropicToolUseBlock):
-                    args_str = json.dumps(block.input, ensure_ascii=False, separators=(",", ":"))
-                    tool_call = ChatCompletionMessageToolCallParam(
-                        type="function",
-                        function={"name": block.name, "arguments": args_str},
-                        id=block.id,
-                    )
-                    tool_calls.append(tool_call)
-            if text_buf or tool_calls:
-                content = "\n".join(text_buf) if text_buf else None
-                if tool_calls:
-                    result.append(
-                        ChatCompletionAssistantMessageParam(
-                            role="assistant", content=content, tool_calls=tool_calls
-                        )
-                    )
-                elif content:
-                    result.append(ChatCompletionAssistantMessageParam(role="assistant", content=content))
-
-        elif message.role == AnthropicMessageRole.USER:
-            text_parts: list[str] = []
-            tool_msgs: list[ChatCompletionToolMessageParam] = []
-            for block in content_blocks:
-                if isinstance(block, AnthropicTextBlock):
-                    text_parts.append(block.text)
-                elif isinstance(block, AnthropicToolResultBlock):
-                    if isinstance(block.content, str):
-                        tool_text = block.content
-                    else:
-                        # list[TextBlock]
-                        tool_text = "\n".join(b.text for b in block.content)
-                    tool_msgs.append(
-                        ChatCompletionToolMessageParam(
-                            role="tool", tool_call_id=block.tool_use_id, content=tool_text
-                        )
-                    )
-            result.extend(tool_msgs)
-            if text_parts:
-                result.append(ChatCompletionUserMessageParam(role="user", content="\n".join(text_parts)))
-
-    return result
-
-
-def anthro_to_responses_input(body: dict[str, Any], new_system_text: str | None) -> list[dict[str, Any]]:
-    """Translate Anthropic-style messages into OpenAI Responses API input array."""
-
-    def _join_text_parts(parts: list[dict[str, Any]]) -> str:
-        texts: list[str] = []
-        for p in parts:
-            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str):
-                texts.append(p["text"])
-        return "\n".join(texts)
-
-    out: list[dict[str, Any]] = []
-    if new_system_text:
-        out.append({"role": "system", "content": [{"type": "input_text", "text": new_system_text}]})
-    for m in body.get("messages", []):
-        role = m.get("role")
-        content = m.get("content")
-        if role not in ("user", "assistant"):
-            continue
-        if isinstance(content, str):
-            text = content
-        elif isinstance(content, list):
-            text = _join_text_parts(content)
-        else:
-            text = ""
-        if text.strip():
-            out.append({"role": role, "content": [{"type": "input_text", "text": text}]})
-    validated = parse_response_messages(out)
-    if validated is None:
-        return []
-    return dump_response_messages(validated)
-
-
-def build_grader_prompt(
-    prefix_messages: list[ChatCompletionMessageParam],
-    raw_bad_branch: list[ChatCompletionMessageParam],
-    raw_new_asst_obj: dict[str, Any],
-) -> list[ChatCompletionMessageParam]:
-    user_content = GRADER_USER_TEMPLATE.format(
-        prefix_json=json.dumps(prefix_messages, ensure_ascii=False),
-        bad_branch_json=json.dumps(raw_bad_branch if raw_bad_branch is not None else [], ensure_ascii=False),
-        new_asst_json=json.dumps(raw_new_asst_obj or {}, ensure_ascii=False),
-    )
-    return [
-        ChatCompletionSystemMessageParam(role="system", content=GRADER_SYSTEM_PROMPT),
-        ChatCompletionUserMessageParam(role="user", content=user_content),
-    ]
 
 
 GRADE_TOOL = {
@@ -373,7 +235,7 @@ GRADE_TOOL = {
 }
 
 
-def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
+def parse_grade_from_responses(resp_obj) -> Grade:
     response = parse_response(resp_obj)
 
     for tool_call in iter_tool_calls_from_response(response):
@@ -385,8 +247,8 @@ def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
             continue
         args = getattr(fn, "arguments", None)
         if isinstance(args, str):
-            return TypeAdapter(dict[str, Any]).validate_json(args)
-        return TypeAdapter(dict[str, Any]).validate_python(args or {})
+            return Grade.model_validate_json(args)
+        return Grade.model_validate(args or {})
     raise RuntimeError("No grade tool call in responses output")
 
 
@@ -447,12 +309,9 @@ async def run_eval(
             out.append({"role": role, "content": content})
         return out
 
-    def responses_to_ccr_messages(inp: Any) -> list[ChatCompletionMessageParam]:
+    def responses_to_ccr_messages(inp: list[ResponseOutputMessage]) -> list[ChatCompletionMessageParam]:
         msgs: list[ChatCompletionMessageParam] = []
-        parsed = parse_response_messages(inp)
-        if parsed is None:
-            return msgs
-        for it in parsed:
+        for it in inp:
             role = response_message_role(it)
             if role in (MessageRole.USER, MessageRole.ASSISTANT) and (
                 txt := response_message_content_as_text(it).strip()
@@ -523,8 +382,7 @@ async def run_eval(
             if isinstance(item, CCRSample):  # CCR
                 # 1) Rewrite system via Node apply script
                 ar = item.anthropic_request
-                sys_val = ar.system or ""
-                new_sys = rewrite_system_with_template(sys_val, template_path)
+                new_sys = rewrite_system_with_template(ar.system or "", template_path)
                 # 2) Find last assistant message in Anthropic messages (before final user complaint)
                 prev_asst_idx = index_of_last_assistant_in_anthropic_messages(ar.messages)
                 if prev_asst_idx is None:
@@ -532,7 +390,7 @@ async def run_eval(
                     return None, None
                 # 3) Build OpenAI sampling request BEFORE the bad assistant turn
                 context_messages = ar.messages[:prev_asst_idx]
-                oai_messages = anthro_to_openai_messages(context_messages, new_sys)
+                oai_messages = anthropic_to_chat_messages(context_messages, new_sys)
                 in_tokens = tokens_for_chat_messages(oai_messages)
                 log_event(
                     {
@@ -605,7 +463,11 @@ async def run_eval(
                     return None, None
                 new_asst_obj = {"responses_input": resp_input, "responses_output": samp.model_dump()}
                 # For grader context later, build ephemeral CCR-like messages
-                msgs_for_grader = responses_to_ccr_messages(inp)
+                parsed_inp = parse_response_messages(inp)
+                if parsed_inp is None:
+                    log_event({"correlation_id": item.correlation_id, "status": "invalid_responses_input"})
+                    return None, None
+                msgs_for_grader = responses_to_ccr_messages(parsed_inp)
                 prev_asst_idx_for_grader = index_of_last_assistant_before_final(msgs_for_grader) or 0
 
             # 4) Build grading inputs
@@ -848,8 +710,8 @@ async def run_eval(
                 g_obj = EvalGradeRecord.model_validate(grade_rec)
                 g_out.write(json.dumps(g_obj.model_dump(), sort_keys=True) + "\n")
                 try:
-                    parsed = parse_grade_from_responses(grade_rec["response"])  # type: ignore[index]
-                    score = float(parsed.get("score", 0))
+                    grade = parse_grade_from_responses(g_obj.response)
+                    score = float(grade.score)
                     scores.append(score)
                     if src in scores_by_source:
                         scores_by_source[src].append(score)  # type: ignore[index]
@@ -859,7 +721,7 @@ async def run_eval(
                         json.dumps(
                             {
                                 "event": "grade_parsed",
-                                "cid": grade_rec.get("correlation_id"),
+                                "cid": g_obj.correlation_id,
                                 "score": score,
                                 "source": src,
                                 "n": summary_data["n"],
@@ -891,7 +753,7 @@ async def run_eval(
         grades_path = report_base / "grades.jsonl"
         report_path = report_base / "report.html"
         # Build grades map
-        grades_map: dict[str, dict[str, Any]] = {}
+        grades_map: dict[str, Grade | None] = {}
         with grades_path.open("r", encoding="utf-8") as gf:
             for line in gf:
                 grec = json.loads(line)
@@ -899,10 +761,10 @@ async def run_eval(
                 if not cid:
                     continue
                 try:
-                    parsed = parse_grade_from_responses(grec.get("response"))
-                    grades_map[cid] = parsed
+                    grade = parse_grade_from_responses(grec.get("response"))
+                    grades_map[cid] = grade
                 except Exception:
-                    grades_map[cid] = {"score": None, "rationale": None}
+                    grades_map[cid] = None
 
         # Collect rows
         rows: list[dict[str, Any]] = []
@@ -926,7 +788,8 @@ async def run_eval(
                     rin = _rin if _rin is not None else []
                     orig_sys = responses_extract_system_text(rin)
                     rewritten_sys = rewrite_system_with_template(orig_sys or "", template_file)
-                    msgs_disp = responses_to_ccr_messages(rin)
+                    parsed_rin = parse_response_messages(rin)
+                    msgs_disp = responses_to_ccr_messages(parsed_rin) if parsed_rin else []
                     idx = index_of_last_assistant_before_final(msgs_disp)
                     if idx is None:
                         shared_prefix = msgs_disp
@@ -936,7 +799,7 @@ async def run_eval(
                         bad_branch = msgs_disp[idx:]
                 else:
                     # CCR item - validate and use typed Anthropic structures
-                    ccr_req = CCRRequest.model_validate(ar)
+                    ccr_req = Request.model_validate(ar)
                     orig_sys = ccr_req.system or ""
                     rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
                     msgs = anthropic_messages_to_standard(ccr_req.messages)
@@ -947,7 +810,7 @@ async def run_eval(
                     else:
                         shared_prefix = [m for m in (msgs[:idx]) if m.role != MessageRole.SYSTEM]
                         bad_branch = msgs[idx:]
-                grade = grades_map.get(cid) or {}
+                grade = grades_map.get(cid)
                 rows.append(
                     {
                         "correlation_id": cid,

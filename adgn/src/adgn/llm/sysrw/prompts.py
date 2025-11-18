@@ -1,5 +1,17 @@
 """Prompt templates for system rewrite evaluation."""
 
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from openai.types.chat import (
+    ChatCompletionMessageParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
+
+
 GRADER_SYSTEM_PROMPT = """You are an evaluator of AI coding assistants.
 
 You will be given a past conversation between user and an AI coding assistant. The conversation ends with a turn where assistant's next action or response was bad quality, and user marked that by the marker token '<bad>' in their subsequent message along with some explanation of what assistant did wrong. You will be given a counterfactual NEW alternative response that assistant could have sent or immediate next action assistant could have taken instead of the bad actions. Your task is to evaluate whether the alternative action/response would be better to take as an immediate action than the action the user complained about.
@@ -20,3 +32,20 @@ BAD_BRANCH_JSON (from bad assistant turn through the user's complaint, inclusive
 
 NEW_ASSISTANT_REPLY_JSON:
 {new_asst_json}"""
+
+
+def build_grader_prompt(
+    prefix_messages: list[ChatCompletionMessageParam],
+    raw_bad_branch: list[ChatCompletionMessageParam],
+    raw_new_asst_obj: dict[str, Any],
+) -> list[ChatCompletionMessageParam]:
+    """Build grader prompt from conversation prefix, bad branch, and new assistant response."""
+    user_content = GRADER_USER_TEMPLATE.format(
+        prefix_json=json.dumps(prefix_messages, ensure_ascii=False),
+        bad_branch_json=json.dumps(raw_bad_branch if raw_bad_branch is not None else [], ensure_ascii=False),
+        new_asst_json=json.dumps(raw_new_asst_obj or {}, ensure_ascii=False),
+    )
+    return [
+        ChatCompletionSystemMessageParam(role="system", content=GRADER_SYSTEM_PROMPT),
+        ChatCompletionUserMessageParam(role="user", content=user_content),
+    ]

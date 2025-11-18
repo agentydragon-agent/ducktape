@@ -64,6 +64,13 @@ class CCRSample(BaseModel):
 # ------------------------
 
 
+class Grade(BaseModel):
+    """Grade result from the grader model."""
+
+    score: int = Field(ge=1, le=5, description="Score from 1 (worst) to 5 (best)")
+    rationale: str = Field(description="Explanation of the score")
+
+
 class EvalSampleRecord(BaseModel):
     request: dict[str, Any]
     response: dict[str, Any]
@@ -71,7 +78,7 @@ class EvalSampleRecord(BaseModel):
     correlation_id: str | None = None
     timestamp: int | None = None
     anthropic_request: Request | None = None
-    grade: dict[str, Any] | None = None
+    grade: Grade | None = None
 
 
 class EvalGradeRecord(BaseModel):
