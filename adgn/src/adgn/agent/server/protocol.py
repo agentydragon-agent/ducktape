@@ -230,9 +230,7 @@ class RunStatusEvt(BaseModel):
 
 class ApprovalPendingEvt(BaseModel):
     type: Literal["approval_pending"] = "approval_pending"
-    call_id: str
-    tool_key: str
-    args_json: str | None = None
+    approval: ApprovalBrief
     model_config = ConfigDict(extra="forbid")
 
 

@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from docker import DockerClient
-from fastmcp.mcp_config import MCPConfig, MCPServerTypes
+from fastmcp.mcp_config import MCPConfig
 
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.local_runtime import LocalAgentRuntime
 from adgn.agent.runtime.running import RunningInfrastructure
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.runtime import ConnectionManager
-from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.openai_utils.model import OpenAIModelProto
 
 from .builder import build_local_agent
