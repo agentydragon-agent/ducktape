@@ -51,6 +51,8 @@ class _GiteaRepositoryFields(BaseModel):
     Shared by both the public response model and internal parsing model.
     """
 
+    model_config = ConfigDict(extra="ignore")  # Lenient parsing - ignore unknown fields
+
     # Core repository identity
     id: int
     name: str = Field(description="Repository name. Mirror path for cloning: '{owner}/{name}.git'")
@@ -165,12 +167,6 @@ class _UserInfo(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class _RepositoryInfo(_GiteaRepositoryFields):
-    """Internal model for parsing Gitea's /repos/{owner}/{repo} response."""
-
-    model_config = ConfigDict(extra="ignore")  # Ignore fields we haven't declared
-
-
 T_Model = TypeVar("T_Model", bound=BaseModel)
 
 
@@ -213,11 +209,11 @@ def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
         raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}")
 
 
-def _get_repo_info(cfg: MirrorConfig, owner: str, repo: str) -> _RepositoryInfo:
+def _get_repo_info(cfg: MirrorConfig, owner: str, repo: str) -> _GiteaRepositoryFields:
     """Get current repository info including mirror status and last update time."""
     repo_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}"
     try:
-        data = _get_typed_json(repo_url, cfg.token, _RepositoryInfo)
+        data = _get_typed_json(repo_url, cfg.token, _GiteaRepositoryFields)
     except requests.RequestException as exc:
         raise MirrorError("failed to fetch repository metadata") from exc
     return data
