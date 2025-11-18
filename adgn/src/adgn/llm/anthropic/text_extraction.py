@@ -10,8 +10,4 @@ def extract_text_content(message: Message) -> str:
     if isinstance(message.content, str):
         return message.content
 
-    texts: list[str] = []
-    for block in message.content:
-        if isinstance(block, TextBlock):
-            texts.append(block.text)
-    return "\n".join(texts)
+    return "\n".join(block.text for block in message.content if isinstance(block, TextBlock))
