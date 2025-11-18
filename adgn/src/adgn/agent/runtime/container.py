@@ -143,6 +143,12 @@ class AgentContainer:
 
     After start, the following fields are populated: mcp, session, agent, persist_handler, ui, approval_engine.
     The approval hub is constructed at init time.
+
+    TODO: This is a god object with too many responsibilities (MCP infrastructure,
+    policy management, agent runtime, UI integration, persistence, actor lifecycle).
+    Should be refactored into focused components (MCPInfrastructure, PolicyInfrastructure,
+    AgentRuntime) with clear separation of concerns. The 150+ line initialization in
+    _handle_actor_msg should be broken into smaller initialization functions.
     """
 
     agent_id: str
