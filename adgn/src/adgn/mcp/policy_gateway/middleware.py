@@ -156,9 +156,9 @@ class PolicyGatewayMiddleware(Middleware):
                 call_result = await call_next(context)
                 # If downstream returned an error ToolResult instead of raising,
                 # remap reserved policy codes/messages here using typed parsing when available.
-                if bool(getattr(call_result, "is_error", False)):
+                if bool(call_result.is_error):
                     # Parse error details - ErrorData guarantees code: int per MCP/JSON-RPC spec
-                    err = getattr(call_result, "error", None)
+                    err = call_result.error
                     if err is None:
                         return call_result
 
