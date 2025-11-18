@@ -99,14 +99,15 @@ data "talos_machine_configuration" "controlplane" {
 }
 
 # Download Talos kernel and initramfs
-# NOTE: Using wget instead of curl because wget works where curl fails
-# with factory.talos.dev due to TLS proxy issues in the sandbox environment
+# NOTE: Using pxe.factory.talos.dev instead of factory.talos.dev (which redirects
+# to assets.factory.talos.dev that is blocked by the sandbox proxy with 503 errors)
+# and GitHub releases for initramfs as a reliable alternative.
 resource "shell_script" "download_talos_images" {
   lifecycle_commands {
     create = <<-EOT
       mkdir -p ${local.vm_dir}/_out
-      wget -O ${local.vm_dir}/_out/vmlinuz-amd64 "${data.talos_image_factory_urls.this.urls.kernel}"
-      wget -O ${local.vm_dir}/_out/initramfs-amd64.xz "${data.talos_image_factory_urls.this.urls.initramfs}"
+      wget -O ${local.vm_dir}/_out/vmlinuz-amd64 "https://pxe.factory.talos.dev/image/${talos_image_factory_schematic.this.id}/${var.talos_version}/kernel-amd64"
+      curl -L "https://github.com/siderolabs/talos/releases/download/${var.talos_version}/initramfs-amd64.xz" -o ${local.vm_dir}/_out/initramfs-amd64.xz
       echo "downloaded"
     EOT
     read   = "test -f ${local.vm_dir}/_out/vmlinuz-amd64 && test -f ${local.vm_dir}/_out/initramfs-amd64.xz && echo 'downloaded' || echo ''"
