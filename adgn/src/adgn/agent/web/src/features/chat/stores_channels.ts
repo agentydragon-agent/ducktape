@@ -68,8 +68,51 @@ export function clearError() {
   lastError.set(null)
 }
 
+function createChannelHandlers(
+  channel: string,
+  onMessage: (msg: any) => void,
+  options: {
+    onOpen?: () => void
+    onUnexpectedClose?: () => void
+    isOptional?: boolean
+  } = {}
+): ChannelHandlers {
+  return {
+    onOpen: () => {
+      channelsConnected.update((s) => new Set(s).add(channel))
+      options.onOpen?.()
+    },
+    onClose: (ev) => {
+      channelsConnected.update((s) => {
+        const ns = new Set(s)
+        ns.delete(channel)
+        return ns
+      })
+
+      const isNormalClose = ev.code === 1000 || ev.code === 1001 || ev.code === 1005
+      const isOptionalNotFound = options.isOptional && ev.code === 4404
+
+      if (!closingIntentional && !isNormalClose && !isOptionalNotFound) {
+        if (options.isOptional) {
+          console.warn(`${channel} channel closed: ${ev.code}`)
+        } else {
+          lastError.set(`${channel} channel closed: ${ev.code}`)
+        }
+        options.onUnexpectedClose?.()
+      }
+    },
+    onError: () => {
+      if (options.isOptional) {
+        console.warn(`${channel} channel error (optional)`)
+      } else {
+        lastError.set(`${channel} channel error`)
+      }
+    },
+    onMessage,
+  }
+}
+
 export function connectAgentChannels(agentId: string) {
-  // Close existing manager
   if (manager) {
     try {
       closingIntentional = true
@@ -79,114 +122,26 @@ export function connectAgentChannels(agentId: string) {
 
   manager = new ChannelManager(agentId)
 
-  // Session channel - agent execution state (local agents only)
-  manager.on('session', {
-    onOpen: () => {
-      channelsConnected.update((s) => new Set(s).add('session'))
-    },
-    onClose: (ev) => {
-      channelsConnected.update((s) => {
-        const ns = new Set(s)
-        ns.delete('session')
-        return ns
-      })
-      if (!closingIntentional && ev.code !== 1000 && ev.code !== 1001 && ev.code !== 1005) {
-        lastError.set(`Session channel closed: ${ev.code}`)
-      }
-    },
-    onError: () => {
-      lastError.set('Session channel error')
-    },
-    onMessage: (msg: SessionMessage) => handleSessionMessage(msg),
-  })
+  manager.on('session', createChannelHandlers('session', handleSessionMessage))
 
-  // MCP channel - always available
-  manager.on('mcp', {
-    onOpen: () => {
-      channelsConnected.update((s) => new Set(s).add('mcp'))
-      // Mark agent as live when MCP channel connects (always present)
-      agentStatus.set({ id: agentId, live: true })
-    },
-    onClose: (ev) => {
-      channelsConnected.update((s) => {
-        const ns = new Set(s)
-        ns.delete('mcp')
-        return ns
-      })
-      if (!closingIntentional && ev.code !== 1000 && ev.code !== 1001 && ev.code !== 1005) {
-        lastError.set(`MCP channel closed: ${ev.code}`)
-        agentStatus.set({ id: agentId, live: false })
-      }
-    },
-    onError: () => {
-      lastError.set('MCP channel error')
-    },
-    onMessage: (msg: McpMessage) => handleMcpMessage(msg),
-  })
+  manager.on(
+    'mcp',
+    createChannelHandlers('mcp', handleMcpMessage, {
+      onOpen: () => agentStatus.set({ id: agentId, live: true }),
+      onUnexpectedClose: () => agentStatus.set({ id: agentId, live: false }),
+    })
+  )
 
-  // Approvals channel - always available
-  manager.on('approvals', {
-    onOpen: () => {
-      channelsConnected.update((s) => new Set(s).add('approvals'))
-    },
-    onClose: (ev) => {
-      channelsConnected.update((s) => {
-        const ns = new Set(s)
-        ns.delete('approvals')
-        return ns
-      })
-      if (!closingIntentional && ev.code !== 1000 && ev.code !== 1001 && ev.code !== 1005) {
-        lastError.set(`Approvals channel closed: ${ev.code}`)
-      }
-    },
-    onError: () => {
-      lastError.set('Approvals channel error')
-    },
-    onMessage: (msg: ApprovalsMessage) => handleApprovalsMessage(msg),
-  })
+  manager.on('approvals', createChannelHandlers('approvals', handleApprovalsMessage))
 
-  // Policy channel - always available
-  manager.on('policy', {
-    onOpen: () => {
-      channelsConnected.update((s) => new Set(s).add('policy'))
-    },
-    onClose: (ev) => {
-      channelsConnected.update((s) => {
-        const ns = new Set(s)
-        ns.delete('policy')
-        return ns
-      })
-      if (!closingIntentional && ev.code !== 1000 && ev.code !== 1001 && ev.code !== 1005) {
-        lastError.set(`Policy channel closed: ${ev.code}`)
-      }
-    },
-    onError: () => {
-      lastError.set('Policy channel error')
-    },
-    onMessage: (msg: PolicyMessage) => handlePolicyMessage(msg),
-  })
+  manager.on('policy', createChannelHandlers('policy', handlePolicyMessage))
 
-  // UI channel - optional
-  manager.on('ui', {
-    onOpen: () => {
-      channelsConnected.update((s) => new Set(s).add('ui'))
-    },
-    onClose: (ev) => {
-      channelsConnected.update((s) => {
-        const ns = new Set(s)
-        ns.delete('ui')
-        return ns
-      })
-      // UI channel is optional, don't error if unavailable
-      if (!closingIntentional && ev.code !== 1000 && ev.code !== 1001 && ev.code !== 1005 && ev.code !== 4404) {
-        console.warn(`UI channel closed: ${ev.code}`)
-      }
-    },
-    onError: () => {
-      console.warn('UI channel error (optional)')
-    },
-    onMessage: (msg: UiMessage) => handleUiMessage(agentId, msg),
-  })
+  manager.on(
+    'ui',
+    createChannelHandlers('ui', (msg) => handleUiMessage(agentId, msg), {
+      isOptional: true,
+    })
+  )
 
   closingIntentional = false
   manager.connect()
