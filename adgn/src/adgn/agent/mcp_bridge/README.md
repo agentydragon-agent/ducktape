@@ -123,23 +123,29 @@ When mounting your repository:
 
 ## Status
 
-**Core Functionality: ✅ Complete**
+**Core Functionality: ✅ Complete (Single Agent)**
 
-The HTTP MCP Bridge is fully functional:
+The HTTP MCP Bridge is fully functional for a single external agent:
 - ✅ HTTP/SSE transport endpoint (via FastMCP's `http_app()`)
 - ✅ Policy-gated tool execution
 - ✅ Compositor with mounted MCP servers
 - ✅ Approval policy engine (Docker-based evaluation)
 - ✅ Standard MCP server resources and tools
 
-External agents can connect immediately using the MCP-over-HTTP protocol.
+**Current Limitation**: Single agent per bridge instance. The `agent_id` is configured at startup via CLI, and all connections share the same infrastructure. For multiple external agents, run separate bridge instances on different ports.
 
 ## Future Enhancements
 
-These features would improve production deployment but are not required for basic usage:
+These features would improve production deployment:
 
-- [ ] **Token Authentication**: Bearer token → agent_id mapping for secure external access
-- [ ] **Multi-Tenancy**: Support multiple concurrent external agents with isolated infrastructure
+- [ ] **Token Authentication + Multi-Tenancy**:
+  - Read `Authorization: Bearer <token>` header to determine agent_id
+  - Create/cache separate infrastructure per agent_id
+  - Enables multiple external agents connecting to single bridge instance
+  - Example: ChatGPT on port 8080, Claude.ai on same port, different tokens
+
 - [ ] **Idle Cleanup**: Auto-shutdown infrastructure after N minutes of inactivity
+
 - [ ] **Unified Instructions**: Merge server instructions in initialization message
+
 - [ ] **Web UI**: Browser-based approval management (human-in-the-loop oversight)

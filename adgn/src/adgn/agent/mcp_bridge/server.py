@@ -45,7 +45,11 @@ async def create_bridge_infrastructure(
     return running
 
 
-# Future enhancements (core functionality is complete):
-# - Add authentication middleware for token → agent_id mapping
-# - Handle multi-tenancy (multiple external agents with different agent_ids)
+# Current limitation: Single agent per bridge instance.
+# The agent_id is configured at startup and shared by all connections.
+#
+# Future enhancements for multi-tenancy:
+# - Add authentication middleware: read Authorization header → agent_id
+# - Create/cache infrastructure per agent_id (not per bridge instance)
 # - Add cleanup for idle infrastructure instances
+# This would enable multiple external agents on one bridge (different tokens → different agent_ids)
