@@ -5,7 +5,7 @@ from typing import Any
 
 from ..config.models import Violation
 from .categorizer import CategorizedViolation, ViolationCategorizer, ViolationCategory
-from .parser import DiffParser, ToolCall
+from .parser import ToolCall, parse_tool_response
 
 
 class DiffIntelligence:
@@ -26,7 +26,6 @@ class DiffIntelligence:
         Args:
             context_distance: Lines away from change to consider "near"
         """
-        self.parser = DiffParser()
         self.categorizer = ViolationCategorizer(context_distance)
 
     def analyze(
@@ -36,7 +35,7 @@ class DiffIntelligence:
     ) -> defaultdict[ViolationCategory, list[CategorizedViolation]]:
         """Analyze violations in context of tool changes."""
         # Parse diff information
-        parsed_diff = self.parser.parse_tool_response(tool_call)
+        parsed_diff = parse_tool_response(tool_call)
 
         # Categorize violations
         categorized = self.categorizer.categorize_violations(violations, parsed_diff)
@@ -52,7 +51,7 @@ class DiffIntelligence:
     ) -> list[CategorizedViolation]:
         """Get violations prioritized by their relationship to changes."""
         # Parse and categorize
-        parsed_diff = self.parser.parse_tool_response(tool_call)
+        parsed_diff = parse_tool_response(tool_call)
         categorized = self.categorizer.categorize_violations(violations, parsed_diff)
 
         # Filter by priority

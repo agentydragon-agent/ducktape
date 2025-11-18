@@ -150,19 +150,16 @@ def _parse_structured_patch(file_path: str, structured_patch: list[HunkData]) ->
     )
 
 
-class DiffParser:
-    """Parse structured patches from Claude tool responses."""
+def parse_tool_response(tool_call: ToolCall) -> ParsedDiff | None:
+    """Parse Edit/MultiEdit tool response into ParsedDiff."""
+    if tool_call.tool_name not in ("Edit", "MultiEdit"):
+        return None
+    if tool_call.tool_response is None:
+        return None  # PreToolUse has no response
 
-    def parse_tool_response(self, tool_call: ToolCall) -> ParsedDiff | None:
-        """Parse Edit/MultiEdit tool response into ParsedDiff."""
-        if tool_call.tool_name not in ("Edit", "MultiEdit"):
-            return None
-        if tool_call.tool_response is None:
-            return None  # PreToolUse has no response
+    try:
+        response = EditToolResponse.model_validate({**tool_call.tool_input, **tool_call.tool_response})
+    except ValidationError:
+        return None  # Missing or invalid structuredPatch field
 
-        try:
-            response = EditToolResponse.model_validate({**tool_call.tool_input, **tool_call.tool_response})
-        except ValidationError:
-            return None  # Missing or invalid structuredPatch field
-
-        return _parse_structured_patch(response.file_path, response.structured_patch)
+    return _parse_structured_patch(response.file_path, response.structured_patch)

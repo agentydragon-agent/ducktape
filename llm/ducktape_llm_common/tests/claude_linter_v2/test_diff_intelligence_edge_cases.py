@@ -8,7 +8,7 @@ from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
     ViolationCategory,
 )
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
-from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser, ToolCall
+from ducktape_llm_common.claude_linter_v2.diff.parser import ToolCall, parse_tool_response
 
 
 class TestDiffParserEdgeCases:
@@ -16,8 +16,6 @@ class TestDiffParserEdgeCases:
 
     def test_parse_edit_with_context_lines(self):
         """Test parsing Edit tool with context lines."""
-        parser = DiffParser()
-
         tool_response = {
             "structuredPatch": [
                 {
@@ -36,7 +34,7 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
 
         assert parsed is not None
         assert parsed.added_lines == {12}  # Only the + line
@@ -44,8 +42,6 @@ class TestDiffParserEdgeCases:
 
     def test_parse_multiedit_with_line_shifts(self):
         """Test MultiEdit where second edit is affected by first edit's line changes."""
-        parser = DiffParser()
-
         tool_response = {
             "structuredPatch": [
                 {
@@ -65,35 +61,29 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response(ToolCall(tool_name="MultiEdit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(ToolCall(tool_name="MultiEdit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
 
         assert parsed is not None
         assert parsed.added_lines == {10, 11, 12, 22}
 
     def test_parse_empty_structured_patch(self):
         """Test handling empty structuredPatch."""
-        parser = DiffParser()
-
         # Empty patch array
         tool_response = {"structuredPatch": []}
-        parsed = parser.parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
         assert parsed is not None
         assert len(parsed.hunks) == 0
         assert len(parsed.added_lines) == 0
 
     def test_parse_no_structured_patch_field(self):
         """Test handling missing structuredPatch field."""
-        parser = DiffParser()
-
         # No structuredPatch field
         tool_response = {"someOtherField": "value"}
-        parsed = parser.parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
         assert parsed is None
 
     def test_parse_special_diff_markers(self):
         """Test handling special diff markers."""
-        parser = DiffParser()
-
         tool_response = {
             "structuredPatch": [
                 {
@@ -110,7 +100,7 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
+        parsed = parse_tool_response(ToolCall(tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response))
 
         assert parsed is not None
         assert parsed.added_lines == {10}

@@ -9,7 +9,7 @@ from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
     ViolationCategory,
 )
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
-from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser, ParsedDiff, ToolCall
+from ducktape_llm_common.claude_linter_v2.diff.parser import ParsedDiff, ToolCall, parse_tool_response
 
 
 class TestDiffParser:
@@ -17,8 +17,6 @@ class TestDiffParser:
 
     def test_parse_edit_tool(self):
         """Test parsing Edit tool response."""
-        parser = DiffParser()
-
         tool_call = ToolCall(
             tool_name="Edit",
             tool_input={"file_path": "/test.py", "old_string": "def foo():", "new_string": "def bar():"},
@@ -29,7 +27,7 @@ class TestDiffParser:
             },
         )
 
-        parsed = parser.parse_tool_response(tool_call)
+        parsed = parse_tool_response(tool_call)
 
         assert parsed is not None
         assert parsed.added_lines == {10}
@@ -38,8 +36,6 @@ class TestDiffParser:
 
     def test_parse_multiedit_tool(self):
         """Test parsing MultiEdit tool with multiple hunks."""
-        parser = DiffParser()
-
         tool_call = ToolCall(
             tool_name="MultiEdit",
             tool_input={
@@ -54,7 +50,7 @@ class TestDiffParser:
             },
         )
 
-        parsed = parser.parse_tool_response(tool_call)
+        parsed = parse_tool_response(tool_call)
 
         assert parsed is not None
         assert parsed.added_lines == {10, 20}
@@ -70,8 +66,7 @@ class TestDiffParser:
     )
     def test_parse_other_tools_returns_none(self, tool_name, tool_input):
         """Test that non-Edit/MultiEdit tools return None."""
-        parser = DiffParser()
-        assert parser.parse_tool_response(ToolCall(tool_name=tool_name, tool_input=tool_input, tool_response=None)) is None
+        assert parse_tool_response(ToolCall(tool_name=tool_name, tool_input=tool_input, tool_response=None)) is None
 
 
 class TestViolationCategorizer:
