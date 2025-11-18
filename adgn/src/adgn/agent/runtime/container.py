@@ -182,7 +182,7 @@ class AgentContainer:
     # Compositor instance (when compositor path is used)
     _compositor: Compositor | None = field(default=None, init=False)
     # Front-door MCP client (FastMCP Client connected to the compositor with policy middleware)
-    _mcp_client: Client | None = field(default=None, init=False)
+    _compositor_client: Client | None = field(default=None, init=False)
     # No direct reference to resources server; mounted via helper
     # Policy clients (managed via AsyncExitStack)
     _policy_reader: PolicyReaderStub | None = field(default=None, init=False)
@@ -195,18 +195,18 @@ class AgentContainer:
         return self._policy_approver
 
     @property
-    def mcp_client(self) -> Client | None:
+    def compositor_client(self) -> Client | None:
         """Front-door MCP client connected to the compositor (if started)."""
-        return self._mcp_client
+        return self._compositor_client
 
     async def list_mcp_entries(self) -> dict[str, ServerEntry]:
         """Return full per-server entries via compositor_meta resources.
 
         Empty when MCP is not initialized.
         """
-        if self._mcp_client is None:
+        if self._compositor_client is None:
             return {}
-        meta = CompositorMetaClient(self._mcp_client)
+        meta = CompositorMetaClient(self._compositor_client)
         return await meta.list_states()
 
     # ---- Actor dispatch -----------------------------------------------------
@@ -242,11 +242,14 @@ class AgentContainer:
 
                 # Session & manager
                 self._cm = ConnectionManager()
-                sess = AgentSession(self._cm, approval_hub=self.approval_hub, persistence=self.persistence)
-                sess.agent_id = self.agent_id
-                if self.with_ui and self._ui_bus is not None:
-                    sess.ui_bus = self._ui_bus
-                sess.approval_engine = self.approval_engine
+                sess = AgentSession(
+                    self._cm,
+                    approval_hub=self.approval_hub,
+                    persistence=self.persistence,
+                    agent_id=self.agent_id,
+                    ui_bus=self._ui_bus if self.with_ui else None,
+                    approval_engine=self.approval_engine,
+                )
 
                 # LLM client
                 client = self.client_factory(self.model)
@@ -265,7 +268,7 @@ class AgentContainer:
                 # In-proc client to the compositor with policy middleware
                 mcp_client = Client(comp, message_handler=notif_buffer.handler)
                 await self._stack.enter_async_context(mcp_client)
-                self._mcp_client = mcp_client
+                self._compositor_client = mcp_client
                 self._notif_buffer = notif_buffer
                 # Coalesced Snapshot refresh
                 self._snapshot_push_pending = False
@@ -360,9 +363,9 @@ class AgentContainer:
                 comp2 = self._compositor
                 if comp2 is None:
                     return None
-                if self._mcp_client is None:
+                if self._compositor_client is None:
                     raise RuntimeError("mcp client not initialized")
-                admin = CompositorAdminClient(self._mcp_client)
+                admin = CompositorAdminClient(self._compositor_client)
                 # Compute current specs for diffs
                 current_specs = await comp2.mount_specs()
                 # Full replace
@@ -410,16 +413,16 @@ class AgentContainer:
                 return await self._op_close()
             case _AttachOneMsg(name=name, spec=spec):
                 # Route via compositor_admin tools (policy-gated)
-                if self._mcp_client is None:
+                if self._compositor_client is None:
                     raise RuntimeError("mcp client not initialized")
-                admin = CompositorAdminClient(self._mcp_client)
+                admin = CompositorAdminClient(self._compositor_client)
                 await admin.attach_server(name=name, spec=spec)
                 await self._push_snapshot_and_status()
                 return None
             case _DetachOneMsg(name=name):
-                if self._mcp_client is None:
+                if self._compositor_client is None:
                     raise RuntimeError("mcp client not initialized")
-                admin = CompositorAdminClient(self._mcp_client)
+                admin = CompositorAdminClient(self._compositor_client)
                 await admin.detach_server(name=name)
                 await self._push_snapshot_and_status()
                 return None
