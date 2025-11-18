@@ -19,7 +19,6 @@ from claude_optimizer.database.models import (
     SystemPrompt,
 )
 import pytest
-import yaml
 
 from .test_types import OptimizationRunStatus
 

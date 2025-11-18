@@ -3,10 +3,10 @@ from __future__ import annotations
 from concurrent.futures import CancelledError
 
 import pytest
-from tests.agent.helpers import expect_error, expect_run_finished
-from tests.llm.support.openai_mock import FakeOpenAIModel
 
 from adgn.agent.server.protocol import ErrorCode
+from tests.agent.helpers import expect_error, expect_run_finished
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.timeout(3)

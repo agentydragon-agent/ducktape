@@ -5,8 +5,8 @@ import logging
 import os
 
 import docker
-import docker.errors
 from docker import DockerClient
+import docker.errors
 
 from adgn.agent.policies.policy_types import PolicyResponse
 from adgn.agent.runtime.images import resolve_runtime_image

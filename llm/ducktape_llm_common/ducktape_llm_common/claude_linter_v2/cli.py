@@ -12,15 +12,14 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Any
 
 import click
 import humanize
 from pytimeparse import parse as parse_duration
 
+from ..claude_code_api import SessionID
 from . import __version__
 from .checker import FileChecker
-from .claude_code_api import SessionID
 from .config import AutofixCategory
 from .hooks.exceptions import HookBugError
 from .hooks.handler import HOOK_REQUEST_TYPES, handle

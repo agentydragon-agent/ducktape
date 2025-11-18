@@ -3,6 +3,8 @@ from __future__ import annotations
 from concurrent.futures import CancelledError
 
 import pytest
+
+from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ws_helpers import (
     assert_payloads_have,
     has_finished_run,
@@ -11,8 +13,6 @@ from tests.agent.ws_helpers import (
     is_ui_message,
 )
 from tests.llm.support.openai_mock import make_mock
-
-from adgn.mcp._shared.naming import build_mcp_function
 
 
 @pytest.mark.timeout(15)

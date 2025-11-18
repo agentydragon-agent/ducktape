@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from tests.util.notifications import parse_system_notification_payload
-
 from adgn.agent.reducer import format_notifications_message
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from tests.util.notifications import parse_system_notification_payload
 
 
 def _make_notifier(name: str = "child") -> NotifyingFastMCP:

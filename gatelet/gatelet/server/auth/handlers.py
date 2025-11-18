@@ -10,7 +10,7 @@ from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
+from ..config import Settings, get_settings
 from ..database import get_db_session
 from ..models import AdminSession, AuthCRSession, AuthKey
 from .key_auth import KeyAuthError, validate_key
@@ -147,7 +147,7 @@ async def key_path_auth(key: str, db_session: AsyncSession = Depends(get_db_sess
         raise AuthHandlerError
 
 
-async def session_auth(session_token: str, db_session: AsyncSession = Depends(get_db_session)) -> SessionAuthContext:
+async def session_auth(session_token: str, db_session: AsyncSession = Depends(get_db_session), settings: Settings = Depends(get_settings)) -> SessionAuthContext:
     """Authenticate using challenge-response session token."""
     # Find session
     query = select(AuthCRSession).where(AuthCRSession.session_token == session_token)

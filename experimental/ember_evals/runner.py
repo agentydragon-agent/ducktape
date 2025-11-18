@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 import datetime as _dt
 import json
 import os
-import shutil
+from pathlib import Path
 import re
+import shutil
 import sys
 import tempfile
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, Iterable, Mapping, Sequence
+
 import yaml
 
 from ember.integrations.gitea import GiteaRepository
@@ -19,17 +20,11 @@ from ember.integrations.gitea import GiteaRepository
 from .common import CommandError, dump_yaml, merge_dict, run_command
 from .definitions import ScenarioSuite
 from .executor import ScenarioExecutor
+from .kubernetes import KubernetesManager, LabelSelector
 from .matrix import MatrixHarness, MatrixTranscript, render_matrix_transcript
-from .models import (
-    EvalRunErrorReport,
-    EvalRunMetadata,
-    EvalRunRequest,
-    RunLabels,
-    RuntimeSecretNames,
-)
+from .models import EvalRunErrorReport, EvalRunMetadata, EvalRunRequest, RunLabels, RuntimeSecretNames
 from .scenarios.regression import SCENARIO_SUITE as REGRESSION_SUITE
 from .steps import ScenarioSuiteResult
-from .kubernetes import KubernetesManager, LabelSelector
 
 
 def _get_repo_root() -> Path:
@@ -103,8 +98,7 @@ def resource_name(base: str, suffix: str, fallback: str) -> str:
     base_clean = sanitize_for_k8s(base, fallback)
     suffix_clean = sanitize_for_k8s(suffix, suffix)
     max_base = 63 - len(suffix_clean) - 1
-    if max_base < 1:
-        max_base = 1
+    max_base = max(max_base, 1)
     base_trimmed = base_clean[:max_base]
     return f"{base_trimmed}-{suffix_clean}"
 
@@ -169,7 +163,7 @@ async def build_image(image_ref: str) -> None:
     await run_command(("docker", "push", image_ref))
 
 
-def load_base_values() -> Dict[str, object]:
+def load_base_values() -> dict[str, object]:
     with BASE_VALUES_FILE.open("r", encoding="utf-8") as fh:
         return yaml.safe_load(fh) or {}
 
@@ -192,7 +186,7 @@ def prepare_values(
     release: str,
     secrets: RuntimeSecretNames,
     image: str,
-) -> Dict[str, object]:
+) -> dict[str, object]:
     values = load_base_values()
     repository, tag = split_image_ref(image)
     overrides = {
@@ -344,7 +338,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
             write_artifact(artifact_dir / "scenarios.json", scenario_summary.model_dump())
         print(f"[ember-eval] Run {request.run_id} ready (namespace {request.namespace}).")
         return metadata
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         metadata.status = "failed"
         metadata.failed_at = _dt.datetime.utcnow().isoformat() + "Z"
         metadata.error = str(exc)
@@ -535,7 +529,7 @@ def cli_main(argv: Sequence[str] | None = None) -> int:
     except CommandError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"fatal: {exc}", file=sys.stderr)
         return 1
     return 0

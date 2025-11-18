@@ -5,13 +5,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 export ANSIBLE_LINT_SKIP_VAULT=1
 
-# Strip 'ansible/' prefix from file paths if present (for pre-commit integration)
-# This handles the case where we're called from repo root with paths like 'ansible/roles/...'
-# but we're already cd'd into the ansible/ directory
-args=()
+# Strip "ansible/" prefix from file paths if present
+# Pre-commit passes paths like "ansible/roles/cli/tasks/main.yml"
+# but ansible-lint (running from ansible/) needs "roles/cli/tasks/main.yml"
+stripped_args=()
 for arg in "$@"; do
-    # Remove leading 'ansible/' if present
-    args+=("${arg#ansible/}")
+    stripped_args+=("${arg#ansible/}")
 done
 
-ansible-lint --config-file ../.ansible-lint.yaml "${args[@]}"
+# If no arguments, scan all ansible files (default behavior)
+if [ ${#stripped_args[@]} -eq 0 ]; then
+    ansible-lint --config-file ../.ansible-lint.yaml
+else
+    ansible-lint --config-file ../.ansible-lint.yaml "${stripped_args[@]}"
+fi

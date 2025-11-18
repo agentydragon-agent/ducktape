@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from tests.agent.helpers import api_create_agent
-from tests.llm.support.openai_mock import make_mock
 
 from adgn.mcp._shared.naming import build_mcp_function
+from tests.agent.helpers import api_create_agent
+from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")

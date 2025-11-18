@@ -23,7 +23,7 @@ from .database import get_db_session
 from .endpoints import activitywatch, admin, challenge, homeassistant, webhook_receive, webhook_view
 from .endpoints.homeassistant import fetch_states
 from .endpoints.webhook_view import get_latest_payloads
-from .lifespan import lifespan, BASE_DIR
+from .lifespan import BASE_DIR, lifespan
 from .models import AdminSession
 
 logger = logging.getLogger(__name__)

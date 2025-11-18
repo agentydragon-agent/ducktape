@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import pytest
-from tests.conftest import make_container_opts
 
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.exec.models import ExecInput, Exited, TimedOut
+from tests.conftest import make_container_opts
 
 
 def _make_server(ephemeral: bool):

@@ -4,9 +4,9 @@ from concurrent.futures import CancelledError
 
 from hamcrest import any_of, assert_that, has_item, has_properties
 import pytest
-from tests.llm.support.openai_mock import FakeOpenAIModel
 
 from adgn.agent.server.protocol import ErrorCode
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.timeout(5)

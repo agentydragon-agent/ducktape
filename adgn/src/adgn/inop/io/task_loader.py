@@ -1,7 +1,6 @@
 """Load and parse task type and runner configurations."""
 
 from pathlib import Path
-from typing import Any
 
 import yaml
 

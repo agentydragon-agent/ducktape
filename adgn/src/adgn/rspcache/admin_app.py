@@ -5,21 +5,19 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import Any
 from uuid import UUID
 
 from asyncpg import UniqueViolationError
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from openai.types.responses import ResponseStreamEvent
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
-from openai.types.responses import ResponseStreamEvent
-
 from adgn.openai_utils.model import ResponsesRequest
 from adgn.rspcache.models import FinalResponseSnapshot, ResponseStatus
-from adgn.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponseFrame, ResponsesDB
+from adgn.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponsesDB
 
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200

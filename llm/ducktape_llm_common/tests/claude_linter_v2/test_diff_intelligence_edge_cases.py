@@ -3,10 +3,7 @@
 from collections import defaultdict
 
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
-from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
-    CategorizedViolation,
-    ViolationCategory,
-)
+from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedViolation, ViolationCategory
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
 from ducktape_llm_common.claude_linter_v2.diff.parser import ToolCall, parse_tool_response
 

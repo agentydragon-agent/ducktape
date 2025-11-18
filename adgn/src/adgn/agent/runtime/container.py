@@ -36,7 +36,6 @@ from adgn.mcp._shared.constants import (
 )
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
-from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.approval_policy.server import (
     ApprovalPolicyAdminServer,
     ApprovalPolicyProposerServer,
@@ -52,6 +51,7 @@ from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.mcp.policy_gateway.middleware import install_policy_gateway
 from adgn.mcp.runtime.server import make_runtime_server
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
+from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.ui.server import make_ui_server
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto

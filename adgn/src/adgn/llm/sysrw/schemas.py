@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from anthropic.types import Message as AnthropicMessageResponse
 from anthropic.types.tool_param import ToolParam
 from openai.types.chat import ChatCompletion
 from openai.types.chat.chat_completion_create_params import ChatCompletionCreateParams

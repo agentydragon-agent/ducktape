@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import json
-from typing import Any
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError

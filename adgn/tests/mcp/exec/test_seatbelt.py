@@ -5,7 +5,6 @@ from pathlib import Path
 
 from fastmcp.client import Client
 import pytest
-from tests._markers import REQUIRES_SANDBOX_EXEC
 
 from adgn.mcp.exec.models import Exited, TimedOut
 from adgn.mcp.exec.seatbelt import SandboxExecArgs, SeatbeltExecMCP
@@ -21,6 +20,7 @@ from adgn.seatbelt.model import (
     SystemRule,
     TraceConfig,
 )
+from tests._markers import REQUIRES_SANDBOX_EXEC
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
 

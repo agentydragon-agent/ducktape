@@ -2,6 +2,7 @@ import os
 import shutil
 
 import pytest
+
 from tests._markers import REQUIRES_SANDBOX_EXEC
 
 # Run these stdio-handshake tests in a dedicated xdist group to avoid flakiness

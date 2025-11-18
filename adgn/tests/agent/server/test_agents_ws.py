@@ -3,6 +3,8 @@ from __future__ import annotations
 from hamcrest import assert_that, has_item
 from pydantic import TypeAdapter
 import pytest
+
+from adgn.agent.server.agents_ws import AgentCreatedMsg, AgentsHubMsg, AgentsSnapshotMsg, AgentStatusMsg
 from tests.agent.ws_helpers import (
     ACTIVE_RUN_CLEARED,
     ACTIVE_RUN_SET,
@@ -11,8 +13,6 @@ from tests.agent.ws_helpers import (
     wait_for_accepted,
 )
 from tests.llm.support.openai_mock import FakeOpenAIModel
-
-from adgn.agent.server.agents_ws import AgentCreatedMsg, AgentsHubMsg, AgentsSnapshotMsg, AgentStatusMsg
 
 
 def test_agents_ws_initial_and_create_broadcast(ws_hub):
