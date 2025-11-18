@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from adgn.agent.approvals import ApprovalRequest
+from adgn.agent.persist import ApprovalOutcome, ApprovalRecord
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 if TYPE_CHECKING:
@@ -20,6 +22,76 @@ if TYPE_CHECKING:
     from mcp import types as mcp_types
 
 logger = logging.getLogger(__name__)
+
+
+# Helper functions for data conversion
+
+
+def _convert_pending_approvals(pending_map: dict[str, ApprovalRequest]) -> list[PendingApproval]:
+    """Convert ApprovalHub pending map to list of PendingApproval models.
+
+    Args:
+        pending_map: Dict of call_id -> ApprovalRequest from ApprovalHub
+
+    Returns:
+        List of PendingApproval Pydantic models
+    """
+    result: list[PendingApproval] = []
+    for call_id, request in pending_map.items():
+        # Parse args_json if present
+        args = {}
+        if request.tool_call.args_json:
+            try:
+                args = json.loads(request.tool_call.args_json)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse args_json for call_id {call_id}")
+
+        result.append(
+            PendingApproval(
+                call_id=call_id,
+                tool=request.tool_call.name,
+                args=args,
+                timestamp=datetime.now(),  # TODO: Track creation time in ApprovalRequest
+            )
+        )
+    return result
+
+
+def _convert_approval_record_to_history(record: ApprovalRecord) -> ApprovalHistoryEntry:
+    """Convert persistence ApprovalRecord to ApprovalHistoryEntry.
+
+    Args:
+        record: ApprovalRecord from persistence
+
+    Returns:
+        ApprovalHistoryEntry for MCP response
+    """
+    # Map outcome to decision type
+    if record.outcome in (ApprovalOutcome.POLICY_ALLOW, ApprovalOutcome.USER_APPROVE):
+        decision = DecisionType.APPROVED
+        reason = None
+    else:
+        decision = DecisionType.REJECTED
+        # Extract reason from details if present
+        reason = record.details.get("reason") if record.details else None
+        if not reason:
+            reason = f"Denied by {record.outcome.value}"
+
+    # Extract args from details
+    args = record.details.get("args", {}) if record.details else {}
+
+    # Extract decided_by from details
+    decided_by = record.details.get("decided_by", "human") if record.details else "human"
+
+    return ApprovalHistoryEntry(
+        call_id=record.call_id,
+        tool=record.tool_key,
+        args=args,
+        decision=decision,
+        reason=reason,
+        timestamp=record.decided_at,
+        decided_by=decided_by,
+    )
 
 
 # Enumerations
@@ -111,7 +183,8 @@ class AgentApprovalsHistoryResponse(BaseModel):
 
     agent_id: str
     timeline: list[ApprovalHistoryEntry]
-    count: int
+    pending: list[PendingApproval]  # Pending approvals not yet decided
+    count: int  # Total count (timeline + pending)
 
 
 def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
@@ -215,9 +288,8 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         """
         infra = await registry.get_infrastructure(agent_id)
 
-        # TODO: Implement get_pending() method
-        # pending: list[PendingApproval] = await infra.approval_engine.get_pending()
-        pending: list[PendingApproval] = []
+        # Convert ApprovalHub pending map to list of PendingApproval models
+        pending = _convert_pending_approvals(infra.approval_hub.pending)
 
         return AgentApprovalsPendingResponse(agent_id=agent_id, pending=pending)
 
@@ -246,9 +318,8 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         for agent_id in registry.known_agents():
             infra = await registry.get_infrastructure(agent_id)
 
-            # TODO: Implement get_pending() method
-            # pending_approvals: list[PendingApproval] = await infra.approval_engine.get_pending()
-            pending_approvals: list[PendingApproval] = []
+            # Convert ApprovalHub pending map to list of PendingApproval models
+            pending_approvals = _convert_pending_approvals(infra.approval_hub.pending)
 
             for approval in pending_approvals:
                 # Construct MCP TextResourceContents for each approval
@@ -278,16 +349,26 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 
         Serves as activity log for external agents - shows what tool calls
         were approved/rejected, when, and by whom (human or which agent).
+
+        Includes both pending approvals (not yet decided) and completed approvals.
         All data routed through Pydantic models for type safety.
         """
         infra = await registry.get_infrastructure(agent_id)
 
-        # TODO: Implement get_history() method
-        # history_entries: list[ApprovalHistoryEntry] = await infra.approval_engine.get_history()
-        history_entries: list[ApprovalHistoryEntry] = []
+        # Get completed approvals from persistence
+        approval_records = await infra.approval_engine.persistence.list_approvals(agent_id=agent_id, limit=100)
+        completed_entries = [_convert_approval_record_to_history(record) for record in approval_records]
+
+        # Get pending approvals from approval hub
+        pending_approvals = _convert_pending_approvals(infra.approval_hub.pending)
+
+        # Total count includes both completed and pending
+        total_count = len(completed_entries) + len(pending_approvals)
 
         # Return Pydantic response model directly (FastMCP handles serialization)
-        return AgentApprovalsHistoryResponse(agent_id=agent_id, timeline=history_entries, count=len(history_entries))
+        return AgentApprovalsHistoryResponse(
+            agent_id=agent_id, timeline=completed_entries, pending=pending_approvals, count=total_count
+        )
 
     # Tools
 
@@ -304,11 +385,15 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 
         Routes to: lookup_infrastructure(agent_id).approval_hub.resolve()
         """
-        infra = await registry.get_infrastructure(agent_id)
+        from adgn.agent.handler import ContinueDecision
 
-        # TODO: Implement approval via approval_hub
-        # from adgn.agent.handler import ContinueDecision
-        # infra.approval_hub.resolve(call_id, ContinueDecision())
+        infra = await registry.get_infrastructure(agent_id)
+        infra.approval_hub.resolve(call_id, ContinueDecision())
+
+        # Broadcast resource updates for pending approvals and history
+        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/pending")
+        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/history")
+        await server.broadcast_resource_updated("resource://approvals/pending")
 
         return {"status": "approved", "agent_id": agent_id, "call_id": call_id}
 
@@ -326,11 +411,15 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 
         Routes to: lookup_infrastructure(agent_id).approval_hub.resolve()
         """
-        infra = await registry.get_infrastructure(agent_id)
+        from adgn.agent.handler import AbortTurnDecision
 
-        # TODO: Implement rejection via approval_hub
-        # from adgn.agent.handler import AbortTurnDecision
-        # infra.approval_hub.resolve(call_id, AbortTurnDecision(reason=reason))
+        infra = await registry.get_infrastructure(agent_id)
+        infra.approval_hub.resolve(call_id, AbortTurnDecision(reason=reason))
+
+        # Broadcast resource updates for pending approvals and history
+        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/pending")
+        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/history")
+        await server.broadcast_resource_updated("resource://approvals/pending")
 
         return {"status": "rejected", "agent_id": agent_id, "call_id": call_id}
 
@@ -362,33 +451,39 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         return {"status": "aborted", "agent_id": agent_id}
 
     # Wire up notifications
-    # TODO: Implement notification wiring
-    # - Listen to approval engine events → broadcast resource://approvals/pending updates
-    # - Listen to agent loop state changes → broadcast resource://agents/{id}/state updates
+    # Note: Notifications are triggered when:
+    # 1. Approval decisions are made (approve/reject tools)
+    # 2. Approval policy changes (already wired through ApprovalPolicyEngine)
+    # 3. Agent state changes (for local agents)
 
-    async def _on_approval_change(agent_id: str):
-        """Approval engine notification handler."""
-        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/pending")
-        await server.broadcast_resource_updated("resource://approvals/pending")
+    # For approval changes, we trigger notifications directly in the approve/reject tools
+    # since ApprovalHub doesn't have a built-in notification system
 
-    async def _on_agent_state_change(agent_id: str):
-        """Agent loop state change notification handler."""
-        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/state")
+    # For policy changes, ApprovalPolicyEngine already has a notifier callback
+    # We can enhance it to also notify about approval history changes
 
-    # Hook up listeners for all agents
+    # Hook up policy engine notifiers for all agents
     for agent_id in registry.known_agents():
         try:
             infra = await registry.get_infrastructure(agent_id)
-            # TODO: Add approval engine listener
-            # infra.approval_engine.add_listener(lambda: _on_approval_change(agent_id))
 
-            # Only add agent loop listener for local agents (no hasattr)
-            if registry.get_agent_mode(agent_id) == AgentMode.LOCAL:
-                local_runtime = registry.get_local_runtime(agent_id)
-                if local_runtime and local_runtime.agent:
-                    # TODO: Add agent state listener
-                    # local_runtime.agent.add_state_listener(lambda: _on_agent_state_change(agent_id))
-                    pass
+            # Create a closure that captures agent_id for this specific agent
+            def make_policy_notifier(aid: str):
+                def notifier(uri: str):
+                    # Schedule broadcast in event loop (notifier is sync)
+                    import asyncio
+
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(server.broadcast_resource_updated(uri))
+                    except RuntimeError:
+                        logger.warning(f"Could not broadcast {uri}: no running event loop")
+
+                return notifier
+
+            # Set notifier for policy engine
+            infra.approval_engine.set_notifier(make_policy_notifier(agent_id))
+
         except Exception as e:
             logger.warning(f"Failed to hook listeners for {agent_id}: {e}")
 
