@@ -14,7 +14,9 @@ from adgn.mcp.compositor.server import Compositor
 logger = logging.getLogger(__name__)
 
 
-class _Handler(MessageHandler):
+class _ResourceNotificationHandler(MessageHandler):
+    """Message handler that forwards resource notifications to NotificationsBuffer."""
+
     def __init__(self, owner: NotificationsBuffer) -> None:
         self._buffer = owner
 
@@ -42,7 +44,7 @@ class NotificationsBuffer:
         self._list_changed: set[str] = set()
         self._raw: list[mcp_types.ResourceUpdatedNotification | mcp_types.ResourceListChangedNotification] = []
         self._hooks: list[Callable[[], Awaitable[None]]] = []
-        self.handler: MessageHandler = _Handler(self)
+        self.handler: MessageHandler = _ResourceNotificationHandler(self)
         # Subscribe to compositor-level notifications when available so we don't
         # rely solely on client message forwarding (which may be disabled for
         # in-proc mounts).
