@@ -223,13 +223,15 @@ class MCPInfrastructure:
             Note: run_id is None since policy gateway doesn't have run context.
             Approvals are still recorded for audit/analytics purposes.
             """
+            from adgn.agent.persist import Decision
+
+            decision = Decision(outcome=outcome, decided_at=datetime.now(UTC), reason=None)
             await self.persistence.record_approval(
                 run_id=None,
                 agent_id=self.agent_id,
                 call_id=call_id,
                 tool_key=tool_key,
-                outcome=outcome,
-                decided_at=datetime.now(UTC),
+                decision=decision,
             )
 
         install_policy_gateway(

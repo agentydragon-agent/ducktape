@@ -15,7 +15,20 @@ from pydantic import JsonValue
 from adgn.agent.persist import PolicyProposal
 from adgn.agent.runtime.auto_attach import filter_persistable_servers
 
-from . import AgentMetadata, AgentRow, ApprovalOutcome, ApprovalRecord, EventType, Persistence, RunRow, RunStatus
+from . import (
+    AgentMetadata,
+    AgentRow,
+    ApprovalOutcome,
+    ApprovalRecord,
+    Decision,
+    EventType,
+    Persistence,
+    RunRow,
+    RunStatus,
+    ToolCall,
+    ToolCallExecution,
+    ToolCallRecord,
+)
 from .events import EventRecord, parse_event
 
 MAX_EVENT_PAYLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB hard limit per event payload
@@ -38,7 +51,7 @@ class SQLitePersistence(Persistence):
             yield db
 
     @asynccontextmanager
-    async def _open_row(self):
+    async def _db_connection(self):
         async with aiosqlite.connect(self.db_path) as db:
             # Enforce FK cascades on every connection
             await db.execute("PRAGMA foreign_keys = ON;")
@@ -46,17 +59,20 @@ class SQLitePersistence(Persistence):
             yield db
 
     async def ensure_schema(self) -> None:
-        """Create base tables if missing using the current schema.
+        """Create base tables using the current schema.
 
-        Note: This function does not implement versioned migrations. To apply
-        schema changes, recreate the database or manage data migration outside
-        this helper.
+        Drops old schema_version and approvals tables without versioning.
+        Creates new tool_calls table for ToolCallRecord persistence.
         """
         async with self._open() as db:
             await db.execute("PRAGMA foreign_keys = ON;")
             # executescript allows multiple statements in one call
             await db.executescript(
                 """
+-- Drop old tables (no versioning, no backward compatibility)
+DROP TABLE IF EXISTS schema_version;
+DROP TABLE IF EXISTS approvals;
+
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
@@ -87,16 +103,20 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_run_seq ON events(run_id, seq);
 CREATE INDEX IF NOT EXISTS idx_events_call ON events(call_id);
-CREATE TABLE IF NOT EXISTS approvals (
+CREATE TABLE IF NOT EXISTS tool_calls (
   call_id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  run_id TEXT NULL REFERENCES runs(id) ON DELETE CASCADE,
   agent_id TEXT NULL REFERENCES agents(id) ON DELETE SET NULL,
-  tool_key TEXT NOT NULL,
-  outcome TEXT NOT NULL,
-  decided_at TEXT NOT NULL,
-  details TEXT NULL
+  tool_call_json TEXT NOT NULL,
+  decision_json TEXT NULL,
+  execution_json TEXT NULL,
+  created_at TEXT NOT NULL,
+  decided_at TEXT NULL,
+  completed_at TEXT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_approvals_run_decided ON approvals(run_id, decided_at);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_run ON tool_calls(run_id);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_agent ON tool_calls(agent_id);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_decided ON tool_calls(decided_at);
 CREATE TABLE IF NOT EXISTS approval_policies (
   version INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -156,7 +176,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
     ) -> MCPConfig:
         attach = attach or {}
         detach = detach if detach is not None else []
-        async with self._open_row() as db:
+        async with self._db_connection() as db:
             async with db.execute("SELECT specs FROM agents WHERE id = ?", (agent_id,)) as cur:
                 r = await cur.fetchone()
             if not r:
@@ -194,7 +214,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
         return out
 
     async def get_agent(self, agent_id: str) -> AgentRow | None:
-        async with self._open_row() as db:
+        async with self._db_connection() as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute("SELECT id, created_at, specs, metadata FROM agents WHERE id = ?", (agent_id,))
             r = await cur.fetchone()
@@ -216,7 +236,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
         """
         out: dict[str, datetime | None] = {}
         async with (
-            self._open_row() as db,
+            self._db_connection() as db,
             db.execute(
                 """
 SELECT a.id as agent_id,
@@ -254,7 +274,7 @@ GROUP BY a.id
     async def get_latest_policy(self, agent_id: str) -> tuple[str, int] | None:
         """Return (content, version) of the latest approval policy for the agent, or None."""
         async with (
-            self._open_row() as db,
+            self._db_connection() as db,
             db.execute(
                 """
 SELECT content, version
@@ -297,7 +317,7 @@ VALUES (?, ?, ?, 'pending', ?, NULL)
             await db.commit()
 
     async def list_policy_proposals(self, agent_id: str) -> list[PolicyProposal]:
-        async with self._open_row() as db:
+        async with self._db_connection() as db:
             out: list[PolicyProposal] = []
             async with db.execute(
                 """
@@ -324,7 +344,7 @@ ORDER BY created_at DESC
 
     async def get_policy_proposal(self, agent_id: str, proposal_id: str) -> PolicyProposal | None:
         async with (
-            self._open_row() as db,
+            self._db_connection() as db,
             db.execute(
                 """
 SELECT id, status, created_at, decided_at, content
@@ -352,7 +372,7 @@ WHERE agent_id = ? AND id = ?
         """
         # Read proposal content
         async with (
-            self._open_row() as db,
+            self._db_connection() as db,
             db.execute(
                 "SELECT content FROM policy_proposals WHERE agent_id = ? AND id = ?", (agent_id, proposal_id)
             ) as cur,
@@ -457,10 +477,11 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
         agent_id: str | None,
         call_id: str,
         tool_key: str,
-        outcome: ApprovalOutcome,
-        decided_at: datetime,
+        decision: Decision,
         details: dict[str, JsonValue] | None = None,
     ) -> None:
+        from adgn.agent.persist import Decision
+
         async with self._open() as db:
             await db.execute(
                 """
@@ -472,8 +493,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                     str(run_id) if run_id is not None else None,
                     agent_id,
                     tool_key,
-                    outcome.value,
-                    decided_at.isoformat(),
+                    decision.outcome.value,
+                    decision.decided_at.isoformat(),
                     json.dumps(details) if details else None,
                 ),
             )
@@ -481,8 +502,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 
     async def list_approvals(self, *, agent_id: str, limit: int = 100) -> list[ApprovalRecord]:
         """List approval history for an agent, ordered by decision time (newest first)."""
+        from adgn.agent.persist import Decision
+
         out: list[ApprovalRecord] = []
-        async with self._open_row() as db:
+        async with self._db_connection() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 """
@@ -495,15 +518,22 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 (agent_id, limit),
             ) as cur:
                 async for r in cur:
+                    # Construct Decision object from database fields
+                    details_dict = json.loads(r["details"]) if r["details"] else None
+                    decision = Decision(
+                        outcome=ApprovalOutcome(r["outcome"]),
+                        decided_at=datetime.fromisoformat(r["decided_at"]),
+                        reason=details_dict.get("reason") if details_dict else None,
+                    )
+
                     out.append(
                         ApprovalRecord(
                             call_id=r["call_id"],
                             run_id=r["run_id"],
                             agent_id=r["agent_id"],
                             tool_key=r["tool_key"],
-                            outcome=ApprovalOutcome(r["outcome"]),
-                            decided_at=datetime.fromisoformat(r["decided_at"]),
-                            details=json.loads(r["details"]) if r["details"] else None,
+                            decision=decision,
+                            details=details_dict,
                         )
                     )
         return out
@@ -517,7 +547,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
         sql = f"SELECT id, agent_id, started_at, finished_at, status, system_message, model, model_params, event_count FROM runs {where} ORDER BY started_at DESC LIMIT ?"
         params.append(limit)
         out: list[RunRow] = []
-        async with self._open_row() as db:
+        async with self._db_connection() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(sql, params) as cur:
                 async for r in cur:
@@ -537,7 +567,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
         return out
 
     async def get_run(self, run_id: UUID) -> RunRow | None:
-        async with self._open_row() as db:
+        async with self._db_connection() as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 "SELECT id, agent_id, started_at, finished_at, status, system_message, model, model_params, event_count FROM runs WHERE id = ?",
@@ -560,7 +590,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 
     async def load_events(self, run_id: UUID) -> list[EventRecord]:
         out: list[EventRecord] = []
-        async with self._open_row() as db:
+        async with self._db_connection() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT seq, ts, type, payload, call_id, tool_key FROM events WHERE run_id = ? ORDER BY seq ASC",
@@ -577,6 +607,113 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                                 "call_id": r["call_id"],
                                 "tool_key": r["tool_key"],
                             }
+                        )
+                    )
+        return out
+
+    # Tool Calls (new ToolCallRecord persistence) --------------------------------
+    async def save_tool_call(self, record: ToolCallRecord) -> None:
+        """Save or update a tool call record."""
+        async with self._open() as db:
+            # Serialize nested Pydantic models to JSON
+            tool_call_json = record.tool_call.model_dump_json()
+            decision_json = record.decision.model_dump_json() if record.decision else None
+            execution_json = record.execution.model_dump_json() if record.execution else None
+
+            # Extract timestamps
+            created_at = _now().isoformat()
+            decided_at = record.decision.decided_at.isoformat() if record.decision else None
+            completed_at = record.execution.completed_at.isoformat() if record.execution else None
+
+            await db.execute(
+                """
+                INSERT OR REPLACE INTO tool_calls (
+                    call_id, run_id, agent_id,
+                    tool_call_json, decision_json, execution_json,
+                    created_at, decided_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.call_id,
+                    record.run_id,
+                    record.agent_id,
+                    tool_call_json,
+                    decision_json,
+                    execution_json,
+                    created_at,
+                    decided_at,
+                    completed_at,
+                ),
+            )
+            await db.commit()
+
+    async def get_tool_call(self, call_id: str) -> ToolCallRecord | None:
+        """Get a tool call record by call_id."""
+        async with self._db_connection() as db:
+            cur = await db.execute(
+                """
+                SELECT call_id, run_id, agent_id,
+                       tool_call_json, decision_json, execution_json
+                FROM tool_calls WHERE call_id = ?
+                """,
+                (call_id,),
+            )
+            r = await cur.fetchone()
+            if not r:
+                return None
+
+            # Deserialize JSON to Pydantic models
+            tool_call = ToolCall.model_validate_json(r["tool_call_json"])
+            decision = Decision.model_validate_json(r["decision_json"]) if r["decision_json"] else None
+            execution = ToolCallExecution.model_validate_json(r["execution_json"]) if r["execution_json"] else None
+
+            return ToolCallRecord(
+                call_id=r["call_id"],
+                run_id=r["run_id"],
+                agent_id=r["agent_id"],
+                tool_call=tool_call,
+                decision=decision,
+                execution=execution,
+            )
+
+    async def list_tool_calls(self, run_id: str | None = None) -> list[ToolCallRecord]:
+        """List tool call records, optionally filtered by run_id."""
+        out: list[ToolCallRecord] = []
+        async with self._db_connection() as db:
+            if run_id:
+                sql = """
+                    SELECT call_id, run_id, agent_id,
+                           tool_call_json, decision_json, execution_json
+                    FROM tool_calls WHERE run_id = ?
+                    ORDER BY created_at ASC
+                """
+                params = (run_id,)
+            else:
+                sql = """
+                    SELECT call_id, run_id, agent_id,
+                           tool_call_json, decision_json, execution_json
+                    FROM tool_calls
+                    ORDER BY created_at ASC
+                """
+                params = ()
+
+            async with db.execute(sql, params) as cur:
+                async for r in cur:
+                    # Deserialize JSON to Pydantic models
+                    tool_call = ToolCall.model_validate_json(r["tool_call_json"])
+                    decision = Decision.model_validate_json(r["decision_json"]) if r["decision_json"] else None
+                    execution = (
+                        ToolCallExecution.model_validate_json(r["execution_json"]) if r["execution_json"] else None
+                    )
+
+                    out.append(
+                        ToolCallRecord(
+                            call_id=r["call_id"],
+                            run_id=r["run_id"],
+                            agent_id=r["agent_id"],
+                            tool_call=tool_call,
+                            decision=decision,
+                            execution=execution,
                         )
                     )
         return out
