@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from adgn.agent.approvals import ApprovalRequest
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
-from adgn.agent.persist import ApprovalOutcome, ApprovalRecord, PolicyProposal
+from adgn.agent.persist import ApprovalOutcome, PolicyProposal, ToolCallRecord
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 if TYPE_CHECKING:
@@ -50,45 +50,48 @@ def _convert_pending_approvals(pending_map: dict[str, ApprovalRequest]) -> list[
     return result
 
 
-def _convert_approval_record_to_history(record: ApprovalRecord) -> ApprovalHistoryEntry:
-    # If decision is not present, fall back to details dict (backward compatibility)
-    if record.decision is not None:
-        # Use new Decision structure
-        if record.decision.outcome in (ApprovalOutcome.POLICY_ALLOW, ApprovalOutcome.USER_APPROVE):
-            decision = DecisionType.APPROVED
-        else:
-            decision = DecisionType.REJECTED
+def _convert_tool_call_record_to_history(record: ToolCallRecord) -> ApprovalHistoryEntry | None:
+    """Convert ToolCallRecord to ApprovalHistoryEntry.
 
-        reason = record.decision.reason
-        if not reason and decision == DecisionType.REJECTED:
-            reason = f"Denied by {record.decision.outcome.value}"
+    Returns None for PENDING tool calls (decision=None), since they haven't been decided yet
+    and belong in the pending list instead.
+    """
+    # Skip pending tool calls - they go in the pending list, not history
+    if record.decision is None:
+        return None
 
-        timestamp = record.decision.decided_at
+    # Determine decision type from outcome
+    if record.decision.outcome in (ApprovalOutcome.POLICY_ALLOW, ApprovalOutcome.USER_APPROVE):
+        decision = DecisionType.APPROVED
     else:
-        # Backward compatibility: fall back to details dict
-        # This branch supports old records before Decision migration
-        outcome = record.details.get("outcome") if record.details else None
-        if outcome in (ApprovalOutcome.POLICY_ALLOW.value, ApprovalOutcome.USER_APPROVE.value):
-            decision = DecisionType.APPROVED
-            reason = None
-        else:
-            decision = DecisionType.REJECTED
-            reason = record.details.get("reason") if record.details else None
-            if not reason and outcome:
-                reason = f"Denied by {outcome}"
+        decision = DecisionType.REJECTED
 
-        timestamp = datetime.fromisoformat(record.details.get("decided_at")) if record.details and record.details.get("decided_at") else datetime.now()
+    # Extract reason
+    reason = record.decision.reason
+    if not reason and decision == DecisionType.REJECTED:
+        reason = f"Denied by {record.decision.outcome.value}"
 
-    args = record.details.get("args", {}) if record.details else {}
-    decided_by = record.details.get("decided_by", "human") if record.details else "human"
+    # Parse args from JSON
+    args = {}
+    if record.tool_call.args_json:
+        try:
+            args = json.loads(record.tool_call.args_json)
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse args_json for call_id {record.call_id}")
+
+    # Determine who made the decision
+    if record.decision.outcome in (ApprovalOutcome.POLICY_ALLOW, ApprovalOutcome.POLICY_DENY_CONTINUE, ApprovalOutcome.POLICY_DENY_ABORT):
+        decided_by = "policy"
+    else:
+        decided_by = "human"
 
     return ApprovalHistoryEntry(
         call_id=record.call_id,
-        tool=record.tool_key,
+        tool=record.tool_call.name,
         args=args,
         decision=decision,
         reason=reason,
-        timestamp=timestamp,
+        timestamp=record.decision.decided_at,
         decided_by=decided_by,
     )
 
@@ -326,8 +329,17 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         """Includes both pending (not yet decided) and completed approvals."""
         infra = await registry.get_infrastructure(agent_id)
 
-        approval_records = await infra.approval_engine.persistence.list_approvals(agent_id=agent_id, limit=100)
-        completed_entries = [_convert_approval_record_to_history(record) for record in approval_records]
+        # Get all tool call records (limit to recent 100)
+        # Note: list_tool_calls doesn't support agent_id filtering yet, so we get all and filter
+        all_records = await infra.approval_engine.persistence.list_tool_calls()
+        agent_records = [r for r in all_records if r.agent_id == agent_id][-100:]
+
+        # Convert to history entries (filters out PENDING records)
+        completed_entries = []
+        for record in agent_records:
+            entry = _convert_tool_call_record_to_history(record)
+            if entry is not None:
+                completed_entries.append(entry)
 
         pending_approvals = _convert_pending_approvals(infra.approval_hub.pending)
 
