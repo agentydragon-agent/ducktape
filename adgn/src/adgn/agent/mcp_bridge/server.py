@@ -20,7 +20,14 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping, UITokenAuthMiddleware, generate_ui_token
+from adgn.agent.mcp_bridge.auth import (
+    TokenAuthMiddleware,
+    TokenInfo,
+    TokenMapping,
+    TokenRole,
+    UITokenAuthMiddleware,
+    generate_ui_token,
+)
 from adgn.agent.mcp_bridge.servers.agents import AgentList, make_agents_server
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -212,6 +219,8 @@ async def create_mcp_server_app(auth_tokens_path: Path, registry: Infrastructure
     """Create token-authenticated MCP server app.
 
     Routes MCP-over-HTTP requests to per-agent compositor apps based on token.
+
+    DEPRECATED: Use create_unified_mcp_app instead for role-based routing.
     """
 
     class CompositorRoutingMiddleware(BaseHTTPMiddleware):
@@ -253,6 +262,77 @@ async def create_mcp_server_app(auth_tokens_path: Path, registry: Infrastructure
 
     # Order matters: routing first, then token auth (outermost middleware runs first)
     mcp_app.add_middleware(CompositorRoutingMiddleware)
+    mcp_app.add_middleware(TokenAuthMiddleware, token_mapping=token_mapping)
+
+    return mcp_app
+
+
+async def create_unified_mcp_app(auth_tokens_path: Path, registry: InfrastructureRegistry) -> FastAPI:
+    """Create unified token-authenticated MCP server app with role-based routing.
+
+    Routes MCP-over-HTTP requests based on token role:
+    - HUMAN tokens → agents management server
+    - AGENT tokens → per-agent compositor apps
+
+    Single /mcp endpoint handles both routing paths transparently.
+    """
+    # Create agents management server for HUMAN tokens
+    agents_server = await make_agents_server(registry)
+    agents_http_app = agents_server.http_app()
+
+    class UnifiedMCPRoutingMiddleware(BaseHTTPMiddleware):
+        """Routes requests based on token role (HUMAN → management, AGENT → compositor)."""
+
+        async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+            # Get token info set by TokenAuthMiddleware
+            token_info: TokenInfo = request.state.token_info
+
+            # Route based on token role
+            if token_info.role == TokenRole.HUMAN:
+                # Route to agents management server
+                target_app = agents_http_app
+                logger.debug("Routing HUMAN token to agents management server")
+            elif token_info.role == TokenRole.AGENT:
+                # Route to agent's compositor
+                agent_id = token_info.agent_id
+                if agent_id is None:
+                    raise HTTPException(
+                        status_code=500, detail="AGENT token missing agent_id (should be caught in auth)"
+                    )
+                target_app = await registry.get_compositor_app(agent_id)
+                logger.debug(f"Routing AGENT token to compositor for agent_id={agent_id}")
+            else:
+                raise HTTPException(status_code=500, detail=f"Unknown token role: {token_info.role}")
+
+            # Forward request to target app using ASGI protocol
+            response_started = False
+            status_code = 200
+            headers = []
+            body_parts = []
+
+            async def send(message):
+                nonlocal response_started, status_code, headers
+                if message["type"] == "http.response.start":
+                    response_started = True
+                    status_code = message["status"]
+                    headers = message.get("headers", [])
+                elif message["type"] == "http.response.body":
+                    body_parts.append(message.get("body", b""))
+
+            # Forward request to target app
+            await target_app(request.scope, request.receive, send)
+
+            # Return the response
+            response_headers = {k.decode(): v.decode() for k, v in headers}
+            body = b"".join(body_parts)
+            return Response(content=body, status_code=status_code, headers=response_headers)
+
+    # Create FastAPI app for unified MCP server
+    token_mapping = TokenMapping(auth_tokens_path)
+    mcp_app = FastAPI(title="Unified MCP Server")
+
+    # Order matters: routing first, then token auth (outermost middleware runs first)
+    mcp_app.add_middleware(UnifiedMCPRoutingMiddleware)
     mcp_app.add_middleware(TokenAuthMiddleware, token_mapping=token_mapping)
 
     return mcp_app
