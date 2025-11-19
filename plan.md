@@ -155,86 +155,124 @@ All planned features have been implemented:
 
 ### HTTP to MCP Migration Plan
 
-**Principle**: Frontend ↔ Backend should **primarily communicate via MCP** (resources + tools), not HTTP REST or WebSockets.
+**Principle**: Frontend ↔ Backend should **communicate ONLY via MCP** (resources + tools), not HTTP REST or WebSockets.
 
-**Current State**: 36 non-MCP endpoints inventoried across agent server, channels, and MCP bridge:
-- 31 HTTP REST endpoints (agent management, runs, proposals, presets)
-- 6 WebSocket channel endpoints (UI state streaming - **temporary**, to be replaced with MCP subscriptions)
-- 3 bridge mode stubs (incomplete, TODO)
+**✅ Wave B COMPLETED** (2025-11-19):
+- Frontend now uses MCP client (StreamableHTTP transport)
+- MCP subscriptions infrastructure working (`NotifyingFastMCP.broadcast_resource_updated()`)
+- Core agent management tools implemented in `mcp_bridge/servers/agents.py`
+- 107 tests passing (backend MCP + frontend MCP client + subscriptions)
 
-**Migration Categories**:
+**Remaining Work** (DELETE, not add):
 
-#### Keep as HTTP/WebSocket (12 endpoints)
-- Static file serving (`/`, `/vite.svg`) - HTTP-native concern
-- Health checks (`/health`) - HTTP convention
-- Presets discovery (`/api/presets/*`) - internal server config
-- WebSocket channels (`/ws/*`) - **temporary** real-time UI updates (see Definition of Done above)
+#### DELETE Redundant HTTP Endpoints
+All agent management should flow through MCP `agents` server. Remove these HTTP endpoints:
 
-#### Migrate to MCP (21 endpoints - HIGH PRIORITY)
+**Agent CRUD & Lifecycle** (8 HTTP endpoints → already have MCP equivalents):
+- ❌ `POST /api/agents` → ✅ `agents/create_agent(preset, system?)`
+- ❌ `GET /api/agents/{agent_id}` → ✅ `resource://agents/{id}/info`
+- ❌ `DELETE /api/agents/{agent_id}` → ✅ `agents/delete_agent(id)`
+- ❌ `POST /api/agents/{agent_id}/boot` → ✅ `agents/boot_agent(id)`
+- ❌ `PATCH /api/agents/{agent_id}/mcp` → ✅ `agents/update_mcp_config(id, config)`
+- ❌ `POST /api/agents/{agent_id}/mcp/attach` → ✅ `agents/attach_server(id, name, spec)`
+- ❌ `POST /api/agents/{agent_id}/mcp/detach` → ✅ `agents/detach_server(id, name)`
+- ❌ `GET /api/agents` → ✅ `resource://agents/list`
 
-**Agent CRUD & Lifecycle** (8 endpoints → tools/resources in `mcp_bridge/servers/agents.py`):
-- `POST /api/agents` → `agents/create_agent(preset, system?)`
-- `GET /api/agents/{agent_id}` → `resource://agents/{id}/info`
-- `DELETE /api/agents/{agent_id}` → `agents/delete_agent(id)`
-- `POST /api/agents/{agent_id}/boot` → `agents/boot_agent(id)`
-- `PATCH /api/agents/{agent_id}/mcp` → `agents/update_mcp_config(id, config)`
-- `POST /api/agents/{agent_id}/mcp/attach` → `agents/attach_server(id, name, spec)`
-- `POST /api/agents/{agent_id}/mcp/detach` → `agents/detach_server(id, name)`
-- `GET /api/agents` → `resource://agents/list` (✅ already exists)
+**Agent Execution** (2 HTTP endpoints → already have MCP equivalents):
+- ❌ `POST /api/agents/{agent_id}/prompt` → ✅ `agents/prompt(id, text)`
+- ❌ `POST /api/agents/{agent_id}/abort` → ✅ `agents/abort_agent(id)`
 
-**Agent Execution** (2 endpoints → tools):
-- `POST /api/agents/{agent_id}/prompt` → `agents/prompt(id, text)`
-- `POST /api/agents/{agent_id}/abort` → `agents/abort_run(id)` (partial overlap with existing `abort_agent`)
+**Approvals** (3 HTTP endpoints → already have MCP equivalents):
+- ❌ `POST /api/agents/{agent_id}/approve` → ✅ `agents/approve_tool_call(id, call_id)`
+- ❌ `POST /api/agents/{agent_id}/deny_continue` → ✅ `agents/deny_tool_call(id, call_id)`
+- ❌ `POST /api/agents/{agent_id}/deny_abort` → ✅ `agents/deny_abort(id, call_id)`
 
-**Approvals** (3 endpoints → tools):
-- `POST /api/agents/{agent_id}/approve` → `agents/approve_tool_call(id, call_id)` (✅ already exists)
-- `POST /api/agents/{agent_id}/deny_continue` → `agents/deny_tool_call(id, call_id)`
-- `POST /api/agents/{agent_id}/deny_abort` → `agents/deny_abort(id, call_id)`
+**Policy Management** (proposal approval via MCP, proposals already accessible):
+- ✅ `resource://agents/{id}/proposals` - already works (policy server)
+- ✅ `resource://approval-policy/proposals/{id}` - already works (policy server)
+- ✅ `agents/approve_proposal(id, proposal_id)` - for human UI
+- ✅ `agents/reject_proposal(id, proposal_id)` - for human UI
+- ✅ `agents/withdraw_proposal(id, proposal_id)` - **AGENT-ONLY** (agents can withdraw own proposals)
+- ❌ DELETE: `POST /api/agents/{id}/proposals` - proposals work via policy server, no HTTP needed
 
-**Policy Management** (5 endpoints → tools/resources):
-- `POST /api/agents/{agent_id}/policy` → `agents/set_policy(id, content)`
-- `GET /api/agents/{agent_id}/proposals` → `resource://agents/{id}/proposals` (✅ already exists)
-- `GET /api/agents/{agent_id}/proposals/{proposal_id}` → `resource://approval-policy/proposals/{id}` (via policy server)
-- `POST /api/agents/{agent_id}/proposals/{proposal_id}/approve` → `agents/approve_proposal(id, proposal_id)`
-- `POST /api/agents/{agent_id}/proposals/{proposal_id}/reject` → `agents/reject_proposal(id, proposal_id)`
+#### DELETE WebSocket Channels (Replace with MCP Subscriptions)
+MCP subscriptions already work (`broadcast_resource_updated()` implemented). Replace these WebSocket channels:
 
-**Agent State** (3 endpoints → resources):
-- `GET /api/agents/{agent_id}/snapshot` → `resource://agents/{id}/snapshot`
-- `GET /api/agents/{agent_id}/status` → `resource://agents/{id}/status` (deferred - complex structure)
-- `GET /api/capabilities` → `resource://server/capabilities` (deferred - handshake helper)
+- ❌ `/ws/session` → ✅ Subscribe to `resource://agents/{id}/state`
+- ❌ `/ws/approvals` → ✅ Subscribe to `resource://agents/{id}/approvals/pending`
+- ❌ `/ws/policy` → ✅ Subscribe to `resource://approval-policy/proposals`
+- ❌ `/ws/mcp` → ✅ Subscribe to `resource://agents/{id}/mcp/state`
+- ❌ `/ws/ui` → ✅ Subscribe to `resource://ui/{id}/blocks`
+- ❌ `/ws/agents` → ✅ Subscribe to `resource://agents/list`
 
-#### Defer / Unclear (3 endpoints)
-- Runs & Events (`/api/runs`, `/api/runs/{run_id}`, `/api/runs/{run_id}/events`) - deferred until pagination/filtering design
+**Important**: All `/ws/*` endpoints are NOT MCP protocol - they are legacy WebSocket channels that duplicate MCP functionality.
+
+#### Keep as HTTP (Static/Health Only)
+- ✅ Static file serving (`/`, `/vite.svg`) - HTTP-native concern
+- ✅ Health checks (`/health`) - HTTP convention
+- ✅ Presets discovery (`/api/presets/*`) - internal server config
+
+#### Deferred (Complex Structure/Pagination)
+- Runs & Events (`/api/runs/*`) - deferred until pagination/filtering design
+- `GET /api/agents/{id}/status` - deferred (complex structure)
+- `GET /api/capabilities` - deferred (handshake helper)
+
+**Token-Based Capability Filtering**:
+
+Single MCP server presents different tools/resources based on token role:
+
+```python
+from enum import StrEnum
+
+class TokenRole(StrEnum):
+    """MCP server access roles derived from JWT token."""
+    HUMAN = "human"  # Human UI and admin operations
+    AGENT = "agent"  # Agent self-management
+
+class TokenCapabilityMiddleware(Middleware):
+    """Filter MCP tools/resources by token role (human vs agent)."""
+
+    # Define access control lists
+    AGENT_ONLY_TOOLS = {"withdraw_proposal"}  # Agents can withdraw own proposals
+
+    async def call_tool(self, name: str, args: dict, ctx: RequestContext, call_next):
+        role = extract_role_from_token(ctx.auth_token)  # Returns TokenRole enum
+
+        # Block agent-only tools from human UI
+        if role == TokenRole.HUMAN and name in self.AGENT_ONLY_TOOLS:
+            raise McpError(FORBIDDEN, f"Tool {name} requires admin privileges")
+
+        return await call_next(name, args)
+```
+
+**Agent-only tools**: `withdraw_proposal` (agents can withdraw their own proposals, humans cannot)
+**Human-only tools**: None currently (all human tools also available to admin agents)
+**Admin-only tools**: `create_agent`, `delete_agent`, `boot_agent` (infrastructure management)
 
 **Migration Roadmap**:
 
-**Phase 1 (Immediate)** - Complete MCP agents server:
-1. Add missing tools to `mcp_bridge/servers/agents.py`:
-   - Agent lifecycle: `create_agent`, `delete_agent`, `boot_agent`
-   - MCP config: `update_mcp_config`, `attach_server`, `detach_server`
-   - Execution: `prompt`, `abort_run`
-   - Approvals: `deny_tool_call`, `deny_abort`
-   - Policy: `set_policy`, `approve_proposal`, `reject_proposal`
-2. Add missing resources:
-   - `resource://agents/{id}/info` (rich agent metadata)
-   - `resource://agents/{id}/snapshot` (compositor snapshot)
-3. Update frontend to use MCP tools instead of HTTP REST endpoints
+**✅ Phase 1 COMPLETE** - MCP agents server + frontend client
+- Frontend uses MCP client (StreamableHTTP)
+- Core tools implemented: approve, deny, abort, prompt
+- Subscriptions infrastructure working
+- 107 tests passing
 
-**Phase 2 (Medium-term)** - Replace WebSocket channels with MCP subscriptions:
-1. Implement MCP resource subscriptions (`resource_updated` notifications)
-2. Replace `/ws/session` → subscribe to `resource://agents/{id}/state`
-3. Replace `/ws/approvals` → subscribe to `resource://agents/{id}/approvals/pending`
-4. Replace `/ws/policy` → subscribe to `resource://agents/{id}/policy/proposals`
-5. Replace `/ws/mcp` → subscribe to `resource://agents/{id}/mcp/state`
-6. Replace `/ws/ui` → subscribe to `resource://ui/{id}/blocks`
-7. Replace `/ws/agents` → subscribe to `resource://agents/list`
+**Phase 2 (Wave D)** - Implement token-based capability middleware:
+1. Add `TokenCapabilityMiddleware` to agents MCP server
+2. Define `TokenRole` enum (HUMAN, AGENT) and role-based tool access (AGENT_ONLY_TOOLS)
+3. Extract role from JWT token in request context (returns TokenRole enum)
+4. Block unauthorized tool calls and filter tool/resource lists
+5. Implement middleware methods: `call_tool()`, `list_tools()`, `list_resources()`, `read_resource()`
+6. Test: human cannot call `withdraw_proposal`, agent can
 
-**Phase 3 (Long-term)** - Deprecate and remove HTTP endpoints:
-1. Add deprecation warnings to HTTP REST endpoints
-2. Migrate all frontend code to MCP
-3. Remove legacy HTTP endpoints (keep static file serving and health checks)
+**Phase 3 (Future)** - DELETE redundant HTTP/WebSocket:
+1. Verify frontend only uses MCP (no HTTP REST calls to `/api/agents/*`)
+2. Delete HTTP endpoint handlers (keep static/health/presets only)
+3. Delete WebSocket channel infrastructure (`/ws/*`)
+4. Remove channel bundle code entirely
+5. Verify: ZERO WebSocket endpoints remain (only MCP StreamableHTTP)
 
-**Note**: All 21 endpoints marked for migration should be implemented as MCP tools/resources in the `agents` MCP server (`mcp_bridge/servers/agents.py`), which serves as the unified interface for cross-agent management.
+**Note**: Proposals already work via policy server MCP resources. Do NOT add HTTP endpoints for proposals.
 
 ### Waves 8-11: Code Quality, Cleanup & Verification
 - Wave 8: Code Quality Scans (28 parallel scan agents)
@@ -482,15 +520,75 @@ This plan focuses on **core approval and timeline functionality**. The following
 
 ## Architecture Overview
 
+### Token-Based Capability Middleware Pattern
+
+**Key Architecture Decision**: Single MCP server with token-based capability filtering (Wave D).
+
+MCP subscriptions **ALREADY WORK** (`NotifyingFastMCP.broadcast_resource_updated()` implemented in Wave B).
+
+```python
+from enum import StrEnum
+
+class TokenRole(StrEnum):
+    """MCP server access roles derived from JWT token."""
+    HUMAN = "human"  # Human UI and admin operations
+    AGENT = "agent"  # Agent self-management
+
+class TokenCapabilityMiddleware(Middleware):
+    """Filter MCP tools/resources by token role (human vs agent)."""
+
+    # Define access control lists
+    AGENT_ONLY_TOOLS = {"withdraw_proposal"}  # Agents can withdraw own proposals
+
+    async def call_tool(self, name: str, args: dict, ctx: RequestContext, call_next):
+        role = extract_role_from_token(ctx.auth_token)  # Returns TokenRole enum
+
+        # Block agent-only tools from human UI
+        if role == TokenRole.HUMAN and name in self.AGENT_ONLY_TOOLS:
+            raise McpError(FORBIDDEN, f"Tool {name} only available to agents")
+
+        return await call_next(name, args)
+
+    async def list_tools(self, ctx: RequestContext, call_next):
+        """Filter tool list based on role."""
+        all_tools = await call_next()
+        role = extract_role_from_token(ctx.auth_token)
+
+        if role == TokenRole.HUMAN:
+            # Filter out agent-only tools from human UI
+            return [t for t in all_tools if t.name not in self.AGENT_ONLY_TOOLS]
+        else:
+            # Agents see all tools
+            return all_tools
+
+    async def list_resources(self, ctx: RequestContext, call_next):
+        """Filter resource list based on role (currently no filtering needed)."""
+        return await call_next()
+
+    async def read_resource(self, uri: str, ctx: RequestContext, call_next):
+        """Control resource access by role (currently no restrictions)."""
+        return await call_next(uri)
+```
+
+**Benefits**:
+- Single MCP server, single port
+- Token determines capabilities (human vs agent) via TokenRole enum
+- Middleware filters both tools AND resources
+- Follows existing `PolicyGatewayMiddleware` pattern in codebase
+- Simpler deployment and reasoning
+
+### System Architecture Diagram
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                     Frontend (Browser)                       │
 │  - Single MCP client (Streamable HTTP)                      │
 │  - Token in URL → localStorage                              │
 │  - Connects to: agents server                              │
+│  - Subscriptions: live updates via resource_updated         │
 └──────────────┬───────────────────────────────────────────────┘
                │ HTTP GET /ui?token=...
-               │ Streamable HTTP
+               │ Streamable HTTP (MCP protocol)
                ▼
 ┌──────────────────────────────────────────────────────────────┐
 │           Management UI Server (Port 8081)                   │
@@ -498,6 +596,8 @@ This plan focuses on **core approval and timeline functionality**. The following
 │  - Single endpoint: GET /mcp/agents                         │
 │                                                              │
 │  Unified "agents" MCP Server:                               │
+│  ├─ TokenCapabilityMiddleware (filters by role)            │
+│  │                                                           │
 │  ├─ Resources (flat structure):                             │
 │  │  ├─ resource://agents/list                               │
 │  │  ├─ resource://agents/{id}/state                         │
@@ -506,10 +606,12 @@ This plan focuses on **core approval and timeline functionality**. The following
 │  │  └─ resource://approvals/pending (GLOBAL mailbox)       │
 │  │                                                           │
 │  └─ Tools (route to per-agent infrastructure):             │
-│     ├─ approve_tool_call(agent_id, call_id)                │
-│     ├─ reject_tool_call(agent_id, call_id, reason)         │
-│     ├─ abort_agent(agent_id)                               │
-│     └─ (future: spawn_agent, update_policy, ...)           │
+│     ├─ approve_tool_call(agent_id, call_id)  [human+admin] │
+│     ├─ reject_tool_call(agent_id, call_id)   [human+admin] │
+│     ├─ abort_agent(agent_id)                 [human+admin] │
+│     ├─ withdraw_proposal(id, proposal_id)    [AGENT ONLY]  │
+│     ├─ create_agent(preset)                  [ADMIN ONLY]  │
+│     └─ delete_agent(agent_id)                [ADMIN ONLY]  │
 └──────────────▲───────────────────────────────────────────────┘
                │ InfrastructureRegistry
                │ Routes: approve(123) → lookup(123).approval_engine.approve()

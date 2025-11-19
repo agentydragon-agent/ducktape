@@ -73,25 +73,48 @@
 **Dependencies**: Wave C complete
 
 - **Agent 1**: Agent State Notifications
-  - Wire `resource://agents/{id}/state` to emit `resource_updated` on:
-    - User prompt, assistant message, tool call, approval decision
-  - Pattern: compositor/session events → `server.broadcast_resource_updated()`
+  - Wire `resource://agents/{id}/state` to emit `resource_updated` notifications
+  - MCP subscriptions already work (`NotifyingFastMCP.broadcast_resource_updated()` implemented)
+  - Focus: connect compositor/session events to broadcast calls
+  - Pattern: compositor events (user prompt, assistant message, tool call, approval decision) → `server.broadcast_resource_updated(resources.agent_state(agent_id))`
+  - Verify: frontend subscriptions receive live updates
 
-- **Agent 2**: Approvals/Proposals HTTP + MCP
-  - Add HTTP endpoint: `POST /api/agents/{id}/proposals {content}`
-  - Mount proposer/admin servers by default for live agents
-  - MCP tests: create→visible, withdraw→removed
+- **Agent 2**: Token-Based Capability Middleware
+  - Implement `TokenCapabilityMiddleware` for agents MCP server
+  - Define `TokenRole` enum (HUMAN, AGENT) - only two roles, no separate admin
+  - Extract role from JWT token (returns TokenRole enum)
+  - Define tool access lists:
+    - `AGENT_ONLY_TOOLS = ["withdraw_proposal"]` (agents can withdraw own proposals, humans cannot)
+  - Implement middleware methods:
+    - `call_tool()` - block unauthorized tool calls (raise `McpError(FORBIDDEN)`)
+    - `list_tools()` - filter tool list based on role
+    - `list_resources()` - filter resource list based on role (currently no filtering)
+    - `read_resource()` - control resource access by role (currently no restrictions)
+  - Pattern follows existing `PolicyGatewayMiddleware` in codebase
+  - Test: human cannot call `withdraw_proposal`, agent can
+  - **Note**: Single MCP server on same port, different capabilities per token role
 
-- **Agent 3**: Loop Hooks + DB Server
-  - Implement `loop.enable_hook/disable_hook` with `loop://hooks/{id}` resources
-  - Orchestrator bridge: coalesced notifications → hooks
-  - Read-only DB MCP server: `db://view/*`, `query` tool
+- **Agent 3**: Loop Hooks + DB Server (PLANNED FEATURES)
+  - **Loop Hooks**: Extend existing loop MCP server (currently only has `yield_turn`)
+    - Add tools: `enable_hook(id)`, `disable_hook(id)`
+    - Add resources: `loop://hooks/{id}` (hook status and config)
+    - Wire orchestrator bridge: coalesced notifications → hook execution
+    - Hook execution happens in RuntimeImage (sandboxed)
+    - Pattern per scaffold_reflection.md architecture
+  - **DB Server**: New read-only MCP server for agent database
+    - Resources: `db://view/*` (database views)
+    - Tools: `query` (read-only SQL queries)
+    - Used by HookInputsHydration for loop hooks
+    - Pattern per scaffold_reflection.md architecture
 
-- **Agent 4**: Chat/UI Delivery
-  - Promote MCP-native chat inbox (`ui://chat/inbox`, `chat_read_since`)
-  - Runtime bridges: human chat notifications → `UiState`
-  - Assistant outputs → `chat.assistant.post`
-  - Remove legacy `ui` MCP server after migration
+- **Agent 4**: Chat/UI Delivery + DELETE Legacy Endpoints
+  - **ADD**: Promote MCP-native chat inbox (`ui://chat/inbox`, `chat_read_since`)
+  - **ADD**: Runtime bridges: human chat notifications → `UiState`, assistant outputs → `chat.assistant.post`
+  - **DELETE**: Remove legacy HTTP endpoints for agent management (keep static/health/presets only)
+  - **DELETE**: Remove WebSocket channel infrastructure (`/ws/session`, `/ws/approvals`, `/ws/policy`, `/ws/mcp`, `/ws/ui`, `/ws/agents`)
+  - **DELETE**: Remove channel bundle code (`_channel_bundle`, `channel.bundle`)
+  - **VERIFY**: ZERO WebSocket endpoints remain (only MCP StreamableHTTP)
+  - **NOTE**: Proposals already work via policy server MCP resources - do NOT add HTTP proposals endpoint
 
 ## Wave E: Code Quality Scans (~2 hours, 28 parallel agents)
 
@@ -212,10 +235,13 @@ Based on Wave F analysis, create 5 parallel cleanup agents targeting:
 - MessageComposer works for local+UI agents
 
 ### Wave D Success
-- Agent state notifications working
-- Proposals HTTP endpoint + MCP integration
+- Agent state notifications emit `resource_updated` on compositor events
+- Token-based capability middleware blocks unauthorized tool calls (human cannot withdraw_proposal)
 - Loop hooks + DB server implemented
 - Chat inbox fully MCP-native
+- Legacy HTTP agent endpoints DELETED (only static/health/presets remain)
+- WebSocket channel infrastructure DELETED (`/ws/*` endpoints removed)
+- ZERO WebSocket endpoints remain (only MCP StreamableHTTP)
 
 ### Wave E Success
 - 28-30 scan reports generated
@@ -252,40 +278,70 @@ Based on Wave F analysis, create 5 parallel cleanup agents targeting:
 
 ## Architecture Notes
 
-### Token-Based Server Consolidation
+### Token-Based Capability Middleware (NEW Pattern - Wave D)
+
+**Key Insight**: MCP subscriptions ALREADY WORK (`NotifyingFastMCP.broadcast_resource_updated()` implemented in Wave B).
 
 Instead of running separate MCP servers for different audiences (e.g., `agents` server and `human` server), use **one MCP server that presents different tools/resources based on the presented token**.
 
-FastMCP's middleware makes this easy - the auth middleware can inspect the token and dynamically adjust the server's capabilities:
+FastMCP's middleware pattern (like existing `PolicyGatewayMiddleware`) makes this easy:
 
 ```python
-async def make_unified_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
-    """Unified MCP server that presents different views based on token."""
-    server = NotifyingFastMCP(name="unified")
+from enum import StrEnum
 
-    # Register ALL tools/resources
-    # ... (agents tools, human tools, etc.)
+class TokenRole(StrEnum):
+    """MCP server access roles derived from JWT token."""
+    HUMAN = "human"  # Human UI and admin operations
+    AGENT = "agent"  # Agent self-management
 
-    # Middleware filters based on token
-    @server.middleware
-    async def filter_by_token(request, call_next):
-        token = extract_token(request)
-        if token.role == "human":
-            # Filter to human-appropriate tools
-            pass
-        elif token.role == "agent":
-            # Filter to agent-appropriate tools
-            pass
-        return await call_next(request)
+class TokenCapabilityMiddleware(Middleware):
+    """Filter MCP tools/resources by token role (human vs agent)."""
 
-    return server
+    # Define access control lists
+    AGENT_ONLY_TOOLS = {"withdraw_proposal"}  # Agents can withdraw own proposals
+
+    async def call_tool(self, name: str, args: dict, ctx: RequestContext, call_next):
+        role = extract_role_from_token(ctx.auth_token)  # Returns TokenRole enum
+
+        # Block agent-only tools from human UI
+        if role == TokenRole.HUMAN and name in self.AGENT_ONLY_TOOLS:
+            raise McpError(FORBIDDEN, f"Tool {name} only available to agents")
+
+        return await call_next(name, args)
+
+    async def list_tools(self, ctx: RequestContext, call_next):
+        """Filter tool list based on role."""
+        all_tools = await call_next()
+        role = extract_role_from_token(ctx.auth_token)
+
+        if role == TokenRole.HUMAN:
+            # Filter out agent-only tools from human UI
+            return [t for t in all_tools if t.name not in self.AGENT_ONLY_TOOLS]
+        else:
+            # Agents see all tools
+            return all_tools
+
+    async def list_resources(self, ctx: RequestContext, call_next):
+        """Filter resource list based on role (currently no filtering needed)."""
+        return await call_next()
+
+    async def read_resource(self, uri: str, ctx: RequestContext, call_next):
+        """Control resource access by role (currently no restrictions)."""
+        return await call_next(uri)
 ```
 
 **Benefits**:
-- Single listener/port
-- Simpler deployment
-- Easier to reason about
+- Single MCP server, single port
+- Simpler deployment (no multiple server processes)
+- Easier to reason about (one codebase, token determines view)
 - Token becomes the capability selector
+- Follows existing `PolicyGatewayMiddleware` pattern in codebase
+
+**MCP Subscriptions Status**:
+- ✅ `NotifyingFastMCP.broadcast_resource_updated()` implemented and tested (Wave B)
+- ✅ Frontend subscription client working (107 tests passing)
+- Wave D Agent 1: Wire compositor events → broadcast calls
+- No new infrastructure needed - just connect the dots
 
 ### Cross-Agent Routing Architecture
 
