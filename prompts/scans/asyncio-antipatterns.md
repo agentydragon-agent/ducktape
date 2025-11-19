@@ -5,57 +5,97 @@
 
 ## Common Antipatterns
 
-### 0. asyncio.gather() Instead of TaskGroup (Python 3.11+)
+### 0. asyncio.gather() vs TaskGroup: When to Use Each
 
-**Pattern**: Using `asyncio.gather()` with manual order synchronization when `asyncio.TaskGroup` would be clearer and safer.
+**Critical principle**: Choose based on whether you need return values and error handling strategy.
 
+#### Use gather() when:
+
+1. **You need return values from tasks** (most common case)
+2. **Best-effort execution**: Use `return_exceptions=True` to collect all results even if some fail
+3. **Result order matters**: gather preserves order of inputs
+4. **Python 3.10 or older**: TaskGroup not available
+
+**Example - gather is the RIGHT choice:**
 ```python
-# BAD: Manual gather with zip-based order synchronization
+# GOOD: gather with return_exceptions for best-effort result collection
 tool_tasks: dict[str, asyncio.Task[list[Tool]]] = {}
 for name, entry in per_name.items():
     if isinstance(entry, RunningServerEntry):
         tool_tasks[name] = asyncio.create_task(entry.tools)
 
-# Waits for all tasks even if some fail, manual exception handling
+# Collect all results, even if some fail
 results = await asyncio.gather(*tool_tasks.values(), return_exceptions=True)
 for (name, _), result in zip(tool_tasks.items(), results):
     if isinstance(result, Exception):
         per_name[name] = FailedServerEntry(error=str(result))
     else:
         per_name[name] = RunningServerEntry(initialize=entry.initialize, tools=result)
-
-# GOOD: TaskGroup with structured concurrency
-async def _handle_tools(name: str, task: asyncio.Task, entry: RunningServerEntry):
-    try:
-        tools = await task
-        per_name[name] = RunningServerEntry(initialize=entry.initialize, tools=tools)
-    except Exception as e:
-        per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
-
-async with asyncio.TaskGroup() as tg:
-    for name, task in tool_tasks.items():
-        entry = per_name[name]
-        assert isinstance(entry, RunningServerEntry)
-        tg.create_task(_handle_tools(name, task, entry))
 ```
 
-**Why TaskGroup is better:**
-- **Exception propagation**: First exception cancels remaining tasks and is re-raised
-- **No manual exception handling**: No need for `return_exceptions=True` + isinstance checks
-- **No order synchronization**: Use dict, update in-place per task
-- **Clearer task lifetime**: Automatic cleanup on exception
-- **Structured concurrency**: Tasks complete before exiting `async with` block
+**Why gather is better here:**
+- Needs return values from each task
+- Wants all results (best-effort), not fail-fast
+- Simple, direct code without helper functions
 
-**When to use TaskGroup:**
-- Python 3.11+ (required)
-- Need to run multiple tasks concurrently
-- Want automatic cancellation on first error (default behavior)
-- Tasks update shared state (dict, instance fields)
+#### Use TaskGroup when:
 
-**When gather() might still be OK:**
-- Need `return_exceptions=True` and want all results regardless of failures
-- Order matters and zip() pattern is genuinely needed
-- Python 3.10 or older (TaskGroup not available)
+1. **Fire-and-forget tasks** (no return values needed)
+2. **Fail-fast behavior**: Want to cancel all tasks if any fails
+3. **Manual result collection is acceptable**: Can store results in shared dict/list
+4. **Python 3.11+** available
+
+**Example - TaskGroup is the RIGHT choice:**
+```python
+# GOOD: TaskGroup for fail-fast fire-and-forget tasks
+async def _notify_subscriber(subscriber: Subscriber, event: Event):
+    await subscriber.notify(event)
+
+async with asyncio.TaskGroup() as tg:
+    for subscriber in subscribers:
+        tg.create_task(_notify_subscriber(subscriber, event))
+# If any notification fails, all others are cancelled and exception propagates
+```
+
+**Why TaskGroup is better here:**
+- No return values needed (fire-and-forget)
+- Want fail-fast behavior (one failure = abort all)
+- Structured concurrency
+
+#### Key Differences
+
+| Feature | gather() | TaskGroup |
+|---------|----------|-----------|
+| **Return values** | ✅ Returns list of results | ❌ Requires manual collection |
+| **Error handling** | `return_exceptions=True` for best-effort | Always fail-fast (first error cancels others) |
+| **Exception on failure** | Only if `return_exceptions=False` (default) | Always raises first exception |
+| **Task cancellation** | No automatic cancellation on error | Cancels all tasks on first error |
+| **Result order** | Preserves input order | No built-in ordering |
+| **Python version** | All versions | 3.11+ only |
+| **Use case** | Need results, best-effort execution | Fire-and-forget, fail-fast |
+
+#### When gather is MISUSED:
+
+**Anti-pattern: gather without return_exceptions when you need fail-fast**
+```python
+# BAD: Using gather's default fail-fast but ignoring result ordering
+results = await asyncio.gather(task1(), task2(), task3())  # Fails on first error
+# Problem: If fail-fast is desired, TaskGroup is clearer intent
+```
+
+**Better with TaskGroup for fail-fast:**
+```python
+async with asyncio.TaskGroup() as tg:
+    tg.create_task(task1())
+    tg.create_task(task2())
+    tg.create_task(task3())
+```
+
+#### Summary
+
+- **gather**: Default choice when you need return values or best-effort execution
+- **TaskGroup**: Use for fire-and-forget tasks or when fail-fast behavior is critical
+- **Don't blindly replace gather with TaskGroup**: gather is often the right choice
 
 **Detection:**
 ```bash
