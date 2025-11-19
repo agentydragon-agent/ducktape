@@ -217,48 +217,9 @@ MCP subscriptions already work (`broadcast_resource_updated()` implemented). Rep
 - `GET /api/agents/{id}/status` - deferred (complex structure)
 - `GET /api/capabilities` - deferred (handshake helper)
 
-**Token-Based Connection Routing**:
+**Token-Based Connection Routing** (See "Architecture Overview" section for detailed pattern):
 
-Single HTTP endpoint proxies to different backend MCP servers based on token:
-
-```python
-from enum import StrEnum
-from fastmcp.server import FastMCP
-from fastmcp.client import Client
-
-class TokenRole(StrEnum):
-    """MCP connection routing roles derived from JWT token."""
-    HUMAN = "human"  # Routes to agents management server
-    AGENT = "agent"  # Routes to agent's compositor
-
-async def create_routed_proxy(token: str) -> FastMCP:
-    """Create a proxy that forwards to the appropriate backend based on token."""
-    role, agent_id = extract_role_and_agent_id(token)
-
-    if role == TokenRole.AGENT:
-        # Route to agent's compositor (agent-facing tools)
-        transport = get_agent_compositor_transport(agent_id)
-        client = Client(transport)
-        proxy = FastMCP.as_proxy(client)
-        proxy.client_factory = lambda: client
-        return proxy
-
-    elif role == TokenRole.HUMAN:
-        # Route to agents management server (human-facing tools)
-        transport = get_agents_management_transport()
-        client = Client(transport)
-        proxy = FastMCP.as_proxy(client)
-        proxy.client_factory = lambda: client
-        return proxy
-```
-
-**Pattern follows Compositor's `mount_server()`** (adgn/src/adgn/mcp/compositor/server.py:263-276)
-
-**Benefits**:
-- Single HTTP endpoint (`/mcp/agents`)
-- ALL MCP protocol messages forwarded to appropriate backend
-- No filtering needed - backend serves correct tools/resources
-- Routing happens once at connection level, not per-request
+Single HTTP endpoint `/mcp` routes connections to different backend MCP servers based on Bearer token lookup.
 
 **Migration Roadmap**:
 
@@ -266,17 +227,20 @@ async def create_routed_proxy(token: str) -> FastMCP:
 - Frontend uses MCP client (StreamableHTTP)
 - Core tools implemented: approve, deny, abort, prompt
 - Subscriptions infrastructure working
-- 107 tests passing
+- 28+ tests passing
 
 **Phase 2 (Wave D)** - Implement token-based connection routing:
-1. Add token-based routing at `/mcp/agents` endpoint
-2. Define `TokenRole` enum (HUMAN, AGENT) for routing
-3. Extract role + agent_id from JWT token at connection time
-4. Route to backend using FastMCP's proxy pattern:
-   - AGENT role → `FastMCP.as_proxy(agent's compositor client)`
-   - HUMAN role → `FastMCP.as_proxy(agents management server client)`
-5. Pattern follows Compositor's `mount_server()` approach
-6. Test: agent token connects to compositor, human token connects to management server
+1. Add token-based routing at `/mcp` endpoint (not `/mcp/agents`)
+2. Define `TokenRole` enum (HUMAN, AGENT) - only two roles
+3. Extract Bearer token from Authorization header and look up in token table
+4. Token table lookup returns `{role: "human" | "agent", agent_id?: str}`
+5. Route to backend using `StreamableHTTPSessionManager`:
+   - AGENT role (with agent_id) → Route to agent's compositor MCP server
+   - HUMAN role → Route to agents management MCP server
+6. Each connection gets its own session manager for the appropriate backend
+7. Client sees backend directly (no prefixes) - transparent proxy
+8. Pattern: Custom ASGI app → token lookup → get/create session manager → delegate to `manager.handle_request()`
+9. Test: agent token connects to compositor, human token connects to management server
 
 **Phase 3 (Future)** - DELETE redundant HTTP/WebSocket:
 1. Verify frontend only uses MCP (no HTTP REST calls to `/api/agents/*`)
@@ -533,71 +497,80 @@ This plan focuses on **core approval and timeline functionality**. The following
 
 ## Architecture Overview
 
-### Token-Based Capability Middleware Pattern
+### Token-Based Connection Routing Pattern
 
-**Key Architecture Decision**: Single MCP server with token-based capability filtering (Wave D).
+**Key Architecture Decision**: Single MCP endpoint with per-connection routing based on Bearer token lookup (Wave D).
 
 MCP subscriptions **ALREADY WORK** (`NotifyingFastMCP.broadcast_resource_updated()` implemented in Wave B).
 
+**Pattern**: Use `StreamableHTTPSessionManager` to route connections to different backend MCP servers based on Bearer token.
+
 ```python
 from enum import StrEnum
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from starlette.types import Scope, Receive, Send
 
 class TokenRole(StrEnum):
-    """MCP server access roles derived from JWT token."""
-    HUMAN = "human"  # Human UI and admin operations
-    AGENT = "agent"  # Agent self-management
+    """MCP connection routing roles from token table lookup."""
+    HUMAN = "human"  # Routes to agents management server
+    AGENT = "agent"  # Routes to agent's compositor
 
-class TokenCapabilityMiddleware(Middleware):
-    """Filter MCP tools/resources by token role (human vs agent)."""
+class MCPRoutingHandler:
+    """Custom ASGI app that routes MCP connections based on Bearer token."""
 
-    # Define access control lists
-    AGENT_ONLY_TOOLS = {"withdraw_proposal"}  # Agents can withdraw own proposals
+    def __init__(self, token_table: dict[str, dict], registry: AgentRegistry):
+        self.token_table = token_table
+        self.registry = registry
+        # Cache session managers per backend
+        self.session_managers: dict[str, StreamableHTTPSessionManager] = {}
 
-    async def on_call_tool(
-        self, context: MiddlewareContext[CallToolRequestParams], call_next
-    ):
-        role = extract_role_from_token(context)  # Returns TokenRole enum
-        name = context.message.name
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Extract Bearer token from Authorization header
+        token = extract_bearer_token(scope["headers"])
 
-        # Block agent-only tools from human UI
-        if role == TokenRole.HUMAN and name in self.AGENT_ONLY_TOOLS:
-            raise McpError(FORBIDDEN, f"Tool {name} only available to agents")
+        # Look up token in table
+        token_info = self.token_table.get(token)  # {role: "human" | "agent", agent_id?: str}
 
-        return await call_next(context)
+        if not token_info:
+            # Return 401 Unauthorized
+            return
 
-    async def on_list_tools(
-        self, context: MiddlewareContext[ListToolsRequest], call_next
-    ):
-        """Filter tool list based on role."""
-        all_tools = await call_next(context)
-        role = extract_role_from_token(context)
+        role = TokenRole(token_info["role"])
 
-        if role == TokenRole.HUMAN:
-            # Filter out agent-only tools from human UI
-            return [t for t in all_tools if t.name not in self.AGENT_ONLY_TOOLS]
-        else:
-            # Agents see all tools
-            return all_tools
+        # Get or create session manager for the appropriate backend
+        if role == TokenRole.AGENT:
+            agent_id = token_info["agent_id"]
+            backend_key = f"agent:{agent_id}"
+            if backend_key not in self.session_managers:
+                # Get agent's compositor MCP server
+                infra = await self.registry.get_infrastructure(agent_id)
+                compositor_server = infra.compositor._mcp_server
+                self.session_managers[backend_key] = StreamableHTTPSessionManager(
+                    app=compositor_server,
+                    json_response=False
+                )
+        elif role == TokenRole.HUMAN:
+            backend_key = "human"
+            if backend_key not in self.session_managers:
+                # Get agents management MCP server
+                management_server = get_agents_management_server()
+                self.session_managers[backend_key] = StreamableHTTPSessionManager(
+                    app=management_server,
+                    json_response=False
+                )
 
-    async def on_list_resources(
-        self, context: MiddlewareContext[ListResourcesRequest], call_next
-    ):
-        """Filter resource list based on role (currently no filtering needed)."""
-        return await call_next(context)
-
-    async def on_read_resource(
-        self, context: MiddlewareContext[ReadResourceRequestParams], call_next
-    ):
-        """Control resource access by role (currently no restrictions)."""
-        return await call_next(context)
+        # Route this connection to the appropriate session manager
+        manager = self.session_managers[backend_key]
+        await manager.handle_request(scope, receive, send)
 ```
 
 **Benefits**:
-- Single MCP server, single port
-- Token determines capabilities (human vs agent) via TokenRole enum
-- Middleware filters both tools AND resources
-- Follows existing `PolicyGatewayMiddleware` pattern in codebase
-- Simpler deployment and reasoning
+- Single HTTP endpoint `/mcp`, single port
+- ALL MCP protocol messages forwarded to appropriate backend
+- No prefixes - client sees backend tools/resources directly
+- Per-connection routing (not per-request middleware)
+- Each connection transparently proxies to correct backend
+- No filtering logic needed - backend serves correct capabilities
 
 ### System Architecture Diagram
 
@@ -605,20 +578,20 @@ class TokenCapabilityMiddleware(Middleware):
 ┌──────────────────────────────────────────────────────────────┐
 │                     Frontend (Browser)                       │
 │  - Single MCP client (Streamable HTTP)                      │
-│  - Token in URL → localStorage                              │
-│  - Connects to: agents server                              │
+│  - Bearer token in Authorization header                     │
+│  - Connects to: /mcp endpoint                               │
 │  - Subscriptions: live updates via resource_updated         │
 └──────────────┬───────────────────────────────────────────────┘
-               │ HTTP GET /ui?token=...
+               │ HTTP with Authorization: Bearer <token>
                │ Streamable HTTP (MCP protocol)
                ▼
 ┌──────────────────────────────────────────────────────────────┐
 │           Management UI Server (Port 8081)                   │
-│  - Serves static files + token auth                         │
-│  - Single endpoint: GET /mcp/agents                         │
+│  - Serves static files                                       │
+│  - Single endpoint: /mcp (token-based routing)              │
 │                                                              │
-│  Unified "agents" MCP Server:                               │
-│  ├─ TokenCapabilityMiddleware (filters by role)            │
+│  MCPRoutingHandler (per-connection routing):                │
+│  ├─ Token lookup → route to backend                         │
 │  │                                                           │
 │  ├─ Resources (flat structure):                             │
 │  │  ├─ resource://agents/list                               │
