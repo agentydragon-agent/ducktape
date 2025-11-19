@@ -218,6 +218,92 @@ Use Pydantic when you have:
 
 **Discovery aids** (very high false positive rate):
 
+### Automated Scanning Tool
+
+**Tool**: `prompts/scans/scan_manual_serde.py` - AST-based scanner for dict literals and Pydantic model analysis
+
+**What it finds**:
+1. **Dict literals with string keys** - All `{"key": value}` constructions in the codebase
+   - Surfaces candidates for manual composition that should be Pydantic `__init__` calls
+   - Particularly useful when dict is in internal code (not I/O boundary)
+2. **Pydantic BaseModel classes** - All models with their fields and types
+   - Raw data for LLM to analyze for design issues
+   - LLM can identify: overlapping fields, duplicate field sets, single-field models, opportunities for shared sub-models
+
+**Usage**:
+```bash
+# Run on entire codebase
+python prompts/scans/scan_manual_serde.py . > serde_scan.json
+
+# Run on specific directory
+python prompts/scans/scan_manual_serde.py path/to/module > module_serde.json
+
+# Pretty-print summary
+python prompts/scans/scan_manual_serde.py . 2>&1 | grep "===" -A 10
+```
+
+**Output structure**:
+- `summary`: Counts of dict literals and models found
+- `dict_literals`: List of dicts with `file`, `line`, `col`, `keys`, `num_keys`, `context`
+- `pydantic_models`: List of models with `file`, `line`, `name`, `fields` (dict), `num_fields`
+
+**Manual review workflow**:
+
+1. **Review dict_literals**:
+   - Check context: Is this in internal code or I/O boundary?
+   - If internal + known keys → Candidate for Pydantic model
+   - Look for patterns: same keys appearing in multiple places
+   - Cross-reference with pydantic_models: Does a model already exist for this structure?
+
+2. **Analyze pydantic_models for overlapping fields** (LLM does this):
+   - Compare field sets across models
+   - Models sharing 50%+ fields → Should they share a common base model?
+   - Example: `UserRequest` and `UserResponse` both have `user_id, email, name`
+   - Consider: Create `UserCore` base model, inherit in both
+
+3. **Identify single-field models** (LLM does this):
+   - Filter models where `num_fields == 1`
+   - Single-field models are often legitimate (NewType pattern, validation)
+   - But review: Is this just a wrapper? Could it be a type alias?
+   - Keep if: Custom validation, multiple methods, clear semantic meaning
+   - Replace if: Just wrapping a primitive with no behavior
+
+4. **Find duplicate field sets** (LLM does this):
+   - Group models by identical field sets
+   - Models with identical fields → Should one be eliminated?
+   - Check: Are these in different modules for different contexts? (might be OK)
+   - Consider: Consolidate into single model if semantically identical
+
+**Example analysis**:
+
+```bash
+# After running scan, analyze output with jq
+cat serde_scan.json | jq '.dict_literals[] | select(.num_keys >= 3)' | less
+# → Review dict literals with 3+ keys (more likely to need models)
+
+cat serde_scan.json | jq '.dict_literals[] | select(.context | contains("function"))' | less
+# → Focus on dict literals in functions (internal code, not module-level)
+
+cat serde_scan.json | jq '.pydantic_models[] | select(.num_fields == 1)' | less
+# → Find single-field models for review
+
+# LLM can analyze overlapping fields by comparing model field sets
+# Example: Load into Python/LLM and programmatically compare field sets
+```
+
+**Tool characteristics**:
+- **Dict literal finding**: ~100% recall (finds all dict literals), ~20% precision (most are legitimate)
+- **Model field extraction**: ~100% recall (finds all BaseModel classes and their fields)
+- **False positives are expected**: This is a discovery tool, not a verdict
+- **Manual verification required**: Context determines if each finding is actually problematic
+- **LLM does the analysis**: Tool surfaces raw data; LLM analyzes overlaps, duplicates, single-field models
+
+**What the tool CANNOT tell you** (requires human judgment):
+- Whether a dict literal is at an I/O boundary (legitimate) or internal code (suspicious)
+- Whether overlapping fields indicate poor design or intentional separation of concerns
+- Whether a single-field model is a useful abstraction or unnecessary wrapper
+- Whether dict keys are truly "known at development time" or dynamic
+
 ### Grep Patterns
 
 ```bash
