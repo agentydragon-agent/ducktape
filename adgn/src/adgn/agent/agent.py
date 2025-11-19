@@ -20,7 +20,7 @@ from pydantic import TypeAdapter
 
 from adgn.agent.handler import AssistantText, GroundTruthUsage, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import Abort, Auto, Continue, Forbid, RequireAny, RequireSpecific, ToolPolicy
-from adgn.mcp._shared.calltool import as_minimal_json
+from adgn.mcp._shared.calltool import serialize_tool_result_compact
 from adgn.openai_utils.model import (
     AssistantMessage,
     AssistantMessageOut,
@@ -94,7 +94,7 @@ def _dump_call_tool_result(res: CallToolResult, tool_call_info: str | None = Non
     Dumps a compact JSON with native snake_case keys to avoid lossy remapping.
     """
 
-    result = json.dumps(as_minimal_json(res), ensure_ascii=False)
+    result = json.dumps(serialize_tool_result_compact(res), ensure_ascii=False)
 
     # Safety check: OpenAI has a 10MB limit for input strings
     # Fail fast if tool output is too large to prevent API errors

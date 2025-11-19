@@ -159,11 +159,11 @@ class ApprovalPolicyEngine:
             self._notify(APPROVAL_POLICY_RESOURCE_URI)
         return self._policy_version
 
-    # Internal load used on startup to hydrate content/version from persistence
-    def load_policy(self, source: str, *, version: int) -> None:
+    # Internal load used on startup to hydrate content/id from persistence
+    def load_policy(self, source: str, *, policy_id: int) -> None:
         # Hydrate from persistence without executing the code
         self._policy_source = source
-        self._policy_version = version
+        self._policy_version = policy_id
 
     # No in-engine validation/TEST_CASES; evaluator will surface errors
 

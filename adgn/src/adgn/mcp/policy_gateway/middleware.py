@@ -17,7 +17,7 @@ from adgn.agent.approvals import ApprovalHub, ApprovalRequest, ApprovalToolCall
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.persist import ApprovalOutcome, Decision, Persistence, ToolCall, ToolCallExecution, ToolCallRecord
 from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 from adgn.mcp._shared.constants import (
     POLICY_BACKEND_RESERVED_MISUSE_CODE,
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
@@ -200,7 +200,7 @@ class PolicyGatewayMiddleware(Middleware):
                 # Update with execution result (EXECUTING → COMPLETED)
                 if self._persistence is not None:
                     execution_obj = ToolCallExecution(
-                        completed_at=_now(), output=to_pydantic(call_result)
+                        completed_at=_now(), output=convert_fastmcp_result(call_result)
                     )
                     completed_record = ToolCallRecord(
                         call_id=call_id,
@@ -346,7 +346,7 @@ class PolicyGatewayMiddleware(Middleware):
                 # Update with execution result (EXECUTING → COMPLETED)
                 if self._persistence is not None:
                     execution_obj = ToolCallExecution(
-                        completed_at=_now(), output=to_pydantic(call_result)
+                        completed_at=_now(), output=convert_fastmcp_result(call_result)
                     )
                     completed_record = ToolCallRecord(
                         call_id=call_id,

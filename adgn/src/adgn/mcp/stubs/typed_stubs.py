@@ -11,7 +11,7 @@ from mcp import types as mcp_types
 from mcp.types import CallToolResult
 from pydantic import BaseModel, TypeAdapter
 
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 from adgn.mcp._shared.client_helpers import extract_error_detail
 
 # We use the concrete FastMCP Client type for sessions in tests
@@ -39,7 +39,7 @@ class ToolStub(Generic[T_Out]):
     async def __call__(self, payload: T_In) -> T_Out:
         args = payload.model_dump(exclude_none=self._exclude_none)
         result = await self._session.call_tool(name=self._name, arguments=args)
-        pydantic_result = to_pydantic(result)
+        pydantic_result = convert_fastmcp_result(result)
         structured = _structured_content(pydantic_result, tool_name=self._name)
         return TypeAdapter(self._out_type).validate_python(structured)
 
@@ -191,7 +191,7 @@ class TypedClient:
             # Call; FastMCP raises on tool error by default. Capture and return message.
             try:
                 raw = await session.call_tool(name=name, arguments=args_dict)
-                result = to_pydantic(raw)
+                result = convert_fastmcp_result(raw)
             except Exception as exc:
                 return str(exc)
             if not result.isError:

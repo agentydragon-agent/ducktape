@@ -44,7 +44,7 @@ from adgn.agent.server.protocol import (
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
 from adgn.agent.server.status_shared import RunPhase, determine_run_phase
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,7 @@ class ConnectionManager(BaseHandler):
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         # FastMCP CallToolResult is not a Pydantic model; project minimal fields
-        fco = FunctionCallOutput(call_id=evt.call_id, result=to_pydantic(evt.result))
+        fco = FunctionCallOutput(call_id=evt.call_id, result=convert_fastmcp_result(evt.result))
         self._spawn(self._send_and_reduce(fco))
         self._spawn(self._emit_ui_bus_messages())
 

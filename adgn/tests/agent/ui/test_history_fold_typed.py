@@ -7,14 +7,14 @@ from fastmcp.client.client import CallToolResult
 from adgn.agent.persist import EventType
 from adgn.agent.persist.events import EventRecord, FunctionCallOutputPayload, ToolCallPayload, UserTextPayload
 from adgn.agent.server.history import fold_events_to_ui_state
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 from adgn.mcp._shared.naming import build_mcp_function
 
 
 def test_fold_events_typed_ui_message() -> None:
     now = datetime.now(UTC)
     # Simulate ui.send_message tool producing a CallToolResult with structured content
-    result = to_pydantic(
+    result = convert_fastmcp_result(
         CallToolResult(
             content=[],
             is_error=False,
