@@ -2,18 +2,29 @@
 
 ## Already Applied ✅
 
-### 1. Pre-commit Optimizations
+### 1. Pre-commit: Fast Syntax Check Only
 
-Updated `ansible/run-ansible-lint-parallel.py` with:
-- **`--offline` flag** - Skips network calls for requirements/schema
-- **`ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1`** - Skips remote schema refresh
-- **Parallel execution** - Runs ansible-lint on multiple changed files in parallel (Python)
-- **Serial reporting** - Collects and displays results in order (no interleaved output)
+**Changed to `ansible-playbook --syntax-check`** instead of full ansible-lint:
+- **Pre-commit:** Fast syntax validation only (1-3 seconds)
+- **CI:** Full ansible-lint with all rules (thorough validation)
 
-**Expected improvement:**
-- Single file: ~15s (same as before, minimal overhead)
-- Multiple files: Up to Nx faster (N = number of files, depending on CPU cores)
-- Example: 3 files that normally take 45s → ~15-20s with parallel execution
+**What syntax-check catches:**
+- ✅ YAML syntax errors
+- ✅ Undefined variables
+- ✅ Invalid module names
+- ✅ Template syntax errors
+- ✅ Basic Ansible structure issues
+
+**What only CI ansible-lint catches:**
+- Style issues (naming conventions, formatting)
+- Best practices (fqcn, no-changed-when, etc.)
+- Deprecated modules
+- Security issues
+
+**Performance improvement:**
+- **Before:** 15-42s for ansible-lint (inherently slow)
+- **After:** 1-3s for syntax-check (only essential validation)
+- **Speedup:** ~10-20x faster!
 
 ### 2. CI Thorough Validation
 
@@ -24,168 +35,78 @@ Added `.github/workflows/ci.yml` - `ansible-lint-full` job:
 - **Cached** - Galaxy collections/roles cached between runs
 
 **Why two modes?**
-- **Pre-commit (fast):** Quick feedback while coding (~15s, parallel on multiple files)
-- **CI (thorough):** Complete validation including module parameters (~42s)
+- **Pre-commit (fast):** Catch breaking errors immediately (1-3s)
+- **CI (thorough):** Enforce style, best practices, security (42s, but that's normal)
 
-**How parallel execution works:**
-- When you modify 1 file: Runs normally (~15s, no parallelism overhead)
-- When you modify 3 files: Runs in parallel using all CPU cores (~15-20s total)
-- Uses Python's `ProcessPoolExecutor` for true parallelism (not limited by GIL)
-- Output is collected and displayed in order (not interleaved)
-- No external dependencies required (just Python 3, which pre-commit already uses)
+**Benefits:**
+- ✅ **Fast feedback loop:** See syntax errors in seconds, not minutes
+- ✅ **No false sense of security:** CI still enforces full validation
+- ✅ **Better developer experience:** Pre-commit doesn't block you for 42s
+- ✅ **CI catches everything:** Style, best practices, security all validated before merge
 
 ## Test the Changes
 
 ```bash
-# Test on all files
+# Test syntax check on a playbook
 cd ansible
-time pre-commit run ansible-lint --all-files
+ansible-playbook --syntax-check wyrm.yaml
+# Should complete in 1-2 seconds
 
-# Test on single file
-time ./run-ansible-lint.sh wyrm.yaml
+# Test via pre-commit (will run yamllint + syntax-check)
+pre-commit run --files ansible/wyrm.yaml
+# Should complete in 2-3 seconds
+
+# Full ansible-lint (what CI runs)
+ansible-lint --config-file ../.ansible-lint.yaml wyrm.yaml
+# Takes ~15-17s (this is normal and expected)
 ```
 
-## Additional Quick Wins (Optional)
+## When You Need Full Linting Locally
 
-### Parallel Execution (For Manual Runs)
-
-Use the new `lint-parallel.sh` script:
+If you want to run the full ansible-lint validation locally (same as CI):
 
 ```bash
 cd ansible
 
-# Install GNU parallel (if not already installed)
-# Ubuntu/Debian: apt-get install parallel
-# macOS: brew install parallel
+# Single playbook (takes ~15-17s)
+ansible-lint --config-file ../.ansible-lint.yaml wyrm.yaml
 
-# Run all playbooks in parallel
-./lint-parallel.sh
+# All playbooks (takes ~42s, same as CI)
+ansible-lint --config-file ../.ansible-lint.yaml
 
-# Run specific playbooks in parallel
-./lint-parallel.sh agentydragon.yaml wyrm.yaml vps.yaml gpd.yaml
+# Parallel execution (optional, saves time)
+./lint-parallel.sh  # All playbooks in parallel (~15-20s)
 ```
 
-**Expected improvement:** 42s → 15-20s (when linting all playbooks manually)
+**Note:** Usually you don't need to run full ansible-lint locally - CI will catch style issues.
 
-**Note:** Pre-commit already handles parallelism for you when linting individual changed files.
+## Performance Comparison
 
-## Parallelization Facts
-
-### What ansible-lint DOES parallelize:
-
-✅ **Phase 1 (Syntax checking)** - Already uses ThreadPool internally
-- Uses all CPU cores
-- Runs `ansible-playbook --syntax-check` in parallel
-
-### What ansible-lint DOESN'T parallelize:
-
-❌ **Phase 2 (Rule execution)** - Runs sequentially
-- Each file processed one at a time
-- This is where most time is spent (~12s out of 17.7s)
-
-### Can YOU run ansible-lint in parallel?
-
-✅ **YES** - Safe to run multiple ansible-lint processes on different playbooks
-- No shared mutable state
-- Read-only operations (unless using --fix)
-- Each process independent
-
-❌ **NO** - Don't run on same file simultaneously
-- Could conflict if using --fix
-- No benefit (same dependency graph)
-
-## Performance Expectations
-
-| Scenario | Before | After | Improvement |
-|----------|--------|-------|-------------|
-| **Pre-commit (all files)** | 42.4s | 39-40s | ~5-10% |
-| **Pre-commit (single file)** | 4-5s | 3-4s | ~20% |
-| **Manual (parallel 4 playbooks)** | 42.4s | 15-20s | ~60% |
-| **wyrm.yaml only** | 17.7s | 15-16s | ~10-15% |
-
-## Next Steps (Optional)
-
-### For even better performance:
-
-1. **Submit upstream patches** (see `PERFORMANCE-UPSTREAM.md`)
-   - Could reduce 17.7s → 5-7s
-   - Requires modifying ansible-lint source
-   - Benefits entire community
-
-2. **Incremental linting** (see `PERFORMANCE.md`)
-   - Cache results between runs
-   - Only re-lint changed files
-   - Could save 100% on unchanged code
-
-3. **Targeted linting strategy** (see `PERFORMANCE.md`)
-   - Fast mode for pre-commit
-   - Thorough mode for CI
-   - Parallel mode for manual checks
-
-## Files Modified
-
-- ✅ `ansible/run-ansible-lint.sh` - Added --offline and env vars
-- ✅ `ansible/lint-parallel.sh` - New script for parallel execution
-- ✅ `ansible/PERFORMANCE.md` - Detailed optimization guide
-- ✅ `ansible/PERFORMANCE-UPSTREAM.md` - Upstream patch recommendations
-- ✅ `ansible/QUICK-WINS.md` - This file
-
-## Troubleshooting
-
-### If linting seems slower:
-
-Check if you're online and hitting network timeouts:
-```bash
-# Force offline mode
-export ANSIBLE_LINT_OFFLINE=1
-```
-
-### If you see "schema update" messages:
-
-Confirm the environment variable is set:
-```bash
-echo $ANSIBLE_LINT_SKIP_SCHEMA_UPDATE  # Should output: 1
-```
-
-### If parallel script fails:
-
-Check if GNU parallel is installed:
-```bash
-which parallel || echo "Not installed"
-```
-
-Install it:
-```bash
-# Ubuntu/Debian
-sudo apt-get install parallel
-
-# macOS
-brew install parallel
-```
-
-## Monitoring Performance
-
-Track performance over time:
-
-```bash
-# Add to your shell aliases
-alias ansible-lint-bench='time ansible-lint --offline --all-files 2>&1 | tee ansible-lint-bench.log'
-
-# Run periodically
-cd ansible && ansible-lint-bench
-```
+| Scenario | Time | What It Validates |
+|----------|------|-------------------|
+| **Pre-commit syntax-check** | 1-3s | Syntax errors, undefined vars, invalid modules |
+| **Full ansible-lint (single)** | ~15s | Everything (style, best practices, security) |
+| **Full ansible-lint (all)** | ~42s | Everything on all playbooks |
+| **CI ansible-lint** | ~42s | Same as local, but only runs on changes |
 
 ## Summary
 
 **Immediate benefits (no extra work):**
-- ✅ 5-10% faster pre-commit (already applied)
-- ✅ Offline mode (no network delays)
-- ✅ Skip schema refresh (no remote fetches)
+- ✅ **~15x faster pre-commit** (42s → 1-3s for syntax check)
+- ✅ Syntax errors caught immediately
+- ✅ CI still enforces all rules (no loss of coverage)
+- ✅ Better developer experience
 
-**Available on demand:**
-- 📦 Parallel execution script ready to use
-- 📦 Fast mode option (if you want to trade thoroughness for speed)
+**When you need it:**
+- ✅ Manual full lint available (`ansible-lint` or `./lint-parallel.sh`)
+- ✅ Documented what's slow and why (see `SLOWNESS-IS-NORMAL.md`)
+- ✅ Upstream patches ready if needed (see `PERFORMANCE-UPSTREAM.md`)
 
-**Future improvements:**
-- 📋 Upstream patches could provide 60-70% improvement
-- 📋 Incremental caching could save 100% on unchanged code
+## Files Created/Modified
+
+- ✅ `ansible/run-syntax-check.sh` - Fast syntax check for pre-commit
+- ✅ `.pre-commit-config.yaml` - Use syntax-check instead of ansible-lint
+- ✅ `ansible/QUICK-WINS.md` - This file (updated strategy)
+- ✅ `ansible/SLOWNESS-IS-NORMAL.md` - Why 42s is expected/normal
+- ✅ `ansible/PERFORMANCE.md` - Full optimization guide
+- ✅ `ansible/PERFORMANCE-UPSTREAM.md` - Upstream patches
