@@ -6,6 +6,7 @@ from typing import Protocol
 from uuid import UUID
 
 from fastmcp.mcp_config import MCPConfig
+from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 
@@ -72,14 +73,61 @@ class PolicyProposal(BaseModel):
     content: str
 
 
+class ToolCall(BaseModel):
+    """Tool call information (simple version without discriminator for persistence)."""
+
+    name: str
+    call_id: str
+    args_json: str | None = None
+
+
+class Decision(BaseModel):
+    """Decision made about a tool call.
+
+    All fields are REQUIRED. The entire Decision object is optional on ToolCallRecord.
+    """
+
+    outcome: ApprovalOutcome
+    decided_at: datetime
+    reason: str | None = None
+
+
+class ToolCallExecution(BaseModel):
+    """Tool execution result.
+
+    All fields are REQUIRED. The entire ToolCallExecution object is optional on ToolCallRecord.
+    """
+
+    completed_at: datetime
+    output: mcp_types.CallToolResult
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class ToolCallRecord(BaseModel):
+    """Complete tool call record from policy gate (tracks ALL calls through gate).
+
+    States:
+    - PENDING: decision=None, execution=None
+    - EXECUTING: decision!=None, execution=None
+    - COMPLETED: decision!=None, execution!=None
+    """
+
+    call_id: str
+    run_id: str | None
+    agent_id: str | None
+    tool_call: ToolCall
+    decision: Decision | None = None
+    execution: ToolCallExecution | None = None
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+# Legacy model - kept for backward compatibility during migration
 class ApprovalRecord(BaseModel):
     """Historical approval record from persistence.
 
     TODO: This tracks tool calls generally, not just approvals. Consider renaming to ToolCallRecord.
     TODO: Replace 'details' dict with typed nested models:
       - tool_call: ApprovalToolCall (reuse existing type with {name, call_id, args_json})
-      - decision: Decision | None (jointly optional: outcome, decided_at, reason)
-        Note: decision.decided_at also serves as execution start time
       - execution: ToolCallExecution | None (jointly optional: completed_at, output)
     This would enable:
       - Tracking EXECUTING state: decision!=None && execution==None
@@ -92,9 +140,8 @@ class ApprovalRecord(BaseModel):
     run_id: str | None
     agent_id: str | None
     tool_key: str
-    outcome: ApprovalOutcome
-    decided_at: datetime
-    details: dict[str, JsonValue] | None = None  # TODO: Replace with typed fields above
+    decision: Decision | None = None
+    details: dict[str, JsonValue] | None = None  # TODO: Replace with typed fields (tool_call, execution)
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -141,6 +188,26 @@ class Persistence(Protocol):
         tool_key: str | None = None,
     ) -> None: ...
 
+    # ToolCallRecord API (new) -------------------------------------------------
+    async def save_tool_call(self, record: ToolCallRecord) -> None:
+        """Save or update a tool call record (INSERT OR REPLACE).
+
+        Use this for all lifecycle stages:
+        - PENDING: decision=None, execution=None
+        - EXECUTING: decision!=None, execution=None
+        - COMPLETED: decision!=None, execution!=None
+        """
+        ...
+
+    async def get_tool_call(self, call_id: str) -> ToolCallRecord | None:
+        """Get a tool call record by call_id."""
+        ...
+
+    async def list_tool_calls(self, run_id: str | None = None) -> list[ToolCallRecord]:
+        """List tool call records, optionally filtered by run_id."""
+        ...
+
+    # Legacy ApprovalRecord API (deprecated, kept for backward compatibility)
     async def record_approval(
         self,
         *,
@@ -148,8 +215,7 @@ class Persistence(Protocol):
         agent_id: str | None,
         call_id: str,
         tool_key: str,
-        outcome: ApprovalOutcome,
-        decided_at: datetime,
+        decision: Decision,
         details: dict[str, JsonValue] | None = None,
     ) -> None: ...
 

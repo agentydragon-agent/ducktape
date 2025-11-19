@@ -51,14 +51,33 @@ def _convert_pending_approvals(pending_map: dict[str, ApprovalRequest]) -> list[
 
 
 def _convert_approval_record_to_history(record: ApprovalRecord) -> ApprovalHistoryEntry:
-    if record.outcome in (ApprovalOutcome.POLICY_ALLOW, ApprovalOutcome.USER_APPROVE):
-        decision = DecisionType.APPROVED
-        reason = None
+    # If decision is not present, fall back to details dict (backward compatibility)
+    if record.decision is not None:
+        # Use new Decision structure
+        if record.decision.outcome in (ApprovalOutcome.POLICY_ALLOW, ApprovalOutcome.USER_APPROVE):
+            decision = DecisionType.APPROVED
+        else:
+            decision = DecisionType.REJECTED
+
+        reason = record.decision.reason
+        if not reason and decision == DecisionType.REJECTED:
+            reason = f"Denied by {record.decision.outcome.value}"
+
+        timestamp = record.decision.decided_at
     else:
-        decision = DecisionType.REJECTED
-        reason = record.details.get("reason") if record.details else None
-        if not reason:
-            reason = f"Denied by {record.outcome.value}"
+        # Backward compatibility: fall back to details dict
+        # This branch supports old records before Decision migration
+        outcome = record.details.get("outcome") if record.details else None
+        if outcome in (ApprovalOutcome.POLICY_ALLOW.value, ApprovalOutcome.USER_APPROVE.value):
+            decision = DecisionType.APPROVED
+            reason = None
+        else:
+            decision = DecisionType.REJECTED
+            reason = record.details.get("reason") if record.details else None
+            if not reason and outcome:
+                reason = f"Denied by {outcome}"
+
+        timestamp = datetime.fromisoformat(record.details.get("decided_at")) if record.details and record.details.get("decided_at") else datetime.now()
 
     args = record.details.get("args", {}) if record.details else {}
     decided_by = record.details.get("decided_by", "human") if record.details else "human"
@@ -69,7 +88,7 @@ def _convert_approval_record_to_history(record: ApprovalRecord) -> ApprovalHisto
         args=args,
         decision=decision,
         reason=reason,
-        timestamp=record.decided_at,
+        timestamp=timestamp,
         decided_by=decided_by,
     )
 
@@ -388,27 +407,32 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
     # (ApprovalHub doesn't have built-in notification system)
     # For policy changes: wire policy engine notifier to broadcast MCP resource updates
 
-    for agent_id in registry.known_agents():
-        try:
-            infra = await registry.get_infrastructure(agent_id)
-
-            # Closure captures agent_id for this specific agent
-            def make_policy_notifier(aid: str):
-                def notifier(uri: str):
-                    # Notifier is sync, schedule broadcast in event loop
-                    import asyncio
-
-                    try:
-                        loop = asyncio.get_running_loop()
-                        loop.create_task(server.broadcast_resource_updated(uri))
-                    except RuntimeError:
-                        logger.warning(f"Could not broadcast {uri}: no running event loop")
-
-                return notifier
-
-            infra.approval_engine.set_notifier(make_policy_notifier(agent_id))
-
-        except Exception as e:
-            logger.warning(f"Failed to hook listeners for {agent_id}: {e}")
+    # TODO: This notification wiring code needs to be moved to an async initialization function
+    # since make_agents_server is not async and can't use await. For now, notification
+    # wiring is handled in the individual tools (approve_tool_call, reject_tool_call).
+    # See lines 359-361, 370-372 for notification broadcasts.
+    #
+    # for agent_id in registry.known_agents():
+    #     try:
+    #         infra = await registry.get_infrastructure(agent_id)
+    #
+    #         # Closure captures agent_id for this specific agent
+    #         def make_policy_notifier(aid: str):
+    #             def notifier(uri: str):
+    #                 # Notifier is sync, schedule broadcast in event loop
+    #                 import asyncio
+    #
+    #                 try:
+    #                     loop = asyncio.get_running_loop()
+    #                     loop.create_task(server.broadcast_resource_updated(uri))
+    #                 except RuntimeError:
+    #                     logger.warning(f"Could not broadcast {uri}: no running event loop")
+    #
+    #             return notifier
+    #
+    #         infra.approval_engine.set_notifier(make_policy_notifier(agent_id))
+    #
+    #     except Exception as e:
+    #         logger.warning(f"Failed to hook listeners for {agent_id}: {e}")
 
     return server
