@@ -47,6 +47,10 @@ SEATBELT_EXEC_SERVER_NAME: Final[str] = "seatbelt_exec"
 APPROVAL_POLICY_RESOURCE_URI: Final[str] = "resource://approval-policy/policy.py"
 APPROVAL_POLICY_PROPOSALS_INDEX_URI: Final[str] = "resource://approval-policy/proposals"
 
+# Policy proposals resource URIs
+POLICIES_LIST_URI: Final[str] = "resource://policies/list"
+POLICIES_DETAIL_URI_FMT: Final[str] = "resource://policies/{policy_id}"
+
 # Global approvals resource (aggregated pending approvals across all agents)
 APPROVALS_PENDING_URI: Final[str] = "resource://approvals/pending"
 

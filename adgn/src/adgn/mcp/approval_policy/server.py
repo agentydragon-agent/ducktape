@@ -19,6 +19,8 @@ from adgn.mcp._shared.constants import (
     APPROVAL_POLICY_SERVER_NAME_APPROVER,
     APPROVAL_POLICY_SERVER_NAME_PROPOSER,
     APPROVAL_POLICY_SERVER_NAME_READER,
+    POLICIES_DETAIL_URI_FMT,
+    POLICIES_LIST_URI,
     RUNTIME_EXEC_TOOL_NAME,
     RUNTIME_SERVER_NAME,
 )
@@ -29,13 +31,10 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 logger = logging.getLogger(__name__)
 
-# Resource URI constants for policy proposals
-POLICIES_LIST_URI = "resource://policies/list"
-
 
 def policy_detail_uri(policy_id: str) -> str:
     """Resource URI for a specific policy proposal."""
-    return f"resource://policies/{policy_id}"
+    return POLICIES_DETAIL_URI_FMT.format(policy_id=policy_id)
 
 
 class CreateProposalArgs(BaseModel):

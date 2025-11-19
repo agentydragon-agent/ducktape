@@ -226,7 +226,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
     # Resources
 
     @server.resource(
-        "resource://agents/list",
+        resources.AGENTS_LIST,
         name="agents.list",
         mime_type="application/json",
         description="List all agents with capabilities and state",
@@ -241,9 +241,9 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             is_local = mode == AgentMode.LOCAL
             capabilities = {"chat": is_local, "agent_loop": is_local}
 
-            state_uri = f"resource://agents/{agent_id}/state" if is_local else None
-            approvals_uri = f"resource://agents/{agent_id}/approvals/pending"
-            policy_proposals_uri = f"resource://agents/{agent_id}/policy/proposals"
+            state_uri = resources.agent_state(agent_id) if is_local else None
+            approvals_uri = resources.agent_approvals_pending(agent_id)
+            policy_proposals_uri = resources.agent_policy_proposals(agent_id)
 
             agent_info = AgentInfo(
                 agent_id=agent_id,
@@ -311,7 +311,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         return AgentApprovalsPending(agent_id=agent_id, pending=pending)
 
     @server.resource(
-        "resource://approvals/pending",
+        resources.APPROVALS_PENDING_GLOBAL,
         name="approvals.pending.global",
         mime_type="application/json",
         description="Global mailbox: all pending approvals across all agents (returns multiple content blocks)",
@@ -328,7 +328,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             pending_approvals = _convert_pending_approvals(infra.approval_hub.pending)
 
             for approval in pending_approvals:
-                approval_uri = f"resource://agents/{agent_id}/approvals/{approval.call_id}"
+                approval_uri = resources.agent_approval(agent_id, approval.call_id)
                 approval_data = {
                     "agent_id": agent_id,
                     "call_id": approval.call_id,
@@ -391,13 +391,13 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
                 status=p.status,
                 created_at=p.created_at,
                 decided_at=p.decided_at,
-                proposal_uri=f"resource://approval-policy/proposals/{p.id}",
+                proposal_uri=resources.policy_proposal(p.id),
             )
             for p in proposals
         ]
 
         return AgentPolicyProposals(
-            agent_id=agent_id, proposals=proposal_infos, active_policy_uri="resource://approval-policy/policy.py"
+            agent_id=agent_id, proposals=proposal_infos, active_policy_uri=resources.ACTIVE_POLICY
         )
 
     @server.resource(
