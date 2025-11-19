@@ -9,8 +9,6 @@ Verifies that resource notifications are properly wired and broadcast when:
 from __future__ import annotations
 
 import asyncio
-import logging
-import threading
 from unittest.mock import AsyncMock, Mock
 
 from fastmcp.client import Client
@@ -168,25 +166,6 @@ async def test_reject_tool_broadcasts_notifications(agents_client_and_server, mo
 
 
 @pytest.mark.asyncio
-async def test_policy_notifier_handles_event_loop_gracefully(mock_registry, mock_approval_engine):
-    """Test that policy notifier handles missing event loop gracefully."""
-    _server = await make_agents_server(mock_registry)
-
-    notifier = mock_approval_engine._notifier
-    assert notifier is not None
-
-    # Call notifier outside event loop context (should log warning, not crash)
-    def call_notifier():
-        notifier(APPROVAL_POLICY_RESOURCE_URI)
-
-    thread = threading.Thread(target=call_notifier)
-    thread.start()
-    thread.join()
-
-    # Test passes if no exception was raised
-
-
-@pytest.mark.asyncio
 async def test_multiple_agents_get_separate_notifiers(mock_registry, mock_approval_engine):
     """Test that each agent gets its own notifier with proper closure."""
     # Add second agent to registry
@@ -228,30 +207,3 @@ async def test_multiple_agents_get_separate_notifiers(mock_registry, mock_approv
 
     # Notifiers should be different instances
     assert mock_approval_engine._notifier is not second_engine._notifier
-
-
-@pytest.mark.asyncio
-async def test_notification_wiring_handles_failed_agent_gracefully(mock_registry, caplog):
-    """Test that notification wiring continues if one agent fails."""
-    # Make get_infrastructure fail for the first agent
-    original_get_infrastructure = mock_registry.get_infrastructure
-
-    call_count = 0
-
-    async def get_infrastructure_fail_first(agent_id: AgentID):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise Exception("Simulated infrastructure failure")
-        return await original_get_infrastructure(agent_id)
-
-    # Add second agent that should succeed
-    mock_registry.known_agents = lambda: ["test-agent", "test-agent-2"]
-    mock_registry.get_infrastructure = get_infrastructure_fail_first
-
-    # Server creation should succeed despite first agent failing
-    with caplog.at_level(logging.WARNING):
-        _server = await make_agents_server(mock_registry)
-
-    # Should log warning about failed agent
-    assert "Failed to hook listeners" in caplog.text or "infrastructure failure" in caplog.text

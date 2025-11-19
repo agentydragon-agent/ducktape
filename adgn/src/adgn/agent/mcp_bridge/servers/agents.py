@@ -378,30 +378,23 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
     # For policy changes: wire policy engine notifier to broadcast MCP resource updates
 
     for agent_id in registry.known_agents():
-        try:
-            infra = await registry.get_infrastructure(agent_id)
+        infra = await registry.get_infrastructure(agent_id)
 
-            # Closure captures agent_id for this specific agent
-            def make_policy_notifier(aid: str):
-                def notifier(uri: str):
-                    # Notifier is sync, schedule broadcast in event loop
-                    try:
-                        loop = asyncio.get_running_loop()
-                        _task = loop.create_task(server.broadcast_resource_updated(uri))
-                        # Don't await task - fire and forget notification
-                        _task.add_done_callback(
-                            lambda t: logger.debug(f"Broadcast complete for {uri}")
-                            if not t.exception()
-                            else logger.warning(f"Broadcast failed for {uri}: {t.exception()}")
-                        )
-                    except RuntimeError:
-                        logger.warning(f"Could not broadcast {uri}: no running event loop")
+        # Closure captures agent_id for this specific agent
+        def make_policy_notifier(aid: str):
+            def notifier(uri: str):
+                # Notifier is sync, schedule broadcast in event loop
+                loop = asyncio.get_running_loop()
+                _task = loop.create_task(server.broadcast_resource_updated(uri))
+                # Don't await task - fire and forget notification
+                _task.add_done_callback(
+                    lambda t: logger.debug(f"Broadcast complete for {uri}")
+                    if not t.exception()
+                    else logger.warning(f"Broadcast failed for {uri}: {t.exception()}")
+                )
 
-                return notifier
+            return notifier
 
-            infra.approval_engine.set_notifier(make_policy_notifier(agent_id))
-
-        except Exception as e:
-            logger.warning(f"Failed to hook listeners for {agent_id}: {e}")
+        infra.approval_engine.set_notifier(make_policy_notifier(agent_id))
 
     return server
