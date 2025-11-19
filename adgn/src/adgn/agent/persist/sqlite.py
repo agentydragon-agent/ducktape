@@ -106,7 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_events_call ON events(call_id);
 CREATE TABLE IF NOT EXISTS tool_calls (
   call_id TEXT PRIMARY KEY,
   run_id TEXT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  agent_id TEXT NULL REFERENCES agents(id) ON DELETE SET NULL,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   tool_call_json TEXT NOT NULL,
   decision_json TEXT NULL,
   execution_json TEXT NULL,

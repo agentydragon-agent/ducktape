@@ -114,7 +114,7 @@ class ToolCallRecord(BaseModel):
 
     call_id: str
     run_id: str | None
-    agent_id: str | None
+    agent_id: str  # REQUIRED - every tool call must be associated with an agent
     tool_call: ToolCall
     decision: Decision | None = None
     execution: ToolCallExecution | None = None
