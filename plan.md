@@ -150,6 +150,7 @@ All planned features have been implemented:
 - These must be replaced with MCP resource subscriptions (listening to `resource_updated` notifications from MCP servers)
 - The frontend will subscribe to MCP resources instead of connecting to WebSocket channels
 - **Remove channel bundles entirely** - no "channel.bundle" or "_channel_bundle" should exist in repo post-migration
+- **Break up overlong Svelte files** (>500 lines): Extract CSS into separate files, split large components (e.g., ApprovalTimeline.svelte at 557 lines)
 - This is a **future wave** (not Wave 7) - requires MCP subscription infrastructure to be fully reliable
 
 ### HTTP to MCP Migration Plan
@@ -285,6 +286,7 @@ All planned features have been implemented:
 - NotifyingFastMCP: replace private attr overrides if public hooks available
 - Policy gateway: document error stamps, add spoofing tests
 - Rename `adgn/src/adgn/agent/server/agents_ws.py` (TODO: determine appropriate name)
+- Inline `adgn/src/adgn/agent/server/channels/endpoints.py` - too thin (17 lines), just call register_endpoint() from each channel module directly at call site
 
 **Verification**: `uv run ruff check . --fix && uv run python -m mypy adgn && pytest -q adgn/tests/agent`
 

@@ -81,6 +81,20 @@ async def send_snapshot(self, approval_hub: ApprovalHub) -> None:
     await self.broadcast(
         ApprovalsSnapshot(pending=[ApprovalBrief(tool_call=req.tool_call) for req in approval_hub._requests.values()])
     )
+
+# BAD: Single-use snapshot wrapper (real codebase example)
+async def send_snapshot(self, compositor: Compositor) -> None:
+    """Send current MCP snapshot to all clients."""
+    sampling = await compositor.sampling_snapshot()
+    snapshot = McpSnapshot(sampling=sampling)  # ❌ Single-use variable
+    await self.broadcast(snapshot)
+
+# GOOD: Direct construction in call
+async def send_snapshot(self, compositor: Compositor) -> None:
+    """Send current MCP snapshot to all clients."""
+    await self.broadcast(
+        McpSnapshot(sampling=await compositor.sampling_snapshot())
+    )
 ```
 
 ### Subpattern: Redundant Field Storage
