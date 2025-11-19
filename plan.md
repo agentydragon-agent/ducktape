@@ -326,6 +326,10 @@ Single HTTP endpoint `/mcp` routes connections to different backend MCP servers 
 - Rename `adgn/src/adgn/agent/server/agents_ws.py` (TODO: determine appropriate name)
 - Inline `adgn/src/adgn/agent/server/channels/endpoints.py` - too thin (17 lines), just call register_endpoint() from each channel module directly at call site
 - **Consider replacing `ApprovalBrief` with `ToolCall` directly** (protocol.py:46-51)
+- **TODO: Consider refactoring sidecar pattern to limit dependencies**
+  - Current: All sidecars depend on `running.compositor`, ChatSidecar also needs `approval_engine.persistence` + `agent_id`, UISidecar takes external `ui_bus`
+  - Consider: More focused attach signatures (e.g., `attach(compositor, **kwargs)` instead of full `RunningInfrastructure`), or builder pattern to make dependencies explicit
+  - Goal: Clearer dependency contracts, easier testing, less coupling to full infrastructure object
 
 ### Type Simplification: ApprovalBrief vs ToolCall
 
