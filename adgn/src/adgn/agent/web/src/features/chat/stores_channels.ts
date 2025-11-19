@@ -3,11 +3,11 @@
  *
  * WebSocket channels:
  * - /ws/session - agent execution state
- * - /ws/approvals - approval requests
  * - /ws/policy - policy content
  *
  * MCP subscriptions:
  * - resource://agents/{agentId}/mcp/state - MCP server state (replaces /ws/mcp)
+ * - resource://agents/{agentId}/approvals/pending - pending approvals (replaces /ws/approvals)
  * - resource://agents/{agentId}/ui/state - UI state (replaces /ws/ui)
  */
 
@@ -23,7 +23,6 @@ import {
   ChannelManager,
   type ChannelHandlers,
   type SessionMessage,
-  type ApprovalsMessage,
   type PolicyMessage,
   type ErrorMessage,
 } from './channels'
@@ -128,8 +127,6 @@ export function connectAgentChannels(agentId: string) {
 
   manager.on('session', createChannelHandlers('session', handleSessionMessage))
 
-  manager.on('approvals', createChannelHandlers('approvals', handleApprovalsMessage))
-
   manager.on('policy', createChannelHandlers('policy', handlePolicyMessage))
 
   closingIntentional = false
@@ -141,6 +138,11 @@ export function connectAgentChannels(agentId: string) {
   }).catch((error) => {
     console.error('MCP state subscription failed:', error)
     agentStatus.set({ id: agentId, live: false })
+  })
+
+  // Subscribe to approvals via MCP resource (replaces /ws/approvals)
+  subscribeToApprovals(agentId).catch((error) => {
+    console.error('Approvals subscription failed:', error)
   })
 
   // Subscribe to UI state via MCP (replaces /ws/ui)
@@ -309,6 +311,79 @@ function handleMcpStateUpdate(data: any): void {
     }
   } catch (error) {
     console.error('[MCP:mcp]', 'Failed to process MCP state update:', error)
+  }
+}
+
+/**
+ * Subscribe to approvals via MCP resource subscription
+ * Replaces WebSocket /ws/approvals channel with resource://agents/{agentId}/approvals/pending
+ */
+async function subscribeToApprovals(agentId: string): Promise<void> {
+  try {
+    // Get or create subscription manager
+    const client = await getMCPClient()
+    if (!subscriptionManager) {
+      subscriptionManager = createSubscriptionManager(client)
+    }
+
+    // Subscribe to approvals resource
+    const uri = `resource://agents/${agentId}/approvals/pending`
+    await subscriptionManager.subscribe(uri, (data) => {
+      handleApprovalsUpdate(data)
+    })
+
+    console.log('[MCP:approvals]', `Subscribed to ${uri}`)
+  } catch (error) {
+    console.error('[MCP:approvals]', 'Subscription failed:', error)
+    throw error
+  }
+}
+
+/**
+ * Handle approvals updates from MCP resource subscription
+ */
+function handleApprovalsUpdate(data: any): void {
+  try {
+    // Check for error indicator from subscription manager
+    if (data.error) {
+      console.warn('[MCP:approvals]', 'Resource read error:', data.message)
+      return
+    }
+
+    // Parse MCP resource contents
+    // Expected format: array of content items, first item is text with JSON
+    if (!Array.isArray(data) || data.length === 0) {
+      console.warn('[MCP:approvals]', 'Unexpected resource format:', data)
+      return
+    }
+
+    const firstContent = data[0]
+    if (firstContent.type !== 'text' || !firstContent.text) {
+      console.warn('[MCP:approvals]', 'Expected text content, got:', firstContent.type)
+      return
+    }
+
+    // Parse JSON: expected shape is {"agent_id": "...", "pending": [...]}
+    const approvalsData = JSON.parse(firstContent.text)
+    if (!approvalsData.pending || !Array.isArray(approvalsData.pending)) {
+      console.warn('[MCP:approvals]', 'No pending array in approvals data:', approvalsData)
+      return
+    }
+
+    // Convert to Pending format expected by UI
+    const map = new Map<string, Pending>()
+    for (const approval of approvalsData.pending) {
+      map.set(approval.call_id, {
+        call_id: approval.call_id,
+        tool_key: approval.tool,  // MCP uses 'tool', UI expects 'tool_key'
+        args_json: approval.args ? JSON.stringify(approval.args) : null,
+      })
+    }
+
+    console.log('[MCP:approvals]', `Approvals updated (${map.size} pending)`)
+    pendingApprovals.set(map)
+  } catch (error) {
+    console.error('[MCP:approvals]', 'Failed to process approvals update:', error)
   }
 }
 
