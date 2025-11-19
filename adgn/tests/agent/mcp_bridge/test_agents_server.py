@@ -58,23 +58,25 @@ async def test_list_agents_resource(agents_client):
 
     # Check local agent
     local = next((a for a in agents if a["agent_id"] == "local-agent"), None)
-    assert local is not None
-    assert local["mode"] == "local"
-    assert local["capabilities"]["chat"] is True
-    assert local["capabilities"]["agent_loop"] is True
-    assert local["state_uri"] == "resource://agents/local-agent/state"
-    assert local["approvals_uri"] == "resource://agents/local-agent/approvals/pending"
-    assert local["policy_proposals_uri"] == "resource://agents/local-agent/policy/proposals"
+    assert local == {
+        "agent_id": "local-agent",
+        "mode": "local",
+        "capabilities": {"chat": True, "agent_loop": True},
+        "state_uri": "resource://agents/local-agent/state",
+        "approvals_uri": "resource://agents/local-agent/approvals/pending",
+        "policy_proposals_uri": "resource://agents/local-agent/policy/proposals",
+    }
 
     # Check bridge agent
     bridge = next((a for a in agents if a["agent_id"] == "bridge-agent"), None)
-    assert bridge is not None
-    assert bridge["mode"] == "bridge"
-    assert bridge["capabilities"]["chat"] is False
-    assert bridge["capabilities"]["agent_loop"] is False
-    assert bridge["state_uri"] is None
-    assert bridge["approvals_uri"] == "resource://agents/bridge-agent/approvals/pending"
-    assert bridge["policy_proposals_uri"] == "resource://agents/bridge-agent/policy/proposals"
+    assert bridge == {
+        "agent_id": "bridge-agent",
+        "mode": "bridge",
+        "capabilities": {"chat": False, "agent_loop": False},
+        "state_uri": None,
+        "approvals_uri": "resource://agents/bridge-agent/approvals/pending",
+        "policy_proposals_uri": "resource://agents/bridge-agent/policy/proposals",
+    }
 
 
 @pytest.mark.asyncio
@@ -84,10 +86,7 @@ async def test_agent_state_resource_returns_snapshot(agents_client, mock_local_r
     content = read_text_json(result)
 
     # Verify sampling snapshot structure
-    assert "ts" in content
-    assert "servers" in content
-    assert content["ts"] == "2025-01-15T10:00:00Z"
-    assert content["servers"] == {}
+    assert content == {"ts": "2025-01-15T10:00:00Z", "servers": {}}
 
     # Verify compositor.sampling_snapshot was called
     mock_local_runtime.running.compositor.sampling_snapshot.assert_called_once()
@@ -165,8 +164,7 @@ async def test_agent_approvals_pending_empty(agents_client):
     result = await agents_client.read_resource("resource://agents/local-agent/approvals/pending")
     content = read_text_json(result)
 
-    assert content["agent_id"] == "local-agent"
-    assert content["pending"] == []
+    assert content == {"agent_id": "local-agent", "pending": []}
 
 
 @pytest.mark.asyncio
@@ -184,10 +182,13 @@ async def test_agent_approvals_pending_with_items(agents_client, mock_approval_h
     assert len(content["pending"]) == 1
 
     approval = content["pending"][0]
-    assert approval["call_id"] == "call-123"
-    assert approval["tool"] == "test_tool"
-    assert approval["args"] == {"arg1": "value1"}
     assert "timestamp" in approval
+    # Check all other fields with full object comparison
+    assert {k: v for k, v in approval.items() if k != "timestamp"} == {
+        "call_id": "call-123",
+        "tool": "test_tool",
+        "args": {"arg1": "value1"},
+    }
 
 
 @pytest.mark.asyncio
@@ -254,10 +255,12 @@ async def test_agent_approvals_history_empty(agents_client, mock_persistence):
     result = await agents_client.read_resource("resource://agents/local-agent/approvals/history")
     content = read_text_json(result)
 
-    assert content["agent_id"] == "local-agent"
-    assert content["timeline"] == []
-    assert content["pending"] == []
-    assert content["count"] == 0
+    assert content == {
+        "agent_id": "local-agent",
+        "timeline": [],
+        "pending": [],
+        "count": 0,
+    }
 
 
 @pytest.mark.asyncio
@@ -284,10 +287,12 @@ async def test_agent_approvals_history_with_records(agents_client, mock_persiste
     assert content["count"] == 1
 
     entry = content["timeline"][0]
-    assert entry["call_id"] == "call-123"
-    assert entry["tool"] == "test_tool"
-    assert entry["args"] == {"arg1": "value1"}
-    assert entry["outcome"] == "user_approve"
+    assert entry == {
+        "call_id": "call-123",
+        "tool": "test_tool",
+        "args": {"arg1": "value1"},
+        "outcome": "user_approve",
+    }
 
 
 @pytest.mark.asyncio
@@ -332,9 +337,11 @@ async def test_agent_policy_proposals_empty(agents_client, mock_persistence):
     result = await agents_client.read_resource("resource://agents/local-agent/policy/proposals")
     content = read_text_json(result)
 
-    assert content["agent_id"] == "local-agent"
-    assert content["proposals"] == []
-    assert content["active_policy_uri"] == "resource://approval-policy/policy.py"
+    assert content == {
+        "agent_id": "local-agent",
+        "proposals": [],
+        "active_policy_uri": "resource://approval-policy/policy.py",
+    }
 
 
 @pytest.mark.asyncio
@@ -356,9 +363,11 @@ async def test_agent_policy_proposals_with_items(agents_client, mock_persistence
     assert len(content["proposals"]) == 1
 
     prop = content["proposals"][0]
-    assert prop["id"] == "prop-123"
-    assert prop["status"] == "approved"
-    assert prop["proposal_uri"] == "resource://approval-policy/proposals/prop-123"
+    assert prop == {
+        "id": "prop-123",
+        "status": "approved",
+        "proposal_uri": "resource://approval-policy/proposals/prop-123",
+    }
 
 
 # --- Error Cases ---
@@ -447,8 +456,7 @@ async def test_reject_tool_call(agents_client, mock_approval_hub):
     # Check that the future was resolved with AbortTurnDecision
     assert fut.done()
     decision = fut.result()
-    assert isinstance(decision, AbortTurnDecision)
-    assert decision.reason == "Test rejection"
+    assert decision == AbortTurnDecision(action="abort", reason="Test rejection")
 
     # Approval should be removed from pending
     assert "call-456" not in mock_approval_hub._requests
@@ -688,14 +696,22 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
 
     # Verify specific entries
     policy_allow_entry = next(e for e in content["timeline"] if e["call_id"] == "call-policy-allow")
-    assert policy_allow_entry["outcome"] == "policy_allow"
-    assert policy_allow_entry["tool"] == "safe_tool"
-    assert policy_allow_entry["reason"] == "Auto-approved"
+    assert policy_allow_entry == {
+        "call_id": "call-policy-allow",
+        "tool": "safe_tool",
+        "args": {"action": "read"},
+        "outcome": "policy_allow",
+        "reason": "Auto-approved",
+    }
 
     user_deny_entry = next(e for e in content["timeline"] if e["call_id"] == "call-user-deny-abort")
-    assert user_deny_entry["outcome"] == "user_deny_abort"
-    assert user_deny_entry["tool"] == "dangerous_tool"
-    assert user_deny_entry["reason"] == "User rejected"
+    assert user_deny_entry == {
+        "call_id": "call-user-deny-abort",
+        "tool": "dangerous_tool",
+        "args": {"action": "destroy"},
+        "outcome": "user_deny_abort",
+        "reason": "User rejected",
+    }
 
 
 @pytest.mark.asyncio
@@ -710,8 +726,7 @@ async def test_agent_state_resource_idle_agent(agents_client, mock_local_runtime
     content = read_text_json(result)
 
     # Verify idle snapshot structure
-    assert content["ts"] == "2025-01-15T09:00:00Z"
-    assert content["servers"] == {}
+    assert content == {"ts": "2025-01-15T09:00:00Z", "servers": {}}
 
     # Verify sampling_snapshot was called
     mock_local_runtime.running.compositor.sampling_snapshot.assert_called()
