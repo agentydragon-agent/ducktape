@@ -33,7 +33,9 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 class AgentBrief(BaseModel):
     """Brief information about an agent (returned from create_agent tool)."""
+
     id: AgentID
+
 
 if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.server import InfrastructureRegistry
@@ -580,8 +582,8 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
 
         session = local_runtime.session
 
-        # Build session snapshot
-        data = {
+        # Build and return session snapshot
+        return {
             "session_state": {
                 "session_id": session._manager._session_id,
                 "version": "1.0.0",
@@ -596,8 +598,6 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             if session.active_run
             else None,
         }
-
-        return data
 
     @server.resource(
         "resource://presets/list",

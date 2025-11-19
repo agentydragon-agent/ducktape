@@ -71,8 +71,8 @@ class LocalAgentRuntime:
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool = True,
         extra_handlers: Iterable[BaseHandler] | None = None,
-        ui_bus = None,
-        connection_manager = None,
+        ui_bus=None,
+        connection_manager=None,
     ):
         self.running = running
         self.model = model

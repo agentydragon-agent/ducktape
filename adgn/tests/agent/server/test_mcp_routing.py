@@ -87,9 +87,7 @@ class TestMCPRouting:
 
         with patch("adgn.agent.server.mcp_routing.TOKEN_TABLE", test_tokens):
             client = TestClient(app)
-            client.post(
-                "/mcp/message", headers={"Authorization": "Bearer test-human-token"}, json={"type": "test"}
-            )
+            client.post("/mcp/message", headers={"Authorization": "Bearer test-human-token"}, json={"type": "test"})
 
             # The agents server's http_app should have been called
             assert mock_agents_server.http_app.called
@@ -104,9 +102,7 @@ class TestMCPRouting:
 
         with patch("adgn.agent.server.mcp_routing.TOKEN_TABLE", test_tokens):
             client = TestClient(app)
-            client.post(
-                "/mcp/message", headers={"Authorization": "Bearer test-agent-token"}, json={"type": "test"}
-            )
+            client.post("/mcp/message", headers={"Authorization": "Bearer test-agent-token"}, json={"type": "test"})
 
             # The registry should have been called to get the agent
             mock_registry.ensure_live.assert_called_once_with("test-agent-1", with_ui=False)
@@ -139,14 +135,10 @@ class TestMCPRouting:
             client = TestClient(app)
 
             # First request
-            client.post(
-                "/mcp/message", headers={"Authorization": "Bearer test-human-token"}, json={"type": "test1"}
-            )
+            client.post("/mcp/message", headers={"Authorization": "Bearer test-human-token"}, json={"type": "test1"})
 
             # Second request with same token
-            client.post(
-                "/mcp/message", headers={"Authorization": "Bearer test-human-token"}, json={"type": "test2"}
-            )
+            client.post("/mcp/message", headers={"Authorization": "Bearer test-human-token"}, json={"type": "test2"})
 
             # http_app should only be called once (cached)
             assert mock_agents_server.http_app.call_count == 1

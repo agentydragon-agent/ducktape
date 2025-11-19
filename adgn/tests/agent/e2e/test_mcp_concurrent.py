@@ -74,7 +74,7 @@ def test_multiple_agents_rapid_status_changes(page: Page, run_server, responses_
     page.get_by_text("Pending Approvals").wait_for(timeout=10000)
 
     # Auto-approve all pending approvals by clicking approve repeatedly
-    for _ in range(15):  # 5 agents × 3 calls each = 15 approvals
+    for _ in range(15):  # 5 agents x 3 calls each = 15 approvals
         try:
             approve_btn = page.get_by_role("button", name="Approve").first
             if approve_btn.count() > 0:
@@ -226,9 +226,7 @@ def test_concurrent_subscriptions_to_different_agents(page: Page, run_server, re
             states[agent_idx]["n"] = i + 1
             if i == 0:
                 return responses_factory.make_tool_call(
-                    build_mcp_function("echo", "echo"),
-                    {"text": f"agent{agent_idx}"},
-                    call_id=f"call_agent{agent_idx}",
+                    build_mcp_function("echo", "echo"), {"text": f"agent{agent_idx}"}, call_id=f"call_agent{agent_idx}"
                 )
             return responses_factory.make_tool_call(
                 build_mcp_function("ui", "end_turn"), {}, call_id=f"call_ui_end_{agent_idx}"

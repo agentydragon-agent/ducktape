@@ -568,8 +568,8 @@ def test_mcp_state_updates_servers_panel_without_reload(page: Page, run_server, 
 
     # Verify server count increased
     final_server_count = page.locator(".server-item").count()
-    assert (
-        final_server_count > initial_server_count
-    ), f"Expected more than {initial_server_count} servers, got {final_server_count}"
+    assert final_server_count > initial_server_count, (
+        f"Expected more than {initial_server_count} servers, got {final_server_count}"
+    )
 
     s["stop"]()

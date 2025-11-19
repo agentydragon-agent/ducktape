@@ -42,21 +42,13 @@ async def persistence(tmp_path: Path) -> SQLitePersistence:
 @pytest.fixture
 def sample_tool_call() -> ToolCall:
     """Create a sample tool call for testing."""
-    return ToolCall(
-        name="test_tool",
-        call_id="test-call-id",
-        args_json='{"param1": "value1", "param2": 42}',
-    )
+    return ToolCall(name="test_tool", call_id="test-call-id", args_json='{"param1": "value1", "param2": 42}')
 
 
 @pytest.fixture
 def sample_decision() -> Decision:
     """Create a sample decision for testing."""
-    return Decision(
-        outcome=ApprovalOutcome.POLICY_ALLOW,
-        decided_at=datetime.now(UTC),
-        reason="Automated approval",
-    )
+    return Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=datetime.now(UTC), reason="Automated approval")
 
 
 @pytest.fixture
@@ -64,18 +56,13 @@ def sample_execution() -> ToolCallExecution:
     """Create a sample execution result for testing."""
     return ToolCallExecution(
         completed_at=datetime.now(UTC),
-        output=mcp_types.CallToolResult(
-            content=[mcp_types.TextContent(type="text", text="Success")],
-            isError=False,
-        ),
+        output=mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text="Success")], isError=False),
     )
 
 
 # Test 1: Full lifecycle test
 @pytest.mark.asyncio
-async def test_full_lifecycle_with_timestamp_preservation(
-    persistence: SQLitePersistence, test_agent: str
-) -> None:
+async def test_full_lifecycle_with_timestamp_preservation(persistence: SQLitePersistence, test_agent: str) -> None:
     """Test complete lifecycle: PENDING → EXECUTING → COMPLETED with timestamp preservation.
 
     Validates that all three states can be saved and retrieved, and that timestamps
@@ -105,11 +92,7 @@ async def test_full_lifecycle_with_timestamp_preservation(
 
     # Phase 2: Update to EXECUTING (add decision)
     decision_time = datetime.now(UTC)
-    decision = Decision(
-        outcome=ApprovalOutcome.USER_APPROVE,
-        decided_at=decision_time,
-        reason="User approved manually",
-    )
+    decision = Decision(outcome=ApprovalOutcome.USER_APPROVE, decided_at=decision_time, reason="User approved manually")
     executing_record = ToolCallRecord(
         call_id=call_id,
         run_id=None,
@@ -133,8 +116,7 @@ async def test_full_lifecycle_with_timestamp_preservation(
     execution = ToolCallExecution(
         completed_at=completion_time,
         output=mcp_types.CallToolResult(
-            content=[mcp_types.TextContent(type="text", text="Lifecycle completed successfully")],
-            isError=False,
+            content=[mcp_types.TextContent(type="text", text="Lifecycle completed successfully")], isError=False
         ),
     )
     completed_record = ToolCallRecord(
@@ -159,9 +141,7 @@ async def test_full_lifecycle_with_timestamp_preservation(
 
 # Test 2: Multiple tool calls test
 @pytest.mark.asyncio
-async def test_multiple_tool_calls_with_different_states(
-    persistence: SQLitePersistence, test_agent: str
-) -> None:
+async def test_multiple_tool_calls_with_different_states(persistence: SQLitePersistence, test_agent: str) -> None:
     """Test saving multiple tool calls with different states.
 
     Creates 5 tool calls with varying states (PENDING, EXECUTING, COMPLETED), then validates:
@@ -298,9 +278,7 @@ async def test_state_transitions_validation(persistence: SQLitePersistence, test
         decision=record1_executing.decision,
         execution=ToolCallExecution(
             completed_at=datetime.now(UTC),
-            output=mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text="OK")], isError=False
-            ),
+            output=mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text="OK")], isError=False),
         ),
     )
     await persistence.save_tool_call(record1_completed)
@@ -370,8 +348,7 @@ async def test_decision_outcome_variants(persistence: SQLitePersistence, test_ag
                 execution=ToolCallExecution(
                     completed_at=datetime.now(UTC),
                     output=mcp_types.CallToolResult(
-                        content=[mcp_types.TextContent(type="text", text=f"Executed for {outcome}")],
-                        isError=False,
+                        content=[mcp_types.TextContent(type="text", text=f"Executed for {outcome}")], isError=False
                     ),
                 ),
             )
@@ -423,8 +400,7 @@ async def test_complex_calltoolresult_content_types(persistence: SQLitePersisten
         execution=ToolCallExecution(
             completed_at=datetime.now(UTC),
             output=mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text="Simple text output")],
-                isError=False,
+                content=[mcp_types.TextContent(type="text", text="Simple text output")], isError=False
             ),
         ),
     )
@@ -473,8 +449,7 @@ async def test_complex_calltoolresult_content_types(persistence: SQLitePersisten
         execution=ToolCallExecution(
             completed_at=datetime.now(UTC),
             output=mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text="Error: File not found")],
-                isError=True,
+                content=[mcp_types.TextContent(type="text", text="Error: File not found")], isError=True
             ),
         ),
     )
@@ -519,8 +494,7 @@ async def test_complex_calltoolresult_content_types(persistence: SQLitePersisten
         tool_call=ToolCall(name="empty_tool", call_id="content-empty", args_json="{}"),
         decision=Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=datetime.now(UTC), reason=None),
         execution=ToolCallExecution(
-            completed_at=datetime.now(UTC),
-            output=mcp_types.CallToolResult(content=[], isError=False),
+            completed_at=datetime.now(UTC), output=mcp_types.CallToolResult(content=[], isError=False)
         ),
     )
     await persistence.save_tool_call(record5)
@@ -546,15 +520,12 @@ async def test_concurrent_access_and_data_integrity(persistence: SQLitePersisten
             agent_id=test_agent,
             tool_call=ToolCall(name=f"tool_{index}", call_id=f"concurrent-{index}", args_json=f'{{"index": {index}}}'),
             decision=Decision(
-                outcome=ApprovalOutcome.POLICY_ALLOW,
-                decided_at=datetime.now(UTC),
-                reason=f"Concurrent task {index}",
+                outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=datetime.now(UTC), reason=f"Concurrent task {index}"
             ),
             execution=ToolCallExecution(
                 completed_at=datetime.now(UTC),
                 output=mcp_types.CallToolResult(
-                    content=[mcp_types.TextContent(type="text", text=f"Result {index}")],
-                    isError=False,
+                    content=[mcp_types.TextContent(type="text", text=f"Result {index}")], isError=False
                 ),
             ),
         )
@@ -621,8 +592,7 @@ async def test_error_handling_and_data_validation(tmp_path: Path, test_agent: st
     # Test 1: Manually corrupt the JSON in the database
     async with persist._open() as db:
         await db.execute(
-            "UPDATE tool_calls SET tool_call_json = ? WHERE call_id = ?",
-            ('{"invalid json syntax', "valid-call"),
+            "UPDATE tool_calls SET tool_call_json = ? WHERE call_id = ?", ('{"invalid json syntax', "valid-call")
         )
         await db.commit()
 
@@ -734,8 +704,7 @@ async def test_summary_all_states_in_single_run(persistence: SQLitePersistence, 
         execution=ToolCallExecution(
             completed_at=datetime.now(UTC),
             output=mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text="Completed")],
-                isError=False,
+                content=[mcp_types.TextContent(type="text", text="Completed")], isError=False
             ),
         ),
     )

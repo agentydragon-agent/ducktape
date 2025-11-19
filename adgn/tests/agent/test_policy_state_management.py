@@ -21,10 +21,7 @@ async def persistence(tmp_path: Path):
 async def test_create_policy(persistence: SQLitePersistence):
     """Test creating a new policy."""
     policy = await persistence.create_policy(
-        policy_id="test-policy",
-        text="print('hello')",
-        description="Test policy",
-        enabled=True,
+        policy_id="test-policy", text="print('hello')", description="Test policy", enabled=True
     )
 
     assert policy.id == "test-policy"
@@ -38,11 +35,7 @@ async def test_create_policy(persistence: SQLitePersistence):
 async def test_get_policy(persistence: SQLitePersistence):
     """Test retrieving a policy by ID."""
     # Create a policy
-    await persistence.create_policy(
-        policy_id="test-policy",
-        text="print('hello')",
-        description="Test policy",
-    )
+    await persistence.create_policy(policy_id="test-policy", text="print('hello')", description="Test policy")
 
     # Retrieve it
     policy = await persistence.get_policy("test-policy")
@@ -59,19 +52,11 @@ async def test_get_policy(persistence: SQLitePersistence):
 async def test_update_policy(persistence: SQLitePersistence):
     """Test updating a policy (with history tracking)."""
     # Create initial policy
-    policy = await persistence.create_policy(
-        policy_id="test-policy",
-        text="version 1",
-        description="Initial version",
-    )
+    policy = await persistence.create_policy(policy_id="test-policy", text="version 1", description="Initial version")
 
     # Update it
     await asyncio.sleep(0.01)  # Ensure timestamp difference
-    updated = await persistence.update_policy(
-        "test-policy",
-        text="version 2",
-        description="Updated version",
-    )
+    updated = await persistence.update_policy("test-policy", text="version 2", description="Updated version")
 
     assert updated.id == "test-policy"
     assert updated.text == "version 2"
@@ -89,11 +74,7 @@ async def test_list_policies(persistence: SQLitePersistence):
     """Test listing policies with pagination."""
     # Create multiple policies
     for i in range(5):
-        await persistence.create_policy(
-            policy_id=f"policy-{i}",
-            text=f"print({i})",
-            description=f"Policy {i}",
-        )
+        await persistence.create_policy(policy_id=f"policy-{i}", text=f"print({i})", description=f"Policy {i}")
         await asyncio.sleep(0.01)  # Ensure ordering
 
     # List all
@@ -115,10 +96,7 @@ async def test_list_policies(persistence: SQLitePersistence):
 async def test_delete_policy(persistence: SQLitePersistence):
     """Test deleting a policy."""
     # Create policy
-    await persistence.create_policy(
-        policy_id="test-policy",
-        text="print('hello')",
-    )
+    await persistence.create_policy(policy_id="test-policy", text="print('hello')")
 
     # Verify it exists
     policy = await persistence.get_policy("test-policy")
@@ -135,10 +113,7 @@ async def test_delete_policy(persistence: SQLitePersistence):
 async def test_policy_history_tracking(persistence: SQLitePersistence):
     """Test that policy history is tracked on updates."""
     # Create policy
-    await persistence.create_policy(
-        policy_id="test-policy",
-        text="version 1",
-    )
+    await persistence.create_policy(policy_id="test-policy", text="version 1")
 
     # Update it multiple times
     await persistence.update_policy("test-policy", text="version 2")
@@ -147,10 +122,10 @@ async def test_policy_history_tracking(persistence: SQLitePersistence):
 
     # Check that we have history entries (implementation detail: query DB directly)
     # The history table should contain entries for the old versions
-    async with persistence._db_connection() as db, db.execute(
-        "SELECT COUNT(*) FROM policy_history WHERE policy_id = ?",
-        ("test-policy",),
-    ) as cur:
+    async with (
+        persistence._db_connection() as db,
+        db.execute("SELECT COUNT(*) FROM policy_history WHERE policy_id = ?", ("test-policy",)) as cur,
+    ):
         row = await cur.fetchone()
         count = row[0] if row else 0
 
@@ -161,19 +136,11 @@ async def test_policy_history_tracking(persistence: SQLitePersistence):
 async def test_policy_enabled_flag(persistence: SQLitePersistence):
     """Test that enabled flag works correctly."""
     # Create enabled policy
-    enabled = await persistence.create_policy(
-        policy_id="enabled-policy",
-        text="print('enabled')",
-        enabled=True,
-    )
+    enabled = await persistence.create_policy(policy_id="enabled-policy", text="print('enabled')", enabled=True)
     assert enabled.enabled is True
 
     # Create disabled policy
-    disabled = await persistence.create_policy(
-        policy_id="disabled-policy",
-        text="print('disabled')",
-        enabled=False,
-    )
+    disabled = await persistence.create_policy(policy_id="disabled-policy", text="print('disabled')", enabled=False)
     assert disabled.enabled is False
 
     # Verify retrieval preserves enabled state
@@ -189,10 +156,7 @@ async def test_policy_enabled_flag(persistence: SQLitePersistence):
 async def test_policy_description_optional(persistence: SQLitePersistence):
     """Test that description is optional."""
     # Create without description
-    policy = await persistence.create_policy(
-        policy_id="no-desc",
-        text="print('hello')",
-    )
+    policy = await persistence.create_policy(policy_id="no-desc", text="print('hello')")
     assert policy.description is None
 
     # Retrieve and verify
@@ -204,10 +168,7 @@ async def test_policy_description_optional(persistence: SQLitePersistence):
 async def test_concurrent_policy_updates(persistence: SQLitePersistence):
     """Test that concurrent updates are handled correctly."""
     # Create policy
-    await persistence.create_policy(
-        policy_id="concurrent-test",
-        text="initial",
-    )
+    await persistence.create_policy(policy_id="concurrent-test", text="initial")
 
     # Perform concurrent updates
     async def update_policy(i: int):

@@ -88,11 +88,7 @@ async def test_save_and_get_tool_call_pending(persistence: SQLitePersistence) ->
 async def test_save_and_get_tool_call_executing(persistence: SQLitePersistence) -> None:
     """Test saving and retrieving an EXECUTING tool call (decision but no execution)."""
     # Create an EXECUTING tool call record
-    decision = Decision(
-        outcome=ApprovalOutcome.USER_APPROVE,
-        decided_at=datetime.now(UTC),
-        reason=None,
-    )
+    decision = Decision(outcome=ApprovalOutcome.USER_APPROVE, decided_at=datetime.now(UTC), reason=None)
     record = ToolCallRecord(
         call_id="test-call-2",
         run_id=None,
@@ -121,16 +117,10 @@ async def test_save_and_get_tool_call_executing(persistence: SQLitePersistence) 
 async def test_save_and_get_tool_call_completed(persistence: SQLitePersistence) -> None:
     """Test saving and retrieving a COMPLETED tool call (decision and execution)."""
     # Create a COMPLETED tool call record
-    decision = Decision(
-        outcome=ApprovalOutcome.POLICY_ALLOW,
-        decided_at=datetime.now(UTC),
-        reason=None,
-    )
+    decision = Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=datetime.now(UTC), reason=None)
     execution = ToolCallExecution(
         completed_at=datetime.now(UTC),
-        output=mcp_types.CallToolResult(
-            content=[mcp_types.TextContent(type="text", text="Success!")], isError=False
-        ),
+        output=mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text="Success!")], isError=False),
     )
     record = ToolCallRecord(
         call_id="test-call-3",
@@ -168,7 +158,7 @@ async def test_list_tool_calls_all(persistence: SQLitePersistence) -> None:
             call_id=f"call-{i}",
             run_id=None,
             agent_id="test-agent",
-            tool_call=ToolCall(name=f"tool_{i}", call_id=f"call-{i}", args_json='{}'),
+            tool_call=ToolCall(name=f"tool_{i}", call_id=f"call-{i}", args_json="{}"),
             decision=None,
             execution=None,
         )
@@ -201,7 +191,7 @@ async def test_list_tool_calls_by_run_id(persistence: SQLitePersistence) -> None
             call_id=f"call-{i}",
             run_id=None,
             agent_id="test-agent",
-            tool_call=ToolCall(name=f"tool_{i}", call_id=f"call-{i}", args_json='{}'),
+            tool_call=ToolCall(name=f"tool_{i}", call_id=f"call-{i}", args_json="{}"),
             decision=None,
             execution=None,
         )
@@ -226,18 +216,14 @@ async def test_update_tool_call_from_pending_to_executing(persistence: SQLitePer
         call_id="test-call-update",
         run_id=None,
         agent_id="test-agent",
-        tool_call=ToolCall(name="test_tool", call_id="test-call-update", args_json='{}'),
+        tool_call=ToolCall(name="test_tool", call_id="test-call-update", args_json="{}"),
         decision=None,
         execution=None,
     )
     await persistence.save_tool_call(record)
 
     # Update to EXECUTING
-    decision = Decision(
-        outcome=ApprovalOutcome.USER_APPROVE,
-        decided_at=datetime.now(UTC),
-        reason=None,
-    )
+    decision = Decision(outcome=ApprovalOutcome.USER_APPROVE, decided_at=datetime.now(UTC), reason=None)
     updated_record = ToolCallRecord(
         call_id="test-call-update",
         run_id=None,
@@ -260,16 +246,12 @@ async def test_update_tool_call_from_pending_to_executing(persistence: SQLitePer
 async def test_update_tool_call_from_executing_to_completed(persistence: SQLitePersistence) -> None:
     """Test updating a tool call from EXECUTING to COMPLETED state."""
     # Create EXECUTING record
-    decision = Decision(
-        outcome=ApprovalOutcome.POLICY_ALLOW,
-        decided_at=datetime.now(UTC),
-        reason=None,
-    )
+    decision = Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=datetime.now(UTC), reason=None)
     record = ToolCallRecord(
         call_id="test-call-complete",
         run_id=None,
         agent_id="test-agent",
-        tool_call=ToolCall(name="test_tool", call_id="test-call-complete", args_json='{}'),
+        tool_call=ToolCall(name="test_tool", call_id="test-call-complete", args_json="{}"),
         decision=decision,
         execution=None,
     )
@@ -278,9 +260,7 @@ async def test_update_tool_call_from_executing_to_completed(persistence: SQLiteP
     # Update to COMPLETED
     execution = ToolCallExecution(
         completed_at=datetime.now(UTC),
-        output=mcp_types.CallToolResult(
-            content=[mcp_types.TextContent(type="text", text="Done!")], isError=False
-        ),
+        output=mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text="Done!")], isError=False),
     )
     completed_record = ToolCallRecord(
         call_id="test-call-complete",
@@ -312,18 +292,14 @@ async def test_json_serialization_roundtrip(persistence: SQLitePersistence) -> N
     """Test that JSON serialization/deserialization preserves all data."""
     # Create a complex record with all fields populated
     decision = Decision(
-        outcome=ApprovalOutcome.USER_DENY_ABORT,
-        decided_at=datetime.now(UTC),
-        reason="Security risk detected",
+        outcome=ApprovalOutcome.USER_DENY_ABORT, decided_at=datetime.now(UTC), reason="Security risk detected"
     )
     execution = ToolCallExecution(
         completed_at=datetime.now(UTC),
         output=mcp_types.CallToolResult(
             content=[
                 mcp_types.TextContent(type="text", text="Error occurred"),
-                mcp_types.ImageContent(
-                    type="image", data="base64data", mimeType="image/png"
-                ),
+                mcp_types.ImageContent(type="image", data="base64data", mimeType="image/png"),
             ],
             isError=True,
         ),

@@ -37,14 +37,10 @@ def test_100_pending_approvals_ui_responsive(page: Page, run_server, responses_f
         # Generate 100 tool calls that require approval
         if i < 100:
             return responses_factory.make_tool_call(
-                build_mcp_function("echo", "echo"),
-                {"text": f"message {i}"},
-                call_id=f"call_echo_{i}",
+                build_mcp_function("echo", "echo"), {"text": f"message {i}"}, call_id=f"call_echo_{i}"
             )
         # After 100 calls, end the turn
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -115,13 +111,9 @@ def test_high_frequency_updates_10_per_second(page: Page, run_server, responses_
         # Generate 100 rapid tool calls
         if i < 100:
             return responses_factory.make_tool_call(
-                build_mcp_function("echo", "echo"),
-                {"text": f"rapid message {i}"},
-                call_id=f"call_echo_{i}",
+                build_mcp_function("echo", "echo"), {"text": f"rapid message {i}"}, call_id=f"call_echo_{i}"
             )
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -187,20 +179,16 @@ def test_10_concurrent_subscriptions_all_work(page: Page, run_server, responses_
         state["i"] = i + 1
         if i == 0:
             return responses_factory.make_tool_call(
-                build_mcp_function("echo", "echo"),
-                {"text": "test"},
-                call_id=f"call_echo_{i}",
+                build_mcp_function("echo", "echo"), {"text": "test"}, call_id=f"call_echo_{i}"
             )
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
 
     # Create 10 agents
     agent_ids = []
-    for i in range(10):
+    for _ in range(10):
         agent_id = api_create_agent(base)
         agent_ids.append(agent_id)
 
@@ -266,9 +254,7 @@ def test_large_resource_payload_10mb(page: Page, run_server, responses_factory):
         if i == 0:
             # Return a large message
             return responses_factory.make_assistant_message(large_text)
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -314,13 +300,9 @@ def test_sustained_load_1000_updates(page: Page, run_server, responses_factory):
         # Generate 1000 tool calls
         if i < 1000:
             return responses_factory.make_tool_call(
-                build_mcp_function("echo", "echo"),
-                {"text": f"message {i}"},
-                call_id=f"call_echo_{i}",
+                build_mcp_function("echo", "echo"), {"text": f"message {i}"}, call_id=f"call_echo_{i}"
             )
-        return responses_factory.make_tool_call(
-            build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end"
-        )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -373,8 +355,6 @@ class ApprovalPolicy:
         if textarea.count() > 0:
             textarea.wait_for(state="visible", timeout=5000)
 
-        last_check = check_time
-
         # If already finished, break out
         if page.locator("text=Status: finished").count() > 0:
             break
@@ -382,8 +362,6 @@ class ApprovalPolicy:
     # Wait for final completion
     page.get_by_text("Status: finished").wait_for(timeout=120000)  # 2 minutes max
 
-    elapsed = time.time() - start_time
-    # Log the time for informational purposes
     # With 1000 updates, this could take a while, so we allow generous timeout
 
     # Final responsiveness check

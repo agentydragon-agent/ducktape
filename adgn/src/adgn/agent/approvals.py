@@ -233,7 +233,6 @@ class ApprovalPolicyEngine:
         self.notify_proposal_change(new_id)
         return new_id
 
-
     async def approve_proposal(self, proposal_id: str) -> None:
         """Approve a pending policy proposal by ID and activate it.
 

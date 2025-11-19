@@ -309,7 +309,7 @@ def agent_app_client():
 @pytest.fixture
 def ws_hub(agent_app_client, patch_agent_build_client, responses_factory):
     """Yield (client, hub_ws) connected to /ws/agents, closes automatically."""
-    app, client = agent_app_client
+    _app, client = agent_app_client
     patch_agent_build_client(FakeOpenAIModel([responses_factory.make_assistant_message("ok")]))
     with client.websocket_connect("/ws/agents") as ws:
         yield client, ws
@@ -358,7 +358,7 @@ def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):
-        app, client = agent_app_client
+        _app, client = agent_app_client
         patch_agent_build_client(model_client)
         agent_id = create_live_agent(client, specs=specs or {})
         with client.websocket_connect(f"/ws/ui?agent_id={agent_id}") as ws:

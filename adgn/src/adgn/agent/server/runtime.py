@@ -105,7 +105,9 @@ class ConnectionManager(BaseHandler):
                 await ws.send_json(payload)
             except Exception as e:
                 logger.error(
-                    "ws send_json failed; stopping sender loop", extra={"client_id": client_id, "error": str(e)}, exc_info=True
+                    "ws send_json failed; stopping sender loop",
+                    extra={"client_id": client_id, "error": str(e)},
+                    exc_info=True,
                 )
                 # Break sender loop - connection is broken
                 break

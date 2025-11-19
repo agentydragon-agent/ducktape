@@ -65,11 +65,8 @@ async def create_bridge_infrastructure(
         agent_id=agent_id, persistence=persistence, docker_client=docker_client, initial_policy=initial_policy
     )
 
-    # Start core infrastructure
-    running = await builder.start(mcp_config)
-
-    # External agents have no sidecars (no UI, chat, or loop control)
-    return running
+    # Start core infrastructure and return (external agents have no sidecars)
+    return await builder.start(mcp_config)
 
 
 class InfrastructureRegistry:

@@ -22,10 +22,7 @@ async def engine_and_persistence(tmp_path: Path, docker_client: DockerClient):
     await persistence.ensure_schema()
 
     # Create agent
-    agent_id = await persistence.create_agent(
-        mcp_config=MCPConfig(),
-        metadata=AgentMetadata(preset="test"),
-    )
+    agent_id = await persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
 
     # Create engine
     engine = ApprovalPolicyEngine(
@@ -45,9 +42,7 @@ async def test_validate_policy_valid(engine_and_persistence, docker_client: Dock
     admin_server = ApprovalPolicyAdminServer(engine=engine)
 
     # Valid Python code
-    result = await admin_server._mcp_server._tools["validate_policy"].fn(
-        ValidatePolicyArgs(source="print('hello')")
-    )
+    result = await admin_server._mcp_server._tools["validate_policy"].fn(ValidatePolicyArgs(source="print('hello')"))
 
     assert result.valid is True
     assert len(result.errors) == 0
@@ -60,9 +55,7 @@ async def test_validate_policy_syntax_error(engine_and_persistence):
     admin_server = ApprovalPolicyAdminServer(engine=engine)
 
     # Invalid syntax
-    result = await admin_server._mcp_server._tools["validate_policy"].fn(
-        ValidatePolicyArgs(source="print('hello'")
-    )
+    result = await admin_server._mcp_server._tools["validate_policy"].fn(ValidatePolicyArgs(source="print('hello'"))
 
     assert result.valid is False
     assert len(result.errors) > 0
@@ -129,9 +122,7 @@ async def test_reload_policy_validates_source(engine_and_persistence, docker_cli
 
     # Try to reload with invalid source
     with pytest.raises(Exception):  # Should fail validation
-        await admin_server._mcp_server._tools["reload_policy"].fn(
-            ReloadPolicyArgs(source="import sys; sys.exit(1)")
-        )
+        await admin_server._mcp_server._tools["reload_policy"].fn(ReloadPolicyArgs(source="import sys; sys.exit(1)"))
 
 
 async def test_reload_policy_no_persistence_raises(engine_and_persistence):
@@ -141,10 +132,7 @@ async def test_reload_policy_no_persistence_raises(engine_and_persistence):
     admin_server = ApprovalPolicyAdminServer(engine=engine)
 
     # Create a new agent with no policy in persistence
-    new_agent_id = await persistence.create_agent(
-        mcp_config=MCPConfig(),
-        metadata=AgentMetadata(preset="test"),
-    )
+    new_agent_id = await persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
 
     # Create new engine with no persisted policy
     new_engine = ApprovalPolicyEngine(

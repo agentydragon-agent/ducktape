@@ -29,6 +29,7 @@ def read_text_json(result):
     # Or it might be a dict-like object
     return result
 
+
 # --- Test-specific fixtures ---
 # Shared fixtures (mock_persistence, mock_approval_hub, mock_approval_engine,
 # mock_running_infrastructure, mock_local_runtime, mock_registry) are in conftest.py
@@ -134,16 +135,12 @@ async def test_agent_state_resource_with_servers(agents_client, mock_local_runti
         ),
         tools=[
             mcp_types.Tool(
-                name="test_tool",
-                description="A test tool",
-                inputSchema={"type": "object", "properties": {}},
+                name="test_tool", description="A test tool", inputSchema={"type": "object", "properties": {}}
             )
         ],
     )
 
-    sampling_snapshot = SamplingSnapshot(
-        ts="2025-01-15T10:30:00Z", servers={"test-server": server_entry}
-    )
+    sampling_snapshot = SamplingSnapshot(ts="2025-01-15T10:30:00Z", servers={"test-server": server_entry})
 
     mock_local_runtime.running.compositor.sampling_snapshot.return_value = sampling_snapshot
 
@@ -668,9 +665,7 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
             call_id="call-policy-deny-cont",
             run_id="run-1",
             agent_id=AgentID("local-agent"),
-            tool_call=ToolCall(
-                name="risky_tool", call_id="call-policy-deny-cont", args_json='{"action": "delete"}'
-            ),
+            tool_call=ToolCall(name="risky_tool", call_id="call-policy-deny-cont", args_json='{"action": "delete"}'),
             decision=Decision(
                 outcome=ApprovalOutcome.POLICY_DENY_CONTINUE,
                 decided_at=base_time + timedelta(minutes=2),
@@ -859,9 +854,7 @@ async def test_agent_snapshot_with_servers(agents_client, mock_local_runtime):
         ],
     )
 
-    sampling_snapshot = SamplingSnapshot(
-        ts="2025-01-15T11:00:00Z", servers={"snapshot-test-server": server_entry}
-    )
+    sampling_snapshot = SamplingSnapshot(ts="2025-01-15T11:00:00Z", servers={"snapshot-test-server": server_entry})
 
     mock_local_runtime.running.compositor.sampling_snapshot.return_value = sampling_snapshot
 
@@ -1125,7 +1118,7 @@ async def test_approval_hub_notifier_not_called_without_setup(mock_approval_hub)
     """Test that ApprovalHub works correctly when no notifier is set."""
     # Don't set a notifier - should not crash
 
-    tool_call = ToolCall(name="test_tool", call_id="call-789", args_json='{}')
+    tool_call = ToolCall(name="test_tool", call_id="call-789", args_json="{}")
     request = ApprovalRequest(tool_call=tool_call)
 
     # Start await_decision
