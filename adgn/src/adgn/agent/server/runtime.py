@@ -176,6 +176,9 @@ class ConnectionManager(BaseHandler):
     def on_user_text_event(self, evt: UserText) -> None:
         ut = UiUserText(text=evt.text)
         self._spawn(self._send_and_reduce(ut))
+        # Notify MCP bridge of session state change
+        if self._session_state_notifier is not None:
+            self._session_state_notifier()
 
     async def _send_direct_all(self, payload: dict[str, Any]) -> None:
         for ws, _q, _task in list(self._clients.values()):
@@ -186,6 +189,9 @@ class ConnectionManager(BaseHandler):
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._spawn(self._send_and_reduce(UiToolCall(tool_call=evt)))
+        # Notify MCP bridge of session state change
+        if self._session_state_notifier is not None:
+            self._session_state_notifier()
 
     # No per-tool interception; Policy Gateway middleware emits approval_pending via notifier
 
@@ -194,10 +200,17 @@ class ConnectionManager(BaseHandler):
         fco = FunctionCallOutput(call_id=evt.call_id, result=convert_fastmcp_result(evt.result))
         self._spawn(self._send_and_reduce(fco))
         self._spawn(self._emit_ui_bus_messages())
+        # Notify MCP bridge of session state change
+        if self._session_state_notifier is not None:
+            self._session_state_notifier()
 
     def configure_status_hub(self, hub: AgentsWSHub, agent_id: str) -> None:
         self._status_hub = hub
         self._status_agent_id = agent_id
+
+    def set_session_state_notifier(self, notifier: Any) -> None:
+        """Set notifier callback for session state changes (for MCP resource updates)."""
+        self._session_state_notifier = notifier
 
     async def broadcast_status(self, live: bool, active_run_id) -> None:
         # No-op when not configured (unit tests may use manager without a WS hub)
