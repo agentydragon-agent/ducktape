@@ -167,8 +167,6 @@ async def _run_server(
         logger.info(f"Token mapping: {auth_tokens_path}")
         logger.info(f"MCP server (token auth): http://{host}:{mcp_port}/sse")
         logger.info(f"Management UI: http://{host}:{ui_port}?token={ui_token}")
-        logger.info(f"  - Policy: ws://{host}:{ui_port}/ws/policy?agent_id=<id>")
-        logger.info(f"  - Approvals: ws://{host}:{ui_port}/ws/approvals?agent_id=<id>")
         logger.info(f"  - MCP: ws://{host}:{ui_port}/ws/mcp?agent_id=<id>")
 
         # Create servers

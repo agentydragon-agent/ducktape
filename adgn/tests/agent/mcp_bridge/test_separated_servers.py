@@ -111,8 +111,6 @@ async def test_websocket_channels_available_on_ui_server(infrastructure_registry
     # Note: TestClient doesn't support WebSocket testing well, so we just check routes exist
     routes = [route.path for route in ui_app.routes if hasattr(route, "path")]
 
-    assert "/ws/policy" in routes, "Policy channel should exist"
-    assert "/ws/approvals" in routes, "Approvals channel should exist"
     assert "/ws/mcp" in routes, "MCP channel should exist"
 
 

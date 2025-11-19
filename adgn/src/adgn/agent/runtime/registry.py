@@ -17,9 +17,6 @@ from adgn.openai_utils.model import OpenAIModelProto
 
 from .builder import build_local_agent
 
-if TYPE_CHECKING:
-    from adgn.agent.server.channels.bundle import ChannelBundle
-
 
 @dataclass
 class AgentRuntime:
@@ -30,7 +27,6 @@ class AgentRuntime:
     - runtime: Local agent (MiniCodex + session)
     - _ui_manager: WebSocket connection manager (optional)
     - _ui_bus: UI event bus (optional)
-    - _channel_bundle: Modular WebSocket channels (optional, lazy-created)
 
     This is a pure data holder for lifecycle management only.
     Handlers access components directly (e.g., container.running.compositor).
@@ -41,7 +37,6 @@ class AgentRuntime:
     runtime: LocalAgentRuntime
     _ui_manager: ConnectionManager | None = None
     _ui_bus: ServerBus | None = None
-    _channel_bundle: ChannelBundle | None = None  # Lazy-created on first WS connect
 
     async def close(self):
         """Lifecycle management - close all components together."""

@@ -19,16 +19,14 @@ from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from pydantic import BaseModel
 import uvicorn
 
-from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import AgentMetadata, RunRow
 from adgn.agent.persist.events import EventRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
-from adgn.agent.presets import AgentPreset, discover_presets
+from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
-from adgn.agent.server.channels.endpoints import register_channel_endpoints
 from adgn.agent.server.exceptions import (
     AgentNotFoundError,
     AgentSessionNotReadyError,
@@ -40,7 +38,6 @@ from adgn.agent.server.runtime import AgentSession
 from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
 from adgn.agent.types import AgentID
 from adgn.mcp._shared.types import SimpleOk
-from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.compositor.clients import CompositorMetaClient
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
@@ -60,75 +57,11 @@ def default_client_factory(model: str) -> OpenAIModelProto:
 
 
 # Request/Response models (module-level to avoid nested classes)
-class CreateAgentBody(BaseModel):
-    preset: str
-    system: str | None = None
-
-
-class PatchAgentMcpBody(BaseModel):
-    mcp_config: MCPConfig | None = None
-    # When provided we merge into MCPConfig (name->MCPConfig with one or more servers)
-    attach: dict[str, MCPConfig] | None = None
-    detach: list[str] | None = None
-
-
-class AgentDescriptor(BaseModel):
-    id: str
-    created_at: datetime
-    mcp_config: MCPConfig
-    metadata: AgentMetadata
-    live: bool
-    working: bool
-    last_updated: datetime | None = None
-
-
-class AgentsList(BaseModel):
-    agents: list[AgentDescriptor]
-
-
-class CreateAgentResult(BaseModel):
-    id: str
-
-
-class DeleteAgentResult(BaseModel):
-    ok: bool
-    error: str | None = None
-
-
-class PatchAgentMcpResult(BaseModel):
-    id: str
-    mcp_config: MCPConfig
-
-
-class AttachOneMcpBody(BaseModel):
-    name: str
-    spec: MCPServerTypes
-
-
-class DetachOneMcpBody(BaseModel):
-    name: str
-
-
-class AgentInfo(BaseModel):
-    agent: AgentDescriptor | None
-    live: bool
 
 
 # Typed status bundle (references component models defined above)
 class AgentStatus(AgentStatusCore):
     """HTTP response model for agent status; mirrors shared core schema."""
-
-
-class SetPolicyBody(BaseModel):
-    content: str
-
-
-class ApproveBody(BaseModel):
-    call_id: str
-
-
-class PromptBody(BaseModel):
-    text: str
 
 
 class RunsList(BaseModel):
@@ -162,25 +95,6 @@ class ProposalContent(BaseModel):
     status: ProposalStatus
     created_at: datetime
     decided_at: datetime | None = None
-
-
-class PresetInfo(BaseModel):
-    preset: AgentPreset | None
-
-
-class PresetSummary(BaseModel):
-    name: str
-    description: str | None = None
-
-
-class PresetsList(BaseModel):
-    presets: list[PresetSummary]
-
-
-# Boot outcome (explicit start of an existing agent)
-class BootAgentResult(BaseModel):
-    ok: bool
-    error: str | None = None
 
 
 ## WebSocket message models moved to ws.py
@@ -282,9 +196,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             # Flush legacy UI manager
             if container._ui_manager:
                 await container._ui_manager.flush()
-            # Flush channel bundle if present
-            if container._channel_bundle is not None:
-                await container._channel_bundle.flush_all()
         await app.state.registry.close_all()
 
     # Helper functions to reduce boilerplate
@@ -319,20 +230,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                 raise RuntimeError("Missing vite.svg asset")
             return Response(content="", media_type="image/svg+xml", status_code=404)
         return FileResponse(svg)
-
-    @app.get("/api/capabilities")
-    async def api_capabilities():
-        """Report which components are active in this server mode."""
-        return {
-            "mode": "full_agent",
-            "components": {
-                "mcp": True,  # MCP tools available
-                "approvals": True,  # Approval/policy management
-                "chat": True,  # Chat interface
-                "agent_state": True,  # Agent running/idle state
-                "ui": True,  # Full UI with all features
-            },
-        }
 
     # -----------------------
     # Agents/Runs API (alpha)
@@ -702,9 +599,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     # Register websocket routes
     register_agents_ws(app)
-
-    # Register modular channel endpoints
-    register_channel_endpoints(app)
 
     return app
 
