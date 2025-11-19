@@ -136,30 +136,6 @@ class ToolCallRecord(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-# Legacy model - kept for backward compatibility during migration
-class ApprovalRecord(BaseModel):
-    """Historical approval record from persistence.
-
-    TODO: This tracks tool calls generally, not just approvals. Consider renaming to ToolCallRecord.
-    TODO: Replace 'details' dict with typed nested models:
-      - tool_call: ApprovalToolCall (reuse existing type with {name, call_id, args_json})
-      - execution: ToolCallExecution | None (jointly optional: completed_at, output)
-    This would enable:
-      - Tracking EXECUTING state: decision!=None && execution==None
-      - Displaying full tool call timeline with args and outputs
-      - Proper type safety instead of generic dict
-      - Clear semantics: decision=None means undecided, execution=None means not completed
-    """
-
-    call_id: str
-    run_id: str | None
-    agent_id: AgentID
-    tool_key: str
-    decision: Decision | None = None
-    details: dict[str, JsonValue] | None = None  # TODO: Replace with typed fields (tool_call, execution)
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
 from .events import EventRecord  # noqa: E402
 
 
@@ -221,20 +197,6 @@ class Persistence(Protocol):
     async def list_tool_calls(self, run_id: str | None = None) -> list[ToolCallRecord]:
         """List tool call records, optionally filtered by run_id."""
         ...
-
-    # Legacy ApprovalRecord API (deprecated, kept for backward compatibility)
-    async def record_approval(
-        self,
-        *,
-        run_id: UUID | None,
-        agent_id: AgentID,
-        call_id: str,
-        tool_key: str,
-        decision: Decision,
-        details: dict[str, JsonValue] | None = None,
-    ) -> None: ...
-
-    async def list_approvals(self, *, agent_id: AgentID, limit: int = 100) -> list[ApprovalRecord]: ...
 
     async def list_runs(self, *, agent_id: AgentID | None = None, limit: int = 50) -> list[RunRow]: ...
     async def get_run(self, run_id: UUID) -> RunRow | None: ...

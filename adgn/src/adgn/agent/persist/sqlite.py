@@ -19,8 +19,6 @@ from adgn.agent.types import AgentID
 from . import (
     AgentMetadata,
     AgentRow,
-    ApprovalOutcome,
-    ApprovalRecord,
     Decision,
     EventType,
     Persistence,
@@ -489,69 +487,6 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
             await db.execute("UPDATE runs SET event_count = event_count + 1 WHERE id = ?", (str(run_id),))
             await db.commit()
 
-    async def record_approval(
-        self,
-        *,
-        run_id: UUID | None,
-        agent_id: AgentID,
-        call_id: str,
-        tool_key: str,
-        decision: Decision,
-        details: dict[str, JsonValue] | None = None,
-    ) -> None:
-        async with self._open() as db:
-            await db.execute(
-                """
-INSERT OR REPLACE INTO approvals (call_id, run_id, agent_id, tool_key, outcome, decided_at, details)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    call_id,
-                    str(run_id) if run_id is not None else None,
-                    agent_id,
-                    tool_key,
-                    decision.outcome.value,
-                    decision.decided_at.isoformat(),
-                    json.dumps(details) if details else None,
-                ),
-            )
-            await db.commit()
-
-    async def list_approvals(self, *, agent_id: AgentID, limit: int = 100) -> list[ApprovalRecord]:
-        """List approval history for an agent, ordered by decision time (newest first)."""
-        out: list[ApprovalRecord] = []
-        async with self._db_connection() as db:
-            async with db.execute(
-                """
-                SELECT call_id, run_id, agent_id, tool_key, outcome, decided_at, details
-                FROM approvals
-                WHERE agent_id = ?
-                ORDER BY decided_at DESC
-                LIMIT ?
-                """,
-                (agent_id, limit),
-            ) as cur:
-                async for r in cur:
-                    # Construct Decision object from database fields
-                    details_dict = json.loads(r["details"]) if r["details"] else None
-                    decision = Decision(
-                        outcome=ApprovalOutcome(r["outcome"]),
-                        decided_at=datetime.fromisoformat(r["decided_at"]),
-                        reason=details_dict.get("reason") if details_dict else None,
-                    )
-
-                    out.append(
-                        ApprovalRecord(
-                            call_id=r["call_id"],
-                            run_id=r["run_id"],
-                            agent_id=AgentID(r["agent_id"]),
-                            tool_key=r["tool_key"],
-                            decision=decision,
-                            details=details_dict,
-                        )
-                    )
-        return out
-
     async def list_runs(self, *, agent_id: AgentID | None = None, limit: int = 50) -> list[RunRow]:
         params: list[object] = []
         where = ""
@@ -752,14 +687,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 (policy_id, text, now.isoformat(), None),
             )
             await db.commit()
-        return Policy(
-            id=policy_id,
-            text=text,
-            description=description,
-            enabled=enabled,
-            created_at=now,
-            updated_at=now,
-        )
+        return Policy(id=policy_id, text=text, description=description, enabled=enabled, created_at=now, updated_at=now)
 
     async def get_policy(self, policy_id: str) -> Policy | None:
         """Get a policy by ID."""
@@ -786,9 +714,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 updated_at=datetime.fromisoformat(cast(str, row["updated_at"])),
             )
 
-    async def update_policy(
-        self, policy_id: str, *, text: str, description: str | None = None
-    ) -> Policy:
+    async def update_policy(self, policy_id: str, *, text: str, description: str | None = None) -> Policy:
         """Update policy text and description, saving old version to history."""
         now = _now()
         async with self._open() as db:
