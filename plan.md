@@ -263,8 +263,7 @@ class TokenCapabilityMiddleware(Middleware):
 3. Extract role from JWT token in request context (returns TokenRole enum)
 4. Block unauthorized tool calls and filter tool/resource lists
 5. Implement middleware methods: `on_call_tool()`, `on_list_tools()`, `on_list_resources()`, `on_read_resource()`
-6. **Note**: `on_notification()` defaults to pass-through (subscriptions work by default)
-7. Test: human cannot call `withdraw_proposal`, agent can
+6. Test: human cannot call `withdraw_proposal`, agent can
 
 **Phase 3 (Future)** - DELETE redundant HTTP/WebSocket:
 1. Verify frontend only uses MCP (no HTTP REST calls to `/api/agents/*`)
@@ -578,14 +577,6 @@ class TokenCapabilityMiddleware(Middleware):
     ):
         """Control resource access by role (currently no restrictions)."""
         return await call_next(context)
-
-    # on_notification() is OPTIONAL - base class already passes through by default
-    # Only override if you need to filter specific notifications by role
-    # async def on_notification(
-    #     self, context: MiddlewareContext[Notification[Any, Any]], call_next
-    # ):
-    #     """Pass through all notifications (subscriptions work by default)."""
-    #     return await call_next(context)
 ```
 
 **Benefits**:

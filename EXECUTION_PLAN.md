@@ -90,7 +90,7 @@
     - `on_list_tools()` - filter tool list based on role
     - `on_list_resources()` - filter resource list based on role (currently no filtering)
     - `on_read_resource()` - control resource access by role (currently no restrictions)
-    - `on_notification()` - **OPTIONAL** (defaults to pass-through, ensures subscriptions work)
+    - Note: `on_notification()` not needed (base class passes through by default)
   - Pattern follows existing `PolicyGatewayMiddleware` in codebase
   - Test: human cannot call `withdraw_proposal`, agent can
   - **Note**: Single MCP server on same port, different capabilities per token role
@@ -224,7 +224,6 @@ Based on Wave F analysis, create 5 parallel cleanup agents targeting:
 ### Wave D Success
 - Agent state notifications emit `resource_updated` on compositor events
 - Token-based capability middleware blocks unauthorized tool calls (human cannot withdraw_proposal)
-- Middleware filters notifications by role
 - Legacy HTTP agent endpoints DELETED (only static/health/presets remain)
 - WebSocket channel infrastructure DELETED (`/ws/*` endpoints removed)
 - ZERO WebSocket endpoints remain (only MCP StreamableHTTP)
@@ -316,14 +315,6 @@ class TokenCapabilityMiddleware(Middleware):
     ):
         """Control resource access by role (currently no restrictions)."""
         return await call_next(context)
-
-    # on_notification() is OPTIONAL - base class already passes through by default
-    # Only override if you need to filter specific notifications by role
-    # async def on_notification(
-    #     self, context: MiddlewareContext[Notification[Any, Any]], call_next
-    # ):
-    #     """Pass through all notifications (subscriptions work by default)."""
-    #     return await call_next(context)
 ```
 
 **Benefits**:
