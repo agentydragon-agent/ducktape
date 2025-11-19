@@ -15,7 +15,8 @@ All planned features have been implemented:
 **Test Results**: 84 passing agent tests (MCP-specific features fully functional)
 
 **See "Remaining Work" section below for complete task breakdown** including:
-- Waves 7-11 (code quality, UI layout, misc cleanups)
+- Wave 7: UI Layout Implementation (8 agents)
+- Waves 8-11: Code Quality, Cleanup & Verification
 - Pre-existing test fixes (ResponseUsage, CallToolResult, event loops)
 - WebSocket test fixture cleanup
 - Agent state notifications, proposals, loop hooks, chat delivery
@@ -119,13 +120,7 @@ All planned features have been implemented:
 
 ## Remaining Work
 
-### Waves 7-10: Code Quality & Cleanup
-- Wave 7: Code Quality Scans (28 parallel scan agents)
-- Wave 8: Violation Analysis
-- Wave 9: Parallel Cleanup (5 agents)
-- Wave 10: Final Verification
-
-### Wave 11: UI Layout Implementation
+### Wave 7: UI Layout Implementation
 
 **Current**: UI has left sidebar (agents + approvals tabs) + main ChatPane
 **Target**: Side-by-side Agent Timeline + Policy Editor + Message Composer (per UI mockups)
@@ -148,6 +143,12 @@ All planned features have been implemented:
 6. Detect UI server: check `$agentStatus.ui?.ready`, conditional composer rendering (no badge - presence indicated by composer + UI messages in timeline)
 7. Add agent mode badge: [LOCAL] or [BRIDGE] (indicates agent loop presence; UI server shown implicitly via composer/timeline)
 8. Update routing: global approvals view, agent selection
+
+### Waves 8-11: Code Quality, Cleanup & Verification
+- Wave 8: Code Quality Scans (28 parallel scan agents)
+- Wave 9: Violation Analysis
+- Wave 10: Parallel Cleanup (5 agents)
+- Wave 11: Final Verification
 
 ### WebSocket Test Fixture Cleanup
 - Fix 10 tests using removed `/ws` endpoint → `/ws/session`
