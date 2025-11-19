@@ -57,6 +57,7 @@ AGENTS_SNAPSHOT_URI_FMT: Final[str] = "resource://agents/{agent_id}/snapshot"
 AGENTS_APPROVALS_PENDING_URI_FMT: Final[str] = "resource://agents/{agent_id}/approvals/pending"
 AGENTS_APPROVALS_HISTORY_URI_FMT: Final[str] = "resource://agents/{agent_id}/approvals/history"
 AGENTS_POLICY_PROPOSALS_URI_FMT: Final[str] = "resource://agents/{agent_id}/policy/proposals"
+AGENTS_POLICY_STATE_URI_FMT: Final[str] = "resource://agents/{agent_id}/policy/state"
 
 # MCP notification method names (match MCP spec)
 RESOURCES_UPDATED_METHOD: Final[str] = "notifications/resources/updated"

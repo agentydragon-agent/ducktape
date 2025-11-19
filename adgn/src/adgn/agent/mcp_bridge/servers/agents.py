@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime
 import json
 import logging
+import os
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -21,9 +22,11 @@ from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.mcp_bridge import resources
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
+from adgn.agent.presets import discover_presets
 from adgn.agent.server.agents_ws import AgentBrief
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
+from adgn.mcp.compositor.server import MountEvent
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 if TYPE_CHECKING:
@@ -187,6 +190,14 @@ class AgentPolicyProposals(BaseModel):
     active_policy_uri: str  # URI to active policy
 
 
+class AgentPolicyState(BaseModel):
+    """Content for resource://agents/{id}/policy/state."""
+
+    agent_id: AgentID
+    policy: dict  # Contains: content, id, proposals
+    active_policy_uri: str  # URI to active policy
+
+
 class AgentInfoDetailed(BaseModel):
     """Basic agent metadata NOT available from other MCP resources.
 
@@ -200,6 +211,19 @@ class AgentInfoDetailed(BaseModel):
     mode: AgentMode
     model: str | None = None  # Model name for local agents
     status: str  # "running" or "stopped"
+
+
+class PresetSummary(BaseModel):
+    """Summary information about an agent preset."""
+
+    name: str
+    description: str | None = None
+
+
+class PresetsList(BaseModel):
+    """Content for resource://presets/list."""
+
+    presets: list[PresetSummary]
 
 
 # Tool response models - empty responses, caller tracks what they called
@@ -229,33 +253,60 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         "resource://agents/list",
         name="agents.list",
         mime_type="application/json",
-        description="List all agents with capabilities and state",
+        description="List all agents with detailed status",
     )
-    async def list_agents() -> AgentList:
-        agent_infos: list[AgentInfo] = []
-        for agent_id in registry.known_agents():
-            mode = registry.get_agent_mode(agent_id)
+    async def list_agents() -> str:
+        """Global agent list with detailed status for each agent.
 
-            # Assume bridge agents have no chat/agent_loop
-            # TODO: Add capability tracking to registry if needed
+        Returns JSON with agents array containing status information including:
+        - id, mode, live status
+        - active_run_id, run_phase
+        - pending_approvals count
+        - capabilities (chat, agent_loop)
+        """
+        agents = []
+        for agent_id in registry.known_agents():
+            try:
+                mode = registry.get_agent_mode(agent_id)
+            except KeyError:
+                continue
+
+            # Get infrastructure if available
+            infra = registry.get_running_infrastructure(agent_id)
+            live = infra is not None
+
+            # Compute status fields
+            active_run_id = None
+            pending_approvals = 0
+            run_phase = "idle"
+
+            if infra:
+                # Get pending approvals count
+                pending_approvals = len(infra.approval_hub.pending)
+
+                # Derive run phase based on active state
+                if pending_approvals > 0:
+                    run_phase = "waiting_approval"
+                elif live:
+                    run_phase = "sampling"
+
+            # Determine capabilities
             is_local = mode == AgentMode.LOCAL
             capabilities = {"chat": is_local, "agent_loop": is_local}
 
-            state_uri = f"resource://agents/{agent_id}/state" if is_local else None
-            approvals_uri = f"resource://agents/{agent_id}/approvals/pending"
-            policy_proposals_uri = f"resource://agents/{agent_id}/policy/proposals"
-
-            agent_info = AgentInfo(
-                agent_id=agent_id,
-                capabilities=capabilities,
-                mode=mode,
-                state_uri=state_uri,
-                approvals_uri=approvals_uri,
-                policy_proposals_uri=policy_proposals_uri,
+            agents.append(
+                {
+                    "id": agent_id,
+                    "mode": mode,
+                    "live": live,
+                    "active_run_id": str(active_run_id) if active_run_id else None,
+                    "run_phase": run_phase,
+                    "pending_approvals": pending_approvals,
+                    "capabilities": capabilities,
+                }
             )
-            agent_infos.append(agent_info)
 
-        return AgentList(agents=agent_infos)
+        return json.dumps({"agents": agents})
 
     @server.resource(
         "resource://agents/{agent_id}/state",
@@ -298,6 +349,31 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
 
         # Delegate to compositor's sampling_snapshot()
         return await local_runtime.running.compositor.sampling_snapshot()
+
+    @server.resource(
+        "resource://agents/{agent_id}/mcp/state",
+        name="agent.mcp.state",
+        mime_type="application/json",
+        description="MCP servers state",
+    )
+    async def agent_mcp_state(agent_id: AgentID):
+        """MCP servers state.
+
+        Returns the sampling snapshot from the compositor wrapped in a dict.
+
+        Raises ValueError if agent is not local or has no runtime.
+        """
+        if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
+            raise ValueError(f"Agent {agent_id} is not a local agent")
+
+        local_runtime = registry.get_local_runtime(agent_id)
+        if local_runtime is None:
+            raise ValueError(f"Agent {agent_id} has no local runtime")
+
+        compositor = local_runtime.running.compositor
+        sampling = await compositor.sampling_snapshot()
+
+        return {"sampling": sampling}
 
     @server.resource(
         "resource://agents/{agent_id}/approvals/pending",
@@ -401,6 +477,46 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         )
 
     @server.resource(
+        "resource://agents/{agent_id}/policy/state",
+        name="agent.policy.state",
+        mime_type="application/json",
+        description="Policy state and proposals for an agent",
+    )
+    async def agent_policy_state_resource(agent_id: AgentID) -> AgentPolicyState:
+        """Get policy state and proposals for an agent."""
+        infra = await registry.get_infrastructure(agent_id)
+        engine = infra.approval_engine
+
+        # Get current policy
+        content, policy_id = engine.get_policy()
+
+        # Get proposals
+        db_proposals = await engine.persistence.list_policy_proposals(agent_id)
+        proposals = [{"id": p.id, "status": p.status} for p in db_proposals]
+
+        policy_data = {"content": content, "id": policy_id, "proposals": proposals}
+
+        return AgentPolicyState(
+            agent_id=agent_id, policy=policy_data, active_policy_uri="resource://approval-policy/policy.py"
+        )
+
+    @server.resource(
+        "resource://agents/{agent_id}/ui/state",
+        name="agent.ui.state",
+        mime_type="application/json",
+        description="UI state (optional, only if UI server attached)",
+    )
+    async def agent_ui_state_resource(agent_id: AgentID) -> str:
+        """UI state (optional, only if UI server attached)."""
+        runtime = registry.get(agent_id)
+        if not runtime or not runtime.runtime.session:
+            raise ValueError(f"Agent {agent_id} has no session")
+
+        ui_state = runtime.runtime.session.ui_state
+
+        return json.dumps({"seq": ui_state.seq, "state": ui_state.model_dump()})
+
+    @server.resource(
         "resource://agents/{agent_id}/info",
         name="agent.info",
         mime_type="application/json",
@@ -426,12 +542,23 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             model = local_runtime.model
             status = "running"
 
-        return AgentInfoDetailed(
-            agent_id=agent_id,
-            mode=mode,
-            model=model,
-            status=status,
-        )
+        return AgentInfoDetailed(agent_id=agent_id, mode=mode, model=model, status=status)
+
+    @server.resource(
+        "resource://presets/list",
+        name="presets.list",
+        mime_type="application/json",
+        description="Available agent presets",
+    )
+    async def presets_list() -> PresetsList:
+        """List all available agent presets.
+
+        Loads presets from configured directories (ADGN_AGENT_PRESETS_DIR or XDG config).
+        Returns preset names and descriptions.
+        """
+        presets = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
+        summaries = [PresetSummary(name=name, description=p.description) for name, p in presets.items()]
+        return PresetsList(presets=summaries)
 
     # Tools
 
@@ -695,5 +822,65 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             return notifier
 
         infra.approval_engine.set_notifier(make_policy_notifier(agent_id))
+
+        # Wire approval hub notifier to broadcast resource updates
+        def make_approval_hub_notifier(aid: str):
+            def notifier():
+                # Notifier is sync, schedule broadcast in event loop
+                loop = asyncio.get_running_loop()
+                # Broadcast all relevant approval resources
+                uris = [
+                    resources.agent_approvals_pending(aid),
+                    resources.agent_approvals_history(aid),
+                    resources.APPROVALS_PENDING_GLOBAL,
+                ]
+                for uri in uris:
+                    _task = loop.create_task(server.broadcast_resource_updated(uri))
+                    _task.add_done_callback(
+                        lambda t, u=uri: logger.debug(f"Broadcast complete for {u}")
+                        if not t.exception()
+                        else logger.warning(f"Broadcast failed for {u}: {t.exception()}")
+                    )
+
+            return notifier
+
+        infra.approval_hub.set_notifier(make_approval_hub_notifier(agent_id))
+
+        # Wire UI state notifications (only for local agents with session)
+        local_runtime = registry.get_local_runtime(agent_id)
+        if local_runtime is not None and local_runtime.session is not None:
+
+            def make_ui_state_notifier(aid: str):
+                def notifier():
+                    # Notifier is sync, schedule broadcast in event loop
+                    loop = asyncio.get_running_loop()
+                    _task = loop.create_task(server.broadcast_resource_updated(resources.agent_ui_state(aid)))
+                    # Don't await task - fire and forget notification
+                    _task.add_done_callback(
+                        lambda t: logger.debug(f"UI state broadcast complete for {aid}")
+                        if not t.exception()
+                        else logger.warning(f"UI state broadcast failed for {aid}: {t.exception()}")
+                    )
+
+                return notifier
+
+            local_runtime.session.set_ui_state_notifier(make_ui_state_notifier(agent_id))
+
+        # Wire compositor mount events to broadcast MCP state resource updates
+        def make_mount_listener(aid: str):
+            async def on_mount_change(name: str, action: MountEvent) -> None:
+                # Broadcast resource update for the agent's MCP state when servers mount/unmount
+                if action in (MountEvent.MOUNTED, MountEvent.UNMOUNTED):
+                    await server.broadcast_resource_updated(resources.agent_mcp_state(aid))
+
+            return on_mount_change
+
+        infra.compositor.add_mount_listener(make_mount_listener(agent_id))
+
+    # Wire registry notifier to broadcast agents list updates when agents are created/deleted
+    async def registry_notifier(uri: str):
+        await server.broadcast_resource_updated(uri)
+
+    registry.set_notifier(registry_notifier)
 
     return server

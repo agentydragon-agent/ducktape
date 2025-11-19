@@ -15,7 +15,12 @@ from adgn.agent.models.policy_error import PolicyError
 from adgn.agent.persist import Persistence
 from adgn.agent.policy_eval.runner import run_policy_source
 from adgn.agent.types import AgentID, ToolCall
-from adgn.mcp._shared.constants import APPROVAL_POLICY_PROPOSALS_INDEX_URI, APPROVAL_POLICY_RESOURCE_URI, UI_SERVER_NAME
+from adgn.mcp._shared.constants import (
+    AGENTS_POLICY_STATE_URI_FMT,
+    APPROVAL_POLICY_PROPOSALS_INDEX_URI,
+    APPROVAL_POLICY_RESOURCE_URI,
+    UI_SERVER_NAME,
+)
 from adgn.mcp._shared.naming import build_mcp_function
 
 # build_mcp_function is used for self_check payload construction
@@ -63,12 +68,21 @@ class ApprovalHub:
 
     - await_decision(call_id, request) -> ContinueDecision | AbortTurnDecision waits until resolve() is called
     - resolve(call_id, decision) resolves the pending decision
+    - set_notifier(notifier) installs a callback for approval state changes
     """
 
-    def __init__(self) -> None:
+    def __init__(self, notifier: Callable[[], None] | None = None) -> None:
         self._futures: dict[str, asyncio.Future[ContinueDecision | AbortTurnDecision]] = {}
         self._requests: dict[str, ApprovalRequest] = {}
         self._lock = asyncio.Lock()
+        self._notifier = notifier
+
+    def set_notifier(self, notifier: Callable[[], None]) -> None:
+        """Install/replace the out-of-band notifier for approval state changes.
+
+        Contract: notifier() is sync and non-blocking (may schedule async work).
+        """
+        self._notifier = notifier
 
     async def await_decision(self, call_id: str, request: ApprovalRequest) -> ContinueDecision | AbortTurnDecision:
         async with self._lock:
@@ -78,6 +92,9 @@ class ApprovalHub:
             if fut is None:
                 fut = asyncio.get_running_loop().create_future()
                 self._futures[call_id] = fut
+        # Notify after lock release to avoid holding lock during notification
+        if self._notifier:
+            self._notifier()
         return await fut
 
     def resolve(self, call_id: str, decision: ContinueDecision | AbortTurnDecision) -> None:
@@ -86,6 +103,9 @@ class ApprovalHub:
         self._requests.pop(call_id, None)
         if fut is not None and not fut.done():
             fut.set_result(decision)
+        # Notify after resolution
+        if self._notifier:
+            self._notifier()
 
     @property
     def pending(self) -> dict[str, ApprovalRequest]:
@@ -154,6 +174,8 @@ class ApprovalPolicyEngine:
         self._policy_id += 1
         if self._notify:
             self._notify(APPROVAL_POLICY_RESOURCE_URI)
+            # Also notify agent-specific policy state resource
+            self._notify(AGENTS_POLICY_STATE_URI_FMT.format(agent_id=self.agent_id))
         return self._policy_id
 
     # Internal load used on startup to hydrate content/id from persistence
@@ -193,6 +215,8 @@ class ApprovalPolicyEngine:
         """
         self.notify_resource(f"{APPROVAL_POLICY_PROPOSALS_INDEX_URI}/{proposal_id}")
         self.notify_proposals_changed()
+        # Also notify agent-specific policy state resource since proposals changed
+        self.notify_resource(AGENTS_POLICY_STATE_URI_FMT.format(agent_id=self.agent_id))
 
     async def create_proposal(self, content: str) -> str:
         """Create a new policy proposal and return its ID.

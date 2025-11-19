@@ -749,3 +749,256 @@ async def test_global_approvals_pending_ordering(agents_client, mock_approval_hu
         assert "agent_id" in approval_data
         assert "call_id" in approval_data
         assert "tool" in approval_data
+
+
+@pytest.mark.asyncio
+async def test_presets_list_resource(agents_client):
+    """Test resource://presets/list returns available agent presets."""
+    result = await agents_client.read_resource("resource://presets/list")
+    content = read_text_json(result)
+
+    assert "presets" in content
+    presets = content["presets"]
+
+    # Should have at least the built-in "default" preset
+    assert len(presets) >= 1
+
+    # Check default preset exists
+    default_preset = next((p for p in presets if p["name"] == "default"), None)
+    assert default_preset is not None
+    assert "description" in default_preset
+
+    # Verify all presets have required fields
+    for preset in presets:
+        assert "name" in preset
+        assert "description" in preset
+
+
+# --- Additional Resource Tests (snapshot, info, presets variations) ---
+
+
+@pytest.mark.asyncio
+async def test_agent_snapshot_returns_full_state(agents_client, mock_local_runtime):
+    """Test resource://agents/{id}/snapshot returns full compositor snapshot."""
+    result = await agents_client.read_resource("resource://agents/local-agent/snapshot")
+    content = read_text_json(result)
+
+    # Verify sampling snapshot structure
+    assert "ts" in content
+    assert "servers" in content
+    assert content["ts"] == "2025-01-15T10:00:00Z"
+    assert content["servers"] == {}
+
+    # Verify compositor.sampling_snapshot was called
+    mock_local_runtime.running.compositor.sampling_snapshot.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_agent_snapshot_bridge_agent_fails(agents_client):
+    """Test resource://agents/{id}/snapshot fails for bridge agents."""
+    with pytest.raises(Exception, match=r"(?i)not a local agent"):
+        await agents_client.read_resource("resource://agents/bridge-agent/snapshot")
+
+
+@pytest.mark.asyncio
+async def test_agent_snapshot_no_runtime_fails(mock_registry, agents_client):
+    """Test resource://agents/{id}/snapshot fails when local agent has no runtime."""
+    # Mock get_local_runtime to return None for local-agent
+    original_get_runtime = mock_registry.get_local_runtime
+
+    def get_runtime_none(agent_id):
+        if agent_id == "local-agent":
+            return None
+        return original_get_runtime(agent_id)
+
+    mock_registry.get_local_runtime = get_runtime_none
+
+    with pytest.raises(Exception, match=r"(?i)no local runtime"):
+        await agents_client.read_resource("resource://agents/local-agent/snapshot")
+
+
+@pytest.mark.asyncio
+async def test_agent_snapshot_with_servers(agents_client, mock_local_runtime):
+    """Test resource://agents/{id}/snapshot returns snapshot with running servers."""
+    # Create a complex sampling snapshot with running server
+    server_entry = RunningServerEntry(
+        state="running",
+        initialize=mcp_types.InitializeResult(
+            protocolVersion="2024-11-05",
+            capabilities=mcp_types.ServerCapabilities(tools={"listChanged": True}),
+            serverInfo=mcp_types.Implementation(name="snapshot-test-server", version="2.0.0"),
+        ),
+        tools=[
+            mcp_types.Tool(
+                name="snapshot_tool",
+                description="A snapshot test tool",
+                inputSchema={"type": "object", "properties": {"param": {"type": "string"}}},
+            )
+        ],
+    )
+
+    sampling_snapshot = SamplingSnapshot(
+        ts="2025-01-15T11:00:00Z", servers={"snapshot-test-server": server_entry}
+    )
+
+    mock_local_runtime.running.compositor.sampling_snapshot.return_value = sampling_snapshot
+
+    result = await agents_client.read_resource("resource://agents/local-agent/snapshot")
+    content = read_text_json(result)
+
+    # Verify sampling snapshot structure
+    assert content["ts"] == "2025-01-15T11:00:00Z"
+    assert "snapshot-test-server" in content["servers"]
+
+    server = content["servers"]["snapshot-test-server"]
+    assert server["state"] == "running"
+    assert "initialize" in server
+    assert "tools" in server
+    assert len(server["tools"]) == 1
+    assert server["tools"][0]["name"] == "snapshot_tool"
+
+
+@pytest.mark.asyncio
+async def test_agent_snapshot_agent_not_found(agents_client):
+    """Test resource://agents/{id}/snapshot fails for non-existent agent."""
+    with pytest.raises(Exception, match=r"(?i)not found"):
+        await agents_client.read_resource("resource://agents/nonexistent-agent/snapshot")
+
+
+@pytest.mark.asyncio
+async def test_agent_info_local_running(agents_client, mock_local_runtime):
+    """Test resource://agents/{id}/info returns correct info for running local agent."""
+    # Add model to the mock runtime
+    mock_local_runtime.model = "claude-3-5-sonnet-20241022"
+
+    result = await agents_client.read_resource("resource://agents/local-agent/info")
+    content = read_text_json(result)
+
+    assert content["agent_id"] == "local-agent"
+    assert content["mode"] == "local"
+    assert content["model"] == "claude-3-5-sonnet-20241022"
+    assert content["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_agent_info_bridge_no_model(agents_client):
+    """Test resource://agents/{id}/info returns correct info for bridge agent."""
+    result = await agents_client.read_resource("resource://agents/bridge-agent/info")
+    content = read_text_json(result)
+
+    assert content["agent_id"] == "bridge-agent"
+    assert content["mode"] == "bridge"
+    assert content["model"] is None
+    assert content["status"] == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_agent_info_local_stopped(mock_registry, agents_client):
+    """Test resource://agents/{id}/info shows 'stopped' for local agent without runtime."""
+    # Mock get_local_runtime to return None for local-agent
+    original_get_runtime = mock_registry.get_local_runtime
+
+    def get_runtime_none(agent_id):
+        if agent_id == "local-agent":
+            return None
+        return original_get_runtime(agent_id)
+
+    mock_registry.get_local_runtime = get_runtime_none
+
+    result = await agents_client.read_resource("resource://agents/local-agent/info")
+    content = read_text_json(result)
+
+    assert content["agent_id"] == "local-agent"
+    assert content["mode"] == "local"
+    assert content["model"] is None
+    assert content["status"] == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_agent_info_not_found(agents_client):
+    """Test resource://agents/{id}/info fails for non-existent agent."""
+    with pytest.raises(Exception, match=r"(?i)not found"):
+        await agents_client.read_resource("resource://agents/nonexistent-agent/info")
+
+
+@pytest.mark.asyncio
+async def test_presets_list_empty(agents_client, monkeypatch):
+    """Test resource://presets/list with no presets available."""
+    # Mock discover_presets to return empty dict
+    import adgn.agent.mcp_bridge.servers.agents as agents_module
+
+    monkeypatch.setattr(agents_module, "discover_presets", lambda env_dir: {})
+
+    result = await agents_client.read_resource("resource://presets/list")
+    content = read_text_json(result)
+
+    assert "presets" in content
+    assert content["presets"] == []
+
+
+@pytest.mark.asyncio
+async def test_presets_list_with_multiple_presets(agents_client, monkeypatch):
+    """Test resource://presets/list returns all available presets."""
+    # Mock discover_presets to return sample presets
+    import adgn.agent.mcp_bridge.servers.agents as agents_module
+    from adgn.agent.presets import AgentPreset
+
+    sample_presets = {
+        "default": AgentPreset(name="default", description="Default preset"),
+        "coding": AgentPreset(name="coding", description="Coding assistant preset", model="claude-3-opus-20240229"),
+        "minimal": AgentPreset(name="minimal", description=None),
+    }
+
+    monkeypatch.setattr(agents_module, "discover_presets", lambda env_dir: sample_presets)
+
+    result = await agents_client.read_resource("resource://presets/list")
+    content = read_text_json(result)
+
+    assert "presets" in content
+    presets = content["presets"]
+    assert len(presets) == 3
+
+    # Check that all presets are included
+    preset_names = {p["name"] for p in presets}
+    assert preset_names == {"default", "coding", "minimal"}
+
+    # Check preset with description
+    default_preset = next((p for p in presets if p["name"] == "default"), None)
+    assert default_preset is not None
+    assert default_preset["description"] == "Default preset"
+
+    # Check preset without description
+    minimal_preset = next((p for p in presets if p["name"] == "minimal"), None)
+    assert minimal_preset is not None
+    assert minimal_preset["description"] is None
+
+
+@pytest.mark.asyncio
+async def test_presets_list_ordering(agents_client, monkeypatch):
+    """Test resource://presets/list preserves preset ordering from discovery."""
+    # Mock discover_presets with ordered presets
+    import adgn.agent.mcp_bridge.servers.agents as agents_module
+    from adgn.agent.presets import AgentPreset
+
+    # Use ordered dict to ensure specific order
+    from collections import OrderedDict
+
+    ordered_presets = OrderedDict(
+        [
+            ("alpha", AgentPreset(name="alpha", description="First")),
+            ("beta", AgentPreset(name="beta", description="Second")),
+            ("gamma", AgentPreset(name="gamma", description="Third")),
+        ]
+    )
+
+    monkeypatch.setattr(agents_module, "discover_presets", lambda env_dir: ordered_presets)
+
+    result = await agents_client.read_resource("resource://presets/list")
+    content = read_text_json(result)
+
+    presets = content["presets"]
+    assert len(presets) == 3
+
+    # Verify order is preserved (dict iteration order is guaranteed in Python 3.7+)
+    preset_names = [p["name"] for p in presets]
+    assert preset_names == ["alpha", "beta", "gamma"]

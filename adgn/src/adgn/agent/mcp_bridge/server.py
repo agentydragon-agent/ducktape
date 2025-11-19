@@ -87,6 +87,14 @@ class InfrastructureRegistry:
         self.mcp_config = mcp_config
         self.initial_policy = initial_policy
         self._agents: defaultdict[AgentID, AgentEntry] = defaultdict(AgentEntry)
+        self._notifier: Callable[[str], Awaitable[None]] | None = None
+
+    def set_notifier(self, notifier: Callable[[str], Awaitable[None]]) -> None:
+        """Set notifier callback for registry changes.
+
+        The notifier is called with a resource URI when agents are created/deleted.
+        """
+        self._notifier = notifier
 
     async def get_or_create_infrastructure(self, agent_id: AgentID) -> tuple[RunningInfrastructure, FastAPI]:
         """Get or create infrastructure for an agent_id (creates bridge agent).
@@ -178,6 +186,9 @@ class InfrastructureRegistry:
         Returns the running infrastructure for the agent.
         """
         running, _ = await self.get_or_create_infrastructure(agent_id)
+        # Notify that agent list changed
+        if self._notifier:
+            await self._notifier("resource://agents/list")
         return running
 
     async def ensure_live(self, agent_id: AgentID) -> RunningInfrastructure:
@@ -206,6 +217,10 @@ class InfrastructureRegistry:
 
         # Remove from registry
         del self._agents[agent_id]
+
+        # Notify that agent list changed
+        if self._notifier:
+            await self._notifier("resource://agents/list")
 
 
 async def create_mcp_server_app(auth_tokens_path: Path, registry: InfrastructureRegistry) -> FastAPI:

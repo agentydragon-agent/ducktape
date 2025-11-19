@@ -22,6 +22,11 @@ def agent_snapshot(agent_id: str) -> str:
     return f"resource://agents/{agent_id}/snapshot"
 
 
+def agent_mcp_state(agent_id: str) -> str:
+    """Resource URI for MCP servers state."""
+    return f"resource://agents/{agent_id}/mcp/state"
+
+
 def agent_approvals_pending(agent_id: str) -> str:
     """Resource URI for pending approvals for an agent."""
     return f"resource://agents/{agent_id}/approvals/pending"
@@ -40,6 +45,21 @@ def agent_approval(agent_id: str, call_id: str) -> str:
 def agent_policy_proposals(agent_id: str) -> str:
     """Resource URI for policy proposals."""
     return f"resource://agents/{agent_id}/policy/proposals"
+
+
+def agent_policy_state(agent_id: str) -> str:
+    """Resource URI for policy state (active policy + proposals)."""
+    return f"resource://agents/{agent_id}/policy/state"
+
+
+def agent_session_state(agent_id: str) -> str:
+    """Resource URI for agent session state and transcript."""
+    return f"resource://agents/{agent_id}/session/state"
+
+
+def agent_ui_state(agent_id: str) -> str:
+    """Resource URI for UI state (only if UI server attached)."""
+    return f"resource://agents/{agent_id}/ui/state"
 
 
 def policy_proposal(proposal_id: str) -> str:

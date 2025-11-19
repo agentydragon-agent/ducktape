@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from datetime import UTC, datetime
-import json
 import logging
 from typing import Any
 import uuid
@@ -241,6 +240,8 @@ class AgentSession:
         # Optional: agent identifier to associate runs with a specific hosted agent
         self.agent_id: str | None = agent_id
         # No Docker client on session; runtime server handles any containerization
+        # Optional: UI state change notifier for MCP resource updates
+        self._ui_state_notifier: Any | None = None
 
     def current_run_phase(self) -> RunPhase:
         """Compute the current run phase from live signals (no stored state).
@@ -310,9 +311,16 @@ class AgentSession:
     def set_persist_handler(self, handler: RunPersistenceHandler) -> None:
         self._persist_handler = handler
 
+    def set_ui_state_notifier(self, notifier: Any) -> None:
+        """Set notifier callback for UI state changes (for MCP resource updates)."""
+        self._ui_state_notifier = notifier
+
     async def _apply_ui_event(self, evt: Any) -> None:
         self.ui_state = reduce_ui_state(self.ui_state, evt)
         await self._manager.send_payload(UiStateUpdated(v="ui_state_v1", seq=self.ui_state.seq, state=self.ui_state))
+        # Notify MCP bridge if notifier is set
+        if self._ui_state_notifier is not None:
+            self._ui_state_notifier()
 
     async def run(self, prompt: str) -> None:
         async with self._lock:
