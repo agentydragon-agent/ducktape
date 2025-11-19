@@ -16,7 +16,10 @@ def _normalize_structured_content(sc: Any) -> Any:
 
 
 def as_minimal_json(res: FMCallToolResult | mcp_types.CallToolResult) -> dict[str, Any]:
-    """Serialize a tool result to a compact JSON dict (structured content + flags)."""
+    """Serialize a tool result to a compact JSON dict (structured content + flags).
+
+    Uses MCP field names (camelCase: isError, structuredContent) as produced by mcp.types.CallToolResult.
+    """
     if isinstance(res, FMCallToolResult):
         res = to_pydantic(res)
 
@@ -24,9 +27,9 @@ def as_minimal_json(res: FMCallToolResult | mcp_types.CallToolResult) -> dict[st
         raise TypeError(f"Expected CallToolResult, got {type(res).__name__}")
 
     data = res.model_dump(mode="json", by_alias=False)
-    payload: dict[str, Any] = {"is_error": data.get("is_error", False)}
-    if "structured_content" in data:
-        payload["structured_content"] = data["structured_content"]
+    payload: dict[str, Any] = {"is_error": data["isError"]}
+    if "structuredContent" in data:
+        payload["structured_content"] = data["structuredContent"]
     if content := data.get("content"):
         payload["content"] = content
     return payload

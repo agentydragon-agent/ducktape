@@ -179,6 +179,44 @@ await admin_server.reload_policy(ReloadPolicyArgs(source=None))
 - [x] History tracking implemented
 - [x] Documentation provided
 
+## Post-Implementation Fixes (2025-11-19)
+
+After initial implementation, the following corrections were applied to fix misspecifications:
+
+### Schema Corrections
+1. **`approval_policies.version` → `approval_policies.id`**
+   - **Issue**: Field named `version` implied per-agent versioning, but it's actually a globally unique identifier
+   - **Fix**: Renamed to `id` to clarify that it's globally unique across all agents
+   - **Files changed**: `sqlite.py` (schema + queries), `server.py` (reload logic)
+
+2. **`policy_proposals` PK from `(agent_id, id)` → `id`**
+   - **Issue**: Composite PK suggested agent-scoped IDs, but proposal IDs are globally unique UUIDs
+   - **Fix**: Changed to single-column PK `id`
+   - **Files changed**: `sqlite.py` (schema definition)
+
+### Type Handling Fixes
+3. **Middleware type handling**
+   - **Issue**: Middleware was passing dict to `ToolCallExecution.output` which expects `mcp.types.CallToolResult`
+   - **Fix**: Use `to_pydantic()` to convert FastMCP results directly to MCP types
+   - **Files changed**: `middleware.py`
+
+4. **Field name casing in `as_minimal_json`**
+   - **Issue**: Function was using snake_case field names (`is_error`, `structured_content`) but MCP types use camelCase (`isError`, `structuredContent`)
+   - **Fix**: Updated to use MCP field names (camelCase) directly without fallback
+   - **Files changed**: `calltool.py`
+
+### Test Fixes
+5. **Removed skip decorator from `test_error_during_execution`**
+   - **Issue**: Test was skipped due to the field casing bug in `as_minimal_json`
+   - **Fix**: Removed skip decorator after fixing the underlying type handling issue
+   - **Files changed**: `test_middleware_lifecycle.py`
+
+### Documentation Updates
+6. **Added TODO to plan.md**
+   - Added suggestion to merge `policy_proposals` and `approval_policies` tables
+   - **Rationale**: Similar structure (id, agent_id, content, timestamps, status/metadata), proposals "graduate" to policies
+   - **Location**: `plan.md` "Future Enhancements" section
+
 ## Future Enhancements
 
 1. **Rollback API**: Expose `rollback_policy(policy_id, history_id)` through MCP

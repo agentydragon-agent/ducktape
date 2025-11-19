@@ -120,7 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_tool_calls_run ON tool_calls(run_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_agent ON tool_calls(agent_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_decided ON tool_calls(decided_at);
 CREATE TABLE IF NOT EXISTS approval_policies (
-  version INTEGER PRIMARY KEY AUTOINCREMENT,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   content TEXT NOT NULL,
   created_at TEXT NOT NULL
@@ -144,13 +144,12 @@ CREATE TABLE IF NOT EXISTS policy_history (
 CREATE INDEX IF NOT EXISTS idx_policy_history_policy ON policy_history(policy_id);
 CREATE INDEX IF NOT EXISTS idx_policy_history_updated ON policy_history(updated_at);
 CREATE TABLE IF NOT EXISTS policy_proposals (
-  id TEXT NOT NULL,
+  id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   content TEXT NOT NULL,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  decided_at TEXT NULL,
-  PRIMARY KEY (agent_id, id)
+  decided_at TEXT NULL
 );
 -- Chat: messages and per-server last-read (HWM)
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -292,15 +291,15 @@ GROUP BY a.id
 
     # ---- Approval policy (per-agent) ---------------------------------------
     async def get_latest_policy(self, agent_id: str) -> tuple[str, int] | None:
-        """Return (content, version) of the latest approval policy for the agent, or None."""
+        """Return (content, id) of the latest approval policy for the agent, or None."""
         async with (
             self._db_connection() as db,
             db.execute(
                 """
-SELECT content, version
+SELECT content, id
 FROM approval_policies
 WHERE agent_id = ?
-ORDER BY version DESC
+ORDER BY id DESC
 LIMIT 1
                 """,
                 (agent_id,),
@@ -309,10 +308,10 @@ LIMIT 1
             row = await cur.fetchone()
             if not row:
                 return None
-            return (cast(str, row["content"]), int(row["version"]))
+            return (cast(str, row["content"]), int(row["id"]))
 
     async def set_policy(self, agent_id: str, *, content: str) -> int:
-        """Persist a new policy version for agent; returns assigned version."""
+        """Persist a new policy for agent; returns assigned id."""
         async with self._open() as db:
             await db.execute(
                 "INSERT INTO approval_policies (agent_id, content, created_at) VALUES (?, ?, ?)",
@@ -386,9 +385,9 @@ WHERE agent_id = ? AND id = ?
             )
 
     async def approve_policy_proposal(self, agent_id: str, proposal_id: str) -> int:
-        """Mark proposal approved and persist content as new active policy version.
+        """Mark proposal approved and persist content as new active policy.
 
-        Returns the new active policy version.
+        Returns the new active policy id.
         """
         # Read proposal content
         async with (

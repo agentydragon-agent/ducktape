@@ -680,3 +680,49 @@ Phase 0 → Phase 1 → Phase 3 → Phase 4 → Phase 5 → Phase FINAL
 ## Next Steps
 
 Ready to begin autonomous execution starting with Phase 0, Wave 0.1?
+
+## Wave 1.1.C Fixes (Completed 2025-11-19)
+
+### Status: ✅ COMPLETED
+
+Fixed critical misspecifications in wave 1.1 implementation before proceeding with full parallel execution plan.
+
+#### Issues Fixed
+
+1. **Schema: `approval_policies.version` → `approval_policies.id`**
+   - **Problem**: Field named `version` implied per-agent versioning, but it's actually a globally unique identifier
+   - **Solution**: Renamed to `id` to clarify that it's globally unique across all agents
+   - **Files changed**:
+     - `adgn/src/adgn/agent/persist/sqlite.py` (schema + queries)
+     - `adgn/src/adgn/mcp/approval_policy/server.py` (reload logic)
+
+2. **Schema: `policy_proposals` PK from `(agent_id, id)` → `id`**
+   - **Problem**: Composite PK suggested agent-scoped IDs, but proposal IDs are globally unique UUIDs
+   - **Solution**: Changed to single-column PK `id`
+   - **Files changed**:
+     - `adgn/src/adgn/agent/persist/sqlite.py` (schema definition)
+   - **Note**: All existing queries remain compatible (defensive WHERE clauses still check both)
+
+3. **Bug: Middleware type handling**
+   - **Problem**: Middleware was passing dict to ToolCallExecution.output which expects mcp.types.CallToolResult
+   - **Solution**: Use to_pydantic() to convert FastMCP results directly to MCP types
+   - **Files changed**:
+     - `adgn/src/adgn/mcp/policy_gateway/middleware.py`
+     - `adgn/tests/mcp/policy_gateway/test_middleware_lifecycle.py` (removed skip decorator)
+
+4. **Bug: Field casing in `as_minimal_json`**
+   - **Problem**: Function was using snake_case field names but MCP types use camelCase
+   - **Solution**: Updated to use MCP field names (isError, structuredContent) directly
+   - **Files changed**:
+     - `adgn/src/adgn/mcp/_shared/calltool.py`
+
+5. **Documentation: TODO for table merging**
+   - **Added**: Future enhancement suggestion to merge `policy_proposals` and `approval_policies` tables
+   - **Rationale**: Similar structure (id, agent_id, content, timestamps, status/metadata), proposals "graduate" to policies
+   - **Location**: `plan.md` "Future Enhancements" section
+
+#### Impact on Parallel Execution Plan
+
+- No blocking impact - these were schema/naming fixes
+- Wave 1.1.D (Approval Engine Integration) can proceed without modifications
+- All subsequent waves can proceed as planned
