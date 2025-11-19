@@ -30,11 +30,11 @@ def _find_in_file(path: Path, *, graph: dict[str, set[str]], root: Path) -> list
             finally:
                 self.stack.pop()
 
-        def visit_Import(self, n: ast.Import) -> None:  # noqa: N802
+        def visit_Import(self, n: ast.Import) -> None:
             self._maybe_report(n)
             self.generic_visit(n)
 
-        def visit_ImportFrom(self, n: ast.ImportFrom) -> None:  # noqa: N802
+        def visit_ImportFrom(self, n: ast.ImportFrom) -> None:
             self._maybe_report(n)
             self.generic_visit(n)
 

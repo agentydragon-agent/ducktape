@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
 
-import pytest
 from mcp import types as mcp_types
+import pytest
 
 from adgn.agent.persist import ApprovalOutcome, Decision, ToolCall, ToolCallExecution, ToolCallRecord
 from adgn.agent.persist.sqlite import SQLitePersistence

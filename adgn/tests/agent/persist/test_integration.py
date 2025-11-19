@@ -17,13 +17,11 @@ It also tests:
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
-import json
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
-import pytest
 from mcp import types as mcp_types
+import pytest
 
 from adgn.agent.persist import ApprovalOutcome, Decision, ToolCall, ToolCallExecution, ToolCallRecord
 from adgn.agent.persist.sqlite import SQLitePersistence

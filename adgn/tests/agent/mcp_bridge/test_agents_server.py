@@ -574,7 +574,7 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
     async def get_infrastructure(agent_id: AgentID):
         if agent_id == AgentID("local-agent"):
             return local_infra
-        elif agent_id == AgentID("bridge-agent"):
+        if agent_id == AgentID("bridge-agent"):
             return bridge_infra
         raise KeyError(f"Agent {agent_id} not found")
 
@@ -999,11 +999,11 @@ async def test_presets_list_with_multiple_presets(agents_client, monkeypatch):
 async def test_presets_list_ordering(agents_client, monkeypatch):
     """Test resource://presets/list preserves preset ordering from discovery."""
     # Mock discover_presets with ordered presets
-    import adgn.agent.mcp_bridge.servers.agents as agents_module
-    from adgn.agent.presets import AgentPreset
-
     # Use ordered dict to ensure specific order
     from collections import OrderedDict
+
+    import adgn.agent.mcp_bridge.servers.agents as agents_module
+    from adgn.agent.presets import AgentPreset
 
     ordered_presets = OrderedDict(
         [

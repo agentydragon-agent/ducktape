@@ -14,7 +14,6 @@ Sidecars (runtime, UI, chat, loop) are attached separately to RunningInfrastruct
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
-import json
 import logging
 import os
 

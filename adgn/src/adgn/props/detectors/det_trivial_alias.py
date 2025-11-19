@@ -17,7 +17,7 @@ class _UseCounter(ast.NodeVisitor):
         self.loads = 0
         self.stores = 0
 
-    def visit_Name(self, node: ast.Name):  # noqa: N802
+    def visit_Name(self, node: ast.Name):
         if node.id == self.target:
             if isinstance(node.ctx, ast.Load):
                 self.loads += 1

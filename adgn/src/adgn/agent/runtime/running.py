@@ -13,7 +13,6 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 
 from fastmcp.client import Client
-from fastmcp.mcp_config import MCPServerTypes
 
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.types import AgentID

@@ -45,7 +45,7 @@ async def process_file(p: Path) -> list[dict]:
     kept = 0
     last_tick = time.monotonic()
     interval = 2.0  # seconds
-    async with aiofiles.open(p, "r", encoding="utf-8") as f:
+    async with aiofiles.open(p, encoding="utf-8") as f:
         async for line in f:
             lines += 1
             rec = json.loads(line)

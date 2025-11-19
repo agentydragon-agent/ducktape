@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from hamcrest import assert_that, equal_to, has_length
 import pytest
-from hamcrest import assert_that, equal_to, has_item, has_length, instance_of
 
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.mcp._shared.constants import APPROVAL_POLICY_PROPOSALS_INDEX_URI

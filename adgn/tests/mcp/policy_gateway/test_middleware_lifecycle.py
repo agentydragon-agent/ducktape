@@ -10,9 +10,7 @@ Uses real persistence (temp SQLite DB) and mocks policy/approval/tools.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
-import json
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -23,14 +21,12 @@ from mcp import McpError, types as mcp_types
 import pytest
 
 from adgn.agent.approvals import ApprovalHub
-from adgn.agent.handler import AbortTurnDecision, ContinueDecision
-from adgn.agent.persist import ApprovalOutcome, Decision, ToolCall, ToolCallExecution, ToolCallRecord
+from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from adgn.mcp._shared.constants import POLICY_DENIED_ABORT_MSG
 from adgn.mcp.approval_policy.clients import PolicyReaderStub
 from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
-
 
 # --- Fixtures ---
 
@@ -286,7 +282,7 @@ async def test_user_approve_lifecycle(
     synchronization that's difficult to test without a more sophisticated
     approval handler setup.
     """
-    pass  # Test body skipped
+    # Test body skipped
 
 
 @pytest.mark.asyncio
@@ -311,7 +307,7 @@ async def test_user_deny_lifecycle(
     synchronization that's difficult to test without a more sophisticated
     approval handler setup.
     """
-    pass  # Test body skipped
+    # Test body skipped
 
 
 @pytest.mark.asyncio

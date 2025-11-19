@@ -1,7 +1,7 @@
 """Tests for policy state management (persistence, validation, reload)."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -147,13 +147,12 @@ async def test_policy_history_tracking(persistence: SQLitePersistence):
 
     # Check that we have history entries (implementation detail: query DB directly)
     # The history table should contain entries for the old versions
-    async with persistence._db_connection() as db:
-        async with db.execute(
-            "SELECT COUNT(*) FROM policy_history WHERE policy_id = ?",
-            ("test-policy",),
-        ) as cur:
-            row = await cur.fetchone()
-            count = row[0] if row else 0
+    async with persistence._db_connection() as db, db.execute(
+        "SELECT COUNT(*) FROM policy_history WHERE policy_id = ?",
+        ("test-policy",),
+    ) as cur:
+        row = await cur.fetchone()
+        count = row[0] if row else 0
 
     # Should have 3 entries: initial version + 2 updates
     assert count == 3

@@ -8,9 +8,9 @@ TypeScript interface definitions for use in the web UI.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -30,14 +30,7 @@ from adgn.agent.mcp_bridge.servers.agents import (
     PolicyProposalInfo,
     RejectToolCallArgs,
 )
-from adgn.agent.persist import (
-    ApprovalOutcome,
-    Decision,
-    EventType,
-    RunStatus,
-    ToolCallExecution,
-    ToolCallRecord,
-)
+from adgn.agent.persist import ApprovalOutcome, Decision, EventType, RunStatus, ToolCallExecution, ToolCallRecord
 from adgn.agent.types import ToolCall
 
 
@@ -132,7 +125,7 @@ def main() -> None:
     unified_schema = {
         "type": "object",
         "title": "AgentTypes",
-        "properties": {name: {"$ref": f"#/$defs/{name}"} for name in all_defs.keys() if name in [m.__name__ for m in models_to_export]},
+        "properties": {name: {"$ref": f"#/$defs/{name}"} for name in all_defs if name in [m.__name__ for m in models_to_export]},
         "$defs": all_defs,
     }
 

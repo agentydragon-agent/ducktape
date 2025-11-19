@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from enum import StrEnum
-import json
 from typing import Any, cast
 
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionMessageToolCallParam

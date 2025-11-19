@@ -338,7 +338,7 @@ class AgentSession:
                 # Responses API invariant (each function_call has an output) holds.
                 # This prevents downstream 400 errors when the SDK validates input.
                 self._agent.abort_pending_tool_calls()
-            except Exception as e:
+            except Exception:
                 # Best-effort; do not block abort on synthesis failures
                 logger.error("abort_pending_tool_calls failed", exc_info=True)
                 # Re-raise after logging - synthesis failures indicate broken state

@@ -126,7 +126,7 @@ def make_container_lifespan(opts: ContainerOptions):
                     container = await client.containers.get(container_dict["Id"])
                     await container.kill()
                     await container.delete(force=True)
-                except Exception as e:
+                except Exception:
                     # Container cleanup failed - this may leak resources
                     logger.error("Container cleanup failed", extra={"container_id": container_dict.get("Id")}, exc_info=True)
                     raise
@@ -224,7 +224,7 @@ async def _run_ephemeral_container(
             await container.kill()
             await asyncio.sleep(0.2)
             await container.kill()
-        except Exception as e:
+        except Exception:
             logger.error("Failed to kill ephemeral container on timeout", exc_info=True)
             raise
 
@@ -256,7 +256,7 @@ async def _run_ephemeral_container(
 
         extend_buf_from_logs(stdout_buf, stdout_logs)
         extend_buf_from_logs(stderr_buf, stderr_logs)
-    except Exception as e:
+    except Exception:
         logger.error("Failed to retrieve logs from ephemeral container", exc_info=True)
         raise
 
@@ -344,7 +344,7 @@ async def _run_session_container(
                 await asyncio.sleep(0.5)
                 # Restart the container
                 s.container = await _start_container(client=docker_client, opts=opts)
-            except Exception as e:
+            except Exception:
                 logger.error("Failed to restart session container after timeout", exc_info=True)
                 raise
         else:

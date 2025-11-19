@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-import pytest
 from docker import DockerClient
 from fastmcp.mcp_config import MCPConfig
+import pytest
 
 from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
 from adgn.agent.persist import AgentMetadata

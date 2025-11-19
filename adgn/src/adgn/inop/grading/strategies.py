@@ -23,7 +23,6 @@ from adgn.inop.engine.models import (
 from adgn.inop.io.yaml_loader import YamlLoader, load_yaml_files
 from adgn.inop.prompting.truncation_utils import TruncationManager
 
-
 # TypedDicts for grading artifacts
 
 
