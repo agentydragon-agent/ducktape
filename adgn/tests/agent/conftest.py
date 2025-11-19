@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 
 import docker
 from fastapi.testclient import TestClient
+from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
@@ -16,11 +18,13 @@ import pytest
 from starlette.testclient import WebSocketTestSession
 
 from adgn.agent.approvals import ApprovalPolicyEngine
+from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt
 from adgn.mcp.editor_server import make_editor_server
+from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.agent.ws_helpers import (
@@ -33,6 +37,22 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 from tests.types import McpServerSpecs
 
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
+
+
+@pytest.fixture
+async def test_agent(persistence: SQLitePersistence) -> str:
+    """Shared test agent fixture - creates a test agent in the database.
+
+    Used across all agent tests that need a test agent ID.
+    """
+    agent_id = "test-agent-1"
+    async with persistence._db_connection() as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO agents (id, created_at, specs, metadata) VALUES (?, ?, ?, ?)",
+            (agent_id, datetime.now(UTC).isoformat(), "{}", None),
+        )
+        await db.commit()
+    return agent_id
 
 
 class _AgentHttp:
@@ -196,9 +216,6 @@ def fake_openai_client_factory() -> Callable[[Iterable[ResponsesResult]], FakeOp
 @pytest.fixture
 def typed_editor_factory(tmp_path: Path):
     """Factory that yields (EditorServerStub, target_path) for an in-proc editor server."""
-    from fastmcp.client import Client
-
-    from adgn.mcp.testing.editor_stubs import EditorServerStub
 
     @asynccontextmanager
     async def _open(initial_text: str = "x = 1\n") -> AsyncIterator[tuple[EditorServerStub, Path]]:
@@ -392,8 +409,6 @@ def agent_ws_box(ws_session, make_agent_http):
             box.ws  # underlying WS
             box.agent_id
     """
-
-    from dataclasses import dataclass
 
     @dataclass
     class Box:

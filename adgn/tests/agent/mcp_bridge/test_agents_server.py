@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 from unittest.mock import Mock
 
@@ -11,11 +11,12 @@ from fastmcp.client import Client
 from mcp import types as mcp_types
 import pytest
 
-from adgn.agent.approvals import ApprovalRequest
+from adgn.agent.approvals import ApprovalHub, ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.mcp_bridge.servers.agents import make_agents_server
-from adgn.agent.mcp_bridge.types import AgentID
+from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist import ApprovalOutcome, Decision, PolicyProposal, ToolCall, ToolCallRecord
+from adgn.mcp.snapshots import RunningServerEntry, SamplingSnapshot
 
 
 def read_text_json(result):
@@ -101,9 +102,6 @@ async def test_agent_state_resource_bridge_agent(agents_client):
 @pytest.mark.asyncio
 async def test_agent_state_resource_with_servers(agents_client, mock_local_runtime):
     """Test resource://agents/{id}/state returns sampling snapshot with server data."""
-    from adgn.mcp.snapshots import RunningServerEntry, SamplingSnapshot
-    from mcp import types as mcp_types
-
     # Create a more complex sampling snapshot with running server
     server_entry = RunningServerEntry(
         state="running",
@@ -532,8 +530,6 @@ async def test_reject_nonexistent_call_id(agents_client):
 @pytest.mark.asyncio
 async def test_global_approvals_pending_different_per_agent(mock_persistence, mock_approval_engine):
     """Test resource://approvals/pending returns different approvals per agent."""
-    from adgn.agent.approvals import ApprovalHub
-
     # Create separate approval hubs for each agent
     local_hub = ApprovalHub()
     bridge_hub = ApprovalHub()
@@ -561,8 +557,6 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
         raise KeyError(f"Agent {agent_id} not found")
 
     def get_agent_mode(agent_id: AgentID):
-        from adgn.agent.mcp_bridge.types import AgentMode
-
         return AgentMode.LOCAL if agent_id == "local-agent" else AgentMode.BRIDGE
 
     custom_registry.known_agents = known_agents
@@ -623,8 +617,6 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
 @pytest.mark.asyncio
 async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persistence):
     """Test resource://agents/{id}/approvals/history with mixed decision outcomes."""
-    from datetime import timedelta
-
     base_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
 
     # Create tool call records with different outcomes
@@ -712,8 +704,6 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
 @pytest.mark.asyncio
 async def test_agent_state_resource_idle_agent(agents_client, mock_local_runtime):
     """Test resource://agents/{id}/state for an idle agent (no active sampling)."""
-    from adgn.mcp.snapshots import SamplingSnapshot
-
     # Mock an idle snapshot (empty servers, older timestamp)
     idle_snapshot = SamplingSnapshot(ts="2025-01-15T09:00:00Z", servers={})
 

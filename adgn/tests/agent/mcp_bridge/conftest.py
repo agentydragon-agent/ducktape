@@ -14,6 +14,7 @@ import pytest
 
 from adgn.agent.approvals import ApprovalHub
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
+from adgn.mcp.snapshots import SamplingSnapshot
 
 # Shared test agent ID (for single-agent tests; multiagent tests can create their own)
 TEST_AGENT = AgentID("test-agent")
@@ -93,8 +94,6 @@ def mock_local_runtime():
     Shared by tests that need a local runtime with abort capability.
     Only used when testing local agent modes.
     """
-    from adgn.mcp.snapshots import SamplingSnapshot
-
     runtime = Mock()
     runtime.agent = Mock()
     runtime.agent.abort = AsyncMock()

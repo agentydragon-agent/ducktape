@@ -44,18 +44,7 @@ async def persistence(tmp_path: Path) -> SQLitePersistence:
     return persist
 
 
-@pytest.fixture
-async def test_agent(persistence: SQLitePersistence) -> str:
-    """Create a test agent in the database."""
-    agent_id = "test-agent-1"
-    from datetime import UTC, datetime
-    async with persistence._db_connection() as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO agents (id, created_at, specs, metadata) VALUES (?, ?, ?, ?)",
-            (agent_id, datetime.now(UTC).isoformat(), "{}", None),
-        )
-        await db.commit()
-    return agent_id
+# test_agent fixture now provided globally in tests/agent/conftest.py
 
 
 @pytest.fixture
@@ -68,12 +57,6 @@ def approval_hub() -> ApprovalHub:
 def run_id() -> UUID | None:
     """Run ID for tests (None to avoid FK constraints)."""
     return None
-
-
-@pytest.fixture
-def agent_id(test_agent: str) -> str:
-    """Agent ID for tests (uses test_agent fixture)."""
-    return test_agent
 
 
 # --- Mock Policy Reader ---
@@ -153,7 +136,7 @@ async def test_policy_allow_lifecycle(
     persistence: SQLitePersistence,
     approval_hub: ApprovalHub,
     run_id: UUID | None,
-    agent_id: str,
+    test_agent: str,
 ):
     """Test POLICY_ALLOW flow: PENDING → EXECUTING → COMPLETED.
 
@@ -171,7 +154,7 @@ async def test_policy_allow_lifecycle(
         policy_reader=policy_reader,
         persistence=persistence,
         run_id=run_id,
-        agent_id=agent_id,
+        agent_id=test_agent,
     )
 
     # Track call_id from PENDING record
@@ -203,7 +186,7 @@ async def test_policy_allow_lifecycle(
     # Assert: Record structure
     assert record.call_id == call_id
     assert record.run_id is None  # No run_id in test environment
-    assert record.agent_id == agent_id
+    assert record.agent_id == test_agent
     assert record.tool_call.name == "test_tool"
     assert record.tool_call.args_json == '{"arg": "value"}'
 
@@ -228,7 +211,7 @@ async def test_policy_deny_abort_lifecycle(
     persistence: SQLitePersistence,
     approval_hub: ApprovalHub,
     run_id: UUID | None,
-    agent_id: str,
+    test_agent: str,
 ):
     """Test POLICY_DENY flow: PENDING → final record (no execution).
 
@@ -245,7 +228,7 @@ async def test_policy_deny_abort_lifecycle(
         policy_reader=policy_reader,
         persistence=persistence,
         run_id=run_id,
-        agent_id=agent_id,
+        agent_id=test_agent,
     )
 
     # Track call_id
@@ -287,7 +270,7 @@ async def test_user_approve_lifecycle(
     persistence: SQLitePersistence,
     approval_hub: ApprovalHub,
     run_id: UUID | None,
-    agent_id: str,
+    test_agent: str,
 ):
     """Test USER_APPROVE flow: PENDING → (user approves) → EXECUTING → COMPLETED.
 
@@ -312,7 +295,7 @@ async def test_user_deny_lifecycle(
     persistence: SQLitePersistence,
     approval_hub: ApprovalHub,
     run_id: UUID | None,
-    agent_id: str,
+    test_agent: str,
 ):
     """Test USER_DENY flow: PENDING → (user denies) → final record (no execution).
 
@@ -336,7 +319,7 @@ async def test_error_during_execution(
     persistence: SQLitePersistence,
     approval_hub: ApprovalHub,
     run_id: UUID | None,
-    agent_id: str,
+    test_agent: str,
 ):
     """Test error flow: PENDING → EXECUTING → COMPLETED (with error result).
 
@@ -353,7 +336,7 @@ async def test_error_during_execution(
         policy_reader=policy_reader,
         persistence=persistence,
         run_id=run_id,
-        agent_id=agent_id,
+        agent_id=test_agent,
     )
 
     # Track call_id
@@ -395,7 +378,7 @@ async def test_multiple_tool_calls(
     persistence: SQLitePersistence,
     approval_hub: ApprovalHub,
     run_id: UUID | None,
-    agent_id: str,
+    test_agent: str,
 ):
     """Test multiple tool calls in sequence.
 
@@ -411,7 +394,7 @@ async def test_multiple_tool_calls(
         policy_reader=policy_reader,
         persistence=persistence,
         run_id=run_id,
-        agent_id=agent_id,
+        agent_id=test_agent,
     )
 
     # Act: Execute three tool calls
@@ -432,7 +415,7 @@ async def test_multiple_tool_calls(
     assert all(r.run_id is None for r in records)
 
     # Assert: All have the test agent_id
-    assert all(r.agent_id == agent_id for r in records)
+    assert all(r.agent_id == test_agent for r in records)
 
     # Assert: Each has correct tool name
     tool_names_from_db = {r.tool_call.name for r in records}
@@ -449,7 +432,7 @@ async def test_timestamp_ordering(
     persistence: SQLitePersistence,
     approval_hub: ApprovalHub,
     run_id: UUID | None,
-    agent_id: str,
+    test_agent: str,
 ):
     """Test that timestamps are properly ordered: created < decided < completed.
 
@@ -462,7 +445,7 @@ async def test_timestamp_ordering(
         policy_reader=policy_reader,
         persistence=persistence,
         run_id=run_id,
-        agent_id=agent_id,
+        agent_id=test_agent,
     )
 
     # Track timestamps at each stage

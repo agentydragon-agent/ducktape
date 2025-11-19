@@ -13,6 +13,7 @@ import pytest
 from adgn.agent.mcp_bridge.server import InfrastructureRegistry, create_management_ui_app, create_mcp_server_app
 from adgn.agent.mcp_bridge.types import AgentID
 from adgn.agent.persist.sqlite import SQLitePersistence
+from adgn.agent.runtime.infrastructure import RunningInfrastructure
 
 # temp_db fixture is provided by conftest.py
 
@@ -142,8 +143,6 @@ async def test_infrastructure_registry_get_nonexistent(infrastructure_registry: 
 async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastructure_registry: InfrastructureRegistry):
     """Test that /api/agents endpoint delegates to agents MCP server."""
     # Register a local agent in the registry
-    from adgn.agent.runtime.infrastructure import RunningInfrastructure
-
     # Create mock infrastructure for a local agent
     mock_infra = Mock(spec=RunningInfrastructure)
     mock_infra.approval_hub = Mock()

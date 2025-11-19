@@ -7,6 +7,7 @@ import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.helpers import api_create_agent
+from tests.llm.support.openai_mock import make_mock
 
 pytestmark = pytest.mark.usefixtures()
 
@@ -59,8 +60,6 @@ def test_ui_create_chat_and_restore(page: Page, run_server, responses_factory):
         return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_r2")
 
     # Inject deterministic OpenAI model via DI
-    from tests.llm.support.openai_mock import make_mock
-
     # Start server instance A
     s1 = run_server(lambda model: make_mock(responses_create))
     base1 = s1["base_url"]

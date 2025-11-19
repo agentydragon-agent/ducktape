@@ -222,14 +222,6 @@ def write_artifact(path: Path, payload: Mapping[str, object]) -> None:
     path.write_text(json.dumps(dict(payload), indent=2), encoding="utf-8")
 
 
-<<<<<<< HEAD
-=======
-def write_artifact(path: Path, payload: Mapping[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(dict(payload), indent=2), encoding="utf-8")
-
-
->>>>>>> c0b595c (Apply auto-formatting from pre-commit hooks)
 async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
     artifact_dir = request.artifact_dir
     artifact_dir.mkdir(parents=True, exist_ok=True)

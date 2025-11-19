@@ -7,6 +7,7 @@ import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.helpers import api_create_agent
+from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
@@ -43,8 +44,6 @@ def test_mcp_approval_flow_with_notifications(page: Page, run_server, responses_
             )
         # Second call: end turn
         return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
-
-    from tests.llm.support.openai_mock import make_mock
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -125,8 +124,6 @@ def test_multi_agent_global_mailbox(page: Page, run_server, responses_factory):
                 build_mcp_function("echo", "echo"), {"text": "agent2 message"}, call_id="call_echo_agent2"
             )
         return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end_2")
-
-    from tests.llm.support.openai_mock import make_mock
 
     # Start server with a factory that can handle multiple agents
     # For simplicity, use the first mock for all agents in this test
@@ -216,8 +213,6 @@ def test_timeline_displays_historical_decisions(page: Page, run_server, response
                 build_mcp_function("echo", "echo"), {"text": "third call"}, call_id="call_echo_3"
             )
         return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
-
-    from tests.llm.support.openai_mock import make_mock
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]

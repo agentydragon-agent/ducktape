@@ -38,17 +38,7 @@ async def persistence(tmp_path: Path) -> SQLitePersistence:
     return persist
 
 
-@pytest.fixture
-async def test_agent(persistence: SQLitePersistence) -> str:
-    """Create a test agent in the database."""
-    agent_id = "test-agent-1"
-    async with persistence._db_connection() as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO agents (id, created_at, specs, metadata) VALUES (?, ?, ?, ?)",
-            (agent_id, datetime.now(UTC).isoformat(), "{}", None),
-        )
-        await db.commit()
-    return agent_id
+# test_agent fixture now provided globally in tests/agent/conftest.py
 
 
 @pytest.fixture

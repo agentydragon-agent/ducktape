@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 from docker import DockerClient
+from fastmcp.mcp_config import MCPConfig
 
 from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
+from adgn.agent.persist import AgentMetadata
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.mcp.approval_policy.server import ApprovalPolicyAdminServer, ReloadPolicyArgs, ValidatePolicyArgs
 
@@ -20,9 +22,6 @@ async def engine_and_persistence(tmp_path: Path, docker_client: DockerClient):
     await persistence.ensure_schema()
 
     # Create agent
-    from adgn.agent.persist import AgentMetadata
-    from fastmcp.mcp_config import MCPConfig
-
     agent_id = await persistence.create_agent(
         mcp_config=MCPConfig(),
         metadata=AgentMetadata(preset="test"),
@@ -149,9 +148,6 @@ async def test_reload_policy_no_persistence_raises(engine_and_persistence):
     admin_server = ApprovalPolicyAdminServer(engine=engine)
 
     # Create a new agent with no policy in persistence
-    from adgn.agent.persist import AgentMetadata
-    from fastmcp.mcp_config import MCPConfig
-
     new_agent_id = await persistence.create_agent(
         mcp_config=MCPConfig(),
         metadata=AgentMetadata(preset="test"),

@@ -174,15 +174,14 @@ class ApprovalPolicy:
     async with make_typed_mcp(proposer, "approval_policy.proposer") as (proposer_client, _sess):
         # Create 3 proposals
         for content in [test_content_allow, test_content_deny, test_content_allow]:
-            result = await proposer_client.call_tool("create_proposal", CreateProposalArgs(content=content))
-            proposal = ProposalDescriptor.model_validate(result.structured_content)
+            proposal = await proposer_client.create_proposal(CreateProposalArgs(content=content))
             proposal_ids.append(proposal.id)
 
     # Approve first, reject second, leave third pending
     admin = ApprovalPolicyAdminServer(engine=approval_engine)
     async with make_typed_mcp(admin, "approval_policy.approver") as (admin_client, _sess):
-        await admin_client.call_tool("approve_proposal", ApproveProposalArgs(id=proposal_ids[0]))
-        await admin_client.call_tool("reject_proposal", RejectProposalArgs(id=proposal_ids[1]))
+        await admin_client.approve_proposal(ApproveProposalArgs(id=proposal_ids[0]))
+        await admin_client.reject_proposal(RejectProposalArgs(id=proposal_ids[1]))
 
     # Verify all proposals appear in list with correct statuses
     reader = ApprovalPolicyServer(approval_engine)
