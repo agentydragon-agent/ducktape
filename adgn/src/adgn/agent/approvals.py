@@ -14,6 +14,7 @@ from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.models.policy_error import PolicyError
 from adgn.agent.persist import Persistence
 from adgn.agent.policy_eval.runner import run_policy_source
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import APPROVAL_POLICY_PROPOSALS_INDEX_URI, APPROVAL_POLICY_RESOURCE_URI, UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 
@@ -126,7 +127,7 @@ class ApprovalPolicyEngine:
         notifier: Callable[[str], None] | None = None,
         *,
         docker_client: DockerClient,
-        agent_id: str,
+        agent_id: AgentID,
         persistence: Persistence,
         policy_source: str,
     ) -> None:
@@ -137,7 +138,7 @@ class ApprovalPolicyEngine:
         self._notify = notifier
         # Public attributes for engine wiring; keep simple access patterns
         self.docker_client: DockerClient = docker_client
-        self.agent_id: str = agent_id
+        self.agent_id: AgentID = agent_id
         self.persistence: Persistence = persistence
 
     def set_notifier(self, notifier: Callable[[str], None]) -> None:

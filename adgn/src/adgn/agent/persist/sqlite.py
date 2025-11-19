@@ -14,6 +14,7 @@ from pydantic import JsonValue
 
 from adgn.agent.persist import Policy, PolicyProposal
 from adgn.agent.runtime.auto_attach import filter_persistable_servers
+from adgn.agent.types import AgentID
 
 from . import (
     AgentMetadata,
@@ -48,6 +49,7 @@ class SQLitePersistence(Persistence):
         async with aiosqlite.connect(self.db_path) as db:
             # Enforce FK cascades on every connection
             await db.execute("PRAGMA foreign_keys = ON;")
+            db.row_factory = aiosqlite.Row
             yield db
 
     @asynccontextmanager
@@ -172,8 +174,8 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
             await db.commit()
 
     # Agents -----------------------------------------------------------------
-    async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> str:
-        agent_id = uuid.uuid4().hex
+    async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> AgentID:
+        agent_id = AgentID(uuid.uuid4().hex)
         async with self._open() as db:
             # Persist only user-configured servers (exclude default auto-attached)
             spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
@@ -184,14 +186,14 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
             await db.commit()
         return agent_id
 
-    async def update_agent_specs(self, agent_id: str, *, mcp_config: MCPConfig) -> None:
+    async def update_agent_specs(self, agent_id: AgentID, *, mcp_config: MCPConfig) -> None:
         async with self._open() as db:
             spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
             await db.execute("UPDATE agents SET specs = ? WHERE id = ?", (json.dumps(spec_json), agent_id))
             await db.commit()
 
     async def patch_agent_specs(
-        self, agent_id: str, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
+        self, agent_id: AgentID, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
     ) -> MCPConfig:
         attach = attach or {}
         detach = detach if detach is not None else []
@@ -217,14 +219,13 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
 
     async def list_agents(self) -> list[AgentRow]:
         out: list[AgentRow] = []
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with self._db_connection() as db:
             async with db.execute("SELECT id, created_at, specs, metadata FROM agents ORDER BY created_at DESC") as cur:
                 async for r in cur:
                     meta_val = AgentMetadata.model_validate_json(cast(str, r["metadata"]))
                     out.append(
                         AgentRow(
-                            id=r["id"],
+                            id=AgentID(r["id"]),
                             created_at=datetime.fromisoformat(r["created_at"]),
                             mcp_config=MCPConfig.model_validate(json.loads(r["specs"])) if r["specs"] else MCPConfig(),
                             metadata=meta_val,
@@ -232,28 +233,27 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
                     )
         return out
 
-    async def get_agent(self, agent_id: str) -> AgentRow | None:
+    async def get_agent(self, agent_id: AgentID) -> AgentRow | None:
         async with self._db_connection() as db:
-            db.row_factory = aiosqlite.Row
             cur = await db.execute("SELECT id, created_at, specs, metadata FROM agents WHERE id = ?", (agent_id,))
             r = await cur.fetchone()
             if not r:
                 return None
             meta_val = AgentMetadata.model_validate_json(cast(str, r["metadata"]))
             return AgentRow(
-                id=r["id"],
+                id=AgentID(r["id"]),
                 created_at=datetime.fromisoformat(r["created_at"]),
                 mcp_config=MCPConfig.model_validate(json.loads(r["specs"])) if r["specs"] else MCPConfig(),
                 metadata=meta_val,
             )
 
-    async def list_agents_last_activity(self) -> dict[str, datetime | None]:
+    async def list_agents_last_activity(self) -> dict[AgentID, datetime | None]:
         """Return a mapping of agent_id -> last activity timestamp (UTC) or None.
 
         Activity considers any of: event ts, run finished_at, run started_at, or
         agent created_at as a fallback, taking the maximum.
         """
-        out: dict[str, datetime | None] = {}
+        out: dict[AgentID, datetime | None] = {}
         async with (
             self._db_connection() as db,
             db.execute(
@@ -271,10 +271,10 @@ GROUP BY a.id
         ):
             async for r in cur:
                 ts = r["last_ts"]
-                out[r["agent_id"]] = datetime.fromisoformat(ts) if ts is not None else None
+                out[AgentID(r["agent_id"])] = datetime.fromisoformat(ts) if ts is not None else None
         return out
 
-    async def delete_agent(self, agent_id: str) -> None:
+    async def delete_agent(self, agent_id: AgentID) -> None:
         """Delete an agent and all associated records.
 
         Always purges related runs (and cascaded events/approvals) and deletes
@@ -290,7 +290,7 @@ GROUP BY a.id
             await db.commit()
 
     # ---- Approval policy (per-agent) ---------------------------------------
-    async def get_latest_policy(self, agent_id: str) -> tuple[str, int] | None:
+    async def get_latest_policy(self, agent_id: AgentID) -> tuple[str, int] | None:
         """Return (content, id) of the latest approval policy for the agent, or None."""
         async with (
             self._db_connection() as db,
@@ -310,7 +310,7 @@ LIMIT 1
                 return None
             return (cast(str, row["content"]), int(row["id"]))
 
-    async def set_policy(self, agent_id: str, *, content: str) -> int:
+    async def set_policy(self, agent_id: AgentID, *, content: str) -> int:
         """Persist a new policy for agent; returns assigned id."""
         async with self._open() as db:
             await db.execute(
@@ -324,7 +324,7 @@ LIMIT 1
             return int(row[0]) if row and row[0] is not None else 0
 
     # ---- Policy proposals (single-store: SQLite) ----------------------------
-    async def create_policy_proposal(self, agent_id: str, *, proposal_id: str, content: str) -> None:
+    async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: str, content: str) -> None:
         async with self._open() as db:
             await db.execute(
                 """
@@ -335,7 +335,7 @@ VALUES (?, ?, ?, 'pending', ?, NULL)
             )
             await db.commit()
 
-    async def list_policy_proposals(self, agent_id: str) -> list[PolicyProposal]:
+    async def list_policy_proposals(self, agent_id: AgentID) -> list[PolicyProposal]:
         async with self._db_connection() as db:
             out: list[PolicyProposal] = []
             async with db.execute(
@@ -361,7 +361,7 @@ ORDER BY created_at DESC
                     )
         return out
 
-    async def get_policy_proposal(self, agent_id: str, proposal_id: str) -> PolicyProposal | None:
+    async def get_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> PolicyProposal | None:
         async with (
             self._db_connection() as db,
             db.execute(
@@ -384,7 +384,7 @@ WHERE agent_id = ? AND id = ?
                 content=cast(str, row["content"]),
             )
 
-    async def approve_policy_proposal(self, agent_id: str, proposal_id: str) -> int:
+    async def approve_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> int:
         """Mark proposal approved and persist content as new active policy.
 
         Returns the new active policy id.
@@ -415,7 +415,7 @@ WHERE agent_id = ? AND id = ?
             await db.commit()
             return int(row[0]) if row and row[0] is not None else 0
 
-    async def reject_policy_proposal(self, agent_id: str, proposal_id: str) -> None:
+    async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None:
         async with self._open() as db:
             await db.execute(
                 "UPDATE policy_proposals SET status = 'rejected', decided_at = ? WHERE agent_id = ? AND id = ?",
@@ -423,7 +423,7 @@ WHERE agent_id = ? AND id = ?
             )
             await db.commit()
 
-    async def delete_policy_proposal(self, agent_id: str, proposal_id: str) -> None:
+    async def delete_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None:
         async with self._open() as db:
             await db.execute("DELETE FROM policy_proposals WHERE agent_id = ? AND id = ?", (agent_id, proposal_id))
             await db.commit()
@@ -435,7 +435,7 @@ WHERE agent_id = ? AND id = ?
         self,
         *,
         run_id: UUID,
-        agent_id: str | None,
+        agent_id: AgentID,
         system_message: str | None,
         model: str | None,
         model_params: dict[str, JsonValue] | None,
@@ -493,7 +493,7 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
         self,
         *,
         run_id: UUID | None,
-        agent_id: str | None,
+        agent_id: AgentID | None,
         call_id: str,
         tool_key: str,
         decision: Decision,
@@ -517,11 +517,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
             )
             await db.commit()
 
-    async def list_approvals(self, *, agent_id: str, limit: int = 100) -> list[ApprovalRecord]:
+    async def list_approvals(self, *, agent_id: AgentID, limit: int = 100) -> list[ApprovalRecord]:
         """List approval history for an agent, ordered by decision time (newest first)."""
         out: list[ApprovalRecord] = []
         async with self._db_connection() as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 """
                 SELECT call_id, run_id, agent_id, tool_key, outcome, decided_at, details
@@ -545,7 +544,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                         ApprovalRecord(
                             call_id=r["call_id"],
                             run_id=r["run_id"],
-                            agent_id=r["agent_id"],
+                            agent_id=AgentID(r["agent_id"]) if r["agent_id"] else None,
                             tool_key=r["tool_key"],
                             decision=decision,
                             details=details_dict,
@@ -553,7 +552,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                     )
         return out
 
-    async def list_runs(self, *, agent_id: str | None = None, limit: int = 50) -> list[RunRow]:
+    async def list_runs(self, *, agent_id: AgentID | None = None, limit: int = 50) -> list[RunRow]:
         params: list[object] = []
         where = ""
         if agent_id:
@@ -563,13 +562,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
         params.append(limit)
         out: list[RunRow] = []
         async with self._db_connection() as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(sql, params) as cur:
                 async for r in cur:
                     out.append(
                         RunRow(
                             id=UUID(r["id"]),
-                            agent_id=r["agent_id"],
+                            agent_id=AgentID(r["agent_id"]),
                             started_at=datetime.fromisoformat(r["started_at"]),
                             finished_at=datetime.fromisoformat(r["finished_at"]) if r["finished_at"] else None,
                             status=RunStatus(r["status"]),
@@ -583,7 +581,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 
     async def get_run(self, run_id: UUID) -> RunRow | None:
         async with self._db_connection() as db:
-            db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 "SELECT id, agent_id, started_at, finished_at, status, system_message, model, model_params, event_count FROM runs WHERE id = ?",
                 (str(run_id),),
@@ -593,7 +590,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 return None
             return RunRow(
                 id=UUID(r["id"]),
-                agent_id=r["agent_id"],
+                agent_id=AgentID(r["agent_id"]),
                 started_at=datetime.fromisoformat(r["started_at"]),
                 finished_at=datetime.fromisoformat(r["finished_at"]) if r["finished_at"] else None,
                 status=RunStatus(r["status"]),
@@ -606,7 +603,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
     async def load_events(self, run_id: UUID) -> list[EventRecord]:
         out: list[EventRecord] = []
         async with self._db_connection() as db:
-            db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT seq, ts, type, payload, call_id, tool_key FROM events WHERE run_id = ? ORDER BY seq ASC",
                 (str(run_id),),
@@ -685,7 +681,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
             return ToolCallRecord(
                 call_id=r["call_id"],
                 run_id=r["run_id"],
-                agent_id=r["agent_id"],
+                agent_id=AgentID(r["agent_id"]),
                 tool_call=tool_call,
                 decision=decision,
                 execution=execution,
@@ -725,7 +721,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                         ToolCallRecord(
                             call_id=r["call_id"],
                             run_id=r["run_id"],
-                            agent_id=r["agent_id"],
+                            agent_id=AgentID(r["agent_id"]),
                             tool_call=tool_call,
                             decision=decision,
                             execution=execution,

@@ -28,6 +28,7 @@ from adgn.agent.presets import AgentPreset, discover_presets
 from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
+from adgn.agent.types import AgentID
 from adgn.agent.server.exceptions import (
     AgentNotFoundError,
     AgentSessionNotReadyError,
@@ -395,33 +396,35 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # Explicit boot endpoint: asserts per-agent volumes/policy exist, then starts live container
     @app.post("/api/agents/{agent_id}/boot", response_model=BootAgentResult)
     async def api_boot_agent(agent_id: str) -> BootAgentResult:
-        row = await app.state.persistence.get_agent(agent_id)
+        agent_id_typed = AgentID(agent_id)
+        row = await app.state.persistence.get_agent(agent_id_typed)
         if row is None:
             return BootAgentResult(ok=False, error="agent_not_found")
         # No volume checks; policy presence validated on startup via engine/persistence
-        if app.state.registry.get(agent_id) is not None:
+        if app.state.registry.get(agent_id_typed) is not None:
             return BootAgentResult(ok=True)
-        await app.state.registry.create(agent_id, row.mcp_config, with_ui=True)
+        await app.state.registry.create(agent_id_typed, row.mcp_config, with_ui=True)
         return BootAgentResult(ok=True)
 
     @app.delete("/api/agents/{agent_id}", response_model=DeleteAgentResult)
     async def api_delete_agent(agent_id: str) -> DeleteAgentResult:
+        agent_id_typed = AgentID(agent_id)
         # Look up live container and persisted agent row
-        container = app.state.registry.get(agent_id)
-        row = await app.state.persistence.get_agent(agent_id)
+        container = app.state.registry.get(agent_id_typed)
+        row = await app.state.persistence.get_agent(agent_id_typed)
         if container is None and row is None:
             return DeleteAgentResult(ok=False, error="not_found")
         # If live, close deterministically (cancels run, waits idle, drains persistence)
         if container is not None:
             result = await container.close()
             # Remove closed container from registry regardless of drain outcome
-            app.state.registry.remove(agent_id)
+            app.state.registry.remove(agent_id_typed)
             # If drain failed, abort purge and return error
             if not (isinstance(result, dict) and result.get("drained", True)):
                 return DeleteAgentResult(ok=False, error="drain_failed")
         # Always purge persisted records when present
         if row is not None:
-            await app.state.persistence.delete_agent(agent_id)
+            await app.state.persistence.delete_agent(agent_id_typed)
         # Notify general WS subscribers (hub presence required)
         hub = app.state.agents_ws_hub
         await hub.broadcast_agent_status(agent_id=agent_id, live=False, active_run_id=None)
