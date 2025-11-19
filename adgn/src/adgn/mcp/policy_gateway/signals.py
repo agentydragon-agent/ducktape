@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+import logging
 from typing import Any, Protocol, runtime_checkable
 
 from fastmcp.client.client import CallToolResult as FastMcpCallToolResult
@@ -18,6 +19,8 @@ from adgn.mcp._shared.constants import (
     POLICY_EVALUATOR_ERROR_MSG,
     POLICY_GATEWAY_STAMP_KEY,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PolicyGatewayErrorKind(StrEnum):
@@ -67,21 +70,25 @@ def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
     if isinstance(obj, dict):
         try:
             return mtypes.ErrorData.model_validate(obj)
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to validate dict as ErrorData: %s", e)
             try:
                 # Minimal acceptance: just code+message fields
                 code_val = obj.get("code")
                 msg_val = obj.get("message")
                 if code_val is None or msg_val is None:
+                    logger.debug("Dict missing code or message fields")
                     return None
                 return mtypes.ErrorData(code=int(code_val), message=str(msg_val))
-            except Exception:
+            except Exception as e2:
+                logger.debug("Failed to construct minimal ErrorData from dict: %s", e2)
                 return None
     # Attribute-style fallback
     if isinstance(obj, _ErrorFields):
         try:
             return mtypes.ErrorData(code=int(obj.code), message=str(obj.message))
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to extract ErrorData from object attributes: %s", e)
             return None
     return None
 

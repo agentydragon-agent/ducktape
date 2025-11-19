@@ -22,6 +22,7 @@ client = make_logged_async_openai(Path("./openai_http.jsonl"))
 
 from __future__ import annotations
 
+import asyncio
 from functools import partial
 import json
 import logging
@@ -37,11 +38,17 @@ logger = logging.getLogger(__name__)
 async def _log_write(path: Path, record: dict[str, Any]) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        content = json.dumps(record, ensure_ascii=False) + "\n"
+
+        def _write():
+            with path.open("a", encoding="utf-8") as f:
+                f.write(content)
+
+        await asyncio.to_thread(_write)
     except OSError as e:
-        # Best-effort logging; never crash the caller, but surface failure for diagnostics
-        logger.debug("failed to write HTTP log: %s", e)
+        # Best-effort logging; never crash the caller. HTTP interceptor hooks must not
+        # disrupt normal API operation. Log at warning level for visibility.
+        logger.warning("HTTP log write failed (diagnostics unavailable): %s", e, exc_info=True)
 
 
 async def _on_request(req: httpx.Request, *, path: Path) -> None:  # pragma: no cover - HTTP hook
@@ -49,7 +56,8 @@ async def _on_request(req: httpx.Request, *, path: Path) -> None:  # pragma: no 
     try:
         body = req.content or b""
     except Exception as e:
-        logger.debug("failed to read request body for logging: %s", e)
+        # HTTP hook must not crash; log body read failure and continue with empty body
+        logger.warning("failed to read request body for HTTP logging: %s", e, exc_info=True)
         body = b""
     await _log_write(
         path,
@@ -69,18 +77,20 @@ async def _on_response(resp: httpx.Response, *, path: Path) -> None:  # pragma: 
     try:
         req_body = req.content or b""
     except Exception as e:
-        logger.debug("failed to read request body for logging: %s", e)
+        # HTTP hook must not crash; log body read failure and continue with empty body
+        logger.warning("failed to read request body for HTTP logging: %s", e, exc_info=True)
         req_body = b""
     # Safely read response body for streaming responses
     resp_body_bytes: bytes = b""
     try:
         resp_body_bytes = await resp.aread()
     except Exception as e:
-        logger.debug("failed to aread response body: %s", e)
+        logger.warning("failed to aread response body: %s", e, exc_info=True)
         try:
             resp_body_bytes = resp.content
         except Exception as e2:
-            logger.debug("failed to access response.content: %s", e2)
+            # HTTP hook must not crash; both read methods failed, continue with empty body
+            logger.warning("failed to access response.content: %s", e2, exc_info=True)
             resp_body_bytes = b""
     await _log_write(
         path,
@@ -101,7 +111,8 @@ async def _log_request_to_logger(req: httpx.Request, *, logger: logging.Logger) 
     try:
         body = req.content or b""
     except Exception as e:
-        logger.debug("failed to read request body for logging: %s", e)
+        # HTTP hook must not crash; log body read failure and continue with empty body
+        logger.warning("failed to read request body for HTTP logging: %s", e, exc_info=True)
         body = b""
 
     logger.debug(
@@ -121,7 +132,8 @@ async def _log_response_to_logger(
     try:
         req_body = req.content or b""
     except Exception as e:
-        logger.debug("failed to read request body for logging: %s", e)
+        # HTTP hook must not crash; log body read failure and continue with empty body
+        logger.warning("failed to read request body for HTTP logging: %s", e, exc_info=True)
         req_body = b""
 
     # Safely read response body for streaming responses
@@ -129,11 +141,12 @@ async def _log_response_to_logger(
     try:
         resp_body_bytes = await resp.aread()
     except Exception as e:
-        logger.debug("failed to aread response body: %s", e)
+        logger.warning("failed to aread response body: %s", e, exc_info=True)
         try:
             resp_body_bytes = resp.content
         except Exception as e2:
-            logger.debug("failed to access response.content: %s", e2)
+            # HTTP hook must not crash; both read methods failed, continue with empty body
+            logger.warning("failed to access response.content: %s", e2, exc_info=True)
             resp_body_bytes = b""
 
     logger.debug(

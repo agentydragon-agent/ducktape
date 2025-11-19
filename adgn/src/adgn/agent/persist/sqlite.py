@@ -12,6 +12,7 @@ import aiosqlite
 from fastmcp.mcp_config import MCPConfig
 from pydantic import JsonValue
 
+from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import Policy, PolicyProposal
 from adgn.agent.runtime.auto_attach import filter_persistable_servers
 from adgn.agent.types import AgentID
@@ -327,9 +328,9 @@ LIMIT 1
     async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: str, content: str) -> None:
         async with self._open() as db:
             await db.execute(
-                """
+                f"""
 INSERT INTO policy_proposals (id, agent_id, content, status, created_at, decided_at)
-VALUES (?, ?, ?, 'pending', ?, NULL)
+VALUES (?, ?, ?, '{ProposalStatus.PENDING}', ?, NULL)
                 """,
                 (proposal_id, agent_id, content, _now().isoformat()),
             )
@@ -407,7 +408,7 @@ WHERE agent_id = ? AND id = ?
                 (agent_id, content, _now().isoformat()),
             )
             await db.execute(
-                "UPDATE policy_proposals SET status = 'approved', decided_at = ? WHERE agent_id = ? AND id = ?",
+                f"UPDATE policy_proposals SET status = '{ProposalStatus.APPROVED}', decided_at = ? WHERE agent_id = ? AND id = ?",
                 (_now().isoformat(), agent_id, proposal_id),
             )
             cur = await db.execute("SELECT last_insert_rowid();")
@@ -418,7 +419,7 @@ WHERE agent_id = ? AND id = ?
     async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None:
         async with self._open() as db:
             await db.execute(
-                "UPDATE policy_proposals SET status = 'rejected', decided_at = ? WHERE agent_id = ? AND id = ?",
+                f"UPDATE policy_proposals SET status = '{ProposalStatus.REJECTED}', decided_at = ? WHERE agent_id = ? AND id = ?",
                 (_now().isoformat(), agent_id, proposal_id),
             )
             await db.commit()

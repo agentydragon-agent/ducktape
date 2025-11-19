@@ -146,13 +146,18 @@ def _abort_result(reason: str | None = None) -> CallToolResult:
     return _make_error_result(reason or DEFAULT_ABORT_ERROR)
 
 
-def _normalize_call_arguments(arguments: Any) -> str | None:
+def _normalize_call_arguments(arguments: dict[str, Any] | str | None) -> str | None:
+    """Normalize function call arguments to JSON string.
+
+    Args:
+        arguments: Structured data (dict), pre-serialized JSON string, or None.
+
+    Returns:
+        JSON string representation or None if arguments is None.
+    """
     if arguments is None or isinstance(arguments, str):
         return arguments
-    try:
-        return json.dumps(arguments)
-    except TypeError:
-        return str(arguments)
+    return json.dumps(arguments)
 
 
 def _call_tool_result_from_json(output: str) -> CallToolResult:

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from enum import StrEnum
 import json
 import logging
 import os
@@ -21,6 +22,7 @@ from adgn.agent.approvals import ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.mcp_bridge import resources
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
+from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
 from adgn.agent.presets import discover_presets
 from adgn.agent.server.agents_ws import AgentBrief
@@ -176,7 +178,7 @@ class PolicyProposalInfo(BaseModel):
     """Policy proposal metadata with URI to full content."""
 
     id: str
-    status: str
+    status: ProposalStatus
     created_at: datetime
     decided_at: datetime | None = None
     proposal_uri: str  # URI to access full proposal content in policy server
@@ -198,6 +200,13 @@ class AgentPolicyState(BaseModel):
     active_policy_uri: str  # URI to active policy
 
 
+class ServerStatus(StrEnum):
+    """Agent server runtime status."""
+
+    RUNNING = "running"
+    STOPPED = "stopped"
+
+
 class AgentInfoDetailed(BaseModel):
     """Basic agent metadata NOT available from other MCP resources.
 
@@ -210,7 +219,7 @@ class AgentInfoDetailed(BaseModel):
     agent_id: AgentID
     mode: AgentMode
     model: str | None = None  # Model name for local agents
-    status: str  # "running" or "stopped"
+    status: ServerStatus
 
 
 class PresetSummary(BaseModel):
@@ -535,12 +544,12 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
 
         # Determine model and status
         model: str | None = None
-        status = "stopped"
+        status = ServerStatus.STOPPED
 
         local_runtime = registry.get_local_runtime(agent_id)
         if local_runtime is not None:
             model = local_runtime.model
-            status = "running"
+            status = ServerStatus.RUNNING
 
         return AgentInfoDetailed(agent_id=agent_id, mode=mode, model=model, status=status)
 

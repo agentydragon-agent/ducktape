@@ -63,9 +63,10 @@ class ConnectionManager(BaseHandler):
         if ws.application_state is not WebSocketState.CONNECTED:
             try:
                 await ws.accept()
-            except Exception:
-                # If a close has already been sent or the client disconnected, skip
-                return
+            except Exception as e:
+                # If a close has already been sent or the client disconnected, log and propagate
+                logger.error("WebSocket accept failed", extra={"error": str(e)}, exc_info=True)
+                raise
         # If still not connected after best-effort accept, do not register
         if ws.application_state is not WebSocketState.CONNECTED:
             return
@@ -103,9 +104,10 @@ class ConnectionManager(BaseHandler):
                 )
                 await ws.send_json(payload)
             except Exception as e:
-                logger.warning(
-                    "ws send_json failed; disconnecting client", extra={"client_id": client_id, "error": str(e)}
+                logger.error(
+                    "ws send_json failed; stopping sender loop", extra={"client_id": client_id, "error": str(e)}, exc_info=True
                 )
+                # Break sender loop - connection is broken
                 break
 
     def _next_event_id(self) -> int:
@@ -336,9 +338,11 @@ class AgentSession:
                 # Responses API invariant (each function_call has an output) holds.
                 # This prevents downstream 400 errors when the SDK validates input.
                 self._agent.abort_pending_tool_calls()
-            except Exception:
+            except Exception as e:
                 # Best-effort; do not block abort on synthesis failures
-                logger.debug("abort_pending_tool_calls failed", exc_info=True)
+                logger.error("abort_pending_tool_calls failed", exc_info=True)
+                # Re-raise after logging - synthesis failures indicate broken state
+                raise
         t = self._task
         if t is None or t.done():
             return

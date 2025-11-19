@@ -100,7 +100,19 @@ def append_item(state: UiState, item: DisplayItem) -> UiState:
     return UiState(seq=state.seq + 1, items=[*state.items, item])
 
 
-def start_tool(state: UiState, *, tool: str, call_id: str, cmd: str | None, args: Any | None) -> UiState:
+def start_tool(state: UiState, *, tool: str, call_id: str, cmd: str | None, args: dict[str, Any] | None) -> UiState:
+    """Start a tool execution in the UI state.
+
+    Args:
+        state: Current UI state
+        tool: Tool name
+        call_id: Tool call ID
+        cmd: Command string for exec tools, None for JSON tools
+        args: Tool arguments as key-value dict, or None if not applicable.
+
+    Returns:
+        Updated UI state with new tool item.
+    """
     content: ToolContent = ExecContent(cmd=cmd, args=args) if cmd is not None else JsonContent(args=args)
     return append_item(state, ToolItem(tool=tool, call_id=call_id, content=content))
 

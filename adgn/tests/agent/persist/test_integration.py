@@ -563,8 +563,9 @@ async def test_concurrent_access_and_data_integrity(persistence: SQLitePersisten
         await persistence.save_tool_call(record)
 
     # Launch 20 concurrent save operations
-    tasks = [save_tool_call_task(i) for i in range(20)]
-    await asyncio.gather(*tasks)
+    async with asyncio.TaskGroup() as tg:
+        for i in range(20):
+            tg.create_task(save_tool_call_task(i))
 
     # Verify all 20 records were saved
     all_calls = await persistence.list_tool_calls()

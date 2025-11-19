@@ -197,7 +197,9 @@ async def get_status(deps: ServiceDependencies, params: StatusParams) -> StatusR
             single_time,
         )
 
-    worktree_results = await asyncio.gather(*[process_single_worktree(p) for p in worktree_paths])
+    async with asyncio.TaskGroup() as tg:
+        tasks = [tg.create_task(process_single_worktree(p)) for p in worktree_paths]
+    worktree_results = [await t for t in tasks]
     total_time = 0.0
     for wtid, status_result, proc_ms in worktree_results:
         items[wtid] = StatusItem(status=status_result, processing_time_ms=proc_ms)

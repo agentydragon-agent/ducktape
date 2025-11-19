@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Iterable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import shlex
 from typing import Any, cast
@@ -16,6 +17,8 @@ from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM, SLEEP_FOREVER_CMD, WOR
 from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo, NetworkMode
 from adgn.mcp.exec.models import MAX_BYTES_CAP, BaseExecResult, ExecInput, async_timer, render_raw_to_result
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+
+logger = logging.getLogger(__name__)
 
 # Exit code returned by SIGTERM; standardized for host-side timeouts
 
@@ -123,9 +126,10 @@ def make_container_lifespan(opts: ContainerOptions):
                     container = await client.containers.get(container_dict["Id"])
                     await container.kill()
                     await container.delete(force=True)
-                except Exception:
-                    # Already removed or cleanup failed
-                    pass
+                except Exception as e:
+                    # Container cleanup failed - this may leak resources
+                    logger.error("Container cleanup failed", extra={"container_id": container_dict.get("Id")}, exc_info=True)
+                    raise
             await client.close()
 
     return lifespan
@@ -220,8 +224,9 @@ async def _run_ephemeral_container(
             await container.kill()
             await asyncio.sleep(0.2)
             await container.kill()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("Failed to kill ephemeral container on timeout", exc_info=True)
+            raise
 
     if not timed_out:
         try:
@@ -251,8 +256,9 @@ async def _run_ephemeral_container(
 
         extend_buf_from_logs(stdout_buf, stdout_logs)
         extend_buf_from_logs(stderr_buf, stderr_logs)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("Failed to retrieve logs from ephemeral container", exc_info=True)
+        raise
 
     # Remove container
     with suppress(Exception):
@@ -338,8 +344,9 @@ async def _run_session_container(
                 await asyncio.sleep(0.5)
                 # Restart the container
                 s.container = await _start_container(client=docker_client, opts=opts)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("Failed to restart session container after timeout", exc_info=True)
+                raise
         else:
             # Command completed normally
             # Get exit code from exec object if available

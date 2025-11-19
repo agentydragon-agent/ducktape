@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Union
 
 from mcp import types as mcp_types
 
@@ -14,6 +14,9 @@ from adgn.agent.server.protocol import (
     UiMessageEvt,
     UserText,
 )
+
+# Union type for all supported UI state events
+UiStateEvent = Union[UserText, ToolCall, FunctionCallOutput, ApprovalDecisionEvt, UiMessageEvt, UiEndTurnEvt]
 from adgn.mcp._shared.constants import UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 
@@ -31,16 +34,23 @@ from .state import (
 )
 
 
-def reduce_ui_state(state: UiState, evt: Any) -> UiState:
+def reduce_ui_state(state: UiState, evt: UiStateEvent) -> UiState:
     """Pure reducer: match by Pydantic type; never treat models as dicts.
 
-    Accepted types:
-    - UserText
-    - ToolCall
-    - FunctionCallOutput
-    - ApprovalDecisionEvt
-    - UiMessageEvt
-    - UiEndTurnEvt
+    Args:
+        state: Current UI state.
+        evt: Event to apply (one of the UiStateEvent union types).
+
+    Returns:
+        Updated UI state with the event applied.
+
+    Accepted event types:
+    - UserText: User text input
+    - ToolCall: Tool call start event
+    - FunctionCallOutput: Tool execution output
+    - ApprovalDecisionEvt: Approval decision event
+    - UiMessageEvt: Assistant message event
+    - UiEndTurnEvt: End turn separator event
     """
     # User message
     if isinstance(evt, UserText):

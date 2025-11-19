@@ -31,7 +31,6 @@ async def persistence(tmp_path: Path) -> SQLitePersistence:
     return persist
 
 
-@pytest.mark.asyncio
 async def test_schema_creation_drops_old_tables(tmp_path: Path) -> None:
     """Test that ensure_schema drops old tables and creates new tool_calls table."""
     db_path = tmp_path / "test.db"
@@ -58,7 +57,6 @@ async def test_schema_creation_drops_old_tables(tmp_path: Path) -> None:
         assert result is None, "schema_version table should not exist"
 
 
-@pytest.mark.asyncio
 async def test_save_and_get_tool_call_pending(persistence: SQLitePersistence) -> None:
     """Test saving and retrieving a PENDING tool call (no decision, no execution)."""
     # Create a PENDING tool call record
@@ -88,7 +86,6 @@ async def test_save_and_get_tool_call_pending(persistence: SQLitePersistence) ->
     assert retrieved.execution is None
 
 
-@pytest.mark.asyncio
 async def test_save_and_get_tool_call_executing(persistence: SQLitePersistence) -> None:
     """Test saving and retrieving an EXECUTING tool call (decision but no execution)."""
     # Create an EXECUTING tool call record
@@ -122,7 +119,6 @@ async def test_save_and_get_tool_call_executing(persistence: SQLitePersistence) 
     assert retrieved.execution is None
 
 
-@pytest.mark.asyncio
 async def test_save_and_get_tool_call_completed(persistence: SQLitePersistence) -> None:
     """Test saving and retrieving a COMPLETED tool call (decision and execution)."""
     # Create a COMPLETED tool call record
@@ -165,7 +161,6 @@ async def test_save_and_get_tool_call_completed(persistence: SQLitePersistence) 
     assert retrieved.execution.output.content[0].text == "Success!"
 
 
-@pytest.mark.asyncio
 async def test_list_tool_calls_all(persistence: SQLitePersistence) -> None:
     """Test listing all tool calls."""
     # Create multiple records

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 from datetime import UTC, datetime
+import logging
 import os
 import sys
 import time
@@ -12,6 +13,8 @@ import time
 import httpx
 from kubernetes import client, config
 from kubernetes.client import ApiException
+
+logger = logging.getLogger(__name__)
 
 ADMIN_URL = os.environ.get("ADMIN_URL", "http://rspcache-admin.rspcache.svc.cluster.local:8100")
 NAMESPACE = os.environ.get("NAMESPACE", "ember")
@@ -38,8 +41,10 @@ def decode_b64_optional(data: dict[str, str] | None, key: str) -> str | None:
         return None
     try:
         return base64.b64decode(raw).decode()
-    except Exception:
-        return None
+    except Exception as e:
+        # Corrupt secret data is a critical error - log and reraise
+        logger.error("Failed to decode base64 secret key '%s': %s", key, e, exc_info=True)
+        raise
 
 
 def rotate() -> None:

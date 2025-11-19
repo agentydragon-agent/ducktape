@@ -57,7 +57,6 @@ class TestPatternSummarizer:
             exclude_patterns=["*.log", ".git/", "*.pyc", "__pycache__"],
         )
 
-    @pytest.mark.asyncio
     async def test_summarize_patterns_basic(self, tmp_path):
         """Test basic pattern summarization."""
         cfg = self.mock_test_config()
@@ -87,7 +86,6 @@ class TestPatternSummarizer:
             assert result == "Common issues found: lack of error handling"
             assert mock_client.responses.create.called
 
-    @pytest.mark.asyncio
     async def test_summarize_patterns_multiple_tasks(self, tmp_path):
         """Test pattern summarization with multiple tasks."""
         cfg = self.mock_test_config()
@@ -180,7 +178,6 @@ class TestPromptEngineer:
         assert "Overall Grade: 7.0" in message
         assert "Overall Grade: 9.0" in message
 
-    @pytest.mark.asyncio
     async def test_propose_prompt(self, tmp_path):
         """Test prompt proposal generation."""
         cfg = TestPatternSummarizer().mock_test_config()

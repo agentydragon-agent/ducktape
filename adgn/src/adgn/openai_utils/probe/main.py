@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -27,6 +28,8 @@ from openai.types.chat.chat_completion import ChatCompletion
 from openai.types.responses import Response
 from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict
+
+logger = logging.getLogger(__name__)
 
 from adgn.openai_utils.probe.core import (
     FAMILY_PRIORITY,
@@ -457,7 +460,9 @@ class ProbeResult:
                         return _snippet_from_chat(ch)
             if not self.ok and self.exc is not None:
                 return _squeeze_one_line(msg_from_exc(self.exc)) or None
-        except Exception:
+        except Exception as e:
+            # Content extraction failure in probe display - log and return None
+            logger.debug("Failed to extract content from probe result: %s", e)
             return None
         return None
 

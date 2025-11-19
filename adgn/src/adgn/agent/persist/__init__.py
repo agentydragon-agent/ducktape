@@ -9,6 +9,7 @@ from fastmcp.mcp_config import MCPConfig
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.types import AgentID, ToolCall
 
 
@@ -69,7 +70,7 @@ class RunRow(BaseModel):
 
 class PolicyProposal(BaseModel):
     id: str
-    status: str
+    status: ProposalStatus
     created_at: datetime
     decided_at: datetime | None = None
     content: str

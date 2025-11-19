@@ -99,13 +99,14 @@ class WtClient:
             return by_name.absolute_path, (res.relative_path or None)
         return None, None
 
-    def _is_daemon_running(self) -> bool:
+    async def _is_daemon_running(self) -> bool:
         """Check if the daemon is running."""
         try:
             if not self.config.daemon_pid_path.exists():
                 return False
 
-            pid_str = self.config.daemon_pid_path.read_text().strip()
+            pid_str = await asyncio.to_thread(self.config.daemon_pid_path.read_text)
+            pid_str = pid_str.strip()
             if not pid_str:
                 return False
 
@@ -121,7 +122,7 @@ class WtClient:
         """Start daemon if not running."""
 
         async with self._daemon_start_lock:
-            if self._is_daemon_running():
+            if await self._is_daemon_running():
                 logger.debug("Daemon already running for %s", self.config.main_repo)
                 return
 

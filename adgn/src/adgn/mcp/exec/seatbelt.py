@@ -152,8 +152,9 @@ class SeatbeltExecMCP(NotifyingFastMCP):
                                     await proc.stdin.drain()
                                 proc.stdin.close()
                         except Exception as e:
-                            # Record the failure but do not crash; exit code/streams will reflect errors
-                            logger.debug("stdin write/close failed: %s", e)
+                            # stdin write failure indicates broken pipe or process crash
+                            logger.error("stdin write/close failed: %s", e, exc_info=True)
+                            raise
 
                         timed_out = False
                         try:
@@ -164,16 +165,18 @@ class SeatbeltExecMCP(NotifyingFastMCP):
                             t2 = _remaining()
                             await asyncio.wait_for(proc.wait(), timeout=t2)
                         except TimeoutError:
-                            # Best-effort termination; __aexit__ will also ensure cleanup
+                            # Timeout: kill process and mark as timed out
                             timed_out = True
                             try:
                                 proc.kill()
                             except Exception as e:
-                                logger.debug("proc.kill() failed: %s", e)
+                                logger.error("proc.kill() failed during timeout handling: %s", e, exc_info=True)
+                                raise
                             try:
                                 await proc.wait()
                             except Exception as e:
-                                logger.debug("proc.wait() after kill failed: %s", e)
+                                logger.error("proc.wait() after kill failed: %s", e, exc_info=True)
+                                raise
 
                     duration_ms = get_duration_ms()
 
@@ -201,7 +204,8 @@ class SeatbeltExecMCP(NotifyingFastMCP):
                     try:
                         trace_text = proc.trace_file.read_text(errors="replace")
                     except Exception as e:
-                        logger.debug("failed to read trace file: %s", e)
+                        logger.warning("failed to read trace file: %s", e, exc_info=True)
+                        # Trace is optional diagnostic data; allow None on failure
                         trace_text = None
 
                 # Disabled for now: unified sandbox denies are noisy/unscoped.
@@ -210,7 +214,8 @@ class SeatbeltExecMCP(NotifyingFastMCP):
                     try:
                         _p, unified_text = collect_unified_sandbox_denies(proc.artifacts_dir)
                     except Exception as e:
-                        logger.debug("collect unified denies failed: %s", e)
+                        logger.warning("collect unified denies failed: %s", e, exc_info=True)
+                        # Unified denies are optional diagnostic data; allow None on failure
                         unified_text = None
 
                 return SandboxExecResult.from_rendered_streams(

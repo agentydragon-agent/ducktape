@@ -39,7 +39,7 @@ class RunResult:
     unified_sandbox_denies_text: str | None = None
 
 
-def _prepare_policy(
+async def _prepare_policy(
     policy: SBPLPolicy, *, artifacts_dir: Path, trace: bool, trace_dir: Path | None
 ) -> tuple[SBPLPolicy, Path, Path | None, str]:
     """Write policy.sb and return (policy_copy_or_original, policy_file, trace_file, policy_text)."""
@@ -55,11 +55,11 @@ def _prepare_policy(
         else:
             trace_file = Path(policy.trace.path)
     policy_text = compile_sbpl(sp)
-    policy_file.write_text(policy_text)
+    await asyncio.to_thread(policy_file.write_text, policy_text)
     return sp, policy_file, trace_file, policy_text
 
 
-def collect_unified_sandbox_denies(artifacts_dir: Path, window: str = "5m") -> tuple[Path | None, str | None]:
+async def collect_unified_sandbox_denies(artifacts_dir: Path, window: str = "5m") -> tuple[Path | None, str | None]:
     """Collect recent unified log deny messages from the macOS sandbox.
 
     Returns (path, text) where path is the written file under artifacts_dir and
@@ -84,18 +84,18 @@ def collect_unified_sandbox_denies(artifacts_dir: Path, window: str = "5m") -> t
         raise RuntimeError(f"log show failed rc={res.returncode}: {res.stderr!r}")
     text = res.stdout or ""
     dest = artifacts_dir / "unified_sandbox_deny.log"
-    dest.write_text(text)
+    await asyncio.to_thread(dest.write_text, text)
     return dest, text
 
 
-def _collect_unified_if_failed(artifacts_dir: Path, returncode: int | None) -> tuple[Path | None, str | None]:
+async def _collect_unified_if_failed(artifacts_dir: Path, returncode: int | None) -> tuple[Path | None, str | None]:
     """Collect unified sandbox denies only when exit code is non-zero."""
     if returncode not in (None, 0):
-        return collect_unified_sandbox_denies(artifacts_dir)
+        return await collect_unified_sandbox_denies(artifacts_dir)
     return None, None
 
 
-def _finalize_result(
+async def _finalize_result(
     *,
     returncode: int | None,
     stdout: bytes | None,
@@ -116,13 +116,13 @@ def _finalize_result(
 
     trace_text: str | None = None
     if read_trace and trace_file and trace_file.exists():
-        trace_text = trace_file.read_text(errors="replace")
+        trace_text = await asyncio.to_thread(trace_file.read_text, errors="replace")
 
     if not keep_files:
         # Keep trace by default; only remove policy file
         policy_file.unlink()
 
-    unified_path, unified_text = _collect_unified_if_failed(artifacts_dir, returncode)
+    unified_path, unified_text = await _collect_unified_if_failed(artifacts_dir, returncode)
 
     return RunResult(
         exit_code=(returncode if returncode is not None else -1),
@@ -167,7 +167,7 @@ async def run_sandboxed_async(
         raise FileNotFoundError("sandbox-exec not found on PATH; macOS-only")
 
     artifacts_dir = Path(tempfile.mkdtemp(prefix="seatbelt-run-"))
-    _policy, policy_file, trace_file, policy_text = _prepare_policy(
+    _policy, policy_file, trace_file, policy_text = await _prepare_policy(
         policy, artifacts_dir=artifacts_dir, trace=trace, trace_dir=trace_dir
     )
 
@@ -183,7 +183,7 @@ async def run_sandboxed_async(
         out_b, err_b = None, None
     ended = datetime.now(UTC)
     keep = trace if keep_files is None else keep_files
-    return _finalize_result(
+    return await _finalize_result(
         returncode=proc.returncode,
         stdout=out_b,
         stderr=err_b,
@@ -327,7 +327,7 @@ async def apopen(
 
     artifacts_dir = Path(tempfile.mkdtemp(prefix="seatbelt-apopen-"))
     # Configure trace path on a deep copy if requested and write policy
-    _sp, policy_file, trace_file, policy_text = _prepare_policy(
+    _sp, policy_file, trace_file, policy_text = await _prepare_policy(
         policy, artifacts_dir=artifacts_dir, trace=trace, trace_dir=None
     )
 

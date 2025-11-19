@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from datetime import datetime
+from enum import StrEnum
 import logging
 from typing import Protocol
 from urllib.parse import urlencode
@@ -18,6 +19,16 @@ from .key_auth import KeyAuthError, validate_key
 logger = logging.getLogger(__name__)
 
 
+class AuthType(StrEnum):
+    """Authentication method types."""
+
+    KEY_PATH = "key_path"
+    SESSION = "session"
+    ADMIN = "admin"
+    NONE = "none"
+    BEARER = "bearer"
+
+
 class AuthHandlerError(Exception):
     """Common exception for all authentication errors."""
 
@@ -26,7 +37,7 @@ class AuthContext(Protocol):
     """Authentication context with information for navigation."""
 
     @property
-    def auth_type(self) -> str:
+    def auth_type(self) -> AuthType:
         """Authentication method type."""
         ...
 
@@ -65,8 +76,8 @@ class KeyPathAuthContext:
         self.key = auth_key
 
     @property
-    def auth_type(self) -> str:
-        return "key_path"
+    def auth_type(self) -> AuthType:
+        return AuthType.KEY_PATH
 
     @property
     def key_value(self) -> str:
@@ -92,8 +103,8 @@ class SessionAuthContext:
         self.session = session
 
     @property
-    def auth_type(self) -> str:
-        return "session"
+    def auth_type(self) -> AuthType:
+        return AuthType.SESSION
 
     @property
     def session_token(self) -> str:
@@ -119,8 +130,8 @@ class AdminAuthContext:
         self.session = session
 
     @property
-    def auth_type(self) -> str:
-        return "admin"
+    def auth_type(self) -> AuthType:
+        return AuthType.ADMIN
 
     def create_url(self, path: str) -> str:
         return f"/{path}"
@@ -185,12 +196,12 @@ async def admin_auth(session_token: str, db_session: AsyncSession = Depends(get_
     return AdminAuthContext(admin_session)
 
 
-def create_auth_dependency(auth_type: str) -> Callable:
+def create_auth_dependency(auth_type: AuthType) -> Callable:
     """Create an authentication dependency based on auth type."""
-    if auth_type == "key_path":
+    if auth_type == AuthType.KEY_PATH:
         return key_path_auth
-    if auth_type == "session":
+    if auth_type == AuthType.SESSION:
         return session_auth
-    if auth_type == "admin":
+    if auth_type == AuthType.ADMIN:
         return admin_auth
     raise ValueError(f"Unsupported {auth_type = }")

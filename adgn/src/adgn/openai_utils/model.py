@@ -136,7 +136,17 @@ class ResponsesRequest(BaseModel):
     def to_kwargs(self) -> dict[str, Any]:
         """Normalize to kwargs compatible with AsyncOpenAI.responses.create()."""
 
-        def norm_item(x: Any) -> Any:
+        def norm_item(x: BaseModel | str | dict[str, Any]) -> dict[str, Any] | str:
+            """Normalize an item for OpenAI API compatibility.
+
+            Pydantic models are serialized; other values pass through.
+
+            Args:
+                x: BaseModel to serialize, or already-serialized value (str/dict).
+
+            Returns:
+                Serialized dict for models, or the original value.
+            """
             if isinstance(x, BaseModel):
                 return x.model_dump(exclude_none=True)
             return x
@@ -173,7 +183,16 @@ class AssistantMessageOut(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _coerce_text(cls, data: Any) -> Any:
+    def _coerce_text(cls, data: str | dict[str, Any]) -> dict[str, Any]:
+        """Coerce various input forms to the standard parts-based format.
+
+        Args:
+            data: Either a plain text string, or a dict with "text" key, or already
+                  in the standard format with "parts" key.
+
+        Returns:
+            Dict with "parts" key containing a list of OutputText-compatible dicts.
+        """
         if isinstance(data, str):
             return {"parts": [{"text": data}]}
         if isinstance(data, dict) and "parts" not in data:

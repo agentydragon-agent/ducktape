@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """FastAPI server for LLM instructions with token generation."""
 
+import asyncio
 from datetime import datetime, timedelta
 import logging
 import os
@@ -124,7 +125,7 @@ def render_html_page(title: str, content: str, active_page: str = "index") -> st
 async def index():
     """Serve the main page with rendered markdown."""
     try:
-        text = Path("index.md").read_text()
+        text = await asyncio.to_thread(Path("index.md").read_text)
         ts = TokenScheme(TOKEN_SECRET, text)
 
         # Use configured timezone
@@ -154,7 +155,7 @@ for page_name in MARKDOWN_PAGES:
     async def serve_markdown_page(page: str = page_name):
         """Serve a markdown documentation page."""
         try:
-            text = Path(f"{page}.md").read_text()
+            text = await asyncio.to_thread(Path(f"{page}.md").read_text)
 
             # Convert to HTML with frontmatter support
             md = create_markdown_converter()
@@ -173,13 +174,13 @@ for page_name in MARKDOWN_PAGES:
             handle_page_rendering_error(e, f"{page}.md")
 
 
-def analyze_page_tokens(
+async def analyze_page_tokens(
     page_id: str, markdown_path: Path, title: str, url: str, is_index: bool = False
 ) -> dict[str, Any] | None:
     """Analyze a single page's token counts by simulating the full rendering pipeline."""
     try:
         # Step 1: Read markdown
-        text = markdown_path.read_text()
+        text = await asyncio.to_thread(markdown_path.read_text)
 
         if is_index:
             # Step 2: Render template variables for index
@@ -226,13 +227,13 @@ async def stats_api():
     pages_stats = []
 
     # Analyze index page
-    if stats := analyze_page_tokens("index", Path("index.md"), "LLM Instructions", "/", is_index=True):
+    if stats := await analyze_page_tokens("index", Path("index.md"), "LLM Instructions", "/", is_index=True):
         pages_stats.append(stats)
 
     # Analyze other markdown pages
     for page in MARKDOWN_PAGES:
         title = PAGE_TITLES.get(page, page)
-        if stats := analyze_page_tokens(page, Path(f"{page}.md"), title, f"/{page}"):
+        if stats := await analyze_page_tokens(page, Path(f"{page}.md"), title, f"/{page}"):
             pages_stats.append(stats)
 
     # Calculate totals
@@ -284,7 +285,7 @@ async def verify_token(request: Request, token: str = ""):
     if token:
         try:
             # Read the source index.md file (not rendered)
-            text = Path("index.md").read_text()
+            text = await asyncio.to_thread(Path("index.md").read_text)
             ts = TokenScheme(TOKEN_SECRET, text)
 
             ts.verify_token(token)

@@ -38,7 +38,6 @@ async def engine_and_persistence(tmp_path: Path, docker_client: DockerClient):
     return engine, persistence
 
 
-@pytest.mark.asyncio
 async def test_validate_policy_valid(engine_and_persistence, docker_client: DockerClient):
     """Test validating a valid policy."""
     engine, _ = engine_and_persistence
@@ -54,7 +53,6 @@ async def test_validate_policy_valid(engine_and_persistence, docker_client: Dock
     assert len(result.errors) == 0
 
 
-@pytest.mark.asyncio
 async def test_validate_policy_syntax_error(engine_and_persistence):
     """Test validating a policy with syntax errors."""
     engine, _ = engine_and_persistence
@@ -71,7 +69,6 @@ async def test_validate_policy_syntax_error(engine_and_persistence):
     assert "Syntax error" in result.errors[0]
 
 
-@pytest.mark.asyncio
 async def test_validate_policy_runtime_error(engine_and_persistence, docker_client: DockerClient):
     """Test validating a policy that fails at runtime."""
     engine, _ = engine_and_persistence
@@ -88,7 +85,6 @@ async def test_validate_policy_runtime_error(engine_and_persistence, docker_clie
     assert "Runtime validation failed" in result.errors[0]
 
 
-@pytest.mark.asyncio
 async def test_reload_policy_from_persistence(engine_and_persistence, docker_client: DockerClient):
     """Test reloading policy from persistence."""
     engine, persistence = engine_and_persistence
@@ -110,7 +106,6 @@ async def test_reload_policy_from_persistence(engine_and_persistence, docker_cli
     assert current_policy == new_policy
 
 
-@pytest.mark.asyncio
 async def test_reload_policy_from_source(engine_and_persistence, docker_client: DockerClient):
     """Test reloading policy from provided source."""
     engine, _ = engine_and_persistence
@@ -126,7 +121,6 @@ async def test_reload_policy_from_source(engine_and_persistence, docker_client: 
     assert current_policy == new_source
 
 
-@pytest.mark.asyncio
 async def test_reload_policy_validates_source(engine_and_persistence, docker_client: DockerClient):
     """Test that reload validates the source before setting."""
     engine, _ = engine_and_persistence
@@ -140,7 +134,6 @@ async def test_reload_policy_validates_source(engine_and_persistence, docker_cli
         )
 
 
-@pytest.mark.asyncio
 async def test_reload_policy_no_persistence_raises(engine_and_persistence):
     """Test that reloading from empty persistence raises error."""
     engine, persistence = engine_and_persistence

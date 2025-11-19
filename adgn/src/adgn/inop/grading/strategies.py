@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import (
@@ -22,6 +22,53 @@ from adgn.inop.engine.models import (
 )
 from adgn.inop.io.yaml_loader import YamlLoader, load_yaml_files
 from adgn.inop.prompting.truncation_utils import TruncationManager
+
+
+# TypedDicts for grading artifacts
+
+
+class FileBasedArtifacts(TypedDict):
+    """Raw artifacts from FileBasedGradingStrategy.collect_artifacts."""
+
+    files: dict[str, str]  # path -> content
+
+
+class PreparedFileBasedArtifacts(TypedDict):
+    """Prepared artifacts from FileBasedGradingStrategy.prepare_for_grader."""
+
+    type: str  # "file_based"
+    files: list[dict[str, str]]  # list of {path, content}
+    criteria: list[Criterion]
+
+
+class MessageBasedArtifacts(TypedDict):
+    """Raw artifacts from MessageBasedGradingStrategy.collect_artifacts."""
+
+    final_message: str
+
+
+class PreparedMessageBasedArtifacts(TypedDict):
+    """Prepared artifacts from MessageBasedGradingStrategy.prepare_for_grader."""
+
+    type: str  # "message_based"
+    message: str
+    criteria: list[Criterion]
+
+
+class ComparisonArtifacts(TypedDict):
+    """Raw artifacts from ComparisonGradingStrategy.collect_artifacts."""
+
+    agent_output: str
+    reference: str
+
+
+class PreparedComparisonArtifacts(TypedDict):
+    """Prepared artifacts from ComparisonGradingStrategy.prepare_for_grader."""
+
+    type: str  # "comparison"
+    agent_output: str
+    reference: str
+    criteria: list[Criterion]
 
 
 class GradingStrategy(ABC):
@@ -69,8 +116,12 @@ class FileBasedGradingStrategy(GradingStrategy):
     def __init__(self, criteria: list[Criterion] | None = None):
         self.criteria = criteria if criteria is not None else []
 
-    def collect_artifacts(self, context: GradingContext) -> dict[str, Any]:
-        """Collect files from environment or rollout."""
+    def collect_artifacts(self, context: GradingContext) -> FileBasedArtifacts:
+        """Collect files from environment or rollout.
+
+        Returns:
+            Dict with 'files' key mapping file paths to content strings.
+        """
         files = {}
 
         # Try to get files from environment first (container/workspace)
@@ -105,8 +156,16 @@ class FileBasedGradingStrategy(GradingStrategy):
                     files[path] = content
         return files
 
-    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> dict[str, Any]:
-        """Truncate files for grading."""
+    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> PreparedFileBasedArtifacts:
+        """Truncate files for grading.
+
+        Args:
+            artifacts: Raw artifacts dict (expected to be FileBasedArtifacts).
+            config: Optimizer configuration for truncation settings.
+
+        Returns:
+            Prepared artifacts with truncated files ready for grading model.
+        """
         files = artifacts.get("files", {})
         t_mgr = TruncationManager(config)
 
@@ -145,8 +204,12 @@ class MessageBasedGradingStrategy(GradingStrategy):
     def __init__(self, criteria: list[Criterion] | None = None):
         self.criteria = criteria if criteria is not None else []
 
-    def collect_artifacts(self, context: GradingContext) -> dict[str, Any]:
-        """Get final message from trajectory."""
+    def collect_artifacts(self, context: GradingContext) -> MessageBasedArtifacts:
+        """Get final message from trajectory.
+
+        Returns:
+            Dict with 'final_message' key containing the agent's final output.
+        """
         final_message = ""
 
         # Look for final output in trajectory
@@ -164,8 +227,16 @@ class MessageBasedGradingStrategy(GradingStrategy):
 
         return {"final_message": final_message}
 
-    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> dict[str, Any]:
-        """Truncate message if needed."""
+    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> PreparedMessageBasedArtifacts:
+        """Truncate message if needed.
+
+        Args:
+            artifacts: Raw artifacts dict (expected to be MessageBasedArtifacts).
+            config: Optimizer configuration for truncation settings.
+
+        Returns:
+            Prepared artifacts with truncated message ready for grading model.
+        """
         message = artifacts.get("final_message", "")
         t_mgr = TruncationManager(config)
 
@@ -191,8 +262,12 @@ class ComparisonGradingStrategy(GradingStrategy):
         self.reference = reference
         self.criteria = criteria if criteria is not None else []
 
-    def collect_artifacts(self, context: GradingContext) -> dict[str, Any]:
-        """Get agent output for comparison."""
+    def collect_artifacts(self, context: GradingContext) -> ComparisonArtifacts:
+        """Get agent output for comparison.
+
+        Returns:
+            Dict with 'agent_output' and 'reference' keys for comparison.
+        """
         # Get final message - collect ALL assistant messages for code review
         # since the review might be spread across multiple messages
         all_messages = []
@@ -215,8 +290,16 @@ class ComparisonGradingStrategy(GradingStrategy):
 
         return {"agent_output": agent_output, "reference": self.reference}
 
-    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> dict[str, Any]:
-        """Prepare comparison artifacts."""
+    def prepare_for_grader(self, artifacts: dict[str, Any], config: OptimizerConfig) -> PreparedComparisonArtifacts:
+        """Prepare comparison artifacts.
+
+        Args:
+            artifacts: Raw artifacts dict (expected to be ComparisonArtifacts).
+            config: Optimizer configuration for truncation settings.
+
+        Returns:
+            Prepared artifacts with truncated outputs ready for grading model.
+        """
         t_mgr = TruncationManager(config)
 
         agent_output = t_mgr.truncate_text(

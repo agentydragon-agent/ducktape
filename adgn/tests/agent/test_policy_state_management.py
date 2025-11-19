@@ -18,7 +18,6 @@ async def persistence(tmp_path: Path):
     return p
 
 
-@pytest.mark.asyncio
 async def test_create_policy(persistence: SQLitePersistence):
     """Test creating a new policy."""
     policy = await persistence.create_policy(
@@ -36,7 +35,6 @@ async def test_create_policy(persistence: SQLitePersistence):
     assert isinstance(policy.updated_at, datetime)
 
 
-@pytest.mark.asyncio
 async def test_get_policy(persistence: SQLitePersistence):
     """Test retrieving a policy by ID."""
     # Create a policy
@@ -58,7 +56,6 @@ async def test_get_policy(persistence: SQLitePersistence):
     assert missing is None
 
 
-@pytest.mark.asyncio
 async def test_update_policy(persistence: SQLitePersistence):
     """Test updating a policy (with history tracking)."""
     # Create initial policy
@@ -82,14 +79,12 @@ async def test_update_policy(persistence: SQLitePersistence):
     assert updated.updated_at > policy.updated_at
 
 
-@pytest.mark.asyncio
 async def test_update_nonexistent_policy_raises(persistence: SQLitePersistence):
     """Test that updating a non-existent policy raises KeyError."""
     with pytest.raises(KeyError, match="Policy not found"):
         await persistence.update_policy("nonexistent", text="new text")
 
 
-@pytest.mark.asyncio
 async def test_list_policies(persistence: SQLitePersistence):
     """Test listing policies with pagination."""
     # Create multiple policies
@@ -117,7 +112,6 @@ async def test_list_policies(persistence: SQLitePersistence):
     assert page1[1].id == "policy-3"
 
 
-@pytest.mark.asyncio
 async def test_delete_policy(persistence: SQLitePersistence):
     """Test deleting a policy."""
     # Create policy
@@ -138,7 +132,6 @@ async def test_delete_policy(persistence: SQLitePersistence):
     assert deleted is None
 
 
-@pytest.mark.asyncio
 async def test_policy_history_tracking(persistence: SQLitePersistence):
     """Test that policy history is tracked on updates."""
     # Create policy
@@ -166,7 +159,6 @@ async def test_policy_history_tracking(persistence: SQLitePersistence):
     assert count == 3
 
 
-@pytest.mark.asyncio
 async def test_policy_enabled_flag(persistence: SQLitePersistence):
     """Test that enabled flag works correctly."""
     # Create enabled policy
@@ -195,7 +187,6 @@ async def test_policy_enabled_flag(persistence: SQLitePersistence):
     assert retrieved_disabled.enabled is False
 
 
-@pytest.mark.asyncio
 async def test_policy_description_optional(persistence: SQLitePersistence):
     """Test that description is optional."""
     # Create without description
@@ -211,7 +202,6 @@ async def test_policy_description_optional(persistence: SQLitePersistence):
     assert retrieved.description is None
 
 
-@pytest.mark.asyncio
 async def test_concurrent_policy_updates(persistence: SQLitePersistence):
     """Test that concurrent updates are handled correctly."""
     # Create policy
@@ -224,7 +214,9 @@ async def test_concurrent_policy_updates(persistence: SQLitePersistence):
     async def update_policy(i: int):
         await persistence.update_policy("concurrent-test", text=f"version {i}")
 
-    await asyncio.gather(*[update_policy(i) for i in range(10)])
+    async with asyncio.TaskGroup() as tg:
+        for i in range(10):
+            tg.create_task(update_policy(i))
 
     # Final policy should have one of the versions
     final = await persistence.get_policy("concurrent-test")
