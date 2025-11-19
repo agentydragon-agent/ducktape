@@ -387,8 +387,11 @@ rg --type py '\| None' -B 2 -A 1 --line-number
 # Find ALL Optional type annotations with context
 rg --type py 'Optional\[' -B 2 -A 1 --line-number
 
+# Find Union types that include None
+rg --type py 'Union\[.*None' -B 2 -A 1 --line-number
+
 # Count total nullables found
-(rg --type py '\| None' && rg --type py 'Optional\[') | wc -l
+(rg --type py '\| None' && rg --type py 'Optional\[' && rg --type py 'Union\[.*None') | wc -l
 ```
 
 **What to review for each nullable:**
