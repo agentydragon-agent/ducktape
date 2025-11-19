@@ -89,13 +89,8 @@ async def build_local_agent(
         assert ui_bus is not None
         bundle = SidecarBundle.for_local_agent(ui_bus=ui_bus)
     else:
-        # No UI - just chat and loop
-        bundle = SidecarBundle(
-            sidecars=[
-                # ChatSidecar(),  # TODO: Add when needed
-                # LoopControlSidecar(),  # TODO: Add when needed
-            ]
-        )
+        # No UI - empty sidecar bundle
+        bundle = SidecarBundle(sidecars=[])
     await bundle.attach_all(running)
 
     # Create local agent runtime with UI components

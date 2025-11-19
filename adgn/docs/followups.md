@@ -1,6 +1,14 @@
 # Remaining follow-ups (targeted)
 
-This document tracks what’s left to tidy up after recent refactors. Closed items from the previous list have been removed.
+This document tracks what's left to tidy up after recent refactors. Closed items from the previous list have been removed.
+
+## MCP Migration Status
+
+**The MCP-based management UI implementation is complete** (Phases 0-4, Waves 1-4). See **../MCP_MIGRATION_SUMMARY.md** for full details.
+
+**Remaining**: Phase 5 cleanup (remove legacy WebSocket code, final consistency pass)
+
+---
 
 ## Docs
 

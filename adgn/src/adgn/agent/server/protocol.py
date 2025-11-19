@@ -47,7 +47,6 @@ class ApprovalBrief(BaseModel):
     """Brief approval information for wire protocol (embeds canonical ToolCall)."""
 
     tool_call: ToolCall
-    args: dict = Field(default_factory=dict)  # Parsed from tool_call.args_json for UI convenience
 
     model_config = ConfigDict(extra="forbid")
 

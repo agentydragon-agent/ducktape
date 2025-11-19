@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "svelte-check --tsconfig ./tsconfig.app.json",
-    "generate-types": "cd ../../../.. && .venv/bin/python scripts/generate_types.py",
+    "generate-types": "adgn-generate-types",
     "prebuild": "npm run generate-types"
   },
   "dependencies": {

@@ -25,43 +25,32 @@ def token_mapping_file(tmp_path: Path) -> Path:
     return tokens_file
 
 
-def test_generate_ui_token_creates_random_token():
+def test_generate_ui_token_creates_random_token(monkeypatch):
     """Test that generate_ui_token creates a secure random token."""
     # Remove env var if present
-    old_token = os.environ.pop("ADGN_UI_TOKEN", None)
-    try:
-        token1 = generate_ui_token()
-        token2 = generate_ui_token()
+    monkeypatch.delenv("ADGN_UI_TOKEN", raising=False)
 
-        # Should be non-empty
-        assert token1
-        assert token2
+    token1 = generate_ui_token()
+    token2 = generate_ui_token()
 
-        # Should be different (extremely unlikely to collide)
-        assert token1 != token2
+    # Should be non-empty
+    assert token1
+    assert token2
 
-        # Should be URL-safe base64 (32 bytes = ~43 characters)
-        assert len(token1) >= 40
-        assert all(c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" for c in token1)
-    finally:
-        if old_token:
-            os.environ["ADGN_UI_TOKEN"] = old_token
+    # Should be different (extremely unlikely to collide)
+    assert token1 != token2
+
+    # Should be URL-safe base64 (32 bytes = ~43 characters)
+    assert len(token1) >= 40
+    assert all(c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" for c in token1)
 
 
-def test_generate_ui_token_respects_env_var():
+def test_generate_ui_token_respects_env_var(monkeypatch):
     """Test that generate_ui_token uses ADGN_UI_TOKEN if set."""
     test_token = "test-ui-token-from-env"
-    old_token = os.environ.get("ADGN_UI_TOKEN")
-
-    try:
-        os.environ["ADGN_UI_TOKEN"] = test_token
-        token = generate_ui_token()
-        assert token == test_token
-    finally:
-        if old_token:
-            os.environ["ADGN_UI_TOKEN"] = old_token
-        else:
-            os.environ.pop("ADGN_UI_TOKEN", None)
+    monkeypatch.setenv("ADGN_UI_TOKEN", test_token)
+    token = generate_ui_token()
+    assert token == test_token
 
 
 @pytest.mark.asyncio

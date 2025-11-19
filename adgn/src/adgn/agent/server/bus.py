@@ -12,9 +12,6 @@ class MimeType(StrEnum):
     """Supported MIME types for UI messages."""
 
     MARKDOWN = "text/markdown"
-    # Future expansion could include:
-    # HTML = "text/html"
-    # PLAIN = "text/plain"
 
 
 class UiMessage(BaseModel):

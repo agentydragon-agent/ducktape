@@ -121,7 +121,6 @@ class AgentStatus(AgentStatusCore):
 
 class SetPolicyBody(BaseModel):
     content: str
-    proposal_id: str | None = None
 
 
 class ApproveBody(BaseModel):
@@ -459,21 +458,21 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                 # Detach all non-auto servers
                 for name in current_servers:
                     if name not in forbidden:
-                        await container.running.detach_mcp(name)
+                        await container.running.admin_client.detach_server(name=name)
                 # Attach servers from new config
                 if patch.mcp_config.mcpServers:
                     for name, spec in patch.mcp_config.mcpServers.items():
-                        await container.running.attach_mcp(name, spec)
+                        await container.running.admin_client.attach_server(name=name, spec=spec)
             else:
                 # Incremental attach/detach
                 if patch.detach:
                     for name in patch.detach:
-                        await container.running.detach_mcp(name)
+                        await container.running.admin_client.detach_server(name=name)
                 if patch.attach:
                     for _cfg_name, cfg in patch.attach.items():
                         if cfg.mcpServers:
                             for name, spec in cfg.mcpServers.items():
-                                await container.running.attach_mcp(name, spec)
+                                await container.running.admin_client.attach_server(name=name, spec=spec)
         return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
     @app.post("/api/agents/{agent_id}/mcp/attach", response_model=PatchAgentMcpResult)
@@ -489,7 +488,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Live apply if running
         container = app.state.registry.get(agent_id)
         if container is not None:
-            await container.running.attach_mcp(body.name, body.spec)
+            await container.running.admin_client.attach_server(name=body.name, spec=body.spec)
         return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
     @app.post("/api/agents/{agent_id}/mcp/detach", response_model=PatchAgentMcpResult)
@@ -506,7 +505,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Live apply if running
         container = app.state.registry.get(agent_id)
         if container is not None:
-            await container.running.detach_mcp(body.name)
+            await container.running.admin_client.detach_server(name=body.name)
         return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
     @app.get("/api/agents/{agent_id}", response_model=AgentInfo)
@@ -548,7 +547,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     # Withdraw is expressed as reject in API; see /proposals/{id}/reject
 
-    # --- Policy: set active content (optionally from proposal) ---
+    # --- Policy: set active content ---
     @app.post("/api/agents/{agent_id}/policy", response_model=SimpleOk)
     async def api_set_policy(agent_id: str, body: SetPolicyBody = Body(...)) -> SimpleOk:  # noqa: B008
         container = await get_container(agent_id)
@@ -556,9 +555,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             await container.running.policy_approver.set_policy_text(SetPolicyTextArgs(source=body.content))
         except Exception as e:
             raise PolicyOperationError("policy_set", str(e)) from e
-        # If proposal id provided, delete it from store
-        if body.proposal_id:
-            await app.state.persistence.delete_policy_proposal(agent_id, body.proposal_id)
         # Push snapshot (do not swallow errors)
         if container._ui_manager is not None:
             sess = get_session(container, agent_id)

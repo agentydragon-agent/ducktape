@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 from fastapi.testclient import TestClient
 from fastmcp.mcp_config import MCPConfig
@@ -141,8 +142,6 @@ async def test_infrastructure_registry_get_nonexistent(infrastructure_registry: 
 async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastructure_registry: InfrastructureRegistry):
     """Test that /api/agents endpoint delegates to agents MCP server."""
     # Register a local agent in the registry
-    from unittest.mock import AsyncMock, Mock
-
     from adgn.agent.runtime.infrastructure import RunningInfrastructure
 
     # Create mock infrastructure for a local agent

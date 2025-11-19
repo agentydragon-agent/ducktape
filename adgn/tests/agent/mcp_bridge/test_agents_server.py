@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 import json
+from unittest.mock import Mock
 
 from fastmcp.client import Client
 from mcp import types as mcp_types
@@ -531,8 +532,6 @@ async def test_reject_nonexistent_call_id(agents_client):
 @pytest.mark.asyncio
 async def test_global_approvals_pending_different_per_agent(mock_persistence, mock_approval_engine):
     """Test resource://approvals/pending returns different approvals per agent."""
-    from unittest.mock import Mock
-
     from adgn.agent.approvals import ApprovalHub
 
     # Create separate approval hubs for each agent

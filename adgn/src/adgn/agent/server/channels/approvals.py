@@ -63,11 +63,7 @@ class ApprovalsChannelManager(ChannelConnectionManager):
 
     async def send_snapshot(self, approval_hub: ApprovalHub) -> None:
         """Send current approvals snapshot to all clients."""
-        pending = []
-        for req in approval_hub._requests.values():
-            args = json.loads(req.tool_call.args_json) if req.tool_call.args_json else {}
-            pending.append(ApprovalBrief(tool_call=req.tool_call, args=args))
-
+        pending = [ApprovalBrief(tool_call=req.tool_call) for req in approval_hub._requests.values()]
         snapshot = ApprovalsSnapshot(pending=pending)
         await self.broadcast(snapshot)
 

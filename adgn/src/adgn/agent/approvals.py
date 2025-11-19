@@ -209,10 +209,6 @@ class ApprovalPolicyEngine:
         self.notify_proposal_change(new_id)
         return new_id
 
-    async def withdraw_proposal(self, proposal_id: str) -> None:
-        """Withdraw (delete) a pending policy proposal by ID."""
-        await self.persistence.delete_policy_proposal(self.agent_id, proposal_id)
-        self.notify_proposal_change(proposal_id)
 
     async def approve_proposal(self, proposal_id: str) -> None:
         """Approve a pending policy proposal by ID and activate it.

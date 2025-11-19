@@ -211,10 +211,9 @@ class MCPInfrastructure:
         async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
             """Notify UI of pending approval requests."""
             if self._connection_manager is not None:
-                args = json.loads(args_json) if args_json else {}
                 tool_call = ToolCall(name=tool_key, call_id=call_id, args_json=args_json)
                 await self._connection_manager.send_payload(
-                    ApprovalPendingEvt(approval=ApprovalBrief(tool_call=tool_call, args=args))
+                    ApprovalPendingEvt(approval=ApprovalBrief(tool_call=tool_call))
                 )
 
         install_policy_gateway(

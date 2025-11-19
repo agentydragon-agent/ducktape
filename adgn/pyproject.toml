@@ -219,6 +219,7 @@ adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
 adgn-matrix-bot = "adgn.agent.matrix_bot:main"
 adgn-detectors-custom = "adgn.props.detectors.cli_custom:main"
 adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
+adgn-generate-types = "adgn.scripts.generate_types:main"
 
 # Mypy configuration moved to central /mypy.ini at repo root
 

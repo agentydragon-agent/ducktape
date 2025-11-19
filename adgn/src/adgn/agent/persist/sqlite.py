@@ -423,11 +423,6 @@ WHERE agent_id = ? AND id = ?
             )
             await db.commit()
 
-    async def delete_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None:
-        async with self._open() as db:
-            await db.execute("DELETE FROM policy_proposals WHERE agent_id = ? AND id = ?", (agent_id, proposal_id))
-            await db.commit()
-
     # Seatbelt templates are volume-backed via Docker; no DB APIs in final shape
 
     # Runs --------------------------------------------------------------------
@@ -546,18 +541,10 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
             ) as cur,
         ):
             async for r in cur:
-                out.append(
-                    parse_event(
-                        {
-                            "seq": int(r["seq"]),
-                            "ts": r["ts"],
-                            "type": r["type"],
-                            "payload": json.loads(r["payload"]) if r["payload"] else {},
-                            "call_id": r["call_id"],
-                            "tool_key": r["tool_key"],
-                        }
-                    )
-                )
+                # Parse event using raw row data; only pre-process the JSON payload field
+                row_dict = dict(r)
+                row_dict["payload"] = json.loads(r["payload"]) if r["payload"] else {}
+                out.append(parse_event(row_dict))
         return out
 
     # Tool Calls (new ToolCallRecord persistence) --------------------------------

@@ -262,11 +262,7 @@ class AgentSession:
     async def build_snapshot(self, sampling=None) -> Snapshot:
         if self.active_run:
             self.active_run.pending_approvals = [
-                ApprovalBrief(
-                    tool_call=req.tool_call,
-                    args=(json.loads(req.tool_call.args_json or "{}") if req.tool_call.args_json else {}),
-                )
-                for req in self.approval_hub._requests.values()
+                ApprovalBrief(tool_call=req.tool_call) for req in self.approval_hub._requests.values()
             ]
 
         approval_policy = None

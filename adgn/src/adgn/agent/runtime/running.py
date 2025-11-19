@@ -90,14 +90,6 @@ class RunningInfrastructure:
             return CloseResult(drained=False, error="; ".join(errors))
         return CloseResult(drained=True)
 
-    async def attach_mcp(self, name: str, spec: MCPServerTypes) -> None:
-        """Policy-gated via active approval policy."""
-        await self.admin_client.attach_server(name=name, spec=spec)
-
-    async def detach_mcp(self, name: str) -> None:
-        """Policy-gated via active approval policy."""
-        await self.admin_client.detach_server(name=name)
-
     async def __aenter__(self) -> RunningInfrastructure:
         return self
 
