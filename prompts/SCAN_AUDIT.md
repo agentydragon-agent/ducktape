@@ -10,7 +10,7 @@
 ## Summary
 
 - **Total Prompts**: 31
-- **Currently Mandatory Scans**: 0 (all treat automation as optional/recommended)
+- **Currently Mandatory Scans**: 6 (updated to include grep-based mandatory scans)
 - **Have Dedicated Scanners**: 4 (`scan_*.py` scripts)
 - **Should Be Mandatory**: 6 (scans that surface concrete candidates to force review)
 - **Correctly Optional**: 18 (subjective patterns where scan doesn't prevent lazy analysis)
@@ -31,7 +31,7 @@
 | **timestamp-naming** | Optional | **RECOMMENDED** | grep `_ts`, `timestamp` | Timestamp field naming | Grep surfaces candidates quickly |
 | **test-assertions** | Optional | **RECOMMENDED** | grep assert patterns | Plain asserts vs PyHamcrest | Grep finds common cases |
 | **asyncio-antipatterns** | Optional | **RECOMMENDED** | grep asyncio methods | `asyncio.gather()` vs TaskGroup | Grep surfaces specific API usage |
-| **pydantic-antipatterns** | Optional | **RECOMMENDED** | grep Pydantic methods | Manual `model_dump`, dict-style access | Grep finds API misuse |
+| **pydantic-antipatterns** | Optional | **MANDATORY** | grep union types + isinstance | Union types mixing BaseModel with weak types, isinstance checks | Surfaces every union type smell - forces review of Pydantic type usage |
 | **stringly-typed** | Optional | **RECOMMENDED** | AST string counter + grep | String literals instead of enums | Tool helps prioritize files |
 | **suspicious-nullability** | Optional | **RECOMMENDED** | grep `None` + AST | Nullable params, None propagation | Grep surfaces candidates for analysis |
 | **unnecessary-verbosity** | Optional | OPTIONAL | Manual review | Single-use variables, verbose returns | Subjective judgment, scan doesn't prevent lazy analysis |
@@ -57,7 +57,7 @@
 
 ## Recommendations by Category
 
-### ✅ MANDATORY Scans (5) - Should require automated scan as first step
+### ✅ MANDATORY Scans (6) - Should require automated scan as first step
 
 These scans surface concrete candidates that force the agent to review specific instances rather than claiming "looks fine" without thorough examination.
 
@@ -86,7 +86,12 @@ These scans surface concrete candidates that force the agent to review specific 
    - **Prevents**: Agent missing suppressions buried in long files
    - **Action**: Update prompt to say "MANDATORY: Run grep to find ALL type ignore comments"
 
-### ⚠️ RECOMMENDED Scans (8) - Should suggest but not require
+6. **pydantic-antipatterns** → grep union types + isinstance
+   - **Why mandatory**: Surfaces every union mixing BaseModel with weak types, every isinstance check
+   - **Prevents**: Agent missing Pydantic type system defeats scattered across codebase
+   - **Action**: Already updated - MANDATORY grep patterns in Detection Strategy
+
+### ⚠️ RECOMMENDED Scans (7) - Should suggest but not require
 
 These scans help find candidates faster but don't prevent lazy analysis (agent would likely search anyway):
 
@@ -95,7 +100,6 @@ These scans help find candidates faster but don't prevent lazy analysis (agent w
 - **timestamp-naming**: Grep finds `_ts` fields - faster than manual search
 - **test-assertions**: Grep finds assert patterns - common cases
 - **asyncio-antipatterns**: Grep finds asyncio API usage - specific patterns
-- **pydantic-antipatterns**: Grep finds Pydantic method calls - API misuse
 - **stringly-typed**: AST counter + grep helps prioritize - guidance only
 - **suspicious-nullability**: Grep + AST surfaces None usage - analysis aid
 
