@@ -12,7 +12,7 @@ import aiosqlite
 from fastmcp.mcp_config import MCPConfig
 from pydantic import JsonValue
 
-from adgn.agent.persist import PolicyProposal
+from adgn.agent.persist import Policy, PolicyProposal
 from adgn.agent.runtime.auto_attach import filter_persistable_servers
 
 from . import (
@@ -63,6 +63,8 @@ class SQLitePersistence(Persistence):
 
         Drops old schema_version and approvals tables without versioning.
         Creates new tool_calls table for ToolCallRecord persistence.
+        Maintains approval_policies for backward compatibility but adds new
+        policies and policy_history tables for enhanced state management.
         """
         async with self._open() as db:
             await db.execute("PRAGMA foreign_keys = ON;")
@@ -123,6 +125,24 @@ CREATE TABLE IF NOT EXISTS approval_policies (
   content TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS policies (
+  id TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  description TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS policy_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  policy_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT,
+  FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_policy_history_policy ON policy_history(policy_id);
+CREATE INDEX IF NOT EXISTS idx_policy_history_updated ON policy_history(updated_at);
 CREATE TABLE IF NOT EXISTS policy_proposals (
   id TEXT NOT NULL,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -480,8 +500,6 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
         decision: Decision,
         details: dict[str, JsonValue] | None = None,
     ) -> None:
-        from adgn.agent.persist import Decision
-
         async with self._open() as db:
             await db.execute(
                 """
@@ -502,8 +520,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 
     async def list_approvals(self, *, agent_id: str, limit: int = 100) -> list[ApprovalRecord]:
         """List approval history for an agent, ordered by decision time (newest first)."""
-        from adgn.agent.persist import Decision
-
         out: list[ApprovalRecord] = []
         async with self._db_connection() as db:
             db.row_factory = aiosqlite.Row
@@ -687,7 +703,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                     FROM tool_calls WHERE run_id = ?
                     ORDER BY created_at ASC
                 """
-                params = (run_id,)
+                params: tuple[str, ...] = (run_id,)
             else:
                 sql = """
                     SELECT call_id, run_id, agent_id,
@@ -717,3 +733,133 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                         )
                     )
         return out
+
+    # Policy state management (new enhanced API) ---------------------------------
+    async def create_policy(
+        self, *, policy_id: str, text: str, description: str | None = None, enabled: bool = True
+    ) -> Policy:
+        """Create a new policy and save initial version to history."""
+        now = _now()
+        async with self._open() as db:
+            await db.execute(
+                """
+                INSERT INTO policies (id, text, description, enabled, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (policy_id, text, description, 1 if enabled else 0, now.isoformat(), now.isoformat()),
+            )
+            # Record initial version in history
+            await db.execute(
+                """
+                INSERT INTO policy_history (policy_id, text, updated_at, updated_by)
+                VALUES (?, ?, ?, ?)
+                """,
+                (policy_id, text, now.isoformat(), None),
+            )
+            await db.commit()
+        return Policy(
+            id=policy_id,
+            text=text,
+            description=description,
+            enabled=enabled,
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def get_policy(self, policy_id: str) -> Policy | None:
+        """Get a policy by ID."""
+        async with (
+            self._db_connection() as db,
+            db.execute(
+                """
+                SELECT id, text, description, enabled, created_at, updated_at
+                FROM policies
+                WHERE id = ?
+                """,
+                (policy_id,),
+            ) as cur,
+        ):
+            row = await cur.fetchone()
+            if not row:
+                return None
+            return Policy(
+                id=str(row["id"]),
+                text=str(row["text"]),
+                description=str(row["description"]) if row["description"] else None,
+                enabled=bool(row["enabled"]),
+                created_at=datetime.fromisoformat(cast(str, row["created_at"])),
+                updated_at=datetime.fromisoformat(cast(str, row["updated_at"])),
+            )
+
+    async def update_policy(
+        self, policy_id: str, *, text: str, description: str | None = None
+    ) -> Policy:
+        """Update policy text and description, saving old version to history."""
+        now = _now()
+        async with self._open() as db:
+            # Get current policy to save to history
+            cur = await db.execute("SELECT text FROM policies WHERE id = ?", (policy_id,))
+            row = await cur.fetchone()
+            if not row:
+                raise KeyError(f"Policy not found: {policy_id}")
+            old_text = row[0]
+
+            # Save old version to history
+            await db.execute(
+                """
+                INSERT INTO policy_history (policy_id, text, updated_at, updated_by)
+                VALUES (?, ?, ?, ?)
+                """,
+                (policy_id, old_text, now.isoformat(), None),
+            )
+
+            # Update current policy
+            await db.execute(
+                """
+                UPDATE policies
+                SET text = ?, description = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (text, description, now.isoformat(), policy_id),
+            )
+            await db.commit()
+
+        # Fetch and return updated policy
+        result = await self.get_policy(policy_id)
+        if result is None:
+            raise RuntimeError(f"Policy disappeared after update: {policy_id}")
+        return result
+
+    async def list_policies(self, *, offset: int = 0, limit: int = 100) -> list[Policy]:
+        """List policies with pagination."""
+        out: list[Policy] = []
+        async with (
+            self._db_connection() as db,
+            db.execute(
+                """
+                SELECT id, text, description, enabled, created_at, updated_at
+                FROM policies
+                ORDER BY updated_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ) as cur,
+        ):
+            async for row in cur:
+                out.append(
+                    Policy(
+                        id=str(row["id"]),
+                        text=str(row["text"]),
+                        description=str(row["description"]) if row["description"] else None,
+                        enabled=bool(row["enabled"]),
+                        created_at=datetime.fromisoformat(cast(str, row["created_at"])),
+                        updated_at=datetime.fromisoformat(cast(str, row["updated_at"])),
+                    )
+                )
+        return out
+
+    async def delete_policy(self, policy_id: str) -> None:
+        """Delete a policy and its history."""
+        async with self._open() as db:
+            await db.execute("DELETE FROM policies WHERE id = ?", (policy_id,))
+            await db.commit()

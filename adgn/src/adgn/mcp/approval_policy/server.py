@@ -10,6 +10,7 @@ from pydantic import AnyUrl, BaseModel
 
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.models.proposal_status import ProposalStatus
+from adgn.agent.persist import Policy
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.mcp._shared.constants import (
@@ -44,11 +45,54 @@ class ProposalDescriptor(BaseModel):
     decided_at: datetime | None = None
 
 
+class ProposalDetail(BaseModel):
+    """Full proposal details including content and metadata."""
+
+    id: str
+    status: ProposalStatus
+    created_at: datetime
+    decided_at: datetime | None = None
+    content: str
+
+
 class ApproveProposalArgs(BaseModel):
     id: str
+    comment: str | None = None
 
 
 class RejectProposalArgs(BaseModel):
+    id: str
+    reason: str | None = None
+
+
+class PolicyListItem(BaseModel):
+    """Lightweight policy info for list view."""
+
+    id: str
+    description: str | None = None
+    enabled: bool = True
+
+
+class CreatePolicyArgs(BaseModel):
+    """Args for creating a new policy."""
+
+    id: str
+    text: str
+    description: str | None = None
+    enabled: bool = True
+
+
+class UpdatePolicyArgs(BaseModel):
+    """Args for updating an existing policy."""
+
+    id: str
+    text: str
+    description: str | None = None
+
+
+class DeletePolicyArgs(BaseModel):
+    """Args for deleting a policy."""
+
     id: str
 
 
@@ -136,11 +180,55 @@ class ApprovalPolicyServer(NotifyingFastMCP):
             content, _version = self._engine.get_policy()
             return content
 
-        @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
-        async def proposal_item(id: str) -> str:
-            if (got := await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)) is None:
+        @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/list", name="proposals_list", mime_type="application/json")
+        async def proposals_list() -> list[ProposalDescriptor]:
+            """List all policy proposals with status and timestamps."""
+            proposals = await self._engine.persistence.list_policy_proposals(self._engine.agent_id)
+            return [
+                ProposalDescriptor(
+                    id=p.id,
+                    status=ProposalStatus(p.status),
+                    created_at=p.created_at,
+                    decided_at=p.decided_at,
+                )
+                for p in proposals
+            ]
+
+        @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal_detail", mime_type="application/json")
+        async def proposal_detail(id: str) -> ProposalDetail:
+            """Get full proposal details including content and metadata."""
+            got = await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)
+            if got is None:
                 raise KeyError(id)
-            return got.content
+            return ProposalDetail(
+                id=got.id,
+                status=ProposalStatus(got.status),
+                created_at=got.created_at,
+                decided_at=got.decided_at,
+                content=got.content,
+            )
+
+        @self.resource("resource://policies/list", name="policies_list", mime_type="application/json")
+        async def policies_list() -> list[PolicyListItem]:
+            """List all policies (returns lightweight metadata for list view)."""
+            policies = await self._engine.persistence.list_policies(offset=0, limit=100)
+            return [
+                PolicyListItem(
+                    id=p.id,
+                    description=p.description,
+                    enabled=p.enabled,
+                )
+                for p in policies
+            ]
+
+        @self.resource("resource://policies/{policy_id}", name="policy_detail", mime_type="application/json")
+        async def policy_detail(policy_id: str) -> Policy:
+            """Get full policy by ID."""
+
+            got = await self._engine.persistence.get_policy(policy_id)
+            if got is None:
+                raise KeyError(policy_id)
+            return got
 
         @self.flat_model()
         async def decide(input: PolicyRequest) -> PolicyResponse:
@@ -222,11 +310,15 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
         @self.flat_model()
         async def approve_proposal(input: ApproveProposalArgs) -> None:
             """Approve a pending policy proposal by id (activates policy)."""
+            if input.comment:
+                logger.info("Approving proposal %s with comment: %s", input.id, input.comment)
             await self._engine.approve_proposal(input.id)
 
         @self.flat_model()
         async def reject_proposal(input: RejectProposalArgs) -> None:
             """Reject a pending policy proposal by id."""
+            if input.reason:
+                logger.info("Rejecting proposal %s with reason: %s", input.id, input.reason)
             await self._engine.reject_proposal(input.id)
 
         @self.flat_model()
@@ -235,6 +327,79 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
             # Self-check program using engine's docker client
             self._engine.self_check(input.source)
             self._engine.set_policy(input.source)
+
+        @self.flat_model()
+        async def validate_policy(input: ValidatePolicyArgs) -> ValidationResult:
+            """Validate policy source code without activating it."""
+            errors: list[str] = []
+            try:
+                # Try syntax validation first
+                compile(input.source, "<policy>", "exec")
+            except SyntaxError as e:
+                errors.append(f"Syntax error at line {e.lineno}: {e.msg}")
+                return ValidationResult(valid=False, errors=errors)
+
+            # Try running self-check (validates runtime execution)
+            try:
+                self._engine.self_check(input.source)
+            except Exception as e:
+                errors.append(f"Runtime validation failed: {e!s}")
+                return ValidationResult(valid=False, errors=errors)
+
+            return ValidationResult(valid=True, errors=[])
+
+        @self.flat_model()
+        async def reload_policy(input: ReloadPolicyArgs) -> None:
+            """Reload policy from persistence or provided source."""
+            if input.source is not None:
+                # Reload from provided source
+                self._engine.self_check(input.source)
+                self._engine.set_policy(input.source)
+            else:
+                # Reload from persistence
+                result = await self._engine.persistence.get_latest_policy(self._engine.agent_id)
+                if result is None:
+                    raise ValueError("No policy found in persistence")
+                content, version = result
+                self._engine.load_policy(content, version=version)
+                # Notify about reload
+                self._engine.notify_resource(APPROVAL_POLICY_RESOURCE_URI)
+
+        @self.flat_model()
+        async def create_policy(input: CreatePolicyArgs) -> Policy:
+            """Create a new named policy in the policy library."""
+
+            policy = await self._engine.persistence.create_policy(
+                policy_id=input.id,
+                text=input.text,
+                description=input.description,
+                enabled=input.enabled,
+            )
+            # Notify about policy library change
+            self._engine.notify_resource("resource://policies/list")
+            return policy
+
+        @self.flat_model()
+        async def update_policy(input: UpdatePolicyArgs) -> Policy:
+            """Update an existing policy's text and description."""
+
+            policy = await self._engine.persistence.update_policy(
+                policy_id=input.id,
+                text=input.text,
+                description=input.description,
+            )
+            # Notify about both the specific policy and the list
+            self._engine.notify_resource(f"resource://policies/{input.id}")
+            self._engine.notify_resource("resource://policies/list")
+            return policy
+
+        @self.flat_model()
+        async def delete_policy(input: DeletePolicyArgs) -> None:
+            """Delete a policy from the policy library."""
+            await self._engine.persistence.delete_policy(input.id)
+            # Notify about policy deletion
+            self._engine.notify_resource(f"resource://policies/{input.id}")
+            self._engine.notify_resource("resource://policies/list")
 
 
 async def attach_approval_policy_admin(
@@ -252,3 +417,22 @@ class SetPolicyTextArgs(BaseModel):
     """
 
     source: str
+
+
+class ValidatePolicyArgs(BaseModel):
+    """Validation request for policy source code."""
+
+    source: str
+
+
+class ValidationResult(BaseModel):
+    """Result of policy validation."""
+
+    valid: bool
+    errors: list[str] = []
+
+
+class ReloadPolicyArgs(BaseModel):
+    """Arguments for policy reload operation."""
+
+    source: str | None = None  # If provided, reload from this source; otherwise reload from persistence
