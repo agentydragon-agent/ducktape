@@ -262,8 +262,8 @@ class TokenCapabilityMiddleware(Middleware):
 2. Define `TokenRole` enum (HUMAN, AGENT) and role-based tool access (AGENT_ONLY_TOOLS)
 3. Extract role from JWT token in request context (returns TokenRole enum)
 4. Block unauthorized tool calls and filter tool/resource lists
-5. Implement middleware methods: `on_call_tool()`, `on_list_tools()`, `on_list_resources()`, `on_read_resource()`, `on_notification()`
-6. Filter resource update notifications based on role
+5. Implement middleware methods: `on_call_tool()`, `on_list_tools()`, `on_list_resources()`, `on_read_resource()`
+6. **Note**: `on_notification()` defaults to pass-through (subscriptions work by default)
 7. Test: human cannot call `withdraw_proposal`, agent can
 
 **Phase 3 (Future)** - DELETE redundant HTTP/WebSocket:
@@ -579,18 +579,13 @@ class TokenCapabilityMiddleware(Middleware):
         """Control resource access by role (currently no restrictions)."""
         return await call_next(context)
 
-    async def on_notification(
-        self, context: MiddlewareContext[Notification[Any, Any]], call_next
-    ):
-        """Filter resource update notifications by role.
-
-        This intercepts notifications/resources/updated messages and can filter
-        which clients receive them based on token role.
-        """
-        # For now, pass through all notifications (no filtering yet)
-        # Future: filter by checking context.message.method == "notifications/resources/updated"
-        # and examining the URI to determine if the resource should be visible to this role
-        return await call_next(context)
+    # on_notification() is OPTIONAL - base class already passes through by default
+    # Only override if you need to filter specific notifications by role
+    # async def on_notification(
+    #     self, context: MiddlewareContext[Notification[Any, Any]], call_next
+    # ):
+    #     """Pass through all notifications (subscriptions work by default)."""
+    #     return await call_next(context)
 ```
 
 **Benefits**:

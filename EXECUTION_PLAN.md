@@ -90,7 +90,7 @@
     - `on_list_tools()` - filter tool list based on role
     - `on_list_resources()` - filter resource list based on role (currently no filtering)
     - `on_read_resource()` - control resource access by role (currently no restrictions)
-    - `on_notification()` - filter resource update notifications by role (pass through for now)
+    - `on_notification()` - **OPTIONAL** (defaults to pass-through, ensures subscriptions work)
   - Pattern follows existing `PolicyGatewayMiddleware` in codebase
   - Test: human cannot call `withdraw_proposal`, agent can
   - **Note**: Single MCP server on same port, different capabilities per token role
@@ -317,18 +317,13 @@ class TokenCapabilityMiddleware(Middleware):
         """Control resource access by role (currently no restrictions)."""
         return await call_next(context)
 
-    async def on_notification(
-        self, context: MiddlewareContext[Notification[Any, Any]], call_next
-    ):
-        """Filter resource update notifications by role.
-
-        This intercepts notifications/resources/updated messages and can filter
-        which clients receive them based on token role.
-        """
-        # For now, pass through all notifications (no filtering yet)
-        # Future: filter by checking context.message.method == "notifications/resources/updated"
-        # and examining the URI to determine if the resource should be visible to this role
-        return await call_next(context)
+    # on_notification() is OPTIONAL - base class already passes through by default
+    # Only override if you need to filter specific notifications by role
+    # async def on_notification(
+    #     self, context: MiddlewareContext[Notification[Any, Any]], call_next
+    # ):
+    #     """Pass through all notifications (subscriptions work by default)."""
+    #     return await call_next(context)
 ```
 
 **Benefits**:
