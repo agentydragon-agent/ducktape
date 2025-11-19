@@ -30,6 +30,7 @@ from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.running import RunningInfrastructure
 from adgn.agent.server.protocol import ApprovalBrief, ApprovalPendingEvt
 from adgn.agent.server.runtime import ConnectionManager
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import (
     APPROVAL_POLICY_SERVER_NAME_APPROVER,
     APPROVAL_POLICY_SERVER_NAME_PROPOSER,
@@ -79,7 +80,7 @@ class MCPInfrastructure:
 
     def __init__(
         self,
-        agent_id: str,
+        agent_id: AgentID,
         persistence: SQLitePersistence,
         docker_client: DockerClient,
         initial_policy: str | None = None,

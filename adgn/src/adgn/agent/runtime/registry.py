@@ -12,6 +12,7 @@ from adgn.agent.runtime.local_runtime import LocalAgentRuntime
 from adgn.agent.runtime.running import RunningInfrastructure
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.runtime import ConnectionManager
+from adgn.agent.types import AgentID
 from adgn.openai_utils.model import OpenAIModelProto
 
 from .builder import build_local_agent
@@ -35,7 +36,7 @@ class AgentRuntime:
     Handlers access components directly (e.g., container.running.compositor).
     """
 
-    agent_id: str
+    agent_id: AgentID
     running: RunningInfrastructure
     runtime: LocalAgentRuntime
     _ui_manager: ConnectionManager | None = None
@@ -61,9 +62,9 @@ class AgentRegistry:
     model: str
     client_factory: Callable[[str], OpenAIModelProto]
     docker_client: DockerClient
-    _items: dict[str, AgentRuntime] = field(default_factory=dict)
+    _items: dict[AgentID, AgentRuntime] = field(default_factory=dict)
 
-    def get(self, agent_id: str) -> AgentRuntime | None:
+    def get(self, agent_id: AgentID) -> AgentRuntime | None:
         return self._items.get(agent_id)
 
     def list(self) -> list[AgentRuntime]:
@@ -71,7 +72,7 @@ class AgentRegistry:
 
     async def create(
         self,
-        agent_id: str,
+        agent_id: AgentID,
         mcp_config: MCPConfig,
         *,
         with_ui: bool = True,
@@ -104,7 +105,7 @@ class AgentRegistry:
         return agent_runtime
 
     async def ensure_live(
-        self, agent_id: str, *, with_ui: bool = True, ui_bus=None, connection_manager=None
+        self, agent_id: AgentID, *, with_ui: bool = True, ui_bus=None, connection_manager=None
     ) -> AgentRuntime:
         """Raises KeyError if the agent does not exist in persistence."""
         if (agent_runtime := self.get(agent_id)) is not None:
@@ -118,7 +119,7 @@ class AgentRegistry:
             agent_id, row.mcp_config, with_ui=with_ui, ui_bus=ui_bus, connection_manager=connection_manager
         )
 
-    def remove(self, agent_id: str) -> None:
+    def remove(self, agent_id: AgentID) -> None:
         self._items.pop(agent_id, None)
 
     async def close_all(self) -> None:
