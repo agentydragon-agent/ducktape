@@ -149,6 +149,7 @@ All planned features have been implemented:
 - Current WebSocket channels (`/ws/session`, `/ws/mcp`, `/ws/approvals`, `/ws/policy`, `/ws/ui`, `/ws/agents`) are **NOT MCP protocol** - they are still WebSockets
 - These must be replaced with MCP resource subscriptions (listening to `resource_updated` notifications from MCP servers)
 - The frontend will subscribe to MCP resources instead of connecting to WebSocket channels
+- **Remove channel bundles entirely** - no "channel.bundle" or "_channel_bundle" should exist in repo post-migration
 - This is a **future wave** (not Wave 7) - requires MCP subscription infrastructure to be fully reliable
 
 ### HTTP to MCP Migration Plan
