@@ -13,7 +13,7 @@ from fastmcp.tools.tool import ToolResult
 from mcp import McpError, types as mtypes
 from mcp.types import ErrorData
 
-from adgn.agent.approvals import ApprovalHub, ApprovalRequest, ApprovalToolCall
+from adgn.agent.approvals import ApprovalHub, ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.persist import ApprovalOutcome, Decision, Persistence, ToolCall, ToolCallExecution, ToolCallRecord
 from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest
@@ -184,7 +184,9 @@ class PolicyGatewayMiddleware(Middleware):
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
                     agent_id=self._agent_id,
-                    tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                    tool_call=ToolCall(
+                        name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
+                    ),
                     decision=decision_obj,
                     execution=None,
                 )
@@ -199,14 +201,14 @@ class PolicyGatewayMiddleware(Middleware):
 
                 # Update with execution result (EXECUTING → COMPLETED)
                 if self._persistence is not None:
-                    execution_obj = ToolCallExecution(
-                        completed_at=_now(), output=convert_fastmcp_result(call_result)
-                    )
+                    execution_obj = ToolCallExecution(completed_at=_now(), output=convert_fastmcp_result(call_result))
                     completed_record = ToolCallRecord(
                         call_id=call_id,
                         run_id=str(self._run_id) if self._run_id is not None else None,
                         agent_id=self._agent_id,
-                        tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                        tool_call=ToolCall(
+                            name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
+                        ),
                         decision=decision_obj,
                         execution=execution_obj,
                     )
@@ -273,7 +275,9 @@ class PolicyGatewayMiddleware(Middleware):
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
                     agent_id=self._agent_id,
-                    tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                    tool_call=ToolCall(
+                        name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
+                    ),
                     decision=decision_obj,
                     execution=None,
                 )
@@ -292,7 +296,9 @@ class PolicyGatewayMiddleware(Middleware):
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
                     agent_id=self._agent_id,
-                    tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                    tool_call=ToolCall(
+                        name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
+                    ),
                     decision=decision_obj,
                     execution=None,
                 )
@@ -305,10 +311,7 @@ class PolicyGatewayMiddleware(Middleware):
 
         # ASK: block until resolved via ApprovalHub
         req = ApprovalRequest(
-            tool_key=tool_key,
-            tool_call=ApprovalToolCall(
-                name=name, call_id=call_id, args_json=(json.dumps(arguments) if arguments else None)
-            ),
+            tool_call=ToolCall(name=name, call_id=call_id, args_json=(json.dumps(arguments) if arguments else None))
         )
         # Register + notify before awaiting
         wait_coro = self._hub.await_decision(call_id, req)
@@ -325,7 +328,9 @@ class PolicyGatewayMiddleware(Middleware):
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
                     agent_id=self._agent_id,
-                    tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                    tool_call=ToolCall(
+                        name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
+                    ),
                     decision=decision_obj,
                     execution=None,
                 )
@@ -340,14 +345,14 @@ class PolicyGatewayMiddleware(Middleware):
 
                 # Update with execution result (EXECUTING → COMPLETED)
                 if self._persistence is not None:
-                    execution_obj = ToolCallExecution(
-                        completed_at=_now(), output=convert_fastmcp_result(call_result)
-                    )
+                    execution_obj = ToolCallExecution(completed_at=_now(), output=convert_fastmcp_result(call_result))
                     completed_record = ToolCallRecord(
                         call_id=call_id,
                         run_id=str(self._run_id) if self._run_id is not None else None,
                         agent_id=self._agent_id,
-                        tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                        tool_call=ToolCall(
+                            name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
+                        ),
                         decision=decision_obj,
                         execution=execution_obj,
                     )
@@ -360,13 +365,17 @@ class PolicyGatewayMiddleware(Middleware):
 
         if isinstance(decision_response, AbortTurnDecision):
             # User denied - update with decision (no execution)
-            decision_obj = Decision(outcome=ApprovalOutcome.USER_DENY_ABORT, decided_at=_now(), reason=decision_response.reason)
+            decision_obj = Decision(
+                outcome=ApprovalOutcome.USER_DENY_ABORT, decided_at=_now(), reason=decision_response.reason
+            )
             if self._persistence is not None:
                 denied_record = ToolCallRecord(
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
                     agent_id=self._agent_id,
-                    tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                    tool_call=ToolCall(
+                        name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
+                    ),
                     decision=decision_obj,
                     execution=None,
                 )

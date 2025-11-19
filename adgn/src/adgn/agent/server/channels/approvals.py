@@ -65,7 +65,7 @@ class ApprovalsChannelManager(ChannelConnectionManager):
         pending = []
         for req in approval_hub._requests.values():
             args = json.loads(req.tool_call.args_json) if req.tool_call.args_json else {}
-            pending.append(ApprovalBrief(call_id=req.tool_call.call_id, tool_key=req.tool_key, args=args))
+            pending.append(ApprovalBrief(tool_call=req.tool_call, args=args))
 
         snapshot = ApprovalsSnapshot(pending=pending)
         await self.broadcast(snapshot)

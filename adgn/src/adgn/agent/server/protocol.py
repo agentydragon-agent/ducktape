@@ -12,6 +12,7 @@ from adgn.agent.models.policy_error import PolicyTestsSummary
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.server.bus import MimeType
 from adgn.agent.server.state import UiState
+from adgn.agent.types import ToolCall
 from adgn.mcp.snapshots import SamplingSnapshot  # structured snapshot model (module-level)
 
 # --------------------------
@@ -43,9 +44,10 @@ class SessionState(BaseModel):
 
 
 class ApprovalBrief(BaseModel):
-    call_id: str
-    tool_key: str
-    args: dict = Field(default_factory=dict)
+    """Brief approval information for wire protocol (embeds canonical ToolCall)."""
+
+    tool_call: ToolCall
+    args: dict = Field(default_factory=dict)  # Parsed from tool_call.args_json for UI convenience
 
     model_config = ConfigDict(extra="forbid")
 
@@ -116,11 +118,11 @@ class AssistantText(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ToolCall(BaseModel):
+class ToolCallEvt(BaseModel):
+    """Wire protocol message for tool calls (wraps canonical ToolCall)."""
+
     type: Literal["tool_call"] = "tool_call"
-    name: str
-    args_json: str | None = None
-    call_id: str
+    tool_call: ToolCall
 
     model_config = ConfigDict(extra="forbid")
 
@@ -159,7 +161,7 @@ class UiEndTurnEvt(BaseModel):
 
 
 TranscriptItem = Annotated[
-    UserText | AssistantText | ToolCall | FunctionCallOutput | ReasoningChunk | UiMessageEvt | UiEndTurnEvt,
+    UserText | AssistantText | ToolCallEvt | FunctionCallOutput | ReasoningChunk | UiMessageEvt | UiEndTurnEvt,
     Field(discriminator="type"),
 ]
 
@@ -311,7 +313,7 @@ ServerMessage = Annotated[
     | UiStateUpdated
     | UserText
     | AssistantText
-    | ToolCall
+    | ToolCallEvt
     | FunctionCallOutput
     | ReasoningChunk
     | UiMessageEvt

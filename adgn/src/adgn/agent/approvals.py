@@ -14,7 +14,7 @@ from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.models.policy_error import PolicyError
 from adgn.agent.persist import Persistence
 from adgn.agent.policy_eval.runner import run_policy_source
-from adgn.agent.types import AgentID
+from adgn.agent.types import AgentID, ToolCall
 from adgn.mcp._shared.constants import APPROVAL_POLICY_PROPOSALS_INDEX_URI, APPROVAL_POLICY_RESOURCE_URI, UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 
@@ -54,15 +54,8 @@ class TurnAbortRequested(Exception):  # noqa: N818
         super().__init__(f"Turn abort requested: {reason} (call_id={call_id})")
 
 
-class ApprovalToolCall(BaseModel):
-    name: str
-    call_id: str
-    args_json: str | None = None
-
-
 class ApprovalRequest(BaseModel):
-    tool_key: str
-    tool_call: ApprovalToolCall
+    tool_call: ToolCall
 
 
 class ApprovalHub:
