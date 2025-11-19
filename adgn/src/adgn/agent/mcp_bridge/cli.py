@@ -26,7 +26,7 @@ from adgn.agent.mcp_bridge.server import (
     InfrastructureRegistry,
     create_bridge_infrastructure,
     create_management_ui_app,
-    create_mcp_server_app,
+    create_unified_mcp_app,
 )
 from adgn.agent.mcp_bridge.types import AgentID
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -160,7 +160,7 @@ async def _run_server(
         )
 
         # Create both apps
-        mcp_app = await create_mcp_server_app(auth_tokens_path=auth_tokens_path, registry=registry)
+        mcp_app = await create_unified_mcp_app(auth_tokens_path=auth_tokens_path, registry=registry)
         ui_app, ui_token = await create_management_ui_app(registry=registry)
 
         logger.info("HTTP MCP Bridge started (multi-agent mode)")

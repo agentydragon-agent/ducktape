@@ -40,20 +40,16 @@ class TokenInfo(BaseModel):
 class TokenMapping:
     """Maps Bearer tokens to TokenInfo from a JSON file.
 
-    Supports two file formats:
-
-    New format (with roles):
+    Expected file format:
         {
           "secret-token-123": {"role": "agent", "agent_id": "chatgpt-agent"},
           "secret-token-456": {"role": "agent", "agent_id": "claude-agent"},
           "ui-token-789": {"role": "human"}
         }
 
-    Legacy format (backwards compatible, assumes AGENT role):
-        {
-          "secret-token-123": "chatgpt-agent",
-          "secret-token-456": "claude-agent"
-        }
+    Each token must map to a dict with:
+    - role: "agent" or "human"
+    - agent_id: required for "agent" role, omitted for "human" role
     """
 
     def __init__(self, path: Path):
@@ -76,22 +72,18 @@ class TokenMapping:
             if not isinstance(token, str):
                 raise ValueError(f"Token key must be string: {token}")
 
-            # Handle both legacy format (string) and new format (dict)
-            if isinstance(value, str):
-                # Legacy format: token -> agent_id (assumes AGENT role)
-                mapping[token] = TokenInfo(role=TokenRole.AGENT, agent_id=AgentID(value))
-            elif isinstance(value, dict):
-                # New format: token -> {role, agent_id?}
-                token_info = TokenInfo.model_validate(value)
-                # Validate: AGENT role requires agent_id
-                if token_info.role == TokenRole.AGENT and token_info.agent_id is None:
-                    raise ValueError(f"AGENT role token {token} missing agent_id")
-                # Convert agent_id string to AgentID type
-                if token_info.agent_id is not None:
-                    token_info.agent_id = AgentID(token_info.agent_id)
-                mapping[token] = token_info
-            else:
-                raise ValueError(f"Invalid token mapping value for {token}: {value}")
+            if not isinstance(value, dict):
+                raise ValueError(f"Invalid token mapping value for {token}: expected dict, got {type(value).__name__}")
+
+            # Parse token -> {role, agent_id?}
+            token_info = TokenInfo.model_validate(value)
+            # Validate: AGENT role requires agent_id
+            if token_info.role == TokenRole.AGENT and token_info.agent_id is None:
+                raise ValueError(f"AGENT role token {token} missing agent_id")
+            # Convert agent_id string to AgentID type
+            if token_info.agent_id is not None:
+                token_info.agent_id = AgentID(token_info.agent_id)
+            mapping[token] = token_info
 
         self._mapping = mapping
         logger.info(f"Loaded {len(self._mapping)} token mappings from {self.path}")
@@ -99,14 +91,6 @@ class TokenMapping:
     def get_token_info(self, token: str) -> TokenInfo | None:
         """Get TokenInfo for a token, or None if not found."""
         return self._mapping.get(token)
-
-    def get_agent_id(self, token: str) -> AgentID | None:
-        """Get agent_id for a token, or None if not found.
-
-        Legacy method for backward compatibility. Returns None for HUMAN role tokens.
-        """
-        token_info = self._mapping.get(token)
-        return token_info.agent_id if token_info else None
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):
