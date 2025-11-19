@@ -177,7 +177,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         @self.resource(APPROVAL_POLICY_RESOURCE_URI, name="policy.py", mime_type="text/x-python")
         def active_policy() -> str:
             # Single source of truth: engine
-            content, _version = self._engine.get_policy()
+            content, _policy_id = self._engine.get_policy()
             return content
 
         @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/list", name="proposals_list", mime_type="application/json")
@@ -360,8 +360,8 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
                 result = await self._engine.persistence.get_latest_policy(self._engine.agent_id)
                 if result is None:
                     raise ValueError("No policy found in persistence")
-                content, version = result
-                self._engine.load_policy(content, version=version)
+                content, policy_id = result
+                self._engine.load_policy(content, version=policy_id)
                 # Notify about reload
                 self._engine.notify_resource(APPROVAL_POLICY_RESOURCE_URI)
 

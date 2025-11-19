@@ -2061,6 +2061,7 @@ These features would improve production deployment:
 - [ ] **SQLAlchemy Migration**: Migrate from raw aiosqlite to SQLAlchemy ORM for better type safety and migrations
 - [ ] **Remove SidecarBundle**: Eliminate SidecarBundle abstraction - currently a no-op for external agents, adds unnecessary complexity
 - [ ] **Detailed Agent State**: Instead of state priority logic (WAITING_APPROVAL > EXECUTING > SAMPLING > IDLE), track detailed state including lists of pending approvals, executing tools, etc. This would provide richer UI information without needing priority resolution.
+- [ ] **Merge Policy Tables**: Consider merging `policy_proposals` and `approval_policies` tables - they have very similar structure (id, agent_id, content, timestamps, status/metadata), and policy_proposals essentially "graduate" to approval_policies when approved. Could simplify schema and reduce duplication.
 
 ## References
 

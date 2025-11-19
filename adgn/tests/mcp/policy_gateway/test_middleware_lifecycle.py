@@ -332,7 +332,6 @@ async def test_user_deny_lifecycle(
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Bug in as_minimal_json: looks for 'is_error' key but model dumps with 'isError'")
 async def test_error_during_execution(
     persistence: SQLitePersistence,
     approval_hub: ApprovalHub,
@@ -346,9 +345,6 @@ async def test_error_during_execution(
     2. Policy allows → EXECUTING record
     3. Tool execution fails → COMPLETED record with error in output
     4. Error captured in execution.output
-
-    NOTE: This test currently fails due to a bug in as_minimal_json (calltool.py line 27)
-    where it looks for 'is_error' but Pydantic CallToolResult dumps with 'isError'.
     """
     # Arrange: Create middleware with ALLOW policy
     policy_reader = MockPolicyReader(ApprovalDecision.ALLOW)
