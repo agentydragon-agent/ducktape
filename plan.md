@@ -262,8 +262,9 @@ class TokenCapabilityMiddleware(Middleware):
 2. Define `TokenRole` enum (HUMAN, AGENT) and role-based tool access (AGENT_ONLY_TOOLS)
 3. Extract role from JWT token in request context (returns TokenRole enum)
 4. Block unauthorized tool calls and filter tool/resource lists
-5. Implement middleware methods: `call_tool()`, `list_tools()`, `list_resources()`, `read_resource()`
-6. Test: human cannot call `withdraw_proposal`, agent can
+5. Implement middleware methods: `on_call_tool()`, `on_list_tools()`, `on_list_resources()`, `on_read_resource()`, `on_notification()`
+6. Filter resource update notifications based on role
+7. Test: human cannot call `withdraw_proposal`, agent can
 
 **Phase 3 (Future)** - DELETE redundant HTTP/WebSocket:
 1. Verify frontend only uses MCP (no HTTP REST calls to `/api/agents/*`)
@@ -540,19 +541,24 @@ class TokenCapabilityMiddleware(Middleware):
     # Define access control lists
     AGENT_ONLY_TOOLS = {"withdraw_proposal"}  # Agents can withdraw own proposals
 
-    async def call_tool(self, name: str, args: dict, ctx: RequestContext, call_next):
-        role = extract_role_from_token(ctx.auth_token)  # Returns TokenRole enum
+    async def on_call_tool(
+        self, context: MiddlewareContext[CallToolRequestParams], call_next
+    ):
+        role = extract_role_from_token(context)  # Returns TokenRole enum
+        name = context.message.name
 
         # Block agent-only tools from human UI
         if role == TokenRole.HUMAN and name in self.AGENT_ONLY_TOOLS:
             raise McpError(FORBIDDEN, f"Tool {name} only available to agents")
 
-        return await call_next(name, args)
+        return await call_next(context)
 
-    async def list_tools(self, ctx: RequestContext, call_next):
+    async def on_list_tools(
+        self, context: MiddlewareContext[ListToolsRequest], call_next
+    ):
         """Filter tool list based on role."""
-        all_tools = await call_next()
-        role = extract_role_from_token(ctx.auth_token)
+        all_tools = await call_next(context)
+        role = extract_role_from_token(context)
 
         if role == TokenRole.HUMAN:
             # Filter out agent-only tools from human UI
@@ -561,13 +567,30 @@ class TokenCapabilityMiddleware(Middleware):
             # Agents see all tools
             return all_tools
 
-    async def list_resources(self, ctx: RequestContext, call_next):
+    async def on_list_resources(
+        self, context: MiddlewareContext[ListResourcesRequest], call_next
+    ):
         """Filter resource list based on role (currently no filtering needed)."""
-        return await call_next()
+        return await call_next(context)
 
-    async def read_resource(self, uri: str, ctx: RequestContext, call_next):
+    async def on_read_resource(
+        self, context: MiddlewareContext[ReadResourceRequestParams], call_next
+    ):
         """Control resource access by role (currently no restrictions)."""
-        return await call_next(uri)
+        return await call_next(context)
+
+    async def on_notification(
+        self, context: MiddlewareContext[Notification[Any, Any]], call_next
+    ):
+        """Filter resource update notifications by role.
+
+        This intercepts notifications/resources/updated messages and can filter
+        which clients receive them based on token role.
+        """
+        # For now, pass through all notifications (no filtering yet)
+        # Future: filter by checking context.message.method == "notifications/resources/updated"
+        # and examining the URI to determine if the resource should be visible to this role
+        return await call_next(context)
 ```
 
 **Benefits**:

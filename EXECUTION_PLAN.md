@@ -86,10 +86,11 @@
   - Define tool access lists:
     - `AGENT_ONLY_TOOLS = ["withdraw_proposal"]` (agents can withdraw own proposals, humans cannot)
   - Implement middleware methods:
-    - `call_tool()` - block unauthorized tool calls (raise `McpError(FORBIDDEN)`)
-    - `list_tools()` - filter tool list based on role
-    - `list_resources()` - filter resource list based on role (currently no filtering)
-    - `read_resource()` - control resource access by role (currently no restrictions)
+    - `on_call_tool()` - block unauthorized tool calls (raise `McpError(FORBIDDEN)`)
+    - `on_list_tools()` - filter tool list based on role
+    - `on_list_resources()` - filter resource list based on role (currently no filtering)
+    - `on_read_resource()` - control resource access by role (currently no restrictions)
+    - `on_notification()` - filter resource update notifications by role (pass through for now)
   - Pattern follows existing `PolicyGatewayMiddleware` in codebase
   - Test: human cannot call `withdraw_proposal`, agent can
   - **Note**: Single MCP server on same port, different capabilities per token role
@@ -323,9 +324,24 @@ class TokenCapabilityMiddleware(Middleware):
         """Filter resource list based on role (currently no filtering needed)."""
         return await call_next()
 
-    async def read_resource(self, uri: str, ctx: RequestContext, call_next):
+    async def on_read_resource(
+        self, context: MiddlewareContext[ReadResourceRequestParams], call_next
+    ):
         """Control resource access by role (currently no restrictions)."""
-        return await call_next(uri)
+        return await call_next(context)
+
+    async def on_notification(
+        self, context: MiddlewareContext[Notification[Any, Any]], call_next
+    ):
+        """Filter resource update notifications by role.
+
+        This intercepts notifications/resources/updated messages and can filter
+        which clients receive them based on token role.
+        """
+        # For now, pass through all notifications (no filtering yet)
+        # Future: filter by checking context.message.method == "notifications/resources/updated"
+        # and examining the URI to determine if the resource should be visible to this role
+        return await call_next(context)
 ```
 
 **Benefits**:
