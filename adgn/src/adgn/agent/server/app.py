@@ -19,7 +19,6 @@ from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from pydantic import BaseModel
 import uvicorn
 
-from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import AgentMetadata, RunRow
 from adgn.agent.persist.events import EventRecord
@@ -27,12 +26,9 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import AgentPreset, discover_presets
 from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
 from adgn.agent.runtime.registry import AgentRegistry
-from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
-from adgn.agent.server.channels.endpoints import register_channel_endpoints
 from adgn.agent.server.exceptions import (
     AgentNotFoundError,
     AgentSessionNotReadyError,
-    ApprovalNotFoundError,
     PolicyOperationError,
 )
 from adgn.agent.server.protocol import Snapshot
@@ -60,10 +56,6 @@ def default_client_factory(model: str) -> OpenAIModelProto:
 
 
 # Request/Response models (module-level to avoid nested classes)
-class CreateAgentBody(BaseModel):
-    preset: str
-    system: str | None = None
-
 
 class PatchAgentMcpBody(BaseModel):
     mcp_config: MCPConfig | None = None
@@ -86,13 +78,6 @@ class AgentsList(BaseModel):
     agents: list[AgentDescriptor]
 
 
-class CreateAgentResult(BaseModel):
-    id: str
-
-
-class DeleteAgentResult(BaseModel):
-    ok: bool
-    error: str | None = None
 
 
 class PatchAgentMcpResult(BaseModel):
@@ -109,10 +94,6 @@ class DetachOneMcpBody(BaseModel):
     name: str
 
 
-class AgentInfo(BaseModel):
-    agent: AgentDescriptor | None
-    live: bool
-
 
 # Typed status bundle (references component models defined above)
 class AgentStatus(AgentStatusCore):
@@ -121,10 +102,6 @@ class AgentStatus(AgentStatusCore):
 
 class SetPolicyBody(BaseModel):
     content: str
-
-
-class ApproveBody(BaseModel):
-    call_id: str
 
 
 class PromptBody(BaseModel):
@@ -177,11 +154,6 @@ class PresetsList(BaseModel):
     presets: list[PresetSummary]
 
 
-# Boot outcome (explicit start of an existing agent)
-class BootAgentResult(BaseModel):
-    ok: bool
-    error: str | None = None
-
 
 ## WebSocket message models moved to ws.py
 
@@ -204,10 +176,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     @app.exception_handler(PolicyOperationError)
     async def handle_policy_operation_error(request, exc: PolicyOperationError):
         raise HTTPException(status_code=400, detail=f"{exc.operation}_failed: {exc.reason}") from exc
-
-    @app.exception_handler(ApprovalNotFoundError)
-    async def handle_approval_not_found(request, exc: ApprovalNotFoundError):
-        raise HTTPException(status_code=404, detail="unknown_call") from exc
 
     def _mount_static(path: str, directory: Path, name: str) -> None:
         if not directory.exists():
@@ -249,8 +217,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         client_factory=default_client_factory,
         docker_client=app.state.docker_client,
     )
-    # Initialize the agents WS hub explicitly (no lazy creation in route registrar)
-    app.state.agents_ws_hub = AgentsWSHub(app)
 
     # (continued below)
 
@@ -282,9 +248,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             # Flush legacy UI manager
             if container._ui_manager:
                 await container._ui_manager.flush()
-            # Flush channel bundle if present
-            if container._channel_bundle is not None:
-                await container._channel_bundle.flush_all()
         await app.state.registry.close_all()
 
     # Helper functions to reduce boilerplate
@@ -372,65 +335,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         items.sort(key=lambda t: t[1], reverse=True)
         return AgentsList(agents=[p for _, _, p in items])
 
-    @app.post("/api/agents", response_model=CreateAgentResult)
-    async def api_create_agent(create: CreateAgentBody = Body(...)) -> CreateAgentResult:  # noqa: B008
-        # Lookup preset; combine with optional override system
-        ps = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
-        p = ps.get(create.preset)
-        if p is None:
-            raise HTTPException(status_code=404, detail="unknown_preset")
-        # Inline conversion of preset specs to typed MCPConfig
-        typed_cfg = MCPConfig.model_validate({"mcpServers": p.specs or {}})
-        # Store only internal preset info (no freeform metadata)
-        metadata = AgentMetadata(preset=create.preset)
-        # Persist JSON specs and metadata
-        agent_id = await app.state.persistence.create_agent(mcp_config=typed_cfg, metadata=metadata)
-
-        # Do not persist policy; engine is the single source of truth
-        # Notify general WS subscribers (hub presence required)
-        hub = app.state.agents_ws_hub
-        await hub.broadcast_agent_created(agent_id)
-        await hub.broadcast_agent_status(agent_id=agent_id, live=False, active_run_id=None)
-        return CreateAgentResult(id=agent_id)
-
-    # Explicit boot endpoint: asserts per-agent volumes/policy exist, then starts live container
-    @app.post("/api/agents/{agent_id}/boot", response_model=BootAgentResult)
-    async def api_boot_agent(agent_id: str) -> BootAgentResult:
-        agent_id_typed = AgentID(agent_id)
-        row = await app.state.persistence.get_agent(agent_id_typed)
-        if row is None:
-            return BootAgentResult(ok=False, error="agent_not_found")
-        # No volume checks; policy presence validated on startup via engine/persistence
-        if app.state.registry.get(agent_id_typed) is not None:
-            return BootAgentResult(ok=True)
-        await app.state.registry.create(agent_id_typed, row.mcp_config, with_ui=True)
-        return BootAgentResult(ok=True)
-
-    @app.delete("/api/agents/{agent_id}", response_model=DeleteAgentResult)
-    async def api_delete_agent(agent_id: str) -> DeleteAgentResult:
-        agent_id_typed = AgentID(agent_id)
-        # Look up live container and persisted agent row
-        container = app.state.registry.get(agent_id_typed)
-        row = await app.state.persistence.get_agent(agent_id_typed)
-        if container is None and row is None:
-            return DeleteAgentResult(ok=False, error="not_found")
-        # If live, close deterministically (cancels run, waits idle, drains persistence)
-        if container is not None:
-            result = await container.close()
-            # Remove closed container from registry regardless of drain outcome
-            app.state.registry.remove(agent_id_typed)
-            # If drain failed, abort purge and return error
-            if not (isinstance(result, dict) and result.get("drained", True)):
-                return DeleteAgentResult(ok=False, error="drain_failed")
-        # Always purge persisted records when present
-        if row is not None:
-            await app.state.persistence.delete_agent(agent_id_typed)
-        # Notify general WS subscribers (hub presence required)
-        hub = app.state.agents_ws_hub
-        await hub.broadcast_agent_status(agent_id=agent_id, live=False, active_run_id=None)
-        await hub.broadcast_agent_deleted(agent_id)
-        return DeleteAgentResult(ok=True)
-
     @app.patch("/api/agents/{agent_id}/mcp", response_model=PatchAgentMcpResult)
     async def api_patch_agent_mcp(agent_id: str, patch: PatchAgentMcpBody = Body(...)) -> PatchAgentMcpResult:  # noqa: B008
         # Validate detach does not target default auto-attached servers
@@ -508,29 +412,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             await container.running.admin_client.detach_server(name=body.name)
         return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
-    @app.get("/api/agents/{agent_id}", response_model=AgentInfo)
-    async def api_get_agent(agent_id: str) -> AgentInfo:
-        row = await app.state.persistence.get_agent(agent_id)
-        live = app.state.registry.get(agent_id) is not None
-        if row is None:
-            return AgentInfo(agent=None, live=live)
-        working = False
-        cont = app.state.registry.get(agent_id)
-        if cont is not None and cont.runtime.session is not None and cont.runtime.session.active_run:
-            working = True
-        return AgentInfo(
-            agent=AgentDescriptor(
-                id=row.id,
-                created_at=row.created_at,
-                mcp_config=row.mcp_config,
-                metadata=row.metadata,
-                live=live,
-                working=working,
-                last_updated=None,
-            ),
-            live=live,
-        )
-
     # Pull current snapshot for an agent
     @app.get("/api/agents/{agent_id}/snapshot", response_model=Snapshot)
     async def api_get_snapshot(agent_id: str) -> Snapshot:
@@ -561,30 +442,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
 
-    # --- Approvals (user decisions) ---
-    @app.post("/api/agents/{agent_id}/approve", response_model=SimpleOk)
-    async def api_approve(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
-        container = await get_container(agent_id)
-        sess = get_session(container, agent_id)
-        if body.call_id not in sess.approval_hub._requests:
-            raise ApprovalNotFoundError(body.call_id)
-        sess.approval_hub.resolve(body.call_id, ContinueDecision())
-        if container._ui_manager is not None:
-            await _send_snapshot_latest(container, sess)
-        return SimpleOk(ok=True)
-
-    @app.post("/api/agents/{agent_id}/deny_continue", response_model=SimpleOk)
-    async def api_deny_continue(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
-        container = await get_container(agent_id)
-        sess = get_session(container, agent_id)
-        if body.call_id not in sess.approval_hub._requests:
-            raise ApprovalNotFoundError(body.call_id)
-        # Map deny-continue to abort semantics at the middleware boundary
-        sess.approval_hub.resolve(body.call_id, AbortTurnDecision(reason=f"User denied: {body.call_id}"))
-        if container._ui_manager is not None:
-            await _send_snapshot_latest(container, sess)
-        return SimpleOk(ok=True)
-
     # --- Policy proposals: approve/reject -----------------------------------
     @app.post("/api/agents/{agent_id}/proposals/{proposal_id}/approve", response_model=SimpleOk)
     async def api_approve_proposal(agent_id: str, proposal_id: str) -> SimpleOk:
@@ -607,17 +464,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             await container.running.policy_approver.reject_proposal(RejectProposalArgs(id=proposal_id))
         except Exception as e:
             raise PolicyOperationError("reject_proposal", str(e)) from e
-        return SimpleOk(ok=True)
-
-    @app.post("/api/agents/{agent_id}/deny_abort", response_model=SimpleOk)
-    async def api_deny_abort(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
-        container = await get_container(agent_id)
-        sess = get_session(container, agent_id)
-        if body.call_id not in sess.approval_hub._requests:
-            raise ApprovalNotFoundError(body.call_id)
-        sess.approval_hub.resolve(body.call_id, AbortTurnDecision(reason="ui_deny"))
-        if container._ui_manager is not None:
-            await _send_snapshot_latest(container, sess)
         return SimpleOk(ok=True)
 
     # --- Prompt/Abort ---
@@ -699,12 +545,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         ps = _load_presets()
         p = ps.get(name)
         return PresetInfo(preset=p if p else None)
-
-    # Register websocket routes
-    register_agents_ws(app)
-
-    # Register modular channel endpoints
-    register_channel_endpoints(app)
 
     return app
 

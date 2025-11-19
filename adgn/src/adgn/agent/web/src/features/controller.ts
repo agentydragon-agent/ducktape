@@ -1,6 +1,6 @@
 import { currentAgentId, getAgentIdFromUrl, setAgentId } from '../shared/router'
 import { connectAgentWs, disconnectAgentWs } from './chat/stores'
-import { startAgentsWs, stopAgentStatusPolling } from './agents/stores'
+import { startAgentsPolling, stopAgentStatusPolling } from './agents/stores'
 
 export function initAgentUiController(): () => void {
   // Authoritative bootstrap: read agent_id from URL before subscribing
@@ -12,8 +12,8 @@ export function initAgentUiController(): () => void {
     bootstrapped = true
   }
 
-  // Start agents WS immediately so the sidebar populates on refresh (initial snapshot)
-  try { startAgentsWs() } catch {}
+  // Start agents polling immediately so the sidebar populates on refresh
+  try { startAgentsPolling() } catch {}
 
   let lastId: string | null = null
   const unsub = currentAgentId.subscribe((id) => {
@@ -28,16 +28,15 @@ export function initAgentUiController(): () => void {
       // Defer to next microtask to avoid racing with URL/store updates
       queueMicrotask(() => connectAgentWs(id))
     } else {
-      // No agent selected: ensure list WS is active and status polling is off
-      startAgentsWs()
+      // No agent selected: ensure list polling is active and status polling is off
+      startAgentsPolling()
       stopAgentStatusPolling()
       if (lastId !== null) disconnectAgentWs()
     }
   })
 
   const onVis = () => {
-    // Keep WS running across visibility changes to avoid missing events
-    // Only stop legacy status polling (which we no longer use by default)
+    // Stop legacy status polling (which we no longer use by default)
     stopAgentStatusPolling()
   }
   document.addEventListener('visibilitychange', onVis)
@@ -45,6 +44,5 @@ export function initAgentUiController(): () => void {
   return () => {
     unsub()
     document.removeEventListener('visibilitychange', onVis)
-    // Do not forcibly close agents WS here; leaving it open simplifies UX.
   }
 }

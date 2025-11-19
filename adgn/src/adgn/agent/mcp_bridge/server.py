@@ -365,30 +365,6 @@ async def create_management_ui_app(registry: InfrastructureRegistry) -> tuple[Fa
     # Apply UI token authentication middleware
     ui_app.add_middleware(UITokenAuthMiddleware, expected_token=ui_token)
 
-    @ui_app.websocket("/ws/policy")
-    async def ws_policy(websocket: WebSocket, agent_id: AgentID):
-        """Policy channel - view/edit approval policy."""
-        await websocket.accept()
-        # TODO: Implement policy channel
-        await websocket.send_json({"type": "not_implemented", "message": "Policy channel coming soon"})
-        await websocket.close()
-
-    @ui_app.websocket("/ws/approvals")
-    async def ws_approvals(websocket: WebSocket, agent_id: AgentID):
-        """Approvals channel - pending approvals and decisions."""
-        await websocket.accept()
-        # TODO: Implement approvals channel
-        await websocket.send_json({"type": "not_implemented", "message": "Approvals channel coming soon"})
-        await websocket.close()
-
-    @ui_app.websocket("/ws/mcp")
-    async def ws_mcp(websocket: WebSocket, agent_id: AgentID):
-        """MCP channel - server state and tool calls."""
-        await websocket.accept()
-        # TODO: Implement MCP channel
-        await websocket.send_json({"type": "not_implemented", "message": "MCP channel coming soon"})
-        await websocket.close()
-
     @ui_app.get("/api/agents")
     async def list_agents():
         """List all active agents.

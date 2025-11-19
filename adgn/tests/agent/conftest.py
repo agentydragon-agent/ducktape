@@ -307,15 +307,6 @@ def agent_app_client():
 
 
 @pytest.fixture
-def ws_hub(agent_app_client, patch_agent_build_client, responses_factory):
-    """Yield (client, hub_ws) connected to /ws/agents, closes automatically."""
-    app, client = agent_app_client
-    patch_agent_build_client(FakeOpenAIModel([responses_factory.make_assistant_message("ok")]))
-    with client.websocket_connect("/ws/agents") as ws:
-        yield client, ws
-
-
-@pytest.fixture
 def make_spy_spec() -> Callable[[list[str]], McpServerSpecs]:
     def _spec(counter: list[str]) -> McpServerSpecs:
         mcp = FastMCP("spy")

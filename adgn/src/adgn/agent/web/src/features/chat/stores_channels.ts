@@ -6,7 +6,6 @@
  * - /ws/mcp - MCP server state
  * - /ws/approvals - approval requests
  * - /ws/policy - policy content
- * - /ws/ui - UI state
  */
 
 import { writable, derived, type Writable, type Readable } from 'svelte/store'

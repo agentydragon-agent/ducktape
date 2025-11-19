@@ -103,19 +103,6 @@ async def test_mcp_server_routes_to_agent_infrastructure(
     assert "agent-2" in infrastructure_registry._agents
 
 
-async def test_websocket_channels_available_on_ui_server(infrastructure_registry: InfrastructureRegistry):
-    """Test that WebSocket channels are available on management UI server."""
-    ui_app, _ = await create_management_ui_app(registry=infrastructure_registry)
-
-    # Test that WebSocket endpoints exist (they'll reject without agent_id, but route exists)
-    # Note: TestClient doesn't support WebSocket testing well, so we just check routes exist
-    routes = [route.path for route in ui_app.routes if hasattr(route, "path")]
-
-    assert "/ws/policy" in routes, "Policy channel should exist"
-    assert "/ws/approvals" in routes, "Approvals channel should exist"
-    assert "/ws/mcp" in routes, "MCP channel should exist"
-
-
 async def test_infrastructure_registry_caches_per_agent(infrastructure_registry: InfrastructureRegistry):
     """Test that infrastructure registry caches infrastructure per agent."""
     # Create infrastructure for agent-1

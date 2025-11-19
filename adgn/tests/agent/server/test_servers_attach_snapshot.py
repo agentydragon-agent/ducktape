@@ -23,35 +23,30 @@ def test_attach_server_populates_sampling_servers(agent_app_client):
     assert r.status_code == 200
     agent_id = r.json()["id"]
 
-    # Connect to MCP channel to ensure agent starts and to receive sampling updates
-    with client.websocket_connect(f"/ws/mcp?agent_id={agent_id}") as ws_mcp:
-        env = Envelope.model_validate(ws_mcp.receive_json())
-        assert env.payload.type == "accepted"
+    # Boot the agent to ensure it starts
+    boot = client.post(f"/api/agents/{agent_id}/boot")
+    assert boot.status_code == 200
 
-        # Receive initial MCP snapshot
-        snap_env = Envelope.model_validate(ws_mcp.receive_json())
-        assert snap_env.payload.type == "mcp_snapshot"
-
-        # Attach an in-proc echo server via HTTP API
-        # The API expects typed attach spec per server name
-        # For tests, we use the in-proc factory form: { "inproc": { "factory": "adgn.mcp.testing.simple_servers.make_simple_mcp", "args": ["echo"], "kwargs": {} } }
-        attach = {
-            "echo": {
-                "type": "inproc",
-                "factory": "adgn.mcp.testing.simple_servers.make_simple_mcp",
-                "args": ["echo"],
-                "kwargs": {},
-            }
+    # Attach an in-proc echo server via HTTP API
+    # The API expects typed attach spec per server name
+    # For tests, we use the in-proc factory form: { "inproc": { "factory": "adgn.mcp.testing.simple_servers.make_simple_mcp", "args": ["echo"], "kwargs": {} } }
+    attach = {
+        "echo": {
+            "type": "inproc",
+            "factory": "adgn.mcp.testing.simple_servers.make_simple_mcp",
+            "args": ["echo"],
+            "kwargs": {},
         }
-        rr = client.patch(f"/api/agents/{agent_id}/mcp", json={"attach": attach})
-        assert rr.status_code == 200, rr.text
+    }
+    rr = client.patch(f"/api/agents/{agent_id}/mcp", json={"attach": attach})
+    assert rr.status_code == 200, rr.text
 
-        # Read a fresh snapshot over HTTP and assert sampling contains our server
-        s = client.get(f"/api/agents/{agent_id}/snapshot")
-        assert s.status_code == 200
-        snap = TypeAdapter(Snapshot).validate_python(s.json())
-        assert snap.details is not None
-        assert snap.details.sampling.servers is not None
+    # Read a fresh snapshot over HTTP and assert sampling contains our server
+    s = client.get(f"/api/agents/{agent_id}/snapshot")
+    assert s.status_code == 200
+    snap = TypeAdapter(Snapshot).validate_python(s.json())
+    assert snap.details is not None
+    assert snap.details.sampling.servers is not None
 
-        # Servers should be a dict[str, ServerEntry] where keys are server names
-        assert "echo" in snap.details.sampling.servers
+    # Servers should be a dict[str, ServerEntry] where keys are server names
+    assert "echo" in snap.details.sampling.servers
