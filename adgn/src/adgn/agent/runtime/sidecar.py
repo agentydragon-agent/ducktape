@@ -15,9 +15,8 @@ class Sidecar(ABC):
     Sidecars add optional functionality (UI, chat, loop, runtime exec)
     without being tightly coupled to the core infrastructure.
 
-    Each sidecar is responsible for:
-    - Mounting its MCP servers into the compositor during attach()
-    - Cleaning up resources during detach()
+    Each sidecar is responsible for mounting its MCP servers into
+    the compositor during attach().
     """
 
     @abstractmethod
@@ -27,6 +26,3 @@ class Sidecar(ABC):
         This method should mount any MCP servers into running.compositor
         and perform any other initialization needed.
         """
-
-    async def detach(self) -> None:
-        """Cleanup when infrastructure is closing (optional override)."""

@@ -8,7 +8,7 @@ type-safe access to compositor, policy gateway, and approval infrastructure.
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING
 
@@ -56,29 +56,18 @@ class RunningInfrastructure:
     # Internal cleanup
     _stack: AsyncExitStack
 
-    # Attached sidecars (for lifecycle management)
-    _sidecars: list[Sidecar] = field(default_factory=list)
-
     @cached_property
     def admin_client(self) -> CompositorAdminClient:
         """Get or create compositor admin client."""
         return CompositorAdminClient(self.compositor_client)
 
     async def attach_sidecar(self, sidecar: Sidecar) -> None:
-        """Sidecars are detached in reverse order when close() is called."""
+        """Attach a sidecar to this infrastructure."""
         await sidecar.attach(self)
-        self._sidecars.append(sidecar)
 
     async def close(self) -> CloseResult:
-        """Sidecars are detached in reverse order of attachment."""
+        """Close the infrastructure and cleanup resources."""
         errors: list[str] = []
-
-        # Detach sidecars in reverse order
-        for sidecar in reversed(self._sidecars):
-            try:
-                await sidecar.detach()
-            except Exception as e:
-                errors.append(f"{type(sidecar).__name__}: {e}")
 
         # Close async exit stack
         try:
