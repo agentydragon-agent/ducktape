@@ -4,11 +4,16 @@
 
 ### 1. Pre-commit Optimizations
 
-Updated `ansible/run-ansible-lint.sh` with:
+Updated `ansible/run-ansible-lint-parallel.py` with:
 - **`--offline` flag** - Skips network calls for requirements/schema
 - **`ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1`** - Skips remote schema refresh
+- **Parallel execution** - Runs ansible-lint on multiple changed files in parallel (Python)
+- **Serial reporting** - Collects and displays results in order (no interleaved output)
 
-**Expected improvement:** 42s → 39-40s (~5-10% faster)
+**Expected improvement:**
+- Single file: ~15s (same as before, minimal overhead)
+- Multiple files: Up to Nx faster (N = number of files, depending on CPU cores)
+- Example: 3 files that normally take 45s → ~15-20s with parallel execution
 
 ### 2. CI Thorough Validation
 
@@ -19,8 +24,15 @@ Added `.github/workflows/ci.yml` - `ansible-lint-full` job:
 - **Cached** - Galaxy collections/roles cached between runs
 
 **Why two modes?**
-- **Pre-commit (fast):** Quick feedback while coding (~15s)
+- **Pre-commit (fast):** Quick feedback while coding (~15s, parallel on multiple files)
 - **CI (thorough):** Complete validation including module parameters (~42s)
+
+**How parallel execution works:**
+- When you modify 1 file: Runs normally (~15s, no parallelism overhead)
+- When you modify 3 files: Runs in parallel using all CPU cores (~15-20s total)
+- Uses Python's `ProcessPoolExecutor` for true parallelism (not limited by GIL)
+- Output is collected and displayed in order (not interleaved)
+- No external dependencies required (just Python 3, which pre-commit already uses)
 
 ## Test the Changes
 
