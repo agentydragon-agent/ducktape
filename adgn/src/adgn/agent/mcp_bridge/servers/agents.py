@@ -907,6 +907,23 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
 
             local_runtime.session.set_ui_state_notifier(make_ui_state_notifier(agent_id))
 
+            # Wire session state notifications
+            def make_session_state_notifier(aid: str):
+                def notifier():
+                    # Notifier is sync, schedule broadcast in event loop
+                    loop = asyncio.get_running_loop()
+                    _task = loop.create_task(server.broadcast_resource_updated(resources.agent_session_state(aid)))
+                    # Don't await task - fire and forget notification
+                    _task.add_done_callback(
+                        lambda t: logger.debug(f"Session state broadcast complete for {aid}")
+                        if not t.exception()
+                        else logger.warning(f"Session state broadcast failed for {aid}: {t.exception()}")
+                    )
+
+                return notifier
+
+            local_runtime.session._manager.set_session_state_notifier(make_session_state_notifier(agent_id))
+
         # Wire compositor mount events to broadcast MCP state resource updates
         def make_mount_listener(aid: str):
             async def on_mount_change(name: str, action: MountEvent) -> None:
