@@ -581,7 +581,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             },
             "run_state": {
                 "run_id": str(session.active_run.run_id),
-                "status": "running",
+                "status": ServerStatus.RUNNING,
                 "started_at": session.active_run.started_at.isoformat(),
             }
             if session.active_run
