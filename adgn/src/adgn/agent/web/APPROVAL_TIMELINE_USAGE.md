@@ -21,7 +21,7 @@ The `ApprovalTimeline` component displays historical approval decisions for an a
 - Returns `AgentApprovalsHistory` with `timeline: ApprovalHistoryEntry[]`
 
 ### Live Updates
-- Subscribes to WebSocket at `/ws/agents/{agentId}/approvals`
+- Subscribes to WebSocket at `/ws/approvals?agent_id={agentId}`
 - Listens for `approval_decision` messages
 - Automatically updates timeline when new decisions are made
 

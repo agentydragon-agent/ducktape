@@ -51,7 +51,7 @@
 
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${protocol}//${window.location.host}/ws/agents/${encodeURIComponent(agentId)}/approvals`
+      const wsUrl = `${protocol}//${window.location.host}/ws/approvals?agent_id=${encodeURIComponent(agentId)}`
 
       ws = new WebSocket(wsUrl)
 

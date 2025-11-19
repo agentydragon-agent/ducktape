@@ -42,7 +42,7 @@ export let agentId: string  // Required prop
    - Extracts `timeline: ApprovalHistoryEntry[]`
 
 2. **Live Updates**
-   - Establishes WebSocket connection to `/ws/agents/{agentId}/approvals`
+   - Establishes WebSocket connection to `/ws/approvals?agent_id={agentId}`
    - Listens for messages:
      - `approval_decision` - New decision made
      - `approvals_snapshot` - Full timeline refresh

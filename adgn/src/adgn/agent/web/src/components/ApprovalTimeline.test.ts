@@ -539,7 +539,7 @@ describe('ApprovalTimeline', () => {
     })
 
     // Get the WebSocket instance
-    const wsUrl = `ws://localhost/ws/agents/${encodeURIComponent(mockAgentId)}/approvals`
+    const wsUrl = `ws://localhost/ws/approvals?agent_id=${encodeURIComponent(mockAgentId)}`
     const ws = new MockWebSocket(wsUrl)
 
     // Simulate receiving a new approval decision
@@ -568,7 +568,7 @@ describe('ApprovalTimeline', () => {
       expect(screen.getByText('No approval history yet')).toBeTruthy()
     })
 
-    const ws = new MockWebSocket(`ws://localhost/ws/agents/${encodeURIComponent(mockAgentId)}/approvals`)
+    const ws = new MockWebSocket(`ws://localhost/ws/approvals?agent_id=${encodeURIComponent(mockAgentId)}`)
 
     // Simulate receiving a snapshot
     const snapshotTimeline = [
@@ -597,7 +597,7 @@ describe('ApprovalTimeline', () => {
       expect(screen.getByText('No approval history yet')).toBeTruthy()
     })
 
-    const ws = new MockWebSocket(`ws://localhost/ws/agents/${encodeURIComponent(mockAgentId)}/approvals`)
+    const ws = new MockWebSocket(`ws://localhost/ws/approvals?agent_id=${encodeURIComponent(mockAgentId)}`)
     const closeSpy = vi.spyOn(ws, 'close')
 
     // Unmount component
@@ -673,7 +673,7 @@ describe('ApprovalTimeline', () => {
       expect(screen.getByText('No approval history yet')).toBeTruthy()
     })
 
-    const ws = new MockWebSocket(`ws://localhost/ws/agents/${encodeURIComponent(mockAgentId)}/approvals`)
+    const ws = new MockWebSocket(`ws://localhost/ws/approvals?agent_id=${encodeURIComponent(mockAgentId)}`)
 
     // Simulate invalid JSON message
     if (ws.onmessage) {
