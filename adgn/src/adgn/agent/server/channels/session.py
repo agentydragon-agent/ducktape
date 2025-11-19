@@ -15,6 +15,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.server.channels.base import ChannelConnectionManager
+from adgn.agent.types import ToolCall
 
 if TYPE_CHECKING:
     from adgn.agent.server.runtime import AgentSession
@@ -83,13 +84,11 @@ class AssistantText(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ToolCall(BaseModel):
-    """Tool invocation."""
+class ToolCallEvt(BaseModel):
+    """Tool invocation (wraps canonical ToolCall)."""
 
     type: Literal["tool_call"] = "tool_call"
-    name: str
-    args_json: str | None = None
-    call_id: str
+    tool_call: ToolCall
     model_config = ConfigDict(extra="forbid")
 
 
@@ -127,7 +126,7 @@ class TurnDone(BaseModel):
 
 
 SessionMessage = Annotated[
-    SessionSnapshot | UserText | AssistantText | ToolCall | ToolResult | ReasoningChunk | RunStatusEvt | TurnDone,
+    SessionSnapshot | UserText | AssistantText | ToolCallEvt | ToolResult | ReasoningChunk | RunStatusEvt | TurnDone,
     Field(discriminator="type"),
 ]
 

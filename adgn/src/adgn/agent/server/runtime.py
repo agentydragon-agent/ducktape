@@ -34,7 +34,7 @@ from adgn.agent.server.protocol import (
     SessionState,
     Snapshot,
     SnapshotDetails,
-    ToolCall as UiToolCall,
+    ToolCallEvt as UiToolCall,
     UiEndTurnEvt,
     UiMessageEvt,
     UiMessagePayload,
@@ -184,8 +184,7 @@ class ConnectionManager(BaseHandler):
         raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
-        tc = UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
-        self._spawn(self._send_and_reduce(tc))
+        self._spawn(self._send_and_reduce(UiToolCall(tool_call=evt)))
 
     # No per-tool interception; Policy Gateway middleware emits approval_pending via notifier
 
@@ -264,8 +263,7 @@ class AgentSession:
         if self.active_run:
             self.active_run.pending_approvals = [
                 ApprovalBrief(
-                    call_id=req.tool_call.call_id,
-                    tool_key=req.tool_key,
+                    tool_call=req.tool_call,
                     args=(json.loads(req.tool_call.args_json or "{}") if req.tool_call.args_json else {}),
                 )
                 for req in self.approval_hub._requests.values()

@@ -16,6 +16,7 @@ from openai.types.responses.response_usage import InputTokensDetails, OutputToke
 from pydantic import BaseModel
 
 from adgn.agent.loop_control import LoopDecision, NoLoopDecision
+from adgn.agent.types import ToolCall
 from adgn.openai_utils.model import ReasoningItem
 
 
@@ -36,12 +37,6 @@ class UserText(BaseModel):
 
 class AssistantText(BaseModel):
     text: str
-
-
-class ToolCall(BaseModel):
-    name: str
-    args_json: str | None = None
-    call_id: str
 
 
 class ToolCallOutput(BaseModel):

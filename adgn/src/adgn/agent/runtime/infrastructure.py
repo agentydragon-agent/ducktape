@@ -213,9 +213,12 @@ class MCPInfrastructure:
         async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
             """Notify UI of pending approval requests."""
             if self._connection_manager is not None:
+                from adgn.agent.types import ToolCall
+
                 args = json.loads(args_json) if args_json else {}
+                tool_call = ToolCall(name=tool_key, call_id=call_id, args_json=args_json)
                 await self._connection_manager.send_payload(
-                    ApprovalPendingEvt(approval=ApprovalBrief(call_id=call_id, tool_key=tool_key, args=args))
+                    ApprovalPendingEvt(approval=ApprovalBrief(tool_call=tool_call, args=args))
                 )
 
         async def _record_outcome(call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
@@ -228,11 +231,7 @@ class MCPInfrastructure:
 
             decision = Decision(outcome=outcome, decided_at=datetime.now(UTC), reason=None)
             await self.persistence.record_approval(
-                run_id=None,
-                agent_id=self.agent_id,
-                call_id=call_id,
-                tool_key=tool_key,
-                decision=decision,
+                run_id=None, agent_id=self.agent_id, call_id=call_id, tool_key=tool_key, decision=decision
             )
 
         install_policy_gateway(

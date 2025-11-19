@@ -9,7 +9,7 @@ from fastmcp.mcp_config import MCPConfig
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from adgn.agent.types import AgentID
+from adgn.agent.types import AgentID, ToolCall
 
 
 class AgentMetadata(BaseModel):
@@ -94,14 +94,6 @@ class PolicyHistoryEntry(BaseModel):
     text: str
     updated_at: datetime
     updated_by: str | None = None
-
-
-class ToolCall(BaseModel):
-    """Tool call information (simple version without discriminator for persistence)."""
-
-    name: str
-    call_id: str
-    args_json: str | None = None
 
 
 class Decision(BaseModel):
@@ -266,7 +258,5 @@ class Persistence(Protocol):
     async def create_policy(
         self, *, policy_id: str, text: str, description: str | None = None, enabled: bool = True
     ) -> Policy: ...
-    async def update_policy(
-        self, policy_id: str, *, text: str, description: str | None = None
-    ) -> Policy: ...
+    async def update_policy(self, policy_id: str, *, text: str, description: str | None = None) -> Policy: ...
     async def delete_policy(self, policy_id: str) -> None: ...
