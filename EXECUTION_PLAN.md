@@ -95,10 +95,8 @@
   - **Note**: Single MCP server on same port, different capabilities per token role
 
 - **Agent 3**: Loop Hooks + DB Server (PLANNED FEATURES)
-  - **Loop Hooks**: Extend existing loop MCP server (currently only has `yield_turn`)
-    - Add tools: `enable_hook(id)`, `disable_hook(id)`
-    - Add resources: `loop://hooks/{id}` (hook status and config)
-    - Wire orchestrator bridge: coalesced notifications → hook execution
+  - **Loop Hooks**: Wire orchestrator notifications to hook execution
+    - Orchestrator bridge: coalesced notifications → hook execution
     - Hook execution happens in RuntimeImage (sandboxed)
     - Pattern per scaffold_reflection.md architecture
   - **DB Server**: New read-only MCP server for agent database
