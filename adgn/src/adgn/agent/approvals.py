@@ -236,7 +236,7 @@ class ApprovalPolicyEngine:
 
 def make_policy_engine(
     *,
-    agent_id: str,
+    agent_id: AgentID,
     persistence: Persistence,
     docker_client: DockerClient,
     notifier: Callable[[str], None] | None = None,

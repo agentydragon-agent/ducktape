@@ -131,7 +131,7 @@ class PolicyGatewayMiddleware(Middleware):
         policy_reader: PolicyReaderStub,
         persistence: Persistence | None = None,
         run_id: UUID | None = None,
-        agent_id: str | None = None,
+        agent_id: AgentID | None = None,
     ) -> None:
         self._hub = hub
         self._notify = pending_notifier
@@ -153,7 +153,7 @@ class PolicyGatewayMiddleware(Middleware):
             pending_record = ToolCallRecord(
                 call_id=call_id,
                 run_id=str(self._run_id) if self._run_id is not None else None,
-                agent_id=AgentID(self._agent_id),
+                agent_id=self._agent_id,
                 tool_call=tool_call,
                 decision=None,
                 execution=None,
@@ -184,7 +184,7 @@ class PolicyGatewayMiddleware(Middleware):
                 executing_record = ToolCallRecord(
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
-                    agent_id=AgentID(self._agent_id),
+                    agent_id=self._agent_id,
                     tool_call=ToolCall(
                         name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
                     ),
@@ -206,7 +206,7 @@ class PolicyGatewayMiddleware(Middleware):
                     completed_record = ToolCallRecord(
                         call_id=call_id,
                         run_id=str(self._run_id) if self._run_id is not None else None,
-                        agent_id=AgentID(self._agent_id),
+                        agent_id=self._agent_id,
                         tool_call=ToolCall(
                             name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
                         ),
@@ -275,7 +275,7 @@ class PolicyGatewayMiddleware(Middleware):
                 denied_record = ToolCallRecord(
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
-                    agent_id=AgentID(self._agent_id),
+                    agent_id=self._agent_id,
                     tool_call=ToolCall(
                         name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
                     ),
@@ -296,7 +296,7 @@ class PolicyGatewayMiddleware(Middleware):
                 denied_record = ToolCallRecord(
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
-                    agent_id=AgentID(self._agent_id),
+                    agent_id=self._agent_id,
                     tool_call=ToolCall(
                         name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
                     ),
@@ -328,7 +328,7 @@ class PolicyGatewayMiddleware(Middleware):
                 executing_record = ToolCallRecord(
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
-                    agent_id=AgentID(self._agent_id),
+                    agent_id=self._agent_id,
                     tool_call=ToolCall(
                         name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
                     ),
@@ -350,7 +350,7 @@ class PolicyGatewayMiddleware(Middleware):
                     completed_record = ToolCallRecord(
                         call_id=call_id,
                         run_id=str(self._run_id) if self._run_id is not None else None,
-                        agent_id=AgentID(self._agent_id),
+                        agent_id=self._agent_id,
                         tool_call=ToolCall(
                             name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
                         ),
@@ -373,7 +373,7 @@ class PolicyGatewayMiddleware(Middleware):
                 denied_record = ToolCallRecord(
                     call_id=call_id,
                     run_id=str(self._run_id) if self._run_id is not None else None,
-                    agent_id=AgentID(self._agent_id),
+                    agent_id=self._agent_id,
                     tool_call=ToolCall(
                         name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
                     ),
@@ -406,7 +406,7 @@ def install_policy_gateway(
     record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
     persistence: Persistence | None = None,
     run_id: UUID | None = None,
-    agent_id: str | None = None,
+    agent_id: AgentID | None = None,
 ) -> None:
     """Install PolicyGatewayMiddleware on a FastMCP-like server.
 
