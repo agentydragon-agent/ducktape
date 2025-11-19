@@ -68,7 +68,7 @@
   - Agent selection routing
   - Navigation between views
 
-## Wave D: Backend Feature Complete (~1.5 hours, 4 parallel agents)
+## Wave D: Backend Feature Complete (~1 hour, 3 parallel agents)
 
 **Dependencies**: Wave C complete
 
@@ -95,25 +95,13 @@
   - Test: human cannot call `withdraw_proposal`, agent can
   - **Note**: Single MCP server on same port, different capabilities per token role
 
-- **Agent 3**: Loop Hooks + DB Server (PLANNED FEATURES)
-  - **Loop Hooks**: Wire orchestrator notifications to hook execution
-    - Orchestrator bridge: coalesced notifications → hook execution
-    - Hook execution happens in RuntimeImage (sandboxed)
-    - Pattern per scaffold_reflection.md architecture
-  - **DB Server**: New read-only MCP server for agent database
-    - Resources: `db://view/*` (database views)
-    - Tools: `query` (read-only SQL queries)
-    - Used by HookInputsHydration for loop hooks
-    - Pattern per scaffold_reflection.md architecture
-
-- **Agent 4**: Chat/UI Delivery + DELETE Legacy Endpoints
-  - **ADD**: Promote MCP-native chat inbox (`ui://chat/inbox`, `chat_read_since`)
-  - **ADD**: Runtime bridges: human chat notifications → `UiState`, assistant outputs → `chat.assistant.post`
-  - **DELETE**: Remove legacy HTTP endpoints for agent management (keep static/health/presets only)
-  - **DELETE**: Remove WebSocket channel infrastructure (`/ws/session`, `/ws/approvals`, `/ws/policy`, `/ws/mcp`, `/ws/ui`, `/ws/agents`)
-  - **DELETE**: Remove channel bundle code (`_channel_bundle`, `channel.bundle`)
+- **Agent 3**: DELETE Legacy HTTP/WebSocket Endpoints
+  - Verify frontend only uses MCP (no HTTP calls to `/api/agents/*`)
+  - Delete HTTP agent management endpoints (keep static/health/presets only)
+  - Delete WebSocket channel infrastructure (`/ws/*` endpoints)
+  - Delete channel bundle code (`_channel_bundle`, `channel.bundle`)
   - **VERIFY**: ZERO WebSocket endpoints remain (only MCP StreamableHTTP)
-  - **NOTE**: Proposals already work via policy server MCP resources - do NOT add HTTP proposals endpoint
+  - **NOTE**: Proposals already work via policy server MCP resources
 
 ## Wave E: Code Quality Scans (~2 hours, 28 parallel agents)
 
@@ -236,8 +224,7 @@ Based on Wave F analysis, create 5 parallel cleanup agents targeting:
 ### Wave D Success
 - Agent state notifications emit `resource_updated` on compositor events
 - Token-based capability middleware blocks unauthorized tool calls (human cannot withdraw_proposal)
-- Loop hooks + DB server implemented
-- Chat inbox fully MCP-native
+- Middleware filters notifications by role
 - Legacy HTTP agent endpoints DELETED (only static/health/presets remain)
 - WebSocket channel infrastructure DELETED (`/ws/*` endpoints removed)
 - ZERO WebSocket endpoints remain (only MCP StreamableHTTP)
