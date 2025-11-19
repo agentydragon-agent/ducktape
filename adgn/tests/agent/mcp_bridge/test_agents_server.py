@@ -17,6 +17,7 @@ from adgn.agent.mcp_bridge.servers.agents import make_agents_server
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist import ApprovalOutcome, Decision, PolicyProposal, ToolCall, ToolCallRecord
 from adgn.mcp.snapshots import RunningServerEntry, SamplingSnapshot
+from adgn.tests.agent.mcp_bridge.conftest import make_tool_call
 
 
 def read_text_json(result):
@@ -172,7 +173,7 @@ async def test_agent_approvals_pending_empty(agents_client):
 async def test_agent_approvals_pending_with_items(agents_client, mock_approval_hub):
     """Test resource://agents/{id}/approvals/pending with pending approvals."""
     # Add pending approval
-    tool_call = ToolCall(name="test_tool", call_id="call-123", args_json='{"arg1": "value1"}')
+    tool_call = make_tool_call()
     request = ApprovalRequest(tool_call=tool_call)
     mock_approval_hub._requests["call-123"] = request
 
@@ -209,8 +210,8 @@ async def test_global_approvals_pending_empty(agents_client):
 async def test_global_approvals_pending_multi_content(agents_client, mock_approval_hub):
     """Test resource://approvals/pending returns multi-content blocks."""
     # Add pending approvals to the hub
-    tool_call_1 = ToolCall(name="test_tool_1", call_id="call-123", args_json='{"arg1": "value1"}')
-    tool_call_2 = ToolCall(name="test_tool_2", call_id="call-456", args_json='{"arg2": "value2"}')
+    tool_call_1 = make_tool_call("test_tool_1")
+    tool_call_2 = make_tool_call("test_tool_2", "call-456", {"arg2": "value2"})
 
     mock_approval_hub._requests["call-123"] = ApprovalRequest(tool_call=tool_call_1)
     mock_approval_hub._requests["call-456"] = ApprovalRequest(tool_call=tool_call_2)
@@ -268,7 +269,7 @@ async def test_agent_approvals_history_with_records(agents_client, mock_persiste
         call_id="call-123",
         run_id="run-456",
         agent_id=AgentID("local-agent"),
-        tool_call=ToolCall(name="test_tool", call_id="call-123", args_json='{"arg1": "value1"}'),
+        tool_call=make_tool_call(),
         decision=Decision(outcome=ApprovalOutcome.USER_APPROVE, decided_at=decided_at, reason=None),
         execution=None,
     )
@@ -297,7 +298,7 @@ async def test_agent_approvals_history_filters_pending(agents_client, mock_persi
         call_id="call-pending",
         run_id="run-456",
         agent_id=AgentID("local-agent"),
-        tool_call=ToolCall(name="pending_tool", call_id="call-pending", args_json="{}"),
+        tool_call=make_tool_call("pending_tool", "call-pending", {}),
         decision=None,
         execution=None,
     )
@@ -308,7 +309,7 @@ async def test_agent_approvals_history_filters_pending(agents_client, mock_persi
         call_id="call-completed",
         run_id="run-456",
         agent_id=AgentID("local-agent"),
-        tool_call=ToolCall(name="completed_tool", call_id="call-completed", args_json="{}"),
+        tool_call=make_tool_call("completed_tool", "call-completed", {}),
         decision=Decision(outcome=ApprovalOutcome.USER_APPROVE, decided_at=decided_at, reason=None),
         execution=None,
     )
@@ -398,7 +399,7 @@ async def test_agent_not_initialized(mock_registry, agents_client):
 async def test_approve_tool_call(agents_client, mock_approval_hub):
     """Test approve_tool_call resolves with ContinueDecision."""
     # Setup pending approval
-    tool_call = ToolCall(name="test_tool", call_id="call-123", args_json="{}")
+    tool_call = make_tool_call(args={})
     request = ApprovalRequest(tool_call=tool_call)
 
     # Create future for the approval
@@ -427,7 +428,7 @@ async def test_approve_tool_call(agents_client, mock_approval_hub):
 async def test_reject_tool_call(agents_client, mock_approval_hub):
     """Test reject_tool_call resolves with AbortTurnDecision."""
     # Setup pending approval
-    tool_call = ToolCall(name="test_tool", call_id="call-456", args_json="{}")
+    tool_call = make_tool_call(call_id="call-456", args={})
     request = ApprovalRequest(tool_call=tool_call)
 
     # Create future for the approval
@@ -567,9 +568,9 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
     server = await make_agents_server(custom_registry)
 
     # Add different pending approvals to each agent
-    tool_call_local_1 = ToolCall(name="local_tool_1", call_id="local-call-1", args_json='{"param": "value1"}')
-    tool_call_local_2 = ToolCall(name="local_tool_2", call_id="local-call-2", args_json='{"param": "value2"}')
-    tool_call_bridge_1 = ToolCall(name="bridge_tool_1", call_id="bridge-call-1", args_json='{"param": "value3"}')
+    tool_call_local_1 = make_tool_call("local_tool_1", "local-call-1", {"param": "value1"})
+    tool_call_local_2 = make_tool_call("local_tool_2", "local-call-2", {"param": "value2"})
+    tool_call_bridge_1 = make_tool_call("bridge_tool_1", "bridge-call-1", {"param": "value3"})
 
     local_hub._requests["local-call-1"] = ApprovalRequest(tool_call=tool_call_local_1)
     local_hub._requests["local-call-2"] = ApprovalRequest(tool_call=tool_call_local_2)
@@ -626,7 +627,7 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
             call_id="call-policy-allow",
             run_id="run-1",
             agent_id=AgentID("local-agent"),
-            tool_call=ToolCall(name="safe_tool", call_id="call-policy-allow", args_json='{"action": "read"}'),
+            tool_call=make_tool_call("safe_tool", "call-policy-allow", {"action": "read"}),
             decision=Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=base_time, reason="Auto-approved"),
             execution=None,
         ),
@@ -635,7 +636,7 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
             call_id="call-user-approve",
             run_id="run-1",
             agent_id=AgentID("local-agent"),
-            tool_call=ToolCall(name="user_tool", call_id="call-user-approve", args_json='{"action": "write"}'),
+            tool_call=make_tool_call("user_tool", "call-user-approve", {"action": "write"}),
             decision=Decision(
                 outcome=ApprovalOutcome.USER_APPROVE, decided_at=base_time + timedelta(minutes=1), reason=None
             ),
@@ -646,9 +647,7 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
             call_id="call-policy-deny-cont",
             run_id="run-1",
             agent_id=AgentID("local-agent"),
-            tool_call=ToolCall(
-                name="risky_tool", call_id="call-policy-deny-cont", args_json='{"action": "delete"}'
-            ),
+            tool_call=make_tool_call("risky_tool", "call-policy-deny-cont", {"action": "delete"}),
             decision=Decision(
                 outcome=ApprovalOutcome.POLICY_DENY_CONTINUE,
                 decided_at=base_time + timedelta(minutes=2),
@@ -661,9 +660,7 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
             call_id="call-user-deny-abort",
             run_id="run-1",
             agent_id=AgentID("local-agent"),
-            tool_call=ToolCall(
-                name="dangerous_tool", call_id="call-user-deny-abort", args_json='{"action": "destroy"}'
-            ),
+            tool_call=make_tool_call("dangerous_tool", "call-user-deny-abort", {"action": "destroy"}),
             decision=Decision(
                 outcome=ApprovalOutcome.USER_DENY_ABORT,
                 decided_at=base_time + timedelta(minutes=3),
@@ -725,7 +722,7 @@ async def test_global_approvals_pending_ordering(agents_client, mock_approval_hu
     """Test resource://approvals/pending maintains agent and approval ordering."""
     # Add multiple pending approvals in specific order
     for i in range(3):
-        tool_call = ToolCall(name=f"tool_{i}", call_id=f"call-{i}", args_json=f'{{"index": {i}}}')
+        tool_call = make_tool_call(f"tool_{i}", f"call-{i}", {"index": i})
         mock_approval_hub._requests[f"call-{i}"] = ApprovalRequest(tool_call=tool_call)
 
     result = await agents_client.read_resource("resource://approvals/pending")

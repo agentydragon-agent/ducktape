@@ -205,3 +205,32 @@ def mock_registry_single_agent(mock_running_infrastructure) -> Mock:
     registry.get_local_runtime = get_local_runtime
 
     return registry
+
+
+# Helper functions for test data creation
+
+
+def make_tool_call(name: str = "test_tool", call_id: str = "call-123", args: dict[str, Any] | None = None) -> Any:
+    """Create a ToolCall instance for tests.
+
+    Args:
+        name: Tool name (default: "test_tool")
+        call_id: Call ID (default: "call-123")
+        args: Arguments dict (default: {"arg1": "value1"}). Pass {} for empty args.
+
+    Returns:
+        ToolCall instance with args serialized to JSON
+
+    Example:
+        tool_call = make_tool_call("approve", "call-1", {"param": "value"})
+        tool_call = make_tool_call()  # Uses defaults
+        tool_call = make_tool_call(args={})  # Empty args
+    """
+    import json
+
+    from adgn.agent.persist import ToolCall
+
+    if args is None:
+        args = {"arg1": "value1"}
+    args_json = json.dumps(args) if args else "{}"
+    return ToolCall(name=name, call_id=call_id, args_json=args_json)
