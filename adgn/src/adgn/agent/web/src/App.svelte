@@ -12,7 +12,7 @@
   import { LEFT_MIN, LEFT_MAX } from './shared/layout'
 
   import { disconnectAgentWs } from './features/chat/stores'
-  import { backendOrigin } from './features/agents/api'
+  import { deleteAgent } from './features/agents/api'
 
   let hasAgent = false
   // Current agent id
@@ -92,10 +92,9 @@
   async function deleteCurrentAgent() {
     if (!agentId) return
     try {
-      const res = await fetch(`${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' })
-      const body = await res.json().catch(() => null)
-      if (!res.ok || !body?.ok) {
-        throw new Error(body?.error || ('HTTP ' + res.status))
+      const result = await deleteAgent(agentId)
+      if (!result.ok) {
+        throw new Error(result.error || 'Delete failed')
       }
       // Clear current agent; center pane shows AgentsList
       setAgentId(null)

@@ -1,4 +1,6 @@
 import type { AgentListResponse, AgentStatus, DeleteResponse } from '../../shared/types'
+import { getMCPClient } from '../mcp/clientManager'
+import { callTool, readResource, MCPClientError } from '../mcp/client'
 const DEBUG = import.meta.env.DEV
 
 export function backendOrigin(): string {
@@ -20,88 +22,147 @@ export interface ServerCapabilities {
 }
 
 export async function getCapabilities(): Promise<ServerCapabilities> {
+  // Capabilities endpoint remains HTTP for bootstrap
   const res = await fetch(backendOrigin() + '/api/capabilities')
   if (!res.ok) throw new Error('getCapabilities http ' + res.status)
   return res.json()
 }
 
 export async function listAgents(): Promise<AgentListResponse> {
-  const res = await fetch(backendOrigin() + '/api/agents')
-  if (!res.ok) throw new Error('listAgents http ' + res.status)
-  return res.json()
+  try {
+    const client = await getMCPClient()
+    const result = await readResource(client, 'resource://agents/list')
+
+    // Parse the resource contents
+    const data = JSON.parse(result[0].text)
+
+    // Transform MCP response to match expected HTTP format
+    return {
+      agents: data.agents.map((a: any) => ({
+        id: a.agent_id,
+        created_at: undefined,
+        live: true,
+        working: false,
+        last_updated: undefined,
+        metadata: { preset: 'unknown' }
+      }))
+    }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] listAgents error:', error)
+    throw new Error(`listAgents MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 export async function createAgent(specs: Record<string, any> = {}): Promise<{ id: string }> {
-  const url = backendOrigin() + '/api/agents'
-  if (DEBUG) console.log('[HTTP] POST', url, { specs })
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ specs })
-  })
-  if (DEBUG) console.log('[HTTP] POST RES', res.status)
-  if (!res.ok) throw new Error('createAgent http ' + res.status)
-  return res.json()
+  // Legacy interface - not supported in MCP bridge mode
+  throw new Error('createAgent with specs not supported - use createAgentFromPreset')
 }
 
 export async function listPresets(): Promise<{ presets: Array<{ name: string; description?: string | null }> }> {
+  // Presets endpoint remains HTTP for now
   const res = await fetch(backendOrigin() + '/api/presets')
   if (!res.ok) throw new Error('listPresets http ' + res.status)
   return res.json()
 }
 
 export async function createAgentFromPreset(preset: string, system?: string): Promise<{ id: string }> {
-  const url = backendOrigin() + '/api/agents'
-  const body: any = { preset }
-  if (system) body.system = system
-  if (DEBUG) console.log('[HTTP] POST', url, body)
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body)
-  })
-  if (!res.ok) throw new Error('createAgentFromPreset http ' + res.status)
-  return res.json()
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] create_agent', { preset, system_message: system })
+
+    const result = await callTool(client, 'create_agent', {
+      preset,
+      system_message: system || undefined
+    })
+
+    if (DEBUG) console.log('[MCP] create_agent result:', result)
+
+    // Extract the structured content
+    const content = result.content.find((c: any) => c.type === 'text')
+    if (!content) throw new Error('No text content in MCP response')
+
+    const data = JSON.parse(content.text)
+    return { id: data.agent_id }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] createAgentFromPreset error:', error)
+    throw new Error(`createAgentFromPreset MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 export async function deleteAgent(id: string): Promise<DeleteResponse> {
-  const url = backendOrigin() + '/api/agents/' + encodeURIComponent(id)
-  if (DEBUG) console.log('[HTTP] DELETE', url)
-  const res = await fetch(url, { method: 'DELETE' })
-  if (DEBUG) console.log('[HTTP] DELETE RES', res.status)
-  const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error('deleteAgent http ' + res.status)
-  return body as DeleteResponse
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] delete_agent', { agent_id: id })
+
+    await callTool(client, 'delete_agent', { agent_id: id })
+
+    if (DEBUG) console.log('[MCP] delete_agent success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] deleteAgent error:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 export async function getAgentStatus(id: string): Promise<AgentStatus> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(id)}/status`
-  if (DEBUG) console.log('[HTTP] GET', url)
-  const res = await fetch(url)
-  if (DEBUG) console.log('[HTTP] GET RES', res.status)
-  if (!res.ok) throw new Error('getAgentStatus http ' + res.status)
-  return res.json()
+  try {
+    const client = await getMCPClient()
+    const result = await readResource(client, `resource://agents/${id}/info`)
+
+    // Parse the resource contents
+    const data = JSON.parse(result[0].text)
+
+    // Transform MCP response to match expected HTTP format
+    return {
+      id: data.agent_id,
+      live: data.status === 'running',
+      lifecycle: data.status === 'running' ? 'ready' : 'closed'
+    }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] getAgentStatus error:', error)
+    throw new Error(`getAgentStatus MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
-// MCP reconfiguration via HTTP (attach/detach)
+// MCP reconfiguration via MCP tools
 export async function attachMcpServer(agentId: string, name: string, spec: any): Promise<any> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/mcp/attach`
-  const body = { name, spec }
-  if (DEBUG) console.log('[HTTP] POST', url, body)
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-  if (DEBUG) console.log('[HTTP] POST RES', res.status)
-  if (!res.ok) throw new Error('attachMcpServer http ' + res.status)
-  return res.json()
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] attach_server', { agent_id: agentId, name, spec })
+
+    await callTool(client, 'attach_server', {
+      agent_id: agentId,
+      name,
+      spec
+    })
+
+    if (DEBUG) console.log('[MCP] attach_server success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] attachMcpServer error:', error)
+    throw new Error(`attachMcpServer MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 export async function detachMcpServer(agentId: string, name: string): Promise<any> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/mcp/detach`
-  const body = { name }
-  if (DEBUG) console.log('[HTTP] POST', url, body)
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-  if (DEBUG) console.log('[HTTP] POST RES', res.status)
-  if (!res.ok) throw new Error('detachMcpServer http ' + res.status)
-  return res.json()
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] detach_server', { agent_id: agentId, name })
+
+    await callTool(client, 'detach_server', {
+      agent_id: agentId,
+      name
+    })
+
+    if (DEBUG) console.log('[MCP] detach_server success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] detachMcpServer error:', error)
+    throw new Error(`detachMcpServer MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 // Agent id routing utilities live in shared/router.ts. Avoid duplicates here.
@@ -109,13 +170,21 @@ export async function detachMcpServer(agentId: string, name: string): Promise<an
 // --- Chat/Approvals helpers ---
 
 export async function getSnapshot(agentId: string): Promise<any> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/snapshot`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('getSnapshot http ' + res.status)
-  return res.json()
+  try {
+    const client = await getMCPClient()
+    const result = await readResource(client, `resource://agents/${agentId}/snapshot`)
+
+    // Parse the resource contents
+    const data = JSON.parse(result[0].text)
+    return data
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] getSnapshot error:', error)
+    throw new Error(`getSnapshot MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 export async function withdrawProposal(agentId: string, proposalId: string): Promise<{ ok: boolean; error?: string | null }> {
+  // Withdraw not yet implemented in MCP - fall back to HTTP
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/proposals/${encodeURIComponent(proposalId)}/withdraw`
   const res = await fetch(url, { method: 'POST' })
   const body = await res.json().catch(() => null)
@@ -124,75 +193,189 @@ export async function withdrawProposal(agentId: string, proposalId: string): Pro
 }
 
 export async function setPolicy(agentId: string, content: string, proposalId?: string): Promise<{ ok: boolean; error?: string | null }> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/policy`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ content, proposal_id: proposalId ?? null })
-  })
-  const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error('setPolicy http ' + res.status)
-  return body
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] set_policy', { agent_id: agentId, policy_text: content })
+
+    await callTool(client, 'set_policy', {
+      agent_id: agentId,
+      policy_text: content
+    })
+
+    if (DEBUG) console.log('[MCP] set_policy success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] setPolicy error:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 export async function rejectProposal(agentId: string, proposalId: string): Promise<{ ok: boolean; error?: string | null }> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/proposals/${encodeURIComponent(proposalId)}/reject`
-  const res = await fetch(url, { method: 'POST' })
-  const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error('rejectProposal http ' + res.status)
-  return body
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] reject_proposal', { agent_id: agentId, proposal_id: proposalId })
+
+    await callTool(client, 'reject_proposal', {
+      agent_id: agentId,
+      proposal_id: proposalId,
+      reason: 'Rejected by user'
+    })
+
+    if (DEBUG) console.log('[MCP] reject_proposal success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] rejectProposal error:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 export async function getProposal(agentId: string, proposalId: string): Promise<{ id: string; content: string; status?: string; created_at?: string; decided_at?: string | null }>{
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/proposals/${encodeURIComponent(proposalId)}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('getProposal http ' + res.status)
-  return res.json()
+  try {
+    const client = await getMCPClient()
+    const result = await readResource(client, `resource://agents/${agentId}/policy/proposals`)
+
+    // Parse the resource contents
+    const data = JSON.parse(result[0].text)
+
+    // Find the specific proposal
+    const proposal = data.proposals.find((p: any) => p.id === proposalId)
+    if (!proposal) throw new Error(`Proposal ${proposalId} not found`)
+
+    return {
+      id: proposal.id,
+      content: '', // Full content would need to be fetched from proposal_uri
+      status: proposal.status,
+      created_at: proposal.created_at,
+      decided_at: proposal.decided_at
+    }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] getProposal error:', error)
+    throw new Error(`getProposal MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 export async function approveCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/approve`
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ call_id: callId }) })
-  const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error('approve http ' + res.status)
-  return body
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] approve_tool_call', { agent_id: agentId, call_id: callId })
+
+    await callTool(client, 'approve_tool_call', {
+      agent_id: agentId,
+      call_id: callId
+    })
+
+    if (DEBUG) console.log('[MCP] approve_tool_call success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] approveCall error:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 export async function denyContinueCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/deny_continue`
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ call_id: callId }) })
-  const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error('deny_continue http ' + res.status)
-  return body
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] deny_tool_call', { agent_id: agentId, call_id: callId })
+
+    await callTool(client, 'deny_tool_call', {
+      agent_id: agentId,
+      call_id: callId,
+      reason: 'Denied by user'
+    })
+
+    if (DEBUG) console.log('[MCP] deny_tool_call success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] denyContinueCall error:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 export async function denyAbortCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/deny_abort`
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ call_id: callId }) })
-  const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error('deny_abort http ' + res.status)
-  return body
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] deny_abort', { agent_id: agentId, call_id: callId })
+
+    await callTool(client, 'deny_abort', {
+      agent_id: agentId,
+      call_id: callId,
+      reason: 'Abort denied by user'
+    })
+
+    if (DEBUG) console.log('[MCP] deny_abort success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] denyAbortCall error:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 export async function sendPrompt(agentId: string, text: string): Promise<{ ok: boolean; error?: string | null }> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/prompt`
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
-  const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error('prompt http ' + res.status)
-  return body
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] prompt', { agent_id: agentId, message: text })
+
+    await callTool(client, 'prompt', {
+      agent_id: agentId,
+      message: text
+    })
+
+    if (DEBUG) console.log('[MCP] prompt success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] sendPrompt error:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 export async function abortRun(agentId: string): Promise<{ ok: boolean; error?: string | null }> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/abort`
-  const res = await fetch(url, { method: 'POST' })
-  const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error('abort http ' + res.status)
-  return body
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] abort_run', { agent_id: agentId })
+
+    await callTool(client, 'abort_run', {
+      agent_id: agentId
+    })
+
+    if (DEBUG) console.log('[MCP] abort_run success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] abortRun error:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 export async function getApprovalHistory(agentId: string): Promise<any> {
-  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/approvals/history`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('getApprovalHistory http ' + res.status)
-  return res.json()
+  try {
+    const client = await getMCPClient()
+    const result = await readResource(client, `resource://agents/${agentId}/approvals/history`)
+
+    // Parse the resource contents
+    const data = JSON.parse(result[0].text)
+    return data
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] getApprovalHistory error:', error)
+    throw new Error(`getApprovalHistory MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }

@@ -71,32 +71,33 @@ def generate_typescript_from_schema(schema: dict[str, Any], type_name: str) -> s
 def main() -> None:
     """Generate TypeScript types from Pydantic models."""
     # Define models to export (in desired order)
+    # Name is derived from class __name__ - no duplication
     models_to_export = [
         # Core types
-        ("ToolCall", ToolCall),
+        ToolCall,
         # Enums
-        ("ApprovalOutcome", ApprovalOutcome),
-        ("RunStatus", RunStatus),
-        ("EventType", EventType),
+        ApprovalOutcome,
+        RunStatus,
+        EventType,
         # Decision and execution
-        ("Decision", Decision),
-        ("ToolCallExecution", ToolCallExecution),
-        ("ToolCallRecord", ToolCallRecord),
+        Decision,
+        ToolCallExecution,
+        ToolCallRecord,
         # Approval types
-        ("ApprovalRequest", ApprovalRequest),
-        ("PendingApproval", PendingApproval),
-        ("ApprovalHistoryEntry", ApprovalHistoryEntry),
+        ApprovalRequest,
+        PendingApproval,
+        ApprovalHistoryEntry,
         # Agent info
-        ("AgentInfo", AgentInfo),
-        ("AgentList", AgentList),
-        ("AgentApprovalsPending", AgentApprovalsPending),
-        ("AgentApprovalsHistory", AgentApprovalsHistory),
-        ("PolicyProposalInfo", PolicyProposalInfo),
-        ("AgentPolicyProposals", AgentPolicyProposals),
+        AgentInfo,
+        AgentList,
+        AgentApprovalsPending,
+        AgentApprovalsHistory,
+        PolicyProposalInfo,
+        AgentPolicyProposals,
         # Tool args
-        ("ApproveToolCallArgs", ApproveToolCallArgs),
-        ("RejectToolCallArgs", RejectToolCallArgs),
-        ("AbortAgentArgs", AbortAgentArgs),
+        ApproveToolCallArgs,
+        RejectToolCallArgs,
+        AbortAgentArgs,
     ]
 
     # Output directory
@@ -108,11 +109,12 @@ def main() -> None:
     print(f"Generating TypeScript types to {output_file}...")
 
     # Collect all schemas and definitions
+    # Python dicts remember iteration order, so no separate type_order needed
     all_defs: dict[str, Any] = {}
-    type_order: list[str] = []
 
     # First pass: collect all schemas and their definitions
-    for type_name, model_class in models_to_export:
+    for model_class in models_to_export:
+        type_name = model_class.__name__
         print(f"  Processing {type_name}...")
         schema = get_json_schema(model_class)
 
@@ -120,17 +122,17 @@ def main() -> None:
         if "$defs" in schema:
             all_defs.update(schema["$defs"])
 
-        # Store the main schema as a definition
+        # Store the main schema as a definition (order preserved by dict)
         main_schema = {k: v for k, v in schema.items() if k != "$defs"}
         all_defs[type_name] = main_schema
-        type_order.append(type_name)
 
     # Create a unified schema with all definitions
     # We create a dummy root schema that references all our main types
+    # Use all_defs keys directly (order preserved since Python 3.7+)
     unified_schema = {
         "type": "object",
         "title": "AgentTypes",
-        "properties": {name: {"$ref": f"#/$defs/{name}"} for name in type_order},
+        "properties": {name: {"$ref": f"#/$defs/{name}"} for name in all_defs.keys() if name in [m.__name__ for m in models_to_export]},
         "$defs": all_defs,
     }
 
@@ -145,7 +147,7 @@ def main() -> None:
         ts_output.append(ts_code.strip())
 
         output_file.write_text("\n".join(ts_output))
-        print(f"✓ Successfully generated TypeScript types for {len(type_order)} models")
+        print(f"✓ Successfully generated TypeScript types for {len(models_to_export)} models")
     except Exception as e:
         print(f"Error generating TypeScript: {e}", file=sys.stderr)
         raise
