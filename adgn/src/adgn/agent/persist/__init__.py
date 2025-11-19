@@ -161,7 +161,7 @@ class ApprovalRecord(BaseModel):
 
     call_id: str
     run_id: str | None
-    agent_id: AgentID | None
+    agent_id: AgentID
     tool_key: str
     decision: Decision | None = None
     details: dict[str, JsonValue] | None = None  # TODO: Replace with typed fields (tool_call, execution)
@@ -235,7 +235,7 @@ class Persistence(Protocol):
         self,
         *,
         run_id: UUID | None,
-        agent_id: AgentID | None,
+        agent_id: AgentID,
         call_id: str,
         tool_key: str,
         decision: Decision,
