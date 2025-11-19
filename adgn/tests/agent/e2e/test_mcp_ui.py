@@ -279,3 +279,297 @@ def test_timeline_displays_historical_decisions(page: Page, run_server, response
     assert timeline.inner_text() is not None and len(timeline.inner_text()) > 0
 
     s["stop"]()
+
+
+# ============================================================================
+# MCP Subscription Live Update Tests
+# ============================================================================
+# The following tests verify that UI updates happen via MCP subscriptions
+# without requiring page reloads. They check that:
+# 1. DOM updates occur when backend state changes
+# 2. Page URL remains unchanged (no navigation)
+# 3. Multiple browser contexts receive the same updates
+# ============================================================================
+
+
+def test_agent_creation_updates_sidebar_without_reload(page: Page, run_server, responses_factory):
+    """Create agent via HTTP API → sidebar updates via MCP subscription without page reload.
+
+    Verifies:
+    - Load UI and verify sidebar shows agents list
+    - Capture initial URL
+    - Create agent via HTTP API (not via UI)
+    - Wait for agent to appear in sidebar (MCP subscription update)
+    - Verify URL didn't change (no navigation)
+    - Verify agent is visible in the sidebar
+    """
+
+    async def responses_create(_req):
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+
+    s = run_server(lambda model: make_mock(responses_create))
+    base = s["base_url"]
+
+    # Open UI without specific agent
+    page.goto(base + "/")
+    page.locator(".ws .dot.on").wait_for(timeout=10000)
+
+    # Capture initial URL and agent count
+    initial_url = page.url
+
+    # Verify sidebar is present (may be empty or have existing agents)
+    page.locator(".agents-list").wait_for(timeout=5000)
+
+    # Count initial agents
+    initial_agents = page.locator(".agent-row").count()
+
+    # Create agent via HTTP API (not via UI)
+    agent_id = api_create_agent(base)
+
+    # Wait for new agent to appear in sidebar without reload
+    # The sidebar should update via MCP subscription
+    page.locator(f'.agent-id:has-text("{agent_id[:8]}")').wait_for(timeout=10000)
+
+    # Verify URL didn't change (no navigation)
+    assert page.url == initial_url, "Page URL changed unexpectedly (reload detected)"
+
+    # Verify agent count increased
+    final_agents = page.locator(".agent-row").count()
+    assert final_agents == initial_agents + 1, f"Expected {initial_agents + 1} agents, got {final_agents}"
+
+    s["stop"]()
+
+
+def test_approval_timeline_updates_without_reload(page: Page, run_server, responses_factory):
+    """Approve a pending approval → timeline updates via MCP subscription without reload.
+
+    Verifies:
+    - Create agent and attach echo MCP server
+    - Send prompt that triggers tool call requiring approval
+    - Wait for pending approval to appear
+    - Capture initial URL
+    - Click approve button
+    - Verify timeline updates to show "approved" status via MCP subscription
+    - Verify URL didn't change
+    """
+
+    state = {"i": 0}
+
+    async def responses_create(_req):
+        i = state["i"]
+        state["i"] = i + 1
+        if i == 0:
+            return responses_factory.make_tool_call(
+                build_mcp_function("echo", "echo"), {"text": "hello"}, call_id="call_echo"
+            )
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+
+    s = run_server(lambda model: make_mock(responses_create))
+    base = s["base_url"]
+
+    # Create agent via helper
+    agent_id = api_create_agent(base)
+
+    # Attach echo server via HTTP (in-proc factory spec)
+    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
+    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
+    assert patch.ok, patch.text
+
+    # Open UI and connect WS
+    page.goto(base + f"/?agent_id={agent_id}")
+    page.locator(".ws .dot.on").wait_for(timeout=10000)
+
+    # Send a prompt to trigger the tool call that requires approval
+    page.locator('textarea[placeholder^="Type a prompt"]').fill("use echo tool")
+    page.get_by_role("button", name="Send").click()
+
+    # Pending approval should show up without reload
+    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+
+    # Capture URL before approval
+    url_before_approval = page.url
+
+    # Click Approve on the first pending item
+    page.get_by_role("button", name="Approve").first.click()
+
+    # Wait for run to finish
+    page.get_by_text("Status: finished").wait_for(timeout=10000)
+
+    # Verify URL didn't change
+    assert page.url == url_before_approval, "Page URL changed during approval (reload detected)"
+
+    # Verify pending approvals count decreased (should be 0)
+    # The UI should update via MCP subscription
+    page.get_by_text("Pending Approvals (1)").wait_for(state="detached", timeout=5000)
+
+    s["stop"]()
+
+
+def test_policy_editor_updates_without_reload(page: Page, run_server, responses_factory, policy_allow_all: str):
+    """Update policy via HTTP API → policy editor updates via MCP subscription without reload.
+
+    Verifies:
+    - Create agent
+    - Open UI and load policy editor
+    - Capture initial URL
+    - Update policy via HTTP API (not via UI)
+    - Verify policy content updates in editor via MCP subscription
+    - Verify URL didn't change
+    """
+
+    async def responses_create(_req):
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+
+    s = run_server(lambda model: make_mock(responses_create))
+    base = s["base_url"]
+
+    # Create agent via helper
+    agent_id = api_create_agent(base)
+
+    # Open UI and connect WS
+    page.goto(base + f"/?agent_id={agent_id}")
+    page.locator(".ws .dot.on").wait_for(timeout=10000)
+
+    # Switch to Policy tab to load policy editor
+    page.get_by_role("tab", name="Policy").click()
+
+    # Wait for policy editor to load
+    page.locator(".policy-editor").wait_for(timeout=5000)
+
+    # Capture initial URL
+    initial_url = page.url
+
+    # Update policy via HTTP API
+    new_policy = policy_allow_all.replace("# Allow all", "# Updated policy - allow all")
+    resp = requests.post(base + f"/api/agents/{agent_id}/policy", json={"content": new_policy})
+    assert resp.ok, resp.text
+
+    # Wait for policy editor to update with new content via MCP subscription
+    # Look for the updated comment text
+    page.locator(".policy-editor:has-text('Updated policy - allow all')").wait_for(timeout=10000)
+
+    # Verify URL didn't change
+    assert page.url == initial_url, "Page URL changed during policy update (reload detected)"
+
+    s["stop"]()
+
+
+def test_multiple_tabs_receive_same_updates(browser: Browser, run_server, responses_factory):
+    """Create agent in tab 1 → tab 2 receives update via MCP subscription.
+
+    Verifies:
+    - Open UI in 2 browser contexts (simulate 2 tabs)
+    - Create agent via HTTP API
+    - Verify both contexts show the new agent via MCP subscriptions
+    - No page reloads in either context
+    """
+
+    async def responses_create(_req):
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+
+    s = run_server(lambda model: make_mock(responses_create))
+    base = s["base_url"]
+
+    # Create two browser contexts (simulate two tabs)
+    context1 = browser.new_context()
+    context2 = browser.new_context()
+
+    try:
+        page1 = context1.new_page()
+        page2 = context2.new_page()
+
+        # Open UI in both contexts
+        page1.goto(base + "/")
+        page1.locator(".ws .dot.on").wait_for(timeout=10000)
+
+        page2.goto(base + "/")
+        page2.locator(".ws .dot.on").wait_for(timeout=10000)
+
+        # Capture URLs
+        url1 = page1.url
+        url2 = page2.url
+
+        # Verify sidebars are present
+        page1.locator(".agents-list").wait_for(timeout=5000)
+        page2.locator(".agents-list").wait_for(timeout=5000)
+
+        # Count initial agents in both contexts
+        initial_count1 = page1.locator(".agent-row").count()
+        initial_count2 = page2.locator(".agent-row").count()
+        assert initial_count1 == initial_count2, "Both contexts should see same initial agent count"
+
+        # Create agent via HTTP API
+        agent_id = api_create_agent(base)
+
+        # Wait for agent to appear in both contexts via MCP subscriptions
+        page1.locator(f'.agent-id:has-text("{agent_id[:8]}")').wait_for(timeout=10000)
+        page2.locator(f'.agent-id:has-text("{agent_id[:8]}")').wait_for(timeout=10000)
+
+        # Verify URLs didn't change in either context
+        assert page1.url == url1, "Context 1 URL changed (reload detected)"
+        assert page2.url == url2, "Context 2 URL changed (reload detected)"
+
+        # Verify agent counts increased in both contexts
+        assert page1.locator(".agent-row").count() == initial_count1 + 1
+        assert page2.locator(".agent-row").count() == initial_count2 + 1
+
+    finally:
+        context1.close()
+        context2.close()
+
+    s["stop"]()
+
+
+def test_mcp_state_updates_servers_panel_without_reload(page: Page, run_server, responses_factory):
+    """Attach MCP server via HTTP API → servers panel updates via MCP subscription without reload.
+
+    Verifies:
+    - Create agent
+    - Open UI and switch to Servers tab
+    - Capture initial URL and server count
+    - Attach MCP server via HTTP API
+    - Verify servers panel updates to show new server via MCP subscription
+    - Verify URL didn't change
+    """
+
+    async def responses_create(_req):
+        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+
+    s = run_server(lambda model: make_mock(responses_create))
+    base = s["base_url"]
+
+    # Create agent via helper
+    agent_id = api_create_agent(base)
+
+    # Open UI and connect WS
+    page.goto(base + f"/?agent_id={agent_id}")
+    page.locator(".ws .dot.on").wait_for(timeout=10000)
+
+    # Switch to Servers tab
+    page.get_by_role("tab", name="Servers").click()
+
+    # Wait for servers panel to load
+    page.locator(".servers-panel").wait_for(timeout=5000)
+
+    # Capture initial URL and count servers
+    initial_url = page.url
+    initial_server_count = page.locator(".server-item").count()
+
+    # Attach echo server via HTTP API
+    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
+    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
+    assert patch.ok, patch.text
+
+    # Wait for echo server to appear in servers panel via MCP subscription
+    page.locator('.server-item:has-text("echo")').wait_for(timeout=10000)
+
+    # Verify URL didn't change
+    assert page.url == initial_url, "Page URL changed during server attach (reload detected)"
+
+    # Verify server count increased
+    final_server_count = page.locator(".server-item").count()
+    assert (
+        final_server_count > initial_server_count
+    ), f"Expected more than {initial_server_count} servers, got {final_server_count}"
+
+    s["stop"]()
