@@ -23,17 +23,9 @@ export async function loadServerCapabilities() {
     serverCapabilities.set(caps)
   } catch (err) {
     console.error('Failed to load server capabilities:', err)
-    // Fallback to default full agent capabilities if fetch fails
-    serverCapabilities.set({
-      mode: 'full_agent',
-      components: {
-        mcp: true,
-        approvals: true,
-        chat: true,
-        agent_state: true,
-        ui: true
-      }
-    })
+    // Leave serverCapabilities as null - failures should be visible
+    serverCapabilities.set(null)
+    throw err
   }
 }
 

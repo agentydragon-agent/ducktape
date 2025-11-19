@@ -14,7 +14,6 @@ Sidecars (runtime, UI, chat, loop) are attached separately to RunningInfrastruct
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
-from datetime import UTC, datetime
 import json
 import logging
 import os
@@ -24,7 +23,6 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, load_default_policy_source, make_policy_engine
-from adgn.agent.persist import ApprovalOutcome, Decision
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.running import RunningInfrastructure
@@ -219,21 +217,12 @@ class MCPInfrastructure:
                     ApprovalPendingEvt(approval=ApprovalBrief(tool_call=tool_call, args=args))
                 )
 
-        async def _record_outcome(call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
-            """Record approval outcome to persistence.
-
-            Note: run_id is None since policy gateway doesn't have run context.
-            Approvals are still recorded for audit/analytics purposes.
-            """
-            decision = Decision(outcome=outcome, decided_at=datetime.now(UTC), reason=None)
-            await self.persistence.record_approval(
-                run_id=None, agent_id=self.agent_id, call_id=call_id, tool_key=tool_key, decision=decision
-            )
-
         install_policy_gateway(
             compositor,
             hub=approval_hub,
             pending_notifier=_pending_notifier,
-            record_outcome=_record_outcome,
             policy_reader=policy_reader,
+            persistence=self.persistence,
+            run_id=None,
+            agent_id=self.agent_id,
         )

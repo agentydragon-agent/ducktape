@@ -15,6 +15,9 @@ import pytest
 from adgn.agent.approvals import ApprovalHub
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 
+# Shared test agent ID (for single-agent tests; multiagent tests can create their own)
+TEST_AGENT = AgentID("test-agent")
+
 
 @pytest.fixture
 def temp_db(tmp_path: Path) -> Path:
@@ -158,12 +161,12 @@ def mock_registry_single_agent(mock_running_infrastructure) -> Mock:
     """Mock InfrastructureRegistry with single test agent.
 
     Alternative to mock_registry for tests that only need one agent.
-    Provides a single "test-agent" in LOCAL mode.
+    Provides TEST_AGENT in LOCAL mode.
     """
     registry = Mock()
 
     agents: dict[AgentID, dict[str, Any]] = {
-        AgentID("test-agent"): {"mode": AgentMode.LOCAL, "infrastructure": mock_running_infrastructure}
+        TEST_AGENT: {"mode": AgentMode.LOCAL, "infrastructure": mock_running_infrastructure}
     }
 
     def known_agents():

@@ -71,19 +71,8 @@ class AgentRegistry:
         return list(self._items.values())
 
     async def create(
-        self,
-        agent_id: AgentID,
-        mcp_config: MCPConfig,
-        *,
-        with_ui: bool = True,
-        ui_bus=None,
-        connection_manager=None,
-        system: str | None = None,
+        self, agent_id: AgentID, mcp_config: MCPConfig, *, with_ui: bool = True, system: str | None = None
     ) -> AgentRuntime:
-        # Create ui_bus if needed for UI
-        if with_ui and ui_bus is None:
-            ui_bus = ServerBus()
-
         running, runtime, ui_bus_out, conn_mgr_out = await build_local_agent(
             agent_id=agent_id,
             mcp_config=mcp_config,
@@ -92,8 +81,6 @@ class AgentRegistry:
             client_factory=self.client_factory,
             docker_client=self.docker_client,
             with_ui=with_ui,
-            ui_bus=ui_bus,
-            connection_manager=connection_manager,
             system_override=system,
         )
 
@@ -104,9 +91,7 @@ class AgentRegistry:
         self._items[agent_id] = agent_runtime
         return agent_runtime
 
-    async def ensure_live(
-        self, agent_id: AgentID, *, with_ui: bool = True, ui_bus=None, connection_manager=None
-    ) -> AgentRuntime:
+    async def ensure_live(self, agent_id: AgentID, *, with_ui: bool = True) -> AgentRuntime:
         """Raises KeyError if the agent does not exist in persistence."""
         if (agent_runtime := self.get(agent_id)) is not None:
             return agent_runtime
@@ -115,9 +100,7 @@ class AgentRegistry:
         if row is None:
             raise KeyError(f"agent not found: {agent_id}")
 
-        return await self.create(
-            agent_id, row.mcp_config, with_ui=with_ui, ui_bus=ui_bus, connection_manager=connection_manager
-        )
+        return await self.create(agent_id, row.mcp_config, with_ui=with_ui)
 
     def remove(self, agent_id: AgentID) -> None:
         self._items.pop(agent_id, None)

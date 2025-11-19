@@ -32,12 +32,17 @@ async def build_local_agent(
     client_factory: Callable[[str], OpenAIModelProto],
     docker_client: DockerClient,
     with_ui: bool = True,
-    ui_bus: ServerBus | None = None,
-    connection_manager: ConnectionManager | None = None,
     system_override: str | None = None,
     initial_policy: str | None = None,
 ) -> tuple[RunningInfrastructure, LocalAgentRuntime, ServerBus | None, ConnectionManager | None]:
-    """Example:
+    """Build local agent infrastructure and runtime.
+
+    Creates all necessary components for a local agent:
+    - MCPInfrastructure with policy gateway
+    - ServerBus and ConnectionManager (when with_ui=True)
+    - LocalAgentRuntime with UI integration
+
+    Example:
     from adgn.openai_utils.client_factory import build_client
 
     def client_factory(model: str):
@@ -51,7 +56,6 @@ async def build_local_agent(
         client_factory=client_factory,
         docker_client=docker.from_env(),
         with_ui=True,
-        ui_bus=ui_bus,
     )
 
     # Use the agent
@@ -61,12 +65,12 @@ async def build_local_agent(
     await runtime.close()
     await running.close()
     """
-    # Validate UI requirements and create connection manager if needed
+    # Create UI components if needed
+    ui_bus: ServerBus | None = None
+    connection_manager: ConnectionManager | None = None
     if with_ui:
-        if ui_bus is None:
-            raise ValueError("ui_bus required when with_ui=True")
-        if connection_manager is None:
-            connection_manager = ConnectionManager()
+        ui_bus = ServerBus()
+        connection_manager = ConnectionManager()
 
     # Create infrastructure builder
     builder = MCPInfrastructure(

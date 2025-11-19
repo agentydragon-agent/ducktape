@@ -37,25 +37,19 @@ class TokenMapping:
     def reload(self) -> None:
         """Reload mapping from file."""
         if not self.path.exists():
-            logger.warning(f"Token mapping file not found: {self.path}")
-            self._mapping = {}
-            return
+            raise FileNotFoundError(f"Token mapping file not found: {self.path}")
 
-        try:
-            data = json.loads(self.path.read_text())
-            if not isinstance(data, dict):
-                raise ValueError("Token mapping must be a JSON object")
+        data = json.loads(self.path.read_text())
+        if not isinstance(data, dict):
+            raise ValueError("Token mapping must be a JSON object")
 
-            # Validate all values are strings
-            for token, agent_id in data.items():
-                if not isinstance(token, str) or not isinstance(agent_id, str):
-                    raise ValueError(f"Invalid mapping: {token} -> {agent_id}")
+        # Validate all values are strings
+        for token, agent_id in data.items():
+            if not isinstance(token, str) or not isinstance(agent_id, str):
+                raise ValueError(f"Invalid mapping: {token} -> {agent_id}")
 
-            self._mapping = data
-            logger.info(f"Loaded {len(self._mapping)} token mappings from {self.path}")
-        except Exception as e:
-            logger.error(f"Failed to load token mapping from {self.path}: {e}")
-            self._mapping = {}
+        self._mapping = data
+        logger.info(f"Loaded {len(self._mapping)} token mappings from {self.path}")
 
     def get_agent_id(self, token: str) -> str | None:
         """Get agent_id for a token, or None if not found."""

@@ -127,7 +127,6 @@ class PolicyGatewayMiddleware(Middleware):
         *,
         hub: ApprovalHub,
         pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
-        record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
         policy_reader: PolicyReaderStub,
         persistence: Persistence | None = None,
         run_id: UUID | None = None,
@@ -135,7 +134,6 @@ class PolicyGatewayMiddleware(Middleware):
     ) -> None:
         self._hub = hub
         self._notify = pending_notifier
-        self._record = record_outcome  # Legacy callback, deprecated
         self._policy_reader = policy_reader
         self._persistence = persistence
         self._run_id = run_id
@@ -192,10 +190,6 @@ class PolicyGatewayMiddleware(Middleware):
                     execution=None,
                 )
                 await self._persistence.save_tool_call(executing_record)
-
-            # Legacy callback support
-            if self._record is not None:
-                await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
 
             try:
                 call_result = await call_next(context)
@@ -284,9 +278,6 @@ class PolicyGatewayMiddleware(Middleware):
                 )
                 await self._persistence.save_tool_call(denied_record)
 
-            # Legacy callback support
-            if self._record is not None:
-                await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
             raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, rationale)
 
         if decision is ApprovalDecision.DENY_CONTINUE:
@@ -305,9 +296,6 @@ class PolicyGatewayMiddleware(Middleware):
                 )
                 await self._persistence.save_tool_call(denied_record)
 
-            # Legacy callback support
-            if self._record is not None:
-                await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_CONTINUE)
             raise _policy_denied_error(ApprovalDecision.DENY_CONTINUE, name, rationale)
 
         # ASK: block until resolved via ApprovalHub
@@ -336,10 +324,6 @@ class PolicyGatewayMiddleware(Middleware):
                     execution=None,
                 )
                 await self._persistence.save_tool_call(executing_record)
-
-            # Legacy callback support
-            if self._record is not None:
-                await self._record(call_id, tool_key, ApprovalOutcome.USER_APPROVE)
 
             try:
                 call_result = await call_next(context)
@@ -382,9 +366,6 @@ class PolicyGatewayMiddleware(Middleware):
                 )
                 await self._persistence.save_tool_call(denied_record)
 
-            # Legacy callback support
-            if self._record is not None:
-                await self._record(call_id, tool_key, ApprovalOutcome.USER_DENY_ABORT)
             raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, decision_response.reason)
 
         # Unknown decision type: internal error for visibility
@@ -403,7 +384,6 @@ def install_policy_gateway(
     hub: ApprovalHub,
     policy_reader: PolicyReaderStub,
     pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
-    record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
     persistence: Persistence | None = None,
     run_id: UUID | None = None,
     agent_id: AgentID | None = None,
@@ -417,7 +397,6 @@ def install_policy_gateway(
         PolicyGatewayMiddleware(
             hub=hub,
             pending_notifier=pending_notifier,
-            record_outcome=record_outcome,
             policy_reader=policy_reader,
             persistence=persistence,
             run_id=run_id,

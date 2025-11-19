@@ -7,6 +7,7 @@ External agents connect using MCP-over-HTTP and get policy-gated access to tools
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import logging
@@ -87,14 +88,10 @@ class InfrastructureRegistry:
         self.docker_client = docker_client
         self.mcp_config = mcp_config
         self.initial_policy = initial_policy
-        self._agents: dict[AgentID, AgentEntry] = {}
+        self._agents: defaultdict[AgentID, AgentEntry] = defaultdict(AgentEntry)
 
     async def get_or_create_infrastructure(self, agent_id: AgentID) -> tuple[RunningInfrastructure, FastAPI]:
         """Get or create infrastructure for an agent_id (creates bridge agent)."""
-        # Create stub entry if this is first access
-        if agent_id not in self._agents:
-            self._agents[agent_id] = AgentEntry()
-
         entry = self._agents[agent_id]
 
         async with entry.creation_lock:
@@ -168,10 +165,6 @@ class InfrastructureRegistry:
         compositor_app: FastAPI,
         local_runtime: LocalAgentRuntime,
     ) -> None:
-        # Create or update entry
-        if agent_id not in self._agents:
-            self._agents[agent_id] = AgentEntry()
-
         self._agents[agent_id].agent = RunningAgent(
             running=running, compositor_app=compositor_app, mode=AgentMode.LOCAL, local_runtime=local_runtime
         )

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from enum import StrEnum
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -56,49 +55,20 @@ def _convert_tool_call_record_to_history(record: ToolCallRecord) -> ApprovalHist
     if record.decision is None:
         return None
 
-    # Determine decision type from outcome
-    if record.decision.outcome in (ApprovalOutcome.POLICY_ALLOW, ApprovalOutcome.USER_APPROVE):
-        decision = DecisionType.APPROVED
-    else:
-        decision = DecisionType.REJECTED
-
-    # Extract reason
-    reason = record.decision.reason
-    if not reason and decision == DecisionType.REJECTED:
-        reason = f"Denied by {record.decision.outcome.value}"
-
     # Parse args from JSON
     args = json.loads(record.tool_call.args_json) if record.tool_call.args_json else {}
-
-    # Determine who made the decision
-    if record.decision.outcome in (
-        ApprovalOutcome.POLICY_ALLOW,
-        ApprovalOutcome.POLICY_DENY_CONTINUE,
-        ApprovalOutcome.POLICY_DENY_ABORT,
-    ):
-        decided_by = "policy"
-    else:
-        decided_by = "human"
 
     return ApprovalHistoryEntry(
         call_id=record.call_id,
         tool=record.tool_call.name,
         args=args,
-        decision=decision,
-        reason=reason,
+        outcome=record.decision.outcome,
+        reason=record.decision.reason,
         timestamp=record.decision.decided_at,
-        decided_by=decided_by,
     )
 
 
 # Enumerations
-class DecisionType(StrEnum):
-    """Approval decision types."""
-
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-
 # Tool input models
 class ApproveToolCallArgs(BaseModel):
     """Arguments for approve_tool_call tool."""
@@ -138,10 +108,9 @@ class ApprovalHistoryEntry(BaseModel):
     call_id: str
     tool: str
     args: dict
-    decision: DecisionType
-    reason: str | None = None  # Only for rejections
+    outcome: ApprovalOutcome
+    reason: str | None = None
     timestamp: datetime
-    decided_by: str  # "human" or agent ID
 
 
 # Resource response models

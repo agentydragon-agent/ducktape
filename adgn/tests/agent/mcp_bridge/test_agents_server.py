@@ -192,8 +192,7 @@ async def test_agent_approvals_history_with_records(agents_client, mock_persiste
     assert entry["call_id"] == "call-123"
     assert entry["tool"] == "test_tool"
     assert entry["args"] == {"arg1": "value1"}
-    assert entry["decision"] == "approved"
-    assert entry["decided_by"] == "human"
+    assert entry["outcome"] == "user_approve"
 
 
 @pytest.mark.asyncio
