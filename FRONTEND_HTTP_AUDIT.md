@@ -44,21 +44,6 @@
 
 ---
 
-### 3. Missing MCP Tool
-
-#### POST `/api/agents/{agentId}/proposals/{proposalId}/withdraw`
-- **File**: `adgn/src/adgn/agent/web/src/features/agents/api.ts:195`
-- **Purpose**: Withdraw a policy proposal
-- **Migration Path**: → Need to implement `withdraw_proposal` MCP tool
-- **Status**: ❌ **NOT YET MIGRATED** - MCP tool doesn't exist
-- **Backend Work Needed**:
-  - Add `withdraw_proposal` tool to agents MCP server
-  - Implement withdrawal logic in approval/policy system
-- **Frontend Work Needed**:
-  - Update `withdrawProposal()` in api.ts to use MCP tool
-
----
-
 ## Migration Summary
 
 | Endpoint | Type | Status | MCP Equivalent | Work Needed |
@@ -66,7 +51,6 @@
 | `/api/capabilities` | HTTP GET | ✅ Keep | N/A (bootstrap) | None - intentional |
 | `/ws/session` | WebSocket | ❌ Migrate | `resource://agents/{id}/session/state` | Frontend migration |
 | `/ws/policy` | WebSocket | ⚠️ Partial | `resource://agents/{id}/policy/state` | Complete migration in stores |
-| `/api/.../withdraw` | HTTP POST | ❌ Migrate | Need `withdraw_proposal` tool | Backend + frontend |
 
 ---
 
@@ -127,25 +111,6 @@ await subscriptionManager.subscribe(uri, handleSessionUpdate)
 3. Verify proposal notifications work via MCP
 4. Test policy editor, proposals panel
 
-### 3. Implement `withdraw_proposal` MCP Tool (Priority: LOW)
-**Estimated Time**: 2-3 hours
-
-**Backend** (`adgn/src/adgn/agent/mcp_bridge/servers/agents.py`):
-```python
-@server.tool()
-async def withdraw_proposal(agent_id: AgentID, proposal_id: str) -> SimpleOk:
-    """Withdraw a policy proposal."""
-    # Implementation here
-```
-
-**Frontend** (`adgn/src/adgn/agent/web/src/features/agents/api.ts`):
-```typescript
-export async function withdrawProposal(agentId: string, proposalId: string) {
-  const client = await getMCPClient()
-  return await client.callTool('withdraw_proposal', { agent_id: agentId, proposal_id: proposalId })
-}
-```
-
 ---
 
 ## Testing Checklist
@@ -154,7 +119,6 @@ After completing migrations:
 
 - [ ] `/ws/session` removed: Transcript updates work via MCP subscription
 - [ ] `/ws/policy` removed: Policy editor and proposals work via MCP
-- [ ] `withdraw_proposal` tool: Proposal withdrawal works via MCP
 - [ ] No WebSocket connections except MCP's `/mcp` endpoint
 - [ ] All frontend components using MCP subscriptions for live updates
 - [ ] E2E tests pass (test_mcp_ui.py, test_mcp_concurrent.py)

@@ -98,12 +98,6 @@ class UpdatePolicyArgs(BaseModel):
     description: str | None = None
 
 
-class DeletePolicyArgs(BaseModel):
-    """Args for deleting a policy."""
-
-    id: str
-
-
 # IO types unified; see PolicyRequest/PolicyResponse in adgn.agent.approvals
 
 
@@ -400,14 +394,6 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
             self._engine.notify_resource(policy_detail_uri(input.id))
             self._engine.notify_resource(POLICIES_LIST_URI)
             return policy
-
-        @self.flat_model()
-        async def delete_policy(input: DeletePolicyArgs) -> None:
-            """Delete a policy from the policy library."""
-            await self._engine.persistence.delete_policy(input.id)
-            # Notify about policy deletion
-            self._engine.notify_resource(policy_detail_uri(input.id))
-            self._engine.notify_resource(POLICIES_LIST_URI)
 
 
 async def attach_approval_policy_admin(
