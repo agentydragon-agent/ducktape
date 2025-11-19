@@ -493,7 +493,7 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
         self,
         *,
         run_id: UUID | None,
-        agent_id: AgentID | None,
+        agent_id: AgentID,
         call_id: str,
         tool_key: str,
         decision: Decision,
@@ -544,7 +544,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                         ApprovalRecord(
                             call_id=r["call_id"],
                             run_id=r["run_id"],
-                            agent_id=AgentID(r["agent_id"]) if r["agent_id"] else None,
+                            agent_id=AgentID(r["agent_id"]),
                             tool_key=r["tool_key"],
                             decision=decision,
                             details=details_dict,
