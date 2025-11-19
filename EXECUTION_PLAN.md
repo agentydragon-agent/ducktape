@@ -88,30 +88,46 @@ Total: 69 parallel task agent calls across 8 serial waves
 
 ### B1: HTTP → MCP Migration (8 parallel agents)
 
+**ARCHITECTURE NOTE**: Cross-agent tools are **thin routing wrappers** over existing single-agent MCP servers. DO NOT reimplement business logic - delegate to per-agent servers via compositor.get_child_client() or Python APIs.
+
 **Agent 1: Agent Lifecycle Tools**
 - Implement `create_agent`, `delete_agent`, `boot_agent` in `mcp_bridge/servers/agents.py`
+- Route to registry.create_agent(), registry.remove_agent(), registry.ensure_live()
 
 **Agent 2: MCP Config Tools**
 - Implement `update_mcp_config`, `attach_server`, `detach_server`
+- Route to per-agent compositor.reconfigure(), mount_server(), unmount_server()
+- Pattern: `infra = await registry.get_infrastructure(agent_id); await infra.compositor.mount_server(...)`
 
 **Agent 3: Execution Tools**
-- Implement `prompt`, `abort_run` tools
+- Implement `prompt` tool (sends user message to agent)
+- Route to per-agent chat.human server's `post` tool
+- Implement `abort_run` tool (aborts agent loop)
+- Already exists as `abort_agent` - may just need alias/documentation
 
 **Agent 4: Approval Tools**
-- Implement `deny_tool_call`, `deny_abort` tools (complement existing `approve_tool_call`)
+- Implement `deny_tool_call` tool (alias for `reject_tool_call` with better naming)
+- Implement `deny_abort` tool (reject abort request)
+- Route to existing approval_hub.resolve() with AbortTurnDecision
 
 **Agent 5: Policy Tools**
 - Implement `set_policy`, `approve_proposal`, `reject_proposal` tools
+- Route to per-agent approval_policy_admin server tools
+- Pattern: `client = infra.compositor.get_child_client("approval_policy_admin"); await client.call_tool("approve_proposal", {...})`
 
 **Agent 6: Agent Info Resource**
 - Implement `resource://agents/{id}/info` (rich agent metadata)
+- Aggregate from agent runtime: compositor state, capabilities, mounted servers
 
 **Agent 7: Snapshot Resource**
 - Implement `resource://agents/{id}/snapshot` (compositor snapshot)
+- Route to per-agent compositor.sampling_snapshot()
+- Thin wrapper: `return await infra.compositor.sampling_snapshot()`
 
 **Agent 8: Frontend Migration**
 - Update frontend to use MCP tools instead of HTTP REST endpoints
 - Update `features/agents/api.ts` to call MCP tools
+- Replace fetch() calls with MCP client.call_tool()
 
 ### B2: WebSocket Test Cleanup (4 parallel agents)
 
@@ -369,6 +385,40 @@ Each agent applies fixes for ~20-30 instances of their assigned pattern.
   - ✅ All tests pass
 
 ## Notes
+
+### Cross-Agent Routing Architecture
+
+The cross-agent tools in `agents` server are **thin routing wrappers** that delegate to per-agent MCP servers. Two implementation approaches considered:
+
+#### Approach 1: Manual Routing (Current)
+Each tool manually resolves agent_id and calls per-agent server:
+```python
+@server.tool()
+async def approve_proposal(agent_id: str, proposal_id: str) -> None:
+    infra = await registry.get_infrastructure(AgentID(agent_id))
+    client = infra.compositor.get_child_client("approval_policy_admin")
+    await client.call_tool("approve_proposal", {"id": proposal_id})
+```
+
+**Pros**: Explicit, flexible, easy to add per-agent error handling
+**Cons**: Boilerplate for each tool
+
+#### Approach 2: Decorator Pattern (Considered)
+Create a decorator that automatically adds agent_id routing:
+```python
+@route_to_agent_server("approval_policy_admin", "approve_proposal")
+async def approve_proposal(agent_id: str, proposal_id: str) -> None:
+    pass  # Decorator handles routing
+```
+
+**Pros**: Less boilerplate, consistent pattern
+**Cons**:
+- Magic/implicit behavior
+- Harder to customize per-tool error handling
+- Requires tool signature inspection/manipulation
+- FastMCP may not support wrapping tool functions
+
+**Decision**: Use **Approach 1 (Manual Routing)** for Wave B. The boilerplate is minimal (~3 lines per tool), and explicit routing is clearer for maintenance. Can reconsider decorator pattern if >20 routing tools emerge.
 
 ### Deferred to Future
 - WebSocket → MCP subscription migration (Phase 2)
