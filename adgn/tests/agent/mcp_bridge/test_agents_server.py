@@ -1140,3 +1140,86 @@ async def test_approval_hub_notifier_not_called_without_setup(mock_approval_hub)
     decision = await task
     assert isinstance(decision, AbortTurnDecision)
     assert decision.reason == "test"
+
+
+@pytest.mark.asyncio
+async def test_agent_session_state_resource(agents_client, mock_local_runtime):
+    """Test resource://agents/{id}/session/state returns session state for local agents."""
+    from datetime import UTC, datetime
+    from uuid import UUID
+
+    # Mock session manager and active run
+    mock_session = mock_local_runtime.session
+    mock_session._manager = Mock()
+    mock_session._manager._session_id = "test-session-123"
+    mock_session._run_counter = 5
+
+    # Mock active run
+    mock_run = Mock()
+    mock_run.run_id = UUID("12345678-1234-5678-1234-567812345678")
+    mock_run.started_at = datetime(2025, 1, 15, 10, 30, 0, tzinfo=UTC)
+    mock_session.active_run = mock_run
+
+    result = await agents_client.read_resource("resource://agents/local-agent/session/state")
+    content = read_text_json(result)
+
+    # Verify session state structure
+    assert "session_state" in content
+    assert content["session_state"]["session_id"] == "test-session-123"
+    assert content["session_state"]["version"] == "1.0.0"
+    assert content["session_state"]["active_run_id"] == "12345678-1234-5678-1234-567812345678"
+    assert content["session_state"]["run_counter"] == 5
+
+    # Verify run state
+    assert "run_state" in content
+    assert content["run_state"]["run_id"] == "12345678-1234-5678-1234-567812345678"
+    assert content["run_state"]["status"] == "running"
+    assert content["run_state"]["started_at"] == "2025-01-15T10:30:00"
+
+
+@pytest.mark.asyncio
+async def test_agent_session_state_resource_no_active_run(agents_client, mock_local_runtime):
+    """Test resource://agents/{id}/session/state with no active run."""
+    # Mock session manager without active run
+    mock_session = mock_local_runtime.session
+    mock_session._manager = Mock()
+    mock_session._manager._session_id = "test-session-456"
+    mock_session._run_counter = 3
+    mock_session.active_run = None
+
+    result = await agents_client.read_resource("resource://agents/local-agent/session/state")
+    content = read_text_json(result)
+
+    # Verify session state structure
+    assert "session_state" in content
+    assert content["session_state"]["session_id"] == "test-session-456"
+    assert content["session_state"]["active_run_id"] is None
+    assert content["session_state"]["run_counter"] == 3
+
+    # Verify run state is None
+    assert content["run_state"] is None
+
+
+@pytest.mark.asyncio
+async def test_agent_session_state_resource_bridge_agent(agents_client):
+    """Test resource://agents/{id}/session/state fails for bridge agents."""
+    with pytest.raises(Exception, match=r"(?i)not a local agent"):
+        await agents_client.read_resource("resource://agents/bridge-agent/session/state")
+
+
+@pytest.mark.asyncio
+async def test_agent_session_state_resource_no_session(mock_registry, agents_client):
+    """Test resource://agents/{id}/session/state fails when local agent has no session."""
+    # Mock get_local_runtime to return runtime without session
+    original_get_runtime = mock_registry.get_local_runtime
+
+    def get_runtime_no_session(agent_id):
+        runtime = original_get_runtime(agent_id)
+        if agent_id == "local-agent" and runtime:
+            runtime.session = None
+        return runtime
+
+    mock_registry.get_local_runtime = get_runtime_no_session
+
+    with pytest.raises(Exception, match=r"(?i)no session"):
+        await agents_client.read_resource("resource://agents/local-agent/session/state")
