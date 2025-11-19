@@ -145,8 +145,8 @@ All planned features have been implemented:
 3. Complete MessageComposer: send messages, abort agent
 4. Update App.svelte: CSS grid (timeline | policy) + conditional composer
 5. Wire MCP subscriptions: `resource://agents/{id}/approvals/history`, `resource://approval-policy/policy.py`
-6. Detect UI server: check `$agentStatus.ui?.ready`, conditional composer rendering
-7. Add agent badges: [LOCAL]/[BRIDGE], [Agent Loop ✓], [UI Server ✓]
+6. Detect UI server: check `$agentStatus.ui?.ready`, conditional composer rendering (no badge - presence indicated by composer + UI messages in timeline)
+7. Add agent badges: [LOCAL]/[BRIDGE], [Agent Loop ✓] (UI server presence shown implicitly via composer/timeline)
 8. Update routing: global approvals view, agent selection
 
 ### WebSocket Test Fixture Cleanup
