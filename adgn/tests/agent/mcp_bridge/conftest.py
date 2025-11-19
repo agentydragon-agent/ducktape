@@ -94,6 +94,8 @@ def mock_local_runtime():
     Shared by tests that need a local runtime with abort capability.
     Only used when testing local agent modes.
     """
+    from adgn.agent.server.state import new_state
+
     runtime = Mock()
     runtime.agent = Mock()
     runtime.agent.abort = AsyncMock()
@@ -104,6 +106,10 @@ def mock_local_runtime():
     runtime.running.compositor.sampling_snapshot = AsyncMock(
         return_value=SamplingSnapshot(ts="2025-01-15T10:00:00Z", servers={})
     )
+
+    # Mock session with ui_state
+    runtime.session = Mock()
+    runtime.session.ui_state = new_state()
 
     return runtime
 
@@ -157,10 +163,20 @@ def mock_registry(mock_running_infrastructure, mock_local_runtime) -> Mock:
             raise KeyError(f"Agent {agent_id} not found in registry")
         return agents[agent_id]["runtime"]
 
+    def get(agent_id: AgentID):
+        """Get agent runtime (for UI state access)."""
+        if agent_id not in agents:
+            return None
+        runtime_mock = Mock()
+        runtime_mock.runtime = agents[agent_id]["runtime"]
+        runtime_mock.running = agents[agent_id]["infrastructure"]
+        return runtime_mock
+
     registry.known_agents = known_agents
     registry.get_agent_mode = get_agent_mode
     registry.get_infrastructure = get_infrastructure
     registry.get_local_runtime = get_local_runtime
+    registry.get = get
 
     return registry
 

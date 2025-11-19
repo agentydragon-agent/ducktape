@@ -100,6 +100,28 @@ async def test_agent_state_resource_bridge_agent(agents_client):
 
 
 @pytest.mark.asyncio
+async def test_agent_ui_state_resource(agents_client, mock_local_runtime):
+    """Test resource://agents/{id}/ui/state returns UI state for local agents with session."""
+    result = await agents_client.read_resource("resource://agents/local-agent/ui/state")
+    content = read_text_json(result)
+
+    # Verify UI state structure
+    assert "seq" in content
+    assert "state" in content
+    assert content["seq"] == 0
+    assert content["state"]["seq"] == 0
+    assert content["state"]["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_agent_ui_state_resource_no_session(agents_client, mock_registry):
+    """Test resource://agents/{id}/ui/state fails when agent has no session."""
+    # Make bridge agent return None for session
+    with pytest.raises(Exception, match=r"(?i)has no session"):
+        await agents_client.read_resource("resource://agents/bridge-agent/ui/state")
+
+
+@pytest.mark.asyncio
 async def test_agent_state_resource_with_servers(agents_client, mock_local_runtime):
     """Test resource://agents/{id}/state returns sampling snapshot with server data."""
     # Create a more complex sampling snapshot with running server
@@ -1002,3 +1024,119 @@ async def test_presets_list_ordering(agents_client, monkeypatch):
     # Verify order is preserved (dict iteration order is guaranteed in Python 3.7+)
     preset_names = [p["name"] for p in presets]
     assert preset_names == ["alpha", "beta", "gamma"]
+
+
+@pytest.mark.asyncio
+async def test_agents_list_resource_detailed_status(agents_client):
+    """Test resource://agents/list returns detailed status for all agents."""
+    result = await agents_client.read_resource("resource://agents/list")
+    content = read_text_json(result)
+
+    assert "agents" in content
+    assert len(content["agents"]) >= 1
+
+    # Check that all agents have required status fields
+    for agent in content["agents"]:
+        assert "id" in agent
+        assert "mode" in agent
+        assert "live" in agent
+        assert "active_run_id" in agent
+        assert "run_phase" in agent
+        assert "pending_approvals" in agent
+        assert "capabilities" in agent
+
+        # Verify field types
+        assert isinstance(agent["live"], bool)
+        assert isinstance(agent["run_phase"], str)
+        assert isinstance(agent["pending_approvals"], int)
+        assert isinstance(agent["capabilities"], dict)
+
+
+# --- Approval Hub Notification Tests ---
+
+
+@pytest.mark.asyncio
+async def test_approval_hub_notifier_on_request(mock_approval_hub):
+    """Test that ApprovalHub notifier is called when an approval is requested."""
+    # Track notifier calls
+    notifier_calls = []
+
+    def test_notifier():
+        notifier_calls.append("approval_requested")
+
+    mock_approval_hub.set_notifier(test_notifier)
+
+    # Create approval request
+    tool_call = ToolCall(name="test_tool", call_id="call-123", args_json='{"arg": "value"}')
+    request = ApprovalRequest(tool_call=tool_call)
+
+    # Start await_decision in background (it will wait for resolution)
+    task = asyncio.create_task(mock_approval_hub.await_decision("call-123", request))
+
+    # Give it time to process
+    await asyncio.sleep(0.1)
+
+    # Verify notifier was called
+    assert len(notifier_calls) == 1
+    assert notifier_calls[0] == "approval_requested"
+
+    # Clean up: resolve the approval
+    mock_approval_hub.resolve("call-123", ContinueDecision())
+    await task
+
+
+@pytest.mark.asyncio
+async def test_approval_hub_notifier_on_resolve(mock_approval_hub):
+    """Test that ApprovalHub notifier is called when an approval is resolved."""
+    # Track notifier calls
+    notifier_calls = []
+
+    def test_notifier():
+        notifier_calls.append("approval_resolved")
+
+    mock_approval_hub.set_notifier(test_notifier)
+
+    # Create approval request
+    tool_call = ToolCall(name="test_tool", call_id="call-456", args_json='{"arg": "value"}')
+    request = ApprovalRequest(tool_call=tool_call)
+
+    # Start await_decision in background
+    task = asyncio.create_task(mock_approval_hub.await_decision("call-456", request))
+
+    # Give it time to process request
+    await asyncio.sleep(0.1)
+
+    # Clear calls from request phase
+    notifier_calls.clear()
+
+    # Resolve the approval
+    mock_approval_hub.resolve("call-456", ContinueDecision())
+
+    # Verify notifier was called for resolve
+    assert len(notifier_calls) == 1
+    assert notifier_calls[0] == "approval_resolved"
+
+    # Wait for task to complete
+    await task
+
+
+@pytest.mark.asyncio
+async def test_approval_hub_notifier_not_called_without_setup(mock_approval_hub):
+    """Test that ApprovalHub works correctly when no notifier is set."""
+    # Don't set a notifier - should not crash
+
+    tool_call = ToolCall(name="test_tool", call_id="call-789", args_json='{}')
+    request = ApprovalRequest(tool_call=tool_call)
+
+    # Start await_decision
+    task = asyncio.create_task(mock_approval_hub.await_decision("call-789", request))
+
+    await asyncio.sleep(0.1)
+
+    # Resolve - should not crash
+    mock_approval_hub.resolve("call-789", AbortTurnDecision(reason="test"))
+
+    # Should complete successfully
+    decision = await task
+    assert isinstance(decision, AbortTurnDecision)
+    assert decision.reason == "test"

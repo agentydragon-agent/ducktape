@@ -58,6 +58,8 @@ class ConnectionManager(BaseHandler):
         # Hub binding for status broadcasts (configured by WS layer)
         self._status_hub: AgentsWSHub | None = None
         self._status_agent_id: str | None = None
+        # Optional: session state change notifier for MCP resource updates
+        self._session_state_notifier: Any | None = None
 
     async def connect(self, ws: WebSocket) -> None:
         # Accept only if not already accepted by the route handler
