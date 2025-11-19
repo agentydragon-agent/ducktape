@@ -70,13 +70,8 @@ def _convert_tool_call_record_to_history(record: ToolCallRecord) -> ApprovalHist
     if record.decision is None:
         return None
 
-    # Parse args from JSON
-    args = json.loads(record.tool_call.args_json) if record.tool_call.args_json else {}
-
     return ApprovalHistoryEntry(
-        call_id=record.call_id,
-        tool=record.tool_call.name,
-        args=args,
+        tool_call=record.tool_call,
         outcome=record.decision.outcome,
         reason=record.decision.reason,
         timestamp=record.decision.decided_at,
@@ -134,9 +129,7 @@ class PendingApproval(BaseModel):
 class ApprovalHistoryEntry(BaseModel):
     """Single approval decision in the timeline."""
 
-    call_id: str
-    tool: str
-    args: dict
+    tool_call: ToolCall
     outcome: ApprovalOutcome
     reason: str | None = None
     timestamp: datetime

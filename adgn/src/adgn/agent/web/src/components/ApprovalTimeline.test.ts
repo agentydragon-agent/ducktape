@@ -47,9 +47,11 @@ describe('ApprovalTimeline', () => {
     timestamp: string = '2025-01-01T00:00:00Z',
     reason?: string
   ): ApprovalHistoryEntry => ({
-    call_id: callId,
-    tool,
-    args: { test: 'value' },
+    tool_call: {
+      name: tool,
+      call_id: callId,
+      args_json: '{"test": "value"}'
+    },
     outcome,
     reason: reason || null,
     timestamp,

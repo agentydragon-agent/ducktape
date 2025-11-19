@@ -36,6 +36,18 @@
     }
   }
 
+  /**
+   * Parse tool call args_json to object
+   */
+  function parseArgs(argsJson: string | null): Record<string, unknown> {
+    if (!argsJson) return {}
+    try {
+      return JSON.parse(argsJson)
+    } catch {
+      return {}
+    }
+  }
+
   // Subscribe to live updates via WebSocket
   let ws: WebSocket | null = null
 
@@ -55,16 +67,18 @@
           // Handle approval decision messages - add to timeline
           if (msg.type === 'approval_decision') {
             const entry: ApprovalHistoryEntry = {
-              call_id: msg.call_id,
-              tool: msg.tool || msg.tool_key || 'unknown',
-              args: msg.args || {},
+              tool_call: {
+                name: msg.tool || msg.tool_key || 'unknown',
+                call_id: msg.call_id,
+                args_json: msg.args ? JSON.stringify(msg.args) : null
+              },
               outcome: msg.outcome,
               reason: msg.reason || null,
               timestamp: new Date().toISOString()
             }
 
             // Add to timeline, avoiding duplicates
-            timeline = [entry, ...timeline.filter(e => e.call_id !== msg.call_id)]
+            timeline = [entry, ...timeline.filter(e => e.tool_call.call_id !== msg.call_id)]
           }
 
           // Handle history snapshot messages
@@ -121,7 +135,7 @@
     if (searchTool.trim()) {
       const search = searchTool.toLowerCase()
       filtered = filtered.filter(e =>
-        e.tool.toLowerCase().includes(search)
+        e.tool_call.name.toLowerCase().includes(search)
       )
     }
 
@@ -256,11 +270,11 @@
       </div>
     {:else}
       <div class="timeline">
-        {#each filteredTimeline as entry (entry.call_id)}
+        {#each filteredTimeline as entry (entry.tool_call.call_id)}
           <div class="timeline-entry {getDecisionClass(entry.outcome)}">
             <div class="entry-header">
               <div class="entry-title">
-                <span class="tool-name">{entry.tool}</span>
+                <span class="tool-name">{entry.tool_call.name}</span>
                 <span class="decision-badge {getDecisionClass(entry.outcome)}">
                   {getDecisionLabel(entry.outcome)}
                 </span>
@@ -274,20 +288,20 @@
             <div class="entry-body">
               <div class="entry-detail">
                 <span class="label">Call ID:</span>
-                <code class="call-id">{entry.call_id}</code>
+                <code class="call-id">{entry.tool_call.call_id}</code>
               </div>
 
               <div class="entry-detail">
                 <button
                   class="expand-toggle"
-                  on:click={() => toggleExpand(entry.call_id)}
+                  on:click={() => toggleExpand(entry.tool_call.call_id)}
                 >
-                  {expandedEntries.has(entry.call_id) ? '▼' : '▶'}
+                  {expandedEntries.has(entry.tool_call.call_id) ? '▼' : '▶'}
                   Arguments
                 </button>
 
-                {#if expandedEntries.has(entry.call_id)}
-                  <pre class="args-content">{formatArgs(entry.args)}</pre>
+                {#if expandedEntries.has(entry.tool_call.call_id)}
+                  <pre class="args-content">{formatArgs(parseArgs(entry.tool_call.args_json))}</pre>
                 {/if}
               </div>
 
