@@ -131,6 +131,88 @@ Prompts are instructions to agents/LLMs, so address the reader directly:
 - "Requires human judgment" → "Requires your judgment"
 - "LLM verification approach" → "Verification approach" (implied you follow it)
 
+## Mandatory vs Optional Automated Scans
+
+**Principle**: Prompts should specify when automated scans are MANDATORY vs OPTIONAL based on tool recall characteristics.
+
+### When to Make Scans MANDATORY
+
+Automated scans should be **required as the first step** when:
+
+1. **High recall tools exist** (~90%+ recall)
+   - Example: `grep` for all `cast()` calls, AST for all `except:` blocks
+   - Skipping these tools means missing issues
+   - **Language**: "MUST run", "Begin by running", "First step: run"
+
+2. **Pattern can ONLY appear in specific locations**
+   - Example: Type ignores can ONLY appear as `# type: ignore` comments
+   - 100% recall is achievable with the right tool
+   - **Language**: "Run scan_*.py to find ALL instances"
+
+3. **Manual search is impractical**
+   - Example: Finding all single-field Pydantic models across 500 files
+   - Humans will miss instances; automation won't
+   - **Language**: "Run automated scan (do not skip this step)"
+
+### When to Make Scans RECOMMENDED
+
+Automated scans should be **suggested but not required** when:
+
+1. **Medium recall tools** (~60-80% recall)
+   - Example: Grep patterns that catch common cases but miss variations
+   - Useful starting point but not comprehensive
+   - **Language**: "Recommended: run grep patterns below", "Consider using"
+
+2. **High false positive rate** (>50%)
+   - Automation finds many candidates, most are legitimate
+   - Manual review time might exceed manual reading time
+   - **Language**: "Can use automated scan to narrow candidates"
+
+3. **Pattern requires context to identify**
+   - Example: "Vague" naming requires semantic judgment
+   - Tool can hint, but human must decide
+   - **Language**: "Optional: use tool for initial candidates"
+
+### When to Make Scans OPTIONAL
+
+Automated scans should be **mentioned as hints only** when:
+
+1. **Low recall** (<50%)
+   - Tool misses most instances
+   - Manual reading is required anyway
+   - **Language**: "Automation provides hints only; manual review required"
+
+2. **Subjective patterns**
+   - Example: Code is "too verbose" or docs are "useless"
+   - No automated tool can reliably detect these
+   - **Language**: "No reliable automated detection; read code manually"
+
+### Template Language
+
+```markdown
+## Detection Strategy
+
+**MANDATORY first step**: Run `scan_error_handling.py` to find ALL exception handlers.
+- Tool has ~100% recall for bare except blocks
+- Cannot skip this step - manual search will miss instances
+
+**Recommended (but not required)**: Use grep patterns to narrow candidates.
+- ~70% recall, helps focus review but not comprehensive
+- Supplement with manual reading
+
+**Optional hints**: AST tool can flag short variable names.
+- Low recall (~30%), manual review required regardless
+- Use only to help prioritize which files to read first
+```
+
+### Audit Current Prompts
+
+**Current state** (as of 2025): Most scan prompts treat all automation as optional/recommended. This should be updated:
+
+- ✅ **Keep optional**: Patterns requiring judgment (naming, verbosity, documentation quality)
+- ⚠️ **Should be mandatory**: High-recall scans (error handling, type ignores, comments extraction)
+- ⚠️ **Should be recommended**: Medium-recall grep patterns (walrus opportunities, timestamp naming)
+
 ## Scan Prompt Structure
 
 Every scan prompt should follow this structure:
@@ -150,8 +232,8 @@ Clear examples of BAD and GOOD code with explanations of why.
 - Tool X has ~100% recall, ~Y% precision
 - Tool Z has ~A% recall, ~B% precision
 
-**Recommended approach**:
-1. Run [specific tools: grep/AST/ruff/vulture/etc.] to gather candidates
+**[MANDATORY/RECOMMENDED/OPTIONAL] approach**:
+1. [MANDATORY first step IF high recall]: Run scan_*.py to find ALL instances
 2. [Verification strategy based on precision]:
    - High precision: Light verification
    - Low precision: Manual review or LLM filtering
@@ -160,6 +242,7 @@ Clear examples of BAD and GOOD code with explanations of why.
 ```
 
 **Include**:
+- **Mandatory/Recommended/Optional designation** for each automated tool based on recall
 - Specific useful tools (grep patterns, AST checks, linters, analyzers)
 - Characterization of each tool's recall/precision for this pattern
 - Clear verification strategy based on precision
@@ -170,6 +253,7 @@ Clear examples of BAD and GOOD code with explanations of why.
 - Hardcoded lists of specific values to search for
 - Claiming automation is sufficient without verification
 - Suggesting automated fixes for low-precision patterns without review
+- **Making high-recall scans optional when they should be mandatory**
 
 ### 3. Examples with Context
 
