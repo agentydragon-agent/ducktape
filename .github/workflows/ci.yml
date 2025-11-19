@@ -89,22 +89,8 @@ jobs:
       - name: Check if ansible files changed
         id: ansible-changes
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # PR: check if ansible/ changed vs base branch
-            if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^ansible/'; then
-              echo "changed=true" >> $GITHUB_OUTPUT
-            else
-              echo "changed=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            # Push: check if ansible/ changed in this commit
-            if git diff --name-only HEAD~1 HEAD | grep -q '^ansible/'; then
-              echo "changed=true" >> $GITHUB_OUTPUT
-            else
-              # On main branch or first commit, always run
-              echo "changed=true" >> $GITHUB_OUTPUT
-            fi
-          fi
+          result=$(.github/scripts/check-ansible-changes.sh "${{ github.event_name }}" "${{ github.base_ref }}")
+          echo "$result" >> $GITHUB_OUTPUT
 
       - name: Set up Python
         if: steps.ansible-changes.outputs.changed == 'true'
@@ -137,21 +123,7 @@ jobs:
 
       - name: Run ansible-lint (thorough mode)
         if: steps.ansible-changes.outputs.changed == 'true'
-        working-directory: ansible
-        run: |
-          # Full thorough check - no NODEPS, no --offline
-          # This validates module parameters, dependencies, etc.
-          export ANSIBLE_LINT_SKIP_VAULT=1
-
-          # List all playbooks to lint
-          playbooks=$(find . -maxdepth 1 -name "*.yaml" -type f ! -name "galaxy.yaml")
-
-          echo "Running full ansible-lint on playbooks:"
-          echo "$playbooks"
-          echo ""
-
-          # Run on all playbooks
-          ansible-lint --config-file ../.ansible-lint.yaml $playbooks
+        run: .github/scripts/run-ansible-lint.sh
 
       - name: Generate ansible-lint summary
         if: always() && steps.ansible-changes.outputs.changed == 'true'
@@ -219,31 +191,7 @@ jobs:
 
       - name: Install dependencies and run tests
         id: pytest
-        working-directory: ${{ matrix.project }}
-        run: |
-          # UV version synced with flake.nix / .envrc
-          pip install uv==0.5.11
-
-          # Check if project needs dbus-python system dependencies
-          if grep -q "dbus-python" pyproject.toml 2>/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
-          fi
-
-          # Install project dependencies
-          uv pip install --system -e ".[dev]" || uv pip install --system -e .
-
-          # Install Playwright browsers if playwright is installed
-          if uv pip show playwright >/dev/null 2>&1; then
-            playwright install --with-deps chromium
-          fi
-
-          # Run tests if pytest is available
-          if uv pip show pytest >/dev/null 2>&1; then
-            pytest -v
-          else
-            echo "pytest not installed in this project, skipping tests"
-          fi
+        run: .github/scripts/run-pytest.sh "${{ matrix.project }}"
 
       - name: Generate test summary
         if: always()
