@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import { uiState as uiStateStore, lastError as lastErrorStore, subscribeToAgentUiState, unsubscribeFromAgentUiState } from '../features/chat/stores_mcp'
+  import { uiState as uiStateStore, lastError as lastErrorStore, subscribeToAgentUiState, unsubscribeFromAgentUiState, clearError } from '../features/chat/stores_mcp'
   import { sendPrompt } from '../features/agents/api'
   import { currentAgentId } from '../features/agents/stores'
   import { renderMarkdown as renderMarkdownHtml } from '../shared/markdown'
@@ -23,20 +23,34 @@
   let promptEl: HTMLTextAreaElement | null = null
   let agentMode: AgentMode | null = null
   let abortErrorMessage: string | null = null
-  $: runStatus = $runStatusStore
+  let runStatus: string = 'idle'
   // Consider agent busy for these transient states; allow send only when idle/finished
   $: busy = runStatus === 'running' || runStatus === 'awaiting_approval' || runStatus === 'starting' || runStatus === 'aborting'
   // Show abort button only for LOCAL mode agents that are running
-  $: showAbortButton = agentMode === 'local' && ($runStatusStore === 'running' || $runStatusStore === 'starting')
+  $: showAbortButton = agentMode === 'local' && (runStatus === 'running' || runStatus === 'starting')
 
 
-  function sendPromptLocal() {
+  async function sendPromptLocal() {
     if (busy || !prompt.trim()) return
-    sendPrompt(prompt)
-    // Clear the prompt immediately on submit and persist cleared draft
     const id = $currentAgentId
+    if (!id) return
+
+    const message = prompt
+    // Clear the prompt immediately on submit and persist cleared draft
     prompt = ''
-    if (id) localStorage.setItem(`composer:${id}`, '')
+    localStorage.setItem(`composer:${id}`, '')
+
+    // Set status to starting
+    runStatus = 'starting'
+
+    try {
+      await sendPrompt(id, message)
+      // Status updates will come via MCP subscription
+    } catch (error) {
+      console.error('Failed to send prompt:', error)
+      $lastErrorStore = error instanceof Error ? error.message : 'Failed to send prompt'
+      runStatus = 'idle'
+    }
   }
   function onPromptKeydown(e: KeyboardEvent) {
     // Send on Enter (no Shift), also accept Cmd/Ctrl+Enter. Preserve IME composing.
@@ -147,12 +161,27 @@
   }
   function scrollToBottom() { if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight }
   onMount(() => { requestAnimationFrame(() => { promptEl?.focus() }) })
+  onDestroy(() => {
+    // Cleanup subscriptions when component is destroyed
+    if (lastAgentId) {
+      unsubscribeFromAgentUiState(lastAgentId).catch((error) => {
+        console.error('Failed to cleanup subscription:', error)
+      })
+    }
+  })
 
-  // Per-agent draft persistence and mode fetching
+  // Per-agent draft persistence, mode fetching, and MCP subscription
   let lastAgentId: string | null = null
   $: if ($currentAgentId !== lastAgentId) {
     // Save previous agent's draft
-    if (lastAgentId) localStorage.setItem(`composer:${lastAgentId}`, prompt)
+    if (lastAgentId) {
+      localStorage.setItem(`composer:${lastAgentId}`, prompt)
+      // Unsubscribe from previous agent's UI state
+      unsubscribeFromAgentUiState(lastAgentId).catch((error) => {
+        console.error('Failed to unsubscribe from previous agent:', error)
+      })
+    }
+
     // Load new agent's draft
     const id = $currentAgentId
     if (id) {
@@ -160,12 +189,18 @@
       prompt = saved ?? ''
       // Fetch agent mode for new agent
       fetchAgentMode()
+      // Subscribe to new agent's UI state
+      subscribeToAgentUiState(id).catch((error) => {
+        console.error('Failed to subscribe to agent UI state:', error)
+        $lastErrorStore = error instanceof Error ? error.message : 'Failed to subscribe to UI state'
+      })
     } else {
       prompt = ''
       agentMode = null
     }
     lastAgentId = id ?? null
     abortErrorMessage = null
+    runStatus = 'idle'
   }
 
   // No DOM scanning needed; Marked emits highlighted HTML with 'hljs' class
