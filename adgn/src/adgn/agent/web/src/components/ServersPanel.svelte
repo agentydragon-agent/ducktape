@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ServerEntry } from '../../shared/types'
+  import type { ServerEntry } from '../shared/types'
   export let servers: ServerEntry[] = []
   import { currentAgentId } from '../shared/router'
   import ModalBackdrop from './ModalBackdrop.svelte'

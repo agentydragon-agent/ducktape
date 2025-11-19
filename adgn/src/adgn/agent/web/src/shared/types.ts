@@ -51,11 +51,11 @@ export type InitializeView = {
   capabilities?: ServerResourcesCaps | null
 }
 
-export type ServerEntryInitializing = { state: 'initializing' }
+export type ServerEntryInitializing = { name: string; state: 'initializing' }
 
-export type ServerEntryRunning = { state: 'running'; initialize: InitializeView; tools?: McpTool[] }
+export type ServerEntryRunning = { name: string; state: 'running'; initialize: InitializeView; tools?: McpTool[] }
 
-export type ServerEntryFailed = { state: 'failed'; error?: string | null }
+export type ServerEntryFailed = { name: string; state: 'failed'; error?: string | null }
 
 export type ServerEntry = ServerEntryInitializing | ServerEntryRunning | ServerEntryFailed
 

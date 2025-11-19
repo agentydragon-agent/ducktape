@@ -19,6 +19,7 @@ import type {
 } from '../../shared/types'
 import {
   ChannelManager,
+  type ChannelHandlers,
   type SessionMessage,
   type McpMessage,
   type ApprovalsMessage,
