@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import contextlib
 from datetime import UTC, datetime
 import logging
@@ -17,7 +18,7 @@ from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import RunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.agents_ws import AgentsWSHub
-from adgn.agent.server.bus import UiEndTurn, UiMessage
+from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
     ApprovalBrief,
     ApprovalPolicyInfo,
@@ -59,7 +60,7 @@ class ConnectionManager(BaseHandler):
         self._status_hub: AgentsWSHub | None = None
         self._status_agent_id: str | None = None
         # Optional: session state change notifier for MCP resource updates
-        self._session_state_notifier: Any | None = None
+        self._session_state_notifier: Callable[[], None] | None = None
 
     async def connect(self, ws: WebSocket) -> None:
         # Accept only if not already accepted by the route handler
@@ -162,7 +163,7 @@ class ConnectionManager(BaseHandler):
     def on_response(self, evt: Any) -> None:
         return None
 
-    def _spawn(self, coro: Any) -> None:
+    def _spawn(self, coro: Awaitable[None]) -> None:
         t: asyncio.Task[Any] = asyncio.create_task(coro)
         self._bg_tasks.add(t)
         t.add_done_callback(self._bg_tasks.discard)
@@ -208,7 +209,7 @@ class ConnectionManager(BaseHandler):
         self._status_hub = hub
         self._status_agent_id = agent_id
 
-    def set_session_state_notifier(self, notifier: Any) -> None:
+    def set_session_state_notifier(self, notifier: Callable[[], None]) -> None:
         """Set notifier callback for session state changes (for MCP resource updates)."""
         self._session_state_notifier = notifier
 
@@ -237,7 +238,7 @@ class AgentSession:
         *,
         persistence=None,
         agent_id: str | None = None,
-        ui_bus: Any | None = None,
+        ui_bus: ServerBus | None = None,
         approval_engine: ApprovalPolicyEngine | None = None,
     ) -> None:
         self._task: asyncio.Task | None = None
@@ -248,7 +249,7 @@ class AgentSession:
         self._agent: MiniCodex | None = None
         self._manager = manager
         self._persistence = persistence
-        self.ui_bus: Any | None = ui_bus
+        self.ui_bus: ServerBus | None = ui_bus
         self.ui_state: UiState = new_state()
         self.approval_engine: ApprovalPolicyEngine | None = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
@@ -256,7 +257,7 @@ class AgentSession:
         self.agent_id: str | None = agent_id
         # No Docker client on session; runtime server handles any containerization
         # Optional: UI state change notifier for MCP resource updates
-        self._ui_state_notifier: Any | None = None
+        self._ui_state_notifier: Callable[[], None] | None = None
 
     def current_run_phase(self) -> RunPhase:
         """Compute the current run phase from live signals (no stored state).
@@ -326,11 +327,11 @@ class AgentSession:
     def set_persist_handler(self, handler: RunPersistenceHandler) -> None:
         self._persist_handler = handler
 
-    def set_ui_state_notifier(self, notifier: Any) -> None:
+    def set_ui_state_notifier(self, notifier: Callable[[], None]) -> None:
         """Set notifier callback for UI state changes (for MCP resource updates)."""
         self._ui_state_notifier = notifier
 
-    async def _apply_ui_event(self, evt: Any) -> None:
+    async def _apply_ui_event(self, evt: ServerMessage) -> None:
         self.ui_state = reduce_ui_state(self.ui_state, evt)
         await self._manager.send_payload(UiStateUpdated(v="ui_state_v1", seq=self.ui_state.seq, state=self.ui_state))
         # Notify MCP bridge if notifier is set
