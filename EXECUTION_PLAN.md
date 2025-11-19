@@ -43,13 +43,15 @@
   - Component: `PolicyEditorPane.svelte`
   - Agent-scoped policy resource integration
 
-- **Agent 3**: MessageComposer Completion
-  - Complete `MessageComposer.svelte`
-  - Send messages, abort agent
-  - Conditional rendering based on UI server presence
+- **Agent 3**: MessageComposer Component
+  - Complete `MessageComposer.svelte` for sending messages to agent
+  - Conditional rendering based on UI server presence (check `$agentStatus.ui?.ready`)
+  - Separate sub-component for message sending
 
 - **Agent 4**: App.svelte Layout
-  - CSS grid: `timeline | policy` + conditional composer
+  - CSS grid: `timeline | policy` + conditional components
+  - MessageComposer (conditional on UI server)
+  - AbortButton (conditional on loop server)
   - Side-by-side layout per mockups
 
 - **Agent 5**: MCP Subscriptions Wiring
@@ -59,15 +61,15 @@
   - Update components to use subscriptions
 
 - **Agent 6**: UI Server Detection
-  - Check `$agentStatus.ui?.ready`
-  - Conditional composer rendering
+  - Check `$agentStatus.ui?.ready` for MessageComposer rendering
   - Show UI messages in timeline from UI server notifications
 
-- **Agent 7**: Agent Controls
+- **Agent 7**: Agent Controls Component
   - Add agent mode badge: [LOCAL] or [BRIDGE] (indicates agent loop presence)
-  - Add ABORT button (conditional on loop server being present)
+  - Add ABORT button as separate sub-component
+  - Abort button conditional on LOOP server presence (NOT UI server)
   - Abort button triggers tool to abort the loop
-  - UI server shown implicitly via composer + timeline messages
+  - **Note**: UI server and loop server are SEPARATE conditionals
 
 - **Agent 8**: Routing Updates
   - Global approvals view

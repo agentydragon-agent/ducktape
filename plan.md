@@ -144,22 +144,25 @@ All planned features have been implemented:
 2. **PolicyEditorPane Extraction**: Extract from ApprovalsPanel
    - Policy view/edit + proposals UI
    - Agent-scoped policy resource integration
-3. **MessageComposer Completion**: Send messages, abort agent
-   - Conditional rendering based on UI server presence
-4. **App.svelte Layout**: CSS grid (timeline | policy) + conditional composer
+3. **MessageComposer Component**: Send messages to agent
+   - Conditional rendering based on UI server presence (check `$agentStatus.ui?.ready`)
+   - Separate sub-component for message sending
+4. **App.svelte Layout**: CSS grid (timeline | policy) + conditional components
+   - MessageComposer (conditional on UI server)
+   - AbortButton (conditional on loop server)
 5. **MCP Subscriptions Wiring**:
    - Subscribe to `resource://agents/{id}/approvals/history`
    - Subscribe to `resource://agents/{id}/approval-policy/policy.py` (agent-scoped)
    - Subscribe to UI server notifications (for message rendering)
 6. **UI Server Detection**:
-   - Check `$agentStatus.ui?.ready`
-   - Conditional composer rendering
+   - Check `$agentStatus.ui?.ready` for MessageComposer rendering
    - Show UI messages in timeline from UI server notifications
-7. **Agent Controls**:
+7. **Agent Controls Component**:
    - Add agent mode badge: [LOCAL] or [BRIDGE] (indicates agent loop presence)
-   - Add ABORT button (conditional on loop server being present)
+   - Add ABORT button as separate sub-component
+   - Abort button conditional on LOOP server presence (NOT UI server)
    - Abort button triggers tool to abort the loop
-   - UI server shown implicitly via composer + timeline messages
+   - **Note**: UI server and loop server are SEPARATE conditionals
 8. **Routing Updates**: Global approvals view, agent selection
 
 **IMPORTANT - Definition of Done for WebSocket Migration**:
