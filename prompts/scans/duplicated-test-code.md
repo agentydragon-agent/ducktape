@@ -171,6 +171,65 @@ def test_send_welcome_email(mock_email_client):
     mock_email_client.send.assert_called_once()
 ```
 
+### CRITICAL: Don't Mock Trivial Data Holders
+
+**ANTI-PATTERN**: Mocking Pydantic models, dataclasses, or simple data holders
+
+```python
+# BAD: Mock reimplements the data structure
+def make_mock_message(name: str, arguments: dict[str, Any] | None = None):
+    """Create a mock MCP CallToolRequest message."""
+    class MockMessage:
+        def __init__(self, name: str, arguments: dict[str, Any] | None):
+            self.name = name
+            self.arguments = arguments or {}
+    return MockMessage(name, arguments)
+
+# BAD: Using unittest.mock for simple data
+from unittest.mock import Mock
+def test_process_request():
+    mock_request = Mock()
+    mock_request.name = "tool_name"
+    mock_request.arguments = {"key": "value"}
+    process(mock_request)
+```
+
+**GOOD**: Use real instances with test data
+
+```python
+# GOOD: Use the actual Pydantic model
+from mcp.types import CallToolRequest
+
+def test_process_request():
+    request = CallToolRequest(
+        name="tool_name",
+        arguments={"key": "value"}
+    )
+    process(request)
+
+# GOOD: Use actual dataclass
+from dataclasses import dataclass
+
+@dataclass
+class User:
+    id: int
+    name: str
+
+def test_user_validation():
+    user = User(id=1, name="Test User")  # Real instance
+    assert validate_user(user)
+```
+
+**Why?**
+- Mocks hide schema changes (real models fail fast)
+- Mocks don't validate constraints (Pydantic validation, required fields)
+- Mocks create maintenance burden (reimplementing data structures)
+- Real instances are self-documenting (IDE autocomplete, type hints)
+- Tests become integration-like (closer to production behavior)
+
+**When to mock**: Only mock classes with behavior (services, clients, I/O)
+**When NOT to mock**: Never mock pure data containers (Pydantic, dataclasses, NamedTuple, TypedDict)
+
 ## Pattern 5: Duplicated Parameterization
 
 ### BAD: Repeated test data across modules
