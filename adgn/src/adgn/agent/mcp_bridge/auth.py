@@ -16,6 +16,8 @@ import secrets
 from fastapi import HTTPException, Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from adgn.agent.types import AgentID
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +33,7 @@ class TokenMapping:
 
     def __init__(self, path: Path):
         self.path = path
-        self._mapping: dict[str, str] = {}
+        self._mapping: dict[str, AgentID] = {}
         self.reload()
 
     def reload(self) -> None:
@@ -43,15 +45,17 @@ class TokenMapping:
         if not isinstance(data, dict):
             raise ValueError("Token mapping must be a JSON object")
 
-        # Validate all values are strings
+        # Validate all values are strings and convert to AgentID
+        mapping: dict[str, AgentID] = {}
         for token, agent_id in data.items():
             if not isinstance(token, str) or not isinstance(agent_id, str):
                 raise ValueError(f"Invalid mapping: {token} -> {agent_id}")
+            mapping[token] = AgentID(agent_id)
 
-        self._mapping = data
+        self._mapping = mapping
         logger.info(f"Loaded {len(self._mapping)} token mappings from {self.path}")
 
-    def get_agent_id(self, token: str) -> str | None:
+    def get_agent_id(self, token: str) -> AgentID | None:
         """Get agent_id for a token, or None if not found."""
         return self._mapping.get(token)
 
