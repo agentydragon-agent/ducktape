@@ -404,6 +404,9 @@ class AgentSession:
                 run_id=run_id, status=UiRunStatus.RUNNING, started_at=started, pending_approvals=[], last_event_id=None
             )
             self._run_counter += 1
+            # Notify MCP bridge of session state change (run started)
+            if self._manager._session_state_notifier is not None:
+                self._manager._session_state_notifier()
             finish_status = RunStatus.FINISHED
             try:
                 await self._agent.run(user_text=prompt)
@@ -440,6 +443,9 @@ class AgentSession:
                 # Keep snapshot run_state in sync with finished status
                 await self._manager.send_payload(await self.build_snapshot())
                 await self._manager.broadcast_status(True, None)
+                # Notify MCP bridge of session state change (run finished)
+                if self._manager._session_state_notifier is not None:
+                    self._manager._session_state_notifier()
             return
         await self._manager.send_payload(ErrorEvt(code=ErrorCode.NO_AGENT, message="no_agent_attached"))
         return
