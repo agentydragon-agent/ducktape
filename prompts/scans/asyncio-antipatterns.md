@@ -286,6 +286,46 @@ async def open_write_pipe(fd: int) -> asyncio.StreamWriter:
 
 ## Detection Strategy
 
+**MANDATORY Step 0**: Discover ALL async functions and await usage in the codebase.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL async/await output using your intelligence
+- High recall required, high precision NOT required - you determine which are problematic
+- Review each for: blocking I/O, deprecated APIs, gather vs TaskGroup, error handling
+- Prevents lazy analysis by forcing examination of ALL async code
+
+```bash
+# Find ALL async function definitions with context
+rg --type py '^async def ' -B 1 -A 5 --line-number
+
+# Find ALL await expressions with context
+rg --type py '\bawait\b' -B 2 -A 1 --line-number
+
+# Find asyncio.gather usage
+rg --type py 'asyncio\.gather\(' -B 2 -A 2 --line-number
+
+# Find TaskGroup usage
+rg --type py 'TaskGroup\(' -B 2 -A 2 --line-number
+
+# Find asyncio.create_task usage
+rg --type py 'asyncio\.create_task\(' -B 2 -A 2 --line-number
+
+# Count total async functions and await statements
+echo "Async functions:" && rg --type py '^async def ' | wc -l
+echo "Await statements:" && rg --type py '\bawait\b' | wc -l
+```
+
+**What to review for each async function:**
+1. **Blocking I/O**: Path.read_text(), open(), subprocess.run() in async functions
+2. **Deprecated APIs**: asyncio.ensure_future, @asynccontextmanager issues
+3. **gather vs TaskGroup**: Does it need return values? Best-effort or fail-fast?
+4. **Error handling**: Are exceptions properly handled in tasks?
+5. **CPU-bound operations**: Long-running sync code that should use run_in_executor
+
+**Process ALL output**: Read each async function, use your judgment to identify antipatterns.
+
+---
+
 **Primary Method**: Manual code reading of async functions to identify blocking operations.
 
 **Why automation is insufficient**: Determining if an operation blocks requires understanding:
@@ -293,7 +333,7 @@ async def open_write_pipe(fd: int) -> asyncio.StreamWriter:
 - Whether operation is truly I/O-bound or CPU-bound
 - Context: is `subprocess.run()` acceptable if it's truly fast and infrequent?
 
-**Discovery aids** (candidates for manual review):
+**Discovery aids AFTER Step 0** (candidates for manual review):
 
 ### Grep Patterns for Blocking I/O in async functions
 

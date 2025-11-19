@@ -87,11 +87,59 @@ rg --type py 'Literal\[.*,.*\]'
 
 ### Detection Strategy
 
+**MANDATORY Step 0**: Run string literal and symbol histogram scanner.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process the histogram output using your intelligence
+- High recall required, high precision NOT required - you determine which are categorical values vs messages
+- Review histogram for: repeated literals, literal/symbol overlaps, categorical patterns
+- Prevents lazy analysis by forcing examination of ALL string literal patterns
+
+**Tool**: `prompts/scans/scan_string_literals.py` - AST-based scanner for string literals and symbols
+
+**What it finds**:
+1. **Literal histogram**: All string literals (< 50 chars) sorted by frequency with file/line locations
+2. **Symbol histogram**: All symbol names (classes, functions, variables, fields) sorted by frequency
+3. **Overlaps**: String literals matching symbol names (STRONG stringly-typed indicator)
+   - Example: literal `"status"` + symbol `status` suggests using Status enum instead of strings
+4. **Repeated patterns**: Same string appearing many times → likely needs enum
+
+**Usage**:
+```bash
+# Run on entire codebase
+python prompts/scans/scan_string_literals.py . > string_literals_scan.json
+
+# Pretty-print summary
+cat string_literals_scan.json | jq '.summary'
+
+# View most frequent literals
+cat string_literals_scan.json | jq '.literal_histogram | to_entries | .[0:20]'
+
+# View overlaps (literals matching symbol names)
+cat string_literals_scan.json | jq '.overlaps'
+
+# Find specific literal usage
+cat string_literals_scan.json | jq '.literal_histogram["completed"]'
+```
+
+**Key insight from overlaps**: When you see both a string literal `"status"` and a symbol name `status` appearing frequently, this strongly suggests the code is using strings where it should use an enum. The overlap section surfaces these cases automatically.
+
+**What to review in histogram:**
+1. **High-frequency literals**: Strings appearing 5+ times are enum candidates
+2. **Categorical patterns**: status/type/mode/state values
+3. **Overlaps**: Literal/symbol matches indicate stringly-typed patterns
+4. **Related groups**: Multiple literals that seem related (e.g., "queued", "completed", "failed")
+
+**Process ALL high-frequency output**: Focus on literals appearing 5+ times, use judgment to identify categorical values (not messages/URLs/IDs).
+
+---
+
 **Primary Method**: Manual code reading - understand the domain, look for repeated categorical strings. Read code to understand which strings represent categorical values vs messages/IDs/etc.
 
-**Automated Preprocessing** (discovers candidates, NOT definitive):
+**Automated Preprocessing AFTER Step 0** (discovers candidates, NOT definitive):
 
 1. **String Literal Repetition Counter** (AST-based)
+   - **Now automated by scan_string_literals.py** - run this tool instead
    - Walk AST extracting Constant nodes with string values
    - Filter: 3-30 chars, alphanumeric (skip URLs/paths/messages)
    - Count occurrences, report strings appearing 5+ times
