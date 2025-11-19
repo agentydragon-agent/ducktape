@@ -361,7 +361,7 @@ def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
         app, client = agent_app_client
         patch_agent_build_client(model_client)
         agent_id = create_live_agent(client, specs=specs or {})
-        with client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
+        with client.websocket_connect(f"/ws/session?agent_id={agent_id}") as ws:
             if wait_accepted:
                 wait_for_accepted(ws)
 
