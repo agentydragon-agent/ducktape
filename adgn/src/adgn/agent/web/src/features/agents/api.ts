@@ -189,3 +189,10 @@ export async function abortRun(agentId: string): Promise<{ ok: boolean; error?: 
   if (!res.ok) throw new Error('abort http ' + res.status)
   return body
 }
+
+export async function getApprovalHistory(agentId: string): Promise<any> {
+  const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/approvals/history`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('getApprovalHistory http ' + res.status)
+  return res.json()
+}
