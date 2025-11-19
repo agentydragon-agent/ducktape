@@ -5,7 +5,7 @@ server {
 }
 
 server {
-    listen 443 ssl;
+    listen {{ nginx_https_port | default(4443) }} ssl;
     server_name trilium.agentydragon.com;
 
     ssl_certificate /etc/letsencrypt/live/trilium.agentydragon.com/fullchain.pem;
