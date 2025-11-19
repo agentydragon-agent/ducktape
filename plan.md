@@ -196,6 +196,118 @@ All planned features have been implemented:
 
 **Verification**: `uv run ruff check . --fix && uv run python -m mypy adgn && pytest -q adgn/tests/agent`
 
+## Web Frontend Followups
+
+### ApprovalTimeline Component Enhancements (Future)
+
+**Component**: `src/adgn/agent/web/src/components/ApprovalTimeline.svelte`
+
+**Future enhancements**:
+- Export timeline to CSV/JSON
+- Advanced filtering (by date range, decision method)
+- Grouping by tool or time period
+- Pagination for very long timelines
+- Search in arguments (deep search, not just tool names)
+- Statistics/summary view (decision counts, approval rates)
+- Keyboard shortcuts for filtering
+- Accessibility improvements (ARIA labels)
+
+**Testing needed** (deferred):
+- Unit Tests: filtering logic, sorting logic, argument formatting, timestamp formatting
+- Integration Tests: API fetch, WebSocket messages, live updates, error states
+- E2E Tests: user filters timeline, searches tools, toggles sort order, expands arguments
+
+### TypeScript Generated Types Integration (Wave 2+)
+
+**Status**: Generated types file created and verified (18/18 tests passing); shared types actively used throughout codebase.
+
+**Phase 2: Immediate Next Steps (Wave 2)**:
+1. **Update API Layer** (`features/agents/api.ts`)
+   - Import generated types from `src/generated/types.ts`
+   - Type API responses using generated types
+   - Example: `/agents` endpoint should return `AgentList` type
+
+2. **Add Type Guards**
+   - Create utilities to validate runtime data matches generated types
+   - Use for API responses and WebSocket messages
+   - Example: `isPendingApproval(data: unknown): data is PendingApproval`
+
+3. **Update Store Types**
+   - Use generated types in Svelte stores where applicable
+   - Map between generated and shared types as needed
+
+**Phase 3: Gradual Migration (Wave 3+)**:
+1. Start with API layer - ensure fetch/response use generated types
+2. Update stores to use generated types internally
+3. Update component props to accept generated types
+4. Add type mapping utilities (e.g., `approvalOutcomeToKind()`, `proposalInfoToProposal()`)
+5. Deprecate duplicate shared types once migration complete
+
+**Key Type Overlaps** (keep both, map where needed):
+- `ApprovalOutcome` (generated, 6 variants) vs `ApprovalKind` (shared, 3 variants)
+- `PolicyProposalInfo` (generated, complete) vs `Proposal` (shared, simplified)
+- `AgentInfo` (generated, static config) vs `AgentRow`/`AgentStatus` (shared, runtime state)
+
+**Documentation**:
+- See `TYPES_ANALYSIS.md` (consolidated into this section)
+- Add comments in code explaining when to use each type
+
+### GlobalApprovalsList Component Requirements
+
+**Component**: `src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
+
+**Backend Requirements** (MUST implement):
+
+1. **MCP StreamableHTTP Endpoint** (REQUIRED)
+   - Mount MCP bridge server at `/api/mcp` with StreamableHTTP transport
+   - Accept bearer token authentication
+   - Currently only runs internally; needs HTTP exposure
+   - Example mounting code needed in `server/app.py`:
+     ```python
+     from fastmcp.server.streamable_http import StreamableHTTPServerTransport
+     mcp_bridge = app.state.mcp_bridge_registry
+     transport = StreamableHTTPServerTransport("/api/mcp")
+     app.mount("/api/mcp", transport.handle_request)
+     ```
+
+2. **Resource Subscriptions** (OPTIONAL - polling fallback already implemented)
+   - Backend MCP server broadcasts `ResourceUpdated` notifications
+   - Verify StreamableHTTP subscription support
+   - If not available, component gracefully falls back to polling (5-second interval)
+
+**Future enhancements**:
+- Real-time Subscriptions: Replace polling with WebSocket resource subscriptions (instant updates)
+- Bulk Actions: Multi-select approvals, approve/reject multiple at once
+- Filtering and Search: Filter by agent_id, search by tool name, filter by timestamp
+- Approval History: Show recently approved/rejected items, undo capability for recent actions
+- Notifications: Browser notifications for new approvals, optional sound alerts
+
+### Component Testing Status
+
+**Blocked Tests**:
+- `src/adgn/agent/web/src/components/GlobalApprovalsList.test.ts` (20 tests written)
+- `src/adgn/agent/web/src/components/ApprovalTimeline.test.ts` (25 tests written)
+- **Blocker**: Svelte 6 + vitest incompatibility (waiting for upstream support)
+
+**Manual Testing Approach** (interim):
+- TypeScript compilation validates component interfaces
+- E2E tests can verify functionality once vitest support lands
+- See component test files for coverage expectations
+
+### Pre-existing TypeScript Errors
+
+**Note**: 11 discriminated union property access errors in Svelte components (pre-existing, unrelated to generated types work):
+- Files: `ServersPanel.svelte`, `RightSidebar.svelte`, `ChatPane.svelte`, etc.
+- Issue: Accessing variant-specific properties without type narrowing
+- Status: Not blocking; should be addressed separately
+
+**MCP Client Configuration** (1 pre-existing error):
+- File: `features/mcp/client.ts`
+- Issue: Invalid capability structure
+- Status: Not blocking; pre-existing configuration issue
+
+---
+
 ## Executive Summary
 
 Replace custom WebSocket channels with a unified **`agents` MCP server** that provides cross-agent management. This single server routes to per-agent infrastructure and can be delegated to other agents for self-orchestration. The frontend becomes a simple MCP client, and the same server can later be given to agents for spawning, approving, and managing other agents.
