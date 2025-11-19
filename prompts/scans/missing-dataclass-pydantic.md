@@ -288,7 +288,29 @@ class DatabaseConnection:
 
 ## Detection Strategy
 
-**MANDATORY first step**: Run `scan_dataclass_candidates.py` and process ALL output.
+**MANDATORY Step 0**: Discover ALL existing dataclasses and review their field definitions.
+
+- This scan is **required** - do not skip this step
+- You **must** read and handle ALL dataclass output
+- Review every dataclass for: mutable defaults, field ordering, missing field(), incorrect types
+- Prevents lazy analysis by forcing examination of ALL existing dataclass usage
+
+```bash
+# Find ALL @dataclass declarations with their field definitions (next ~20 lines)
+rg --type py '@dataclass' -A 20 --line-number
+
+# Count total dataclasses found
+rg --type py '@dataclass' | wc -l
+```
+
+**What to review for each dataclass:**
+1. **Mutable defaults (BUG)**: `list[T] = []`, `dict[K,V] = {}`, `set[T] = set()` without `field(default_factory=...)`
+2. **Field ordering**: Non-default fields must come before fields with defaults
+3. **Missing field()**: Mutable defaults, `init=False` fields, `repr=False` fields
+4. **Type accuracy**: Are field types correct and specific?
+5. **Unnecessary dataclass**: Does this have complex `__post_init__` that suggests plain class is better?
+
+**MANDATORY Step 1**: Run `scan_dataclass_candidates.py` and process ALL output.
 
 - This scan is **required** - do not skip this step
 - You **must** read and handle the complete scan output (can pipe to temp file)
@@ -303,7 +325,7 @@ class DatabaseConnection:
 
 **Approach**:
 
-### Step 1: Automated Discovery (Gather Candidates)
+### Step 2: Automated Discovery (Gather Candidates)
 
 **Tool**: `prompts/scans/scan_dataclass_candidates.py` - AST-based scanner for boilerplate classes
 
@@ -356,7 +378,7 @@ rg --type py -B5 "def __hash__" | rg "^class"
 rg --type py "def (to_dict|from_dict|asdict|as_dict)"
 ```
 
-### Step 2: Verification (Filter False Positives)
+### Step 3: Verification (Filter False Positives)
 
 For each candidate, manually check:
 
@@ -382,7 +404,7 @@ For each candidate, manually check:
 - Classes that set up resources (connections, threads, locks)
 - Inheritance hierarchies with complex `__init__` chains
 
-### Step 3: Fix Confirmed Issues
+### Step 4: Fix Confirmed Issues
 
 Convert identified classes to dataclass/Pydantic:
 
