@@ -4,13 +4,13 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import json
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 import uuid
 from uuid import UUID
 
 import aiosqlite
 from fastmcp.mcp_config import MCPConfig
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 from adgn.agent.persist import Policy, PolicyProposal
 from adgn.agent.runtime.auto_attach import filter_persistable_servers
@@ -541,9 +541,12 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
             ) as cur,
         ):
             async for r in cur:
-                # Parse event using raw row data; only pre-process the JSON payload field
+                # Parse event using raw row data; use Pydantic for JSON payload parsing
                 row_dict = dict(r)
-                row_dict["payload"] = json.loads(r["payload"]) if r["payload"] else {}
+                if r["payload"]:
+                    row_dict["payload"] = TypeAdapter(dict[str, Any]).validate_json(r["payload"])
+                else:
+                    row_dict["payload"] = {}
                 out.append(parse_event(row_dict))
         return out
 
