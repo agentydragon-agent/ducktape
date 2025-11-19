@@ -167,11 +167,13 @@ export ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1
 ansible-lint --offline --config-file ../.ansible-lint.yaml "${stripped_args[@]}"
 ```
 
-## Recommended Configuration for Pre-Commit
+## Current Configuration
 
-**Fast mode** (for quick feedback during development):
+### Pre-commit Hook (Fast Mode)
 
-Update `ansible/run-ansible-lint.sh`:
+**File:** `ansible/run-ansible-lint.sh`
+
+**Optimizations applied:**
 
 ```bash
 #!/usr/bin/env bash
@@ -200,17 +202,46 @@ else
 fi
 ```
 
-**Expected improvement:**
+**Performance:**
 - wyrm.yaml: 17.7s → 15-16s (~10-15% faster)
 - Individual files: ~5-7s → ~4-5s (~20-30% faster)
 
-**Full thorough mode** (for CI/final validation):
+**Trade-offs:**
+- ✅ Fast feedback during development
+- ✅ No network dependencies
+- ✅ Skips remote schema updates
+- ⚠️ Slightly less thorough than full mode (but still validates most things)
 
-Keep a separate script for thorough checking:
+### CI (Thorough Mode)
 
-```bash
-# ansible/lint-thorough.sh
-ansible-lint --config-file ../.ansible-lint.yaml
+**File:** `.github/workflows/ci.yml` - `ansible-lint-full` job
+
+**Configuration:**
+- ✅ **Full validation** - No `NODEPS`, no `--offline`
+- ✅ **All playbooks** - Lints every playbook in `ansible/`
+- ✅ **Incremental** - Only runs if `ansible/` changed
+- ✅ **Cached dependencies** - Galaxy roles/collections cached between runs
+- ✅ **Module validation** - Validates module parameters, checks for deprecated modules
+
+**What it does differently than pre-commit:**
+1. **Installs dependencies:** Runs `ansible-galaxy` to install required collections/roles
+2. **Validates modules:** Checks module parameters against actual module documentation
+3. **Full schema validation:** Fetches latest schemas from remote sources
+4. **All playbooks:** Lints every playbook, not just changed files
+
+**When it runs:**
+- On every push that modifies `ansible/` directory
+- On every pull request that modifies `ansible/` directory
+- Skipped if no ansible files changed (incremental)
+
+**Example output:**
+```
+### Ansible-lint Results (Full Mode)
+
+**Mode**: Full validation with dependencies
+**Flags**: No NODEPS, no --offline (complete checking)
+
+✅ All playbooks passed ansible-lint
 ```
 
 ## Optimizations WITH Modifying ansible-lint
@@ -271,13 +302,13 @@ ansible-lint --offline wyrm.yaml 2>&1 | grep "files processed"
 
 ## Recommendations by Use Case
 
-| Use Case | Configuration | Expected Time | Coverage |
-|----------|---------------|---------------|----------|
-| **Pre-commit (dev)** | `--offline` + `SKIP_SCHEMA_UPDATE=1` | 15-16s | Full |
-| **Pre-commit (fast)** | Above + `NODEPS=1` | 12-14s | Reduced |
-| **CI (thorough)** | Default settings | 42s | Full |
-| **Single file edit** | Pre-commit (passes filename) | 4-5s | Targeted |
-| **Parallel (4 playbooks)** | GNU parallel + `--offline` | ~15s total | Full |
+| Use Case | Configuration | Expected Time | Coverage | Notes |
+|----------|---------------|---------------|----------|-------|
+| **Pre-commit (current)** | `--offline` + `SKIP_SCHEMA_UPDATE=1` | 15-16s | Full* | *No module validation |
+| **Pre-commit (fast)** | Above + `NODEPS=1` | 12-14s | Reduced | Not recommended |
+| **CI (current)** | Full mode, all playbooks | ~42s | Complete | Validates modules |
+| **Single file edit** | Pre-commit (passes filename) | 4-5s | Targeted | Auto via pre-commit |
+| **Parallel (manual)** | `./lint-parallel.sh` | ~15s total | Full* | 4 playbooks in parallel |
 
 ## Action Items
 

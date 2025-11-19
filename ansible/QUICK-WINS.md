@@ -2,12 +2,25 @@
 
 ## Already Applied ✅
 
-I've updated `ansible/run-ansible-lint.sh` with immediate optimizations:
+### 1. Pre-commit Optimizations
 
-1. **Added `--offline` flag** - Skips network calls for requirements/schema
-2. **Added `ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1`** - Skips remote schema refresh
+Updated `ansible/run-ansible-lint.sh` with:
+- **`--offline` flag** - Skips network calls for requirements/schema
+- **`ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1`** - Skips remote schema refresh
 
 **Expected improvement:** 42s → 39-40s (~5-10% faster)
+
+### 2. CI Thorough Validation
+
+Added `.github/workflows/ci.yml` - `ansible-lint-full` job:
+- **Full validation** - No NODEPS, validates module parameters
+- **All playbooks** - Lints every playbook in `ansible/`
+- **Incremental** - Only runs if `ansible/` changed
+- **Cached** - Galaxy collections/roles cached between runs
+
+**Why two modes?**
+- **Pre-commit (fast):** Quick feedback while coding (~15s)
+- **CI (thorough):** Complete validation including module parameters (~42s)
 
 ## Test the Changes
 
@@ -22,7 +35,7 @@ time ./run-ansible-lint.sh wyrm.yaml
 
 ## Additional Quick Wins (Optional)
 
-### Option 1: Fast Mode (Lower Thoroughness)
+### Option 1: Fast Mode with NODEPS (NOT Recommended)
 
 Add to `run-ansible-lint.sh` if you want even faster checks:
 
@@ -30,7 +43,18 @@ Add to `run-ansible-lint.sh` if you want even faster checks:
 export ANSIBLE_LINT_NODEPS=1  # Skip dependency validation
 ```
 
-**Trade-off:** ~25% faster but less thorough (skips module validation)
+**What NODEPS does:**
+- Skips installing Galaxy dependencies
+- Skips module parameter validation
+- Skips checks that require modules to be loaded
+- Reports **far fewer violations** (many issues go undetected)
+
+**Trade-off:** ~25% faster but **significantly less thorough**
+- ❌ Won't catch invalid module parameters
+- ❌ Won't detect deprecated modules
+- ❌ Won't validate module-specific syntax
+
+**Recommendation:** Don't use NODEPS. The CI thorough mode will catch what pre-commit misses.
 
 ### Option 2: Parallel Execution (For Manual Runs)
 

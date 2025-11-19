@@ -76,6 +76,97 @@ jobs:
           pip install pre-commit==4.0.1
           pre-commit run --all-files --show-diff-on-failure
 
+  ansible-lint-full:
+    name: Ansible-lint (full, all playbooks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for change detection
+
+      - name: Check if ansible files changed
+        id: ansible-changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR: check if ansible/ changed vs base branch
+            if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^ansible/'; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Push: check if ansible/ changed in this commit
+            if git diff --name-only HEAD~1 HEAD | grep -q '^ansible/'; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+            else
+              # On main branch or first commit, always run
+              echo "changed=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Set up Python
+        if: steps.ansible-changes.outputs.changed == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache Ansible Galaxy
+        if: steps.ansible-changes.outputs.changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ansible/collections
+            ~/.ansible/roles
+          key: ansible-galaxy-full-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: |
+            ansible-galaxy-full-${{ runner.os }}-
+
+      - name: Install ansible and ansible-lint
+        if: steps.ansible-changes.outputs.changed == 'true'
+        run: |
+          pip install "ansible-core>=2.18" ansible-lint
+
+      - name: Install Ansible Galaxy dependencies
+        if: steps.ansible-changes.outputs.changed == 'true'
+        run: |
+          cd ansible
+          ansible-galaxy role install -r requirements.yaml
+          ansible-galaxy collection install -r requirements.yaml
+
+      - name: Run ansible-lint (thorough mode)
+        if: steps.ansible-changes.outputs.changed == 'true'
+        working-directory: ansible
+        run: |
+          # Full thorough check - no NODEPS, no --offline
+          # This validates module parameters, dependencies, etc.
+          export ANSIBLE_LINT_SKIP_VAULT=1
+
+          # List all playbooks to lint
+          playbooks=$(find . -maxdepth 1 -name "*.yaml" -type f ! -name "galaxy.yaml")
+
+          echo "Running full ansible-lint on playbooks:"
+          echo "$playbooks"
+          echo ""
+
+          # Run on all playbooks
+          ansible-lint --config-file ../.ansible-lint.yaml $playbooks
+
+      - name: Generate ansible-lint summary
+        if: always() && steps.ansible-changes.outputs.changed == 'true'
+        run: |
+          echo "### Ansible-lint Results (Full Mode)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Mode**: Full validation with dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "**Flags**: No NODEPS, no --offline (complete checking)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All playbooks passed ansible-lint" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Ansible-lint found issues" >> $GITHUB_STEP_SUMMARY
+          fi
+
   pytest:
     name: Pytest (${{ matrix.project }})
     runs-on: ubuntu-latest
