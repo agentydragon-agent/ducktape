@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict
 
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import RUNTIME_CONTAINER_INFO_URI
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp._shared.types import ContainerInfo
@@ -101,7 +102,7 @@ class AgentStatusCore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCore:
+async def build_agent_status_core(app: FastAPI, agent_id: AgentID) -> AgentStatusCore:
     """Shared builder for agent status used by HTTP and WS paths.
 
     Computes policy presence/id, MCP server states, lifecycle,

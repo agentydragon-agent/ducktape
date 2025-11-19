@@ -61,9 +61,58 @@ Status: living list of gaps and candidates for future work. Focus is on `adgn.se
 - [ ] Clear behavior when `sandbox-exec` is missing/deprecated (diagnostics, suggested alternatives).
 - [ ] Optional translation layer to container/VM policies for dynamic per‑run path scoping (documented outside SBPL core).
 
+## MCP Security Integration
+See `docs/seatbelt/MCP_SECURITY_INTEGRATION.md` for detailed documentation on seatbelt-MCP integration.
+
+### Cross-Layer Security
+- [ ] MCP approval policy should be aware of seatbelt policies; allow policy customization based on policy specificity
+  - Example: `approve seatbelt_exec only if policy.files is non-empty`
+  - Location: `src/adgn/agent/policies/default_policy.py`
+  - Reference: `src/adgn/mcp/exec/seatbelt.py` (SandboxExecArgs.policy field)
+
+- [ ] Unified audit log combining seatbelt kernel denials + MCP approval decisions
+  - Location: `src/adgn/agent/persist/` (extend ApprovalOutcome/ToolCallExecution models)
+  - Reference: `src/adgn/seatbelt/runner.py` (unified_sandbox_denies collection)
+
+- [ ] Policy validation hook: expose seatbelt policy linting via MCP tool
+  - Example: `seatbelt_validate_policy` tool that returns SBPL validation findings
+  - Location: `src/adgn/mcp/exec/seatbelt.py`
+
+### Policy Templates & Resources
+- [ ] Seatbelt policy templates as MCP resources with versioning
+  - Example: `resources://seatbelt/templates/jupyter-kernel` → compiled SBPL
+  - Location: `src/adgn/mcp/resources/server.py` (add seatbelt template resources)
+
+- [ ] Pre-built policy presets for common MCP use cases (Jupyter, read-only FS, loopback-only net)
+  - Location: `src/adgn/seatbelt/presets.py` (new module)
+
+### Dynamic Policies
+- [ ] Policy modification via approval policy middleware
+  - Allow approval policy to inject additional restrictions into seatbelt policies at runtime
+  - Example: Policy says "yes, but restrict to /tmp" → modify policy before sandbox-exec
+  - Location: `src/adgn/mcp/policy_gateway/middleware.py` + `src/adgn/mcp/exec/seatbelt.py`
+
+- [ ] Default/fallback seatbelt policies for tools that don't provide one
+  - Example: UI tool calling `seatbelt_exec` without explicit policy → use safe read-only default
+  - Location: `src/adgn/mcp/exec/seatbelt.py` (SandboxExecArgs validation)
+
+### User Experience & Observability
+- [ ] Policy proposal UI for seatbelt policies (similar to approval policy proposals)
+  - Allow users to draft, test, and propose new seatbelt policies
+  - Location: UI + `src/adgn/agent/approvals.py`
+
+- [ ] Enhanced trace output: explain seatbelt denials in terms of policy rules
+  - Example: "Access to /etc/passwd denied by rule: (deny file-read* (literal \"/etc\"))"
+  - Location: `src/adgn/seatbelt/runner.py` (trace parsing and rendering)
+
+- [ ] Compatibility warning when approval policy + seatbelt policy conflict
+  - Example: Approval says "yes" but seatbelt says "no" → warn in logs
+  - Location: `src/adgn/agent/approvals.py` + policy evaluator
+
 ---
 
 Notes
 - Current implemented subset: `file-read*`, `file-write*`, `file-read-metadata`, `file-map-executable`, `process*`, `signal (target self)`, `network-(inbound|outbound|bind)` with `(local ip)`, `mach-lookup` by global name, `system-socket`, `sysctl-read`, `trace`.
 - Keep core layering: models and compiler remain pure; validations/presets/runners are opt‑in and explicit.
+- Seatbelt and MCP approval policy form a defense-in-depth security model: MCP gates access semantically, seatbelt enforces OS-level isolation. See `MCP_SECURITY_INTEGRATION.md` for the full architecture.
 

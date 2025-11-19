@@ -200,6 +200,34 @@ However, for Wave B, **manual routing is preferred** because:
 - Custom error handling per tool is easier
 - FastMCP tool registration may not support decorator wrapping
 
+## Security Integration: Approval Policy + Seatbelt
+
+The MCP security model uses **two complementary layers** for defense-in-depth:
+
+### 1. Approval Policy (MCP Layer - Semantic Gating)
+
+**Location**: `adgn/src/adgn/mcp/approval_policy/`
+
+Controls which MCP tools can be invoked by name and arguments via custom Python policies. Decisions include:
+- `allow`: Tool call proceeds
+- `deny_continue`: Block, agent continues
+- `deny_abort`: Block, agent's turn aborts
+- `ask`: Defer to human via UI
+
+See `adgn/src/adgn/mcp/policy_gateway/middleware.py` for the middleware that intercepts all tool calls.
+
+### 2. Seatbelt (Process Layer - OS Isolation)
+
+**Location**: `adgn/src/adgn/seatbelt/`
+
+Provides macOS kernel-level sandboxing for specific operations (e.g., `seatbelt_exec` tool). Even if approval policy mistakenly allows a dangerous operation, seatbelt enforces OS-level resource restrictions via SBPL policies.
+
+**Security boundary**:
+- Approval policy gates at the MCP tool level (semantic control)
+- Seatbelt enforces at the OS syscall level (enforcement)
+
+For detailed architecture and integration points, see **`seatbelt/MCP_SECURITY_INTEGRATION.md`**.
+
 ## Related Documentation
 
 - `EXECUTION_PLAN.md` - Wave B implementation plan for cross-agent tools
@@ -207,3 +235,5 @@ However, for Wave B, **manual routing is preferred** because:
 - `adgn/src/adgn/mcp/approval_policy/server.py` - Policy server implementation
 - `adgn/src/adgn/mcp/compositor/server.py` - Compositor implementation
 - `adgn/src/adgn/agent/mcp_bridge/servers/agents.py` - Cross-agent server implementation
+- `seatbelt/MCP_SECURITY_INTEGRATION.md` - Defense-in-depth security model for seatbelt + approval policy
+- `seatbelt/TODO.md` - Seatbelt roadmap with MCP integration items

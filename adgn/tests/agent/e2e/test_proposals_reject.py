@@ -36,7 +36,6 @@ async def test_policy_proposal_reject_updates_ui(
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
-    # Create a proposal directly via persistence (no named volumes)
     # Insert a proposal for this agent
     await sqlite_persistence.create_policy_proposal(agent_id, "p-e2e", policy_allow_all)
     # Open UI and connect WS

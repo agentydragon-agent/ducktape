@@ -1,5 +1,7 @@
 # Resources Server (Dedicated)
 
+> **Context**: This document describes the internal Resources server implementation. For an overview of MCP resources accessible to frontend clients and the subscription pattern, see `@../mcp-architecture.md`.
+
 A dedicated MCP server that exposes resource operations as tools for agents/LLMs and centralizes subscription management. It complements the Compositor:
 
 - Compositor (aggregator): mounts child servers and provides the aggregated protocol surface. Clients use it for direct `resources/list` and `resources/read` over the protocol.

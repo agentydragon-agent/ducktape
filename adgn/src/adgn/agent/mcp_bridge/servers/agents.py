@@ -614,8 +614,8 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
     # Tools
 
     @server.tool()
-    async def approve_tool_call(agent_id: str, call_id: str) -> None:
-        infra = await registry.get_infrastructure(AgentID(agent_id))
+    async def approve_tool_call(agent_id: AgentID, call_id: str) -> None:
+        infra = await registry.get_infrastructure(agent_id)
         infra.approval_hub.resolve(call_id, ContinueDecision())
 
         await server.broadcast_resource_updated(resources.agent_approvals_pending(agent_id))
@@ -623,8 +623,8 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         await server.broadcast_resource_updated(resources.APPROVALS_PENDING_GLOBAL)
 
     @server.tool()
-    async def reject_tool_call(agent_id: str, call_id: str, reason: str) -> None:
-        infra = await registry.get_infrastructure(AgentID(agent_id))
+    async def reject_tool_call(agent_id: AgentID, call_id: str, reason: str) -> None:
+        infra = await registry.get_infrastructure(agent_id)
         infra.approval_hub.resolve(call_id, AbortTurnDecision(reason=reason))
 
         await server.broadcast_resource_updated(resources.agent_approvals_pending(agent_id))
@@ -638,7 +638,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         Provides a clearer semantic for denial operations alongside approve/reject terminology.
         """
         # Delegate to reject_tool_call
-        await reject_tool_call(str(agent_id), call_id, reason)
+        await reject_tool_call(agent_id, call_id, reason)
         return SimpleOk(ok=True)
 
     @server.tool()
@@ -652,8 +652,8 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         client = infra.compositor.get_child_client("approval_policy_admin")
         await client.call_tool("reject_proposal", {"id": call_id, "reason": reason})
 
-        await server.broadcast_resource_updated(resources.agent_approvals_pending(str(agent_id)))
-        await server.broadcast_resource_updated(resources.agent_approvals_history(str(agent_id)))
+        await server.broadcast_resource_updated(resources.agent_approvals_pending(agent_id))
+        await server.broadcast_resource_updated(resources.agent_approvals_history(agent_id))
         await server.broadcast_resource_updated(resources.APPROVALS_PENDING_GLOBAL)
         return SimpleOk(ok=True)
 
@@ -874,7 +874,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         infra.approval_engine.set_notifier(make_policy_notifier(agent_id))
 
         # Wire approval hub notifier to broadcast resource updates
-        def make_approval_hub_notifier(aid: str):
+        def make_approval_hub_notifier(aid: AgentID):
             def notifier():
                 # Notifier is sync, schedule broadcast in event loop
                 loop = asyncio.get_running_loop()
@@ -900,7 +900,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         local_runtime = registry.get_local_runtime(agent_id)
         if local_runtime is not None and local_runtime.session is not None:
 
-            def make_ui_state_notifier(aid: str):
+            def make_ui_state_notifier(aid: AgentID):
                 def notifier():
                     # Notifier is sync, schedule broadcast in event loop
                     loop = asyncio.get_running_loop()
@@ -917,7 +917,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             local_runtime.session.set_ui_state_notifier(make_ui_state_notifier(agent_id))
 
             # Wire session state notifications
-            def make_session_state_notifier(aid: str):
+            def make_session_state_notifier(aid: AgentID):
                 def notifier():
                     # Notifier is sync, schedule broadcast in event loop
                     loop = asyncio.get_running_loop()
@@ -934,7 +934,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             local_runtime.session._manager.set_session_state_notifier(make_session_state_notifier(agent_id))
 
         # Wire compositor mount events to broadcast MCP state resource updates
-        def make_mount_listener(aid: str):
+        def make_mount_listener(aid: AgentID):
             async def on_mount_change(name: str, action: MountEvent) -> None:
                 # Broadcast resource update for the agent's MCP state when servers mount/unmount
                 if action in (MountEvent.MOUNTED, MountEvent.UNMOUNTED):

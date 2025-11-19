@@ -79,7 +79,7 @@ async def collect_unified_sandbox_denies(artifacts_dir: Path, window: str = "5m"
         "--predicate",
         '((subsystem == "com.apple.sandbox") OR (category == "Sandbox"))',
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    res = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, check=False)
     if res.returncode != 0:
         raise RuntimeError(f"log show failed rc={res.returncode}: {res.stderr!r}")
     text = res.stdout or ""

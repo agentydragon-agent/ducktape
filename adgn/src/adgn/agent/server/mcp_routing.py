@@ -16,6 +16,8 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from adgn.agent.types import AgentID
+
 if TYPE_CHECKING:
     from adgn.agent.runtime.registry import AgentRegistry
     from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -87,7 +89,7 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
             backend_key = f"agent:{agent_id}"
             if backend_key not in self._backend_apps:
                 # Get the agent's compositor HTTP app
-                container = await self.registry.ensure_live(agent_id, with_ui=False)
+                container = await self.registry.ensure_live(AgentID(agent_id), with_ui=False)
                 compositor_app = container.running.compositor.http_app()
                 self._backend_apps[backend_key] = compositor_app  # type: ignore[assignment]
             return self._backend_apps[backend_key]

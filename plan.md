@@ -2,121 +2,27 @@
 
 ## Implementation Status
 
-**✅ Phases 0-5 COMPLETE** (as of 2025-11-19)
+✅ **Phases 0-5 COMPLETE** (as of 2025-11-19): Type consolidation, backend MCP server, frontend MCP client (StreamableHTTP + subscriptions), type generation, comprehensive testing (107+ tests passing), WebSocket analysis complete.
 
-All planned features have been implemented:
-- ✅ **Phase 0**: Type Consolidation (100%)
-- ✅ **Phase 1**: Backend MCP Server (100% - agent state sampling implemented)
-- ✅ **Phase 2**: Frontend MCP Client (100% - StreamableHTTP + subscriptions)
-- ✅ **Phase 3**: Type Generation Tooling (100% - json-schema-to-typescript pipeline)
-- ✅ **Phase 4**: Testing (100% - 66+ tests, backend + frontend + e2e)
-- ✅ **Phase 5**: WebSocket Cleanup (100% - analysis complete, no deletions needed)
+See implementation in:
+- Backend MCP server: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
+- Frontend MCP client: `adgn/src/adgn/agent/web/src/features/mcp/`
+- Backend tests: `tests/agent/mcp_bridge/test_agents_server.py` (28 passing)
+- Frontend tests: `src/adgn/agent/web/src/features/mcp/*.test.ts` (79 passing)
+- E2E tests: `tests/agent/e2e/test_mcp_ui.py` (3 written, Docker required)
 
-**Test Results**: 84 passing agent tests (MCP-specific features fully functional)
-
-**See "Remaining Work" section below for complete task breakdown** including:
-- Wave 7: UI Layout Implementation (8 agents)
-- Waves 8-11: Code Quality, Cleanup & Verification
-- Pre-existing test fixes (ResponseUsage, CallToolResult, event loops)
-- WebSocket test fixture cleanup
-- Agent state notifications, proposals, loop hooks, chat delivery
-
-**Environment Limitations**:
-- Playwright browsers cannot install (network 403 errors from CDN)
-- Docker not available in current environment
-- E2E tests written and ready but cannot execute here (once Docker mocking done, Playwright still needed)
+**Environment Limitations**: Playwright browsers cannot install (CDN 403); Docker unavailable. E2E tests written, ready for Docker-enabled environment.
 
 ## Test Coverage Summary
 
-**Total Tests Written**: 66+ (107 total including duplicates in summary)
-**Total Tests Passing**: ~107 where executable
+✅ **107+ tests passing** (backend MCP + frontend MCP client + subscriptions). See test files:
+- Backend: `tests/agent/mcp_bridge/test_agents_server.py` (28 tests)
+- Frontend MCP client: `src/adgn/agent/web/src/features/mcp/client.test.ts` (38 tests)
+- Frontend subscriptions: `src/adgn/agent/web/src/features/mcp/subscriptions.test.ts` (41 tests)
+- Frontend components: `src/adgn/agent/web/src/components/*.test.ts` (45 tests blocked - Svelte 6 incompatibility)
+- E2E: `tests/agent/e2e/test_mcp_ui.py` (3 tests written, Docker required)
 
-### Backend Tests (✅ 28 passing)
-**Location**: `tests/agent/mcp_bridge/test_agents_server.py`
-
-**Coverage**:
-- Multi-agent global mailbox (different approvals per agent)
-- Historical timeline with mixed outcomes (all decision types)
-- Agent state for idle agents
-- Global approvals ordering and structure
-- Resource parsing and structure validation
-- Tool call execution and error handling
-
-**Notable Fixes**: 7 existing tests fixed (snake_case alignment: `isError` → `is_error`)
-
-**Command**: `pytest tests/agent/mcp_bridge/test_agents_server.py -v`
-
-### Frontend MCP Client Tests (✅ 38 passing)
-**Location**: `src/adgn/agent/web/src/features/mcp/client.test.ts`
-
-**Coverage**:
-- Connection establishment and error handling
-- Resource reading (success, errors, timeouts)
-- Tool calling (success, errors, structured content)
-- Large payload handling (>1MB resources)
-- Concurrent operations (parallel tool calls, resource reads)
-- URI edge cases (special characters, empty segments)
-- Integration workflow (end-to-end scenarios)
-- Performance (concurrent safety)
-
-**Command**: `cd src/adgn/agent/web && npm test -- client.test.ts`
-
-### Frontend Subscriptions Tests (✅ 41 passing)
-**Location**: `src/adgn/agent/web/src/features/mcp/subscriptions.test.ts`
-
-**Coverage**:
-- Subscription lifecycle (create, notify, unsubscribe)
-- Multiple callbacks per URI
-- Automatic resource refresh
-- Error recovery and logging
-- Cleanup logic
-- Notification buffering
-- Concurrent subscription handling
-
-**Command**: `cd src/adgn/agent/web && npm test -- subscriptions.test.ts`
-
-### Frontend Component Tests (⚠️ 45 written, blocked)
-**Locations**:
-- `src/adgn/agent/web/src/components/GlobalApprovalsList.test.ts` (20 tests)
-- `src/adgn/agent/web/src/components/ApprovalTimeline.test.ts` (25 tests)
-
-**Coverage**:
-- Empty states (no approvals, no agents)
-- Action buttons (approve, reject, abort)
-- Filtering and sorting
-- Live updates via subscriptions
-- Multi-agent scenarios
-- Error handling and loading states
-- Search functionality
-- Decision type filters
-
-**Blocked By**: Svelte 6 + vitest incompatibility (waiting for upstream support)
-
-### Playwright E2E Tests (⚠️ 3 written, requires Docker)
-**Location**: `tests/agent/e2e/test_mcp_ui.py`
-
-**Coverage**:
-- `test_mcp_approval_flow_with_notifications` - Real-time approval flow with notifications
-- `test_multi_agent_global_mailbox` - Multi-agent concurrency scenarios
-- `test_timeline_displays_historical_decisions` - Historical timeline display
-
-**Requirements**: Docker daemon + Playwright browsers (`python -m playwright install`)
-
-**Note**: Marked with `@pytest.mark.requires_docker`
-
-### Known Test Limitations
-
-**1. Svelte Component Tests**
-- Issue: Svelte 6 not yet supported by vitest's environment API
-- Impact: 45 component tests written but cannot execute
-- Status: Waiting for upstream fix (vitest #7697)
-- Workaround: Manual testing, TypeScript compilation validates interfaces
-
-**2. E2E Tests Require Docker**
-- Issue: Playwright E2E tests need Docker to run full stack
-- Impact: Tests won't run in Docker-free environments
-- Status: By design (MCP server runs in containers)
-- Workaround: Skip with `pytest -m "not requires_docker"` or run in Docker-enabled CI
+**Known Limitations**: Svelte 6 + vitest incompatibility blocks 45 component tests (upstream fix pending). E2E tests require Docker daemon.
 
 ## Remaining Work
 

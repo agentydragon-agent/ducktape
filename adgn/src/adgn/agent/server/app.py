@@ -34,6 +34,7 @@ from adgn.agent.server.mcp_routing import TOKEN_TABLE, MCPRoutingMiddleware
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession
 from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
+from adgn.agent.types import AgentID
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 
@@ -208,14 +209,14 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         await app.state.registry.close_all()
 
     # Helper functions to reduce boilerplate
-    async def get_container(agent_id: str):
+    async def get_container(agent_id: AgentID):
         """Get live container for agent, raising AgentNotFoundError if missing."""
         try:
             return await app.state.registry.ensure_live(agent_id, with_ui=True)
         except KeyError as e:
             raise AgentNotFoundError(agent_id) from e
 
-    def get_session(container, agent_id: str) -> AgentSession:
+    def get_session(container, agent_id: AgentID) -> AgentSession:
         """Get session from container, raising AgentSessionNotReadyError if not initialized."""
         if container.runtime.session is None:
             raise AgentSessionNotReadyError(agent_id)
@@ -248,20 +249,20 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     # Pull current snapshot for an agent
     @app.get("/api/agents/{agent_id}/snapshot", response_model=Snapshot)
-    async def api_get_snapshot(agent_id: str) -> Snapshot:
+    async def api_get_snapshot(agent_id: AgentID) -> Snapshot:
         container = await get_container(agent_id)
         sess = get_session(container, agent_id)
         sampling = await container.running.compositor.sampling_snapshot()
         return await sess.build_snapshot(sampling=sampling)
 
     @app.get("/api/agents/{agent_id}/status", response_model=AgentStatus)
-    async def api_agent_status(agent_id: str) -> AgentStatus:
+    async def api_agent_status(agent_id: AgentID) -> AgentStatus:
         core = await build_agent_status_core(app, agent_id)
         # Re-validate into HTTP schema; dump as JSON-like to coerce enums/inner models
         return AgentStatus(**core.model_dump(mode="json"))
 
     @app.get("/api/runs", response_model=RunsList)
-    async def api_list_runs(agent_id: str | None = None, limit: int = 50) -> RunsList:
+    async def api_list_runs(agent_id: AgentID | None = None, limit: int = 50) -> RunsList:
         rows = await app.state.persistence.list_runs(agent_id=agent_id, limit=limit)
         return RunsList(runs=rows)
 
@@ -277,7 +278,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     # Proposals list/content
     @app.get("/api/agents/{agent_id}/proposals", response_model=ProposalsList)
-    async def api_list_proposals(agent_id: str) -> ProposalsList:
+    async def api_list_proposals(agent_id: AgentID) -> ProposalsList:
         rows = await app.state.persistence.list_policy_proposals(agent_id)
         items = [
             ProposalRow(
