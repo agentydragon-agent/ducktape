@@ -23,16 +23,17 @@ from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import RunRow
 from adgn.agent.persist.events import EventRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
-from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.exceptions import (
     AgentNotFoundError,
     AgentSessionNotReadyError,
+    ApprovalNotFoundError,
+    PolicyOperationError,
 )
+from adgn.agent.server.mcp_routing import TOKEN_TABLE, MCPRoutingMiddleware
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession
 from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
-from adgn.mcp._shared.types import SimpleOk
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 
@@ -91,8 +92,6 @@ class ProposalContent(BaseModel):
     decided_at: datetime | None = None
 
 
-
-
 ## WebSocket message models moved to ws.py
 
 
@@ -112,8 +111,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         raise HTTPException(status_code=500, detail="no_session") from exc
 
     @app.exception_handler(PolicyOperationError)
+    async def handle_policy_operation_error(request, exc: PolicyOperationError):
+        raise HTTPException(status_code=400, detail=f"policy_operation_error: {exc.reason}") from exc
 
     @app.exception_handler(ApprovalNotFoundError)
+    async def handle_approval_not_found(request, exc: ApprovalNotFoundError):
+        raise HTTPException(status_code=404, detail="approval_not_found") from exc
 
     def _mount_static(path: str, directory: Path, name: str) -> None:
         if not directory.exists():
@@ -172,6 +175,22 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         await app.state.persistence.ensure_schema()
         logger.info("persistence ready", extra={"db_path": str(db_path)})
 
+        # Create agents management server for MCP routing
+        # Import here to avoid circular dependency with registry setup
+        from adgn.agent.mcp_bridge.server import InfrastructureRegistry  # noqa: PLC0415
+        from adgn.agent.mcp_bridge.servers.agents import make_agents_server  # noqa: PLC0415
+
+        # Create minimal infrastructure registry for agents server
+        # Note: This is a simplified setup - in production, you'd want proper registry management
+        app.state.mcp_registry = InfrastructureRegistry(
+            persistence=app.state.persistence,
+            docker_client=app.state.docker_client,
+            mcp_config=MCPConfig(servers={}),
+            initial_policy=None,
+        )
+        app.state.agents_server = await make_agents_server(app.state.mcp_registry)
+        logger.info("agents management server created")
+
         # Multi-agent: agents should be created via API after startup
         app.state.ready.set()
 
@@ -227,14 +246,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     # No-op helper removed: direct registry.create is used where needed
 
-
-
-
-
-
-
-
-
     # Pull current snapshot for an agent
     @app.get("/api/agents/{agent_id}/snapshot", response_model=Snapshot)
     async def api_get_snapshot(agent_id: str) -> Snapshot:
@@ -248,8 +259,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         core = await build_agent_status_core(app, agent_id)
         # Re-validate into HTTP schema; dump as JSON-like to coerce enums/inner models
         return AgentStatus(**core.model_dump(mode="json"))
-
-
 
     @app.get("/api/runs", response_model=RunsList)
     async def api_list_runs(agent_id: str | None = None, limit: int = 50) -> RunsList:
@@ -278,11 +287,32 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         ]
         return ProposalsList(proposals=items)
 
-    # Register websocket routes
-    register_agents_ws(app)
+    # Mount MCP routing endpoint
+    # Note: The agents_server is created during startup, so this uses a lazy sub-app
+    from fastapi import FastAPI as SubApp  # noqa: PLC0415
 
-    # Register modular channel endpoints
-    register_channel_endpoints(app)
+    mcp_sub_app = SubApp()
+
+    @mcp_sub_app.middleware("http")
+    async def mcp_routing_middleware_wrapper(request, call_next):
+        """Wrapper to apply MCP routing middleware after startup."""
+        if not hasattr(app.state, "agents_server"):
+            return Response(content="Server not ready", status_code=503)
+
+        # Create middleware instance
+        middleware = MCPRoutingMiddleware(
+            app=mcp_sub_app, token_table=TOKEN_TABLE, registry=app.state.registry, agents_server=app.state.agents_server
+        )
+        return await middleware.dispatch(request, call_next)
+
+    app.mount("/mcp", mcp_sub_app)
+    logger.info("MCP routing endpoint mounted at /mcp")
+
+    # TODO: Register websocket routes (placeholder)
+    # register_agents_ws(app)
+
+    # TODO: Register modular channel endpoints (placeholder)
+    # register_channel_endpoints(app)
 
     return app
 
