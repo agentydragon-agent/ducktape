@@ -829,7 +829,7 @@ in {
           "WebFetch"
           "WebSearch"
         ];
-        ask = ["Bash(*)"];
+        # ask = ["Bash(*)"];  - use Bash without parens to allow all commands
         deny = [];
         defaultMode = "default";
       };
