@@ -15,6 +15,43 @@ This document tracks what's left to tidy up after recent refactors. Closed items
 
 ---
 
+## UI Layout Implementation (plan.md Spec)
+
+- [ ] **Implement side-by-side UI layout from plan.md**
+  - **Current state**: UI has left sidebar (agents + approvals tabs) + main ChatPane
+  - **Target state**: Side-by-side Tool Call Timeline (left) + Policy Editor (right) + Message Composer (bottom for local agents)
+  - **Existing components that can be reused**:
+    - `ApprovalTimeline.svelte` - Timeline component (exists, tested, but not integrated into App.svelte)
+    - `GlobalApprovalsList.svelte` - Global mailbox component (exists, tested, but not integrated)
+    - `ApprovalsPanel.svelte` - Has policy editor functionality (currently in tab)
+  - **Components to create**:
+    - PolicyEditorPane.svelte - Dedicated right-pane policy editor (extract from ApprovalsPanel)
+    - MessageComposer.svelte - Bottom message composer (for local agents with UI server)
+  - **App.svelte changes needed**:
+    - Replace current layout with side-by-side grid
+    - Left pane: ApprovalTimeline showing all tool calls (not just pending)
+    - Right pane: PolicyEditorPane with policy editing + proposals
+    - Bottom pane (conditional): MessageComposer if agent has UI server attached
+    - Different rendering for agents WITH vs WITHOUT UI server (per plan.md mockups)
+  - **Integration requirements**:
+    - Wire ApprovalTimeline to fetch from `resource://agents/{id}/approvals/history`
+    - Wire PolicyEditorPane to fetch/update policy via MCP
+    - Wire MessageComposer to send messages via `send_message` tool (when UI server attached)
+    - Detect if agent has UI server and conditionally show message composer
+    - Merge UI blocks from UI server into timeline chronologically (if UI server attached)
+  - **Acceptance criteria from plan.md**:
+    - Shows loading state on startup
+    - Extracts token from URL
+    - Connects to MCP server
+    - Displays tool call timeline with all decisions (approved, rejected, auto)
+    - Shows decision type (auto/user/policy) and decided_by
+    - Displays active policy source code
+    - Allows user to edit and update active policy
+    - Displays policy proposals
+    - Links to individual proposal content in policy server
+    - Shows message composer for local agents with UI server
+    - Hides message composer for bridge agents or agents without UI server
+
 ## WebSocket Test Fixture Cleanup
 
 - [ ] **Update test fixtures to use modular WebSocket channels**
