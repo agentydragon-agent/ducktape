@@ -14,6 +14,7 @@
   import { getOrExtractToken } from '../shared/token'
   import { backendOrigin } from '../features/agents/api'
   import type { AgentList, AgentMode } from '../generated/types'
+  import { MCPUris } from '../generated/mcpConstants'
 
   export let renderMarkdown: boolean = true
 
@@ -75,8 +76,7 @@
         token
       })
 
-      const agentListUri = 'resource://agents/list'
-      const contents = await readResource(client, agentListUri)
+      const contents = await readResource(client, MCPUris.agentsListUri)
 
       // Parse the resource contents
       if (Array.isArray(contents) && contents.length > 0) {

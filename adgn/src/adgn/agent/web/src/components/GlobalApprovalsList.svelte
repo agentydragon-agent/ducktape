@@ -3,6 +3,7 @@
   import { createMCPClient, readResource, callTool, subscribeToResource } from '../features/mcp/client'
   import { getOrExtractToken } from '../shared/token'
   import type { PendingApproval } from '../generated/types'
+  import { MCPUris } from '../generated/mcpConstants'
   import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
   import JsonDisclosure from './JsonDisclosure.svelte'
 
@@ -63,7 +64,7 @@
       // Subscribe to resource updates for live refresh
       // NOTE: Subscription support would need to be added to the backend
       try {
-        await subscribeToResource(mcpClient, 'resource://approvals/pending')
+        await subscribeToResource(mcpClient, MCPUris.approvalsPendingUri)
       } catch (e) {
         console.warn('Subscription not supported, will use polling:', e)
       }
@@ -98,7 +99,7 @@
 
     try {
       // Read the global approvals resource
-      const contents = await readResource(mcpClient, 'resource://approvals/pending')
+      const contents = await readResource(mcpClient, MCPUris.approvalsPendingUri)
 
       // Parse contents - it returns an array of TextResourceContents
       // Each block has: { uri, mimeType, text }

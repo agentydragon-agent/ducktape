@@ -5,6 +5,7 @@
   import { createMCPClient, readResource, subscribeToResource, type MCPClientConfig } from '../features/mcp/client'
   import { getOrExtractToken } from '../shared/token'
   import type { AgentInfo, AgentList } from '../generated/types'
+  import { MCPUris } from '../generated/mcpConstants'
   import { prefs } from '../shared/prefs'
   import { LEFT_MIN, LEFT_MAX } from '../shared/layout'
   import SidebarToggle from './SidebarToggle.svelte'
@@ -52,7 +53,7 @@
       return
     }
     try {
-      const result = await readResource(mcpClient, 'resource://agents/list')
+      const result = await readResource(mcpClient, MCPUris.agentsListUri)
       // result is an array of content items
       if (result && result.length > 0) {
         const content = result[0]
@@ -87,14 +88,14 @@
       mcpClient.setNotificationHandler(
         ResourceUpdatedNotificationSchema,
         async (notification) => {
-          if (notification.params?.uri === 'resource://agents/list') {
+          if (notification.params?.uri === MCPUris.agentsListUri) {
             await fetchAgentsList()
           }
         }
       )
 
       // Subscribe to agents list updates
-      await subscribeToResource(mcpClient, 'resource://agents/list')
+      await subscribeToResource(mcpClient, MCPUris.agentsListUri)
 
       // Fetch initial list
       await fetchAgentsList()
