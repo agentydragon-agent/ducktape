@@ -55,7 +55,7 @@ def test_agents_ws_status_on_agent_ws_connect(ws_hub):
     _ = TypeAdapter(AgentsHubMsg).validate_python(init)
 
     # Opening per-agent WS should cause a live:true status broadcast on the hub
-    with client.websocket_connect(f"/ws?agent_id={agent_id}") as agent_ws:
+    with client.websocket_connect(f"/ws/ui?agent_id={agent_id}") as agent_ws:
         _ = wait_for_accepted(agent_ws)
 
         # Hub emits bare typed messages (not Envelope); use matcher-based drain

@@ -26,7 +26,6 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
 from adgn.agent.runtime.registry import AgentRegistry
-from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
 from adgn.agent.server.exceptions import (
     AgentNotFoundError,
     AgentSessionNotReadyError,
@@ -97,6 +96,19 @@ class ProposalContent(BaseModel):
     decided_at: datetime | None = None
 
 
+class PresetInfo(BaseModel):
+    preset: AgentPreset | None
+
+
+class PresetSummary(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class PresetsList(BaseModel):
+    presets: list[PresetSummary]
+
+
 ## WebSocket message models moved to ws.py
 
 
@@ -163,8 +175,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         client_factory=default_client_factory,
         docker_client=app.state.docker_client,
     )
-    # Initialize the agents WS hub explicitly (no lazy creation in route registrar)
-    app.state.agents_ws_hub = AgentsWSHub(app)
 
     # (continued below)
 
@@ -237,196 +247,13 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     # No-op helper removed: direct registry.create is used where needed
 
-    @app.get("/api/agents", response_model=AgentsList)
-    async def api_list_agents() -> AgentsList:
-        rows = await app.state.persistence.list_agents()
-        live = {c.agent_id: c for c in app.state.registry.list()}
-        working_ids = {
-            cid
-            for cid, c in live.items()
-            if (c.runtime.session is not None and c.runtime.session.active_run is not None)
-        }
-        last_map = await app.state.persistence.list_agents_last_activity()
-        # Build enriched list and sort by last activity desc (fallback to created_at)
-        items: list[tuple[str, datetime, AgentDescriptor]] = []
-        for r in rows:
-            last_ts = last_map.get(r.id) or r.created_at
-            items.append(
-                (
-                    r.id,
-                    last_ts,
-                    AgentDescriptor(
-                        id=r.id,
-                        created_at=r.created_at,
-                        mcp_config=r.mcp_config,
-                        metadata=r.metadata,
-                        live=r.id in live,
-                        working=r.id in working_ids,
-                        last_updated=last_ts,
-                    ),
-                )
-            )
-        items.sort(key=lambda t: t[1], reverse=True)
-        return AgentsList(agents=[p for _, _, p in items])
 
-    @app.post("/api/agents", response_model=CreateAgentResult)
-    async def api_create_agent(create: CreateAgentBody = Body(...)) -> CreateAgentResult:  # noqa: B008
-        # Lookup preset; combine with optional override system
-        ps = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
-        p = ps.get(create.preset)
-        if p is None:
-            raise HTTPException(status_code=404, detail="unknown_preset")
-        # Inline conversion of preset specs to typed MCPConfig
-        typed_cfg = MCPConfig.model_validate({"mcpServers": p.specs or {}})
-        # Store only internal preset info (no freeform metadata)
-        metadata = AgentMetadata(preset=create.preset)
-        # Persist JSON specs and metadata
-        agent_id = await app.state.persistence.create_agent(mcp_config=typed_cfg, metadata=metadata)
 
-        # Do not persist policy; engine is the single source of truth
-        # Notify general WS subscribers (hub presence required)
-        hub = app.state.agents_ws_hub
-        await hub.broadcast_agent_created(agent_id)
-        await hub.broadcast_agent_status(agent_id=agent_id, live=False, active_run_id=None)
-        return CreateAgentResult(id=agent_id)
 
-    # Explicit boot endpoint: asserts per-agent volumes/policy exist, then starts live container
-    @app.post("/api/agents/{agent_id}/boot", response_model=BootAgentResult)
-    async def api_boot_agent(agent_id: str) -> BootAgentResult:
-        agent_id_typed = AgentID(agent_id)
-        row = await app.state.persistence.get_agent(agent_id_typed)
-        if row is None:
-            return BootAgentResult(ok=False, error="agent_not_found")
-        # No volume checks; policy presence validated on startup via engine/persistence
-        if app.state.registry.get(agent_id_typed) is not None:
-            return BootAgentResult(ok=True)
-        await app.state.registry.create(agent_id_typed, row.mcp_config, with_ui=True)
-        return BootAgentResult(ok=True)
 
-    @app.delete("/api/agents/{agent_id}", response_model=DeleteAgentResult)
-    async def api_delete_agent(agent_id: str) -> DeleteAgentResult:
-        agent_id_typed = AgentID(agent_id)
-        # Look up live container and persisted agent row
-        container = app.state.registry.get(agent_id_typed)
-        row = await app.state.persistence.get_agent(agent_id_typed)
-        if container is None and row is None:
-            return DeleteAgentResult(ok=False, error="not_found")
-        # If live, close deterministically (cancels run, waits idle, drains persistence)
-        if container is not None:
-            result = await container.close()
-            # Remove closed container from registry regardless of drain outcome
-            app.state.registry.remove(agent_id_typed)
-            # If drain failed, abort purge and return error
-            if not (isinstance(result, dict) and result.get("drained", True)):
-                return DeleteAgentResult(ok=False, error="drain_failed")
-        # Always purge persisted records when present
-        if row is not None:
-            await app.state.persistence.delete_agent(agent_id_typed)
-        # Notify general WS subscribers (hub presence required)
-        hub = app.state.agents_ws_hub
-        await hub.broadcast_agent_status(agent_id=agent_id, live=False, active_run_id=None)
-        await hub.broadcast_agent_deleted(agent_id)
-        return DeleteAgentResult(ok=True)
 
-    @app.patch("/api/agents/{agent_id}/mcp", response_model=PatchAgentMcpResult)
-    async def api_patch_agent_mcp(agent_id: str, patch: PatchAgentMcpBody = Body(...)) -> PatchAgentMcpResult:  # noqa: B008
-        # Validate detach does not target default auto-attached servers
-        if patch.detach:
-            forbidden = set(DEFAULT_AUTO_SERVER_NAMES) | {"compositor"}
-            bad = [n for n in patch.detach if n in forbidden]
-            if bad:
-                raise HTTPException(status_code=400, detail={"error": "cannot_detach_auto", "servers": bad})
-        # Persist desired state first
-        if patch.mcp_config is not None:
-            await app.state.persistence.update_agent_specs(agent_id, mcp_config=patch.mcp_config)
-            persisted_cfg = patch.mcp_config
-        else:
-            persisted_cfg = await app.state.persistence.patch_agent_specs(
-                agent_id, attach=patch.attach, detach=patch.detach
-            )
-        # Apply live changes if container exists
-        container = app.state.registry.get(agent_id)
-        if container is not None:
-            if patch.mcp_config is not None:
-                # Full reconfiguration: detach all non-auto servers, then attach from new config
-                meta = CompositorMetaClient(container.running.compositor_client)
-                current_servers = await meta.list_states()
-                forbidden = set(DEFAULT_AUTO_SERVER_NAMES) | {"compositor"}
-                # Detach all non-auto servers
-                for name in current_servers:
-                    if name not in forbidden:
-                        await container.running.admin_client.detach_server(name=name)
-                # Attach servers from new config
-                if patch.mcp_config.mcpServers:
-                    for name, spec in patch.mcp_config.mcpServers.items():
-                        await container.running.admin_client.attach_server(name=name, spec=spec)
-            else:
-                # Incremental attach/detach
-                if patch.detach:
-                    for name in patch.detach:
-                        await container.running.admin_client.detach_server(name=name)
-                if patch.attach:
-                    for _cfg_name, cfg in patch.attach.items():
-                        if cfg.mcpServers:
-                            for name, spec in cfg.mcpServers.items():
-                                await container.running.admin_client.attach_server(name=name, spec=spec)
-        return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
-    @app.post("/api/agents/{agent_id}/mcp/attach", response_model=PatchAgentMcpResult)
-    async def api_attach_agent_mcp(agent_id: str, body: AttachOneMcpBody = Body(...)) -> PatchAgentMcpResult:  # noqa: B008
-        row = await app.state.persistence.get_agent(agent_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="agent not found")
-        # Persist attach of a single server
-        attach_cfg = MCPConfig.model_validate({"mcpServers": {body.name: body.spec}})
-        persisted_cfg = await app.state.persistence.patch_agent_specs(
-            agent_id, attach={"single": attach_cfg}, detach=[]
-        )
-        # Live apply if running
-        container = app.state.registry.get(agent_id)
-        if container is not None:
-            await container.running.admin_client.attach_server(name=body.name, spec=body.spec)
-        return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
 
-    @app.post("/api/agents/{agent_id}/mcp/detach", response_model=PatchAgentMcpResult)
-    async def api_detach_agent_mcp(agent_id: str, body: DetachOneMcpBody = Body(...)) -> PatchAgentMcpResult:  # noqa: B008
-        row = await app.state.persistence.get_agent(agent_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="agent not found")
-        # Validate requested detach names are allowed
-        forbidden = set(DEFAULT_AUTO_SERVER_NAMES) | {"compositor"}
-        if body.name in forbidden:
-            raise HTTPException(status_code=400, detail={"error": "cannot_detach_auto", "servers": [body.name]})
-        # Persist detach (single)
-        persisted_cfg = await app.state.persistence.patch_agent_specs(agent_id, attach={}, detach=[body.name])
-        # Live apply if running
-        container = app.state.registry.get(agent_id)
-        if container is not None:
-            await container.running.admin_client.detach_server(name=body.name)
-        return PatchAgentMcpResult(id=agent_id, mcp_config=persisted_cfg)
-
-    @app.get("/api/agents/{agent_id}", response_model=AgentInfo)
-    async def api_get_agent(agent_id: str) -> AgentInfo:
-        row = await app.state.persistence.get_agent(agent_id)
-        live = app.state.registry.get(agent_id) is not None
-        if row is None:
-            return AgentInfo(agent=None, live=live)
-        working = False
-        cont = app.state.registry.get(agent_id)
-        if cont is not None and cont.runtime.session is not None and cont.runtime.session.active_run:
-            working = True
-        return AgentInfo(
-            agent=AgentDescriptor(
-                id=row.id,
-                created_at=row.created_at,
-                mcp_config=row.mcp_config,
-                metadata=row.metadata,
-                live=live,
-                working=working,
-                last_updated=None,
-            ),
-            live=live,
-        )
 
     # Pull current snapshot for an agent
     @app.get("/api/agents/{agent_id}/snapshot", response_model=Snapshot)
@@ -442,99 +269,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Re-validate into HTTP schema; dump as JSON-like to coerce enums/inner models
         return AgentStatus(**core.model_dump(mode="json"))
 
-    # Withdraw is expressed as reject in API; see /proposals/{id}/reject
 
-    # --- Policy: set active content ---
-    @app.post("/api/agents/{agent_id}/policy", response_model=SimpleOk)
-    async def api_set_policy(agent_id: str, body: SetPolicyBody = Body(...)) -> SimpleOk:  # noqa: B008
-        container = await get_container(agent_id)
-        try:
-            await container.running.policy_approver.set_policy_text(SetPolicyTextArgs(source=body.content))
-        except Exception as e:
-            raise PolicyOperationError("policy_set", str(e)) from e
-        # Push snapshot (do not swallow errors)
-        if container._ui_manager is not None:
-            sess = get_session(container, agent_id)
-            await _send_snapshot_latest(container, sess)
-        return SimpleOk(ok=True)
-
-    # --- Approvals (user decisions) ---
-    @app.post("/api/agents/{agent_id}/approve", response_model=SimpleOk)
-    async def api_approve(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
-        container = await get_container(agent_id)
-        sess = get_session(container, agent_id)
-        if body.call_id not in sess.approval_hub._requests:
-            raise ApprovalNotFoundError(body.call_id)
-        sess.approval_hub.resolve(body.call_id, ContinueDecision())
-        if container._ui_manager is not None:
-            await _send_snapshot_latest(container, sess)
-        return SimpleOk(ok=True)
-
-    @app.post("/api/agents/{agent_id}/deny_continue", response_model=SimpleOk)
-    async def api_deny_continue(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
-        container = await get_container(agent_id)
-        sess = get_session(container, agent_id)
-        if body.call_id not in sess.approval_hub._requests:
-            raise ApprovalNotFoundError(body.call_id)
-        # Map deny-continue to abort semantics at the middleware boundary
-        sess.approval_hub.resolve(body.call_id, AbortTurnDecision(reason=f"User denied: {body.call_id}"))
-        if container._ui_manager is not None:
-            await _send_snapshot_latest(container, sess)
-        return SimpleOk(ok=True)
-
-    # --- Policy proposals: approve/reject -----------------------------------
-    @app.post("/api/agents/{agent_id}/proposals/{proposal_id}/approve", response_model=SimpleOk)
-    async def api_approve_proposal(agent_id: str, proposal_id: str) -> SimpleOk:
-        container = await get_container(agent_id)
-        try:
-            await container.running.policy_approver.approve_proposal(ApproveProposalArgs(id=proposal_id))
-        except Exception as e:
-            raise PolicyOperationError("approve_proposal", str(e)) from e
-        await app.state.persistence.approve_policy_proposal(agent_id, proposal_id)
-        # Push snapshot update to UIs (do not swallow errors)
-        if container._ui_manager is not None:
-            sess = get_session(container, agent_id)
-            await _send_snapshot_latest(container, sess)
-        return SimpleOk(ok=True)
-
-    @app.post("/api/agents/{agent_id}/proposals/{proposal_id}/reject", response_model=SimpleOk)
-    async def api_reject_proposal(agent_id: str, proposal_id: str) -> SimpleOk:
-        container = await get_container(agent_id)
-        try:
-            await container.running.policy_approver.reject_proposal(RejectProposalArgs(id=proposal_id))
-        except Exception as e:
-            raise PolicyOperationError("reject_proposal", str(e)) from e
-        return SimpleOk(ok=True)
-
-    @app.post("/api/agents/{agent_id}/deny_abort", response_model=SimpleOk)
-    async def api_deny_abort(agent_id: str, body: ApproveBody = Body(...)) -> SimpleOk:  # noqa: B008
-        container = await get_container(agent_id)
-        sess = get_session(container, agent_id)
-        if body.call_id not in sess.approval_hub._requests:
-            raise ApprovalNotFoundError(body.call_id)
-        sess.approval_hub.resolve(body.call_id, AbortTurnDecision(reason="ui_deny"))
-        if container._ui_manager is not None:
-            await _send_snapshot_latest(container, sess)
-        return SimpleOk(ok=True)
-
-    # --- Prompt/Abort ---
-    @app.post("/api/agents/{agent_id}/prompt", response_model=SimpleOk)
-    async def api_prompt(agent_id: str, body: PromptBody = Body(...)) -> SimpleOk:  # noqa: B008
-        container = await get_container(agent_id)
-        sess = get_session(container, agent_id)
-        # Start run (session schedules the long task internally)
-        await sess.run(body.text)
-        logger.info("api_prompt: started", extra={"agent_id": agent_id, "text": body.text[:64]})
-        return SimpleOk(ok=True)
-
-    @app.post("/api/agents/{agent_id}/abort", response_model=SimpleOk)
-    async def api_abort(agent_id: str) -> SimpleOk:
-        container = await get_container(agent_id)
-        sess = get_session(container, agent_id)
-        if sess.active_run is not None:
-            await sess.cancel_active_run()
-            return SimpleOk(ok=True)
-        raise HTTPException(status_code=400, detail="not_running")
 
     @app.get("/api/runs", response_model=RunsList)
     async def api_list_runs(agent_id: str | None = None, limit: int = 50) -> RunsList:
@@ -596,9 +331,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         ps = _load_presets()
         p = ps.get(name)
         return PresetInfo(preset=p if p else None)
-
-    # Register websocket routes
-    register_agents_ws(app)
 
     return app
 
