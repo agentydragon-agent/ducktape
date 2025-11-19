@@ -19,12 +19,13 @@ from mcp import types as mcp_types
 from pydantic import BaseModel, TypeAdapter
 
 from adgn.agent.approvals import ApprovalRequest
-from adgn.agent.handler import AbortTurnDecision, ContinueDecision
+from adgn.agent.handler import AbortTurnDecision, ContinueDecision, DenyContinueDecision
 from adgn.agent.mcp_bridge import resources
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
 from adgn.agent.presets import discover_presets
+from adgn.agent.server.state import ApprovalKind
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.compositor.server import MountEvent
@@ -618,48 +619,40 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
     # Tools
 
     @server.tool()
-    async def approve_tool_call(agent_id: AgentID, call_id: str) -> None:
-        infra = await registry.get_infrastructure(agent_id)
-        infra.approval_hub.resolve(call_id, ContinueDecision())
+    async def decide_approval(
+        agent_id: AgentID, call_id: str, decision: ApprovalKind, reason: str | None = None
+    ) -> None:
+        """Unified tool for handling approval decisions.
 
-        await server.broadcast_resource_updated(resources.agent_approvals_pending(agent_id))
-        await server.broadcast_resource_updated(resources.agent_approvals_history(agent_id))
-        await server.broadcast_resource_updated(resources.APPROVALS_PENDING_GLOBAL)
+        Resolves a pending approval with one of three outcomes:
+        - "approve": Allow the tool call to proceed (USER_APPROVE)
+        - "deny_continue": Deny the tool call but continue the turn (USER_DENY_CONTINUE)
+        - "deny_abort": Deny the tool call and abort the entire turn (USER_DENY_ABORT)
 
-    @server.tool()
-    async def reject_tool_call(agent_id: AgentID, call_id: str, reason: str) -> None:
-        infra = await registry.get_infrastructure(agent_id)
-        infra.approval_hub.resolve(call_id, AbortTurnDecision(reason=reason))
-
-        await server.broadcast_resource_updated(resources.agent_approvals_pending(agent_id))
-        await server.broadcast_resource_updated(resources.agent_approvals_history(agent_id))
-        await server.broadcast_resource_updated(resources.APPROVALS_PENDING_GLOBAL)
-
-    @server.tool()
-    async def deny_tool_call(agent_id: AgentID, call_id: str, reason: str) -> SimpleOk:
-        """Deny/reject a pending tool call approval (semantic alias for reject_tool_call).
-
-        Provides a clearer semantic for denial operations alongside approve/reject terminology.
-        """
-        # Delegate to reject_tool_call
-        await reject_tool_call(agent_id, call_id, reason)
-        return SimpleOk(ok=True)
-
-    @server.tool()
-    async def deny_abort(agent_id: AgentID, call_id: str, reason: str) -> SimpleOk:
-        """Deny an abort request via the approval policy server.
-
-        Routes the denial to the approval_policy_admin server's reject_proposal tool.
-        Provides a semantic alternative for denying abort-related approval proposals.
+        Args:
+            agent_id: The target agent ID
+            call_id: The approval request call ID
+            decision: The approval decision kind ("approve", "deny_continue", or "deny_abort")
+            reason: Optional reason for denial (required for deny_continue and deny_abort)
         """
         infra = await registry.get_infrastructure(agent_id)
-        client = infra.compositor.get_child_client("approval_policy_admin")
-        await client.call_tool("reject_proposal", {"id": call_id, "reason": reason})
 
+        # Map ApprovalKind to handler decision type
+        if decision == "approve":
+            handler_decision = ContinueDecision()
+        elif decision == "deny_continue":
+            handler_decision = DenyContinueDecision(reason=reason)
+        elif decision == "deny_abort":
+            handler_decision = AbortTurnDecision(reason=reason)
+        else:
+            raise ValueError(f"Invalid approval decision: {decision}")
+
+        infra.approval_hub.resolve(call_id, handler_decision)
+
+        # Broadcast resource updates
         await server.broadcast_resource_updated(resources.agent_approvals_pending(agent_id))
         await server.broadcast_resource_updated(resources.agent_approvals_history(agent_id))
         await server.broadcast_resource_updated(resources.APPROVALS_PENDING_GLOBAL)
-        return SimpleOk(ok=True)
 
     @server.tool()
     async def abort_agent(agent_id: AgentID) -> None:

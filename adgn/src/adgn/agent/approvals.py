@@ -10,7 +10,7 @@ import uuid
 from docker import DockerClient
 from pydantic import BaseModel
 
-from adgn.agent.handler import AbortTurnDecision, ContinueDecision
+from adgn.agent.handler import AbortTurnDecision, ContinueDecision, DenyContinueDecision
 from adgn.agent.models.policy_error import PolicyError
 from adgn.agent.persist import Persistence
 from adgn.agent.policy_eval.runner import run_policy_source
@@ -66,13 +66,15 @@ class ApprovalRequest(BaseModel):
 class ApprovalHub:
     """In-process rendezvous for pending approval/decision events.
 
-    - await_decision(call_id, request) -> ContinueDecision | AbortTurnDecision waits until resolve() is called
+    - await_decision(call_id, request) -> Decision waits until resolve() is called
     - resolve(call_id, decision) resolves the pending decision
     - set_notifier(notifier) installs a callback for approval state changes
     """
 
     def __init__(self, notifier: Callable[[], None] | None = None) -> None:
-        self._futures: dict[str, asyncio.Future[ContinueDecision | AbortTurnDecision]] = {}
+        self._futures: dict[
+            str, asyncio.Future[ContinueDecision | DenyContinueDecision | AbortTurnDecision]
+        ] = {}
         self._requests: dict[str, ApprovalRequest] = {}
         self._lock = asyncio.Lock()
         self._notifier = notifier
@@ -84,7 +86,9 @@ class ApprovalHub:
         """
         self._notifier = notifier
 
-    async def await_decision(self, call_id: str, request: ApprovalRequest) -> ContinueDecision | AbortTurnDecision:
+    async def await_decision(
+        self, call_id: str, request: ApprovalRequest
+    ) -> ContinueDecision | DenyContinueDecision | AbortTurnDecision:
         async with self._lock:
             # Track the request so UIs can snapshot pending approvals
             self._requests[call_id] = request
@@ -97,7 +101,7 @@ class ApprovalHub:
             self._notifier()
         return await fut
 
-    def resolve(self, call_id: str, decision: ContinueDecision | AbortTurnDecision) -> None:
+    def resolve(self, call_id: str, decision: ContinueDecision | DenyContinueDecision | AbortTurnDecision) -> None:
         fut = self._futures.pop(call_id, None)
         # Remove from pending requests map when resolved
         self._requests.pop(call_id, None)

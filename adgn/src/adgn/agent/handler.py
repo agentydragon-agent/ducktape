@@ -47,13 +47,20 @@ class ToolCallOutput(BaseModel):
 
 
 class ContinueDecision(BaseModel):
-    """Proceed with normal execution."""
+    """Proceed with normal execution (approve tool call)."""
 
     action: Literal["continue"] = "continue"
 
 
+class DenyContinueDecision(BaseModel):
+    """Deny the tool call but continue the turn (skip this tool, let agent proceed)."""
+
+    action: Literal["deny_continue"] = "deny_continue"
+    reason: str | None = None
+
+
 class AbortTurnDecision(BaseModel):
-    """Request abort of the entire turn."""
+    """Deny the tool call and abort the entire turn."""
 
     action: Literal["abort"] = "abort"
     reason: str | None = None
