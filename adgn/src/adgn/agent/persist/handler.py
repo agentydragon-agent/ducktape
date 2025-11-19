@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 from adgn.openai_utils.model import ReasoningItem
 
 from . import EventType, Persistence
@@ -119,7 +119,7 @@ class RunPersistenceHandler(BaseHandler):
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         # Persist full Pydantic MCP CallToolResult (with content when available)
-        payload_model = to_pydantic(evt.result)
+        payload_model = convert_fastmcp_result(evt.result)
         payload = payload_model.model_dump(mode="json", by_alias=True)
         self._record_event(type=EventType.FUNCTION_CALL_OUTPUT, payload=payload, call_id=evt.call_id)
 

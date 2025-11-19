@@ -9,7 +9,7 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler, BaseHandler
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
@@ -30,7 +30,7 @@ class RecordingHandler(BaseHandler):
     def on_tool_result_event(self, evt) -> None:
         res = evt.result
         if isinstance(res, CallToolResult):
-            res = to_pydantic(res)
+            res = convert_fastmcp_result(res)
         if not isinstance(res, types.CallToolResult):
             raise TypeError(f"unexpected tool result type: {type(res).__name__}")
         self.rec.tool_outputs.append(res)

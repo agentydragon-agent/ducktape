@@ -361,7 +361,7 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
                 if result is None:
                     raise ValueError("No policy found in persistence")
                 content, policy_id = result
-                self._engine.load_policy(content, version=policy_id)
+                self._engine.load_policy(content, policy_id=policy_id)
                 # Notify about reload
                 self._engine.notify_resource(APPROVAL_POLICY_RESOURCE_URI)
 

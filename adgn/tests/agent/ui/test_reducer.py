@@ -17,7 +17,7 @@ from adgn.agent.server.protocol import (
 )
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import ExecContent, ToolItem, UiState, new_state
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ui.typed_asserts import (
     assert_typed_items_have_one,
@@ -89,7 +89,7 @@ def test_function_output_updates_exec_stream():
     result = CallToolResult(
         content=[], structured_content={"stdout": "ok", "stderr": "", "exit_code": 0}, is_error=False
     )
-    pydantic_result = to_pydantic(result)
+    pydantic_result = convert_fastmcp_result(result)
     s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c4", result=pydantic_result))
     it = s2.items[0]
     assert isinstance(it, ToolItem)
@@ -107,7 +107,7 @@ def test_function_output_updates_json_output_when_not_exec():
     )
     payload = {"value": {"a": 1}}
     result = CallToolResult(content=[], structured_content=payload, is_error=False)
-    pydantic_result = to_pydantic(result)
+    pydantic_result = convert_fastmcp_result(result)
     s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c5", result=pydantic_result))
     it = s2.items[0]
     assert isinstance(it, ToolItem)
