@@ -76,6 +76,69 @@ jobs:
           pip install pre-commit==4.0.1
           pre-commit run --all-files --show-diff-on-failure
 
+  ansible-lint-full:
+    name: Ansible-lint (full, all playbooks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for change detection
+
+      - name: Check if ansible files changed
+        id: ansible-changes
+        run: |
+          result=$(.github/scripts/check-ansible-changes.sh "${{ github.event_name }}" "${{ github.base_ref }}")
+          echo "$result" >> $GITHUB_OUTPUT
+
+      - name: Set up Python
+        if: steps.ansible-changes.outputs.changed == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache Ansible Galaxy
+        if: steps.ansible-changes.outputs.changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ansible/collections
+            ~/.ansible/roles
+          key: ansible-galaxy-full-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: |
+            ansible-galaxy-full-${{ runner.os }}-
+
+      - name: Install ansible and ansible-lint
+        if: steps.ansible-changes.outputs.changed == 'true'
+        run: |
+          pip install "ansible-core>=2.18" ansible-lint
+
+      - name: Install Ansible Galaxy dependencies
+        if: steps.ansible-changes.outputs.changed == 'true'
+        run: |
+          cd ansible
+          ansible-galaxy role install -r requirements.yaml
+          ansible-galaxy collection install -r requirements.yaml
+
+      - name: Run ansible-lint (thorough mode)
+        if: steps.ansible-changes.outputs.changed == 'true'
+        run: .github/scripts/run-ansible-lint.sh
+
+      - name: Generate ansible-lint summary
+        if: always() && steps.ansible-changes.outputs.changed == 'true'
+        run: |
+          echo "### Ansible-lint Results (Full Mode)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Mode**: Full validation with dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "**Flags**: No NODEPS, no --offline (complete checking)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All playbooks passed ansible-lint" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Ansible-lint found issues" >> $GITHUB_STEP_SUMMARY
+          fi
+
   pytest:
     name: Pytest (${{ matrix.project }})
     runs-on: ubuntu-latest
@@ -128,31 +191,7 @@ jobs:
 
       - name: Install dependencies and run tests
         id: pytest
-        working-directory: ${{ matrix.project }}
-        run: |
-          # UV version synced with flake.nix / .envrc
-          pip install uv==0.5.11
-
-          # Check if project needs dbus-python system dependencies
-          if grep -q "dbus-python" pyproject.toml 2>/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
-          fi
-
-          # Install project dependencies
-          uv pip install --system -e ".[dev]" || uv pip install --system -e .
-
-          # Install Playwright browsers if playwright is installed
-          if uv pip show playwright >/dev/null 2>&1; then
-            playwright install --with-deps chromium
-          fi
-
-          # Run tests if pytest is available
-          if uv pip show pytest >/dev/null 2>&1; then
-            pytest -v
-          else
-            echo "pytest not installed in this project, skipping tests"
-          fi
+        run: .github/scripts/run-pytest.sh "${{ matrix.project }}"
 
       - name: Generate test summary
         if: always()

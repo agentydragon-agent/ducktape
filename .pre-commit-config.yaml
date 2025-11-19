@@ -38,18 +38,22 @@ repos:
         files: "\\.ya?ml$"
         exclude: "ansible/host_vars/.*\\.yml$|^k8s/.*\\.ya?ml$"
 
-  # Ansible-lint: track latest release with ansible-core 2.19+ support.
+  # Ansible syntax check: Fast validation for pre-commit
   #
-  # IMPORTANT: Run from ansible/ to limit discovery to ansible files only.
-  # When ansible-lint runs with no lintables specified, it defaults to *scanning the whole repo* (".").
-  # With pass_filenames: true, pre-commit passes only modified ansible files for faster checks.
-  - repo: https://github.com/ansible/ansible-lint
-    rev: v25.7.0
+  # Pre-commit: Just runs ansible-playbook --syntax-check (fast, catches essential errors)
+  # CI: Runs full ansible-lint with all rules (thorough, slower)
+  #
+  # This gives fast local feedback (1-3 seconds) while ensuring thorough validation in CI.
+  # Syntax check catches: YAML errors, undefined variables, invalid module usage, etc.
+  # Full ansible-lint in CI catches: Style issues, best practices, deprecated modules, etc.
+  - repo: local
     hooks:
-      - id: ansible-lint
-        files: "^ansible/"
-        exclude: "k8s/.*"  # Exclude k8s files that cause parsing issues
-        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/ansible" && ./run-ansible-lint.sh "$@"' --
+      - id: ansible-syntax-check
+        name: ansible-playbook --syntax-check
+        entry: ansible/run-syntax-check.sh
+        language: system
+        files: "^ansible/.*\\.ya?ml$"
+        exclude: "^ansible/k8s/.*"  # Exclude k8s files
         pass_filenames: true
 
   # Ruff = linter + import sorter + formatter
