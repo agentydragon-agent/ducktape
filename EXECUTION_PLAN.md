@@ -79,21 +79,17 @@
   - Pattern: compositor events (user prompt, assistant message, tool call, approval decision) → `server.broadcast_resource_updated(resources.agent_state(agent_id))`
   - Verify: frontend subscriptions receive live updates
 
-- **Agent 2**: Token-Based Capability Middleware
-  - Implement `TokenCapabilityMiddleware` for agents MCP server
+- **Agent 2**: Token-Based Connection Routing
+  - Implement token-based routing at `/mcp/agents` endpoint
   - Define `TokenRole` enum (HUMAN, AGENT) - only two roles, no separate admin
-  - Extract role from JWT token (returns TokenRole enum)
-  - Define tool access lists:
-    - `AGENT_ONLY_TOOLS = ["withdraw_proposal"]` (agents can withdraw own proposals, humans cannot)
-  - Implement middleware methods:
-    - `on_call_tool()` - block unauthorized tool calls (raise `McpError(FORBIDDEN)`)
-    - `on_list_tools()` - filter tool list based on role
-    - `on_list_resources()` - filter resource list based on role (currently no filtering)
-    - `on_read_resource()` - control resource access by role (currently no restrictions)
-    - Note: `on_notification()` not needed (base class passes through by default)
-  - Pattern follows existing `PolicyGatewayMiddleware` in codebase
-  - Test: human cannot call `withdraw_proposal`, agent can
-  - **Note**: Single MCP server on same port, different capabilities per token role
+  - Extract role + agent_id from JWT token
+  - Route based on role:
+    - **AGENT** role (with agent_id) → `FastMCP.as_proxy(agent's compositor client)`
+    - **HUMAN** role → `FastMCP.as_proxy(agents management server client)`
+  - Use FastMCP's proxy pattern to forward ALL MCP protocol messages to backend
+  - Pattern follows Compositor's `mount_server()` approach (FastMCP.as_proxy + client_factory)
+  - Test: agent token connects to compositor, human token connects to management server
+  - **Note**: Single HTTP endpoint, token determines which backend to proxy to
 
 - **Agent 3**: DELETE Legacy HTTP/WebSocket Endpoints
   - Verify frontend only uses MCP (no HTTP calls to `/api/agents/*`)
@@ -223,7 +219,7 @@ Based on Wave F analysis, create 5 parallel cleanup agents targeting:
 
 ### Wave D Success
 - Agent state notifications emit `resource_updated` on compositor events
-- Token-based capability middleware blocks unauthorized tool calls (human cannot withdraw_proposal)
+- Token-based routing forwards connections to correct backend (compositor or management server)
 - Legacy HTTP agent endpoints DELETED (only static/health/presets remain)
 - WebSocket channel infrastructure DELETED (`/ws/*` endpoints removed)
 - ZERO WebSocket endpoints remain (only MCP StreamableHTTP)
@@ -263,66 +259,59 @@ Based on Wave F analysis, create 5 parallel cleanup agents targeting:
 
 ## Architecture Notes
 
-### Token-Based Capability Middleware (NEW Pattern - Wave D)
+### Token-Based Connection Routing (NEW Pattern - Wave D)
 
-**Key Insight**: MCP subscriptions ALREADY WORK (`NotifyingFastMCP.broadcast_resource_updated()` implemented in Wave B).
+**Key Insight**: Use FastMCP's proxy pattern to route connections to different backend servers based on JWT token role.
 
-Instead of running separate MCP servers for different audiences (e.g., `agents` server and `human` server), use **one MCP server that presents different tools/resources based on the presented token**.
+Instead of running separate HTTP endpoints, use **one HTTP endpoint (`/mcp/agents`) that proxies to different backend MCP servers based on the presented token**.
 
-FastMCP's middleware pattern (like existing `PolicyGatewayMiddleware`) makes this easy:
+FastMCP's proxy pattern (like Compositor's `mount_server()`) makes this easy:
 
 ```python
 from enum import StrEnum
+from fastmcp.server import FastMCP
+from fastmcp.client import Client
 
 class TokenRole(StrEnum):
-    """MCP server access roles derived from JWT token."""
-    HUMAN = "human"  # Human UI and admin operations
-    AGENT = "agent"  # Agent self-management
+    """MCP connection routing roles derived from JWT token."""
+    HUMAN = "human"  # Routes to agents management server
+    AGENT = "agent"  # Routes to agent's compositor
 
-class TokenCapabilityMiddleware(Middleware):
-    """Filter MCP tools/resources by token role (human vs agent)."""
+async def create_routed_proxy(token: str) -> FastMCP:
+    """Create a proxy that forwards to the appropriate backend based on token."""
+    role, agent_id = extract_role_and_agent_id(token)
 
-    # Define access control lists
-    AGENT_ONLY_TOOLS = {"withdraw_proposal"}  # Agents can withdraw own proposals
+    if role == TokenRole.AGENT:
+        # Route to agent's compositor (agent-facing tools)
+        transport = get_agent_compositor_transport(agent_id)
+        client = Client(transport)
+        proxy = FastMCP.as_proxy(client)
+        proxy.client_factory = lambda: client
+        return proxy
 
-    async def call_tool(self, name: str, args: dict, ctx: RequestContext, call_next):
-        role = extract_role_from_token(ctx.auth_token)  # Returns TokenRole enum
+    elif role == TokenRole.HUMAN:
+        # Route to agents management server (human-facing tools)
+        transport = get_agents_management_transport()
+        client = Client(transport)
+        proxy = FastMCP.as_proxy(client)
+        proxy.client_factory = lambda: client
+        return proxy
+```
 
-        # Block agent-only tools from human UI
-        if role == TokenRole.HUMAN and name in self.AGENT_ONLY_TOOLS:
-            raise McpError(FORBIDDEN, f"Tool {name} only available to agents")
-
-        return await call_next(name, args)
-
-    async def list_tools(self, ctx: RequestContext, call_next):
-        """Filter tool list based on role."""
-        all_tools = await call_next()
-        role = extract_role_from_token(ctx.auth_token)
-
-        if role == TokenRole.HUMAN:
-            # Filter out agent-only tools from human UI
-            return [t for t in all_tools if t.name not in self.AGENT_ONLY_TOOLS]
-        else:
-            # Agents see all tools
-            return all_tools
-
-    async def list_resources(self, ctx: RequestContext, call_next):
-        """Filter resource list based on role (currently no filtering needed)."""
-        return await call_next()
-
-    async def on_read_resource(
-        self, context: MiddlewareContext[ReadResourceRequestParams], call_next
-    ):
-        """Control resource access by role (currently no restrictions)."""
-        return await call_next(context)
+**Pattern follows Compositor's approach** (`adgn/src/adgn/mcp/compositor/server.py:263-276`):
+```python
+base_client = Client(transport, message_handler=...)
+proxy = FastMCP.as_proxy(base_client)
+proxy.client_factory = lambda: base_client
+self.mount(proxy, prefix=name)
 ```
 
 **Benefits**:
-- Single MCP server, single port
-- Simpler deployment (no multiple server processes)
-- Easier to reason about (one codebase, token determines view)
-- Token becomes the capability selector
-- Follows existing `PolicyGatewayMiddleware` pattern in codebase
+- Single HTTP endpoint, single port (`/mcp/agents`)
+- ALL MCP protocol messages forwarded to appropriate backend
+- No filtering logic needed - backend serves correct tools/resources
+- Follows existing Compositor proxy pattern in codebase
+- Simpler: routing happens at connection level, not per-request
 
 **MCP Subscriptions Status**:
 - ✅ `NotifyingFastMCP.broadcast_resource_updated()` implemented and tested (Wave B)
