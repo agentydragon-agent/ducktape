@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from fastapi import WebSocket
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.agent.server.channels.base import ChannelConnectionManager
 from adgn.agent.server.channels.common import handle_channel_ws
 from adgn.agent.server.protocol import ApprovalBrief, ApprovalPendingEvt
@@ -39,7 +40,7 @@ class ApprovalDecisionEvt(BaseModel):
 
     type: Literal["approval_decision"] = "approval_decision"
     call_id: str
-    decision: Literal["approve", "deny_continue", "deny_abort"]
+    decision: ApprovalDecision
     model_config = ConfigDict(extra="forbid")
 
 
@@ -63,9 +64,9 @@ class ApprovalsChannelManager(ChannelConnectionManager):
 
     async def send_snapshot(self, approval_hub: ApprovalHub) -> None:
         """Send current approvals snapshot to all clients."""
-        pending = [ApprovalBrief(tool_call=req.tool_call) for req in approval_hub._requests.values()]
-        snapshot = ApprovalsSnapshot(pending=pending)
-        await self.broadcast(snapshot)
+        await self.broadcast(
+            ApprovalsSnapshot(pending=[ApprovalBrief(tool_call=req.tool_call) for req in approval_hub._requests.values()])
+        )
 
 
 # ============================================================================
