@@ -283,6 +283,7 @@ All planned features have been implemented:
 - Code hygiene: remove named volume comments
 - NotifyingFastMCP: replace private attr overrides if public hooks available
 - Policy gateway: document error stamps, add spoofing tests
+- Rename `adgn/src/adgn/agent/server/agents_ws.py` (TODO: determine appropriate name)
 
 **Verification**: `uv run ruff check . --fix && uv run python -m mypy adgn && pytest -q adgn/tests/agent`
 
