@@ -217,18 +217,20 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
 
     async def list_agents(self) -> list[AgentRow]:
         out: list[AgentRow] = []
-        async with self._db_connection() as db:
-            async with db.execute("SELECT id, created_at, specs, metadata FROM agents ORDER BY created_at DESC") as cur:
-                async for r in cur:
-                    meta_val = AgentMetadata.model_validate_json(cast(str, r["metadata"]))
-                    out.append(
-                        AgentRow(
-                            id=AgentID(r["id"]),
-                            created_at=datetime.fromisoformat(r["created_at"]),
-                            mcp_config=MCPConfig.model_validate(json.loads(r["specs"])) if r["specs"] else MCPConfig(),
-                            metadata=meta_val,
-                        )
+        async with (
+            self._db_connection() as db,
+            db.execute("SELECT id, created_at, specs, metadata FROM agents ORDER BY created_at DESC") as cur,
+        ):
+            async for r in cur:
+                meta_val = AgentMetadata.model_validate_json(cast(str, r["metadata"]))
+                out.append(
+                    AgentRow(
+                        id=AgentID(r["id"]),
+                        created_at=datetime.fromisoformat(r["created_at"]),
+                        mcp_config=MCPConfig.model_validate(json.loads(r["specs"])) if r["specs"] else MCPConfig(),
+                        metadata=meta_val,
                     )
+                )
         return out
 
     async def get_agent(self, agent_id: AgentID) -> AgentRow | None:
@@ -496,22 +498,21 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
         sql = f"SELECT id, agent_id, started_at, finished_at, status, system_message, model, model_params, event_count FROM runs {where} ORDER BY started_at DESC LIMIT ?"
         params.append(limit)
         out: list[RunRow] = []
-        async with self._db_connection() as db:
-            async with db.execute(sql, params) as cur:
-                async for r in cur:
-                    out.append(
-                        RunRow(
-                            id=UUID(r["id"]),
-                            agent_id=AgentID(r["agent_id"]),
-                            started_at=datetime.fromisoformat(r["started_at"]),
-                            finished_at=datetime.fromisoformat(r["finished_at"]) if r["finished_at"] else None,
-                            status=RunStatus(r["status"]),
-                            system_message=r["system_message"],
-                            model=r["model"],
-                            model_params=json.loads(r["model_params"]) if r["model_params"] else None,
-                            event_count=int(r["event_count"] or 0),
-                        )
+        async with self._db_connection() as db, db.execute(sql, params) as cur:
+            async for r in cur:
+                out.append(
+                    RunRow(
+                        id=UUID(r["id"]),
+                        agent_id=AgentID(r["agent_id"]),
+                        started_at=datetime.fromisoformat(r["started_at"]),
+                        finished_at=datetime.fromisoformat(r["finished_at"]) if r["finished_at"] else None,
+                        status=RunStatus(r["status"]),
+                        system_message=r["system_message"],
+                        model=r["model"],
+                        model_params=json.loads(r["model_params"]) if r["model_params"] else None,
+                        event_count=int(r["event_count"] or 0),
                     )
+                )
         return out
 
     async def get_run(self, run_id: UUID) -> RunRow | None:
@@ -537,24 +538,26 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
 
     async def load_events(self, run_id: UUID) -> list[EventRecord]:
         out: list[EventRecord] = []
-        async with self._db_connection() as db:
-            async with db.execute(
+        async with (
+            self._db_connection() as db,
+            db.execute(
                 "SELECT seq, ts, type, payload, call_id, tool_key FROM events WHERE run_id = ? ORDER BY seq ASC",
                 (str(run_id),),
-            ) as cur:
-                async for r in cur:
-                    out.append(
-                        parse_event(
-                            {
-                                "seq": int(r["seq"]),
-                                "ts": r["ts"],
-                                "type": r["type"],
-                                "payload": json.loads(r["payload"]) if r["payload"] else {},
-                                "call_id": r["call_id"],
-                                "tool_key": r["tool_key"],
-                            }
-                        )
+            ) as cur,
+        ):
+            async for r in cur:
+                out.append(
+                    parse_event(
+                        {
+                            "seq": int(r["seq"]),
+                            "ts": r["ts"],
+                            "type": r["type"],
+                            "payload": json.loads(r["payload"]) if r["payload"] else {},
+                            "call_id": r["call_id"],
+                            "tool_key": r["tool_key"],
+                        }
                     )
+                )
         return out
 
     # Tool Calls (new ToolCallRecord persistence) --------------------------------
