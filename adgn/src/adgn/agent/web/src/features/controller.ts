@@ -32,8 +32,7 @@ export function initAgentUiController(): () => void {
   })
 
   const onVis = () => {
-    // Keep WS running across visibility changes to avoid missing events
-    // Only stop legacy status polling (which we no longer use by default)
+    // Stop legacy status polling on visibility change
     stopAgentStatusPolling()
   }
   document.addEventListener('visibilitychange', onVis)
@@ -41,6 +40,5 @@ export function initAgentUiController(): () => void {
   return () => {
     unsub()
     document.removeEventListener('visibilitychange', onVis)
-    // Do not forcibly close agents WS here; leaving it open simplifies UX.
   }
 }

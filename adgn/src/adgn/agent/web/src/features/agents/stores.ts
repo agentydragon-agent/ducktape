@@ -48,9 +48,6 @@ export function stopAgentsPolling() {
 
 // setAgentId and currentAgentId are provided by router
 
-// Disabled: WS agent_status now delivers enriched status; polling is unnecessary
-// Removed legacy polling: rely on agents WS 'agent_status' messages
-
 export function stopAgentStatusPolling() {
   if (_statusTimer) clearInterval(_statusTimer)
   _statusTimer = null
