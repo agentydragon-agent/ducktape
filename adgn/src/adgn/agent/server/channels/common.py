@@ -77,19 +77,17 @@ async def send_envelope(ws: WebSocket, channel: str, payload: Accepted | ErrorEv
         await ws.send_json(envelope.model_dump(mode="json"))
 
 
-async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | None:
-    """Get or create channel bundle for agent."""
+async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle:
+    """Get or create channel bundle for agent.
+
+    Raises KeyError if agent doesn't exist.
+    Raises other exceptions if ensure_live fails.
+    """
     # Import here to avoid circular dependency
     from adgn.agent.server.channels.bundle import ChannelBundle
 
     await app.state.ready.wait()
-    try:
-        runtime = await app.state.registry.ensure_live(agent_id, with_ui=True)
-    except KeyError:
-        return None
-    except Exception as e:
-        logger.exception("ensure_live failed", exc_info=e)
-        return None
+    runtime = await app.state.registry.ensure_live(agent_id, with_ui=True)
 
     if runtime._channel_bundle is None:
         runtime._channel_bundle = ChannelBundle.for_agent_runtime(runtime)
@@ -107,10 +105,14 @@ async def handle_channel_ws(
             await send_envelope(ws, channel, ErrorEvt(code=ErrorCode.NO_AGENT, message="agent_id required"))
             return
 
-        bundle = await get_channel_bundle(app, agent_id)
-        if bundle is None:
+        try:
+            bundle = await get_channel_bundle(app, agent_id)
+        except KeyError:
             await send_envelope(ws, channel, ErrorEvt(code=ErrorCode.NO_AGENT, message="unknown agent"))
             return
+        except Exception as e:
+            await send_envelope(ws, channel, ErrorEvt(code=ErrorCode.AGENT_ERROR, message=f"agent error: {e}"))
+            raise
 
         manager = get_manager(bundle)
         if manager is None:
