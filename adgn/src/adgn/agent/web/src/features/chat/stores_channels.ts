@@ -1,12 +1,14 @@
 /**
- * Channel-based stores - uses modular WebSocket channels.
+ * Channel-based stores - uses modular WebSocket channels + MCP subscriptions.
  *
- * Replaces monolithic /ws connection with separate channels:
+ * WebSocket channels:
  * - /ws/session - agent execution state
  * - /ws/mcp - MCP server state
  * - /ws/approvals - approval requests
  * - /ws/policy - policy content
- * - /ws/ui - UI state
+ *
+ * MCP subscriptions:
+ * - resource://agents/{agentId}/ui/state - UI state (replaces /ws/ui)
  */
 
 import { writable, derived, type Writable, type Readable } from 'svelte/store'
@@ -24,7 +26,6 @@ import {
   type McpMessage,
   type ApprovalsMessage,
   type PolicyMessage,
-  type UiMessage,
   type ErrorMessage,
 } from './channels'
 import {
@@ -42,6 +43,8 @@ import {
 } from '../agents/api'
 import { get } from 'svelte/store'
 import { agentStatus } from '../agents/stores'
+import { getMCPClient } from '../mcp/clientManager'
+import { createSubscriptionManager, type SubscriptionManager } from '../mcp/subscriptions'
 
 export type Pending = {
   call_id: string
