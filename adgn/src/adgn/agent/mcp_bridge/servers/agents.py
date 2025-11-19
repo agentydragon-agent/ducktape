@@ -25,11 +25,15 @@ from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
 from adgn.agent.presets import discover_presets
-from adgn.agent.server.agents_ws import AgentBrief
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.compositor.server import MountEvent
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+
+
+class AgentBrief(BaseModel):
+    """Brief information about an agent (returned from create_agent tool)."""
+    id: AgentID
 
 if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.server import InfrastructureRegistry

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from typing import Union
 
 from mcp import types as mcp_types
 
@@ -14,9 +13,6 @@ from adgn.agent.server.protocol import (
     UiMessageEvt,
     UserText,
 )
-
-# Union type for all supported UI state events
-UiStateEvent = Union[UserText, ToolCall, FunctionCallOutput, ApprovalDecisionEvt, UiMessageEvt, UiEndTurnEvt]
 from adgn.mcp._shared.constants import UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 
@@ -32,6 +28,9 @@ from .state import (
     update_tool_exec_stream,
     update_tool_json_output,
 )
+
+# Union type for all supported UI state events
+UiStateEvent = UserText | ToolCall | FunctionCallOutput | ApprovalDecisionEvt | UiMessageEvt | UiEndTurnEvt
 
 
 def reduce_ui_state(state: UiState, evt: UiStateEvent) -> UiState:

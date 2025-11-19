@@ -7,7 +7,7 @@ from typing import Any, Literal, Protocol, Self, cast
 from openai import AsyncOpenAI
 from openai.types.responses import Response, ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
-from openai.types.responses.response_usage import ResponseUsage
+from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails, ResponseUsage
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adgn.openai_utils.types import ReasoningEffort, ReasoningParams
