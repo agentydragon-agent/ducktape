@@ -202,3 +202,44 @@ jobs:
           else
             echo "❌ Tests failed or skipped" >> $GITHUB_STEP_SUMMARY
           fi
+
+  web-frontend:
+    name: Web Frontend (TypeScript, build, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'adgn/src/adgn/agent/web/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: adgn/src/adgn/agent/web
+
+      - name: Type check (svelte-check)
+        run: npm run check
+        working-directory: adgn/src/adgn/agent/web
+
+      - name: Build
+        run: npm run build
+        working-directory: adgn/src/adgn/agent/web
+
+      - name: Run tests
+        run: npm run test
+        working-directory: adgn/src/adgn/agent/web
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "### Web Frontend Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ TypeScript check, build, and tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Web frontend checks failed" >> $GITHUB_STEP_SUMMARY
+          fi
