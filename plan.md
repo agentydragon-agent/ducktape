@@ -217,37 +217,48 @@ MCP subscriptions already work (`broadcast_resource_updated()` implemented). Rep
 - `GET /api/agents/{id}/status` - deferred (complex structure)
 - `GET /api/capabilities` - deferred (handshake helper)
 
-**Token-Based Capability Filtering**:
+**Token-Based Connection Routing**:
 
-Single MCP server presents different tools/resources based on token role:
+Single HTTP endpoint proxies to different backend MCP servers based on token:
 
 ```python
 from enum import StrEnum
+from fastmcp.server import FastMCP
+from fastmcp.client import Client
 
 class TokenRole(StrEnum):
-    """MCP server access roles derived from JWT token."""
-    HUMAN = "human"  # Human UI and admin operations
-    AGENT = "agent"  # Agent self-management
+    """MCP connection routing roles derived from JWT token."""
+    HUMAN = "human"  # Routes to agents management server
+    AGENT = "agent"  # Routes to agent's compositor
 
-class TokenCapabilityMiddleware(Middleware):
-    """Filter MCP tools/resources by token role (human vs agent)."""
+async def create_routed_proxy(token: str) -> FastMCP:
+    """Create a proxy that forwards to the appropriate backend based on token."""
+    role, agent_id = extract_role_and_agent_id(token)
 
-    # Define access control lists
-    AGENT_ONLY_TOOLS = {"withdraw_proposal"}  # Agents can withdraw own proposals
+    if role == TokenRole.AGENT:
+        # Route to agent's compositor (agent-facing tools)
+        transport = get_agent_compositor_transport(agent_id)
+        client = Client(transport)
+        proxy = FastMCP.as_proxy(client)
+        proxy.client_factory = lambda: client
+        return proxy
 
-    async def call_tool(self, name: str, args: dict, ctx: RequestContext, call_next):
-        role = extract_role_from_token(ctx.auth_token)  # Returns TokenRole enum
-
-        # Block agent-only tools from human UI
-        if role == TokenRole.HUMAN and name in self.AGENT_ONLY_TOOLS:
-            raise McpError(FORBIDDEN, f"Tool {name} requires admin privileges")
-
-        return await call_next(name, args)
+    elif role == TokenRole.HUMAN:
+        # Route to agents management server (human-facing tools)
+        transport = get_agents_management_transport()
+        client = Client(transport)
+        proxy = FastMCP.as_proxy(client)
+        proxy.client_factory = lambda: client
+        return proxy
 ```
 
-**Agent-only tools**: `withdraw_proposal` (agents can withdraw their own proposals, humans cannot)
-**Human-only tools**: None currently (all human tools also available to admin agents)
-**Admin-only tools**: `create_agent`, `delete_agent`, `boot_agent` (infrastructure management)
+**Pattern follows Compositor's `mount_server()`** (adgn/src/adgn/mcp/compositor/server.py:263-276)
+
+**Benefits**:
+- Single HTTP endpoint (`/mcp/agents`)
+- ALL MCP protocol messages forwarded to appropriate backend
+- No filtering needed - backend serves correct tools/resources
+- Routing happens once at connection level, not per-request
 
 **Migration Roadmap**:
 
@@ -257,13 +268,15 @@ class TokenCapabilityMiddleware(Middleware):
 - Subscriptions infrastructure working
 - 107 tests passing
 
-**Phase 2 (Wave D)** - Implement token-based capability middleware:
-1. Add `TokenCapabilityMiddleware` to agents MCP server
-2. Define `TokenRole` enum (HUMAN, AGENT) and role-based tool access (AGENT_ONLY_TOOLS)
-3. Extract role from JWT token in request context (returns TokenRole enum)
-4. Block unauthorized tool calls and filter tool/resource lists
-5. Implement middleware methods: `on_call_tool()`, `on_list_tools()`, `on_list_resources()`, `on_read_resource()`
-6. Test: human cannot call `withdraw_proposal`, agent can
+**Phase 2 (Wave D)** - Implement token-based connection routing:
+1. Add token-based routing at `/mcp/agents` endpoint
+2. Define `TokenRole` enum (HUMAN, AGENT) for routing
+3. Extract role + agent_id from JWT token at connection time
+4. Route to backend using FastMCP's proxy pattern:
+   - AGENT role → `FastMCP.as_proxy(agent's compositor client)`
+   - HUMAN role → `FastMCP.as_proxy(agents management server client)`
+5. Pattern follows Compositor's `mount_server()` approach
+6. Test: agent token connects to compositor, human token connects to management server
 
 **Phase 3 (Future)** - DELETE redundant HTTP/WebSocket:
 1. Verify frontend only uses MCP (no HTTP REST calls to `/api/agents/*`)
