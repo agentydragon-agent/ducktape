@@ -288,69 +288,49 @@ export async function getProposal(agentId: string, proposalId: string): Promise<
   }
 }
 
-export async function approveCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
+export type ApprovalDecision = 'approve' | 'deny_continue' | 'deny_abort'
+
+/**
+ * Unified approval decision function using the decide_approval MCP tool.
+ */
+async function decideApproval(
+  agentId: string,
+  callId: string,
+  decision: ApprovalDecision,
+  reason?: string
+): Promise<{ ok: boolean; error?: string | null }> {
   try {
     const client = await getMCPClient()
-    if (DEBUG) console.log('[MCP] approve_tool_call', { agent_id: agentId, call_id: callId })
+    if (DEBUG) console.log('[MCP] decide_approval', { agent_id: agentId, call_id: callId, decision, reason })
 
-    await callTool(client, 'approve_tool_call', {
+    await callTool(client, 'decide_approval', {
       agent_id: agentId,
-      call_id: callId
+      call_id: callId,
+      decision,
+      reason
     })
 
-    if (DEBUG) console.log('[MCP] approve_tool_call success')
+    if (DEBUG) console.log('[MCP] decide_approval success')
     return { ok: true }
   } catch (error) {
-    if (DEBUG) console.error('[MCP] approveCall error:', error)
+    if (DEBUG) console.error('[MCP] decideApproval error:', error)
     return {
       ok: false,
       error: error instanceof Error ? error.message : String(error)
     }
   }
+}
+
+export async function approveCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
+  return decideApproval(agentId, callId, 'approve')
 }
 
 export async function denyContinueCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
-  try {
-    const client = await getMCPClient()
-    if (DEBUG) console.log('[MCP] deny_tool_call', { agent_id: agentId, call_id: callId })
-
-    await callTool(client, 'deny_tool_call', {
-      agent_id: agentId,
-      call_id: callId,
-      reason: 'Denied by user'
-    })
-
-    if (DEBUG) console.log('[MCP] deny_tool_call success')
-    return { ok: true }
-  } catch (error) {
-    if (DEBUG) console.error('[MCP] denyContinueCall error:', error)
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error)
-    }
-  }
+  return decideApproval(agentId, callId, 'deny_continue', 'Denied by user')
 }
 
 export async function denyAbortCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
-  try {
-    const client = await getMCPClient()
-    if (DEBUG) console.log('[MCP] deny_abort', { agent_id: agentId, call_id: callId })
-
-    await callTool(client, 'deny_abort', {
-      agent_id: agentId,
-      call_id: callId,
-      reason: 'Abort denied by user'
-    })
-
-    if (DEBUG) console.log('[MCP] deny_abort success')
-    return { ok: true }
-  } catch (error) {
-    if (DEBUG) console.error('[MCP] denyAbortCall error:', error)
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error)
-    }
-  }
+  return decideApproval(agentId, callId, 'deny_abort', 'Abort denied by user')
 }
 
 export async function sendPrompt(agentId: string, text: string): Promise<{ ok: boolean; error?: string | null }> {
