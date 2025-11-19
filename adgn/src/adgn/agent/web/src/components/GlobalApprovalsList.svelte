@@ -23,6 +23,18 @@
   // Expanded state for args display
   let expandedApprovals = new Set<string>()
 
+  /**
+   * Parse tool call args_json to object
+   */
+  function parseArgs(argsJson: string | null): Record<string, unknown> {
+    if (!argsJson) return {}
+    try {
+      return JSON.parse(argsJson)
+    } catch {
+      return {}
+    }
+  }
+
   // Group approvals by agent_id for display
   $: groupedApprovals = approvals.reduce((acc, approval) => {
     const agentId = approval.agent_id
@@ -103,7 +115,7 @@
 
       // Parse contents - it returns an array of TextResourceContents
       // Each block has: { uri, mimeType, text }
-      // The text field contains JSON with: { agent_id, call_id, tool, args, timestamp }
+      // The text field contains JSON with: { agent_id, tool_call: { name, call_id, args_json }, timestamp }
       const parsedApprovals: Array<PendingApproval & { agent_id: string }> = []
 
       for (const block of contents) {
@@ -112,9 +124,7 @@
             const data = JSON.parse(block.text)
             parsedApprovals.push({
               agent_id: data.agent_id,
-              call_id: data.call_id,
-              tool: data.tool,
-              args: data.args,
+              tool_call: data.tool_call,
               timestamp: data.timestamp
             })
           } catch (parseError) {
@@ -146,7 +156,7 @@
       })
 
       // Remove from local state immediately for responsive UI
-      approvals = approvals.filter(a => !(a.agent_id === agentId && a.call_id === callId))
+      approvals = approvals.filter(a => !(a.agent_id === agentId && a.tool_call.call_id === callId))
 
       // Refresh to get updated state
       await fetchApprovals()
@@ -182,7 +192,7 @@
       })
 
       // Remove from local state
-      approvals = approvals.filter(a => !(a.agent_id === rejectAgentId && a.call_id === rejectCallId))
+      approvals = approvals.filter(a => !(a.agent_id === rejectAgentId && a.tool_call.call_id === rejectCallId))
 
       // Close dialog
       showRejectDialog = false
@@ -251,8 +261,8 @@
             <div class="approval-card">
               <div class="approval-header">
                 <div class="tool-info">
-                  <strong>{approval.tool}</strong>
-                  <span class="call-id">({approval.call_id.slice(0, 8)}...)</span>
+                  <strong>{approval.tool_call.name}</strong>
+                  <span class="call-id">({approval.tool_call.call_id.slice(0, 8)}...)</span>
                 </div>
                 <div class="timestamp">{new Date(approval.timestamp).toLocaleString()}</div>
               </div>
@@ -260,14 +270,14 @@
               <div class="approval-body">
                 <button
                   class="expand-toggle"
-                  on:click={() => toggleExpanded(agentId, approval.call_id)}
+                  on:click={() => toggleExpanded(agentId, approval.tool_call.call_id)}
                 >
-                  {isExpanded(agentId, approval.call_id) ? '▼' : '▶'} Arguments
+                  {isExpanded(agentId, approval.tool_call.call_id) ? '▼' : '▶'} Arguments
                 </button>
 
-                {#if isExpanded(agentId, approval.call_id)}
+                {#if isExpanded(agentId, approval.tool_call.call_id)}
                   <div class="args-display">
-                    <JsonDisclosure label="Tool Arguments" value={approval.args} open={true} />
+                    <JsonDisclosure label="Tool Arguments" value={parseArgs(approval.tool_call.args_json)} open={true} />
                   </div>
                 {/if}
               </div>
@@ -275,13 +285,13 @@
               <div class="approval-actions">
                 <button
                   class="btn-approve"
-                  on:click={() => handleApprove(agentId, approval.call_id)}
+                  on:click={() => handleApprove(agentId, approval.tool_call.call_id)}
                 >
                   Approve
                 </button>
                 <button
                   class="btn-reject"
-                  on:click={() => showRejectDialogFor(agentId, approval.call_id)}
+                  on:click={() => showRejectDialogFor(agentId, approval.tool_call.call_id)}
                 >
                   Reject
                 </button>

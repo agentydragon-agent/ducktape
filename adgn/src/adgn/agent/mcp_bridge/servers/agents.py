@@ -22,6 +22,7 @@ from adgn.agent.approvals import ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision, DenyContinueDecision
 from adgn.agent.mcp_bridge import resources
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
+from adgn.agent.types import ToolCall
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
 from adgn.agent.presets import discover_presets
@@ -49,14 +50,10 @@ logger = logging.getLogger(__name__)
 
 def _convert_pending_approvals(pending_map: dict[str, ApprovalRequest]) -> list[PendingApproval]:
     result: list[PendingApproval] = []
-    for call_id, request in pending_map.items():
-        args = json.loads(request.tool_call.args_json) if request.tool_call.args_json else {}
-
+    for _call_id, request in pending_map.items():
         result.append(
             PendingApproval(
-                call_id=call_id,
-                tool=request.tool_call.name,
-                args=args,
+                tool_call=request.tool_call,
                 timestamp=datetime.now(),  # TODO: Track creation time in ApprovalRequest
             )
         )
@@ -129,9 +126,7 @@ class AbortAgentArgs(BaseModel):
 class PendingApproval(BaseModel):
     """A tool call awaiting approval."""
 
-    call_id: str
-    tool: str
-    args: dict
+    tool_call: ToolCall
     timestamp: datetime
 
 
