@@ -250,7 +250,9 @@ All planned features have been implemented:
 ### Pre-existing Test Fixes
 1. **ResponseUsage** (13 tests): Add `input_tokens_details`, `output_tokens_details` (OpenAI SDK breaking change)
 2. **CallToolResult** (3 tests): Add `meta={}` parameter (FastMCP breaking change)
-3. **Event loops** (20+ tests): Convert to `@pytest.mark.asyncio` or fix `asyncio.Runner` usage
+3. **Event loops** (20+ tests): Fix `asyncio.Runner` misuse patterns
+   - **Note**: `@pytest.mark.asyncio` decorators NOT needed - `asyncio_mode = "auto"` already configured in pyproject.toml:184
+   - Actual issues: incorrect async/await usage, Runner context management problems
 
 ### Agent State Notifications
 - Wire `resource://agents/{id}/state` to emit `resource_updated` on:

@@ -78,9 +78,9 @@ Total: 69 parallel task agent calls across 8 serial waves
    - Files: grep for `CallToolResult` instantiation
 
 3. **Event Loop Fixes** (20+ tests)
-   - Convert to `@pytest.mark.asyncio` where missing
-   - Fix `asyncio.Runner` usage patterns
-   - Files: Tests that fail with event loop errors
+   - Fix `asyncio.Runner` usage patterns (misuse causing test failures)
+   - **Note**: `@pytest.mark.asyncio` decorators NOT needed - `asyncio_mode = "auto"` already configured in pyproject.toml
+   - Files: Tests that fail with event loop errors (actual async/await issues, not missing decorators)
 
 ## Wave B: Infrastructure Migration (12 parallel)
 
@@ -350,7 +350,7 @@ Each agent applies fixes for ~20-30 instances of their assigned pattern.
 **Wave A**: ~15 minutes (3 agents, test fixes)
 - ResponseUsage: ~5 min (straightforward field additions, 13 sites)
 - CallToolResult: ~3 min (add meta={}, 3 sites)
-- Event loops: ~7 min (asyncio.mark decorator additions, 20+ sites)
+- Event loops: ~7 min (fix asyncio.Runner misuse patterns, 20+ sites - NOT decorator additions since asyncio_mode="auto" already set)
 
 **Wave B**: ~5 hours (12 agents, varies widely by complexity)
 - **B1 Backend (Agents 1-7)**: ~3.5 hours total
