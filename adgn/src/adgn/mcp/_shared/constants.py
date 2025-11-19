@@ -53,6 +53,7 @@ APPROVALS_PENDING_URI: Final[str] = "resource://approvals/pending"
 # Agent resource URIs (exposed by agents MCP bridge server)
 AGENTS_LIST_URI: Final[str] = "resource://agents/list"
 AGENTS_STATE_URI_FMT: Final[str] = "resource://agents/{agent_id}/state"
+AGENTS_SNAPSHOT_URI_FMT: Final[str] = "resource://agents/{agent_id}/snapshot"
 AGENTS_APPROVALS_PENDING_URI_FMT: Final[str] = "resource://agents/{agent_id}/approvals/pending"
 AGENTS_APPROVALS_HISTORY_URI_FMT: Final[str] = "resource://agents/{agent_id}/approvals/history"
 AGENTS_POLICY_PROPOSALS_URI_FMT: Final[str] = "resource://agents/{agent_id}/policy/proposals"

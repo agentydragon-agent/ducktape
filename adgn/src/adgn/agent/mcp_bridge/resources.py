@@ -17,6 +17,11 @@ def agent_state(agent_id: str) -> str:
     return f"resource://agents/{agent_id}/state"
 
 
+def agent_snapshot(agent_id: str) -> str:
+    """Resource URI for full compositor sampling snapshot."""
+    return f"resource://agents/{agent_id}/snapshot"
+
+
 def agent_approvals_pending(agent_id: str) -> str:
     """Resource URI for pending approvals for an agent."""
     return f"resource://agents/{agent_id}/approvals/pending"

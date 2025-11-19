@@ -10,15 +10,20 @@ from datetime import datetime
 import json
 import logging
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
+from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from mcp import types as mcp_types
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from adgn.agent.approvals import ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.mcp_bridge import resources
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
+from adgn.agent.server.agents_ws import AgentBrief
+from adgn.mcp._shared.types import SimpleOk
+from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 if TYPE_CHECKING:
@@ -80,6 +85,22 @@ class ApproveToolCallArgs(BaseModel):
 
 class RejectToolCallArgs(BaseModel):
     """Arguments for reject_tool_call tool."""
+
+    agent_id: AgentID
+    call_id: str
+    reason: str
+
+
+class DenyToolCallArgs(BaseModel):
+    """Arguments for deny_tool_call tool (semantic alias for reject_tool_call)."""
+
+    agent_id: AgentID
+    call_id: str
+    reason: str
+
+
+class DenyAbortArgs(BaseModel):
+    """Arguments for deny_abort tool."""
 
     agent_id: AgentID
     call_id: str
@@ -166,6 +187,21 @@ class AgentPolicyProposals(BaseModel):
     active_policy_uri: str  # URI to active policy
 
 
+class AgentInfoDetailed(BaseModel):
+    """Basic agent metadata NOT available from other MCP resources.
+
+    For additional data, query the specific MCP resources:
+    - Compositor state: resource://agents/{id}/snapshot
+    - Policy: resource://approval-policy/policy.py (per-agent server)
+    - Approvals: resource://agents/{id}/approvals/pending, resource://agents/{id}/approvals/history
+    """
+
+    agent_id: AgentID
+    mode: AgentMode
+    model: str | None = None  # Model name for local agents
+    status: str  # "running" or "stopped"
+
+
 # Tool response models - empty responses, caller tracks what they called
 
 
@@ -237,6 +273,30 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             raise ValueError(f"Agent {agent_id} has no local runtime")
 
         # Get sampling snapshot from the compositor
+        return await local_runtime.running.compositor.sampling_snapshot()
+
+    @server.resource(
+        "resource://agents/{agent_id}/snapshot",
+        name="agent.snapshot",
+        mime_type="application/json",
+        description="Full compositor sampling snapshot for a local agent",
+    )
+    async def agent_snapshot(agent_id: AgentID):
+        """Get full compositor sampling snapshot for an agent.
+
+        Returns the complete compositor sampling state including tools, resources,
+        and prompts from all mounted servers.
+
+        Raises ValueError if agent is not local or has no runtime.
+        """
+        if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
+            raise ValueError(f"Agent {agent_id} is not a local agent")
+
+        local_runtime = registry.get_local_runtime(agent_id)
+        if local_runtime is None:
+            raise ValueError(f"Agent {agent_id} has no local runtime")
+
+        # Delegate to compositor's sampling_snapshot()
         return await local_runtime.running.compositor.sampling_snapshot()
 
     @server.resource(
@@ -340,6 +400,39 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             agent_id=agent_id, proposals=proposal_infos, active_policy_uri="resource://approval-policy/policy.py"
         )
 
+    @server.resource(
+        "resource://agents/{agent_id}/info",
+        name="agent.info",
+        mime_type="application/json",
+        description="Basic agent metadata (mode, model, status) - use specific resources for details",
+    )
+    async def agent_info(agent_id: AgentID) -> AgentInfoDetailed:
+        """Get basic agent metadata NOT available from other MCP resources.
+
+        Returns only agent mode, model, and runtime status.
+        For additional data, query the appropriate MCP resources:
+        - Compositor: resource://agents/{id}/snapshot
+        - Policy: resource://approval-policy/policy.py (per-agent server)
+        - Approvals: resource://agents/{id}/approvals/pending, resource://agents/{id}/approvals/history
+        """
+        mode = registry.get_agent_mode(agent_id)
+
+        # Determine model and status
+        model: str | None = None
+        status = "stopped"
+
+        local_runtime = registry.get_local_runtime(agent_id)
+        if local_runtime is not None:
+            model = local_runtime.model
+            status = "running"
+
+        return AgentInfoDetailed(
+            agent_id=agent_id,
+            mode=mode,
+            model=model,
+            status=status,
+        )
+
     # Tools
 
     @server.tool()
@@ -361,6 +454,32 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         await server.broadcast_resource_updated(resources.APPROVALS_PENDING_GLOBAL)
 
     @server.tool()
+    async def deny_tool_call(agent_id: AgentID, call_id: str, reason: str) -> SimpleOk:
+        """Deny/reject a pending tool call approval (semantic alias for reject_tool_call).
+
+        Provides a clearer semantic for denial operations alongside approve/reject terminology.
+        """
+        # Delegate to reject_tool_call
+        await reject_tool_call(str(agent_id), call_id, reason)
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def deny_abort(agent_id: AgentID, call_id: str, reason: str) -> SimpleOk:
+        """Deny an abort request via the approval policy server.
+
+        Routes the denial to the approval_policy_admin server's reject_proposal tool.
+        Provides a semantic alternative for denying abort-related approval proposals.
+        """
+        infra = await registry.get_infrastructure(agent_id)
+        client = infra.compositor.get_child_client("approval_policy_admin")
+        await client.call_tool("reject_proposal", {"id": call_id, "reason": reason})
+
+        await server.broadcast_resource_updated(resources.agent_approvals_pending(str(agent_id)))
+        await server.broadcast_resource_updated(resources.agent_approvals_history(str(agent_id)))
+        await server.broadcast_resource_updated(resources.APPROVALS_PENDING_GLOBAL)
+        return SimpleOk(ok=True)
+
+    @server.tool()
     async def abort_agent(agent_id: AgentID) -> None:
         """Raises ValueError if agent is not local or has no agent loop."""
         if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
@@ -371,6 +490,186 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             raise ValueError(f"Agent {agent_id} has no agent loop")
 
         await local_runtime.agent.abort()  # type: ignore[attr-defined]  # TODO: Implement abort() on MiniCodex
+
+    @server.tool()
+    async def prompt(agent_id: AgentID, message: str) -> SimpleOk:
+        """Send a user message to an agent (via chat.human server).
+
+        Routes the message to the agent's chat.human MCP server by calling
+        the post tool. Returns immediately after queueing the message.
+
+        Args:
+            agent_id: The target agent ID.
+            message: The user message to send.
+
+        Returns:
+            SimpleOk indicating successful message delivery.
+        """
+        infra = await registry.get_infrastructure(agent_id)
+        client = infra.compositor.get_child_client("chat.human")
+        await client.call_tool("post", {"message": message})
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def abort_run(agent_id: AgentID) -> SimpleOk:
+        """Abort a running agent (alias for abort_agent).
+
+        Requests immediate termination of the agent's active loop.
+        This is a semantic alias for abort_agent that returns SimpleOk for consistency.
+
+        Args:
+            agent_id: The target agent ID.
+
+        Returns:
+            SimpleOk indicating successful abort request.
+
+        Raises:
+            ValueError: If agent is not local or has no agent loop.
+        """
+        await abort_agent(agent_id)
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def update_mcp_config(agent_id: AgentID, config: dict) -> SimpleOk:
+        """Update MCP server configuration for an agent.
+
+        Converges agent's MCP mounts to exactly match the provided configuration
+        (full replacement: unmounts servers not in config, mounts new servers).
+        """
+        infra = await registry.get_infrastructure(agent_id)
+        cfg = MCPConfig.model_validate(config)
+        await infra.compositor.reconfigure(cfg)
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def attach_server(agent_id: AgentID, name: str, spec: dict) -> SimpleOk:
+        """Attach a new MCP server to an agent.
+
+        Mounts a single MCP server with the given name and specification.
+        Raises ValueError if a server with that name is already mounted.
+        """
+        infra = await registry.get_infrastructure(agent_id)
+        server_spec = TypeAdapter(MCPServerTypes).validate_python(spec)
+        await infra.compositor.mount_server(name, server_spec)
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def detach_server(agent_id: AgentID, name: str) -> SimpleOk:
+        """Detach an MCP server from an agent.
+
+        Unmounts a single MCP server by name. Raises RuntimeError if the
+        server is pinned (system servers cannot be unmounted).
+        """
+        infra = await registry.get_infrastructure(agent_id)
+        await infra.compositor.unmount_server(name)
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def set_policy(agent_id: AgentID, policy_text: str) -> SimpleOk:
+        """Set the active policy text for an agent.
+
+        Directly sets the policy source code after validation via the
+        approval policy admin server. The policy is self-checked before
+        activation to ensure it's valid Python and can execute properly.
+
+        Raises ValueError if agent not found.
+        Raises RuntimeError if policy validation fails.
+        """
+        infra = await registry.get_infrastructure(agent_id)
+        await infra.policy_approver.set_policy_text(SetPolicyTextArgs(source=policy_text))
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def approve_proposal(agent_id: AgentID, proposal_id: str) -> SimpleOk:
+        """Approve a pending policy proposal for an agent.
+
+        Approves a policy proposal by ID, which activates the proposed
+        policy as the agent's active policy. The proposal must be in
+        PENDING status.
+
+        Raises ValueError if agent or proposal not found.
+        Raises RuntimeError if proposal is not in PENDING status.
+        """
+        infra = await registry.get_infrastructure(agent_id)
+        await infra.policy_approver.approve_proposal(ApproveProposalArgs(id=proposal_id))
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def reject_proposal(agent_id: AgentID, proposal_id: str, reason: str) -> SimpleOk:
+        """Reject a pending policy proposal for an agent.
+
+        Rejects a policy proposal by ID with an optional reason. The
+        proposal must be in PENDING status. The proposal remains in the
+        database but is marked as rejected.
+
+        Raises ValueError if agent or proposal not found.
+        Raises RuntimeError if proposal is not in PENDING status.
+        """
+        infra = await registry.get_infrastructure(agent_id)
+        await infra.policy_approver.reject_proposal(RejectProposalArgs(id=proposal_id, reason=reason))
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def create_agent(preset: str, system_message: str | None = None) -> AgentBrief:
+        """Create a new agent with the given preset and optional system message.
+
+        Generates a unique agent ID and initializes infrastructure for a new agent.
+        The agent will be ready to accept connections and process requests.
+
+        Args:
+            preset: Agent preset name/configuration identifier.
+            system_message: Optional system message override for the agent.
+
+        Returns:
+            AgentBrief with the newly created agent's ID and initial state.
+        """
+        # Generate unique agent ID
+        agent_id = AgentID(f"agent-{uuid4().hex[:8]}")
+
+        # Create infrastructure for the agent
+        await registry.create_agent(agent_id)
+
+        # Return agent brief with the created agent's ID
+        return AgentBrief(id=agent_id)
+
+    @server.tool()
+    async def delete_agent(agent_id: AgentID) -> SimpleOk:
+        """Delete an agent and clean up its infrastructure.
+
+        Removes the agent from the registry, closes all running infrastructure,
+        and releases associated resources. The agent can no longer be accessed
+        after deletion.
+
+        Args:
+            agent_id: ID of the agent to delete.
+
+        Returns:
+            SimpleOk confirming successful deletion.
+
+        Raises:
+            KeyError: If the agent is not found in the registry.
+        """
+        await registry.remove_agent(agent_id)
+        return SimpleOk(ok=True)
+
+    @server.tool()
+    async def boot_agent(agent_id: AgentID) -> SimpleOk:
+        """Ensure an agent is booted and its infrastructure is running.
+
+        Creates or resumes the agent's infrastructure to ensure it's ready
+        for operation. If the agent is already running, this is a no-op.
+
+        Args:
+            agent_id: ID of the agent to boot.
+
+        Returns:
+            SimpleOk confirming the agent is ready.
+
+        Raises:
+            KeyError: If the agent is not found in the registry.
+        """
+        await registry.ensure_live(agent_id)
+        return SimpleOk(ok=True)
 
     # Wire up notifications
     # For approval changes: notifications are broadcast directly in approve/reject tools

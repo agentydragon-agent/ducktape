@@ -172,6 +172,41 @@ class InfrastructureRegistry:
             running=running, compositor_app=compositor_app, mode=AgentMode.LOCAL, local_runtime=local_runtime
         )
 
+    async def create_agent(self, agent_id: AgentID) -> RunningInfrastructure:
+        """Create and initialize infrastructure for a new agent.
+
+        Returns the running infrastructure for the agent.
+        """
+        running, _ = await self.get_or_create_infrastructure(agent_id)
+        return running
+
+    async def ensure_live(self, agent_id: AgentID) -> RunningInfrastructure:
+        """Ensure agent infrastructure exists, creating if necessary.
+
+        Returns the running infrastructure for the agent.
+        Raises KeyError if agent does not exist in registry.
+        """
+        if agent_id not in self._agents:
+            raise KeyError(f"Agent {agent_id} not found in registry")
+        running, _ = await self.get_or_create_infrastructure(agent_id)
+        return running
+
+    async def remove_agent(self, agent_id: AgentID) -> None:
+        """Remove and clean up agent infrastructure.
+
+        Closes the running infrastructure and removes the agent from the registry.
+        """
+        if agent_id not in self._agents:
+            raise KeyError(f"Agent {agent_id} not found in registry")
+
+        agent = self._agents[agent_id].agent
+        if agent is not None:
+            # Close the infrastructure
+            await agent.running.close()
+
+        # Remove from registry
+        del self._agents[agent_id]
+
 
 async def create_mcp_server_app(auth_tokens_path: Path, registry: InfrastructureRegistry) -> FastAPI:
     """Create token-authenticated MCP server app.
