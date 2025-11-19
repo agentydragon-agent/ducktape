@@ -16,7 +16,7 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.infrastructure import MCPInfrastructure
 from adgn.agent.runtime.local_runtime import LocalAgentRuntime
 from adgn.agent.runtime.running import RunningInfrastructure
-from adgn.agent.runtime.sidecars import SidecarBundle
+from adgn.agent.runtime.sidecars import ChatSidecar, LoopControlSidecar, UISidecar
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.runtime import ConnectionManager
 from adgn.agent.types import AgentID
@@ -84,14 +84,12 @@ async def build_local_agent(
     # Start core infrastructure
     running = await builder.start(mcp_config)
 
-    # Attach sidecars
+    # Attach sidecars for local agent
     if with_ui:
         assert ui_bus is not None
-        bundle = SidecarBundle.for_local_agent(ui_bus=ui_bus)
-    else:
-        # No UI - empty sidecar bundle
-        bundle = SidecarBundle(sidecars=[])
-    await bundle.attach_all(running)
+        await running.attach_sidecar(UISidecar(ui_bus))
+    await running.attach_sidecar(ChatSidecar())
+    await running.attach_sidecar(LoopControlSidecar())
 
     # Create local agent runtime with UI components
     runtime = LocalAgentRuntime(

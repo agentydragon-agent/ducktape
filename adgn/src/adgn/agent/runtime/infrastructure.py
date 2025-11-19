@@ -64,10 +64,11 @@ class MCPInfrastructure:
         # Start core infrastructure
         running = await builder.start(mcp_config)
 
-        # Attach sidecars
-        from adgn.agent.runtime.sidecars import SidecarBundle
-        bundle = SidecarBundle.for_local_agent(ui_bus=ui_bus)
-        await bundle.attach_all(running)
+        # Attach sidecars (UI, chat, loop control)
+        from adgn.agent.runtime.sidecars import ChatSidecar, LoopControlSidecar, UISidecar
+        await running.attach_sidecar(UISidecar(ui_bus))
+        await running.attach_sidecar(ChatSidecar())
+        await running.attach_sidecar(LoopControlSidecar())
 
         # Use it
         tools = await running.compositor_client.list_tools()

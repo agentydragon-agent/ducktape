@@ -13,7 +13,6 @@ Note: Docker execution is NOT a sidecar - it's configured via MCPConfig
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import cast
 
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -58,46 +57,3 @@ class LoopControlSidecar(Sidecar):
     async def attach(self, running: RunningInfrastructure) -> None:
         loop_server = make_loop_server("loop")
         await running.compositor.mount_inproc("loop", loop_server)
-
-
-# ===== Sidecar Bundles (presets) =====
-
-
-@dataclass
-class SidecarBundle:
-    """Note: Docker exec is NOT included in sidecars - configure it via
-    MCPConfig as a standard server. See examples in presets.
-    """
-
-    sidecars: list[Sidecar]
-
-    @classmethod
-    def for_local_agent(cls, ui_bus: ServerBus) -> SidecarBundle:
-        """Note: Add docker exec via MCPConfig if needed:
-        {
-          "mcpServers": {
-            "docker": {
-              "transport": "stdio",
-              "command": "docker-exec-mcp",
-              "args": ["--mount", "/path/to/repo:/workspace:ro"]
-            }
-          }
-        }
-        """
-        return cls([UISidecar(ui_bus), ChatSidecar(), LoopControlSidecar()])
-
-    @classmethod
-    def for_external_agent(cls) -> SidecarBundle:
-        """External agents should configure docker exec via MCPConfig.
-        No UI, chat, or loop control needed for external agents.
-        """
-        return cls([])
-
-    @classmethod
-    def for_testing(cls) -> SidecarBundle:
-        """Configure docker exec via MCPConfig if needed for tests."""
-        return cls([])
-
-    async def attach_all(self, running: RunningInfrastructure) -> None:
-        for sidecar in self.sidecars:
-            await running.attach_sidecar(sidecar)

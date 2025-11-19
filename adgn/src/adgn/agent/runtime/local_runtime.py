@@ -45,8 +45,9 @@ class LocalAgentRuntime:
         # Create infrastructure and attach sidecars
         infrastructure = MCPInfrastructure(...)
         running = await infrastructure.start(mcp_config)
-        bundle = SidecarBundle.for_local_agent(ui_bus=ui_bus)
-        await bundle.attach_all(running)
+        await running.attach_sidecar(UISidecar(ui_bus))
+        await running.attach_sidecar(ChatSidecar())
+        await running.attach_sidecar(LoopControlSidecar())
 
         # Create runtime
         runtime = LocalAgentRuntime(

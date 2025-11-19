@@ -25,7 +25,6 @@ from adgn.agent.mcp_bridge.servers.agents import AgentList, make_agents_server
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.infrastructure import MCPInfrastructure, RunningInfrastructure
-from adgn.agent.runtime.sidecars import SidecarBundle
 from adgn.mcp._shared.resources import read_text_json_typed
 
 if TYPE_CHECKING:
@@ -69,11 +68,7 @@ async def create_bridge_infrastructure(
     # Start core infrastructure
     running = await builder.start(mcp_config)
 
-    # TODO: Remove SidecarBundle concept - this is effectively a no-op for external agents
-    # Attach sidecars (none for external agents)
-    bundle = SidecarBundle.for_external_agent()
-    await bundle.attach_all(running)
-
+    # External agents have no sidecars (no UI, chat, or loop control)
     return running
 
 
