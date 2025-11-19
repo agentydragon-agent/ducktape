@@ -19,12 +19,13 @@ from adgn.agent.runtime.running import RunningInfrastructure
 from adgn.agent.runtime.sidecars import SidecarBundle
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.runtime import ConnectionManager
+from adgn.agent.types import AgentID
 from adgn.openai_utils.model import OpenAIModelProto
 
 
 async def build_local_agent(
     *,
-    agent_id: str,
+    agent_id: AgentID,
     mcp_config: MCPConfig,
     persistence: SQLitePersistence,
     model: str,
@@ -37,28 +38,28 @@ async def build_local_agent(
     initial_policy: str | None = None,
 ) -> tuple[RunningInfrastructure, LocalAgentRuntime, ServerBus | None, ConnectionManager | None]:
     """Example:
-        from adgn.openai_utils.client_factory import build_client
+    from adgn.openai_utils.client_factory import build_client
 
-        def client_factory(model: str):
-            return build_client(model, enable_debug_logging=True)
+    def client_factory(model: str):
+        return build_client(model, enable_debug_logging=True)
 
-        running, runtime, ui_bus, conn_mgr = await build_local_agent(
-            agent_id="my-agent",
-            mcp_config=config,
-            persistence=persistence,
-            model="o4-mini",
-            client_factory=client_factory,
-            docker_client=docker.from_env(),
-            with_ui=True,
-            ui_bus=ui_bus,
-        )
+    running, runtime, ui_bus, conn_mgr = await build_local_agent(
+        agent_id="my-agent",
+        mcp_config=config,
+        persistence=persistence,
+        model="o4-mini",
+        client_factory=client_factory,
+        docker_client=docker.from_env(),
+        with_ui=True,
+        ui_bus=ui_bus,
+    )
 
-        # Use the agent
-        result = await runtime.run("Hello!")
+    # Use the agent
+    result = await runtime.run("Hello!")
 
-        # Cleanup
-        await runtime.close()
-        await running.close()
+    # Cleanup
+    await runtime.close()
+    await running.close()
     """
     # Validate UI requirements and create connection manager if needed
     if with_ui:
