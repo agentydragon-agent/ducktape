@@ -80,16 +80,18 @@
   - Verify: frontend subscriptions receive live updates
 
 - **Agent 2**: Token-Based Connection Routing
-  - Implement token-based routing at `/mcp/agents` endpoint
+  - Implement token-based routing at `/mcp` endpoint (not `/mcp/agents`)
   - Define `TokenRole` enum (HUMAN, AGENT) - only two roles, no separate admin
-  - Extract role + agent_id from JWT token
-  - Route based on role:
-    - **AGENT** role (with agent_id) → `FastMCP.as_proxy(agent's compositor client)`
-    - **HUMAN** role → `FastMCP.as_proxy(agents management server client)`
-  - Use FastMCP's proxy pattern to forward ALL MCP protocol messages to backend
-  - Pattern follows Compositor's `mount_server()` approach (FastMCP.as_proxy + client_factory)
+  - Extract Bearer token from Authorization header and look up in token table
+  - Token table lookup returns `{role: "human" | "agent", agent_id?: str}`
+  - Route based on role using `StreamableHTTPSessionManager`:
+    - **AGENT** role (with agent_id) → Route to agent's compositor MCP server
+    - **HUMAN** role → Route to agents management MCP server
+  - Each connection gets its own session manager for the appropriate backend
+  - Client sees backend directly (no prefixes) - transparent proxy
+  - Pattern: Custom ASGI app → token lookup → get/create session manager → delegate to `manager.handle_request()`
   - Test: agent token connects to compositor, human token connects to management server
-  - **Note**: Single HTTP endpoint, token determines which backend to proxy to
+  - **Note**: Single HTTP endpoint, per-connection routing (not per-request middleware)
 
 - **Agent 3**: DELETE Legacy HTTP/WebSocket Endpoints
   - Verify frontend only uses MCP (no HTTP calls to `/api/agents/*`)
@@ -261,57 +263,78 @@ Based on Wave F analysis, create 5 parallel cleanup agents targeting:
 
 ### Token-Based Connection Routing (NEW Pattern - Wave D)
 
-**Key Insight**: Use FastMCP's proxy pattern to route connections to different backend servers based on JWT token role.
+**Key Insight**: Use per-connection routing with `StreamableHTTPSessionManager` to route connections to different backend MCP servers based on Bearer token lookup.
 
-Instead of running separate HTTP endpoints, use **one HTTP endpoint (`/mcp/agents`) that proxies to different backend MCP servers based on the presented token**.
+Instead of running separate HTTP endpoints, use **one HTTP endpoint (`/mcp`) that routes each connection to the appropriate backend MCP server based on the Bearer token**.
 
-FastMCP's proxy pattern (like Compositor's `mount_server()`) makes this easy:
+The implementation uses `StreamableHTTPSessionManager` (from MCP SDK) to manage sessions with different backend servers:
 
 ```python
 from enum import StrEnum
-from fastmcp.server import FastMCP
-from fastmcp.client import Client
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from starlette.types import Scope, Receive, Send
 
 class TokenRole(StrEnum):
-    """MCP connection routing roles derived from JWT token."""
+    """MCP connection routing roles from token table lookup."""
     HUMAN = "human"  # Routes to agents management server
     AGENT = "agent"  # Routes to agent's compositor
 
-async def create_routed_proxy(token: str) -> FastMCP:
-    """Create a proxy that forwards to the appropriate backend based on token."""
-    role, agent_id = extract_role_and_agent_id(token)
+class MCPRoutingHandler:
+    """Custom ASGI app that routes MCP connections based on Bearer token."""
 
-    if role == TokenRole.AGENT:
-        # Route to agent's compositor (agent-facing tools)
-        transport = get_agent_compositor_transport(agent_id)
-        client = Client(transport)
-        proxy = FastMCP.as_proxy(client)
-        proxy.client_factory = lambda: client
-        return proxy
+    def __init__(self, token_table: dict[str, dict], registry: AgentRegistry):
+        self.token_table = token_table
+        self.registry = registry
+        # Cache session managers per backend
+        self.session_managers: dict[str, StreamableHTTPSessionManager] = {}
 
-    elif role == TokenRole.HUMAN:
-        # Route to agents management server (human-facing tools)
-        transport = get_agents_management_transport()
-        client = Client(transport)
-        proxy = FastMCP.as_proxy(client)
-        proxy.client_factory = lambda: client
-        return proxy
-```
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Extract Bearer token from Authorization header
+        token = extract_bearer_token(scope["headers"])
 
-**Pattern follows Compositor's approach** (`adgn/src/adgn/mcp/compositor/server.py:263-276`):
-```python
-base_client = Client(transport, message_handler=...)
-proxy = FastMCP.as_proxy(base_client)
-proxy.client_factory = lambda: base_client
-self.mount(proxy, prefix=name)
+        # Look up token in table
+        token_info = self.token_table.get(token)  # {role: "human" | "agent", agent_id?: str}
+
+        if not token_info:
+            # Return 401 Unauthorized
+            return
+
+        role = TokenRole(token_info["role"])
+
+        # Get or create session manager for the appropriate backend
+        if role == TokenRole.AGENT:
+            agent_id = token_info["agent_id"]
+            backend_key = f"agent:{agent_id}"
+            if backend_key not in self.session_managers:
+                # Get agent's compositor MCP server
+                infra = await self.registry.get_infrastructure(agent_id)
+                compositor_server = infra.compositor._mcp_server
+                self.session_managers[backend_key] = StreamableHTTPSessionManager(
+                    app=compositor_server,
+                    json_response=False
+                )
+        elif role == TokenRole.HUMAN:
+            backend_key = "human"
+            if backend_key not in self.session_managers:
+                # Get agents management MCP server
+                management_server = get_agents_management_server()
+                self.session_managers[backend_key] = StreamableHTTPSessionManager(
+                    app=management_server,
+                    json_response=False
+                )
+
+        # Route this connection to the appropriate session manager
+        manager = self.session_managers[backend_key]
+        await manager.handle_request(scope, receive, send)
 ```
 
 **Benefits**:
-- Single HTTP endpoint, single port (`/mcp/agents`)
+- Single HTTP endpoint, single port (`/mcp`)
 - ALL MCP protocol messages forwarded to appropriate backend
-- No filtering logic needed - backend serves correct tools/resources
-- Follows existing Compositor proxy pattern in codebase
-- Simpler: routing happens at connection level, not per-request
+- No prefixes - client sees backend tools/resources directly
+- Per-connection routing (not per-request)
+- Each connection transparently proxies to correct backend
+- No filtering logic needed - backend serves correct capabilities
 
 **MCP Subscriptions Status**:
 - ✅ `NotifyingFastMCP.broadcast_resource_updated()` implemented and tested (Wave B)
