@@ -9,7 +9,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 import json
 import logging
+import os
 from pathlib import Path
+import secrets
 
 from fastapi import HTTPException, Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -102,5 +104,67 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         # Inject agent_id into request state
         request.state.agent_id = agent_id
         logger.debug(f"Authenticated request: token → agent_id={agent_id}")
+
+        return await call_next(request)
+
+
+def generate_ui_token() -> str:
+    """Generate UI token for Management UI access.
+
+    Reads from ADGN_UI_TOKEN environment variable if set, otherwise generates a random token.
+    The random token is 32 bytes (256 bits) encoded as URL-safe base64 (43 characters).
+
+    Returns:
+        UI token string for Bearer authentication
+    """
+    env_token = os.environ.get("ADGN_UI_TOKEN")
+    if env_token:
+        logger.info("Using ADGN_UI_TOKEN from environment")
+        return env_token
+
+    token = secrets.token_urlsafe(32)
+    logger.info("Generated random UI token (set ADGN_UI_TOKEN environment variable to use a fixed token)")
+    return token
+
+
+class UITokenAuthMiddleware(BaseHTTPMiddleware):
+    """Validates UI token for Management UI access.
+
+    Simpler than TokenAuthMiddleware - just validates a single token for accessing the management UI.
+    No multi-tenancy: all authenticated requests get the same access.
+    """
+
+    def __init__(self, app, expected_token: str):
+        super().__init__(app)
+        self.expected_token = expected_token
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        # Extract Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing Authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Parse Bearer token
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Authorization header format (expected: Bearer <token>)",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        token = parts[1]
+
+        # Validate token
+        if token != self.expected_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"}
+            )
+
+        logger.debug("Authenticated UI request")
 
         return await call_next(request)

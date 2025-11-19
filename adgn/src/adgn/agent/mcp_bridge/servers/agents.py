@@ -5,22 +5,23 @@ Provides resources and tools for managing multiple agents from a single connecti
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from enum import StrEnum
 import json
 import logging
 from typing import TYPE_CHECKING
 
+from mcp import types as mcp_types
 from pydantic import BaseModel
 
 from adgn.agent.approvals import ApprovalRequest
+from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
-from adgn.agent.persist import ApprovalOutcome, PolicyProposal, ToolCallRecord
+from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 if TYPE_CHECKING:
-    from mcp import types as mcp_types
-
     from adgn.agent.mcp_bridge.server import InfrastructureRegistry
 
 logger = logging.getLogger(__name__)
@@ -32,12 +33,7 @@ logger = logging.getLogger(__name__)
 def _convert_pending_approvals(pending_map: dict[str, ApprovalRequest]) -> list[PendingApproval]:
     result: list[PendingApproval] = []
     for call_id, request in pending_map.items():
-        args = {}
-        if request.tool_call.args_json:
-            try:
-                args = json.loads(request.tool_call.args_json)
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse args_json for call_id {call_id}")
+        args = json.loads(request.tool_call.args_json) if request.tool_call.args_json else {}
 
         result.append(
             PendingApproval(
@@ -72,15 +68,14 @@ def _convert_tool_call_record_to_history(record: ToolCallRecord) -> ApprovalHist
         reason = f"Denied by {record.decision.outcome.value}"
 
     # Parse args from JSON
-    args = {}
-    if record.tool_call.args_json:
-        try:
-            args = json.loads(record.tool_call.args_json)
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse args_json for call_id {record.call_id}")
+    args = json.loads(record.tool_call.args_json) if record.tool_call.args_json else {}
 
     # Determine who made the decision
-    if record.decision.outcome in (ApprovalOutcome.POLICY_ALLOW, ApprovalOutcome.POLICY_DENY_CONTINUE, ApprovalOutcome.POLICY_DENY_ABORT):
+    if record.decision.outcome in (
+        ApprovalOutcome.POLICY_ALLOW,
+        ApprovalOutcome.POLICY_DENY_CONTINUE,
+        ApprovalOutcome.POLICY_DENY_ABORT,
+    ):
         decided_by = "policy"
     else:
         decided_by = "human"
@@ -204,7 +199,7 @@ class AgentPolicyProposals(BaseModel):
 # Tool response models - empty responses, caller tracks what they called
 
 
-def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
+async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
     """Unified cross-agent management server.
 
     Can be delegated to other agents for self-orchestration.
@@ -225,7 +220,10 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
     # Resources
 
     @server.resource(
-        "resource://agents/list", name="agents.list", mime_type="application/json", description="List all agents with capabilities and state"
+        "resource://agents/list",
+        name="agents.list",
+        mime_type="application/json",
+        description="List all agents with capabilities and state",
     )
     async def list_agents() -> AgentList:
         agent_infos: list[AgentInfo] = []
@@ -235,10 +233,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
             # Assume bridge agents have no chat/agent_loop
             # TODO: Add capability tracking to registry if needed
             is_local = mode == AgentMode.LOCAL
-            capabilities = {
-                "chat": is_local,
-                "agent_loop": is_local,
-            }
+            capabilities = {"chat": is_local, "agent_loop": is_local}
 
             state_uri = f"resource://agents/{agent_id}/state" if is_local else None
             approvals_uri = f"resource://agents/{agent_id}/approvals/pending"
@@ -297,8 +292,6 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 
         Crashes if any agent fails (no exception swallowing).
         """
-        from mcp import types as mcp_types
-
         content_blocks: list[mcp_types.TextResourceContents] = []
 
         for agent_id in registry.known_agents():
@@ -314,7 +307,9 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
                     "args": approval.args,
                     "timestamp": approval.timestamp.isoformat(),
                 }
-                block = mcp_types.TextResourceContents(uri=approval_uri, mimeType="application/json", text=json.dumps(approval_data))
+                block = mcp_types.TextResourceContents(
+                    uri=approval_uri, mimeType="application/json", text=json.dumps(approval_data)
+                )
                 content_blocks.append(block)
 
         return mcp_types.ReadResourceResult(contents=content_blocks)
@@ -373,18 +368,14 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         ]
 
         return AgentPolicyProposals(
-            agent_id=agent_id,
-            proposals=proposal_infos,
-            active_policy_uri="resource://approval-policy/policy.py",
+            agent_id=agent_id, proposals=proposal_infos, active_policy_uri="resource://approval-policy/policy.py"
         )
 
     # Tools
 
     @server.tool()
     async def approve_tool_call(agent_id: str, call_id: str) -> None:
-        from adgn.agent.handler import ContinueDecision
-
-        infra = await registry.get_infrastructure(agent_id)
+        infra = await registry.get_infrastructure(AgentID(agent_id))
         infra.approval_hub.resolve(call_id, ContinueDecision())
 
         await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/pending")
@@ -393,9 +384,7 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
 
     @server.tool()
     async def reject_tool_call(agent_id: str, call_id: str, reason: str) -> None:
-        from adgn.agent.handler import AbortTurnDecision
-
-        infra = await registry.get_infrastructure(agent_id)
+        infra = await registry.get_infrastructure(AgentID(agent_id))
         infra.approval_hub.resolve(call_id, AbortTurnDecision(reason=reason))
 
         await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/pending")
@@ -412,39 +401,38 @@ def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastMCP:
         if local_runtime is None or local_runtime.agent is None:
             raise ValueError(f"Agent {agent_id} has no agent loop")
 
-        await local_runtime.agent.abort()
+        await local_runtime.agent.abort()  # type: ignore[attr-defined]  # TODO: Implement abort() on MiniCodex
 
     # Wire up notifications
     # For approval changes: notifications are broadcast directly in approve/reject tools
     # (ApprovalHub doesn't have built-in notification system)
     # For policy changes: wire policy engine notifier to broadcast MCP resource updates
 
-    # TODO: This notification wiring code needs to be moved to an async initialization function
-    # since make_agents_server is not async and can't use await. For now, notification
-    # wiring is handled in the individual tools (approve_tool_call, reject_tool_call).
-    # See lines 359-361, 370-372 for notification broadcasts.
-    #
-    # for agent_id in registry.known_agents():
-    #     try:
-    #         infra = await registry.get_infrastructure(agent_id)
-    #
-    #         # Closure captures agent_id for this specific agent
-    #         def make_policy_notifier(aid: str):
-    #             def notifier(uri: str):
-    #                 # Notifier is sync, schedule broadcast in event loop
-    #                 import asyncio
-    #
-    #                 try:
-    #                     loop = asyncio.get_running_loop()
-    #                     loop.create_task(server.broadcast_resource_updated(uri))
-    #                 except RuntimeError:
-    #                     logger.warning(f"Could not broadcast {uri}: no running event loop")
-    #
-    #             return notifier
-    #
-    #         infra.approval_engine.set_notifier(make_policy_notifier(agent_id))
-    #
-    #     except Exception as e:
-    #         logger.warning(f"Failed to hook listeners for {agent_id}: {e}")
+    for agent_id in registry.known_agents():
+        try:
+            infra = await registry.get_infrastructure(agent_id)
+
+            # Closure captures agent_id for this specific agent
+            def make_policy_notifier(aid: str):
+                def notifier(uri: str):
+                    # Notifier is sync, schedule broadcast in event loop
+                    try:
+                        loop = asyncio.get_running_loop()
+                        _task = loop.create_task(server.broadcast_resource_updated(uri))
+                        # Don't await task - fire and forget notification
+                        _task.add_done_callback(
+                            lambda t: logger.debug(f"Broadcast complete for {uri}")
+                            if not t.exception()
+                            else logger.warning(f"Broadcast failed for {uri}: {t.exception()}")
+                        )
+                    except RuntimeError:
+                        logger.warning(f"Could not broadcast {uri}: no running event loop")
+
+                return notifier
+
+            infra.approval_engine.set_notifier(make_policy_notifier(agent_id))
+
+        except Exception as e:
+            logger.warning(f"Failed to hook listeners for {agent_id}: {e}")
 
     return server

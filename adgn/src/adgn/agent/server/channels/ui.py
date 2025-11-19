@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
+from fastapi import WebSocket
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.server.bus import MimeType
 from adgn.agent.server.channels.base import ChannelConnectionManager
+from adgn.agent.server.channels.common import handle_channel_ws
 from adgn.agent.server.state import UiState
 
 # ============================================================================
@@ -94,9 +96,6 @@ class UiChannelManager(ChannelConnectionManager):
 
 def register_endpoint(app):
     """Register UI channel WebSocket endpoint."""
-    from fastapi import WebSocket
-
-    from adgn.agent.server.channels.common import handle_channel_ws
 
     async def _send_ui_snapshot(bundle, aid):
         runtime = app.state.registry.get(aid)

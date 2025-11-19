@@ -72,7 +72,7 @@ class ApprovalPolicyInfo(BaseModel):
     """Current approval policy state."""
 
     content: str
-    version: int
+    id: int
     proposals: list[ProposalInfo] = []
 
     model_config = ConfigDict(extra="forbid")

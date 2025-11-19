@@ -20,7 +20,15 @@ import click
 import docker
 from fastmcp.mcp_config import MCPConfig
 from platformdirs import user_data_dir
+import uvicorn
 
+from adgn.agent.mcp_bridge.server import (
+    InfrastructureRegistry,
+    create_bridge_infrastructure,
+    create_management_ui_app,
+    create_mcp_server_app,
+)
+from adgn.agent.mcp_bridge.types import AgentID
 from adgn.agent.persist.sqlite import SQLitePersistence
 
 logger = logging.getLogger(__name__)
@@ -111,14 +119,6 @@ async def _run_server(
     ui_port: int,
     initial_policy: str | None,
 ):
-    import uvicorn
-
-    from adgn.agent.mcp_bridge.server import (
-        InfrastructureRegistry,
-        create_management_ui_app,
-        create_mcp_server_app,
-    )
-
     # Initialize persistence
     db_path.parent.mkdir(parents=True, exist_ok=True)
     persistence = SQLitePersistence(db_path)
@@ -131,10 +131,8 @@ async def _run_server(
 
     if agent_id:
         # Single-agent mode: create infrastructure at startup (no management UI)
-        from adgn.agent.mcp_bridge.server import create_bridge_infrastructure
-
         running = await create_bridge_infrastructure(
-            agent_id=agent_id,
+            agent_id=AgentID(agent_id),
             persistence=persistence,
             docker_client=docker_client,
             mcp_config=mcp_config,
@@ -158,23 +156,20 @@ async def _run_server(
 
         # Create shared infrastructure registry
         registry = InfrastructureRegistry(
-            persistence=persistence,
-            docker_client=docker_client,
-            mcp_config=mcp_config,
-            initial_policy=initial_policy,
+            persistence=persistence, docker_client=docker_client, mcp_config=mcp_config, initial_policy=initial_policy
         )
 
         # Create both apps
         mcp_app = await create_mcp_server_app(auth_tokens_path=auth_tokens_path, registry=registry)
-        ui_app = await create_management_ui_app(registry=registry)
+        ui_app, ui_token = await create_management_ui_app(registry=registry)
 
         logger.info("HTTP MCP Bridge started (multi-agent mode)")
         logger.info(f"Token mapping: {auth_tokens_path}")
         logger.info(f"MCP server (token auth): http://{host}:{mcp_port}/sse")
-        logger.info(f"Management UI: http://{host}:{ui_port}")
-        logger.info("  - Policy: ws://{host}:{ui_port}/ws/policy?agent_id=<id>")
-        logger.info("  - Approvals: ws://{host}:{ui_port}/ws/approvals?agent_id=<id>")
-        logger.info("  - MCP: ws://{host}:{ui_port}/ws/mcp?agent_id=<id>")
+        logger.info(f"Management UI: http://{host}:{ui_port}?token={ui_token}")
+        logger.info(f"  - Policy: ws://{host}:{ui_port}/ws/policy?agent_id=<id>")
+        logger.info(f"  - Approvals: ws://{host}:{ui_port}/ws/approvals?agent_id=<id>")
+        logger.info(f"  - MCP: ws://{host}:{ui_port}/ws/mcp?agent_id=<id>")
 
         # Create servers
         mcp_config_obj = uvicorn.Config(app=mcp_app, host=host, port=mcp_port, log_level="info")

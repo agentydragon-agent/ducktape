@@ -12,9 +12,11 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Literal
 from uuid import UUID
 
+from fastapi import WebSocket
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.server.channels.base import ChannelConnectionManager
+from adgn.agent.server.channels.common import handle_channel_ws
 from adgn.agent.types import ToolCall
 
 if TYPE_CHECKING:
@@ -172,9 +174,6 @@ class SessionChannelManager(ChannelConnectionManager):
 
 def register_endpoint(app):
     """Register session channel WebSocket endpoint."""
-    from fastapi import WebSocket
-
-    from adgn.agent.server.channels.common import handle_channel_ws
 
     @app.websocket("/ws/session")
     async def ws_session(ws: WebSocket) -> None:

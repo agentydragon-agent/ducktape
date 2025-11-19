@@ -13,7 +13,7 @@ export type AgentRow = {
 export type AgentListResponse = { agents: AgentRow[] }
 export type McpServerState = 'initializing' | 'running' | 'failed'
 export type McpState = { entries: Record<string, ServerEntry> }
-export type PolicyState = { version?: number | null }
+export type PolicyState = { id?: number | null }
 export type UiStateLite = { ready: boolean }
 export type ContainerState = { present: boolean; id?: string | null; ephemeral?: boolean }
 
@@ -83,7 +83,7 @@ export type Proposal = {
 
 export type ApprovalPolicyInfo = {
   content: string
-  version: number
+  id: number
   proposals?: Proposal[]
 }
 

@@ -65,7 +65,7 @@ class AgentLifecycle(StrEnum):
 
 
 class PolicyState(BaseModel):
-    version: int | None = None
+    id: int | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -104,7 +104,7 @@ class AgentStatusCore(BaseModel):
 async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCore:
     """Shared builder for agent status used by HTTP and WS paths.
 
-    Computes policy presence/version, MCP server states, lifecycle,
+    Computes policy presence/id, MCP server states, lifecycle,
     container id (for non-ephemeral runtime), pending approvals, and run phase.
     """
     registry = app.state.registry
@@ -123,11 +123,11 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
         pending = len(c.runtime.session.approval_hub.pending)
 
     # Policy state from live engine only (single source of truth). If agent is not live, report absent.
-    version_val: int | None = None
+    id_val: int | None = None
     if c and c.runtime.session is not None and c.runtime.session.approval_engine is not None:
-        _content, ver = c.runtime.session.approval_engine.get_policy()
-        version_val = ver
-    policy = PolicyState(version=version_val)
+        _content, policy_id = c.runtime.session.approval_engine.get_policy()
+        id_val = policy_id
+    policy = PolicyState(id=id_val)
 
     # MCP server entries — read via compositor_meta resources through container
     entries: dict[str, ServerEntry] = {}

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -17,7 +18,7 @@ from fastapi import FastAPI, Request, Response
 from fastmcp.mcp_config import MCPConfig
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping
+from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping, UITokenAuthMiddleware, generate_ui_token
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.infrastructure import MCPInfrastructure, RunningInfrastructure
@@ -29,23 +30,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class RunningAgent:
+    """All infrastructure for a running agent (single point of optionality)."""
+
+    running: RunningInfrastructure
+    compositor_app: FastAPI
+    mode: AgentMode
+    local_runtime: LocalAgentRuntime | None  # None for bridge agents
+
+
 class AgentEntry:
-    """Complete agent entry in registry.
+    """Registry entry with lock-protected optional agent infrastructure."""
 
-    Can be created as a stub with just locks, then populated with infrastructure later.
-    """
-
-    def __init__(
-        self,
-        running: RunningInfrastructure | None = None,
-        compositor_app: FastAPI | None = None,
-        mode: AgentMode | None = None,
-        local_runtime: LocalAgentRuntime | None = None,
-    ):
-        self.running = running
-        self.compositor_app = compositor_app
-        self.mode = mode
-        self.local_runtime = local_runtime
+    def __init__(self):
+        self.agent: RunningAgent | None = None
         self.creation_lock = asyncio.Lock()
         self.operation_lock = asyncio.Lock()
 
@@ -100,8 +99,8 @@ class InfrastructureRegistry:
 
         async with entry.creation_lock:
             # Check if already populated
-            if entry.running is not None and entry.compositor_app is not None:
-                return (entry.running, entry.compositor_app)
+            if entry.agent is not None:
+                return (entry.agent.running, entry.agent.compositor_app)
 
             logger.info(f"Creating infrastructure for agent_id={agent_id}")
             running = await create_bridge_infrastructure(
@@ -116,10 +115,10 @@ class InfrastructureRegistry:
 
             compositor_app: FastAPI = running.compositor.http_app()  # type: ignore[assignment]
 
-            # Populate existing stub entry
-            entry.running = running
-            entry.compositor_app = compositor_app
-            entry.mode = AgentMode.BRIDGE
+            # Populate entry
+            entry.agent = RunningAgent(
+                running=running, compositor_app=compositor_app, mode=AgentMode.BRIDGE, local_runtime=None
+            )
 
             logger.info(f"Infrastructure ready for agent_id={agent_id}")
             return (running, compositor_app)
@@ -132,7 +131,7 @@ class InfrastructureRegistry:
     def get_running_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure | None:
         """Get running infrastructure if it exists (doesn't create)."""
         entry = self._agents.get(agent_id)
-        return entry.running if entry else None
+        return entry.agent.running if entry and entry.agent else None
 
     def known_agents(self) -> list[AgentID]:
         return list(self._agents.keys())
@@ -141,38 +140,41 @@ class InfrastructureRegistry:
         """Raises KeyError if agent not in registry or not yet initialized."""
         if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        running = self._agents[agent_id].running
-        if running is None:
+        agent = self._agents[agent_id].agent
+        if agent is None:
             raise KeyError(f"Agent {agent_id} infrastructure not yet initialized")
-        return running
+        return agent.running
 
     def get_agent_mode(self, agent_id: AgentID) -> AgentMode:
         """Raises KeyError if agent not in registry or not yet initialized."""
         if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        mode = self._agents[agent_id].mode
-        if mode is None:
+        agent = self._agents[agent_id].agent
+        if agent is None:
             raise KeyError(f"Agent {agent_id} mode not yet initialized")
-        return mode
+        return agent.mode
 
     def get_local_runtime(self, agent_id: AgentID) -> LocalAgentRuntime | None:
         """Returns None if agent is not local. Raises KeyError if agent not in registry."""
         if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        return self._agents[agent_id].local_runtime
+        agent = self._agents[agent_id].agent
+        return agent.local_runtime if agent else None
 
     def register_local_agent(
-        self, agent_id: AgentID, running: RunningInfrastructure, compositor_app: FastAPI, local_runtime: LocalAgentRuntime
+        self,
+        agent_id: AgentID,
+        running: RunningInfrastructure,
+        compositor_app: FastAPI,
+        local_runtime: LocalAgentRuntime,
     ) -> None:
         # Create or update entry
         if agent_id not in self._agents:
             self._agents[agent_id] = AgentEntry()
 
-        entry = self._agents[agent_id]
-        entry.running = running
-        entry.compositor_app = compositor_app
-        entry.mode = AgentMode.LOCAL
-        entry.local_runtime = local_runtime
+        self._agents[agent_id].agent = RunningAgent(
+            running=running, compositor_app=compositor_app, mode=AgentMode.LOCAL, local_runtime=local_runtime
+        )
 
 
 async def create_mcp_server_app(auth_tokens_path: Path, registry: InfrastructureRegistry) -> FastAPI:
@@ -232,15 +234,38 @@ async def create_mcp_server_app(auth_tokens_path: Path, registry: Infrastructure
     return mcp_app
 
 
-async def create_management_ui_app(registry: InfrastructureRegistry) -> FastAPI:
-    """Create management UI app with WebSocket channels.
+async def create_management_ui_app(registry: InfrastructureRegistry) -> tuple[FastAPI, str]:
+    """Create management UI app with WebSocket channels and token authentication.
 
     Provides web interface for managing approvals, policy, and agent state.
-    No token authentication - intended for localhost access or separate auth.
+    Uses UITokenAuthMiddleware for simple token-based authentication.
+
+    Exposes agents MCP server at /mcp/agents for external MCP clients.
+
+    Returns:
+        Tuple of (FastAPI app, UI token for Bearer authentication)
     """
     from fastapi import WebSocket
+    from fastmcp.client import Client
+
+    from adgn.agent.mcp_bridge.servers.agents import AgentList, make_agents_server
+    from adgn.mcp._shared.resources import read_text_json_typed
+
+    # Generate UI token
+    ui_token = generate_ui_token()
 
     ui_app = FastAPI(title="Management UI")
+
+    # Create agents MCP server and mount its HTTP app
+    agents_server = await make_agents_server(registry)
+    agents_http_app = agents_server.http_app()
+    ui_app.mount("/mcp/agents", agents_http_app)
+
+    # Store agents server in app state for in-process access
+    ui_app.state.agents_server = agents_server
+
+    # Apply UI token authentication middleware
+    ui_app.add_middleware(UITokenAuthMiddleware, expected_token=ui_token)
 
     @ui_app.websocket("/ws/policy")
     async def ws_policy(websocket: WebSocket, agent_id: AgentID):
@@ -268,9 +293,14 @@ async def create_management_ui_app(registry: InfrastructureRegistry) -> FastAPI:
 
     @ui_app.get("/api/agents")
     async def list_agents():
-        """List all active agents."""
-        # TODO: Return list of agents from registry
-        return {"agents": []}
+        """List all active agents.
+
+        Delegates to agents MCP server's resource://agents/list.
+        """
+        # Create in-process client to agents server and read resource
+        async with Client(agents_server) as client:
+            agent_list = await read_text_json_typed(client, "resource://agents/list", AgentList)
+            return agent_list.model_dump()
 
     @ui_app.get("/health")
     async def health():
@@ -291,21 +321,4 @@ async def create_management_ui_app(registry: InfrastructureRegistry) -> FastAPI:
             },
         }
 
-    return ui_app
-
-
-async def create_multi_tenant_app(
-    auth_tokens_path: Path,
-    persistence: SQLitePersistence,
-    docker_client: DockerClient,
-    mcp_config: MCPConfig,
-    initial_policy: str | None,
-) -> FastAPI:
-    """Backward-compatible wrapper - creates only MCP server.
-
-    DEPRECATED: Use create_mcp_server_app() and create_management_ui_app() separately.
-    """
-    registry = InfrastructureRegistry(
-        persistence=persistence, docker_client=docker_client, mcp_config=mcp_config, initial_policy=initial_policy
-    )
-    return await create_mcp_server_app(auth_tokens_path=auth_tokens_path, registry=registry)
+    return ui_app, ui_token

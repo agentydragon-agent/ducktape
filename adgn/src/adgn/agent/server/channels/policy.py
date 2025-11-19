@@ -2,18 +2,20 @@
 
 Component: RunningInfrastructure.approval_engine
 Availability: Always (policy engine in infrastructure)
-Messages: policy content, version, proposals
+Messages: policy content, id, proposals
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated, Literal
 
+from fastapi import WebSocket
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.models.policy_error import PolicyTestsSummary
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.server.channels.base import ChannelConnectionManager
+from adgn.agent.server.channels.common import handle_channel_ws
 
 if TYPE_CHECKING:
     from adgn.agent.approvals import ApprovalPolicyEngine
@@ -38,7 +40,7 @@ class ApprovalPolicyInfo(BaseModel):
     """Current approval policy state."""
 
     content: str
-    version: int
+    id: int
     proposals: list[ProposalInfo] = []
     model_config = ConfigDict(extra="forbid")
 
@@ -55,7 +57,7 @@ class PolicyUpdated(BaseModel):
     """Policy updated event."""
 
     type: Literal["policy_updated"] = "policy_updated"
-    version: int
+    id: int
     model_config = ConfigDict(extra="forbid")
 
 
@@ -78,7 +80,7 @@ PolicyMessage = Annotated[PolicySnapshot | PolicyUpdated | PolicyProposalEvt, Fi
 class PolicyChannelManager(ChannelConnectionManager):
     """Manages WebSocket connections for the policy channel.
 
-    Broadcasts policy content, version, and proposals to connected clients.
+    Broadcasts policy content, id, and proposals to connected clients.
     Always available (policy engine is in RunningInfrastructure).
     """
 
@@ -87,7 +89,7 @@ class PolicyChannelManager(ChannelConnectionManager):
 
     async def send_snapshot(self, approval_engine: ApprovalPolicyEngine) -> None:
         """Send current policy snapshot to all clients."""
-        content, version = approval_engine.get_policy()
+        content, policy_id = approval_engine.get_policy()
 
         # Load proposals from persistence
         db_proposals = await approval_engine.persistence.list_policy_proposals(approval_engine.agent_id)
@@ -102,7 +104,7 @@ class PolicyChannelManager(ChannelConnectionManager):
         ]
 
         await self.broadcast(
-            PolicySnapshot(policy=ApprovalPolicyInfo(content=content, version=version, proposals=proposals))
+            PolicySnapshot(policy=ApprovalPolicyInfo(content=content, id=policy_id, proposals=proposals))
         )
 
 
@@ -113,9 +115,6 @@ class PolicyChannelManager(ChannelConnectionManager):
 
 def register_endpoint(app):
     """Register policy channel WebSocket endpoint."""
-    from fastapi import WebSocket
-
-    from adgn.agent.server.channels.common import handle_channel_ws
 
     @app.websocket("/ws/policy")
     async def ws_policy(ws: WebSocket) -> None:

@@ -37,7 +37,7 @@
 
       {#if $agentStatusStore.policy}
         <span title="Policy">
-          Policy: { typeof $agentStatusStore.policy.version === 'number' ? `v${$agentStatusStore.policy.version}` : 'unavailable' }
+          Policy: { typeof $agentStatusStore.policy.id === 'number' ? `v${$agentStatusStore.policy.id}` : 'unavailable' }
         </span>
       {/if}
       {#if $agentStatusStore.mcp}

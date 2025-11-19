@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 from typing import Any
+from urllib.parse import urlunparse
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
@@ -226,7 +227,6 @@ def dev(
 
     # Prepare Vite environment so frontend can reach backend on a different port
     vite_env = os.environ.copy()
-    from urllib.parse import urlunparse
 
     vite_env["VITE_BACKEND_ORIGIN"] = urlunparse(("http", f"{host}:{backend_port}", "", "", "", ""))
 

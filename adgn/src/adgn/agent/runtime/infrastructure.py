@@ -24,13 +24,13 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, load_default_policy_source, make_policy_engine
-from adgn.agent.persist import ApprovalOutcome
+from adgn.agent.persist import ApprovalOutcome, Decision
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.running import RunningInfrastructure
 from adgn.agent.server.protocol import ApprovalBrief, ApprovalPendingEvt
 from adgn.agent.server.runtime import ConnectionManager
-from adgn.agent.types import AgentID
+from adgn.agent.types import AgentID, ToolCall
 from adgn.mcp._shared.constants import (
     APPROVAL_POLICY_SERVER_NAME_APPROVER,
     APPROVAL_POLICY_SERVER_NAME_PROPOSER,
@@ -213,8 +213,6 @@ class MCPInfrastructure:
         async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
             """Notify UI of pending approval requests."""
             if self._connection_manager is not None:
-                from adgn.agent.types import ToolCall
-
                 args = json.loads(args_json) if args_json else {}
                 tool_call = ToolCall(name=tool_key, call_id=call_id, args_json=args_json)
                 await self._connection_manager.send_payload(
@@ -227,8 +225,6 @@ class MCPInfrastructure:
             Note: run_id is None since policy gateway doesn't have run context.
             Approvals are still recorded for audit/analytics purposes.
             """
-            from adgn.agent.persist import Decision
-
             decision = Decision(outcome=outcome, decided_at=datetime.now(UTC), reason=None)
             await self.persistence.record_approval(
                 run_id=None, agent_id=self.agent_id, call_id=call_id, tool_key=tool_key, decision=decision

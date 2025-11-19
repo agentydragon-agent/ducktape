@@ -28,7 +28,7 @@ from adgn.agent.presets import AgentPreset, discover_presets
 from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
-from adgn.agent.types import AgentID
+from adgn.agent.server.channels.endpoints import register_channel_endpoints
 from adgn.agent.server.exceptions import (
     AgentNotFoundError,
     AgentSessionNotReadyError,
@@ -38,6 +38,7 @@ from adgn.agent.server.exceptions import (
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession
 from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.compositor.clients import CompositorMetaClient
@@ -469,7 +470,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                     for name in patch.detach:
                         await container.running.detach_mcp(name)
                 if patch.attach:
-                    for cfg_name, cfg in patch.attach.items():
+                    for _cfg_name, cfg in patch.attach.items():
                         if cfg.mcpServers:
                             for name, spec in cfg.mcpServers.items():
                                 await container.running.attach_mcp(name, spec)
@@ -707,8 +708,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     register_agents_ws(app)
 
     # Register modular channel endpoints
-    from adgn.agent.server.channels.endpoints import register_channel_endpoints
-
     register_channel_endpoints(app)
 
     return app

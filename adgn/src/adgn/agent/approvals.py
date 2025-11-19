@@ -39,7 +39,7 @@ class PolicyValidationError(Exception):
 # - Policy sandboxing: Execute user policy code under a stricter sandbox. Today
 #   we execute with standard Python builtins and require explicit imports; future
 #   hardening may restrict imports or isolate execution.
-# - Persistence/versioning UX: Persistence exists (SQLite) for policy versions and
+# - Persistence/versioning UX: Persistence exists (SQLite) for policy IDs and
 #   proposals, but richer history/metadata and rollback tools could improve UX.
 # - Multi-user/editor UX: Add conflict prevention and richer notifications for
 #   concurrent edits/approvals (e.g., optimistic locking, better UI affordances).
@@ -126,7 +126,7 @@ class ApprovalPolicyEngine:
     ) -> None:
         # DI of initial policy source; caller must pass explicit policy text.
         self._policy_source: str = policy_source
-        self._policy_version: int = 1  # Start at 1 since we have default content
+        self._policy_id: int = 1  # Start at 1 since we have default content
         # Notifier receives a canonical policy resource URI for broadcasts
         self._notify = notifier
         # Public attributes for engine wiring; keep simple access patterns
@@ -143,21 +143,21 @@ class ApprovalPolicyEngine:
         # No runtime volume state
 
     def get_policy(self) -> tuple[str, int]:
-        return self._policy_source, self._policy_version
+        return self._policy_source, self._policy_id
 
     def set_policy(self, source: str) -> int:
         # Store as-is; evaluator enforces correctness at call time
         self._policy_source = source
-        self._policy_version += 1
+        self._policy_id += 1
         if self._notify:
             self._notify(APPROVAL_POLICY_RESOURCE_URI)
-        return self._policy_version
+        return self._policy_id
 
     # Internal load used on startup to hydrate content/id from persistence
     def load_policy(self, source: str, *, policy_id: int) -> None:
         # Hydrate from persistence without executing the code
         self._policy_source = source
-        self._policy_version = policy_id
+        self._policy_id = policy_id
 
     # No in-engine validation/TEST_CASES; evaluator will surface errors
 

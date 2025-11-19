@@ -7,11 +7,14 @@ Messages: pending approvals, approval decisions
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Annotated, Literal
 
+from fastapi import WebSocket
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.server.channels.base import ChannelConnectionManager
+from adgn.agent.server.channels.common import handle_channel_ws
 from adgn.agent.server.protocol import ApprovalBrief, ApprovalPendingEvt
 
 if TYPE_CHECKING:
@@ -60,8 +63,6 @@ class ApprovalsChannelManager(ChannelConnectionManager):
 
     async def send_snapshot(self, approval_hub: ApprovalHub) -> None:
         """Send current approvals snapshot to all clients."""
-        import json
-
         pending = []
         for req in approval_hub._requests.values():
             args = json.loads(req.tool_call.args_json) if req.tool_call.args_json else {}
@@ -78,9 +79,6 @@ class ApprovalsChannelManager(ChannelConnectionManager):
 
 def register_endpoint(app):
     """Register approvals channel WebSocket endpoint."""
-    from fastapi import WebSocket
-
-    from adgn.agent.server.channels.common import handle_channel_ws
 
     @app.websocket("/ws/approvals")
     async def ws_approvals(ws: WebSocket) -> None:

@@ -273,7 +273,7 @@ class AgentSession:
         if self.approval_engine is None:
             raise RuntimeError("approval_engine not configured for session")
 
-        content, version = self.approval_engine.get_policy()
+        content, policy_id = self.approval_engine.get_policy()
         proposals: list[ProposalInfo] = []
         # Load proposals from persistence policy store
         if self._persistence is not None and self.agent_id:
@@ -284,7 +284,7 @@ class AgentSession:
                 # Strict mapping; surface invalid data rather than swallowing
                 status = ProposalStatus(raw)
                 proposals.append(ProposalInfo(id=pid, status=status))
-        approval_policy = ApprovalPolicyInfo(content=content, version=version, proposals=proposals)
+        approval_policy = ApprovalPolicyInfo(content=content, id=policy_id, proposals=proposals)
 
         # Build preferred details bundle when all components are present
         details = None
