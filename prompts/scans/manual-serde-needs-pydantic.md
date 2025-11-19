@@ -201,14 +201,14 @@ Use Pydantic when you have:
 
 ## Detection Strategy
 
-**MANDATORY first step**: Run `scan_manual_serde.py` to find ALL dict literals and Pydantic models in the codebase.
+**MANDATORY first step**: Run `scan_manual_serde.py` and process ALL output.
 
 - This scan is **required** - do not skip this step
-- Surfaces every dict literal with string keys and all Pydantic models
-- Forces you to review dict construction patterns across entire codebase
-- Prevents lazy analysis by providing concrete candidates to examine
+- You **must** read and handle the complete scan output (can pipe to temp file)
+- Do not sample or skip any results - process every dict literal and Pydantic model found
+- Prevents lazy analysis by forcing examination of all dict construction patterns
 
-**Note**: This scan has high false positives (many dict literals are legitimate at I/O boundaries), but it forces comprehensive review of dict usage patterns.
+**Note**: This scan has high false positives (many dict literals are legitimate at I/O boundaries), but you must still process all results to ensure comprehensive review.
 
 **Key questions for manual review**:
 1. Is this I/O boundary or internal code passing data?

@@ -185,12 +185,12 @@ with contextlib.suppress(Exception):
 
 ## Detection Strategy
 
-**MANDATORY first step**: Run `scan_error_handling.py` to find ALL exception handlers in the codebase.
+**MANDATORY first step**: Run `scan_error_handling.py` and process ALL output.
 
 - This scan is **required** - do not skip this step
-- Surfaces every try-except block with line numbers
-- Forces you to review each exception handler rather than claiming "looks fine" without checking
-- Prevents lazy analysis by providing concrete candidates
+- You **must** read and handle the complete scan output (can pipe to temp file)
+- Do not sample or skip any results - process every exception handler found
+- Prevents lazy analysis by forcing examination of all try-except blocks in the codebase
 
 ### Automated Scanning Tool
 
