@@ -126,6 +126,9 @@ class ApprovalPolicyEngine:
     ) -> None:
         # DI of initial policy source; caller must pass explicit policy text.
         self._policy_source: str = policy_source
+        # In-memory version counter for MCP resource change notifications.
+        # Independent of SQL primary key (which is auto-incrementing per agent).
+        # This tracks resource versions for the MCP protocol; SQL ID is for persistence.
         self._policy_id: int = 1  # Start at 1 since we have default content
         # Notifier receives a canonical policy resource URI for broadcasts
         self._notify = notifier

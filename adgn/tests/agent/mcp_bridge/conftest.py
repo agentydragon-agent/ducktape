@@ -93,9 +93,19 @@ def mock_local_runtime():
     Shared by tests that need a local runtime with abort capability.
     Only used when testing local agent modes.
     """
+    from adgn.mcp.snapshots import SamplingSnapshot
+
     runtime = Mock()
     runtime.agent = Mock()
     runtime.agent.abort = AsyncMock()
+
+    # Mock running infrastructure with compositor
+    runtime.running = Mock()
+    runtime.running.compositor = Mock()
+    runtime.running.compositor.sampling_snapshot = AsyncMock(
+        return_value=SamplingSnapshot(ts="2025-01-15T10:00:00Z", servers={})
+    )
+
     return runtime
 
 

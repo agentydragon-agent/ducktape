@@ -235,9 +235,8 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         if local_runtime is None:
             raise ValueError(f"Agent {agent_id} has no local runtime")
 
-        # TODO: Implement sampling snapshot retrieval
-        # return await local_runtime.session.get_sampling_snapshot()
-        raise NotImplementedError("Sampling snapshot not yet implemented")
+        # Get sampling snapshot from the compositor
+        return await local_runtime.running.compositor.sampling_snapshot()
 
     @server.resource(
         "resource://agents/{agent_id}/approvals/pending",

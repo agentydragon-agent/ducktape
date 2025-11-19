@@ -15,7 +15,17 @@ from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.mcp_bridge.servers.agents import make_agents_server
 from adgn.agent.mcp_bridge.types import AgentID
 from adgn.agent.persist import ApprovalOutcome, Decision, PolicyProposal, ToolCall, ToolCallRecord
-from adgn.mcp._shared.io import read_text_json
+
+
+def read_text_json(result):
+    """Helper to parse JSON from MCP resource result."""
+    # FastMCP client returns a list of TextResourceContents
+    if isinstance(result, list) and len(result) > 0:
+        # Get the first content item and parse its text field
+        text_content = result[0].text if hasattr(result[0], "text") else result[0]
+        return json.loads(text_content) if isinstance(text_content, str) else text_content
+    # Or it might be a dict-like object
+    return result
 
 # --- Test-specific fixtures ---
 # Shared fixtures (mock_persistence, mock_approval_hub, mock_approval_engine,
@@ -65,10 +75,19 @@ async def test_list_agents_resource(agents_client):
 
 
 @pytest.mark.asyncio
-async def test_agent_state_resource_not_implemented(agents_client):
-    """Test resource://agents/{id}/state raises NotImplementedError."""
-    with pytest.raises(Exception, match=r"(?i)not yet implemented"):
-        await agents_client.read_resource("resource://agents/local-agent/state")
+async def test_agent_state_resource_returns_snapshot(agents_client, mock_local_runtime):
+    """Test resource://agents/{id}/state returns sampling snapshot for local agents."""
+    result = await agents_client.read_resource("resource://agents/local-agent/state")
+    content = read_text_json(result)
+
+    # Verify sampling snapshot structure
+    assert "ts" in content
+    assert "servers" in content
+    assert content["ts"] == "2025-01-15T10:00:00Z"
+    assert content["servers"] == {}
+
+    # Verify compositor.sampling_snapshot was called
+    mock_local_runtime.running.compositor.sampling_snapshot.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -76,6 +95,68 @@ async def test_agent_state_resource_bridge_agent(agents_client):
     """Test resource://agents/{id}/state fails for bridge agents."""
     with pytest.raises(Exception, match=r"(?i)not a local agent"):
         await agents_client.read_resource("resource://agents/bridge-agent/state")
+
+
+@pytest.mark.asyncio
+async def test_agent_state_resource_with_servers(agents_client, mock_local_runtime):
+    """Test resource://agents/{id}/state returns sampling snapshot with server data."""
+    from adgn.mcp.snapshots import RunningServerEntry, SamplingSnapshot
+    from mcp import types as mcp_types
+
+    # Create a more complex sampling snapshot with running server
+    server_entry = RunningServerEntry(
+        state="running",
+        initialize=mcp_types.InitializeResult(
+            protocolVersion="2024-11-05",
+            capabilities=mcp_types.ServerCapabilities(tools={"listChanged": True}),
+            serverInfo=mcp_types.Implementation(name="test-server", version="1.0.0"),
+        ),
+        tools=[
+            mcp_types.Tool(
+                name="test_tool",
+                description="A test tool",
+                inputSchema={"type": "object", "properties": {}},
+            )
+        ],
+    )
+
+    sampling_snapshot = SamplingSnapshot(
+        ts="2025-01-15T10:30:00Z", servers={"test-server": server_entry}
+    )
+
+    mock_local_runtime.running.compositor.sampling_snapshot.return_value = sampling_snapshot
+
+    result = await agents_client.read_resource("resource://agents/local-agent/state")
+    content = read_text_json(result)
+
+    # Verify sampling snapshot structure
+    assert content["ts"] == "2025-01-15T10:30:00Z"
+    assert "test-server" in content["servers"]
+
+    server = content["servers"]["test-server"]
+    assert server["state"] == "running"
+    assert "initialize" in server
+    assert "tools" in server
+    assert len(server["tools"]) == 1
+    assert server["tools"][0]["name"] == "test_tool"
+
+
+@pytest.mark.asyncio
+async def test_agent_state_resource_no_runtime(mock_registry, agents_client):
+    """Test resource://agents/{id}/state fails when local agent has no runtime."""
+
+    # Mock get_local_runtime to return None for local-agent
+    original_get_runtime = mock_registry.get_local_runtime
+
+    def get_runtime_none(agent_id):
+        if agent_id == "local-agent":
+            return None
+        return original_get_runtime(agent_id)
+
+    mock_registry.get_local_runtime = get_runtime_none
+
+    with pytest.raises(Exception, match=r"(?i)no local runtime"):
+        await agents_client.read_resource("resource://agents/local-agent/state")
 
 
 @pytest.mark.asyncio

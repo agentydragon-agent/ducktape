@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from fastapi import WebSocket
 from pydantic import BaseModel
 
-from adgn.agent.server.channels.protocol import ChannelEnvelope
+from adgn.agent.server.channels.common import ChannelEnvelope
 
 
 class ChannelConnectionManager:

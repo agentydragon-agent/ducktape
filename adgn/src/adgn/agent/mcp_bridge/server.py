@@ -94,7 +94,12 @@ class InfrastructureRegistry:
         self._agents: defaultdict[AgentID, AgentEntry] = defaultdict(AgentEntry)
 
     async def get_or_create_infrastructure(self, agent_id: AgentID) -> tuple[RunningInfrastructure, FastAPI]:
-        """Get or create infrastructure for an agent_id (creates bridge agent)."""
+        """Get or create infrastructure for an agent_id (creates bridge agent).
+
+        Returns both infrastructure and app as a tuple for tests and cases where
+        both are needed. Use get_compositor_app() if you only need the app, or
+        get_infrastructure() if you only need the infrastructure (without creation).
+        """
         entry = self._agents[agent_id]
 
         async with entry.creation_lock:
@@ -189,18 +194,11 @@ async def create_mcp_server_app(auth_tokens_path: Path, registry: Infrastructure
             # Get the compositor app for this agent
             compositor_app = await registry.get_compositor_app(agent_id)
 
-            # Forward request to the compositor's ASGI app
-            # We need to call the ASGI app directly with the scope
-            scope = request.scope
-
             # Create response containers
             response_started = False
             status_code = 200
             headers = []
             body_parts = []
-
-            async def receive():
-                return await request.receive()
 
             async def send(message):
                 nonlocal response_started, status_code, headers
@@ -211,8 +209,8 @@ async def create_mcp_server_app(auth_tokens_path: Path, registry: Infrastructure
                 elif message["type"] == "http.response.body":
                     body_parts.append(message.get("body", b""))
 
-            # Call the compositor app
-            await compositor_app(scope, receive, send)
+            # Forward request to the compositor's ASGI app
+            await compositor_app(request.scope, request.receive, send)
 
             # Return the response
             response_headers = {k.decode(): v.decode() for k, v in headers}

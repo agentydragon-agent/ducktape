@@ -12,10 +12,10 @@ from uuid import uuid4
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict
 
-from adgn.agent.server.channels.bundle import ChannelBundle
-
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+    from adgn.agent.server.channels.bundle import ChannelBundle
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,9 @@ async def send_envelope(ws: WebSocket, channel: str, payload: Accepted | ErrorEv
 
 async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | None:
     """Get or create channel bundle for agent."""
+    # Import here to avoid circular dependency
+    from adgn.agent.server.channels.bundle import ChannelBundle
+
     await app.state.ready.wait()
     try:
         runtime = await app.state.registry.ensure_live(agent_id, with_ui=True)
