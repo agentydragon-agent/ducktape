@@ -287,6 +287,41 @@ All planned features have been implemented:
 - Policy gateway: document error stamps, add spoofing tests
 - Rename `adgn/src/adgn/agent/server/agents_ws.py` (TODO: determine appropriate name)
 - Inline `adgn/src/adgn/agent/server/channels/endpoints.py` - too thin (17 lines), just call register_endpoint() from each channel module directly at call site
+- **Consider replacing `ApprovalBrief` with `ToolCall` directly** (protocol.py:46-51)
+
+### Type Simplification: ApprovalBrief vs ToolCall
+
+**Current State**: `ApprovalBrief` is a single-field wrapper around `ToolCall`:
+```python
+class ApprovalBrief(BaseModel):
+    """Brief approval information for wire protocol (embeds canonical ToolCall)."""
+    tool_call: ToolCall
+```
+
+**Usage**: 7 locations across protocol, runtime, channels, infrastructure
+- Construction: `ApprovalBrief(tool_call=req.tool_call)` or `ApprovalBrief(tool_call=tool_call)`
+- Access: `approval.tool_call` to get the ToolCall
+
+**Decision**: **Keep `ApprovalBrief` as-is** (do not simplify to bare `ToolCall`)
+
+**Rationale**:
+1. **Semantic clarity**: `ApprovalBrief` signals "this is an approval pending action", not just "a tool call". The name documents intent.
+2. **Wire protocol stability**: Changing `list[ApprovalBrief]` → `list[ToolCall]` breaks existing API contracts and frontend code
+3. **Future extensibility**: May want to add approval metadata (timestamp, status, priority) without breaking changes
+4. **Type safety**: `ApprovalBrief` vs `ToolCall` distinguishes "pending approval" from "generic tool call" at type level
+5. **Small cost**: Single-field wrapper adds ~7 construction sites, but improves code clarity
+
+**Alternative considered**: Use `ToolCall` directly and rely on context (e.g., variable names, field names)
+- **Rejected**: Less clear intent, no type distinction, harder to extend
+
+**Note**: This is distinct from `AgentBrief` (agents_ws.py:32) which has multiple fields (id, live, active_run_id, lifecycle) and is genuinely useful.
+
+**Type Hint Migration (REQUIRED)**: Replace `agent_id: str` with `agent_id: AgentID` throughout codebase for type safety
+- AgentID is NewType-based: `AgentID = NewType("AgentID", str)`
+- Search pattern: function/method parameters named `agent_id` with type `str`
+- Also apply to `call_id`, `proposal_id`, `policy_id` if similar NewTypes exist
+- Tool signatures in mcp_bridge/servers/agents.py should use `agent_id: AgentID`
+- Update all callers to use `AgentID(agent_id_string)` when converting from str
 
 **Verification**: `uv run ruff check . --fix && uv run python -m mypy adgn && pytest -q adgn/tests/agent`
 

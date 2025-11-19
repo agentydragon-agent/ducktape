@@ -90,44 +90,58 @@ Total: 69 parallel task agent calls across 8 serial waves
 
 **ARCHITECTURE NOTE**: Cross-agent tools are **thin routing wrappers** over existing single-agent MCP servers. DO NOT reimplement business logic - delegate to per-agent servers via compositor.get_child_client() or Python APIs.
 
-**Agent 1: Agent Lifecycle Tools**
-- Implement `create_agent`, `delete_agent`, `boot_agent` in `mcp_bridge/servers/agents.py`
+**Agent 1: Agent Lifecycle Tools** (~30 min - 3 tools, straightforward routing)
+- Implement `create_agent(preset, system?)`, `delete_agent(id)`, `boot_agent(id)`
 - Route to registry.create_agent(), registry.remove_agent(), registry.ensure_live()
+- **Complexity**: Low - registry methods already exist, just wrap with MCP tool decorator
+- **Estimated LOC**: ~40 lines (3 tools × ~10 lines each + docstrings + models)
 
-**Agent 2: MCP Config Tools**
-- Implement `update_mcp_config`, `attach_server`, `detach_server`
+**Agent 2: MCP Config Tools** (~30 min - 3 tools, compositor Python API)
+- Implement `update_mcp_config(id, config)`, `attach_server(id, name, spec)`, `detach_server(id, name)`
 - Route to per-agent compositor.reconfigure(), mount_server(), unmount_server()
-- Pattern: `infra = await registry.get_infrastructure(agent_id); await infra.compositor.mount_server(...)`
+- Pattern: `infra = await registry.get_infrastructure(AgentID(agent_id)); await infra.compositor.mount_server(...)`
+- **Complexity**: Low - compositor Python API is stable and well-tested
+- **Estimated LOC**: ~45 lines (3 tools × ~12 lines each + error handling + models)
 
-**Agent 3: Execution Tools**
-- Implement `prompt` tool (sends user message to agent)
-- Route to per-agent chat.human server's `post` tool
-- Implement `abort_run` tool (aborts agent loop)
-- Already exists as `abort_agent` - may just need alias/documentation
+**Agent 3: Execution Tools** (~20 min - 2 tools, one alias + one routing)
+- Implement `prompt(id, text)` - route to per-agent chat.human.post tool
+- Implement `abort_run(id)` - **alias for existing `abort_agent`** or just documentation update
+- **Complexity**: Very Low - `abort_agent` already exists (agents.py:364), `prompt` is thin routing to chat server
+- **Estimated LOC**: ~25 lines (1 new tool + 1 alias/doc update + models)
 
-**Agent 4: Approval Tools**
-- Implement `deny_tool_call` tool (alias for `reject_tool_call` with better naming)
-- Implement `deny_abort` tool (reject abort request)
-- Route to existing approval_hub.resolve() with AbortTurnDecision
+**Agent 4: Approval Tools** (~25 min - 2 tools, one alias + one new)
+- Implement `deny_tool_call(id, call_id, reason)` - **alias for `reject_tool_call`** with better naming
+- Implement `deny_abort(id, call_id, reason)` - route to approval_hub.resolve(AbortTurnDecision)
+- **Complexity**: Low - approval_hub API already used in existing tools
+- **Estimated LOC**: ~30 lines (1 alias + 1 new tool + models)
+- **Note**: `approve_tool_call` and `reject_tool_call` already exist (agents.py:346,355)
 
-**Agent 5: Policy Tools**
-- Implement `set_policy`, `approve_proposal`, `reject_proposal` tools
-- Route to per-agent approval_policy_admin server tools
-- Pattern: `client = infra.compositor.get_child_client("approval_policy_admin"); await client.call_tool("approve_proposal", {...})`
+**Agent 5: Policy Tools** (~35 min - 3 tools, get_child_client routing)
+- Implement `set_policy(id, content)`, `approve_proposal(id, proposal_id)`, `reject_proposal(id, proposal_id)`
+- Route to per-agent approval_policy_admin server tools via get_child_client()
+- Pattern: `client = infra.compositor.get_child_client("approval_policy_admin"); await client.call_tool("approve_proposal", {"id": proposal_id})`
+- **Complexity**: Medium - requires understanding approval_policy server naming and tool signatures
+- **Estimated LOC**: ~50 lines (3 tools × ~13 lines each + client handling + models)
 
-**Agent 6: Agent Info Resource**
+**Agent 6: Agent Info Resource** (~40 min - 1 resource, aggregation logic)
 - Implement `resource://agents/{id}/info` (rich agent metadata)
-- Aggregate from agent runtime: compositor state, capabilities, mounted servers
+- Aggregate from agent runtime: compositor state, capabilities, mounted servers list
+- **Complexity**: Medium - needs to gather data from multiple sources (compositor.sampling_snapshot(), capabilities dict, server list)
+- **Estimated LOC**: ~60 lines (1 resource + aggregation logic + comprehensive AgentInfo model)
 
-**Agent 7: Snapshot Resource**
+**Agent 7: Snapshot Resource** (~15 min - 1 resource, pure passthrough)
 - Implement `resource://agents/{id}/snapshot` (compositor snapshot)
-- Route to per-agent compositor.sampling_snapshot()
-- Thin wrapper: `return await infra.compositor.sampling_snapshot()`
+- Thin wrapper: `infra = await registry.get_infrastructure(agent_id); return await infra.compositor.sampling_snapshot()`
+- **Complexity**: Very Low - pure passthrough to existing compositor method
+- **Estimated LOC**: ~15 lines (1 resource + 2 lines delegation + model reuse)
 
-**Agent 8: Frontend Migration**
-- Update frontend to use MCP tools instead of HTTP REST endpoints
-- Update `features/agents/api.ts` to call MCP tools
-- Replace fetch() calls with MCP client.call_tool()
+**Agent 8: Frontend Migration** (~90 min - update 8+ HTTP endpoints to MCP tools)
+- Update `features/agents/api.ts` to call MCP tools instead of HTTP REST
+- Replace fetch() calls with MCP client.call_tool() for all 8 agent lifecycle operations
+- Update error handling (HTTP status codes → MCP error responses)
+- **Complexity**: Medium-High - requires frontend TypeScript understanding, error handling updates
+- **Estimated LOC**: ~200 lines changed (replacing ~8 HTTP functions + error handling updates)
+- **Dependencies**: All B1-B7 tools must be implemented first
 
 ### B2: WebSocket Test Cleanup (4 parallel agents)
 
@@ -300,6 +314,11 @@ Each agent applies fixes for ~20-30 instances of their assigned pattern.
 - Inline `channels/endpoints.py`
 - NotifyingFastMCP private attr replacements
 - Remove named volume comments
+- **Type hint migration (REQUIRED)**: Replace `agent_id: str` with `agent_id: AgentID` throughout codebase
+  - Pattern: grep for function params `agent_id.*: str` and replace with `AgentID`
+  - Update callers to use `AgentID(agent_id_string)` when converting
+  - Focus on: mcp_bridge, server, runtime modules
+  - Estimated: ~50 occurrences across codebase
 
 **Agent 6: Final Verification**
 - Run: `uv run ruff check . --fix`
@@ -326,17 +345,65 @@ Each agent applies fixes for ~20-30 instances of their assigned pattern.
 - Some scans may report "no violations found" - this is success
 - Test failures should be investigated and fixed
 
-### Estimated Timeline
-- Wave A: ~10 minutes (3 agents)
-- Wave B: ~30 minutes (12 agents, complex migrations)
-- Wave C: ~40 minutes (8 agents, UI work)
-- Wave D: ~25 minutes (4 agents, backend features)
-- Wave E: ~60 minutes (28 agents, all scans)
-- Wave F: ~10 minutes (1 agent, analysis)
-- Wave G: ~30 minutes (5 agents, cleanup)
-- Wave H: ~25 minutes (6 agents, docs + verify)
+### Estimated Timeline (Revised with Complexity Analysis)
 
-**Total estimated time**: ~4 hours of agent work (with human review between waves)
+**Wave A**: ~15 minutes (3 agents, test fixes)
+- ResponseUsage: ~5 min (straightforward field additions, 13 sites)
+- CallToolResult: ~3 min (add meta={}, 3 sites)
+- Event loops: ~7 min (asyncio.mark decorator additions, 20+ sites)
+
+**Wave B**: ~5 hours (12 agents, varies widely by complexity)
+- **B1 Backend (Agents 1-7)**: ~3.5 hours total
+  - Agents 1-2 (lifecycle + config): ~1 hour (straightforward routing)
+  - Agents 3-4 (execution + approvals): ~45 min (mostly aliases + thin routing)
+  - Agent 5 (policy tools): ~35 min (get_child_client pattern)
+  - Agent 6 (info resource): ~40 min (aggregation logic)
+  - Agent 7 (snapshot resource): ~15 min (pure passthrough)
+  - **Can run in parallel**: All backend agents independent
+- **B2 Tests (Agents 9-12)**: ~30 min total
+  - Agent 9 (conftest): ~10 min (fixture updates)
+  - Agents 10-11 (test fixes): ~15 min (mechanical updates)
+  - Agent 12 (verification): ~5 min (run tests)
+  - **Can run in parallel**: Independent test file updates
+- **B1 Frontend (Agent 8)**: ~90 min
+  - **Must run AFTER B1 backend** (depends on tools existing)
+  - Complexity: TypeScript updates, error handling migration
+
+**Wave C**: ~2 hours (8 agents, UI layout + subscriptions)
+- Timeline/Policy/Composer: ~1 hour (component extraction/enhancement)
+- App.svelte + routing: ~20 min (layout updates)
+- MCP subscriptions wiring: ~30 min (resource subscription logic)
+- UI server detection + badges: ~10 min (conditional rendering)
+
+**Wave D**: ~1.5 hours (4 agents, backend features)
+- Agent state notifications: ~30 min (broadcast_resource_updated wiring)
+- Approvals/proposals HTTP: ~30 min (endpoint + MCP integration)
+- Loop hooks + DB: ~30 min (hook resources + query tool)
+
+**Wave E**: ~2 hours (28 agents, all scans)
+- Scans are fast (grep + pattern matching)
+- Most parallelizable wave (28 independent agents)
+
+**Wave F**: ~30 minutes (1 agent, violation analysis)
+- Aggregate scan results, prioritize top 5 categories
+
+**Wave G**: ~2 hours (5 agents, cleanup)
+- Per-category fixes (~20-30 instances each)
+- Complexity varies by violation type
+
+**Wave H**: ~1 hour (6 agents, docs + verify)
+- Documentation updates: ~30 min
+- Misc cleanups: ~20 min
+- Final verification: ~10 min
+
+**Total estimated time**: ~14.5 hours of agent work (with human review between waves)
+**Critical path**: Wave A → Wave B (backend) → Wave B (frontend) → Wave C → Wave D → Wave E → Wave F → Wave G → Wave H
+
+**Parallelism opportunities**:
+- Wave B: 7 backend agents + 4 test agents run in parallel (11 parallel)
+- Wave B: Frontend agent runs sequentially after backend
+- Wave C: All 8 UI agents can run in parallel
+- Wave E: All 28 scan agents can run in parallel (highest parallelism)
 
 ## Success Criteria
 
