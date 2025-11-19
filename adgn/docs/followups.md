@@ -44,10 +44,68 @@ This document tracks what's left to tidy up after recent refactors. Closed items
 - [ ] Add unit tests for `_tool_choice_from_policy` (accepts required/auto/none and single specific function name; rejects multiple names).
 - [ ] Add resource-window tests if implemented (`_build_resource_window` placeholder from earlier notes).
 
+## Pre-existing Test Infrastructure Issues
+
+**These are NOT related to MCP migration - they existed before and require separate fixes:**
+
+### 1. ResponseUsage Validation Errors
+**Issue**: OpenAI SDK updated `ResponseUsage` model to require `input_tokens_details` and `output_tokens_details` fields
+```python
+# Old (working):
+ResponseUsage(input_tokens=0, output_tokens=1, total_tokens=1)
+
+# New (required):
+ResponseUsage(
+    input_tokens=0,
+    output_tokens=1,
+    total_tokens=1,
+    input_tokens_details=InputTokensDetails(...),  # NOW REQUIRED
+    output_tokens_details=OutputTokensDetails(...)  # NOW REQUIRED
+)
+```
+**Fix needed**: Update `openai_utils/model.py` and test factories to include token details
+**Tests affected**: `test_messages_forwarding.py`, `test_mcp_notifications_flow.py` (13 failures)
+
+### 2. CallToolResult API Changes
+**Issue**: FastMCP `CallToolResult` constructor now requires a `meta` parameter
+```python
+# Old (working):
+CallToolResult(content=[...], isError=False)
+
+# New (required):
+CallToolResult(content=[...], isError=False, meta={})  # meta is required
+```
+**Fix needed**: Update all `CallToolResult` construction sites to include `meta` parameter
+**Tests affected**: `test_reducer.py`, `test_history_fold_typed.py` (3 failures)
+**Impact**: This is a breaking change in FastMCP/MCP SDK - check if we're on a version that requires it
+
+### 3. Event Loop Conflicts
+**Issue**: `asyncio.Runner.run()` cannot be called from within an already-running event loop
+```python
+# Fails when already in async context:
+def test_something():
+    runner = asyncio.Runner()
+    runner.run(async_function())  # RuntimeError: Runner.run() cannot be called from a running event loop
+```
+**Fix needed**: Convert tests to native async or use `asyncio.run()` in sync contexts only
+**Tests affected**: `test_editor_inproc.py`, `test_ui_agent_integration.py`, `test_policy_state_management.py`, etc. (20+ failures)
+**Root cause**: Tests mixing sync/async contexts incorrectly - need to either:
+  - Use `@pytest.mark.asyncio` and make tests fully async
+  - OR ensure `Runner.run()` only called from sync (non-event-loop) contexts
+
 ## Verification
 
 - Lint/types: `uv run ruff check . --fix`, `uv run python -m mypy adgn`
 - Targeted tests: `pytest -q adgn/tests/agent`, plus any new seatbelt/approval tests as added.
+
+## Agent State Notifications
+
+- [ ] **Wire agent state notifications for live UI updates**
+  - Currently: `resource://agents/{id}/state` resource exists but doesn't emit notifications
+  - Needed: When agent state changes (new messages, tool calls, state transitions), broadcast `resource_updated`
+  - Implementation: Wire compositor/session events → `server.broadcast_resource_updated(resources.agent_state(agent_id))`
+  - Similar pattern to policy notifications (see `agents.py:380-400` for policy notifier wiring)
+  - Events to wire: user prompt, assistant message, tool call execution, approval decisions
 
 ## Approvals / Proposals
 
