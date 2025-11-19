@@ -46,13 +46,18 @@ repos:
   #
   # Parallel execution: When multiple files are changed, ansible-lint runs in parallel on each file
   # using Python's ProcessPoolExecutor, but reports findings serially for clean output.
+  #
+  # Performance flags:
+  # --offline: Skip network operations (requirements.yml, schema downloads)
+  # --skip-schema-update: Don't fetch remote schemas
+  # --skip-vault: Skip vault password prompt (we don't use vaulted secrets in linting)
   - repo: https://github.com/ansible/ansible-lint
     rev: v25.7.0
     hooks:
       - id: ansible-lint
         files: "^ansible/"
         exclude: "k8s/.*"  # Exclude k8s files that cause parsing issues
-        entry: ansible/run-ansible-lint-parallel.py
+        entry: ansible/run-ansible-lint-parallel.py --offline --skip-schema-update --skip-vault
         language: python
         pass_filenames: true
 

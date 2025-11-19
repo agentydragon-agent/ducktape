@@ -4,6 +4,7 @@
 Runs ansible-lint on multiple files in parallel using Python's concurrent.futures,
 but outputs results sequentially for clean, non-interleaved output.
 """
+import argparse
 import os
 import subprocess
 import sys
@@ -11,23 +12,29 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 
-def run_ansible_lint(file_path: str) -> tuple[str, int, str]:
+def run_ansible_lint(file_path: str, offline: bool, skip_schema_update: bool,
+                     skip_vault: bool, config_file: str) -> tuple[str, int, str]:
     """Run ansible-lint on a single file.
 
     Returns:
         Tuple of (file_path, exit_code, output)
     """
     env = os.environ.copy()
-    env['ANSIBLE_LINT_SKIP_VAULT'] = '1'
-    env['ANSIBLE_LINT_SKIP_SCHEMA_UPDATE'] = '1'
 
-    cmd = [
-        'ansible-lint',
-        '--offline',
-        '--config-file',
-        '../.ansible-lint.yaml',
-        file_path
-    ]
+    if skip_vault:
+        env['ANSIBLE_LINT_SKIP_VAULT'] = '1'
+    if skip_schema_update:
+        env['ANSIBLE_LINT_SKIP_SCHEMA_UPDATE'] = '1'
+
+    cmd = ['ansible-lint']
+
+    if offline:
+        cmd.append('--offline')
+
+    if config_file:
+        cmd.extend(['--config-file', config_file])
+
+    cmd.append(file_path)
 
     try:
         result = subprocess.run(
@@ -44,33 +51,72 @@ def run_ansible_lint(file_path: str) -> tuple[str, int, str]:
 
 def main():
     """Main entry point."""
-    # Change to ansible directory
+    parser = argparse.ArgumentParser(
+        description='Run ansible-lint in parallel with serial output'
+    )
+    parser.add_argument(
+        '--offline',
+        action='store_true',
+        help='Run ansible-lint with --offline flag (skip network operations)'
+    )
+    parser.add_argument(
+        '--skip-schema-update',
+        action='store_true',
+        help='Set ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1'
+    )
+    parser.add_argument(
+        '--skip-vault',
+        action='store_true',
+        default=True,
+        help='Set ANSIBLE_LINT_SKIP_VAULT=1 (default: true)'
+    )
+    parser.add_argument(
+        '--config-file',
+        default='../.ansible-lint.yaml',
+        help='Path to ansible-lint config file (default: ../.ansible-lint.yaml)'
+    )
+    parser.add_argument(
+        'files',
+        nargs='*',
+        help='Files to lint (if empty, lints all)'
+    )
+
+    args = parser.parse_args()
+
+    # Change to ansible directory (where this script should be located)
     script_dir = Path(__file__).parent
     os.chdir(script_dir)
 
-    # Get files from command line, stripping "ansible/" prefix if present
+    # Get files, stripping "ansible/" prefix if present
     files = []
-    for arg in sys.argv[1:]:
+    for file_path in args.files:
         # Strip "ansible/" prefix that pre-commit might add
-        stripped = arg.removeprefix('ansible/')
+        stripped = file_path.removeprefix('ansible/')
         files.append(stripped)
 
     # If no files specified, run on all files (default behavior)
     if not files:
         env = os.environ.copy()
-        env['ANSIBLE_LINT_SKIP_VAULT'] = '1'
-        env['ANSIBLE_LINT_SKIP_SCHEMA_UPDATE'] = '1'
+        if args.skip_vault:
+            env['ANSIBLE_LINT_SKIP_VAULT'] = '1'
+        if args.skip_schema_update:
+            env['ANSIBLE_LINT_SKIP_SCHEMA_UPDATE'] = '1'
 
-        result = subprocess.run(
-            ['ansible-lint', '--offline', '--config-file', '../.ansible-lint.yaml'],
-            env=env,
-            check=False
-        )
+        cmd = ['ansible-lint']
+        if args.offline:
+            cmd.append('--offline')
+        if args.config_file:
+            cmd.extend(['--config-file', args.config_file])
+
+        result = subprocess.run(cmd, env=env, check=False)
         sys.exit(result.returncode)
 
     # Single file: run directly without parallelism overhead
     if len(files) == 1:
-        _, exit_code, output = run_ansible_lint(files[0])
+        _, exit_code, output = run_ansible_lint(
+            files[0], args.offline, args.skip_schema_update,
+            args.skip_vault, args.config_file
+        )
         if output:
             print(output, end='')
         sys.exit(exit_code)
@@ -83,7 +129,10 @@ def main():
     with ProcessPoolExecutor() as executor:
         # Submit all tasks
         future_to_file = {
-            executor.submit(run_ansible_lint, file_path): file_path
+            executor.submit(
+                run_ansible_lint, file_path, args.offline,
+                args.skip_schema_update, args.skip_vault, args.config_file
+            ): file_path
             for file_path in files
         }
 
