@@ -227,8 +227,8 @@ Use Pydantic when you have:
    - Surfaces candidates for manual composition that should be Pydantic `__init__` calls
    - Particularly useful when dict is in internal code (not I/O boundary)
 2. **Pydantic BaseModel classes** - All models with their fields and types
-   - Raw data for LLM to analyze for design issues
-   - LLM can identify: overlapping fields, duplicate field sets, single-field models, opportunities for shared sub-models
+   - Raw data for you to analyze for design issues
+   - You can identify: overlapping fields, duplicate field sets, single-field models, opportunities for shared sub-models
 
 **Usage**:
 ```bash
@@ -255,20 +255,20 @@ python prompts/scans/scan_manual_serde.py . 2>&1 | grep "===" -A 10
    - Look for patterns: same keys appearing in multiple places
    - Cross-reference with pydantic_models: Does a model already exist for this structure?
 
-2. **Analyze pydantic_models for overlapping fields** (LLM does this):
+2. **Analyze pydantic_models for overlapping fields**:
    - Compare field sets across models
    - Models sharing 50%+ fields → Should they share a common base model?
    - Example: `UserRequest` and `UserResponse` both have `user_id, email, name`
    - Consider: Create `UserCore` base model, inherit in both
 
-3. **Identify single-field models** (LLM does this):
+3. **Identify single-field models**:
    - Filter models where `len(fields) == 1`
    - Single-field models are often legitimate (NewType pattern, validation)
    - But review: Is this just a wrapper? Could it be a type alias?
    - Keep if: Custom validation, multiple methods, clear semantic meaning
    - Replace if: Just wrapping a primitive with no behavior
 
-4. **Find duplicate field sets** (LLM does this):
+4. **Find duplicate field sets**:
    - Group models by identical field sets
    - Models with identical fields → Should one be eliminated?
    - Check: Are these in different modules for different contexts? (might be OK)
@@ -289,8 +289,8 @@ cat serde_scan.json | jq '.dict_literals | to_entries[] | {file: .key, literals:
 # Find single-field models for review
 cat serde_scan.json | jq '.pydantic_models | to_entries[] | {file: .key, models: [.value[] | select(.fields | length == 1)]}'
 
-# LLM can analyze overlapping fields by comparing model field sets across all files
-# Example: Load into Python/LLM and programmatically compare field sets
+# You can analyze overlapping fields by comparing model field sets across all files
+# Example: Load into Python and programmatically compare field sets
 ```
 
 **Tool characteristics**:
@@ -298,9 +298,9 @@ cat serde_scan.json | jq '.pydantic_models | to_entries[] | {file: .key, models:
 - **Model field extraction**: ~100% recall (finds all BaseModel classes and their fields)
 - **False positives are expected**: This is a discovery tool, not a verdict
 - **Manual verification required**: Context determines if each finding is actually problematic
-- **LLM does the analysis**: Tool surfaces raw data; LLM analyzes overlaps, duplicates, single-field models
+- **You do the analysis**: Tool surfaces raw data; you analyze overlaps, duplicates, single-field models
 
-**What the tool CANNOT tell you** (requires human judgment):
+**What the tool CANNOT tell you** (requires your judgment):
 - Whether a dict literal is at an I/O boundary (legitimate) or internal code (suspicious)
 - Whether overlapping fields indicate poor design or intentional separation of concerns
 - Whether a single-field model is a useful abstraction or unnecessary wrapper

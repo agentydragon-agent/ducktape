@@ -323,12 +323,12 @@ python prompts/scans/scan_comments.py . 2>&1 | grep "===" -A 10
 
 **Tool characteristics**:
 - **100% recall**: Finds ALL comments and docstrings in valid Python files
-- **No filtering**: Tool surfaces raw data; LLM does filtering for "useless"
+- **No filtering**: Tool surfaces raw data; you do filtering for "useless"
 - **Context included**: 3 lines before/after for manual review
 
-### LLM Filtering Heuristics (Optional - For Reference)
+### Filtering Heuristics (For Your Review)
 
-These patterns can guide LLM filtering of scan results. **Not required as a script** - LLM applies these heuristics during manual review.
+These patterns can guide your filtering of scan results. Apply these heuristics during manual review.
 
 **High-confidence useless patterns**:
 - Duplicating type annotations: "user is a User object" when signature shows `user: User`
@@ -343,7 +343,7 @@ These patterns can guide LLM filtering of scan results. **Not required as a scri
 - Edge cases/warnings: "edge case", "warning", "gotcha"
 - TODOs with context: "TODO(alice): refactor after v2.0"
 
-**LLM verification approach**:
+**Verification approach**:
 1. Load scan results with comments + context
 2. For each comment, check:
    - Does it duplicate information from code structure (types, names, decorators)?

@@ -328,7 +328,7 @@ cat dataclass_scan.json | jq '.classes | to_entries[] |
 **Tool characteristics**:
 - **~100% recall**: Finds all classes with `__init__` methods
 - **Low precision**: Classes with 5+ params may still need complex init
-- **LLM filters**: Use output to identify candidates, verify manually
+- **You filter**: Use output to identify candidates, verify manually
 
 **TODO**: Add detection for `to_dict`/`from_dict` methods (Pydantic indicator)
 

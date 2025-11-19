@@ -216,7 +216,7 @@ cat error_handling_scan.json | jq '.issues | to_entries[] |
 **Tool characteristics**:
 - **~100% recall**: Finds all try-except patterns
 - **High false positives for non_raising_except**: Includes legitimate logging before re-raise
-- **Expected**: LLM reviews each finding in context
+- **Expected**: You review each finding in context
 
 **Example output**:
 ```json
