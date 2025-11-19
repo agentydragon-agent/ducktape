@@ -545,6 +545,48 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         return AgentInfoDetailed(agent_id=agent_id, mode=mode, model=model, status=status)
 
     @server.resource(
+        "resource://agents/{agent_id}/session/state",
+        name="agent.session.state",
+        mime_type="application/json",
+        description="Agent session state and transcript (local agents only)",
+    )
+    async def agent_session_state_resource(agent_id: AgentID) -> dict:
+        """Agent session state and transcript.
+
+        Returns the current session state including active run information and transcript.
+        Only available for local agents with an active session.
+
+        Raises ValueError if agent is not local or has no session.
+        """
+        if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
+            raise ValueError(f"Agent {agent_id} is not a local agent")
+
+        local_runtime = registry.get_local_runtime(agent_id)
+        if local_runtime is None or local_runtime.session is None:
+            raise ValueError(f"Agent {agent_id} has no session")
+
+        session = local_runtime.session
+
+        # Build session snapshot
+        data = {
+            "session_state": {
+                "session_id": session._manager._session_id,
+                "version": "1.0.0",
+                "active_run_id": str(session.active_run.run_id) if session.active_run else None,
+                "run_counter": session._run_counter,
+            },
+            "run_state": {
+                "run_id": str(session.active_run.run_id),
+                "status": "running",
+                "started_at": session.active_run.started_at.isoformat(),
+            }
+            if session.active_run
+            else None,
+        }
+
+        return data
+
+    @server.resource(
         "resource://presets/list",
         name="presets.list",
         mime_type="application/json",
@@ -799,8 +841,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         return SimpleOk(ok=True)
 
     # Wire up notifications
-    # For approval changes: notifications are broadcast directly in approve/reject tools
-    # (ApprovalHub doesn't have built-in notification system)
+    # For approval changes: wire ApprovalHub notifier to broadcast MCP resource updates
     # For policy changes: wire policy engine notifier to broadcast MCP resource updates
 
     for agent_id in registry.known_agents():
