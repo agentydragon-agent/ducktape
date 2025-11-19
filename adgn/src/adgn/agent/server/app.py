@@ -23,7 +23,7 @@ from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import RunRow
 from adgn.agent.persist.events import EventRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
-from adgn.agent.presets import AgentPreset, discover_presets
+from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.exceptions import (
     AgentNotFoundError,
@@ -91,17 +91,6 @@ class ProposalContent(BaseModel):
     decided_at: datetime | None = None
 
 
-class PresetInfo(BaseModel):
-    preset: AgentPreset | None
-
-
-class PresetSummary(BaseModel):
-    name: str
-    description: str | None = None
-
-
-class PresetsList(BaseModel):
-    presets: list[PresetSummary]
 
 
 ## WebSocket message models moved to ws.py
