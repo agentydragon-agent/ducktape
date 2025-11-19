@@ -11,33 +11,28 @@ from uuid import UUID
 
 # (runtime container constants used only in shared status builder)
 import docker  # type: ignore
-from fastapi import Body, FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastmcp.mcp_config import MCPConfig, MCPServerTypes
+from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel
 import uvicorn
 
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist import AgentMetadata, RunRow
+from adgn.agent.persist import RunRow
 from adgn.agent.persist.events import EventRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
-from adgn.agent.presets import discover_presets
-from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
+from adgn.agent.presets import AgentPreset, discover_presets
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.exceptions import (
     AgentNotFoundError,
     AgentSessionNotReadyError,
-    ApprovalNotFoundError,
-    PolicyOperationError,
 )
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession
 from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
-from adgn.agent.types import AgentID
 from adgn.mcp._shared.types import SimpleOk
-from adgn.mcp.compositor.clients import CompositorMetaClient
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 
@@ -128,12 +123,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         raise HTTPException(status_code=500, detail="no_session") from exc
 
     @app.exception_handler(PolicyOperationError)
-    async def handle_policy_operation_error(request, exc: PolicyOperationError):
-        raise HTTPException(status_code=400, detail=f"{exc.operation}_failed: {exc.reason}") from exc
 
     @app.exception_handler(ApprovalNotFoundError)
-    async def handle_approval_not_found(request, exc: ApprovalNotFoundError):
-        raise HTTPException(status_code=404, detail="unknown_call") from exc
 
     def _mount_static(path: str, directory: Path, name: str) -> None:
         if not directory.exists():
@@ -298,39 +289,11 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         ]
         return ProposalsList(proposals=items)
 
-    @app.get("/api/agents/{agent_id}/proposals/{proposal_id}", response_model=ProposalContent)
-    async def api_get_proposal(agent_id: str, proposal_id: str) -> ProposalContent:
-        rec = await app.state.persistence.get_policy_proposal(agent_id, proposal_id)
-        if rec is None:
-            raise HTTPException(status_code=404, detail="proposal_not_found")
-        return ProposalContent(
-            id=rec.id,
-            content=rec.content,
-            status=ProposalStatus(rec.status),
-            created_at=rec.created_at,
-            decided_at=rec.decided_at,
-        )
+    # Register websocket routes
+    register_agents_ws(app)
 
-    # -----------------------
-    # Presets API
-    # -----------------------
-
-    def _load_presets() -> dict[str, AgentPreset]:
-        return discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
-
-    @app.get("/api/presets", response_model=PresetsList)
-    async def api_list_presets() -> PresetsList:
-        ps = _load_presets()
-        items: list[PresetSummary] = [
-            PresetSummary(name=name, description=p.description or None) for name, p in ps.items()
-        ]
-        return PresetsList(presets=items)
-
-    @app.get("/api/presets/{name}", response_model=PresetInfo)
-    async def api_get_preset(name: str) -> PresetInfo:
-        ps = _load_presets()
-        p = ps.get(name)
-        return PresetInfo(preset=p if p else None)
+    # Register modular channel endpoints
+    register_channel_endpoints(app)
 
     return app
 

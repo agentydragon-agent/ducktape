@@ -17,7 +17,6 @@ from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOut
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import RunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
-from adgn.agent.server.agents_ws import AgentsWSHub
 from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
     ApprovalBrief,
@@ -56,9 +55,6 @@ class ConnectionManager(BaseHandler):
         self._bg_tasks: set[asyncio.Task[Any]] = set()
         self._event_id: int = 0
         self._session_id: str = str(uuid.uuid4())
-        # Hub binding for status broadcasts (configured by WS layer)
-        self._status_hub: AgentsWSHub | None = None
-        self._status_agent_id: str | None = None
         # Optional: session state change notifier for MCP resource updates
         self._session_state_notifier: Callable[[], None] | None = None
 
@@ -205,29 +201,13 @@ class ConnectionManager(BaseHandler):
         if self._session_state_notifier is not None:
             self._session_state_notifier()
 
-    def configure_status_hub(self, hub: AgentsWSHub, agent_id: str) -> None:
-        self._status_hub = hub
-        self._status_agent_id = agent_id
-
     def set_session_state_notifier(self, notifier: Callable[[], None]) -> None:
         """Set notifier callback for session state changes (for MCP resource updates)."""
         self._session_state_notifier = notifier
 
     async def broadcast_status(self, live: bool, active_run_id) -> None:
-        # No-op when not configured (unit tests may use manager without a WS hub)
-        if self._status_hub is None or self._status_agent_id is None:
-            return
-        logger.info(
-            "manager: broadcast_status",
-            extra={
-                "agent_id": self._status_agent_id,
-                "live": live,
-                "active_run_id": str(active_run_id) if active_run_id else None,
-            },
-        )
-        await self._status_hub.broadcast_agent_status(
-            agent_id=self._status_agent_id, live=live, active_run_id=active_run_id
-        )
+        # No-op: WebSocket status broadcasts removed
+        pass
 
 
 class AgentSession:
