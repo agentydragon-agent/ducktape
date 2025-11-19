@@ -44,9 +44,10 @@ def _get_repo_root() -> Path:
     )
 
 
-CHART_PATH = _get_repo_root() / "k8s" / "helm" / "ember"
+REPO_ROOT = _get_repo_root()
+CHART_PATH = REPO_ROOT / "k8s" / "helm" / "ember"
 BASE_VALUES_FILE = CHART_PATH / "values-eval.yaml"
-ARTIFACT_ROOT = _get_repo_root() / "artifacts" / "ember-eval"
+ARTIFACT_ROOT = REPO_ROOT / "artifacts" / "ember-eval"
 DEFAULT_IMAGE_REPOSITORY = "registry.k3s.agentydragon.com/emberd"
 
 
@@ -214,11 +215,6 @@ async def resolve_image(args: argparse.Namespace) -> str:
     image_ref = f"{repository}:{tag}"
     await build_image(image_ref)
     return image_ref
-
-
-def write_artifact(path: Path, payload: Mapping[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(dict(payload), indent=2), encoding="utf-8")
 
 
 def write_artifact(path: Path, payload: Mapping[str, object]) -> None:

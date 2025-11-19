@@ -12,17 +12,17 @@
 
 - name: Define path variable for convenience
   ansible.builtin.set_fact:
-    custom_keybindings_path: "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/"
-    flameshot_path: "{{ custom_keybindings_path }}/flameshot-gui/"
+    legacy_gui_custom_keybindings_path: "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/"
+    legacy_gui_flameshot_path: "{{ legacy_gui_custom_keybindings_path }}/flameshot-gui/"
 
 - name: Ensure Flameshot path present in custom-keybindings
   dconf_array_edit:
-    key: "{{ custom_keybindings_path }}"
-    add: "{{ flameshot_path }}"
+    key: "{{ legacy_gui_custom_keybindings_path }}"
+    add: "{{ legacy_gui_flameshot_path }}"
 
 - name: Set Flameshot keybinding metadata
   community.general.dconf:
-    key: "{{ flameshot_path }}{{ item.key }}"
+    key: "{{ legacy_gui_flameshot_path }}{{ item.key }}"
     value: "'{{ item.value }}'" # (TODO: kinda sucky escaping)
   loop:
     - { key: "name", value: "Flameshot GUI" }

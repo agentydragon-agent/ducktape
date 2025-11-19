@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from .executor import ScenarioExecutionError, ScenarioSkipped
+from .executor import ScenarioExecutionError, ScenarioSkippedError
 from .steps import (
     EvalResult,
     ExpectMatrixReplyResult,
@@ -43,15 +43,15 @@ class Scenario(ABC):
         self._results: list[StepResult] = []
 
     # -- lifecycle hooks -------------------------------------------------
-    async def setup(self) -> None:  # pragma: no cover - default hook
-        """Optional hook executed before :meth:`run`."""
+    async def setup(self) -> None:
+        return
 
     @abstractmethod
     async def run(self) -> None:
         """Execute the scenario's logic."""
 
-    async def teardown(self, result: ScenarioResult) -> None:  # pragma: no cover - default hook
-        """Optional hook executed after :meth:`run` completes."""
+    async def teardown(self, result: ScenarioResult) -> None:
+        return
 
     async def execute(self) -> None:
         """Default lifecycle runner that subclasses may override if needed."""
@@ -179,7 +179,7 @@ class Scenario(ABC):
 
     def skip(self, reason: str) -> None:
         self.record(StepSkippedResult(step_type="scenario", reason=reason))
-        raise ScenarioSkipped(reason)
+        raise ScenarioSkippedError(reason)
 
 
 @dataclass(slots=True)

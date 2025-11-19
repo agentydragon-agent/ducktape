@@ -57,14 +57,12 @@ class FinalResponseSnapshot(BaseModel):
 def stream_event_response_id(event: ResponseStreamEvent) -> str | None:
     if isinstance(
         event,
-        (
-            ResponseCreatedEvent,
-            ResponseCompletedEvent,
-            ResponseFailedEvent,
-            ResponseInProgressEvent,
-            ResponseIncompleteEvent,
-            ResponseQueuedEvent,
-        ),
+        ResponseCreatedEvent
+        | ResponseCompletedEvent
+        | ResponseFailedEvent
+        | ResponseInProgressEvent
+        | ResponseIncompleteEvent
+        | ResponseQueuedEvent,
     ):
         return event.response.id
     return None
@@ -73,14 +71,12 @@ def stream_event_response_id(event: ResponseStreamEvent) -> str | None:
 def stream_event_usage(event: ResponseStreamEvent) -> ResponseUsage | None:
     if isinstance(
         event,
-        (
-            ResponseCreatedEvent,
-            ResponseCompletedEvent,
-            ResponseFailedEvent,
-            ResponseInProgressEvent,
-            ResponseIncompleteEvent,
-            ResponseQueuedEvent,
-        ),
+        ResponseCreatedEvent
+        | ResponseCompletedEvent
+        | ResponseFailedEvent
+        | ResponseInProgressEvent
+        | ResponseIncompleteEvent
+        | ResponseQueuedEvent,
     ):
         return event.response.usage
     return None
@@ -89,14 +85,12 @@ def stream_event_usage(event: ResponseStreamEvent) -> ResponseUsage | None:
 def stream_event_final_response(event: ResponseStreamEvent) -> OpenAIResponse | None:
     if isinstance(
         event,
-        (
-            ResponseCreatedEvent,
-            ResponseCompletedEvent,
-            ResponseFailedEvent,
-            ResponseInProgressEvent,
-            ResponseIncompleteEvent,
-            ResponseQueuedEvent,
-        ),
+        ResponseCreatedEvent
+        | ResponseCompletedEvent
+        | ResponseFailedEvent
+        | ResponseInProgressEvent
+        | ResponseIncompleteEvent
+        | ResponseQueuedEvent,
     ):
         return event.response
     return None

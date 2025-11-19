@@ -6,39 +6,39 @@
   ansible.builtin.tempfile:
     state: directory
     suffix: nerd-fonts-release
-  register: tmp_dir
+  register: legacy_nerd_fonts_tmp_dir
   changed_when: false
 
 - name: Set download path for Nerd Fonts release info
   ansible.builtin.set_fact:
-    latest_release_json_path: "{{ tmp_dir.path }}/latest-release.json"
+    legacy_nerd_fonts_latest_release_json_path: "{{ legacy_nerd_fonts_tmp_dir.path }}/latest-release.json"
   changed_when: false
 
 - name: Download Nerd Fonts latest release info
   ansible.builtin.get_url:
     url: https://api.github.com/repos/ryanoasis/nerd-fonts/releases/latest
-    dest: "{{ latest_release_json_path }}"
+    dest: "{{ legacy_nerd_fonts_latest_release_json_path }}"
     mode: '0644'
   changed_when: false
 
 - name: Parse out latest Nerd Fonts release tag
   ansible.builtin.shell: |
-    jq --raw-output '.tag_name' {{ latest_release_json_path }}
-  register: nerd_fonts_version
+    jq --raw-output '.tag_name' {{ legacy_nerd_fonts_latest_release_json_path }}
+  register: legacy_nerd_fonts_version
   changed_when: false
 
 - name: Debug latest Nerd Fonts version
   ansible.builtin.debug:
-    var: nerd_fonts_version
+    var: legacy_nerd_fonts_version
 
 - name: Assert we found a Nerd Fonts version
   ansible.builtin.assert:
     that:
-      - nerd_fonts_version.stdout != ""
+      - legacy_nerd_fonts_version.stdout != ""
 
 - name: Initialize a flag for whether any font was updated
   ansible.builtin.set_fact:
-    fonts_updated: false
+    legacy_nerd_fonts_fonts_updated: false
   changed_when: false
 
 - name: Install each requested Nerd Font
@@ -53,5 +53,5 @@
 - name: Update font cache if needed
   ansible.builtin.command:
     cmd: fc-cache -fv
-  when: fonts_updated
+  when: legacy_nerd_fonts_fonts_updated
   changed_when: true

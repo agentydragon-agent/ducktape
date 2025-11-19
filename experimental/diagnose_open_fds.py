@@ -120,7 +120,7 @@ def categorize_fd(link_target: str) -> tuple[str, str]:
         return "procfs", link_target
     if link_target.startswith("/sys/"):
         return "sysfs", link_target
-    if link_target.startswith("/") or link_target.startswith("."):
+    if link_target.startswith(("/", ".")):
         return "path", link_target
     if link_target == "":
         return "unknown", "<empty>"
@@ -144,7 +144,7 @@ def gather_process_info(pid_dir: Path) -> ProcessInfo | None:
 
     for entry in entries:
         try:
-            link_target = os.readlink(entry)
+            link_target = str(entry.readlink())
         except OSError as exc:
             info.errors.append(f"fd:{entry.name}:{exc.errno}")
             continue
@@ -161,7 +161,7 @@ def check_fd_dir_access() -> bool:
     # Ensure we can read symlinks; if not, the script will still work but warn.
     fd0 = Path("/proc/self/fd/0")
     try:
-        os.readlink(fd0)
+        fd0.readlink()
     except OSError:
         return False
     return stat.S_ISDIR(st.st_mode)

@@ -713,7 +713,7 @@ async def run_eval(
                 "total_samples": total_samples,
                 "text_only_pct": ((text_only / total_samples) if total_samples > 0 else 0.0),
                 "with_tools_pct": ((with_tools / total_samples) if total_samples > 0 else 0.0),
-                "function_counts": fc,
+                "function_counts": function_counts,
                 "function_pct": function_pct,
             },
             "by_source": by_source,

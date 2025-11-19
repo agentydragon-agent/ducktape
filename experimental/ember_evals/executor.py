@@ -40,7 +40,7 @@ class ScenarioExecutionError(RuntimeError):
     """Raised when a scenario step fails."""
 
 
-class ScenarioSkipped(RuntimeError):
+class ScenarioSkippedError(RuntimeError):
     """Raised when a scenario requests to skip itself."""
 
 
@@ -80,10 +80,7 @@ class ScenarioExecutor:
 
     def write_json_artifact(self, path: Path, payload: Mapping[str, object] | BaseModel) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        if isinstance(payload, BaseModel):
-            data = payload.model_dump()
-        else:
-            data = dict(payload)
+        data = payload.model_dump() if isinstance(payload, BaseModel) else dict(payload)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def render(self, template: str) -> str:
@@ -194,7 +191,7 @@ class ScenarioExecutor:
 
             print(
                 f"[ember-eval][{self._request.run_id}] ⇢ Scenario {index}: {scenario.id}"
-                + (f" – {scenario.description}" if scenario.description else "")
+                + (f" - {scenario.description}" if scenario.description else "")
             )
 
             status = ScenarioStatus.PASSED
@@ -202,7 +199,7 @@ class ScenarioExecutor:
 
             try:
                 await scenario.execute()
-            except ScenarioSkipped as exc:
+            except ScenarioSkippedError as exc:
                 status = ScenarioStatus.SKIPPED
                 error = str(exc)
                 scenario.record(StepSkippedResult(step_type="scenario", reason=error or "scenario skipped"))
@@ -246,4 +243,4 @@ class ScenarioExecutor:
         return result.stdout
 
 
-__all__ = ["ScenarioExecutionError", "ScenarioExecutor", "ScenarioSkipped"]
+__all__ = ["ScenarioExecutionError", "ScenarioExecutor", "ScenarioSkippedError"]

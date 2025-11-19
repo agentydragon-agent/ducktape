@@ -20,15 +20,15 @@
       "set" = {CODEX_AGENT = "1";};
     };
     sandbox_mode = "workspace-write";
-      sandbox_workspace_write = {
-        writable_roots = [
-          "/home/agentydragon/.cache/sccache"
-          "/home/agentydragon/.cache/nix"
-          "/nix"
-          "/nix/var/nix"
-          "/home/agentydragon/.cache/pre-commit"
-          "/home/agentydragon/.cache/pre-commit/pre-commit.log"
-        ];
+    sandbox_workspace_write = {
+      writable_roots = [
+        "/home/agentydragon/.cache/sccache"
+        "/home/agentydragon/.cache/nix"
+        "/nix"
+        "/nix/var/nix"
+        "/home/agentydragon/.cache/pre-commit"
+        "/home/agentydragon/.cache/pre-commit/pre-commit.log"
+      ];
       network_access = true;
       exclude_tmpdir_env_var = false;
       exclude_slash_tmp = false;
