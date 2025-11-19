@@ -44,25 +44,7 @@ export ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1  # Skip schema refresh
 ansible-lint --offline --config-file ../.ansible-lint.yaml "${stripped_args[@]}"
 ```
 
-### 2. Enable ANSIBLE_LINT_NODEPS (saves ~1-2s, but reduces coverage)
-
-```bash
-export ANSIBLE_LINT_NODEPS=1
-```
-
-**What it does:**
-- Avoids installing content dependencies
-- Skips checks that require module installation
-- Reports fewer violations (modules not validated)
-
-**Trade-off:** Less thorough checking, but much faster.
-
-**When to use:**
-- Quick local pre-commit checks
-- When you know modules are correct
-- First-pass linting before full validation
-
-### 3. Parallel Execution by Playbook (saves ~60-70%)
+### 2. Parallel Execution by Playbook (saves ~60-70%)
 
 **Current situation:**
 - ansible-lint parallelizes syntax checking (phase 1) internally
@@ -106,7 +88,7 @@ find . -maxdepth 1 -name "*.yaml" -type f | \
 - For 4 independent playbooks: 42s → 15s (4x parallelism)
 - For pre-commit on changed files: Varies, but often 2-3x faster
 
-### 4. Incremental Linting with Custom Caching
+### 3. Incremental Linting with Custom Caching
 
 **Concept:** Only lint files that changed since last successful run.
 
@@ -139,7 +121,7 @@ fi
 
 **Estimated savings:** 100% on unchanged code (instant skip)
 
-### 5. Targeted Linting for Modified Files Only
+### 4. Targeted Linting for Modified Files Only
 
 Instead of linting entire playbooks, lint only changed files:
 
@@ -159,13 +141,6 @@ Instead of linting entire playbooks, lint only changed files:
 - When you modify `roles/cli/tasks/main.yml`, ansible-lint only processes that role
 - When you modify `wyrm.yaml`, it processes the full playbook + dependencies
 
-**To make it even faster:** Add to `run-ansible-lint.sh`:
-
-```bash
-export ANSIBLE_LINT_NODEPS=1
-export ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1
-ansible-lint --offline --config-file ../.ansible-lint.yaml "${stripped_args[@]}"
-```
 
 ## Current Configuration
 
@@ -184,9 +159,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Performance optimizations
 export ANSIBLE_LINT_SKIP_VAULT=1
 export ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1
-
-# Fast mode: skip dependency checks (optional, reduces thoroughness)
-# export ANSIBLE_LINT_NODEPS=1
 
 # Strip "ansible/" prefix from file paths if present
 stripped_args=()
@@ -304,9 +276,8 @@ ansible-lint --offline wyrm.yaml 2>&1 | grep "files processed"
 
 | Use Case | Configuration | Expected Time | Coverage | Notes |
 |----------|---------------|---------------|----------|-------|
-| **Pre-commit (current)** | `--offline` + `SKIP_SCHEMA_UPDATE=1` | 15-16s | Full* | *No module validation |
-| **Pre-commit (fast)** | Above + `NODEPS=1` | 12-14s | Reduced | Not recommended |
-| **CI (current)** | Full mode, all playbooks | ~42s | Complete | Validates modules |
+| **Pre-commit** | `--offline` + `SKIP_SCHEMA_UPDATE=1` | 15-16s | Full* | *No module validation |
+| **CI** | Full mode, all playbooks | ~42s | Complete | Validates modules |
 | **Single file edit** | Pre-commit (passes filename) | 4-5s | Targeted | Auto via pre-commit |
 | **Parallel (manual)** | `./lint-parallel.sh` | ~15s total | Full* | 4 playbooks in parallel |
 

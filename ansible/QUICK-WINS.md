@@ -35,28 +35,7 @@ time ./run-ansible-lint.sh wyrm.yaml
 
 ## Additional Quick Wins (Optional)
 
-### Option 1: Fast Mode with NODEPS (NOT Recommended)
-
-Add to `run-ansible-lint.sh` if you want even faster checks:
-
-```bash
-export ANSIBLE_LINT_NODEPS=1  # Skip dependency validation
-```
-
-**What NODEPS does:**
-- Skips installing Galaxy dependencies
-- Skips module parameter validation
-- Skips checks that require modules to be loaded
-- Reports **far fewer violations** (many issues go undetected)
-
-**Trade-off:** ~25% faster but **significantly less thorough**
-- ❌ Won't catch invalid module parameters
-- ❌ Won't detect deprecated modules
-- ❌ Won't validate module-specific syntax
-
-**Recommendation:** Don't use NODEPS. The CI thorough mode will catch what pre-commit misses.
-
-### Option 2: Parallel Execution (For Manual Runs)
+### Parallel Execution (For Manual Runs)
 
 Use the new `lint-parallel.sh` script:
 
