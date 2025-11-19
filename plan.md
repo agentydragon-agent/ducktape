@@ -153,103 +153,207 @@ All planned features have been implemented:
 - **Break up overlong Svelte files** (>500 lines): Extract CSS into separate files, split large components (e.g., ApprovalTimeline.svelte at 557 lines)
 - This is a **future wave** (not Wave 7) - requires MCP subscription infrastructure to be fully reliable
 
-### HTTP to MCP Migration Plan
+### Wave D: Complete HTTP/WebSocket → MCP Migration
 
 **Principle**: Frontend ↔ Backend should **communicate ONLY via MCP** (resources + tools), not HTTP REST or WebSockets.
 
-**✅ Wave B COMPLETED** (2025-11-19):
-- Frontend now uses MCP client (StreamableHTTP transport)
-- MCP subscriptions infrastructure working (`NotifyingFastMCP.broadcast_resource_updated()`)
-- Core agent management tools implemented in `mcp_bridge/servers/agents.py`
-- 107 tests passing (backend MCP + frontend MCP client + subscriptions)
+**✅ Completed Prior to Wave D** (Waves A-C):
+- Wave A: Pre-requisite test fixes (ResponseUsage, CallToolResult, Event loops)
+- Wave B: MCP infrastructure (NotifyingFastMCP, subscriptions, StreamableHTTP client)
+- Wave C: Core MCP tools (agent CRUD, approvals, policy, MCP server management)
+- 107+ tests passing (backend MCP + frontend MCP client + subscriptions)
 
-**Remaining Work** (DELETE, not add):
+**📋 Wave D Scope**: DELETE all HTTP/WebSocket endpoints, migrate frontend to MCP-only
 
-#### DELETE Redundant HTTP Endpoints
-All agent management should flow through MCP `agents` server. Remove these HTTP endpoints:
+See comprehensive documentation:
+- **FRONTEND_HTTP_AUDIT.md** - Current endpoint usage audit (9 HTTP, 6 WebSocket)
+- **WS_TO_MCP_MIGRATION.md** - WebSocket → MCP subscription migration strategy
 
-**Agent CRUD & Lifecycle** (8 HTTP endpoints → already have MCP equivalents):
-- ❌ `POST /api/agents` → ✅ `agents/create_agent(preset, system?)`
-- ❌ `GET /api/agents/{agent_id}` → ✅ `resource://agents/{id}/info`
-- ❌ `DELETE /api/agents/{agent_id}` → ✅ `agents/delete_agent(id)`
-- ❌ `POST /api/agents/{agent_id}/boot` → ✅ `agents/boot_agent(id)`
-- ❌ `PATCH /api/agents/{agent_id}/mcp` → ✅ `agents/update_mcp_config(id, config)`
-- ❌ `POST /api/agents/{agent_id}/mcp/attach` → ✅ `agents/attach_server(id, name, spec)`
-- ❌ `POST /api/agents/{agent_id}/mcp/detach` → ✅ `agents/detach_server(id, name)`
-- ❌ `GET /api/agents` → ✅ `resource://agents/list`
+---
 
-**Agent Execution** (2 HTTP endpoints → already have MCP equivalents):
-- ❌ `POST /api/agents/{agent_id}/prompt` → ✅ `agents/prompt(id, text)`
-- ❌ `POST /api/agents/{agent_id}/abort` → ✅ `agents/abort_agent(id)`
+#### Phase 1: Backend MCP Resources (1 week)
 
-**Approvals** (3 HTTP endpoints → already have MCP equivalents):
-- ❌ `POST /api/agents/{agent_id}/approve` → ✅ `agents/approve_tool_call(id, call_id)`
-- ❌ `POST /api/agents/{agent_id}/deny_continue` → ✅ `agents/deny_tool_call(id, call_id)`
-- ❌ `POST /api/agents/{agent_id}/deny_abort` → ✅ `agents/deny_abort(id, call_id)`
+**Create 6 MCP resources** (replace WebSocket channels):
 
-**Policy Management** (proposal approval via MCP, proposals already accessible):
-- ✅ `resource://agents/{id}/proposals` - already works (policy server)
-- ✅ `resource://approval-policy/proposals/{id}` - already works (policy server)
-- ✅ `agents/approve_proposal(id, proposal_id)` - for human UI
-- ✅ `agents/reject_proposal(id, proposal_id)` - for human UI
-- ✅ `agents/withdraw_proposal(id, proposal_id)` - **AGENT-ONLY** (agents can withdraw own proposals)
-- ❌ DELETE: `POST /api/agents/{id}/proposals` - proposals work via policy server, no HTTP needed
+| WebSocket Channel | MCP Resource | Data Returned |
+|-------------------|--------------|---------------|
+| `/ws/agents` | `resource://agents/list` | Agent list with status, lifecycle, pending approvals |
+| `/ws/session` | `resource://agents/{id}/session/state` | Session state, run state, transcript items |
+| `/ws/approvals` | `resource://agents/{id}/approvals/pending` | Pending approvals list |
+| `/ws/policy` | `resource://agents/{id}/policy/state` | Policy content, id, proposals |
+| `/ws/mcp` | `resource://agents/{id}/mcp/state` | MCP servers sampling snapshot |
+| `/ws/ui` | `resource://agents/{id}/ui/state` | UI state (if UI server attached) |
 
-#### DELETE WebSocket Channels (Replace with MCP Subscriptions)
-MCP subscriptions already work (`broadcast_resource_updated()` implemented). Replace these WebSocket channels:
+**Additional resources**:
+- `resource://presets/list` - Agent presets (migrate from `GET /api/presets`)
+- `resource://agents/{id}/approvals/history` - Approval history (already exists, migrate frontend)
 
-- ❌ `/ws/session` → ✅ Subscribe to `resource://agents/{id}/state`
-- ❌ `/ws/approvals` → ✅ Subscribe to `resource://agents/{id}/approvals/pending`
-- ❌ `/ws/policy` → ✅ Subscribe to `resource://approval-policy/proposals`
-- ❌ `/ws/mcp` → ✅ Subscribe to `resource://agents/{id}/mcp/state`
-- ❌ `/ws/ui` → ✅ Subscribe to `resource://ui/{id}/blocks`
-- ❌ `/ws/agents` → ✅ Subscribe to `resource://agents/list`
+**Wire notification calls** (emit `broadcast_resource_updated()` on events):
+- Registry: agent create/delete/status → `resource://agents/list`
+- Session: transcript events → `resource://agents/{id}/session/state`
+- Approval hub: approval requests/decisions → `resource://agents/{id}/approvals/pending`
+- Policy engine: policy updates → `resource://agents/{id}/policy/state`
+- Compositor: server attach/detach → `resource://agents/{id}/mcp/state`
+- UI manager: UI state changes → `resource://agents/{id}/ui/state`
 
-**Important**: All `/ws/*` endpoints are NOT MCP protocol - they are legacy WebSocket channels that duplicate MCP functionality.
+**Location**: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
 
-#### Keep as HTTP (Static/Health Only)
-- ✅ Static file serving (`/`, `/vite.svg`) - HTTP-native concern
-- ✅ Health checks (`/health`) - HTTP convention
-- ✅ Presets discovery (`/api/presets/*`) - internal server config
+---
 
-#### Deferred (Complex Structure/Pagination)
+#### Phase 2: Frontend MCP Migration (1 week)
+
+**Migrate 6 components to MCP subscriptions**:
+
+1. **AgentsSidebar** → Subscribe to `resource://agents/list`
+2. **ChatPane** → Subscribe to `resource://agents/{id}/session/state`
+3. **ApprovalsPanel** → Subscribe to `resource://agents/{id}/approvals/pending`
+4. **PolicyEditorPane** → Subscribe to `resource://agents/{id}/policy/state` (+ replace 4 HTTP calls with MCP tools)
+5. **ServersPanel** → Subscribe to `resource://agents/{id}/mcp/state`
+6. **UI state handling** → Subscribe to `resource://agents/{id}/ui/state`
+
+**Migrate 3 components to MCP tools** (replace HTTP POST/PUT):
+- **PolicyEditorPane**: Use `set_policy`, `reject_proposal` tools (not HTTP PUT/POST)
+- **MessageComposer**: Use `prompt` tool (not HTTP POST)
+- **ApprovalTimeline**: Use `resource://agents/{id}/approvals/history` (not HTTP GET)
+
+**Subscription Pattern**:
+```typescript
+// Subscribe to resource
+const unsubscribe = await mcpClient.subscribe(
+  'resource://agents/{id}/session/state',
+  async () => {
+    // Re-read resource on notification
+    const result = await mcpClient.readResource('resource://agents/{id}/session/state');
+    sessionStore.set(JSON.parse(result.contents[0].text));
+  }
+);
+
+// Initial load (no notification for first read)
+const initial = await mcpClient.readResource('resource://agents/{id}/session/state');
+sessionStore.set(JSON.parse(initial.contents[0].text));
+```
+
+**Location**: `adgn/src/adgn/agent/web/src/`
+
+---
+
+#### Phase 3: Cleanup (2-3 days)
+
+**DELETE WebSocket infrastructure**:
+- ❌ Delete `/ws/agents` endpoint and `AgentsWSHub` class
+- ❌ Delete `/ws/session` endpoint and `SessionChannelManager`
+- ❌ Delete `/ws/approvals` endpoint and `ApprovalsChannelManager`
+- ❌ Delete `/ws/policy` endpoint and `PolicyChannelManager`
+- ❌ Delete `/ws/mcp` endpoint and `McpChannelManager`
+- ❌ Delete `/ws/ui` endpoint and `UiChannelManager`
+- ❌ Delete `adgn/src/adgn/agent/server/channels/` directory (all channel code)
+- ❌ Delete channel bundle infrastructure (`bundle.py`, `_channel_bundle` references)
+
+**DELETE HTTP endpoints** (already have MCP equivalents):
+- ❌ `POST /api/agents` → `agents/create_agent()`
+- ❌ `GET /api/agents` → `resource://agents/list`
+- ❌ `GET /api/agents/{id}` → `resource://agents/{id}/info`
+- ❌ `DELETE /api/agents/{id}` → `agents/delete_agent()`
+- ❌ `POST /api/agents/{id}/prompt` → `agents/prompt()`
+- ❌ `POST /api/agents/{id}/abort` → `agents/abort_agent()`
+- ❌ `POST /api/agents/{id}/approve` → `agents/approve_tool_call()`
+- ❌ `POST /api/agents/{id}/deny_continue` → `agents/deny_tool_call()`
+- ❌ `POST /api/agents/{id}/deny_abort` → `agents/deny_abort()`
+- ❌ `GET /api/agents/{id}/policy` → `resource://agents/{id}/policy/state`
+- ❌ `PUT /api/agents/{id}/policy` → `agents/set_policy()`
+- ❌ `POST /api/agents/{id}/policy/proposals/{id}/approve` → `agents/approve_proposal()`
+- ❌ `POST /api/agents/{id}/policy/proposals/{id}/reject` → `agents/reject_proposal()`
+- ❌ `GET /api/agents/{id}/approvals/history` → `resource://agents/{id}/approvals/history`
+- ❌ `POST /api/agents/{id}/message` → `agents/prompt()`
+- ❌ `GET /api/presets` → `resource://presets/list`
+- ❌ `GET /api/capabilities` → Remove (capabilities are per-agent, use `resource://agents/{id}/info`)
+
+**KEEP as HTTP** (static/health only):
+- ✅ Static file serving (`/`, `/vite.svg`, etc.)
+- ✅ Health checks (`/health`)
+
+**Verify cleanup**:
+```bash
+# Verify ZERO WebSocket endpoints remain
+grep -r "/ws/" adgn/src/adgn/agent/server/ || echo "✅ No WebSocket endpoints"
+
+# Verify ZERO channel bundle references
+grep -r "_channel_bundle\|channel.bundle" adgn/ || echo "✅ No channel bundles"
+
+# Verify HTTP endpoints deleted
+grep -r "POST.*api/agents\|GET.*api/agents" adgn/src/adgn/agent/server/app.py || echo "✅ HTTP endpoints clean"
+```
+
+---
+
+#### Phase 4: Token-Based Connection Routing (Optional - can be separate wave)
+
+**Pattern**: Single `/mcp` endpoint routes to different backend MCP servers based on Bearer token.
+
+See Architecture Overview section for detailed implementation pattern using `StreamableHTTPSessionManager`.
+
+---
+
+#### Testing Requirements
+
+**Unit Tests** (already exist, need updates):
+- ✅ Backend MCP server tests (`tests/agent/mcp_bridge/test_agents_server.py`) - 28 tests passing
+- ✅ Frontend MCP client tests (`src/adgn/agent/web/src/features/mcp/client.test.ts`) - 38 tests passing
+- ✅ Frontend subscriptions tests (`src/adgn/agent/web/src/features/mcp/subscriptions.test.ts`) - 41 tests passing
+- ⚠️ Frontend component tests - 45 tests blocked by Svelte 6 + vitest incompatibility
+
+**Integration Tests** (need expansion):
+- ⚠️ **E2E tests need more scenarios** (`tests/agent/e2e/test_mcp_ui.py`)
+  - Currently: 3 basic tests (approval flow, multi-agent mailbox, timeline)
+  - **Need to add**:
+    - MCP subscription live updates (verify no page reload needed)
+    - Resource read error handling (404, timeout, malformed JSON)
+    - Concurrent subscription handling (multiple agents, rapid updates)
+    - Subscription unsubscribe/resubscribe behavior
+    - Performance under load (100+ approvals, rapid status changes)
+    - Edge cases (agent deleted while subscribed, network interruption)
+  - **Locations**: Add to `tests/agent/e2e/test_approvals.py`, `test_ui.py`, `test_mcp_ui.py`
+
+**Playwright Test Coverage Gaps**:
+1. **Missing: Resource subscription testing**
+   - Verify `resource_updated` notifications trigger UI updates
+   - Test subscription cleanup on component unmount
+   - Test multiple subscriptions to same resource
+
+2. **Missing: Error scenario testing**
+   - Resource not found (404)
+   - Malformed resource JSON
+   - Subscription notification timeout
+   - MCP server disconnect/reconnect
+
+3. **Missing: Performance testing**
+   - Large resource payloads (10+ MB)
+   - High-frequency updates (10+ per second)
+   - Many concurrent subscriptions (50+)
+
+4. **Missing: Edge case testing**
+   - Agent deleted while frontend subscribed
+   - Network interruption during resource read
+   - Subscription to non-existent resource URI
+
+**Test Execution Status**:
+- ✅ Backend unit tests: Pass (28 passing)
+- ✅ Frontend unit tests (MCP client/subscriptions): Pass (79 passing)
+- ⚠️ Frontend component tests: Blocked (Svelte 6 incompatibility)
+- ⚠️ E2E tests: Need Docker + Playwright (3 basic tests exist, need expansion)
+
+---
+
+#### Deferred to Future Waves
+
+**Out of Scope for Wave D**:
 - Runs & Events (`/api/runs/*`) - deferred until pagination/filtering design
-- `GET /api/agents/{id}/status` - deferred (complex structure)
-- `GET /api/capabilities` - deferred (handshake helper)
+- `GET /api/agents/{id}/status` - deferred (complex structure, may merge with agent info resource)
 
-**Token-Based Connection Routing** (See "Architecture Overview" section for detailed pattern):
-
-Single HTTP endpoint `/mcp` routes connections to different backend MCP servers based on Bearer token lookup.
-
-**Migration Roadmap**:
-
-**✅ Phase 1 COMPLETE** - MCP agents server + frontend client
-- Frontend uses MCP client (StreamableHTTP)
-- Core tools implemented: approve, deny, abort, prompt
-- Subscriptions infrastructure working
-- 28+ tests passing
-
-**Phase 2 (Wave D)** - Implement token-based connection routing:
-1. Add token-based routing at `/mcp` endpoint (not `/mcp/agents`)
-2. Define `TokenRole` enum (HUMAN, AGENT) - only two roles
-3. Extract Bearer token from Authorization header and look up in token table
-4. Token table lookup returns `{role: "human" | "agent", agent_id?: str}`
-5. Route to backend using `StreamableHTTPSessionManager`:
-   - AGENT role (with agent_id) → Route to agent's compositor MCP server
-   - HUMAN role → Route to agents management MCP server
-6. Each connection gets its own session manager for the appropriate backend
-7. Client sees backend directly (no prefixes) - transparent proxy
-8. Pattern: Custom ASGI app → token lookup → get/create session manager → delegate to `manager.handle_request()`
-9. Test: agent token connects to compositor, human token connects to management server
-
-**Phase 3 (Future)** - DELETE redundant HTTP/WebSocket:
-1. Verify frontend only uses MCP (no HTTP REST calls to `/api/agents/*`)
-2. Delete HTTP endpoint handlers (keep static/health/presets only)
-3. Delete WebSocket channel infrastructure (`/ws/*`)
-4. Remove channel bundle code entirely
-5. Verify: ZERO WebSocket endpoints remain (only MCP StreamableHTTP)
-
-**Note**: Proposals already work via policy server MCP resources. Do NOT add HTTP endpoints for proposals.
+**Important Clarifications**:
+- `withdraw_proposal` tool is **AGENT-FACING ONLY** (agents withdraw their own proposals via compositor)
+- NOT exposed to human UI/frontend
+- Already exists in agent-facing MCP servers, no frontend changes needed
 
 ### Waves 8-11: Code Quality, Cleanup & Verification
 - Wave 8: Code Quality Scans (28 parallel scan agents)
