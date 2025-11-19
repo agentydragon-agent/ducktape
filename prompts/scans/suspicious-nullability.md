@@ -372,26 +372,56 @@ def connect_to_database(
 
 **Goal**: Find ALL instances of suspicious nullability (100% recall target).
 
-**Recall/Precision**: Medium recall (~60-70%) with automation, requires manual verification
+**MANDATORY Step 0**: Discover ALL nullable type annotations in the codebase.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL nullable output using your intelligence
+- High recall required, high precision NOT required - you determine which are problematic
+- Review each nullable for: unnecessary None, None propagation, immediate None checks, assertions
+- Prevents lazy analysis by forcing examination of ALL nullable usage
+
+```bash
+# Find ALL nullable type annotations with context (union syntax)
+rg --type py '\| None' -B 2 -A 1 --line-number
+
+# Find ALL Optional type annotations with context
+rg --type py 'Optional\[' -B 2 -A 1 --line-number
+
+# Count total nullables found
+(rg --type py '\| None' && rg --type py 'Optional\[') | wc -l
+```
+
+**What to review for each nullable:**
+1. **Immediately fails if None**: Function parameter accepts None but first line raises if None
+2. **Immediately asserts not None**: Value assigned from nullable source then `assert x is not None`
+3. **None propagation**: Function returns None if param is None (propagating through layers)
+4. **Semantically impossible None**: Type says nullable but can never actually be None
+5. **Multiple required nullable params**: All params are nullable but all checked and raised together
+
+**Process ALL output**: Read each nullable, use your judgment to identify which match the antipatterns above.
+
+---
+
+**Recall/Precision**: Medium recall (~60-70%) with targeted patterns, requires manual verification
 - `grep "| None\).*\n.*if.*is None.*raise"` finds immediate None checks: ~50% recall, ~70% precision
 - `grep "assert.*is not None"` finds assertions: ~80% recall, ~60% precision
 - AST scan for None propagation patterns: ~40% recall, ~80% precision
 - Manual reading required for "semantically impossible None"
 
-**Why medium recall**:
+**Why medium recall for targeted patterns**:
 - Many patterns require understanding control flow across multiple functions
 - "Semantically impossible None" requires domain understanding
 - None propagation patterns have many variations
 
-**Recommended approach**:
-1. Run grep/AST to find obvious patterns (~60-70% recall, ~60-70% precision)
+**Recommended approach AFTER Step 0**:
+1. Run targeted grep/AST patterns to find obvious antipatterns (~60-70% recall, ~60-70% precision)
 2. For each candidate, analyze:
    - **Immediately fails if None?** Check first lines of function body
    - **Immediately asserts not None?** Look for `assert x is not None`
    - **Propagates None?** Trace return value through call chain
    - **Semantically impossible?** Understand domain constraints
 3. Fix confirmed suspicious nullability
-4. **Supplement with manual reading** of nullable parameters and returns
+4. **Supplement with manual reading** of nullable parameters and returns from Step 0
 5. **Accept**: This pattern requires significant manual analysis
 
 **Medium-recall retrievers**:

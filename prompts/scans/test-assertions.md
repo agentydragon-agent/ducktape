@@ -242,9 +242,39 @@ assert_that(result, has_properties(
 
 ## Detection Strategy
 
+**MANDATORY Step 0**: Discover ALL assert statements in test files.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL assert output using your intelligence
+- High recall required, high precision NOT required - you determine which would benefit from PyHamcrest
+- Review each assertion for: verbose patterns, field-by-field checks, collection operations, type checks
+- Prevents lazy analysis by forcing examination of ALL test assertions
+
+```bash
+# Find ALL assert statements in test files with context
+rg --type py '^[[:space:]]*assert ' --glob "test_*.py" --glob "*_test.py" -B 1 -A 1 --line-number
+
+# Count total assertions found
+rg --type py '^[[:space:]]*assert ' --glob "test_*.py" --glob "*_test.py" | wc -l
+```
+
+**What to review for each assertion:**
+1. **Field-by-field checks**: Multiple `assert obj.field ==` for same object (use plain `==` or `has_properties()`)
+2. **Collection operations**: `assert len()`, `assert x in`, `assert x[0] ==` (use `has_length()`, `has_item()`, matchers)
+3. **Type checks**: `assert isinstance()` (use `instance_of()` for better error messages)
+4. **String operations**: `assert "x" in str`, `assert str.startswith()` (use `contains_string()`, `starts_with()`)
+5. **Numeric comparisons**: `assert x > y`, `assert x >= y` (use `greater_than()`, `greater_than_or_equal_to()`)
+6. **Verbose collection type checks**: Multiple assertions about same collection (compose with `all_of()`)
+
+**Process ALL output**: Read each assertion, use your judgment to identify which would benefit from PyHamcrest matchers.
+
+**Key decision**: For full object comparison with exact values, prefer plain `==`. Use `has_properties()` only for partial matching or composed matchers.
+
+---
+
 **Primary**: Manual code reading - read test files thoroughly, look for verbose patterns.
 
-**Automated preprocessing** (high recall, manual verification required):
+**Automated preprocessing AFTER Step 0** (targeted patterns, manual verification required):
 
 ```bash
 # Verbose collection checks (3+ lines about same collection)
