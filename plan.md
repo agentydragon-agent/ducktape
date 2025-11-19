@@ -144,6 +144,13 @@ All planned features have been implemented:
 7. Add agent mode badge: [LOCAL] or [BRIDGE] (indicates agent loop presence; UI server shown implicitly via composer/timeline)
 8. Update routing: global approvals view, agent selection
 
+**IMPORTANT - Definition of Done for WebSocket Migration**:
+- Post-migration, there should be **ZERO WebSocket endpoints** on the backend
+- Current WebSocket channels (`/ws/session`, `/ws/mcp`, `/ws/approvals`, `/ws/policy`, `/ws/ui`, `/ws/agents`) are **NOT MCP protocol** - they are still WebSockets
+- These must be replaced with MCP resource subscriptions (listening to `resource_updated` notifications from MCP servers)
+- The frontend will subscribe to MCP resources instead of connecting to WebSocket channels
+- This is a **future wave** (not Wave 7) - requires MCP subscription infrastructure to be fully reliable
+
 ### Waves 8-11: Code Quality, Cleanup & Verification
 - Wave 8: Code Quality Scans (28 parallel scan agents)
 - Wave 9: Violation Analysis
