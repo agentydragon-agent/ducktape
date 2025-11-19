@@ -298,16 +298,39 @@ class DatabaseConnection:
 
 ### Step 1: Automated Discovery (Gather Candidates)
 
-**AST-based tool** (high-level description, strong LLM can implement):
-1. Parse all Python files
-2. Find `ClassDef` nodes
-3. Extract `__init__` method
-4. Check if:
-   - All `__init__` statements are `self.x = x` or `self.x = f(x)` where `f` is trivial (list(), None check)
-   - No complex logic (if/for/while, multiple statements per param)
-   - No external calls (except trivial wrappers like `list()`)
-5. Flag as "candidate for dataclass"
-6. Output: list of (file, class, line_number)
+**Tool**: `prompts/scans/scan_dataclass_candidates.py` - AST-based scanner for boilerplate classes
+
+**What it finds**:
+- All classes with their `__init__` analysis
+- Counts `self.x = y` assignments in `__init__`
+- Counts other statements in `__init__` (validation, defaults, etc.)
+- Flags presence of `__repr__`, `__eq__`, `__hash__` methods
+
+**Usage**:
+```bash
+# Run on entire codebase
+python prompts/scans/scan_dataclass_candidates.py . > dataclass_scan.json
+
+# Filter for high-priority candidates (5+ params)
+cat dataclass_scan.json | jq '.classes | to_entries[] |
+  {file: .key, classes: [.value | to_entries[] |
+  select(.value.init_self_assignments >= 5)]}'
+```
+
+**Output structure**:
+- `summary`: Total classes and candidate count
+- `classes`: Dict mapping file paths to dict of class names to analysis:
+  - `line`: Line number
+  - `init_self_assignments`: Count of `self.x = y` in `__init__`
+  - `init_other_statements`: Count of other statements in `__init__`
+  - `has_repr`, `has_eq`, `has_hash`: Boolean flags
+
+**Tool characteristics**:
+- **~100% recall**: Finds all classes with `__init__` methods
+- **Low precision**: Classes with 5+ params may still need complex init
+- **LLM filters**: Use output to identify candidates, verify manually
+
+**TODO**: Add detection for `to_dict`/`from_dict` methods (Pydantic indicator)
 
 **Grep patterns** (lower recall, useful supplement):
 ```bash
@@ -362,36 +385,44 @@ Convert identified classes to dataclass/Pydantic:
 4. **Update tests**: Ensure equality/repr still work
 5. **Check for breakage**: Some code may depend on specific `__init__` behavior
 
-## Example AST Detection Logic
+## Example Scanner Output
 
-High-level description (strong LLM can implement):
+Running `scan_dataclass_candidates.py` produces:
 
+```json
+{
+  "summary": {
+    "total_classes": 45,
+    "candidate_classes": 8
+  },
+  "classes": {
+    "src/agent/runtime.py": {
+      "LocalAgentRuntime": {
+        "line": 32,
+        "init_self_assignments": 10,
+        "init_other_statements": 2,
+        "has_repr": true,
+        "has_eq": false,
+        "has_hash": false
+      }
+    },
+    "src/agent/session.py": {
+      "AgentSession": {
+        "line": 45,
+        "init_self_assignments": 8,
+        "init_other_statements": 0,
+        "has_repr": false,
+        "has_eq": true,
+        "has_hash": false
+      }
+    }
+  }
+}
 ```
-For each Python file:
-  Parse AST
-  For each ClassDef:
-    Find __init__ method
-    If no __init__, skip (already simple)
 
-    Analyze __init__ body:
-      Count assignment statements like "self.x = x"
-      Count other statements (if/for/try/calls)
-
-      If:
-        - 5+ assignments AND
-        - 0-2 other statements (mutable default handling is OK) AND
-        - No complex expressions on RHS
-      Then:
-        Flag as "candidate dataclass"
-        Report: filename, class name, line number, parameter count
-```
-
-Output example:
-```
-adgn/src/adgn/agent/runtime/local_runtime.py:32 LocalAgentRuntime (10 params)
-adgn/src/adgn/agent/session.py:45 AgentSession (8 params)
-adgn/src/adgn/agent/handlers/base.py:20 HandlerContext (6 params)
-```
+**Interpretation**:
+- `LocalAgentRuntime`: 10 params, 2 other statements → Review (may need complex init)
+- `AgentSession`: 8 params, 0 other statements, has `__eq__` → Strong candidate for dataclass
 
 Then manually review each candidate.
 

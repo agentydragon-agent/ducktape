@@ -185,28 +185,65 @@ with contextlib.suppress(Exception):
 
 ## Detection Strategy
 
-### Primary Heuristic: Try-Except Without Re-raise
+### Automated Scanning Tool
 
-Find all `try-except` blocks where the `except` branch does not re-raise:
+**Tool**: `prompts/scans/scan_error_handling.py` - AST-based scanner for error handling antipatterns
+
+**What it finds**:
+1. **Bare except** - `except:` with no exception type
+2. **Broad except** - `except Exception:` (too broad)
+3. **Non-raising except** - Exception handlers that don't re-raise (return, pass, etc.)
+4. **Single-line try** - Try-except wrapping single statement (use contextlib.suppress)
+
+**Usage**:
+```bash
+# Run on entire codebase
+python prompts/scans/scan_error_handling.py . > error_handling_scan.json
+
+# Filter for high-priority issues (bare except)
+cat error_handling_scan.json | jq '.issues | to_entries[] |
+  {file: .key, bare_except: .value.bare_except}'
+```
+
+**Output structure**:
+- `summary`: Counts of each issue type
+- `issues`: Dict mapping file paths to lists of issues by type:
+  - `bare_except`: `{line, col}` for each bare except
+  - `broad_except`: `{line, col}` for each `except Exception:`
+  - `non_raising_except`: `{line, col}` for handlers without raise
+  - `single_line_try`: `{line, col}` for single-line try blocks
+
+**Tool characteristics**:
+- **~100% recall**: Finds all try-except patterns
+- **High false positives for non_raising_except**: Includes legitimate logging before re-raise
+- **Expected**: LLM reviews each finding in context
+
+**Example output**:
+```json
+{
+  "summary": {"bare_except": 5, "broad_except": 12, "non_raising_except": 34},
+  "issues": {
+    "src/client.py": {
+      "bare_except": [{"line": 45, "col": 4}],
+      "non_raising_except": [{"line": 45, "col": 4}, {"line": 67, "col": 4}]
+    }
+  }
+}
+```
+
+### Grep Patterns (Supplement)
+
+Manual grep patterns for additional context:
 
 ```bash
-# Find try-except patterns (candidates for manual review)
-rg --type py -U 'try:.*\n.*except.*:.*\n(?!.*raise)' --multiline
+# Find contextlib.suppress usage (review each)
+rg --type py 'contextlib\.suppress\('
 
 # Find except blocks that log but don't re-raise
 rg --type py -U 'except.*:.*\n.*logger\.(warning|error|exception).*\n(?!.*raise)' --multiline
 
 # Find except blocks returning None
 rg --type py -U 'except.*:.*\n.*return None' --multiline
-
-# Find contextlib.suppress usage (review each)
-rg --type py 'contextlib\.suppress\('
-
-# Find bare except clauses
-rg --type py 'except:'
-
-# Find overly broad exception handlers
-rg --type py 'except Exception:'
 ```
 
 ### Examples to Flag
