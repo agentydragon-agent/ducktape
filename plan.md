@@ -135,14 +135,32 @@ All planned features have been implemented:
 - MessageComposer.svelte - for local agents with UI server
 
 **Tasks** (8 parallel agents):
-1. Rename + enhance ApprovalTimeline → AgentTimeline: merge `UiDisplayItem[]` (UserMessage, AssistantMarkdown, Tool, EndTurn) from `uiState` store
-2. Extract PolicyEditorPane: policy view/edit + proposals
-3. Complete MessageComposer: send messages, abort agent
-4. Update App.svelte: CSS grid (timeline | policy) + conditional composer
-5. Wire MCP subscriptions: `resource://agents/{id}/approvals/history`, `resource://approval-policy/policy.py`
-6. Detect UI server: check `$agentStatus.ui?.ready`, conditional composer rendering (no badge - presence indicated by composer + UI messages in timeline)
-7. Add agent mode badge: [LOCAL] or [BRIDGE] (indicates agent loop presence; UI server shown implicitly via composer/timeline)
-8. Update routing: global approvals view, agent selection
+1. **AgentTimeline Enhancement**: Rename ApprovalTimeline → AgentTimeline
+   - Collapse approval and tool calls into ONE widget per call ID (show inputs AND outputs together)
+   - Merge `UiDisplayItem[]` (UserMessage, AssistantMarkdown, Tool, EndTurn) from `uiState` store
+   - Subscribe to agent-scoped approval policy: `resource://agents/{id}/approval-policy/policy.py` (NOT global)
+   - Wire agent to ensure scoped policy resource is exposed properly
+   - UI server messages: subscribe to notifications FROM the UI server (not just read resource)
+2. **PolicyEditorPane Extraction**: Extract from ApprovalsPanel
+   - Policy view/edit + proposals UI
+   - Agent-scoped policy resource integration
+3. **MessageComposer Completion**: Send messages, abort agent
+   - Conditional rendering based on UI server presence
+4. **App.svelte Layout**: CSS grid (timeline | policy) + conditional composer
+5. **MCP Subscriptions Wiring**:
+   - Subscribe to `resource://agents/{id}/approvals/history`
+   - Subscribe to `resource://agents/{id}/approval-policy/policy.py` (agent-scoped)
+   - Subscribe to UI server notifications (for message rendering)
+6. **UI Server Detection**:
+   - Check `$agentStatus.ui?.ready`
+   - Conditional composer rendering
+   - Show UI messages in timeline from UI server notifications
+7. **Agent Controls**:
+   - Add agent mode badge: [LOCAL] or [BRIDGE] (indicates agent loop presence)
+   - Add ABORT button (conditional on loop server being present)
+   - Abort button triggers tool to abort the loop
+   - UI server shown implicitly via composer + timeline messages
+8. **Routing Updates**: Global approvals view, agent selection
 
 **IMPORTANT - Definition of Done for WebSocket Migration**:
 - Post-migration, there should be **ZERO WebSocket endpoints** on the backend

@@ -31,37 +31,43 @@
 
 - **Agent 1**: AgentTimeline Enhancement
   - Rename `ApprovalTimeline.svelte` → `AgentTimeline.svelte`
-  - Merge `UiDisplayItem[]` from `uiState` store
-  - Show approvals, tool calls, UI messages in unified timeline
+  - Collapse approval and tool calls into ONE widget per call ID (show inputs AND outputs together)
+  - Merge `UiDisplayItem[]` from `uiState` store (UserMessage, AssistantMarkdown, Tool, EndTurn)
+  - Subscribe to agent-scoped approval policy: `resource://agents/{id}/approval-policy/policy.py` (NOT global)
+  - Wire agent to ensure scoped policy resource is exposed properly
+  - UI server messages: subscribe to notifications FROM the UI server (not just read resource)
 
 - **Agent 2**: PolicyEditorPane Extraction
   - Extract from `ApprovalsPanel.svelte`
   - Policy view/edit + proposals UI
   - Component: `PolicyEditorPane.svelte`
+  - Agent-scoped policy resource integration
 
 - **Agent 3**: MessageComposer Completion
   - Complete `MessageComposer.svelte`
   - Send messages, abort agent
-  - Only shown for local agents with UI server
+  - Conditional rendering based on UI server presence
 
 - **Agent 4**: App.svelte Layout
   - CSS grid: `timeline | policy` + conditional composer
   - Side-by-side layout per mockups
 
 - **Agent 5**: MCP Subscriptions Wiring
-  - Wire `resource://agents/{id}/approvals/history`
-  - Wire `resource://approval-policy/policy.py`
+  - Subscribe to `resource://agents/{id}/approvals/history`
+  - Subscribe to `resource://agents/{id}/approval-policy/policy.py` (agent-scoped)
+  - Subscribe to UI server notifications (for message rendering)
   - Update components to use subscriptions
 
 - **Agent 6**: UI Server Detection
   - Check `$agentStatus.ui?.ready`
   - Conditional composer rendering
-  - Show UI messages in timeline
+  - Show UI messages in timeline from UI server notifications
 
-- **Agent 7**: Agent Mode Badge
-  - Add [LOCAL] or [BRIDGE] badge
-  - Indicates agent loop presence
-  - UI server shown implicitly via composer/timeline
+- **Agent 7**: Agent Controls
+  - Add agent mode badge: [LOCAL] or [BRIDGE] (indicates agent loop presence)
+  - Add ABORT button (conditional on loop server being present)
+  - Abort button triggers tool to abort the loop
+  - UI server shown implicitly via composer + timeline messages
 
 - **Agent 8**: Routing Updates
   - Global approvals view
