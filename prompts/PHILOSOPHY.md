@@ -86,6 +86,51 @@ Different automated tools have different reliability profiles:
 3. **Subjective judgment** - Is documentation "useless"? Is a name "vague"? (human/LLM verification needed)
 4. **Low-recall patterns** - May need supplemental manual reading to find all issues
 
+## Prompt Writing Style: You-Language
+
+**All scan prompts are written in second person ("you") targeting the agent executing the scan.**
+
+Prompts are instructions to agents/LLMs, so address the reader directly:
+
+### ✅ GOOD: Direct you-language
+```markdown
+**Manual review workflow**:
+1. Review dict_literals - check context
+2. You analyze pydantic_models for overlapping fields
+3. Filter models where len(fields) == 1
+4. You compare field sets across models
+
+**Tool characteristics**:
+- Tool surfaces raw data; you do the analysis
+- You filter candidates based on context
+- Requires your judgment to determine if problematic
+```
+
+### ❌ BAD: Third-person LLM references
+```markdown
+**Manual review workflow**:
+1. LLM reviews dict_literals
+2. LLM does this analysis
+3. LLM filters models
+4. LLM compares field sets
+
+**Tool characteristics**:
+- Tool surfaces raw data; LLM analyzes it
+- LLM filters candidates
+- Requires human judgment
+```
+
+**Why you-language?**
+- **Clearer**: Direct instructions are easier to follow than descriptions
+- **Natural**: Prompts are imperative ("do this") not descriptive ("someone does this")
+- **Consistent**: Matches command tone ("Run scan", "Verify candidates")
+
+**Examples**:
+- "LLM can identify overlaps" → "You can identify overlaps"
+- "LLM does the filtering" → "You do the filtering"
+- "Requires human judgment" → "Requires your judgment"
+- "LLM verification approach" → "Verification approach" (implied you follow it)
+
 ## Scan Prompt Structure
 
 Every scan prompt should follow this structure:
