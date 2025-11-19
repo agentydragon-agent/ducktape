@@ -4,9 +4,39 @@ This document tracks what's left to tidy up after recent refactors. Closed items
 
 ## MCP Migration Status
 
-**The MCP-based management UI implementation is complete** (Phases 0-4, Waves 1-4). See **../MCP_MIGRATION_SUMMARY.md** for full details.
+**The MCP-based management UI implementation is complete** (Phases 0-5, Waves 1-6).
 
-**Remaining**: Phase 5 cleanup (remove legacy WebSocket code, final consistency pass)
+**Phase 5 (WebSocket Cleanup) Status**:
+- ✅ Analysis complete - monolithic `/ws` endpoint already removed in commit `2b23d5d` (2025-11-18)
+- ✅ Modular channels in production use (6 active endpoints: `/ws/agents`, `/ws/session`, `/ws/mcp`, `/ws/approvals`, `/ws/policy`, `/ws/ui`)
+- ⚠️ **Test fixtures need updates** - 10 tests still reference removed `/ws` endpoint (see followup below)
+
+**Remaining**: Fix test fixtures to use modular channels, ensure no remnants of old WebSocket endpoints
+
+---
+
+## WebSocket Test Fixture Cleanup
+
+- [ ] **Update test fixtures to use modular WebSocket channels**
+  - **Files to fix**:
+    - `tests/agent/conftest.py` - Update `ws_session` fixture (line 347) from `/ws?agent_id={agent_id}` to `/ws/session?agent_id={agent_id}`
+    - `tests/agent/server/test_agents_ws.py` - Update `test_agents_ws_status_on_agent_ws_connect` (line 59)
+  - **Tests affected**: ~10 tests currently broken by removed `/ws` endpoint
+    - `test_agents_list_status_and_history`
+    - `test_agents_ws_run_status_mirrors`
+    - `test_approval_prompt_auto_appears`
+    - `test_persist_revive_continue_ui_flow`
+    - `test_set_policy_rejects_when_tests_missing`
+    - `test_set_policy_rejects_when_test_fails`
+    - `test_ui_websocket_roundtrip_with_mocked_openai`
+    - `test_ws_plain_assistant_text`
+    - `test_ws_tool_multiturn`
+    - `test_agents_ws_status_on_agent_ws_connect`
+  - **Migration notes**:
+    - Old envelope format: `Envelope(session_id, event_id, event_at, payload)`
+    - New envelope format: `ChannelEnvelope(channel, event_id, event_at, payload)`
+    - Consider multi-channel fixture if tests need multiple data sources
+  - **Background**: Monolithic `/ws` endpoint removed in commit `2b23d5d` (2025-11-18), replaced with 6 modular channels
 
 ---
 

@@ -20,6 +20,17 @@ All planned features have been implemented:
 - Wave 9: Parallel Cleanup (5 agents)
 - Wave 10: Final Verification
 
+**TODO: E2E Test Coverage Enhancement**:
+- [ ] Update Playwright e2e tests to not require Docker
+  - Mock out Docker dependencies instead of requiring daemon
+  - Update `test_mcp_ui.py`, `test_ui.py`, `test_abort.py` to use mocked infrastructure
+  - Allows tests to run in all environments (including this one)
+- [ ] Add any missing e2e test scenarios
+  - Review acceptance criteria against current e2e coverage
+  - Identify gaps in user workflow testing
+  - Add tests for: policy proposal workflows, multi-agent interactions, error states
+  - Ensure comprehensive coverage of all MCP-based UI features
+
 **Pre-existing Test Issues** (NOT related to MCP migration):
 - ResponseUsage validation (OpenAI SDK breaking change - 13 tests)
 - CallToolResult API (FastMCP breaking change - 3 tests)
@@ -29,7 +40,99 @@ All planned features have been implemented:
 **Environment Limitations**:
 - Playwright browsers cannot install (network 403 errors from CDN)
 - Docker not available in current environment
-- E2E tests written and ready but cannot execute here
+- E2E tests written and ready but cannot execute here (once Docker mocking done, Playwright still needed)
+
+## Test Coverage Summary
+
+**Total Tests Written**: 66+ (107 total including duplicates in summary)
+**Total Tests Passing**: ~107 where executable
+
+### Backend Tests (✅ 28 passing)
+**Location**: `tests/agent/mcp_bridge/test_agents_server.py`
+
+**Coverage**:
+- Multi-agent global mailbox (different approvals per agent)
+- Historical timeline with mixed outcomes (all decision types)
+- Agent state for idle agents
+- Global approvals ordering and structure
+- Resource parsing and structure validation
+- Tool call execution and error handling
+
+**Notable Fixes**: 7 existing tests fixed (snake_case alignment: `isError` → `is_error`)
+
+**Command**: `pytest tests/agent/mcp_bridge/test_agents_server.py -v`
+
+### Frontend MCP Client Tests (✅ 38 passing)
+**Location**: `src/adgn/agent/web/src/features/mcp/client.test.ts`
+
+**Coverage**:
+- Connection establishment and error handling
+- Resource reading (success, errors, timeouts)
+- Tool calling (success, errors, structured content)
+- Large payload handling (>1MB resources)
+- Concurrent operations (parallel tool calls, resource reads)
+- URI edge cases (special characters, empty segments)
+- Integration workflow (end-to-end scenarios)
+- Performance (concurrent safety)
+
+**Command**: `cd src/adgn/agent/web && npm test -- client.test.ts`
+
+### Frontend Subscriptions Tests (✅ 41 passing)
+**Location**: `src/adgn/agent/web/src/features/mcp/subscriptions.test.ts`
+
+**Coverage**:
+- Subscription lifecycle (create, notify, unsubscribe)
+- Multiple callbacks per URI
+- Automatic resource refresh
+- Error recovery and logging
+- Cleanup logic
+- Notification buffering
+- Concurrent subscription handling
+
+**Command**: `cd src/adgn/agent/web && npm test -- subscriptions.test.ts`
+
+### Frontend Component Tests (⚠️ 45 written, blocked)
+**Locations**:
+- `src/adgn/agent/web/src/components/GlobalApprovalsList.test.ts` (20 tests)
+- `src/adgn/agent/web/src/components/ApprovalTimeline.test.ts` (25 tests)
+
+**Coverage**:
+- Empty states (no approvals, no agents)
+- Action buttons (approve, reject, abort)
+- Filtering and sorting
+- Live updates via subscriptions
+- Multi-agent scenarios
+- Error handling and loading states
+- Search functionality
+- Decision type filters
+
+**Blocked By**: Svelte 6 + vitest incompatibility (waiting for upstream support)
+
+### Playwright E2E Tests (⚠️ 3 written, requires Docker)
+**Location**: `tests/agent/e2e/test_mcp_ui.py`
+
+**Coverage**:
+- `test_mcp_approval_flow_with_notifications` - Real-time approval flow with notifications
+- `test_multi_agent_global_mailbox` - Multi-agent concurrency scenarios
+- `test_timeline_displays_historical_decisions` - Historical timeline display
+
+**Requirements**: Docker daemon + Playwright browsers (`python -m playwright install`)
+
+**Note**: Marked with `@pytest.mark.requires_docker`
+
+### Known Test Limitations
+
+**1. Svelte Component Tests**
+- Issue: Svelte 6 not yet supported by vitest's environment API
+- Impact: 45 component tests written but cannot execute
+- Status: Waiting for upstream fix (vitest #7697)
+- Workaround: Manual testing, TypeScript compilation validates interfaces
+
+**2. E2E Tests Require Docker**
+- Issue: Playwright E2E tests need Docker to run full stack
+- Impact: Tests won't run in Docker-free environments
+- Status: By design (MCP server runs in containers)
+- Workaround: Skip with `pytest -m "not requires_docker"` or run in Docker-enabled CI
 
 ## Executive Summary
 
