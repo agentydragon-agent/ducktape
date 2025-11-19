@@ -29,6 +29,14 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 logger = logging.getLogger(__name__)
 
+# Resource URI constants for policy proposals
+POLICIES_LIST_URI = "resource://policies/list"
+
+
+def policy_detail_uri(policy_id: str) -> str:
+    """Resource URI for a specific policy proposal."""
+    return f"resource://policies/{policy_id}"
+
 
 class CreateProposalArgs(BaseModel):
     content: str
@@ -208,7 +216,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
                 content=got.content,
             )
 
-        @self.resource("resource://policies/list", name="policies_list", mime_type="application/json")
+        @self.resource(POLICIES_LIST_URI, name="policies_list", mime_type="application/json")
         async def policies_list() -> list[PolicyListItem]:
             """List all policies (returns lightweight metadata for list view)."""
             policies = await self._engine.persistence.list_policies(offset=0, limit=100)
@@ -221,7 +229,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
                 for p in policies
             ]
 
-        @self.resource("resource://policies/{policy_id}", name="policy_detail", mime_type="application/json")
+        @self.resource(policy_detail_uri("{policy_id}"), name="policy_detail", mime_type="application/json")
         async def policy_detail(policy_id: str) -> Policy:
             """Get full policy by ID."""
 
@@ -376,7 +384,7 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
                 enabled=input.enabled,
             )
             # Notify about policy library change
-            self._engine.notify_resource("resource://policies/list")
+            self._engine.notify_resource(POLICIES_LIST_URI)
             return policy
 
         @self.flat_model()
@@ -389,8 +397,8 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
                 description=input.description,
             )
             # Notify about both the specific policy and the list
-            self._engine.notify_resource(f"resource://policies/{input.id}")
-            self._engine.notify_resource("resource://policies/list")
+            self._engine.notify_resource(policy_detail_uri(input.id))
+            self._engine.notify_resource(POLICIES_LIST_URI)
             return policy
 
         @self.flat_model()
@@ -398,8 +406,8 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
             """Delete a policy from the policy library."""
             await self._engine.persistence.delete_policy(input.id)
             # Notify about policy deletion
-            self._engine.notify_resource(f"resource://policies/{input.id}")
-            self._engine.notify_resource("resource://policies/list")
+            self._engine.notify_resource(policy_detail_uri(input.id))
+            self._engine.notify_resource(POLICIES_LIST_URI)
 
 
 async def attach_approval_policy_admin(

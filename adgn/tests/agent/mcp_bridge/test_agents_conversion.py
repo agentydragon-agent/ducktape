@@ -14,16 +14,30 @@ from adgn.agent.persist import ApprovalOutcome, Decision, ToolCall, ToolCallExec
 from mcp import types as mcp_types
 
 
+def make_tool_call_record(
+    *,
+    call_id: str = "call-123",
+    run_id: str = "run-456",
+    agent_id: str = "agent-789",
+    tool_name: str = "test_tool",
+    args_json: str | None = '{"arg1": "value1"}',
+    decision: Decision | None = None,
+    execution: ToolCallExecution | None = None,
+) -> ToolCallRecord:
+    """Factory function to create ToolCallRecord with sensible defaults."""
+    return ToolCallRecord(
+        call_id=call_id,
+        run_id=run_id,
+        agent_id=agent_id,
+        tool_call=ToolCall(name=tool_name, call_id=call_id, args_json=args_json),
+        decision=decision,
+        execution=execution,
+    )
+
+
 def test_convert_tool_call_record_pending():
     """PENDING tool calls (no decision) should return None."""
-    record = ToolCallRecord(
-        call_id="call-123",
-        run_id="run-456",
-        agent_id="agent-789",
-        tool_call=ToolCall(name="test_tool", call_id="call-123", args_json='{"arg1": "value1"}'),
-        decision=None,
-        execution=None,
-    )
+    record = make_tool_call_record()
 
     result = _convert_tool_call_record_to_history(record)
     assert result is None
@@ -37,14 +51,7 @@ def test_convert_tool_call_record_executing():
         reason=None,
     )
 
-    record = ToolCallRecord(
-        call_id="call-123",
-        run_id="run-456",
-        agent_id="agent-789",
-        tool_call=ToolCall(name="test_tool", call_id="call-123", args_json='{"arg1": "value1"}'),
-        decision=decision,
-        execution=None,
-    )
+    record = make_tool_call_record(decision=decision)
 
     result = _convert_tool_call_record_to_history(record)
     assert result is not None
@@ -70,14 +77,7 @@ def test_convert_tool_call_record_completed():
         output=mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text="Success!")], isError=False),
     )
 
-    record = ToolCallRecord(
-        call_id="call-123",
-        run_id="run-456",
-        agent_id="agent-789",
-        tool_call=ToolCall(name="test_tool", call_id="call-123", args_json='{"arg1": "value1"}'),
-        decision=decision,
-        execution=execution,
-    )
+    record = make_tool_call_record(decision=decision, execution=execution)
 
     result = _convert_tool_call_record_to_history(record)
     assert result is not None
@@ -98,14 +98,7 @@ def test_convert_tool_call_record_rejected():
         reason="User rejected this action",
     )
 
-    record = ToolCallRecord(
-        call_id="call-123",
-        run_id="run-456",
-        agent_id="agent-789",
-        tool_call=ToolCall(name="test_tool", call_id="call-123", args_json='{"arg1": "value1"}'),
-        decision=decision,
-        execution=None,
-    )
+    record = make_tool_call_record(decision=decision)
 
     result = _convert_tool_call_record_to_history(record)
     assert result is not None
@@ -122,14 +115,7 @@ def test_convert_tool_call_record_policy_deny():
         reason=None,
     )
 
-    record = ToolCallRecord(
-        call_id="call-123",
-        run_id="run-456",
-        agent_id="agent-789",
-        tool_call=ToolCall(name="test_tool", call_id="call-123", args_json='{"arg1": "value1"}'),
-        decision=decision,
-        execution=None,
-    )
+    record = make_tool_call_record(decision=decision)
 
     result = _convert_tool_call_record_to_history(record)
     assert result is not None
@@ -146,14 +132,7 @@ def test_convert_tool_call_record_no_reason_rejection():
         reason=None,
     )
 
-    record = ToolCallRecord(
-        call_id="call-123",
-        run_id="run-456",
-        agent_id="agent-789",
-        tool_call=ToolCall(name="test_tool", call_id="call-123", args_json='{}'),
-        decision=decision,
-        execution=None,
-    )
+    record = make_tool_call_record(args_json='{}', decision=decision)
 
     result = _convert_tool_call_record_to_history(record)
     assert result is not None
@@ -169,14 +148,7 @@ def test_convert_tool_call_record_invalid_json():
         reason=None,
     )
 
-    record = ToolCallRecord(
-        call_id="call-123",
-        run_id="run-456",
-        agent_id="agent-789",
-        tool_call=ToolCall(name="test_tool", call_id="call-123", args_json="invalid json{"),
-        decision=decision,
-        execution=None,
-    )
+    record = make_tool_call_record(args_json="invalid json{", decision=decision)
 
     result = _convert_tool_call_record_to_history(record)
     assert result is not None
@@ -191,14 +163,7 @@ def test_convert_tool_call_record_null_args():
         reason=None,
     )
 
-    record = ToolCallRecord(
-        call_id="call-123",
-        run_id="run-456",
-        agent_id="agent-789",
-        tool_call=ToolCall(name="test_tool", call_id="call-123", args_json=None),
-        decision=decision,
-        execution=None,
-    )
+    record = make_tool_call_record(args_json=None, decision=decision)
 
     result = _convert_tool_call_record_to_history(record)
     assert result is not None

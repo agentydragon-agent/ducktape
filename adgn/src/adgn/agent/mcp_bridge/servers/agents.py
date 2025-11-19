@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from adgn.agent.approvals import ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
+from adgn.agent.mcp_bridge import resources
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -346,18 +347,18 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         infra = await registry.get_infrastructure(AgentID(agent_id))
         infra.approval_hub.resolve(call_id, ContinueDecision())
 
-        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/pending")
-        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/history")
-        await server.broadcast_resource_updated("resource://approvals/pending")
+        await server.broadcast_resource_updated(resources.agent_approvals_pending(agent_id))
+        await server.broadcast_resource_updated(resources.agent_approvals_history(agent_id))
+        await server.broadcast_resource_updated(resources.APPROVALS_PENDING_GLOBAL)
 
     @server.tool()
     async def reject_tool_call(agent_id: str, call_id: str, reason: str) -> None:
         infra = await registry.get_infrastructure(AgentID(agent_id))
         infra.approval_hub.resolve(call_id, AbortTurnDecision(reason=reason))
 
-        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/pending")
-        await server.broadcast_resource_updated(f"resource://agents/{agent_id}/approvals/history")
-        await server.broadcast_resource_updated("resource://approvals/pending")
+        await server.broadcast_resource_updated(resources.agent_approvals_pending(agent_id))
+        await server.broadcast_resource_updated(resources.agent_approvals_history(agent_id))
+        await server.broadcast_resource_updated(resources.APPROVALS_PENDING_GLOBAL)
 
     @server.tool()
     async def abort_agent(agent_id: AgentID) -> None:
