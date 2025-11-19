@@ -151,6 +151,89 @@ All planned features have been implemented:
 - The frontend will subscribe to MCP resources instead of connecting to WebSocket channels
 - This is a **future wave** (not Wave 7) - requires MCP subscription infrastructure to be fully reliable
 
+### HTTP to MCP Migration Plan
+
+**Principle**: Frontend ↔ Backend should **primarily communicate via MCP** (resources + tools), not HTTP REST or WebSockets.
+
+**Current State**: 36 non-MCP endpoints inventoried across agent server, channels, and MCP bridge:
+- 31 HTTP REST endpoints (agent management, runs, proposals, presets)
+- 6 WebSocket channel endpoints (UI state streaming - **temporary**, to be replaced with MCP subscriptions)
+- 3 bridge mode stubs (incomplete, TODO)
+
+**Migration Categories**:
+
+#### Keep as HTTP/WebSocket (12 endpoints)
+- Static file serving (`/`, `/vite.svg`) - HTTP-native concern
+- Health checks (`/health`) - HTTP convention
+- Presets discovery (`/api/presets/*`) - internal server config
+- WebSocket channels (`/ws/*`) - **temporary** real-time UI updates (see Definition of Done above)
+
+#### Migrate to MCP (21 endpoints - HIGH PRIORITY)
+
+**Agent CRUD & Lifecycle** (8 endpoints → tools/resources in `mcp_bridge/servers/agents.py`):
+- `POST /api/agents` → `agents/create_agent(preset, system?)`
+- `GET /api/agents/{agent_id}` → `resource://agents/{id}/info`
+- `DELETE /api/agents/{agent_id}` → `agents/delete_agent(id)`
+- `POST /api/agents/{agent_id}/boot` → `agents/boot_agent(id)`
+- `PATCH /api/agents/{agent_id}/mcp` → `agents/update_mcp_config(id, config)`
+- `POST /api/agents/{agent_id}/mcp/attach` → `agents/attach_server(id, name, spec)`
+- `POST /api/agents/{agent_id}/mcp/detach` → `agents/detach_server(id, name)`
+- `GET /api/agents` → `resource://agents/list` (✅ already exists)
+
+**Agent Execution** (2 endpoints → tools):
+- `POST /api/agents/{agent_id}/prompt` → `agents/prompt(id, text)`
+- `POST /api/agents/{agent_id}/abort` → `agents/abort_run(id)` (partial overlap with existing `abort_agent`)
+
+**Approvals** (3 endpoints → tools):
+- `POST /api/agents/{agent_id}/approve` → `agents/approve_tool_call(id, call_id)` (✅ already exists)
+- `POST /api/agents/{agent_id}/deny_continue` → `agents/deny_tool_call(id, call_id)`
+- `POST /api/agents/{agent_id}/deny_abort` → `agents/deny_abort(id, call_id)`
+
+**Policy Management** (5 endpoints → tools/resources):
+- `POST /api/agents/{agent_id}/policy` → `agents/set_policy(id, content)`
+- `GET /api/agents/{agent_id}/proposals` → `resource://agents/{id}/proposals` (✅ already exists)
+- `GET /api/agents/{agent_id}/proposals/{proposal_id}` → `resource://approval-policy/proposals/{id}` (via policy server)
+- `POST /api/agents/{agent_id}/proposals/{proposal_id}/approve` → `agents/approve_proposal(id, proposal_id)`
+- `POST /api/agents/{agent_id}/proposals/{proposal_id}/reject` → `agents/reject_proposal(id, proposal_id)`
+
+**Agent State** (3 endpoints → resources):
+- `GET /api/agents/{agent_id}/snapshot` → `resource://agents/{id}/snapshot`
+- `GET /api/agents/{agent_id}/status` → `resource://agents/{id}/status` (deferred - complex structure)
+- `GET /api/capabilities` → `resource://server/capabilities` (deferred - handshake helper)
+
+#### Defer / Unclear (3 endpoints)
+- Runs & Events (`/api/runs`, `/api/runs/{run_id}`, `/api/runs/{run_id}/events`) - deferred until pagination/filtering design
+
+**Migration Roadmap**:
+
+**Phase 1 (Immediate)** - Complete MCP agents server:
+1. Add missing tools to `mcp_bridge/servers/agents.py`:
+   - Agent lifecycle: `create_agent`, `delete_agent`, `boot_agent`
+   - MCP config: `update_mcp_config`, `attach_server`, `detach_server`
+   - Execution: `prompt`, `abort_run`
+   - Approvals: `deny_tool_call`, `deny_abort`
+   - Policy: `set_policy`, `approve_proposal`, `reject_proposal`
+2. Add missing resources:
+   - `resource://agents/{id}/info` (rich agent metadata)
+   - `resource://agents/{id}/snapshot` (compositor snapshot)
+3. Update frontend to use MCP tools instead of HTTP REST endpoints
+
+**Phase 2 (Medium-term)** - Replace WebSocket channels with MCP subscriptions:
+1. Implement MCP resource subscriptions (`resource_updated` notifications)
+2. Replace `/ws/session` → subscribe to `resource://agents/{id}/state`
+3. Replace `/ws/approvals` → subscribe to `resource://agents/{id}/approvals/pending`
+4. Replace `/ws/policy` → subscribe to `resource://agents/{id}/policy/proposals`
+5. Replace `/ws/mcp` → subscribe to `resource://agents/{id}/mcp/state`
+6. Replace `/ws/ui` → subscribe to `resource://ui/{id}/blocks`
+7. Replace `/ws/agents` → subscribe to `resource://agents/list`
+
+**Phase 3 (Long-term)** - Deprecate and remove HTTP endpoints:
+1. Add deprecation warnings to HTTP REST endpoints
+2. Migrate all frontend code to MCP
+3. Remove legacy HTTP endpoints (keep static file serving and health checks)
+
+**Note**: All 21 endpoints marked for migration should be implemented as MCP tools/resources in the `agents` MCP server (`mcp_bridge/servers/agents.py`), which serves as the unified interface for cross-agent management.
+
 ### Waves 8-11: Code Quality, Cleanup & Verification
 - Wave 8: Code Quality Scans (28 parallel scan agents)
 - Wave 9: Violation Analysis
