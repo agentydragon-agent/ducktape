@@ -22,8 +22,7 @@ from typing import Any
 class DictLiteralFinder(ast.NodeVisitor):
     """Find dict literals with string-literal keys."""
 
-    def __init__(self, filepath: Path):
-        self.filepath = filepath
+    def __init__(self):
         self.dict_literals: list[dict[str, Any]] = []
         self.current_function: str | None = None
         self.current_class: str | None = None
@@ -63,11 +62,9 @@ class DictLiteralFinder(ast.NodeVisitor):
                 context.append(f"function {self.current_function}")
 
             self.dict_literals.append({
-                "file": str(self.filepath),
                 "line": node.lineno,
                 "col": node.col_offset,
                 "keys": string_keys,
-                "num_keys": len(node.keys),
                 "context": " > ".join(context) if context else "module-level",
             })
 
@@ -77,8 +74,7 @@ class DictLiteralFinder(ast.NodeVisitor):
 class PydanticModelAnalyzer(ast.NodeVisitor):
     """Analyze Pydantic BaseModel classes."""
 
-    def __init__(self, filepath: Path):
-        self.filepath = filepath
+    def __init__(self):
         self.models: list[dict[str, Any]] = []
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -96,11 +92,9 @@ class PydanticModelAnalyzer(ast.NodeVisitor):
         if inherits_basemodel:
             fields = self._extract_fields(node)
             self.models.append({
-                "file": str(self.filepath),
                 "line": node.lineno,
                 "name": node.name,
                 "fields": fields,
-                "num_fields": len(fields),
             })
 
         self.generic_visit(node)
@@ -123,10 +117,10 @@ def scan_file(filepath: Path) -> tuple[list[dict], list[dict]]:
         source = filepath.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(filepath))
 
-        dict_finder = DictLiteralFinder(filepath)
+        dict_finder = DictLiteralFinder()
         dict_finder.visit(tree)
 
-        model_analyzer = PydanticModelAnalyzer(filepath)
+        model_analyzer = PydanticModelAnalyzer()
         model_analyzer.visit(tree)
 
         return dict_finder.dict_literals, model_analyzer.models
@@ -137,8 +131,10 @@ def scan_file(filepath: Path) -> tuple[list[dict], list[dict]]:
 
 def scan_directory(root: Path) -> dict[str, Any]:
     """Scan all Python files in directory tree."""
-    all_dict_literals = []
-    all_models = []
+    dict_literals_by_file: dict[str, list[dict]] = {}
+    models_by_file: dict[str, list[dict]] = {}
+    total_dict_literals = 0
+    total_models = 0
 
     for py_file in root.rglob("*.py"):
         # Skip common non-source directories
@@ -149,16 +145,22 @@ def scan_directory(root: Path) -> dict[str, Any]:
             continue
 
         dict_literals, models = scan_file(py_file)
-        all_dict_literals.extend(dict_literals)
-        all_models.extend(models)
+
+        if dict_literals:
+            dict_literals_by_file[str(py_file)] = dict_literals
+            total_dict_literals += len(dict_literals)
+
+        if models:
+            models_by_file[str(py_file)] = models
+            total_models += len(models)
 
     return {
         "summary": {
-            "total_dict_literals": len(all_dict_literals),
-            "total_models": len(all_models),
+            "total_dict_literals": total_dict_literals,
+            "total_models": total_models,
         },
-        "dict_literals": all_dict_literals,
-        "pydantic_models": all_models,
+        "dict_literals": dict_literals_by_file,
+        "pydantic_models": models_by_file,
     }
 
 

@@ -244,8 +244,8 @@ python prompts/scans/scan_manual_serde.py . 2>&1 | grep "===" -A 10
 
 **Output structure**:
 - `summary`: Counts of dict literals and models found
-- `dict_literals`: List of dicts with `file`, `line`, `col`, `keys`, `num_keys`, `context`
-- `pydantic_models`: List of models with `file`, `line`, `name`, `fields` (dict), `num_fields`
+- `dict_literals`: Dict mapping file paths to lists of `{line, col, keys, context}`
+- `pydantic_models`: Dict mapping file paths to lists of `{line, name, fields}`
 
 **Manual review workflow**:
 
@@ -262,7 +262,7 @@ python prompts/scans/scan_manual_serde.py . 2>&1 | grep "===" -A 10
    - Consider: Create `UserCore` base model, inherit in both
 
 3. **Identify single-field models** (LLM does this):
-   - Filter models where `num_fields == 1`
+   - Filter models where `len(fields) == 1`
    - Single-field models are often legitimate (NewType pattern, validation)
    - But review: Is this just a wrapper? Could it be a type alias?
    - Keep if: Custom validation, multiple methods, clear semantic meaning
@@ -278,16 +278,18 @@ python prompts/scans/scan_manual_serde.py . 2>&1 | grep "===" -A 10
 
 ```bash
 # After running scan, analyze output with jq
-cat serde_scan.json | jq '.dict_literals[] | select(.num_keys >= 3)' | less
-# → Review dict literals with 3+ keys (more likely to need models)
+# Note: Output is grouped by file, so iterate over files then filter items
 
-cat serde_scan.json | jq '.dict_literals[] | select(.context | contains("function"))' | less
-# → Focus on dict literals in functions (internal code, not module-level)
+# Review dict literals with 3+ keys (more likely to need models)
+cat serde_scan.json | jq '.dict_literals | to_entries[] | {file: .key, literals: [.value[] | select(.keys | length >= 3)]}'
 
-cat serde_scan.json | jq '.pydantic_models[] | select(.num_fields == 1)' | less
-# → Find single-field models for review
+# Focus on dict literals in functions (internal code, not module-level)
+cat serde_scan.json | jq '.dict_literals | to_entries[] | {file: .key, literals: [.value[] | select(.context | contains("function"))]}'
 
-# LLM can analyze overlapping fields by comparing model field sets
+# Find single-field models for review
+cat serde_scan.json | jq '.pydantic_models | to_entries[] | {file: .key, models: [.value[] | select(.fields | length == 1)]}'
+
+# LLM can analyze overlapping fields by comparing model field sets across all files
 # Example: Load into Python/LLM and programmatically compare field sets
 ```
 
