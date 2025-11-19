@@ -220,6 +220,27 @@ export async function setPolicy(agentId: string, content: string, proposalId?: s
   }
 }
 
+export async function approveProposal(agentId: string, proposalId: string): Promise<{ ok: boolean; error?: string | null }> {
+  try {
+    const client = await getMCPClient()
+    if (DEBUG) console.log('[MCP] approve_proposal', { agent_id: agentId, proposal_id: proposalId })
+
+    await callTool(client, 'approve_proposal', {
+      agent_id: agentId,
+      proposal_id: proposalId
+    })
+
+    if (DEBUG) console.log('[MCP] approve_proposal success')
+    return { ok: true }
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] approveProposal error:', error)
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
 export async function rejectProposal(agentId: string, proposalId: string): Promise<{ ok: boolean; error?: string | null }> {
   try {
     const client = await getMCPClient()
@@ -384,5 +405,19 @@ export async function getApprovalHistory(agentId: string): Promise<any> {
   } catch (error) {
     if (DEBUG) console.error('[MCP] getApprovalHistory error:', error)
     throw new Error(`getApprovalHistory MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+export async function getPolicyState(agentId: string): Promise<any> {
+  try {
+    const client = await getMCPClient()
+    const result = await readResource(client, `resource://agents/${agentId}/policy/state`)
+
+    // Parse the resource contents
+    const data = JSON.parse(result[0].text)
+    return data.policy
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] getPolicyState error:', error)
+    throw new Error(`getPolicyState MCP error: ${error instanceof Error ? error.message : String(error)}`)
   }
 }

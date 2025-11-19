@@ -1,6 +1,6 @@
 import { currentAgentId, getAgentIdFromUrl, setAgentId } from '../shared/router'
 import { connectAgentWs, disconnectAgentWs } from './chat/stores'
-import { startAgentsWs, stopAgentStatusPolling } from './agents/stores'
+import { stopAgentStatusPolling } from './agents/stores'
 
 export function initAgentUiController(): () => void {
   // Authoritative bootstrap: read agent_id from URL before subscribing
@@ -12,9 +12,6 @@ export function initAgentUiController(): () => void {
     bootstrapped = true
   }
 
-  // Start agents WS immediately so the sidebar populates on refresh (initial snapshot)
-  try { startAgentsWs() } catch {}
-
   let lastId: string | null = null
   const unsub = currentAgentId.subscribe((id) => {
     // Ignore emissions until URL bootstrap completes
@@ -22,14 +19,13 @@ export function initAgentUiController(): () => void {
     if (id === lastId) return
     lastId = id ?? null
     if (typeof id === 'string' && id.length > 0) {
-      // Agents list comes via WS; ensure status polling is off (rely on WS + agent WS)
+      // Agents list now comes via MCP subscription in AgentsSidebar
       stopAgentStatusPolling()
       disconnectAgentWs()
       // Defer to next microtask to avoid racing with URL/store updates
       queueMicrotask(() => connectAgentWs(id))
     } else {
-      // No agent selected: ensure list WS is active and status polling is off
-      startAgentsWs()
+      // No agent selected: agents list managed by AgentsSidebar MCP subscription
       stopAgentStatusPolling()
       if (lastId !== null) disconnectAgentWs()
     }

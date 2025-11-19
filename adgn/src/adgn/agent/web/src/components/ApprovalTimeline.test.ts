@@ -99,10 +99,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-3', 'exec', 'policy_allow', '2025-01-01T00:02:00Z'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -116,10 +113,7 @@ describe('ApprovalTimeline', () => {
   it('should apply correct color coding for user_approve', async () => {
     const timeline = [createMockEntry('call-1', 'test_tool', 'user_approve')]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -132,10 +126,7 @@ describe('ApprovalTimeline', () => {
   it('should apply correct color coding for policy_allow', async () => {
     const timeline = [createMockEntry('call-1', 'test_tool', 'policy_allow')]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -148,10 +139,7 @@ describe('ApprovalTimeline', () => {
   it('should apply correct color coding for rejected outcomes', async () => {
     const timeline = [createMockEntry('call-1', 'test_tool', 'user_deny_continue')]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -168,10 +156,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-3', 'auto_tool', 'policy_allow'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -203,10 +188,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-3', 'auto_tool', 'policy_allow'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -236,10 +218,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-3', 'policy_deny_tool', 'policy_deny_continue'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -269,10 +248,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-3', 'exec_command', 'user_approve'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -303,10 +279,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-2', 'WriteFile', 'user_approve'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -334,10 +307,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-3', 'tool_3', 'user_approve', '2025-01-01T00:01:00Z'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -356,10 +326,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-3', 'tool_3', 'user_approve', '2025-01-01T00:01:00Z'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -388,10 +355,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-1', 'test_tool', 'user_approve', '2025-01-01T00:00:00Z'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -433,10 +397,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-1', 'test_tool', 'user_deny_continue', '2025-01-01T00:00:00Z', 'Security risk'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -452,10 +413,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-3', 'another_approved', 'user_approve'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -484,10 +442,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-4', 'tool_4', 'policy_deny_abort'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -505,10 +460,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-2', 'tool_2', 'user_approve'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -520,10 +472,7 @@ describe('ApprovalTimeline', () => {
   })
 
   it('should update timeline via WebSocket message', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline: [] }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
 
     render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -550,10 +499,7 @@ describe('ApprovalTimeline', () => {
   })
 
   it('should handle WebSocket snapshot messages', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline: [] }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
 
     render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -579,10 +525,7 @@ describe('ApprovalTimeline', () => {
   })
 
   it('should close WebSocket on component destroy', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline: [] }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
 
     const { unmount } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -605,10 +548,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-1', 'tool_1', 'user_approve'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -629,36 +569,26 @@ describe('ApprovalTimeline', () => {
   })
 
   it('should refetch and resubscribe when agentId prop changes', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline: [] }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
 
     const { rerender } = render(ApprovalTimeline, { props: { agentId: 'agent-1' } })
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/agents/agent-1/approvals/history')
-      )
+      expect(mockGetApprovalHistory).toHaveBeenCalledWith('agent-1')
     })
 
     // Change agentId
     rerender({ agentId: 'agent-2' })
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/agents/agent-2/approvals/history')
-      )
+      expect(mockGetApprovalHistory).toHaveBeenCalledWith('agent-2')
     })
   })
 
   it('should handle JSON parse errors in WebSocket messages', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline: [] }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
 
     render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -686,10 +616,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-1', 'tool_1', 'user_approve', '2025-01-15T14:30:00Z'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -709,10 +636,7 @@ describe('ApprovalTimeline', () => {
       createMockEntry('call-4', 'read_data', 'policy_allow'),
     ]
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline })
 
     const { container } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import { uiState as uiStateStore, lastError as lastErrorStore, runStatus as runStatusStore } from '../features/chat/stores'
-  import { sendPrompt } from '../features/chat/stores'
+  import { uiState as uiStateStore, lastError as lastErrorStore, subscribeToAgentUiState, unsubscribeFromAgentUiState } from '../features/chat/stores_mcp'
+  import { sendPrompt } from '../features/agents/api'
   import { currentAgentId } from '../features/agents/stores'
   import { renderMarkdown as renderMarkdownHtml } from '../shared/markdown'
   import DOMPurify from 'dompurify'

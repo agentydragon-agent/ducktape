@@ -3,11 +3,11 @@
  *
  * WebSocket channels:
  * - /ws/session - agent execution state
- * - /ws/mcp - MCP server state
  * - /ws/approvals - approval requests
  * - /ws/policy - policy content
  *
  * MCP subscriptions:
+ * - resource://agents/{agentId}/mcp/state - MCP server state (replaces /ws/mcp)
  * - resource://agents/{agentId}/ui/state - UI state (replaces /ws/ui)
  */
 
@@ -23,7 +23,6 @@ import {
   ChannelManager,
   type ChannelHandlers,
   type SessionMessage,
-  type McpMessage,
   type ApprovalsMessage,
   type PolicyMessage,
   type ErrorMessage,
@@ -66,6 +65,7 @@ export const approvalPolicy: Writable<ApprovalPolicyInfo | null> = writable(null
 export const mcpServerEntries: Writable<ServerEntry[]> = writable([])
 
 let manager: ChannelManager | null = null
+let subscriptionManager: SubscriptionManager | null = null
 let closingIntentional = false
 
 export function clearError() {
@@ -128,27 +128,25 @@ export function connectAgentChannels(agentId: string) {
 
   manager.on('session', createChannelHandlers('session', handleSessionMessage))
 
-  manager.on(
-    'mcp',
-    createChannelHandlers('mcp', handleMcpMessage, {
-      onOpen: () => agentStatus.set({ id: agentId, live: true }),
-      onUnexpectedClose: () => agentStatus.set({ id: agentId, live: false }),
-    })
-  )
-
   manager.on('approvals', createChannelHandlers('approvals', handleApprovalsMessage))
 
   manager.on('policy', createChannelHandlers('policy', handlePolicyMessage))
 
-  manager.on(
-    'ui',
-    createChannelHandlers('ui', (msg) => handleUiMessage(agentId, msg), {
-      isOptional: true,
-    })
-  )
-
   closingIntentional = false
   manager.connect()
+
+  // Subscribe to MCP state via MCP resource (replaces /ws/mcp)
+  subscribeToMcpState(agentId).then(() => {
+    agentStatus.set({ id: agentId, live: true })
+  }).catch((error) => {
+    console.error('MCP state subscription failed:', error)
+    agentStatus.set({ id: agentId, live: false })
+  })
+
+  // Subscribe to UI state via MCP (replaces /ws/ui)
+  subscribeToUiState(agentId).catch((error) => {
+    console.warn('UI state subscription unavailable (optional):', error)
+  })
 }
 
 export function disconnectAgentChannels() {
@@ -156,6 +154,12 @@ export function disconnectAgentChannels() {
     closingIntentional = true
     manager.close()
     manager = null
+  }
+  if (subscriptionManager) {
+    subscriptionManager.cleanup().catch((error) => {
+      console.warn('Error cleaning up UI state subscription:', error)
+    })
+    subscriptionManager = null
   }
   channelsConnected.set(new Set())
 }
@@ -189,22 +193,6 @@ function handleSessionMessage(msg: SessionMessage) {
   }
 }
 
-function handleMcpMessage(msg: McpMessage) {
-  console.log('[CHANNEL:mcp]', msg.type)
-
-  switch (msg.type) {
-    case 'mcp_snapshot':
-      if (msg.sampling?.servers) {
-        mcpServerEntries.set(msg.sampling.servers)
-      }
-      break
-
-    case 'mcp_server_attached':
-    case 'mcp_server_detached':
-      // Server list changed, could refresh or update incrementally
-      break
-  }
-}
 
 function handleApprovalsMessage(msg: ApprovalsMessage) {
   console.log('[CHANNEL:approvals]', msg.type)
@@ -262,23 +250,129 @@ function handlePolicyMessage(msg: PolicyMessage) {
   }
 }
 
-function handleUiMessage(agentId: string, msg: UiMessage) {
-  console.log('[CHANNEL:ui]', msg.type)
+/**
+ * Subscribe to MCP state via MCP resource subscription
+ * Replaces WebSocket /ws/mcp channel with resource://agents/{agentId}/mcp/state
+ */
+async function subscribeToMcpState(agentId: string): Promise<void> {
+  try {
+    // Get or create subscription manager
+    const client = await getMCPClient()
+    if (!subscriptionManager) {
+      subscriptionManager = createSubscriptionManager(client)
+    }
 
-  switch (msg.type) {
-    case 'ui_state_snapshot':
-    case 'ui_state_updated':
-      uiStates.update((m) => {
-        const mm = new Map(m)
-        mm.set(agentId, msg.state)
-        return mm
-      })
-      break
+    // Subscribe to MCP state resource
+    const uri = `resource://agents/${agentId}/mcp/state`
+    await subscriptionManager.subscribe(uri, (data) => {
+      handleMcpStateUpdate(data)
+    })
 
-    case 'ui_message':
-    case 'ui_end_turn':
-      // UI-specific messages
-      break
+    console.log('[MCP:mcp]', `Subscribed to ${uri}`)
+  } catch (error) {
+    console.error('[MCP:mcp]', 'Subscription failed:', error)
+    throw error
+  }
+}
+
+/**
+ * Handle MCP state updates from MCP resource subscription
+ */
+function handleMcpStateUpdate(data: any): void {
+  try {
+    // Check for error indicator from subscription manager
+    if (data.error) {
+      console.warn('[MCP:mcp]', 'Resource read error:', data.message)
+      return
+    }
+
+    // Parse MCP resource contents
+    // Expected format: array of content items, first item is text with JSON
+    if (!Array.isArray(data) || data.length === 0) {
+      console.warn('[MCP:mcp]', 'Unexpected resource format:', data)
+      return
+    }
+
+    const firstContent = data[0]
+    if (firstContent.type !== 'text' || !firstContent.text) {
+      console.warn('[MCP:mcp]', 'Expected text content, got:', firstContent.type)
+      return
+    }
+
+    // Parse JSON: expected shape is {"sampling": {"servers": [...]}}
+    const mcpState = JSON.parse(firstContent.text)
+    if (mcpState.sampling?.servers) {
+      console.log('[MCP:mcp]', `MCP state updated (${mcpState.sampling.servers.length} servers)`)
+      mcpServerEntries.set(mcpState.sampling.servers)
+    } else {
+      console.warn('[MCP:mcp]', 'No sampling.servers in MCP state:', mcpState)
+    }
+  } catch (error) {
+    console.error('[MCP:mcp]', 'Failed to process MCP state update:', error)
+  }
+}
+
+/**
+ * Subscribe to UI state via MCP resource subscription
+ * Replaces WebSocket /ws/ui channel with resource://agents/{agentId}/ui/state
+ */
+async function subscribeToUiState(agentId: string): Promise<void> {
+  try {
+    // Get or create subscription manager
+    const client = await getMCPClient()
+    if (!subscriptionManager) {
+      subscriptionManager = createSubscriptionManager(client)
+    }
+
+    // Subscribe to UI state resource
+    const uri = `resource://agents/${agentId}/ui/state`
+    await subscriptionManager.subscribe(uri, (data) => {
+      handleUiStateUpdate(agentId, data)
+    })
+
+    console.log('[MCP:ui]', `Subscribed to ${uri}`)
+  } catch (error) {
+    // Graceful degradation: UI state is optional
+    console.warn('[MCP:ui]', 'Subscription failed (UI server may not be attached):', error)
+    throw error
+  }
+}
+
+/**
+ * Handle UI state updates from MCP resource subscription
+ */
+function handleUiStateUpdate(agentId: string, data: any): void {
+  try {
+    // Check for error indicator from subscription manager
+    if (data.error) {
+      console.warn('[MCP:ui]', 'Resource read error:', data.message)
+      return
+    }
+
+    // Parse MCP resource contents
+    // Expected format: array of content items, first item is text with JSON
+    if (!Array.isArray(data) || data.length === 0) {
+      console.warn('[MCP:ui]', 'Unexpected resource format:', data)
+      return
+    }
+
+    const firstContent = data[0]
+    if (firstContent.type !== 'text' || !firstContent.text) {
+      console.warn('[MCP:ui]', 'Expected text content, got:', firstContent.type)
+      return
+    }
+
+    // Parse JSON and update store
+    const uiState = JSON.parse(firstContent.text) as UiState
+    console.log('[MCP:ui]', `UI state updated (seq: ${uiState.seq})`)
+
+    uiStates.update((m) => {
+      const mm = new Map(m)
+      mm.set(agentId, uiState)
+      return mm
+    })
+  } catch (error) {
+    console.error('[MCP:ui]', 'Failed to process UI state update:', error)
   }
 }
 

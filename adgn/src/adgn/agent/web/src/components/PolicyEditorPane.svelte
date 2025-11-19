@@ -3,6 +3,9 @@
   import hljs from 'highlight.js/lib/common'
   import ProposalCard from './ProposalCard.svelte'
   import type { ApprovalPolicyInfo, Proposal } from '../shared/types'
+  import { getMCPClient } from '../features/mcp/clientManager'
+  import { createSubscriptionManager } from '../features/mcp/subscriptions'
+  import { setPolicy, approveProposal as apiApproveProposal, rejectProposal as apiRejectProposal } from '../features/agents/api'
 
   // Props
   export let agentId: string
@@ -14,6 +17,7 @@
   let loading = true
   let error: string | null = null
   let allProposals: Proposal[] = []
+  let subscriptionManager: any = null
 
   // Reactive
   $: allProposals = approvalPolicy?.proposals || []
@@ -27,92 +31,95 @@
     }
   }
 
-  // Fetch policy from API
-  async function fetchPolicy() {
+  // Handle policy state updates from MCP subscription
+  function handlePolicyUpdate(data: any) {
+    if (data.error) {
+      error = data.message
+      loading = false
+      return
+    }
+
+    try {
+      const content = data[0]
+      if (content && content.text) {
+        const parsed = JSON.parse(content.text)
+        approvalPolicy = parsed.policy
+        loading = false
+        error = null
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e)
+      loading = false
+    }
+  }
+
+  // Subscribe to policy state resource
+  async function setupSubscription() {
     if (!agentId) return
 
     loading = true
     error = null
 
     try {
-      const origin = window.location.origin
-      const url = `${origin}/api/agents/${encodeURIComponent(agentId)}/policy`
-      const res = await fetch(url)
+      const client = await getMCPClient()
+      subscriptionManager = createSubscriptionManager(client)
 
-      if (!res.ok) {
-        throw new Error(`Failed to fetch policy: ${res.status}`)
-      }
-
-      approvalPolicy = await res.json()
+      const uri = `resource://agents/${agentId}/policy/state`
+      await subscriptionManager.subscribe(uri, handlePolicyUpdate)
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)
-      approvalPolicy = null
-    } finally {
       loading = false
     }
   }
 
-  // Save policy
+  // Save policy via MCP tool
   async function savePolicy() {
     if (!agentId || !editingPolicy) return
 
     try {
-      const origin = window.location.origin
-      const url = `${origin}/api/agents/${encodeURIComponent(agentId)}/policy`
-      const res = await fetch(url, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: editingPolicy })
-      })
+      const result = await setPolicy(agentId, editingPolicy)
 
-      if (!res.ok) {
-        throw new Error(`Failed to save policy: ${res.status}`)
+      if (!result.ok) {
+        throw new Error(result.error || 'Failed to save policy')
       }
 
-      // Refresh policy after save
-      await fetchPolicy()
       showPolicyEditor = false
       editingPolicy = ''
+      error = null
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)
     }
   }
 
-  // Approve proposal
+  // Approve proposal via MCP tool
   async function approveProposal(proposalId: string) {
     if (!agentId) return
 
     try {
-      const origin = window.location.origin
-      const url = `${origin}/api/agents/${encodeURIComponent(agentId)}/policy/proposals/${encodeURIComponent(proposalId)}/approve`
-      const res = await fetch(url, { method: 'POST' })
+      const result = await apiApproveProposal(agentId, proposalId)
 
-      if (!res.ok) {
-        throw new Error(`Failed to approve proposal: ${res.status}`)
+      if (!result.ok) {
+        throw new Error(result.error || 'Failed to approve proposal')
       }
 
-      // Refresh policy after approval
-      await fetchPolicy()
+      error = null
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)
     }
   }
 
-  // Reject proposal
+  // Reject proposal via MCP tool
   async function rejectProposal(proposalId: string) {
     if (!agentId) return
 
     try {
-      const origin = window.location.origin
-      const url = `${origin}/api/agents/${encodeURIComponent(agentId)}/policy/proposals/${encodeURIComponent(proposalId)}/reject`
-      const res = await fetch(url, { method: 'POST' })
+      const result = await apiRejectProposal(agentId, proposalId)
 
-      if (!res.ok) {
-        throw new Error(`Failed to reject proposal: ${res.status}`)
+      if (!result.ok) {
+        throw new Error(result.error || 'Failed to reject proposal')
       }
 
-      // Refresh policy after rejection
-      await fetchPolicy()
+      error = null
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)
     }
@@ -130,12 +137,23 @@
 
   // Lifecycle
   onMount(() => {
-    fetchPolicy()
+    setupSubscription()
   })
 
-  // Watch for agent ID changes
+  onDestroy(async () => {
+    if (subscriptionManager) {
+      await subscriptionManager.cleanup()
+    }
+  })
+
+  // Watch for agent ID changes - re-subscribe
   $: if (agentId) {
-    fetchPolicy()
+    // Clean up old subscription
+    if (subscriptionManager) {
+      subscriptionManager.cleanup()
+    }
+    // Set up new subscription
+    setupSubscription()
   }
 </script>
 
