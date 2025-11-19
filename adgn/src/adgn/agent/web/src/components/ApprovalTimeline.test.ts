@@ -3,9 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import ApprovalTimeline from './ApprovalTimeline.svelte'
 import type { ApprovalHistoryEntry, ApprovalOutcome } from '../generated/types'
 
-// Mock fetch globally
-const mockFetch = vi.fn()
-global.fetch = mockFetch
+// Mock the agents API
+const mockGetApprovalHistory = vi.fn()
+vi.mock('../features/agents/api', () => ({
+  getApprovalHistory: mockGetApprovalHistory
+}))
 
 // Mock WebSocket
 class MockWebSocket {
@@ -55,10 +57,7 @@ describe('ApprovalTimeline', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline: [] }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
   })
 
   afterEach(() => {
@@ -66,7 +65,7 @@ describe('ApprovalTimeline', () => {
   })
 
   it('should render loading state initially', () => {
-    mockFetch.mockImplementation(() => new Promise(() => {})) // Never resolves
+    mockGetApprovalHistory.mockImplementation(() => new Promise(() => {})) // Never resolves
 
     render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -74,10 +73,7 @@ describe('ApprovalTimeline', () => {
   })
 
   it('should render empty state when no entries', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ timeline: [] }),
-    })
+    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
 
     render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
@@ -87,15 +83,12 @@ describe('ApprovalTimeline', () => {
   })
 
   it('should display error message when fetch fails', async () => {
-    mockFetch.mockResolvedValue({
-      ok: false,
-      status: 500,
-    })
+    mockGetApprovalHistory.mockRejectedValue(new Error('getApprovalHistory MCP error: Failed to read resource'))
 
     render(ApprovalTimeline, { props: { agentId: mockAgentId } })
 
     await waitFor(() => {
-      expect(screen.getByText(/Failed to fetch timeline: 500/)).toBeTruthy()
+      expect(screen.getByText(/getApprovalHistory MCP error/)).toBeTruthy()
     })
   })
 

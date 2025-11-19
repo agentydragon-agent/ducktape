@@ -59,10 +59,17 @@ export async function createAgent(specs: Record<string, any> = {}): Promise<{ id
 }
 
 export async function listPresets(): Promise<{ presets: Array<{ name: string; description?: string | null }> }> {
-  // Presets endpoint remains HTTP for now
-  const res = await fetch(backendOrigin() + '/api/presets')
-  if (!res.ok) throw new Error('listPresets http ' + res.status)
-  return res.json()
+  try {
+    const client = await getMCPClient()
+    const result = await readResource(client, 'resource://presets/list')
+
+    // Parse the resource contents
+    const data = JSON.parse(result[0].text)
+    return data
+  } catch (error) {
+    if (DEBUG) console.error('[MCP] listPresets error:', error)
+    throw new Error(`listPresets MCP error: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 export async function createAgentFromPreset(preset: string, system?: string): Promise<{ id: string }> {

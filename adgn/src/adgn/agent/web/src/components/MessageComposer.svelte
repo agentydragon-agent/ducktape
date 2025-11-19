@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { createMCPClient, callTool, MCPClientError } from '../features/mcp/client'
+  import { getOrExtractToken } from '../shared/token'
+  import { backendOrigin } from '../features/agents/api'
+
   // Props
   export let agentId: string
   export let onAbortAgent: () => void
@@ -8,7 +12,7 @@
   let sending = false
   let error: string | null = null
 
-  // Send message to agent via send_message tool
+  // Send message to agent via MCP prompt tool
   async function sendMessage() {
     if (!message.trim() || !agentId || sending) return
 
@@ -16,22 +20,27 @@
     error = null
 
     try {
-      const origin = window.location.origin
-      const url = `${origin}/api/agents/${encodeURIComponent(agentId)}/message`
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: message })
+      const token = getOrExtractToken()
+      if (!token) {
+        throw new Error('Authentication required')
+      }
+
+      const client = await createMCPClient({
+        name: 'message-composer-client',
+        url: `${backendOrigin()}/mcp`,
+        token
       })
 
-      if (!res.ok) {
-        throw new Error(`Failed to send message: ${res.status}`)
-      }
+      await callTool(client, 'prompt', { agent_id: agentId, message: message })
 
       // Clear message on success
       message = ''
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e)
+      if (e instanceof MCPClientError) {
+        error = e.message
+      } else {
+        error = e instanceof Error ? e.message : String(e)
+      }
     } finally {
       sending = false
     }

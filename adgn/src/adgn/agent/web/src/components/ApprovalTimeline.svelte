@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
   import type { ApprovalHistoryEntry, ApprovalOutcome } from '../generated/types'
+  import { getApprovalHistory } from '../features/agents/api'
 
   // Props
   export let agentId: string
@@ -17,7 +18,7 @@
   let sortOrder: 'newest' | 'oldest' = 'newest'
   let expandedEntries = new Set<string>()
 
-  // Fetch timeline from API
+  // Fetch timeline from MCP resource
   async function fetchTimeline() {
     if (!agentId) return
 
@@ -25,15 +26,7 @@
     error = null
 
     try {
-      const origin = window.location.origin
-      const url = `${origin}/api/agents/${encodeURIComponent(agentId)}/approvals/history`
-      const res = await fetch(url)
-
-      if (!res.ok) {
-        throw new Error(`Failed to fetch timeline: ${res.status}`)
-      }
-
-      const data = await res.json()
+      const data = await getApprovalHistory(agentId)
       timeline = data.timeline || []
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)
