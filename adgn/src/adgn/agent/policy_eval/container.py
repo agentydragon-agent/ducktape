@@ -9,6 +9,7 @@ from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.agent.policy_eval.runner import run_policy_source
 from adgn.agent.runtime.images import resolve_runtime_image
+from adgn.agent.types import AgentID
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class ContainerPolicyEvaluator:
     def __init__(
         self,
         *,
-        agent_id: str,
+        agent_id: AgentID,
         docker_client: DockerClient,
         engine: ApprovalPolicyEngine,
         image: str | None = None,

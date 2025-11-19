@@ -16,6 +16,7 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
 
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
+from adgn.agent.types import AgentID
 from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
 from adgn.mcp.compositor.clients import CompositorAdminClient
 from adgn.mcp.compositor.server import Compositor
@@ -51,7 +52,7 @@ class RunningInfrastructure:
     approval_hub: ApprovalHub
 
     # Metadata
-    agent_id: str
+    agent_id: AgentID
 
     # Internal cleanup
     _stack: AsyncExitStack

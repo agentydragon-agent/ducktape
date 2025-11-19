@@ -13,6 +13,7 @@ from adgn.agent.reducer import NotificationsHandler
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.agent.server.runtime import ConnectionManager
+from adgn.agent.types import AgentID
 
 
 def build_handlers(
@@ -23,7 +24,7 @@ def build_handlers(
     approval_engine: ApprovalPolicyEngine,
     approval_hub: ApprovalHub,
     get_run_id: Callable[[], UUID | None],
-    agent_id: str,
+    agent_id: AgentID,
     ui_bus: ServerBus | None = None,
 ) -> tuple[list[BaseHandler], RunPersistenceHandler]:
     """Construct the standard handler stack for an agent.

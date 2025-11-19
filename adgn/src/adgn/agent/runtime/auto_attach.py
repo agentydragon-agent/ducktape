@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastmcp.mcp_config import MCPConfig
 
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import (
     APPROVAL_POLICY_SERVER_NAME,
     RESOURCES_SERVER_NAME,
@@ -37,7 +38,7 @@ def filter_persistable_servers(cfg: MCPConfig) -> MCPConfig:
 
 
 async def attach_default_servers(
-    comp: Compositor, *, agent_id: str, persistence, docker_client, ui_bus, approval_engine
+    comp: Compositor, *, agent_id: AgentID, persistence, docker_client, ui_bus, approval_engine
 ) -> None:
     """Attach the standard UI + approval policy + runtime exec servers.
 
