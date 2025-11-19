@@ -201,22 +201,20 @@ Use Pydantic when you have:
 
 ## Detection Strategy
 
-**Primary Method**: Manual code reading to identify dict-wrangling patterns in internal code.
+**MANDATORY first step**: Run `scan_manual_serde.py` to find ALL dict literals and Pydantic models in the codebase.
 
-**Why automation is insufficient**:
-- Determining if `dict` "should be Pydantic" requires understanding context:
-  - I/O boundary (external API, files) vs internal code
-  - Known structure at development time vs dynamic keys
-  - Whether validation is actually needed
-- String-literal dict access appears everywhere - need semantic judgment
+- This scan is **required** - do not skip this step
+- Surfaces every dict literal with string keys and all Pydantic models
+- Forces you to review dict construction patterns across entire codebase
+- Prevents lazy analysis by providing concrete candidates to examine
+
+**Note**: This scan has high false positives (many dict literals are legitimate at I/O boundaries), but it forces comprehensive review of dict usage patterns.
 
 **Key questions for manual review**:
 1. Is this I/O boundary or internal code passing data?
 2. Are keys known at development time?
 3. Is there documentation of dict structure in docstrings? (RED FLAG)
 4. Are same literal keys accessed multiple times?
-
-**Discovery aids** (very high false positive rate):
 
 ### Automated Scanning Tool
 

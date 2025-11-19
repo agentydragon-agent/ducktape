@@ -288,13 +288,20 @@ class DatabaseConnection:
 
 ## Detection Strategy
 
+**MANDATORY first step**: Run `scan_dataclass_candidates.py` to find ALL classes with `__init__` methods across the codebase.
+
+- This scan is **required** - do not skip this step
+- Surfaces every class with metrics on init complexity
+- Forces you to review each class's __init__ rather than spot-checking obvious files
+- Prevents lazy analysis by providing concrete candidates to review
+
 **Goal**: Find ALL classes that are just boilerplate parameter assignments (high recall).
 
 **Recall/Precision**:
 - AST-based detection: ~95% recall, ~40% precision (many plain classes are legitimately complex)
 - Grep patterns: ~70% recall, ~30% precision (manual inspection required)
 
-**Recommended approach**:
+**Approach**:
 
 ### Step 1: Automated Discovery (Gather Candidates)
 

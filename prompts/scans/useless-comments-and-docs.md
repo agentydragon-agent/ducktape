@@ -292,6 +292,13 @@ with ThreadPoolExecutor() as executor:
 
 ## Detection Strategy
 
+**MANDATORY first step**: Run `scan_comments.py` to extract ALL comments and docstrings from the codebase.
+
+- This scan is **required** - do not skip this step
+- Surfaces every comment/docstring with surrounding context
+- Forces you to judge each comment as useful/useless rather than spot-checking a few files
+- Prevents lazy analysis by providing concrete candidates to review
+
 **Goal**: Find ALL useless comments for manual review (100% recall target).
 
 **Approach**: Low-precision, high-recall extraction of ALL comments, then manual filtering.

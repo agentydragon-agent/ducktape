@@ -133,58 +133,68 @@ Prompts are instructions to agents/LLMs, so address the reader directly:
 
 ## Mandatory vs Optional Automated Scans
 
-**Principle**: Prompts should specify when automated scans are MANDATORY vs OPTIONAL based on tool recall characteristics.
+**Principle**: Prompts should specify when automated scans are MANDATORY vs OPTIONAL to force agents to gather concrete candidates rather than being lazy.
 
 ### When to Make Scans MANDATORY
 
 Automated scans should be **required as the first step** when:
 
-1. **High recall tools exist** (~90%+ recall)
-   - Example: `grep` for all `cast()` calls, AST for all `except:` blocks
-   - Skipping these tools means missing issues
+1. **Prevents agent laziness**
+   - Forces agent to gather concrete candidates before analyzing
+   - Agent might skip discovery and claim "looks fine" without thorough search
+   - **Example**: Running `scan_error_handling.py` forces review of every exception handler
    - **Language**: "MUST run", "Begin by running", "First step: run"
 
-2. **Pattern can ONLY appear in specific locations**
-   - Example: Type ignores can ONLY appear as `# type: ignore` comments
-   - 100% recall is achievable with the right tool
-   - **Language**: "Run scan_*.py to find ALL instances"
+2. **Provides concrete starting points**
+   - Scan surfaces specific instances for agent to examine
+   - Agent analyzes real code rather than abstract patterns
+   - **Example**: `scan_comments.py` gives agent every comment to judge as useful/useless
+   - **Language**: "Run scan_*.py to gather ALL candidates for review"
 
-3. **Manual search is impractical**
-   - Example: Finding all single-field Pydantic models across 500 files
-   - Humans will miss instances; automation won't
+3. **Makes comprehensive review practical**
+   - Manual search across entire codebase is tedious and error-prone
+   - Automated scan makes it feasible to review all instances
+   - **Example**: Finding all dataclass candidates across 200 files
    - **Language**: "Run automated scan (do not skip this step)"
+
+**Key insight**: Mandatory scans aren't just about tool recall - they're about forcing the agent to do the work of gathering and reviewing candidates rather than taking shortcuts.
 
 ### When to Make Scans RECOMMENDED
 
 Automated scans should be **suggested but not required** when:
 
-1. **Medium recall tools** (~60-80% recall)
-   - Example: Grep patterns that catch common cases but miss variations
-   - Useful starting point but not comprehensive
+1. **Helpful but agent likely won't skip**
+   - Grep patterns make search faster but agent would search anyway
+   - Saves time but not essential to prevent laziness
+   - **Example**: Grep for `asyncio.gather()` to find TaskGroup opportunities
    - **Language**: "Recommended: run grep patterns below", "Consider using"
 
-2. **High false positive rate** (>50%)
+2. **High false positive rate reduces value**
    - Automation finds many candidates, most are legitimate
-   - Manual review time might exceed manual reading time
+   - Reviewing all candidates might take longer than targeted manual reading
+   - **Example**: Dict literals (many are at legitimate I/O boundaries)
    - **Language**: "Can use automated scan to narrow candidates"
 
-3. **Pattern requires context to identify**
-   - Example: "Vague" naming requires semantic judgment
-   - Tool can hint, but human must decide
+3. **Agent will read code anyway**
+   - Pattern requires context that means agent must read code regardless
+   - Scan helps prioritize but doesn't prevent lazy skipping
+   - **Example**: Naming issues require reading surrounding code for context
    - **Language**: "Optional: use tool for initial candidates"
 
 ### When to Make Scans OPTIONAL
 
 Automated scans should be **mentioned as hints only** when:
 
-1. **Low recall** (<50%)
-   - Tool misses most instances
-   - Manual reading is required anyway
+1. **Doesn't provide concrete candidates to force review**
+   - Tool output doesn't give agent specific instances to examine
+   - Agent must read code to understand context anyway
+   - **Example**: Short variable names (need context to judge if vague)
    - **Language**: "Automation provides hints only; manual review required"
 
-2. **Subjective patterns**
-   - Example: Code is "too verbose" or docs are "useless"
-   - No automated tool can reliably detect these
+2. **Subjective judgment required for every instance**
+   - No way to batch-review candidates; each requires deep analysis
+   - Forcing scan doesn't prevent lazy analysis of candidates
+   - **Example**: Is code "too verbose"? Is doc "useless"? (pure judgment)
    - **Language**: "No reliable automated detection; read code manually"
 
 ### Template Language
@@ -193,15 +203,18 @@ Automated scans should be **mentioned as hints only** when:
 ## Detection Strategy
 
 **MANDATORY first step**: Run `scan_error_handling.py` to find ALL exception handlers.
-- Tool has ~100% recall for bare except blocks
-- Cannot skip this step - manual search will miss instances
+- Surfaces concrete candidates - forces you to review each exception handler
+- Prevents claiming "looks fine" without examining actual code
+- Output gives specific line numbers for every try-except block
 
 **Recommended (but not required)**: Use grep patterns to narrow candidates.
-- ~70% recall, helps focus review but not comprehensive
-- Supplement with manual reading
+- Helpful for finding common cases faster
+- Not essential - you'd likely search for these anyway
+- Supplement with manual reading for variations
 
 **Optional hints**: AST tool can flag short variable names.
-- Low recall (~30%), manual review required regardless
+- Provides hints about where to look but doesn't force comprehensive review
+- Manual reading required to understand context
 - Use only to help prioritize which files to read first
 ```
 
@@ -209,9 +222,11 @@ Automated scans should be **mentioned as hints only** when:
 
 **Current state** (as of 2025): Most scan prompts treat all automation as optional/recommended. This should be updated:
 
-- ✅ **Keep optional**: Patterns requiring judgment (naming, verbosity, documentation quality)
-- ⚠️ **Should be mandatory**: High-recall scans (error handling, type ignores, comments extraction)
-- ⚠️ **Should be recommended**: Medium-recall grep patterns (walrus opportunities, timestamp naming)
+- ✅ **Keep optional**: Patterns where scan doesn't prevent lazy analysis (naming, verbosity judgment)
+- ⚠️ **Should be mandatory**: Scans that surface concrete candidates to force review (error handling, comments, dataclass candidates)
+- ⚠️ **Should be recommended**: Scans that save time but agent would search anyway (grep patterns for specific APIs)
+
+**Key criterion**: Does making this scan mandatory force the agent to consider specific candidates it might otherwise skip?
 
 ## Scan Prompt Structure
 

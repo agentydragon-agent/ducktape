@@ -3,35 +3,39 @@
 **Generated**: 2025-11-19
 **Purpose**: Audit all scan prompts for adherence to mandatory/recommended/optional automation guidelines from PHILOSOPHY.md
 
+## Key Principle
+
+**Mandatory scans force agents to gather and review concrete candidates**, preventing laziness. This isn't primarily about tool recall - it's about ensuring the agent examines specific instances rather than claiming "looks fine" without thorough review.
+
 ## Summary
 
 - **Total Prompts**: 31
 - **Currently Mandatory Scans**: 0 (all treat automation as optional/recommended)
 - **Have Dedicated Scanners**: 4 (`scan_*.py` scripts)
-- **Should Be Mandatory**: 8 (high-recall patterns)
-- **Correctly Optional**: 16 (subjective/low-recall patterns)
+- **Should Be Mandatory**: 6 (scans that surface concrete candidates to force review)
+- **Correctly Optional**: 18 (subjective patterns where scan doesn't prevent lazy analysis)
 
 ---
 
 ## Detailed Audit Table
 
-| Prompt | Current Status | Should Be | Automated Tool/Pattern | Primary Patterns | Notes |
-|--------|---------------|-----------|------------------------|------------------|-------|
-| **error-swallowing** | Optional | **MANDATORY** | `scan_error_handling.py` (AST, ~100% recall) | Bare except, `except Exception:`, non-raising handlers, single-line try | AST finds ALL exception handlers |
-| **type-ignore-suppressions** | Optional | **MANDATORY** | grep `# type: ignore` (~100% recall) | Type ignore comments, noqa markers, suppression comments | Pattern can ONLY appear as comment |
-| **useless-comments-and-docs** | Optional | **MANDATORY** | `scan_comments.py` (AST, ~100% recall) | Duplicate comments, obvious statements, outdated docs | AST finds ALL comments/docstrings |
-| **missing-dataclass-pydantic** | Optional | **MANDATORY** | `scan_dataclass_candidates.py` (AST, ~95% recall) | Boilerplate `__init__`, redundant assignments, manual `__repr__/__eq__` | AST finds all classes with `__init__` |
-| **manual-serde-needs-pydantic** | Optional | **RECOMMENDED** | `scan_manual_serde.py` (AST, ~80% recall) | Dict literals with string keys, manual serialization, Pydantic opportunities | High false positives (I/O boundaries legitimate) |
-| **trivial-forwarders** | Optional | **RECOMMENDED** | grep + AST (~70% recall) | Single-call functions, functions called once, trivial wrappers | Medium recall, context needed |
-| **walrus-get-pattern** | Optional | **RECOMMENDED** | grep `dict.get()` + if (~70% recall) | `dict.get()` followed by if, walrus operator opportunities | Common pattern, medium recall |
-| **timestamp-naming** | Optional | **RECOMMENDED** | grep `_ts`, `timestamp` (~60% recall) | `_ts` suffix, verbose timestamp names, timestamp field naming | Many variations, medium recall |
-| **test-assertions** | Optional | **RECOMMENDED** | grep assert patterns (~65% recall) | Plain asserts vs PyHamcrest, field-by-field assertions | Multiple patterns to search |
-| **asyncio-antipatterns** | Optional | **RECOMMENDED** | grep `asyncio.gather`, `asyncio.run` (~60% recall) | `asyncio.gather()` vs TaskGroup, missing async context managers | Multiple antipatterns |
-| **pydantic-antipatterns** | Optional | **RECOMMENDED** | grep Pydantic methods (~65% recall) | Manual `model_dump`, dict-style access, field iteration | Various antipatterns |
-| **stringly-typed** | Optional | **RECOMMENDED** | AST string counter + grep (~65% recall) | String literals instead of enums/Literal, categorical strings | Context needed to confirm |
-| **suspicious-nullability** | Optional | **RECOMMENDED** | grep `None` + AST (~60% recall) | Nullable params/returns, None propagation, impossible None | Requires semantic analysis |
-| **unnecessary-verbosity** | Optional | OPTIONAL | AST analyzer (~50% recall) | Single-use variables, verbose boolean returns, redundant conditionals | Subjective, context required |
-| **useless-test-classes** | Optional | OPTIONAL | grep test classes (~40% recall) | Test classes without setup/fixtures, container classes | Hard to detect automatically |
+| Prompt | Current Status | Should Be | Automated Tool/Pattern | Primary Patterns | Why This Classification |
+|--------|---------------|-----------|------------------------|------------------|-------------------------|
+| **error-swallowing** | Optional | **MANDATORY** | `scan_error_handling.py` (AST) | Bare except, `except Exception:`, non-raising handlers | Surfaces every exception handler - forces agent to review each one |
+| **useless-comments-and-docs** | Optional | **MANDATORY** | `scan_comments.py` (AST) | Duplicate comments, obvious statements, outdated docs | Surfaces every comment - agent must judge each as useful/useless |
+| **missing-dataclass-pydantic** | Optional | **MANDATORY** | `scan_dataclass_candidates.py` (AST) | Boilerplate `__init__`, redundant assignments | Surfaces every class - forces review of init methods across codebase |
+| **manual-serde-needs-pydantic** | Optional | **MANDATORY** | `scan_manual_serde.py` (AST) | Dict literals with string keys, Pydantic models | Surfaces concrete instances - forces review of dict construction patterns |
+| **type-ignore-suppressions** | Optional | **MANDATORY** | grep `# type: ignore` | Type ignore comments, suppressions | Surfaces every suppression - forces review of each one |
+| **trivial-forwarders** | Optional | **RECOMMENDED** | grep + AST | Single-call functions, trivial wrappers | Grep surfaces candidates but agent would search anyway |
+| **walrus-get-pattern** | Optional | **RECOMMENDED** | grep `dict.get()` + if | `dict.get()` followed by if | Grep finds common pattern, saves time |
+| **timestamp-naming** | Optional | **RECOMMENDED** | grep `_ts`, `timestamp` | Timestamp field naming | Grep surfaces candidates quickly |
+| **test-assertions** | Optional | **RECOMMENDED** | grep assert patterns | Plain asserts vs PyHamcrest | Grep finds common cases |
+| **asyncio-antipatterns** | Optional | **RECOMMENDED** | grep asyncio methods | `asyncio.gather()` vs TaskGroup | Grep surfaces specific API usage |
+| **pydantic-antipatterns** | Optional | **RECOMMENDED** | grep Pydantic methods | Manual `model_dump`, dict-style access | Grep finds API misuse |
+| **stringly-typed** | Optional | **RECOMMENDED** | AST string counter + grep | String literals instead of enums | Tool helps prioritize files |
+| **suspicious-nullability** | Optional | **RECOMMENDED** | grep `None` + AST | Nullable params, None propagation | Grep surfaces candidates for analysis |
+| **unnecessary-verbosity** | Optional | OPTIONAL | Manual review | Single-use variables, verbose returns | Subjective judgment, scan doesn't prevent lazy analysis |
+| **useless-test-classes** | Optional | OPTIONAL | Manual review | Test classes without setup | Context required, no concrete candidates |
 | **trivial-forwarder-methods** | Optional | OPTIONAL | Manual review | Method forwarding, property wrappers, delegation | Requires understanding intent |
 | **api-model-design** | Optional | OPTIONAL | Manual review | Denormalized/computed fields, API design issues | Architectural, subjective |
 | **denormalized-computed-fields** | Optional | OPTIONAL | Manual review | Denormalized fields, redundant computation | Context and domain knowledge |
@@ -53,47 +57,61 @@
 
 ## Recommendations by Category
 
-### ✅ MANDATORY Scans (4) - Should require automated scan as first step
+### ✅ MANDATORY Scans (5) - Should require automated scan as first step
+
+These scans surface concrete candidates that force the agent to review specific instances rather than claiming "looks fine" without thorough examination.
 
 1. **error-swallowing** → `scan_error_handling.py`
-   - **Why**: AST finds 100% of exception handlers, pattern can only appear in try-except
+   - **Why mandatory**: Surfaces every exception handler with line numbers - forces agent to review each one
+   - **Prevents**: Agent skipping exception handling review, claiming code is fine without checking
    - **Action**: Update prompt to say "MANDATORY first step: Run scan_error_handling.py"
 
-2. **type-ignore-suppressions** → grep `# type: ignore`
-   - **Why**: Pattern can ONLY appear as comment, 100% recall with grep
-   - **Action**: Update prompt to say "MUST run grep to find ALL type ignore comments"
-
-3. **useless-comments-and-docs** → `scan_comments.py`
-   - **Why**: AST finds 100% of comments/docstrings
+2. **useless-comments-and-docs** → `scan_comments.py`
+   - **Why mandatory**: Surfaces every comment/docstring - agent must judge each as useful/useless
+   - **Prevents**: Agent reading only obvious cases, missing outdated/duplicate comments
    - **Action**: Update prompt to say "MANDATORY: Run scan_comments.py to extract ALL comments"
 
-4. **missing-dataclass-pydantic** → `scan_dataclass_candidates.py`
-   - **Why**: AST finds ~95% of classes with `__init__`, manual search impractical
+3. **missing-dataclass-pydantic** → `scan_dataclass_candidates.py`
+   - **Why mandatory**: Surfaces every class with metrics - forces comprehensive review across codebase
+   - **Prevents**: Agent only checking a few files, missing boilerplate in less-obvious places
    - **Action**: Update prompt to say "MANDATORY: Run scan_dataclass_candidates.py"
 
-### ⚠️ RECOMMENDED Scans (9) - Should suggest but not require
+4. **manual-serde-needs-pydantic** → `scan_manual_serde.py`
+   - **Why mandatory**: Surfaces every dict literal and Pydantic model - forces pattern review
+   - **Prevents**: Agent missing dict construction patterns scattered across codebase
+   - **Action**: Update prompt to say "MANDATORY: Run scan_manual_serde.py"
 
-Medium-recall tools (60-80%) that help narrow candidates but aren't comprehensive:
+5. **type-ignore-suppressions** → grep `# type: ignore`
+   - **Why mandatory**: Surfaces every type suppression - forces review of each one
+   - **Prevents**: Agent missing suppressions buried in long files
+   - **Action**: Update prompt to say "MANDATORY: Run grep to find ALL type ignore comments"
 
-- manual-serde-needs-pydantic
-- trivial-forwarders
-- walrus-get-pattern
-- timestamp-naming
-- test-assertions
-- asyncio-antipatterns
-- pydantic-antipatterns
-- stringly-typed
-- suspicious-nullability
+### ⚠️ RECOMMENDED Scans (8) - Should suggest but not require
+
+These scans help find candidates faster but don't prevent lazy analysis (agent would likely search anyway):
+
+- **trivial-forwarders**: Grep + AST surfaces candidates - saves time but not essential
+- **walrus-get-pattern**: Grep finds `dict.get()` patterns - helpful shortcut
+- **timestamp-naming**: Grep finds `_ts` fields - faster than manual search
+- **test-assertions**: Grep finds assert patterns - common cases
+- **asyncio-antipatterns**: Grep finds asyncio API usage - specific patterns
+- **pydantic-antipatterns**: Grep finds Pydantic method calls - API misuse
+- **stringly-typed**: AST counter + grep helps prioritize - guidance only
+- **suspicious-nullability**: Grep + AST surfaces None usage - analysis aid
+
+**Key characteristic**: Agent would search for these anyway; tool just makes it faster.
 
 **Action**: Update prompts to say "RECOMMENDED (but not required): Run [tool/grep pattern]"
 
 ### ✅ OPTIONAL Scans (18) - Correctly treat automation as hints
 
-Low-recall or subjective patterns where automation provides hints only:
+These patterns require subjective judgment where scanning doesn't prevent lazy analysis:
 
-- All manual review prompts (architectural, style, naming, etc.)
-- Patterns requiring domain knowledge or semantic understanding
-- Quality judgments that can't be automated
+- All manual review prompts (architectural decisions, style preferences, naming conventions)
+- Patterns requiring deep context or domain knowledge
+- Quality judgments that can't be batched (each instance needs individual analysis)
+
+**Key characteristic**: Scan doesn't surface concrete candidates that force review; agent must read code and judge each case individually.
 
 **Action**: No changes needed, correctly labeled as optional
 
