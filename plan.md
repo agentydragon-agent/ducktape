@@ -2729,9 +2729,11 @@ Two similar types exist:
 **Recommendation**: Keep `ApprovalToolCall` in `approvals.py` but rename it to `ToolCall` since it's the simpler version without the discriminator. Update all references accordingly. If `protocol.py` needs the discriminated version, it can keep its own `ToolCall` with the discriminator.
 
 **TODO**:
-- [ ] Rename `ApprovalToolCall` → `ToolCall` in `approvals.py`
+- [ ] Rename `ApprovalToolCall` → `ToolCall` in `approvals.py` (currently still uses ApprovalToolCall)
 - [ ] Update all imports and references (middleware, persistence, plan)
 - [ ] Verify no conflicts with `protocol.py` version
+
+**Note**: The persistence layer already uses `ToolCall` (from `adgn.agent.persist`), while `approvals.py` still defines `ApprovalToolCall`. Both coexist without conflicts since they're in different modules.
 
 ### ApprovalRecord Enhancement
 
@@ -2782,15 +2784,13 @@ class ToolCallRecord(BaseModel):
 
 **TODOs:**
 - [ ] **Type consolidation**: Rename `ApprovalToolCall` → `ToolCall` in `approvals.py` and update all references
-- [ ] Fix middleware bug: Lines 242, 254 in `adgn/src/adgn/mcp/policy_gateway/middleware.py`
-  - USER approvals currently recorded as `POLICY_ALLOW` (should be `USER_APPROVE`)
-  - USER rejections currently recorded as `POLICY_DENY_ABORT` (should be `USER_DENY_ABORT`)
-- [ ] Pass tool arguments to `record_approval()` calls in middleware
-- [ ] Track execution start/completion in middleware (before/after `call_next()`)
-- [ ] Add typed fields to ApprovalRecord (or create ToolCallRecord)
-- [ ] Update database schema to support new fields
-- [ ] Update `list_approvals()` to return enriched records
-- [ ] Consider renaming to `ToolCallRecord` for clarity
+- [x] ~~Fix middleware bug: USER approvals/rejections recorded with wrong outcome codes~~ **COMPLETED**: Middleware now correctly uses `USER_APPROVE` and `USER_DENY_ABORT`
+- [x] ~~Pass tool arguments to `record_approval()` calls in middleware~~ **COMPLETED**: Tool arguments captured in ToolCallRecord
+- [x] ~~Track execution start/completion in middleware (before/after `call_next()`)~~ **COMPLETED**: ToolCallExecution tracks completion
+- [x] ~~Add typed fields to ApprovalRecord (or create ToolCallRecord)~~ **COMPLETED**: ToolCallRecord created with Decision and ToolCallExecution
+- [x] ~~Update database schema to support new fields~~ **COMPLETED**: tool_calls table with decision and execution JSON columns
+- [x] ~~Update `list_approvals()` to return enriched records~~ **COMPLETED**: Returns ApprovalRecord with Decision objects
+- [ ] Consider renaming ApprovalRecord → ToolCallRecord (both coexist; ToolCallRecord is newer, more complete model)
 
 ### Agent State Tracking
 
