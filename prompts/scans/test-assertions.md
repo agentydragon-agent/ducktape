@@ -240,6 +240,256 @@ assert_that(result, has_properties(
 
 **Rule**: Use plain `==` for exact full object comparison, `has_properties()` when you need matchers or partial matching.
 
+## Pattern 7: Nested Object Matching (Real Codebase Examples)
+
+PyHamcrest's true power shows when validating deeply nested structures. Here are patterns from the actual codebase that showcase composable matchers:
+
+### Example 1: Nested has_properties for Complex Messages
+
+**From: `test_persist_revive_continue.py:69-70`**
+
+```python
+# EXCELLENT: Check nested message structure in one assertion
+assert_that(
+    payloads,
+    has_items(
+        has_properties(
+            type="ui_message",
+            message=has_properties(mime="text/markdown", content="**hello**")
+        ),
+        has_finished_run(),
+    ),
+)
+```
+
+**Why this is better**:
+- Single assertion validates entire nested structure
+- `message=has_properties(...)` checks nested object properties
+- `has_items()` validates multiple items in collection
+- Clear intent: "Payloads contain a markdown message and finished status"
+
+**BAD Alternative** (verbose, unclear intent):
+```python
+# Find ui_message
+ui_msgs = [p for p in payloads if p.get("type") == "ui_message"]
+assert len(ui_msgs) > 0
+assert ui_msgs[0]["message"]["mime"] == "text/markdown"
+assert ui_msgs[0]["message"]["content"] == "**hello**"
+
+# Find finished run
+run_statuses = [p for p in payloads if p.get("type") == "run_status"]
+assert len(run_statuses) > 0
+assert run_statuses[0]["run_state"]["status"] == RunStatus.FINISHED
+```
+
+### Example 2: Combining Matchers with all_of
+
+**From: `helpers.py:151-153`**
+
+```python
+# Build matcher incrementally for optional conditions
+m = has_properties(type="error", code=code_enum)
+if message_substr:
+    m = all_of(m, _message_contains(message_substr))  # Compose matchers!
+assert_that(payloads, has_item(m))
+```
+
+**Why this is better**:
+- `all_of()` combines multiple matchers into one
+- Can build matchers conditionally
+- Clear composition: "Match error AND message contains substring"
+
+**BAD Alternative**:
+```python
+# Manual filtering and multiple assertions
+errors = [p for p in payloads if p.get("type") == "error" and p.get("code") == code_enum]
+assert len(errors) > 0
+if message_substr:
+    assert message_substr in errors[0]["message"]
+```
+
+### Example 3: Reusable Matcher Factories
+
+**From: `ui_asserts.py:8-12`**
+
+```python
+def item_user_message(text: str | None = None):
+    """Composable matcher for UserMessageItem with optional text check."""
+    m = [instance_of(UserMessageItem)]
+    if text is not None:
+        m.append(has_properties(text=text))
+    return all_of(*m)
+
+# Usage:
+assert_that(items, has_item(item_user_message(text="hello")))
+```
+
+**Why this pattern is excellent**:
+- Reusable matcher function encapsulates common checks
+- Combines type check (`instance_of`) with property validation
+- `all_of(*m)` dynamically composes matchers based on parameters
+- DRY: Single source of truth for "what makes a valid user message"
+
+**BAD Alternative** (duplication across tests):
+```python
+# Test 1
+assert isinstance(items[0], UserMessageItem)
+assert items[0].text == "hello"
+
+# Test 2
+assert isinstance(items[1], UserMessageItem)
+assert items[1].text == "world"
+
+# Test 3 (forgot to check type!)
+assert items[2].text == "foo"  # Bug: didn't verify it's UserMessageItem
+```
+
+### Example 4: Nested Validation in has_items
+
+**From: `test_approval_ui_flow.py:44-47`**
+
+```python
+assert_that(
+    payloads,
+    has_items(
+        has_properties(type="approval_pending", call_id="call_echo"),
+        has_properties(type="approval_decision"),
+        is_function_call_output_end_turn(call_id="call_ui_end"),
+    ),
+)
+```
+
+**Why this is better**:
+- `has_items()` validates collection contains ALL matchers (order-independent)
+- Mix of `has_properties()` and custom matchers (`is_function_call_output_end_turn()`)
+- Clear intent: "These three events must be present"
+
+**vs. contains_exactly()** (when order matters):
+```python
+# Use contains_exactly() when order is significant
+assert_that(
+    payloads,
+    contains_exactly(
+        has_properties(type="start"),
+        has_properties(type="processing"),
+        has_properties(type="complete"),
+    )
+)
+```
+
+### Example 5: Combining instance_of with has_properties
+
+**From: Scan findings - pattern to adopt**
+
+```python
+# BAD: Separate type and property checks
+assert isinstance(result, ToolCallExecution)
+assert result.exit_code == 0
+assert result.stdout.startswith("Success")
+
+# GOOD: Composed matcher
+from hamcrest import assert_that, all_of, instance_of, has_properties, starts_with
+
+assert_that(result, all_of(
+    instance_of(ToolCallExecution),
+    has_properties(
+        exit_code=0,
+        stdout=starts_with("Success")
+    )
+))
+```
+
+**Why composition matters**:
+- Single assertion point of failure
+- Better error messages: "Expected: instance of ToolCallExecution AND properties..."
+- Clear test intent in one expression
+
+## Pattern 8: Custom Matcher Helpers
+
+The codebase has excellent examples of reusable matcher factories:
+
+```python
+# From ws_helpers.py:317
+def has_finished_run():
+    """Matcher: run_status with status == finished."""
+    return has_properties(
+        type="run_status",
+        run_state=has_properties(status=RunStatus.FINISHED)
+    )
+
+# From helpers.py:139
+def _message_contains(fragment: str):
+    """Matcher ensuring an error message contains fragment."""
+    return has_properties(message=contains_string(fragment))
+
+# Usage becomes ultra-readable:
+assert_that(payloads, has_item(has_finished_run()))
+assert_that(errors, has_item(_message_contains("timeout")))
+```
+
+**Benefits of matcher factories**:
+1. **DRY**: Define complex match logic once
+2. **Readable**: `has_finished_run()` reads like English
+3. **Composable**: Can combine with `all_of()`, `any_of()`
+4. **Maintainable**: Change run status structure? Update matcher in one place
+5. **Type-safe**: IDE autocomplete for custom matchers
+
+## Key Composability Patterns
+
+### 1. all_of() - AND logic
+```python
+assert_that(user, all_of(
+    instance_of(User),
+    has_properties(active=True, verified=True)
+))
+# "Must be User AND active AND verified"
+```
+
+### 2. any_of() - OR logic
+```python
+assert_that(status, any_of(
+    equal_to(Status.SUCCESS),
+    equal_to(Status.PENDING)
+))
+# "Must be SUCCESS OR PENDING"
+```
+
+### 3. not_() - Negation
+```python
+assert_that(message, not_(contains_string("error")))
+# "Must NOT contain 'error'"
+```
+
+### 4. Nested matchers
+```python
+assert_that(response, has_properties(
+    status=200,
+    body=has_properties(
+        data=has_items(
+            has_properties(id=1),
+            has_properties(id=2)
+        )
+    )
+))
+# "Response with status 200, body.data contains items with id 1 and 2"
+```
+
+## When to Extract Matcher Factories
+
+Extract when a pattern appears **3+ times** OR is **conceptually significant**:
+
+```python
+# Pattern appears 5+ times in tests:
+# assert p.get("type") == "approval_pending" and p.get("call_id") == call_id
+
+# Extract to:
+def has_approval_pending(call_id: str):
+    return has_properties(type="approval_pending", call_id=call_id)
+
+# Now tests read clearly:
+assert_that(payloads, has_item(has_approval_pending("call_echo")))
+```
+
 ## Detection Strategy
 
 **MANDATORY Step 0**: Discover ALL assert statements in test files.
