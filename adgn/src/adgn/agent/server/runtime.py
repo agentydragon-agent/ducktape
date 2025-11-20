@@ -15,7 +15,7 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist import RunStatus
+from adgn.agent.persist import PersistenceRunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
@@ -116,9 +116,16 @@ class ConnectionManager(BaseHandler):
         self._event_id += 1
         return self._event_id
 
-    async def send_json(self, payload: dict[str, Any]) -> None:
+    async def send_json(self, payload: ServerMessage) -> None:
+        envelope = Envelope(
+            session_id=self._session_id,
+            event_id=self._next_event_id(),
+            event_at=datetime.now(UTC),
+            payload=payload,
+        )
+        dumped = envelope.model_dump(mode="json")
         for _ws, q, _task in list(self._clients.values()):
-            q.put_nowait(payload)
+            q.put_nowait(dumped)
 
     async def _send_and_reduce(self, payload: ServerMessage) -> None:
         await self.send_payload(payload)
@@ -145,11 +152,7 @@ class ConnectionManager(BaseHandler):
                 await self._send_and_reduce(UiEndTurnEvt())
 
     async def send_payload(self, payload: ServerMessage) -> None:
-        await self.send_json(
-            Envelope(
-                session_id=self._session_id, event_id=self._next_event_id(), event_at=datetime.now(UTC), payload=payload
-            ).model_dump(mode="json")
-        )
+        await self.send_json(payload)
         # Mirror run status events to agents hub
         if isinstance(payload, RunStatusEvt):
             st = payload.run_state.status
@@ -181,9 +184,16 @@ class ConnectionManager(BaseHandler):
         if self._session_state_notifier is not None:
             self._session_state_notifier()
 
-    async def _send_direct_all(self, payload: dict[str, Any]) -> None:
+    async def _send_direct_all(self, payload: ServerMessage) -> None:
+        envelope = Envelope(
+            session_id=self._session_id,
+            event_id=self._next_event_id(),
+            event_at=datetime.now(UTC),
+            payload=payload,
+        )
+        dumped = envelope.model_dump(mode="json")
         for ws, _q, _task in list(self._clients.values()):
-            await ws.send_json(payload)
+            await ws.send_json(dumped)
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
         raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
@@ -394,17 +404,17 @@ class AgentSession:
             # Notify MCP bridge of session state change (run started)
             if self._manager._session_state_notifier is not None:
                 self._manager._session_state_notifier()
-            finish_status = RunStatus.FINISHED
+            finish_status = PersistenceRunStatus.FINISHED
             try:
                 await self._agent.run(user_text=prompt)
             except asyncio.CancelledError:
                 await self._manager.send_payload(ErrorEvt(code=ErrorCode.ABORTED))
-                finish_status = RunStatus.ABORTED
+                finish_status = PersistenceRunStatus.ABORTED
             except Exception as e:
                 await self._manager.send_payload(
                     ErrorEvt(code=ErrorCode.AGENT_ERROR, message=f"agent_run_exception: {e}")
                 )
-                finish_status = RunStatus.ERROR
+                finish_status = PersistenceRunStatus.ERROR
             finally:
                 if self.active_run:
                     self.active_run.status = UiRunStatus.FINISHED

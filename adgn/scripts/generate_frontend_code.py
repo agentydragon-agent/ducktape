@@ -35,7 +35,7 @@ from adgn.agent.mcp_bridge.servers.agents import (
     PolicyProposalInfo,
     RejectToolCallArgs,
 )
-from adgn.agent.persist import ApprovalOutcome, Decision, EventType, RunStatus, ToolCallExecution, ToolCallRecord
+from adgn.agent.persist import ApprovalOutcome, Decision, EventType, PersistenceRunStatus, ToolCallExecution, ToolCallRecord
 from adgn.agent.types import ToolCall
 
 
@@ -212,7 +212,7 @@ def generate_pydantic_types() -> None:
         ToolCall,
         # Enums
         ApprovalOutcome,
-        RunStatus,
+        PersistenceRunStatus,
         EventType,
         # Decision and execution
         Decision,
