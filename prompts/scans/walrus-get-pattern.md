@@ -30,9 +30,9 @@ These scans surface candidates for manual review. High recall, low precision exp
 # High recall for dict.get walrus opportunities
 rg --type py 'if.*\.get\(' -B 1 -A 3 --line-number
 
-# 2. Assignment followed by if/while using same variable
+# 2. Assignment followed by if/while using same variable (up to 3 blank lines between)
 # Catches: x = f(); if x: ... → if (x := f()): ...
-rg --type py -U '\w+ = .+\n\s*(if|while) \w+' -B 1 -A 3 --line-number
+rg --type py -U '\w+ = .+(\n\s*){1,3}(if|while) \w+' -B 1 -A 3 --line-number
 
 # 3. re.match/search/findall in if conditions
 # Catches: if re.match(...): m = re.match(...) → if (m := re.match(...)): ...
