@@ -146,18 +146,6 @@ def _abort_result(reason: str | None = None) -> CallToolResult:
     return _make_error_result(reason or DEFAULT_ABORT_ERROR)
 
 
-def _normalize_call_arguments(arguments: dict[str, Any] | str | None) -> str | None:
-    """Normalize function call arguments to JSON string.
-
-    Args:
-        arguments: Structured data (dict), pre-serialized JSON string, or None.
-
-    Returns:
-        JSON string representation or None if arguments is None.
-    """
-    if arguments is None or isinstance(arguments, str):
-        return arguments
-    return json.dumps(arguments)
 
 
 def _call_tool_result_from_json(output: str) -> CallToolResult:
@@ -266,7 +254,7 @@ class MiniCodex:
     async def _handle_pending_tool_calls(self) -> None:
         function_calls: list[FunctionCallItem] = list(self.pending_function_calls)
         calls: list[tuple[FunctionCallItem, str | None]] = [
-            (function_call, _normalize_call_arguments(function_call.arguments)) for function_call in function_calls
+            (function_call, function_call.arguments) for function_call in function_calls
         ]
 
         local_result_map: dict[str, CallToolResult] = {

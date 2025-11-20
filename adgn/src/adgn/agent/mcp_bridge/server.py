@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -43,13 +43,13 @@ class RunningAgent:
     local_runtime: LocalAgentRuntime | None  # None for bridge agents
 
 
+@dataclass
 class AgentEntry:
     """Registry entry with lock-protected optional agent infrastructure."""
 
-    def __init__(self):
-        self.agent: RunningAgent | None = None
-        self.creation_lock = asyncio.Lock()
-        self.operation_lock = asyncio.Lock()
+    agent: RunningAgent | None = None
+    creation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    operation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 async def create_bridge_infrastructure(
@@ -159,8 +159,7 @@ class InfrastructureRegistry:
         """Returns None if agent is not local. Raises KeyError if agent not in registry."""
         if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        agent = self._agents[agent_id].agent
-        return agent.local_runtime if agent else None
+        return agent.local_runtime if (agent := self._agents[agent_id].agent) else None
 
     def register_local_agent(
         self,
@@ -257,64 +256,3 @@ async def create_mcp_server_app(auth_tokens_path: Path, registry: Infrastructure
     return mcp_app
 
 
-async def create_management_ui_app(registry: InfrastructureRegistry) -> tuple[FastAPI, str]:
-    """Create management UI app with WebSocket channels and token authentication.
-
-    Provides web interface for managing approvals, policy, and agent state.
-    Uses UITokenAuthMiddleware for simple token-based authentication.
-
-    Exposes agents MCP server at /mcp/agents for external MCP clients.
-
-    Returns:
-        Tuple of (FastAPI app, UI token for Bearer authentication)
-    """
-    ui_token = generate_ui_token()
-
-    ui_app = FastAPI(title="Management UI")
-
-    agents_server = await make_agents_server(registry)
-    agents_http_app = agents_server.http_app()
-    ui_app.mount("/mcp/agents", agents_http_app)
-
-    ui_app.state.agents_server = agents_server
-
-    ui_app.add_middleware(UITokenAuthMiddleware, expected_token=ui_token)
-
-    @ui_app.websocket("/ws/mcp")
-    async def ws_mcp(websocket: WebSocket, agent_id: AgentID):
-        """MCP channel - server state and tool calls."""
-        await websocket.accept()
-        # TODO: Implement MCP channel
-        await websocket.send_json({"type": "not_implemented", "message": "MCP channel coming soon"})
-        await websocket.close()
-
-    @ui_app.get("/api/agents")
-    async def list_agents():
-        """List all active agents.
-
-        Delegates to agents MCP server's resource://agents/list.
-        """
-        async with Client(agents_server) as client:
-            agent_list = await read_text_json_typed(client, "resource://agents/list", AgentList)
-            return agent_list.model_dump()
-
-    @ui_app.get("/health")
-    async def health():
-        """Health check endpoint."""
-        return {"status": "ok"}
-
-    @ui_app.get("/api/capabilities")
-    async def api_capabilities():
-        """Report which components are active in MCP bridge mode."""
-        return {
-            "mode": "mcp_bridge",
-            "components": {
-                "mcp": True,  # MCP tools available
-                "approvals": True,  # Approval/policy management
-                "chat": False,  # No chat interface in bridge mode
-                "agent_state": False,  # No agent state (external agents)
-                "ui": False,  # Minimal UI (just approvals/policy)
-            },
-        }
-
-    return ui_app, ui_token

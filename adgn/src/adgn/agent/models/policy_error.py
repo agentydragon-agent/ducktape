@@ -11,8 +11,14 @@ class PolicyErrorCode(StrEnum):
     PARSE_ERROR = "parse_error"
 
 
+class PolicyErrorStage(StrEnum):
+    READ = "read"
+    PARSE = "parse"
+    TESTS = "tests"
+
+
 class PolicyError(BaseModel):
-    stage: Literal["read", "parse", "tests"] = Field(description="Processing stage where error occurred")
+    stage: PolicyErrorStage = Field(description="Processing stage where error occurred")
     code: PolicyErrorCode = Field(description="Error code (read_error, parse_error)")
     index: int | None = Field(None, description="Character/token index where error occurred")
     length: int | None = Field(None, description="Length of error span in characters/tokens")

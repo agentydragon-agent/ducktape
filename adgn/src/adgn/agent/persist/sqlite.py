@@ -95,10 +95,8 @@ class SQLitePersistence(Persistence):
             await session.commit()
 
     async def patch_agent_specs(
-        self, agent_id: AgentID, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
+        self, agent_id: AgentID, *, attach: dict[str, MCPConfig] = {}, detach: list[str] = []
     ) -> MCPConfig:
-        attach = attach or {}
-        detach = detach if detach is not None else []
         async with self._session() as session:
             result = await session.execute(select(Agent).where(Agent.id == agent_id))
             agent = result.scalar_one_or_none()

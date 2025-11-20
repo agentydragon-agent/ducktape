@@ -177,13 +177,8 @@ class MCPInfrastructure:
 
         approver_server = ApprovalPolicyAdminServer(engine=approval_engine, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
 
-        reader_client = Client(reader_server)
-        await stack.enter_async_context(reader_client)
-        policy_reader = PolicyReaderStub(TypedClient(reader_client))
-
-        approver_client = Client(approver_server)
-        await stack.enter_async_context(approver_client)
-        policy_approver = PolicyApproverStub(TypedClient(approver_client))
+        policy_reader = await PolicyReaderStub.for_server(stack, reader_server)
+        policy_approver = await PolicyApproverStub.for_server(stack, approver_server)
 
         return (policy_reader, policy_approver)
 
@@ -194,10 +189,9 @@ class MCPInfrastructure:
         against the active approval policy before execution.
         """
 
-        async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
+        async def _pending_notifier(tool_call: ToolCall) -> None:
             """Notify UI of pending approval requests."""
             if self._connection_manager is not None:
-                tool_call = ToolCall(name=tool_key, call_id=call_id, args_json=args_json)
                 await self._connection_manager.send_payload(
                     ApprovalPendingEvt(approval=ApprovalBrief(tool_call=tool_call))
                 )

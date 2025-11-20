@@ -166,17 +166,7 @@ class ToolCall(Base):
 
 
 class Policy(Base):
-    """Per-agent approval policy.
-
-    Consolidates approval policies, proposals, and history into a single table
-    with status tracking. Only ONE policy per agent can be ACTIVE at a time.
-
-    States:
-    - ACTIVE: Currently active policy (only one per agent)
-    - PROPOSED: Awaiting approval
-    - REJECTED: Proposal was rejected
-    - SUPERSEDED: Was active, replaced by newer policy
-    """
+    """Per-agent approval policy with status tracking."""
 
     __tablename__ = "policies"
 

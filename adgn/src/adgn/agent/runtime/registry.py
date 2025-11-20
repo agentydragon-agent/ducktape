@@ -40,8 +40,7 @@ class AgentRuntime:
     async def close(self):
         """Lifecycle management - close all components together."""
         await self.runtime.close()
-        result = await self.running.close()
-        return {"drained": result.drained, "error": result.error}
+        return await self.running.close()
 
 
 @dataclass

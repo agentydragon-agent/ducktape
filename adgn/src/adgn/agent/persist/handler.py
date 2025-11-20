@@ -99,15 +99,13 @@ class RunPersistenceHandler(BaseHandler):
             self._last_run_id = rid
             self._seq = 0
         self._seq += 1
-        # Convert TypedPayload to dict for persistence
-        payload_dict = payload.model_dump(mode="json", exclude_none=True)
         self._spawn(
             self._persistence.append_event(
                 run_id=rid,
                 seq=self._seq,
                 ts=self._now(),
                 type=type,
-                payload=payload_dict,
+                payload=payload,
                 call_id=call_id,
                 tool_key=tool_key,
             )
@@ -129,11 +127,12 @@ class RunPersistenceHandler(BaseHandler):
         )
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        # Persist full Pydantic MCP CallToolResult (with content when available)
-        result_model = convert_fastmcp_result(evt.result)
         self._record_event(
             type=EventType.FUNCTION_CALL_OUTPUT,
-            payload=FunctionCallOutputPayload(call_id=evt.call_id, result=result_model),
+            payload=FunctionCallOutputPayload(
+                call_id=evt.call_id,
+                result=convert_fastmcp_result(evt.result)
+            ),
             call_id=evt.call_id,
         )
 
@@ -141,6 +140,4 @@ class RunPersistenceHandler(BaseHandler):
         self._record_event(type=EventType.REASONING, payload=ReasoningPayload(text=item.text))
 
     def on_response(self, evt: Response) -> None:
-        # Convert Response to ResponsePayload; for now pass full dumped content
-        content_dict = evt.model_dump(mode="json", exclude_none=True)
-        self._record_event(type=EventType.RESPONSE, payload=ResponsePayload(content=content_dict))
+        self._record_event(type=EventType.RESPONSE, payload=ResponsePayload(content=evt))

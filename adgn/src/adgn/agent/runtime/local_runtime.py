@@ -70,7 +70,7 @@ class LocalAgentRuntime:
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool = True,
-        extra_handlers: Iterable[BaseHandler] | None = None,
+        extra_handlers: Iterable[BaseHandler] = (),
         ui_bus=None,
         connection_manager=None,
     ):
@@ -81,7 +81,7 @@ class LocalAgentRuntime:
         self._reasoning_effort = reasoning_effort
         self._reasoning_summary = reasoning_summary
         self._parallel_tool_calls = parallel_tool_calls
-        self._extra_handlers = list(extra_handlers or [])
+        self._extra_handlers = list(extra_handlers)
         self._ui_bus = ui_bus
         self._connection_manager = connection_manager
 

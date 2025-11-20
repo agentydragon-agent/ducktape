@@ -8,7 +8,7 @@ from .policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 
 def run(
     decide: Callable[[PolicyRequest], PolicyResponse],
-    tests: Sequence[tuple[PolicyRequest, ApprovalDecision]] | None = None,
+    tests: Sequence[tuple[PolicyRequest, ApprovalDecision]] = (),
 ) -> int:
     """Run optional preflight tests, then wire stdin→decide→stdout once.
 
