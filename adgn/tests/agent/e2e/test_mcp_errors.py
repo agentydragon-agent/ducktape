@@ -261,9 +261,7 @@ def test_subscription_to_deleted_agent(page: Page, run_server, responses_factory
     agent_id = api_create_agent(base)
 
     # Attach MCP server
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Open UI - this creates subscriptions
     page.goto(base + f"/?agent_id={agent_id}")
