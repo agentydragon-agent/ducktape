@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText, to_jsonl_record
+from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText, to_jsonl_record
 from adgn.agent.loop_control import NoLoopDecision
 from adgn.openai_utils.model import ReasoningItem
 
@@ -46,7 +46,7 @@ class TranscriptHandler(BaseHandler):
         )
 
     # ---- Event helpers ----
-    def _write_event(self, evt: Any) -> None:
+    def _write_event(self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem) -> None:
         rec = to_jsonl_record(evt)
         # Timestamped envelope (events.jsonl)
         out = {"ts": datetime.utcnow().isoformat() + "Z", **rec}
@@ -73,7 +73,7 @@ class TranscriptHandler(BaseHandler):
         # Record adapter ReasoningItem via shared JSONL mapping
         self._write_event(item)
 
-    def on_response(self, evt: Any) -> None:
+    def on_response(self, evt: Response) -> None:
         # Record one responses.create result per model call with usage
         self._write_event(evt)
 
