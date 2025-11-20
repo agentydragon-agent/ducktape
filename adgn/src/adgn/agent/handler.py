@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from fastmcp.client.client import CallToolResult
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from adgn.agent.loop_control import LoopDecision, NoLoopDecision
 from adgn.agent.types import ToolCall
@@ -21,12 +21,12 @@ from adgn.openai_utils.model import InputTokensDetails, OutputTokensDetails, Rea
 
 # ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
 class GroundTruthUsage(BaseModel):
-    model: str
-    input_tokens: int | None = None
-    input_tokens_details: InputTokensDetails | None = None
-    output_tokens: int | None = None
-    output_tokens_details: OutputTokensDetails | None = None
-    total_tokens: int | None = None
+    model: str = Field(description="Model name used for the request")
+    input_tokens: int | None = Field(None, description="Number of input tokens consumed")
+    input_tokens_details: InputTokensDetails | None = Field(None, description="Breakdown of input token usage")
+    output_tokens: int | None = Field(None, description="Number of output tokens generated")
+    output_tokens_details: OutputTokensDetails | None = Field(None, description="Breakdown of output token usage")
+    total_tokens: int | None = Field(None, description="Total tokens consumed (input + output)")
 
 
 # ---- Typed events (no shared runtime base required) ----

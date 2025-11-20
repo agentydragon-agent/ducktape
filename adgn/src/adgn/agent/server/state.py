@@ -45,7 +45,7 @@ ApprovalKind = UserApprovalDecision
 class ExecContent(BaseModel):
     content_kind: Literal["Exec"] = "Exec"
     cmd: str | None = None
-    args: Any | None = None
+    args: dict[str, Any] | None = None
     stdout: str | None = None
     stderr: str | None = None
     exit_code: int | None = None
@@ -55,7 +55,7 @@ class ExecContent(BaseModel):
 
 class JsonContent(BaseModel):
     content_kind: Literal["Json"] = "Json"
-    args: Any | None = None
+    args: dict[str, Any] | None = None
     result: mcp_types.CallToolResult | None = None
     is_error: bool | None = None
     model_config = ConfigDict(extra="forbid")
