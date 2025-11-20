@@ -34,6 +34,16 @@ This specimen captures code quality findings in the adgn agent codebase, focusin
 - **026**: Should return result directly, not reconstruct as dict
 - **027**: Should use walrus operator for assign-and-check-None pattern
 - **028**: Should raise ExceptionGroup instead of returning error strings
+- **029**: Should inline one-use variables in attach methods
+- **030**: TOKEN_TABLE should use Pydantic model, not untyped dict
+- **031**: Should use removeprefix with constant, not magic number slice
+- **032**: Should walrus token_info and remove useless comment
+- **033**: Should inline body and response_headers into Response
+- **034**: Should not catch exceptions explicitly, use default handling or middleware
+- **035**: Remove useless comment that duplicates code intent
+- **036**: Should inline envelope and dumped into put_nowait/send_json
+- **037**: send_json and _send_direct_all are complete duplicates
+- **038**: AgentSession.agent_id should be AgentID type
 
 See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations.
 
