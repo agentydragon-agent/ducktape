@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from fastmcp.mcp_config import MCPConfig
 import pytest
 
-from adgn.agent.mcp_bridge.auth import UITokenAuthMiddleware, generate_ui_token
+from adgn.agent.mcp_bridge.auth import generate_ui_token
 from adgn.agent.mcp_bridge.server import InfrastructureRegistry, create_management_ui_app
 from adgn.agent.persist.sqlite import SQLitePersistence
 
@@ -58,19 +56,10 @@ def test_generate_ui_token_random(monkeypatch):
     assert all(c.isalnum() or c in "-_" for c in token2)
 
 
-async def test_ui_auth_middleware_valid_token():
+async def test_ui_auth_middleware_valid_token(auth_test_app_factory):
     """Test that UITokenAuthMiddleware accepts valid token."""
     expected_token = "valid-ui-token"
-
-    # Create simple FastAPI app with middleware
-    app = FastAPI()
-    app.add_middleware(UITokenAuthMiddleware, expected_token=expected_token)
-
-    @app.get("/test")
-    async def test_endpoint():
-        return {"status": "ok"}
-
-    client = TestClient(app)
+    _app, client = auth_test_app_factory(expected_token)
 
     # Request with valid token should succeed
     response = client.get("/test", headers={"Authorization": f"Bearer {expected_token}"})
@@ -79,19 +68,10 @@ async def test_ui_auth_middleware_valid_token():
     assert response.json() == {"status": "ok"}
 
 
-async def test_ui_auth_middleware_invalid_token():
+async def test_ui_auth_middleware_invalid_token(auth_test_app_factory):
     """Test that UITokenAuthMiddleware rejects invalid token."""
     expected_token = "valid-ui-token"
-
-    # Create simple FastAPI app with middleware
-    app = FastAPI()
-    app.add_middleware(UITokenAuthMiddleware, expected_token=expected_token)
-
-    @app.get("/test")
-    async def test_endpoint():
-        return {"status": "ok"}
-
-    client = TestClient(app)
+    _app, client = auth_test_app_factory(expected_token)
 
     # Request with invalid token should fail
     response = client.get("/test", headers={"Authorization": "Bearer wrong-token"})
@@ -101,19 +81,10 @@ async def test_ui_auth_middleware_invalid_token():
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
-async def test_ui_auth_middleware_missing_token():
+async def test_ui_auth_middleware_missing_token(auth_test_app_factory):
     """Test that UITokenAuthMiddleware rejects requests without token."""
     expected_token = "valid-ui-token"
-
-    # Create simple FastAPI app with middleware
-    app = FastAPI()
-    app.add_middleware(UITokenAuthMiddleware, expected_token=expected_token)
-
-    @app.get("/test")
-    async def test_endpoint():
-        return {"status": "ok"}
-
-    client = TestClient(app)
+    _app, client = auth_test_app_factory(expected_token)
 
     # Request without Authorization header should fail
     response = client.get("/test")
@@ -123,19 +94,10 @@ async def test_ui_auth_middleware_missing_token():
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
-async def test_ui_auth_middleware_invalid_header_format():
+async def test_ui_auth_middleware_invalid_header_format(auth_test_app_factory):
     """Test that UITokenAuthMiddleware rejects malformed Authorization header."""
     expected_token = "valid-ui-token"
-
-    # Create simple FastAPI app with middleware
-    app = FastAPI()
-    app.add_middleware(UITokenAuthMiddleware, expected_token=expected_token)
-
-    @app.get("/test")
-    async def test_endpoint():
-        return {"status": "ok"}
-
-    client = TestClient(app)
+    _app, client = auth_test_app_factory(expected_token)
 
     # Test various invalid formats
     invalid_headers = [

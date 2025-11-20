@@ -10,9 +10,12 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 import pytest
 
 from adgn.agent.approvals import ApprovalHub
+from adgn.agent.mcp_bridge.auth import UITokenAuthMiddleware
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.mcp.snapshots import SamplingSnapshot
 
@@ -221,3 +224,30 @@ def mock_registry_single_agent(mock_running_infrastructure) -> Mock:
     registry.get_local_runtime = get_local_runtime
 
     return registry
+
+
+@pytest.fixture
+def auth_test_app_factory():
+    """Factory to create FastAPI app with UITokenAuthMiddleware for testing.
+
+    Shared by all UI auth tests to reduce duplication of app setup boilerplate.
+    Each test creates the same app+middleware+endpoint pattern.
+
+    Usage:
+        app, client = auth_test_app_factory(expected_token="my-token")
+        response = client.get("/test", headers={"Authorization": "Bearer my-token"})
+    """
+
+    def _create(expected_token: str) -> tuple[FastAPI, TestClient]:
+        """Create app with auth middleware and test endpoint."""
+        app = FastAPI()
+        app.add_middleware(UITokenAuthMiddleware, expected_token=expected_token)
+
+        @app.get("/test")
+        async def test_endpoint():
+            return {"status": "ok"}
+
+        client = TestClient(app)
+        return app, client
+
+    return _create

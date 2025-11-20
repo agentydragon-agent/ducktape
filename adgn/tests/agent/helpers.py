@@ -83,6 +83,22 @@ def api_create_agent(base_url: str, *, preset: str = "default", system: str | No
     return str(data.get("id"))
 
 
+def e2e_open_agent_page(page: Any, base_url: str, agent_id: str, *, timeout: int = 10000) -> None:
+    """Navigate to agent page and wait for WebSocket connection.
+
+    Shared by all E2E tests to reduce duplication of the common
+    page.goto + wait for WS connection pattern (appears 30+ times).
+
+    Args:
+        page: Playwright Page object
+        base_url: Server base URL
+        agent_id: Agent ID to connect to
+        timeout: Timeout in milliseconds for WS connection (default 10s)
+    """
+    page.goto(f"{base_url}/?agent_id={agent_id}")
+    page.locator(".ws .dot.on").wait_for(timeout=timeout)
+
+
 # ------------------------------
 # HTTP agent endpoint helpers
 # ------------------------------

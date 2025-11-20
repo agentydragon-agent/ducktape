@@ -9,6 +9,9 @@ import pytest
 from adgn.agent.persist import ApprovalOutcome, Decision, ToolCall, ToolCallExecution, ToolCallRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
 
+# Note: This module overrides the persistence fixture from conftest.py
+# to pre-populate test agents needed by these specific tests.
+
 
 @pytest.fixture
 async def persistence(tmp_path: Path) -> SQLitePersistence:

@@ -18,46 +18,15 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from pathlib import Path
 
 from mcp import types as mcp_types
 import pytest
 
-from adgn.agent.persist import ApprovalOutcome, Decision, ToolCall, ToolCallExecution, ToolCallRecord
-from adgn.agent.persist.sqlite import SQLitePersistence
-
-
-@pytest.fixture
-async def persistence(tmp_path: Path) -> SQLitePersistence:
-    """Create a fresh SQLite persistence instance with schema."""
-    db_path = tmp_path / "test_integration.db"
-    persist = SQLitePersistence(db_path)
-    await persist.ensure_schema()
-    return persist
-
+from adgn.agent.persist import ToolCallRecord, ToolCall, Decision, ToolCallExecution
 
 # test_agent fixture now provided globally in tests/agent/conftest.py
-
-
-@pytest.fixture
-def sample_tool_call() -> ToolCall:
-    """Create a sample tool call for testing."""
-    return ToolCall(name="test_tool", call_id="test-call-id", args_json='{"param1": "value1", "param2": 42}')
-
-
-@pytest.fixture
-def sample_decision() -> Decision:
-    """Create a sample decision for testing."""
-    return Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=datetime.now(UTC), reason="Automated approval")
-
-
-@pytest.fixture
-def sample_execution() -> ToolCallExecution:
-    """Create a sample execution result for testing."""
-    return ToolCallExecution(
-        completed_at=datetime.now(UTC),
-        output=mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text="Success")], isError=False),
-    )
+# persistence, sample_tool_call, sample_decision, sample_execution fixtures
+# are now provided by tests/agent/persist/conftest.py
 
 
 # Test 1: Full lifecycle test
