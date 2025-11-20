@@ -3,6 +3,8 @@ services:
     image: powerdns/pdns-auth-master:latest
     container_name: powerdns
     network_mode: host  # Use host networking for Tailscale AXFR zone transfers
+    cap_add:
+      - NET_BIND_SERVICE  # Allow binding to privileged ports (53) on host network
     volumes:
       - ./sqlite-data:/var/lib/powerdns
       - ./config/pdns.conf:/etc/powerdns/pdns.conf:ro
