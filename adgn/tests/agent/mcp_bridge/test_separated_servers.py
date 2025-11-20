@@ -133,7 +133,6 @@ async def test_infrastructure_registry_get_nonexistent(infrastructure_registry: 
 
 async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastructure_registry: InfrastructureRegistry):
     """Test that /api/agents endpoint delegates to agents MCP server."""
-    # Register a local agent in the registry
     mock_infra = Mock(spec=RunningInfrastructure)
     mock_infra.approval_hub = Mock()
     mock_infra.approval_hub.pending = {}
@@ -160,8 +159,6 @@ async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastruct
 
     response = client.get("/api/agents", headers={"Authorization": f"Bearer {ui_token}"})
     assert response.status_code == 200, "API should work with valid token"
-
-    # Verify response structure from agents MCP server
     data = response.json()
     assert "agents" in data, "Response should have 'agents' key"
     agents = data["agents"]
@@ -169,8 +166,6 @@ async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastruct
 
     test_agent = next((a for a in agents if a["agent_id"] == "test-local-agent"), None)
     assert test_agent is not None, "test-local-agent should be in the list"
-
-    # Verify agent properties
     assert test_agent["mode"] == "local", "Agent mode should be 'local'"
     assert test_agent["capabilities"]["chat"] is True, "Local agent should have chat capability"
     assert test_agent["capabilities"]["agent_loop"] is True, "Local agent should have agent_loop capability"

@@ -44,19 +44,11 @@ def test_100_pending_approvals_ui_responsive(page: Page, run_server, responses_f
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
-
-    # Create agent
     agent_id = api_create_agent(base)
-
-    # Attach echo MCP server (requires approval by default)
     attach_echo_mcp(base, agent_id)
-
-    # Trigger the prompt that creates 100 approvals (without loading UI first)
     # This ensures approvals are already pending when we open the UI
     resp = requests.post(base + f"/api/agents/{agent_id}/prompt", json={"text": "trigger approvals"})
     assert resp.ok, resp.text
-
-    # Wait a moment for some approvals to accumulate
     time.sleep(1)
 
     # Now open UI and measure load time
@@ -64,17 +56,12 @@ def test_100_pending_approvals_ui_responsive(page: Page, run_server, responses_f
     page.goto(base + f"/?agent_id={agent_id}")
 
     page.locator(".ws .dot.on").wait_for(timeout=10000)
-
-    # Verify UI loads in <5 seconds
     load_time = time.time() - start_time
     assert load_time < 5.0, f"UI took {load_time:.2f}s to load (expected <5s)"
-
-    # Wait for approvals to be visible (at least some of them)
     # Note: UI might paginate or virtualize, so we don't expect all 100 to be in DOM
     wait_for_pending_approvals(page, timeout=5000)
 
     # Test scrolling responsiveness
-    # Get the approvals container and scroll it
     approvals_container = page.locator(".approvals, [data-testid='approvals-list']").first
     if approvals_container.count() > 0:
         page.evaluate("document.querySelector('.approvals, [data-testid=\"approvals-list\"]')?.scrollBy(0, 500)")
@@ -114,11 +101,7 @@ def test_high_frequency_updates_10_per_second(page: Page, run_server, responses_
     base = s["base_url"]
 
     agent_id = api_create_agent(base)
-
-    # Attach echo MCP server with auto-approval for speed
     attach_echo_mcp(base, agent_id)
-
-    # Set approval policy to auto-approve for this test
     policy_src = """
 from adgn.agent.policies.models import PolicyDecision
 
@@ -129,17 +112,11 @@ class ApprovalPolicy:
 """
     policy_resp = requests.post(base + f"/api/agents/{agent_id}/policy", json={"content": policy_src})
     assert policy_resp.ok, policy_resp.text
-
-    # Open UI first
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
-
-    # Trigger the rapid updates
     start_time = time.time()
     resp = requests.post(base + f"/api/agents/{agent_id}/prompt", json={"text": "trigger rapid updates"})
     assert resp.ok, resp.text
-
-    # Wait for the run to finish (all 100 updates should complete)
     # With auto-approval, this should be fast
     page.get_by_text("Status: finished").wait_for(timeout=30000)
 
@@ -147,8 +124,6 @@ class ApprovalPolicy:
     # 100 updates should complete reasonably quickly with auto-approval
     # Allow generous timeout but verify it completes
     assert elapsed < 30.0, f"Updates took {elapsed:.2f}s (expected <30s)"
-
-    # Verify UI is still responsive by checking we can interact with it
     page.locator('textarea[placeholder^="Type a prompt"]').wait_for(state="visible", timeout=5000)
 
     s["stop"]()
@@ -184,8 +159,6 @@ def test_10_concurrent_subscriptions_all_work(page: Page, run_server, responses_
         agent_ids.append(agent_id)
 
     attach_echo_mcp(base, agent_id)
-
-    # Set auto-approve policy for all agents
     policy_src = """
 from adgn.agent.policies.models import PolicyDecision
 
@@ -197,24 +170,17 @@ class ApprovalPolicy:
     for agent_id in agent_ids:
         policy_resp = requests.post(base + f"/api/agents/{agent_id}/policy", json={"content": policy_src})
         assert policy_resp.ok, policy_resp.text
-
-    # Open UI for the first agent (to verify at least one subscription works)
     page.goto(base + f"/?agent_id={agent_ids[0]}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     for agent_id in agent_ids:
         resp = requests.post(base + f"/api/agents/{agent_id}/prompt", json={"text": f"test agent {agent_id}"})
         assert resp.ok, resp.text
-
-    # Verify the first agent's run finishes (subscription is working)
     page.get_by_text("Status: finished").wait_for(timeout=15000)
-
-    # Verify all agents finished by checking their status via API
     for agent_id in agent_ids:
         snapshot_resp = requests.get(base + f"/api/agents/{agent_id}/snapshot")
         assert snapshot_resp.ok
         snapshot_data = snapshot_resp.json()
-        # Check that the agent completed its run
         assert "run_state" in snapshot_data
         assert snapshot_data["run_state"]["status"] in ("finished", "idle")
 
@@ -252,14 +218,8 @@ def test_large_resource_payload_10mb(page: Page, run_server, responses_factory):
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     send_prompt(page, "get large data")
-
-    # Verify the run finishes (large payload was handled)
     page.get_by_text("Status: finished").wait_for(timeout=30000)
-
-    # Verify UI is still responsive after handling large payload
     page.locator('textarea[placeholder^="Type a prompt"]').wait_for(state="visible", timeout=5000)
-
-    # Verify we can still interact with the UI
     page.locator('textarea[placeholder^="Type a prompt"]').fill("test after large payload")
     page.get_by_role("button", name="Send").is_enabled()
 
@@ -304,17 +264,11 @@ class ApprovalPolicy:
 """
     policy_resp = requests.post(base + f"/api/agents/{agent_id}/policy", json={"content": policy_src})
     assert policy_resp.ok, policy_resp.text
-
-    # Open UI
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
-
-    # Trigger the sustained load
     start_time = time.time()
     resp = requests.post(base + f"/api/agents/{agent_id}/prompt", json={"text": "trigger sustained load"})
     assert resp.ok, resp.text
-
-    # Check UI responsiveness periodically while updates are flowing
     # We'll check at the start, middle, and end
     check_points = [10, 30, 60]  # seconds into the test
     last_check = 0
@@ -324,17 +278,12 @@ class ApprovalPolicy:
             time.sleep(0.5)
             if page.locator("text=Status: finished").count() > 0:
                 break
-
-        # Verify UI is still responsive
-        # Check that the textarea is still visible and interactable
         textarea = page.locator('textarea[placeholder^="Type a prompt"]')
         if textarea.count() > 0:
             textarea.wait_for(state="visible", timeout=5000)
 
         if page.locator("text=Status: finished").count() > 0:
             break
-
-    # Wait for final completion
     page.get_by_text("Status: finished").wait_for(timeout=120000)  # 2 minutes max
 
     # With 1000 updates, this could take a while, so we allow generous timeout
