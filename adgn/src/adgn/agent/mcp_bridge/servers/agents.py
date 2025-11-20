@@ -11,12 +11,12 @@ from enum import StrEnum
 import json
 import logging
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from mcp import types as mcp_types
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 
 from adgn.agent.approvals import ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision, DenyContinueDecision
@@ -25,6 +25,7 @@ from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.types import ToolCall
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
+from adgn.agent.policies.policy_types import UserApprovalDecision
 from adgn.agent.presets import discover_presets
 from adgn.agent.server.state import ApprovalKind
 from adgn.mcp._shared.types import SimpleOk
@@ -36,7 +37,7 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 class AgentBrief(BaseModel):
     """Brief information about an agent (returned from create_agent tool)."""
 
-    id: AgentID
+    id: AgentID = Field(description="Unique agent identifier")
 
 
 if TYPE_CHECKING:
@@ -190,9 +191,9 @@ class AgentPolicyProposals(BaseModel):
 class AgentPolicyState(BaseModel):
     """Content for resource://agents/{id}/policy/state."""
 
-    agent_id: AgentID
-    policy: dict  # Contains: content, id, proposals
-    active_policy_uri: str  # URI to active policy
+    agent_id: AgentID = Field(description="Target agent identifier")
+    policy: dict[str, Any] = Field(description="Policy state containing: content (Python source), id (policy identifier), proposals (list)")
+    active_policy_uri: str = Field(description="URI to active policy resource")
 
 
 class ServerStatus(StrEnum):
@@ -625,12 +626,12 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         """
         infra = await registry.get_infrastructure(agent_id)
 
-        # Map ApprovalKind to handler decision type
-        if decision == "approve":
+        # Map UserApprovalDecision to handler decision type
+        if decision == UserApprovalDecision.APPROVE:
             handler_decision = ContinueDecision()
-        elif decision == "deny_continue":
+        elif decision == UserApprovalDecision.DENY_CONTINUE:
             handler_decision = DenyContinueDecision(reason=reason)
-        elif decision == "deny_abort":
+        elif decision == UserApprovalDecision.DENY_ABORT:
             handler_decision = AbortTurnDecision(reason=reason)
         else:
             raise ValueError(f"Invalid approval decision: {decision}")

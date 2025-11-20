@@ -7,6 +7,8 @@ import uuid
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.agent.policies.policy_types import UserApprovalDecision
+
 # ---- Display items (normalized, UI-friendly) ----
 
 
@@ -36,7 +38,7 @@ class EndTurnItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-ApprovalKind = Literal["approve", "deny_continue", "deny_abort"]
+ApprovalKind = UserApprovalDecision
 
 
 # Tool content variants nested under a single ToolItem
@@ -63,13 +65,13 @@ ToolContent = Annotated[ExecContent | JsonContent, Field(discriminator="content_
 
 
 class ToolItem(BaseModel):
-    kind: Literal["Tool"] = "Tool"
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
-    ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    tool: str
-    call_id: str
-    decision: ApprovalKind | None = None
-    content: ToolContent
+    kind: Literal["Tool"] = Field("Tool", description="Item type identifier")
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex, description="Unique item identifier")
+    ts: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Timestamp when tool was called")
+    tool: str = Field(description="Tool name")
+    call_id: str = Field(description="Unique call identifier")
+    decision: ApprovalKind | None = Field(None, description="Approval decision (approve, deny_continue, or deny_abort)")
+    content: ToolContent = Field(description="Tool execution content (Exec or Json variant)")
     model_config = ConfigDict(extra="forbid")
 
 
