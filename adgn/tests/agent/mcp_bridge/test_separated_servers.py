@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock
 
 from fastapi.testclient import TestClient
 from fastmcp.mcp_config import MCPConfig
+from hamcrest import assert_that, has_entries, has_item, instance_of
 import pytest
 
 from adgn.agent.mcp_bridge.server import InfrastructureRegistry, create_management_ui_app, create_mcp_server_app
@@ -162,17 +163,18 @@ async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastruct
     data = response.json()
     assert "agents" in data, "Response should have 'agents' key"
     agents = data["agents"]
-    assert isinstance(agents, list), "agents should be a list"
+    assert_that(agents, instance_of(list))
 
-    test_agent = next((a for a in agents if a["agent_id"] == "test-local-agent"), None)
-    assert test_agent is not None, "test-local-agent should be in the list"
-    assert test_agent["mode"] == "local", "Agent mode should be 'local'"
-    assert test_agent["capabilities"]["chat"] is True, "Local agent should have chat capability"
-    assert test_agent["capabilities"]["agent_loop"] is True, "Local agent should have agent_loop capability"
-    assert test_agent["state_uri"] == "resource://agents/test-local-agent/state", "Should have state URI"
-    assert test_agent["approvals_uri"] == "resource://agents/test-local-agent/approvals/pending", (
-        "Should have approvals URI"
-    )
-    assert test_agent["policy_proposals_uri"] == "resource://agents/test-local-agent/policy/proposals", (
-        "Should have policy proposals URI"
+    assert_that(
+        agents,
+        has_item(
+            has_entries(
+                agent_id="test-local-agent",
+                mode="local",
+                capabilities=has_entries(chat=True, agent_loop=True),
+                state_uri="resource://agents/test-local-agent/state",
+                approvals_uri="resource://agents/test-local-agent/approvals/pending",
+                policy_proposals_uri="resource://agents/test-local-agent/policy/proposals",
+            )
+        ),
     )

@@ -3,6 +3,7 @@ import shutil
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
+from hamcrest import assert_that, instance_of
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
@@ -42,7 +43,7 @@ async def test_stdio_server_list_tools(make_compositor) -> None:
 
     async with make_compositor({"everything": spec}) as (sess, comp):
         tools = await sess.list_tools()
-        assert isinstance(tools, list)
+        assert_that(tools, instance_of(list))
         assert any(t.name.startswith("everything_") for t in tools)
 
 

@@ -1,6 +1,7 @@
 """Test end_turn UI integration - ensures tool doesn't double-emit and renders as thick HR."""
 
 from fastmcp.client.client import CallToolResult
+from hamcrest import assert_that, has_length, instance_of
 
 from adgn.agent.server.bus import ServerBus, UiEndTurn
 from adgn.agent.server.protocol import FunctionCallOutput, ToolCall, UiEndTurnEvt
@@ -25,8 +26,8 @@ def test_end_turn_tool_filtering():
     )
     after_output = reduce_ui_state(after_call, output)
 
-    assert len(after_call.items) == 0, "end_turn tool call should not create UI items"
-    assert len(after_output.items) == 0, "end_turn tool output should not create UI items"
+    assert_that(after_call.items, has_length(0), "end_turn tool call should not create UI items")
+    assert_that(after_output.items, has_length(0), "end_turn tool output should not create UI items")
 
 
 def test_end_turn_event_creates_separator():
@@ -37,7 +38,7 @@ def test_end_turn_event_creates_separator():
     evt = UiEndTurnEvt()
     new_state_obj = reduce_ui_state(state, evt)
 
-    assert len(new_state_obj.items) == 1, "UiEndTurnEvt should create one item"
+    assert_that(new_state_obj.items, has_length(1), "UiEndTurnEvt should create one item")
     assert new_state_obj.items[0].kind == "EndTurn", "Should create EndTurn item"
 
 
@@ -48,8 +49,8 @@ def test_ui_bus_end_turn_flow():
     bus.push_end_turn()
     messages = bus.drain_messages()
 
-    assert len(messages) == 1, "push_end_turn should create one message"
-    assert isinstance(messages[0], UiEndTurn), "Should create UiEndTurn item"
+    assert_that(messages, has_length(1), "push_end_turn should create one message")
+    assert_that(messages[0], instance_of(UiEndTurn))
     assert messages[0].kind == "EndTurn", "UiEndTurn should have EndTurn kind"
 
 
@@ -64,8 +65,8 @@ def test_ui_send_message_still_filtered():
     after_send = reduce_ui_state(state, send_msg_call)
     after_end = reduce_ui_state(after_send, end_turn_call)
 
-    assert len(after_send.items) == 0, "send_message should still be filtered"
-    assert len(after_end.items) == 0, "end_turn should also be filtered"
+    assert_that(after_send.items, has_length(0), "send_message should still be filtered")
+    assert_that(after_end.items, has_length(0), "end_turn should also be filtered")
 
 
 def test_regular_tools_not_affected():
@@ -76,6 +77,6 @@ def test_regular_tools_not_affected():
     regular_call = ToolCall(name=build_mcp_function("echo", "echo"), call_id="echo-123", args_json='{"text": "test"}')
     after_regular = reduce_ui_state(state, regular_call)
 
-    assert len(after_regular.items) == 1, "Regular tools should create items"
+    assert_that(after_regular.items, has_length(1), "Regular tools should create items")
     assert after_regular.items[0].kind == "Tool", "Should create Tool item"
     assert after_regular.items[0].tool == build_mcp_function("echo", "echo"), "Should preserve tool name"

@@ -19,10 +19,13 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
+from hamcrest import assert_that, has_length, instance_of
 from mcp import types as mcp_types
 import pytest
 
 from adgn.agent.persist import ToolCallRecord, ToolCall, Decision, ToolCallExecution
+from adgn.agent.persist.sqlite import SQLitePersistence
+from adgn.agent.persist import ApprovalOutcome
 
 # test_agent fixture now provided globally in tests/agent/conftest.py
 # persistence, sample_tool_call, sample_decision, sample_execution fixtures
@@ -178,7 +181,7 @@ async def test_multiple_tool_calls_with_different_states(persistence: SQLitePers
 
     # Test 1: List all tool calls
     all_calls = await persistence.list_tool_calls()
-    assert len(all_calls) == 5
+    assert_that(all_calls, has_length(5))
     assert {r.call_id for r in all_calls} == {"multi-1", "multi-2", "multi-3", "multi-4", "multi-5"}
 
     # Test 2: Verify each state is preserved
@@ -376,8 +379,8 @@ async def test_complex_calltoolresult_content_types(persistence: SQLitePersisten
     await persistence.save_tool_call(record1)
     retrieved1 = await persistence.get_tool_call("content-text")
     assert retrieved1 is not None
-    assert len(retrieved1.execution.output.content) == 1
-    assert isinstance(retrieved1.execution.output.content[0], mcp_types.TextContent)
+    assert_that(retrieved1.execution.output.content, has_length(1))
+    assert_that(retrieved1.execution.output.content[0], instance_of(mcp_types.TextContent))
     assert retrieved1.execution.output.content[0].text == "Simple text output"
 
     # Test 2: Image content
@@ -404,7 +407,7 @@ async def test_complex_calltoolresult_content_types(persistence: SQLitePersisten
     await persistence.save_tool_call(record2)
     retrieved2 = await persistence.get_tool_call("content-image")
     assert retrieved2 is not None
-    assert len(retrieved2.execution.output.content) == 1
+    assert_that(retrieved2.execution.output.content, has_length(1))
     assert isinstance(retrieved2.execution.output.content[0], mcp_types.ImageContent)
     assert retrieved2.execution.output.content[0].mimeType == "image/png"
 
@@ -450,7 +453,7 @@ async def test_complex_calltoolresult_content_types(persistence: SQLitePersisten
     await persistence.save_tool_call(record4)
     retrieved4 = await persistence.get_tool_call("content-mixed")
     assert retrieved4 is not None
-    assert len(retrieved4.execution.output.content) == 3
+    assert_that(retrieved4.execution.output.content, has_length(3))
     assert isinstance(retrieved4.execution.output.content[0], mcp_types.TextContent)
     assert isinstance(retrieved4.execution.output.content[1], mcp_types.ImageContent)
     assert isinstance(retrieved4.execution.output.content[2], mcp_types.TextContent)
@@ -469,7 +472,7 @@ async def test_complex_calltoolresult_content_types(persistence: SQLitePersisten
     await persistence.save_tool_call(record5)
     retrieved5 = await persistence.get_tool_call("content-empty")
     assert retrieved5 is not None
-    assert len(retrieved5.execution.output.content) == 0
+    assert_that(retrieved5.execution.output.content, has_length(0))
 
 
 # Test 6: Concurrent access test
@@ -507,11 +510,11 @@ async def test_concurrent_access_and_data_integrity(persistence: SQLitePersisten
 
     # Verify all 20 records were saved
     all_calls = await persistence.list_tool_calls()
-    assert len(all_calls) == 20
+    assert_that(all_calls, has_length(20))
 
     # Verify no data corruption - each call_id should be unique
     call_ids = {r.call_id for r in all_calls}
-    assert len(call_ids) == 20
+    assert_that(call_ids, has_length(20))
     assert call_ids == {f"concurrent-{i}" for i in range(20)}
 
     # Verify each record is intact by retrieving individually
@@ -689,7 +692,7 @@ async def test_summary_all_states_in_single_run(persistence: SQLitePersistence, 
 
     # List all calls
     all_calls = await persistence.list_tool_calls()
-    assert len(all_calls) == 3
+    assert_that(all_calls, has_length(3))
 
     # Verify each state is present
     call_states = {r.call_id: (r.decision is not None, r.execution is not None) for r in all_calls}

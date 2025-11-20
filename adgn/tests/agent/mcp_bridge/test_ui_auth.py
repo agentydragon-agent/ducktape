@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi.testclient import TestClient
 from fastmcp.mcp_config import MCPConfig
+from hamcrest import assert_that, instance_of
 import pytest
 
 from adgn.agent.mcp_bridge.auth import generate_ui_token
@@ -43,9 +45,9 @@ def test_generate_ui_token_random(monkeypatch):
     token2 = generate_ui_token()
 
     # Tokens should be non-empty strings
-    assert isinstance(token1, str)
+    assert_that(token1, instance_of(str))
     assert len(token1) > 0
-    assert isinstance(token2, str)
+    assert_that(token2, instance_of(str))
     assert len(token2) > 0
 
     # Tokens should be different (random)

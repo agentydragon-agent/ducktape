@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from hamcrest import assert_that, has_length, greater_than_or_equal_to, only_contains, instance_of
 from mcp import types as mcp_types
 import pytest
 
@@ -146,7 +147,7 @@ async def test_save_and_get_tool_call_completed(persistence: SQLitePersistence) 
     assert retrieved.decision.outcome == ApprovalOutcome.POLICY_ALLOW
     assert retrieved.execution is not None
     assert retrieved.execution.output.isError is False
-    assert len(retrieved.execution.output.content) == 1
+    assert_that(retrieved.execution.output.content, has_length(1))
     assert isinstance(retrieved.execution.output.content[0], mcp_types.TextContent)
     assert retrieved.execution.output.content[0].text == "Success!"
 
@@ -170,7 +171,7 @@ async def test_list_tool_calls_all(persistence: SQLitePersistence) -> None:
 
     all_calls = await persistence.list_tool_calls()
 
-    assert len(all_calls) == 5
+    assert_that(all_calls, has_length(5))
     assert {r.call_id for r in all_calls} == {f"call-{i}" for i in range(5)}
 
 
@@ -201,8 +202,10 @@ async def test_list_tool_calls_by_run_id(persistence: SQLitePersistence) -> None
 
     # List all (no run_id filter)
     all_calls = await persistence.list_tool_calls()
-    assert len(all_calls) >= 3  # At least our 3 records
-    assert all(r.run_id is None for r in all_calls)
+    assert_that(all_calls, has_length(greater_than_or_equal_to(3)))  # At least our 3 records
+    # Verify all records have run_id = None
+    for r in all_calls:
+        assert r.run_id is None
 
 
 @pytest.mark.asyncio
@@ -336,7 +339,7 @@ async def test_json_serialization_roundtrip(persistence: SQLitePersistence) -> N
     # Verify execution
     assert retrieved.execution is not None
     assert retrieved.execution.output.isError is True
-    assert len(retrieved.execution.output.content) == 2
+    assert_that(retrieved.execution.output.content, has_length(2))
     assert isinstance(retrieved.execution.output.content[0], mcp_types.TextContent)
     assert retrieved.execution.output.content[0].text == "Error occurred"
     assert isinstance(retrieved.execution.output.content[1], mcp_types.ImageContent)

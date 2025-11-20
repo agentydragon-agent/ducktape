@@ -4,6 +4,7 @@ from pathlib import Path
 
 from docker import DockerClient
 from fastmcp.mcp_config import MCPConfig
+from hamcrest import assert_that, has_length, greater_than
 import pytest
 
 from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
@@ -45,7 +46,7 @@ async def test_validate_policy_valid(engine_and_persistence, docker_client: Dock
     result = await admin_server._mcp_server._tools["validate_policy"].fn(ValidatePolicyArgs(source="print('hello')"))
 
     assert result.valid is True
-    assert len(result.errors) == 0
+    assert_that(result.errors, has_length(0))
 
 
 async def test_validate_policy_syntax_error(engine_and_persistence):
@@ -58,7 +59,7 @@ async def test_validate_policy_syntax_error(engine_and_persistence):
     result = await admin_server._mcp_server._tools["validate_policy"].fn(ValidatePolicyArgs(source="print('hello'"))
 
     assert result.valid is False
-    assert len(result.errors) > 0
+    assert_that(result.errors, has_length(greater_than(0)))
     assert "Syntax error" in result.errors[0]
 
 
@@ -74,7 +75,7 @@ async def test_validate_policy_runtime_error(engine_and_persistence, docker_clie
     )
 
     assert result.valid is False
-    assert len(result.errors) > 0
+    assert_that(result.errors, has_length(greater_than(0)))
     assert "Runtime validation failed" in result.errors[0]
 
 

@@ -5,12 +5,12 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from hamcrest import all_of, assert_that, contains_string, has_item, has_properties
+from hamcrest import all_of, assert_that, contains_string, has_item, has_properties, instance_of
 import requests
 from uvicorn import Config, Server
 
 from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
-from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
+from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, OpenAIModelProto, ResponsesRequest, ResponsesResult
 from adgn.util.net import pick_free_port
 
 if TYPE_CHECKING:
@@ -221,3 +221,32 @@ def attach_echo_mcp(base_url: str, agent_id: str) -> None:
     }
     patch = requests.patch(base_url + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
     assert patch.ok, patch.text
+
+
+# --------------------------------
+# OpenAI model item matcher factories
+# --------------------------------
+
+
+def is_function_call_item(**props):
+    """Matcher: FunctionCallItem with optional property constraints.
+
+    Composable matcher factory for FunctionCallItem with type checking.
+    Example: is_function_call_item(call_id="call_1", id="fc_id_1")
+    """
+    m = [instance_of(FunctionCallItem)]
+    if props:
+        m.append(has_properties(**props))
+    return all_of(*m)
+
+
+def is_function_call_output_item(**props):
+    """Matcher: FunctionCallOutputItem with optional property constraints.
+
+    Composable matcher factory for FunctionCallOutputItem with type checking.
+    Example: is_function_call_output_item(call_id="call_1")
+    """
+    m = [instance_of(FunctionCallOutputItem)]
+    if props:
+        m.append(has_properties(**props))
+    return all_of(*m)

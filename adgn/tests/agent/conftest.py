@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
+from hamcrest import assert_that, instance_of
 from pydantic import BaseModel
 import pytest
 from starlette.testclient import WebSocketTestSession

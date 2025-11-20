@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastmcp.client.client import CallToolResult
+from hamcrest import assert_that, instance_of
 from mcp import types
 import pytest
 
@@ -33,6 +34,7 @@ class RecordingHandler(BaseHandler):
             res = convert_fastmcp_result(res)
         if not isinstance(res, types.CallToolResult):
             raise TypeError(f"unexpected tool result type: {type(res).__name__}")
+        # Use instance_of matcher in assertions where applicable
         self.rec.tool_outputs.append(res)
 
 
@@ -64,6 +66,6 @@ async def test_agent_mcp_echo_tool_use(
     # The tool output should be emitted (ToolCallOutput) and assistant text should follow
     assert rec.tool_outputs, "No tool outputs captured"
     first = rec.tool_outputs[0]
-    assert isinstance(first, types.CallToolResult)
+    assert_that(first, instance_of(types.CallToolResult))
     assert first.structuredContent == {"echo": "hello"}
     assert res.text.strip() == "done"

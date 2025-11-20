@@ -8,6 +8,7 @@ import json
 from unittest.mock import Mock
 
 from fastmcp.client import Client
+from hamcrest import all_of, assert_that, has_entries, has_items, has_key, has_length, has_properties, greater_than_or_equal_to, instance_of
 from mcp import types as mcp_types
 import pytest
 
@@ -51,25 +52,29 @@ async def test_list_agents_resource(agents_client):
 
     assert "agents" in content
     agents = content["agents"]
-    assert len(agents) == 2
+    assert_that(agents, has_length(2))
 
-    local = next((a for a in agents if a["agent_id"] == "local-agent"), None)
-    assert local is not None
-    assert local["mode"] == "local"
-    assert local["capabilities"]["chat"] is True
-    assert local["capabilities"]["agent_loop"] is True
-    assert local["state_uri"] == "resource://agents/local-agent/state"
-    assert local["approvals_uri"] == "resource://agents/local-agent/approvals/pending"
-    assert local["policy_proposals_uri"] == "resource://agents/local-agent/policy/proposals"
-
-    bridge = next((a for a in agents if a["agent_id"] == "bridge-agent"), None)
-    assert bridge is not None
-    assert bridge["mode"] == "bridge"
-    assert bridge["capabilities"]["chat"] is False
-    assert bridge["capabilities"]["agent_loop"] is False
-    assert bridge["state_uri"] is None
-    assert bridge["approvals_uri"] == "resource://agents/bridge-agent/approvals/pending"
-    assert bridge["policy_proposals_uri"] == "resource://agents/bridge-agent/policy/proposals"
+    assert_that(
+        agents,
+        has_items(
+            has_entries(
+                agent_id="local-agent",
+                mode="local",
+                capabilities=has_entries(chat=True, agent_loop=True),
+                state_uri="resource://agents/local-agent/state",
+                approvals_uri="resource://agents/local-agent/approvals/pending",
+                policy_proposals_uri="resource://agents/local-agent/policy/proposals",
+            ),
+            has_entries(
+                agent_id="bridge-agent",
+                mode="bridge",
+                capabilities=has_entries(chat=False, agent_loop=False),
+                state_uri=None,
+                approvals_uri="resource://agents/bridge-agent/approvals/pending",
+                policy_proposals_uri="resource://agents/bridge-agent/policy/proposals",
+            ),
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -78,8 +83,7 @@ async def test_agent_state_resource_returns_snapshot(agents_client, mock_local_r
     result = await agents_client.read_resource("resource://agents/local-agent/state")
     content = read_text_json(result)
 
-    assert "ts" in content
-    assert "servers" in content
+    assert_that(content, all_of(has_key("ts"), has_key("servers")))
     assert content["ts"] == "2025-01-15T10:00:00Z"
     assert content["servers"] == {}
 
@@ -99,8 +103,7 @@ async def test_agent_ui_state_resource(agents_client, mock_local_runtime):
     result = await agents_client.read_resource("resource://agents/local-agent/ui/state")
     content = read_text_json(result)
 
-    assert "seq" in content
-    assert "state" in content
+    assert_that(content, all_of(has_key("seq"), has_key("state")))
     assert content["seq"] == 0
     assert content["state"]["seq"] == 0
     assert content["state"]["items"] == []
@@ -143,9 +146,8 @@ async def test_agent_state_resource_with_servers(agents_client, mock_local_runti
 
     server = content["servers"]["test-server"]
     assert server["state"] == "running"
-    assert "initialize" in server
-    assert "tools" in server
-    assert len(server["tools"]) == 1
+    assert_that(server, all_of(has_key("initialize"), has_key("tools")))
+    assert_that(server["tools"], has_length(1))
     assert server["tools"][0]["name"] == "test_tool"
 
 
@@ -186,7 +188,7 @@ async def test_agent_approvals_pending_with_items(agents_client, mock_approval_h
     content = read_text_json(result)
 
     assert content["agent_id"] == "local-agent"
-    assert len(content["pending"]) == 1
+    assert_that(content["pending"], has_length(1))
 
     approval = content["pending"][0]
     assert approval["call_id"] == "call-123"
@@ -200,11 +202,11 @@ async def test_global_approvals_pending_empty(agents_client):
     """Test resource://approvals/pending with no pending approvals."""
     result = await agents_client.read_resource("resource://approvals/pending")
 
-    assert isinstance(result, list)
-    assert len(result) == 1
+    assert_that(result, instance_of(list))
+    assert_that(result, has_length(1))
 
     wrapped = result[0]
-    assert isinstance(wrapped, mcp_types.TextResourceContents)
+    assert_that(wrapped, instance_of(mcp_types.TextResourceContents))
     data = json.loads(wrapped.text)
     assert data["contents"] == []
 
@@ -220,16 +222,16 @@ async def test_global_approvals_pending_multi_content(agents_client, mock_approv
 
     result = await agents_client.read_resource("resource://approvals/pending")
 
-    assert isinstance(result, list)
-    assert len(result) == 1
+    assert_that(result, instance_of(list))
+    assert_that(result, has_length(1))
 
     wrapped = result[0]
-    assert isinstance(wrapped, mcp_types.TextResourceContents)
+    assert_that(wrapped, instance_of(mcp_types.TextResourceContents))
     data = json.loads(wrapped.text)
 
     # Should have multiple content blocks (2 approvals per agent x 2 agents)
     contents = data["contents"]
-    assert len(contents) == 4
+    assert_that(contents, has_length(4))
 
     # Each content block should be TextResourceContents with unique URI
     for content in contents:
@@ -239,11 +241,16 @@ async def test_global_approvals_pending_multi_content(agents_client, mock_approv
 
         # Parse and validate JSON
         approval_data = json.loads(content["text"])
-        assert "agent_id" in approval_data
-        assert "call_id" in approval_data
-        assert "tool" in approval_data
-        assert "args" in approval_data
-        assert "timestamp" in approval_data
+        assert_that(
+            approval_data,
+            all_of(
+                has_key("agent_id"),
+                has_key("call_id"),
+                has_key("tool"),
+                has_key("args"),
+                has_key("timestamp"),
+            ),
+        )
 
 
 @pytest.mark.asyncio
@@ -279,7 +286,7 @@ async def test_agent_approvals_history_with_records(agents_client, mock_persiste
     content = read_text_json(result)
 
     assert content["agent_id"] == "local-agent"
-    assert len(content["timeline"]) == 1
+    assert_that(content["timeline"], has_length(1))
     assert content["count"] == 1
 
     entry = content["timeline"][0]
@@ -317,7 +324,7 @@ async def test_agent_approvals_history_filters_pending(agents_client, mock_persi
     content = read_text_json(result)
 
     # Only completed record should be in timeline
-    assert len(content["timeline"]) == 1
+    assert_that(content["timeline"], has_length(1))
     assert content["timeline"][0]["call_id"] == "call-completed"
 
 
@@ -350,7 +357,7 @@ async def test_agent_policy_proposals_with_items(agents_client, mock_persistence
     content = read_text_json(result)
 
     assert content["agent_id"] == "local-agent"
-    assert len(content["proposals"]) == 1
+    assert_that(content["proposals"], has_length(1))
 
     prop = content["proposals"][0]
     assert prop["id"] == "prop-123"
@@ -408,7 +415,7 @@ async def test_approve_tool_call(agents_client, mock_approval_hub):
 
     assert fut.done()
     decision = fut.result()
-    assert isinstance(decision, ContinueDecision)
+    assert_that(decision, instance_of(ContinueDecision))
 
     # Approval should be removed from pending
     assert "call-123" not in mock_approval_hub._requests
@@ -432,8 +439,7 @@ async def test_reject_tool_call(agents_client, mock_approval_hub):
 
     assert fut.done()
     decision = fut.result()
-    assert isinstance(decision, AbortTurnDecision)
-    assert decision.reason == "Test rejection"
+    assert_that(decision, all_of(instance_of(AbortTurnDecision), has_properties(reason="Test rejection")))
 
     # Approval should be removed from pending
     assert "call-456" not in mock_approval_hub._requests
@@ -552,14 +558,14 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
         result = await client.read_resource("resource://approvals/pending")
 
         assert isinstance(result, list)
-        assert len(result) == 1
+        assert_that(result, has_length(1))
 
         wrapped = result[0]
         assert isinstance(wrapped, mcp_types.TextResourceContents)
         data = json.loads(wrapped.text)
 
         contents = data["contents"]
-        assert len(contents) == 3
+        assert_that(contents, has_length(3))
 
         approvals_by_agent = {"local-agent": [], "bridge-agent": []}
         for content in contents:
@@ -571,12 +577,11 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
 
             approvals_by_agent[agent_id].append({"call_id": call_id, "tool": tool})
 
-        assert len(approvals_by_agent["local-agent"]) == 2
+        assert_that(approvals_by_agent["local-agent"], has_length(2))
         local_calls = {a["call_id"] for a in approvals_by_agent["local-agent"]}
-        assert "local-call-1" in local_calls
-        assert "local-call-2" in local_calls
+        assert_that(local_calls, has_items("local-call-1", "local-call-2"))
 
-        assert len(approvals_by_agent["bridge-agent"]) == 1
+        assert_that(approvals_by_agent["bridge-agent"], has_length(1))
         bridge_calls = {a["call_id"] for a in approvals_by_agent["bridge-agent"]}
         assert "bridge-call-1" in bridge_calls
 
@@ -643,7 +648,7 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
     content = read_text_json(result)
 
     assert content["agent_id"] == "local-agent"
-    assert len(content["timeline"]) == 4
+    assert_that(content["timeline"], has_length(4))
     assert content["count"] == 4
 
     # Verify all outcomes are present
@@ -696,7 +701,7 @@ async def test_global_approvals_pending_ordering(agents_client, mock_approval_hu
 
     # FastMCP wraps ReadResourceResult in a list of TextResourceContents
     assert isinstance(result, list)
-    assert len(result) == 1
+    assert_that(result, has_length(1))
 
     # Parse the wrapped result
     wrapped = result[0]
@@ -705,14 +710,12 @@ async def test_global_approvals_pending_ordering(agents_client, mock_approval_hu
 
     # Each agent should have 3 approvals (6 total for 2 agents)
     contents = data["contents"]
-    assert len(contents) == 6
+    assert_that(contents, has_length(6))
 
     # Parse and verify ordering within each agent
     for content in contents:
         approval_data = json.loads(content["text"])
-        assert "agent_id" in approval_data
-        assert "call_id" in approval_data
-        assert "tool" in approval_data
+        assert_that(approval_data, all_of(has_key("agent_id"), has_key("call_id"), has_key("tool")))
 
 
 @pytest.mark.asyncio
@@ -725,7 +728,7 @@ async def test_presets_list_resource(agents_client):
     presets = content["presets"]
 
     # Should have at least the built-in "default" preset
-    assert len(presets) >= 1
+    assert_that(presets, has_length(greater_than_or_equal_to(1)))
 
     # Check default preset exists
     default_preset = next((p for p in presets if p["name"] == "default"), None)
@@ -734,8 +737,7 @@ async def test_presets_list_resource(agents_client):
 
     # Verify all presets have required fields
     for preset in presets:
-        assert "name" in preset
-        assert "description" in preset
+        assert_that(preset, all_of(has_key("name"), has_key("description")))
 
 
 # --- Additional Resource Tests (snapshot, info, presets variations) ---
@@ -748,8 +750,7 @@ async def test_agent_snapshot_returns_full_state(agents_client, mock_local_runti
     content = read_text_json(result)
 
     # Verify sampling snapshot structure
-    assert "ts" in content
-    assert "servers" in content
+    assert_that(content, all_of(has_key("ts"), has_key("servers")))
     assert content["ts"] == "2025-01-15T10:00:00Z"
     assert content["servers"] == {}
 
@@ -813,9 +814,8 @@ async def test_agent_snapshot_with_servers(agents_client, mock_local_runtime):
 
     server = content["servers"]["snapshot-test-server"]
     assert server["state"] == "running"
-    assert "initialize" in server
-    assert "tools" in server
-    assert len(server["tools"]) == 1
+    assert_that(server, all_of(has_key("initialize"), has_key("tools")))
+    assert_that(server["tools"], has_length(1))
     assert server["tools"][0]["name"] == "snapshot_tool"
 
 
@@ -913,7 +913,7 @@ async def test_presets_list_with_multiple_presets(agents_client, monkeypatch):
 
     assert "presets" in content
     presets = content["presets"]
-    assert len(presets) == 3
+    assert_that(presets, has_length(3))
 
     # Check that all presets are included
     preset_names = {p["name"] for p in presets}
@@ -952,7 +952,7 @@ async def test_presets_list_ordering(agents_client, monkeypatch):
     content = read_text_json(result)
 
     presets = content["presets"]
-    assert len(presets) == 3
+    assert_that(presets, has_length(3))
 
     # Verify order is preserved (dict iteration order is guaranteed in Python 3.7+)
     preset_names = [p["name"] for p in presets]
@@ -966,17 +966,22 @@ async def test_agents_list_resource_detailed_status(agents_client):
     content = read_text_json(result)
 
     assert "agents" in content
-    assert len(content["agents"]) >= 1
+    assert_that(content["agents"], has_length(greater_than_or_equal_to(1)))
 
     # Check that all agents have required status fields
     for agent in content["agents"]:
-        assert "id" in agent
-        assert "mode" in agent
-        assert "live" in agent
-        assert "active_run_id" in agent
-        assert "run_phase" in agent
-        assert "pending_approvals" in agent
-        assert "capabilities" in agent
+        assert_that(
+            agent,
+            all_of(
+                has_key("id"),
+                has_key("mode"),
+                has_key("live"),
+                has_key("active_run_id"),
+                has_key("run_phase"),
+                has_key("pending_approvals"),
+                has_key("capabilities"),
+            ),
+        )
 
         # Verify field types
         assert isinstance(agent["live"], bool)
@@ -1010,7 +1015,7 @@ async def test_approval_hub_notifier_on_request(mock_approval_hub):
     await asyncio.sleep(0.1)
 
     # Verify notifier was called
-    assert len(notifier_calls) == 1
+    assert_that(notifier_calls, has_length(1))
     assert notifier_calls[0] == "approval_requested"
 
     # Clean up: resolve the approval
@@ -1046,7 +1051,7 @@ async def test_approval_hub_notifier_on_resolve(mock_approval_hub):
     mock_approval_hub.resolve("call-456", ContinueDecision())
 
     # Verify notifier was called for resolve
-    assert len(notifier_calls) == 1
+    assert_that(notifier_calls, has_length(1))
     assert notifier_calls[0] == "approval_resolved"
 
     # Wait for task to complete
@@ -1094,18 +1099,22 @@ async def test_agent_session_state_resource(agents_client, mock_local_runtime):
     result = await agents_client.read_resource("resource://agents/local-agent/session/state")
     content = read_text_json(result)
 
-    # Verify session state structure
-    assert "session_state" in content
-    assert content["session_state"]["session_id"] == "test-session-123"
-    assert content["session_state"]["version"] == "1.0.0"
-    assert content["session_state"]["active_run_id"] == "12345678-1234-5678-1234-567812345678"
-    assert content["session_state"]["run_counter"] == 5
-
-    # Verify run state
-    assert "run_state" in content
-    assert content["run_state"]["run_id"] == "12345678-1234-5678-1234-567812345678"
-    assert content["run_state"]["status"] == "running"
-    assert content["run_state"]["started_at"] == "2025-01-15T10:30:00"
+    assert_that(
+        content,
+        has_entries(
+            session_state=has_entries(
+                session_id="test-session-123",
+                version="1.0.0",
+                active_run_id="12345678-1234-5678-1234-567812345678",
+                run_counter=5,
+            ),
+            run_state=has_entries(
+                run_id="12345678-1234-5678-1234-567812345678",
+                status="running",
+                started_at="2025-01-15T10:30:00",
+            ),
+        ),
+    )
 
 
 @pytest.mark.asyncio
