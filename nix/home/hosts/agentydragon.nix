@@ -11,6 +11,7 @@
       enableGui = true;
       enableKube = true;
     })
+    ../modules/cosmic.nix
   ];
 
   # Agentydragon-specific configuration (desktop with full GUI)
