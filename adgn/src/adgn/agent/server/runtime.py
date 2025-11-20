@@ -18,6 +18,7 @@ from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import PersistenceRunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
+from adgn.agent.types import AgentID
 from adgn.agent.server.protocol import (
     ApprovalBrief,
     ApprovalPolicyInfo,
@@ -231,7 +232,7 @@ class AgentSession:
         approval_hub: ApprovalHub | None = None,
         *,
         persistence=None,
-        agent_id: str | None = None,
+        agent_id: AgentID | None = None,
         ui_bus: ServerBus | None = None,
         approval_engine: ApprovalPolicyEngine | None = None,
     ) -> None:
@@ -248,7 +249,7 @@ class AgentSession:
         self.approval_engine: ApprovalPolicyEngine | None = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
         # Optional: agent identifier to associate runs with a specific hosted agent
-        self.agent_id: str | None = agent_id
+        self.agent_id: AgentID | None = agent_id
         # No Docker client on session; runtime server handles any containerization
         # Optional: UI state change notifier for MCP resource updates
         self._ui_state_notifier: Callable[[], None] | None = None

@@ -32,8 +32,7 @@ class UISidecar(Sidecar):
         self.ui_bus = ui_bus
 
     async def attach(self, running: RunningInfrastructure) -> None:
-        ui_server = make_ui_server("UI", self.ui_bus)
-        await running.compositor.mount_inproc(UI_SERVER_NAME, ui_server)
+        await running.compositor.mount_inproc(UI_SERVER_NAME, make_ui_server("UI", self.ui_bus))
 
 
 class ChatSidecar(Sidecar):
@@ -55,5 +54,4 @@ class LoopControlSidecar(Sidecar):
     """
 
     async def attach(self, running: RunningInfrastructure) -> None:
-        loop_server = make_loop_server("loop")
-        await running.compositor.mount_inproc("loop", loop_server)
+        await running.compositor.mount_inproc("loop", make_loop_server("loop"))
