@@ -64,8 +64,13 @@ I.issueOneOccurrence(
   properties=['truthfulness', 'python/no-swallowing-errors', 'least-power'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/cli.py': [
-      [86, 89],     // mcp_config silent fallback
-      [92, 93],     // initial_policy has same pattern
+      [86, 89],     // --mcp-config: silent fallback to empty config
+      [92, 93],     // --initial-policy: silent fallback to None (same pattern, should crash)
     ],
   },
+  gap_note=|||
+    Both flags exhibit the same anti-pattern: user explicitly provides file path,
+    file doesn't exist, code silently ignores and continues with fallback value.
+    Correct behavior: either remove exists() check (let crash) or explicitly report error.
+  |||,
 )

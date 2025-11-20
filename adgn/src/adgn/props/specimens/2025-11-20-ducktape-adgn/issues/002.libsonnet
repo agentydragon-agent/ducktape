@@ -11,7 +11,7 @@ local I = import '../../specimens/lib.libsonnet';
 //   - Has NO web frontend (no HTML/JS/Svelte files)
 // - Log messages mislead users (cli.py:160-161):
 //   - "Management UI: http://{host}:{ui_port}" - implies functional UI exists
-//   - "MCP: ws://{host}:{ui_port}/ws/mcp" - implies WebSocket works (it doesn't)
+//   - "MCP: ws://{host}:{ui_port}/ws/mcp" - wrong protocol (MCP uses SSE not WebSocket)
 //
 // The flag is only functionally used to bind uvicorn server (cli.py:166), but the
 // server serves nothing useful - just stubs and proxies to the real MCP server.
