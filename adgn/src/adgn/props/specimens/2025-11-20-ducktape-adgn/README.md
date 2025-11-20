@@ -44,6 +44,9 @@ This specimen captures code quality findings in the adgn agent codebase, focusin
 - **036**: Should inline envelope and dumped into put_nowait/send_json
 - **037**: send_json and _send_direct_all are complete duplicates
 - **038**: AgentSession.agent_id should be AgentID type
+- **039**: parse_response_messages should not exist, callers should type correctly
+- **040**: Trivial wrapper functions should not exist
+- **041**: Role and agent_id should be disjoint union to prevent invalid states
 
 See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations.
 
