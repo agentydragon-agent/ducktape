@@ -242,8 +242,7 @@ class ApprovalPolicyEngine:
         Retrieves the proposal, validates it, activates it as the current policy,
         marks it approved in persistence, and notifies about the change.
         """
-        got = await self.persistence.get_policy_proposal(self.agent_id, proposal_id)
-        if got is None:
+        if (got := await self.persistence.get_policy_proposal(self.agent_id, proposal_id)) is None:
             raise KeyError(str(proposal_id))
         # Self-check the proposal program before activation
         if self.docker_client is not None:

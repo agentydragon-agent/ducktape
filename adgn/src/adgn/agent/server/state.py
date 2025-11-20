@@ -128,8 +128,7 @@ def _find_last_tool_index(state: UiState, call_id: str) -> int | None:
 
 
 def update_tool_decision(state: UiState, call_id: str, decision: ApprovalKind | None) -> UiState:
-    idx = _find_last_tool_index(state, call_id)
-    if idx is None:
+    if (idx := _find_last_tool_index(state, call_id)) is None:
         return state
     it = state.items[idx]
     assert isinstance(it, ToolItem)
@@ -148,8 +147,7 @@ def update_tool_exec_stream(
     exit_code: int | None,
     is_error: bool | None = None,
 ) -> UiState:
-    idx = _find_last_tool_index(state, call_id)
-    if idx is None:
+    if (idx := _find_last_tool_index(state, call_id)) is None:
         return state
     it = state.items[idx]
     assert isinstance(it, ToolItem)
@@ -173,8 +171,7 @@ def update_tool_exec_stream(
 def update_tool_json_output(
     state: UiState, call_id: str, *, result: mcp_types.CallToolResult | None, is_error: bool | None
 ) -> UiState:
-    idx = _find_last_tool_index(state, call_id)
-    if idx is None:
+    if (idx := _find_last_tool_index(state, call_id)) is None:
         return state
     it = state.items[idx]
     assert isinstance(it, ToolItem)

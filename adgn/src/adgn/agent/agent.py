@@ -320,8 +320,7 @@ class MiniCodex:
         had_error = False
         for function_call in function_calls:
             cid = _require_call_id(function_call)
-            outcome = results.get(cid)
-            if outcome is None:
+            if (outcome := results.get(cid)) is None:
                 if not abort_triggered:
                     raise RuntimeError(f"Missing tool output for call_id={cid!r}")
                 outcome = ToolCallAborted(result=_abort_result())

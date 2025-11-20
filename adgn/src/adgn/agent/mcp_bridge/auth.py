@@ -90,8 +90,7 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
 
         token = parts[1]
 
-        agent_id = self.token_mapping.get_agent_id(token)
-        if agent_id is None:
+        if (agent_id := self.token_mapping.get_agent_id(token)) is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"}
             )
