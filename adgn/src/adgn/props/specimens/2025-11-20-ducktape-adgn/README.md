@@ -30,6 +30,8 @@ This specimen captures code quality findings in the adgn agent codebase, focusin
 - **022**: `AgentPreset.modified_at` should be datetime not str
 - **023**: Server stub should provide convenience method for stack context
 - **024**: `pending_notifier` should accept ToolCall directly
+- **025**: Collection parameters should default to empty tuple, not None
+- **026**: Should return result directly, not reconstruct as dict
 
 See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations.
 
