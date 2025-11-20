@@ -1,28 +1,10 @@
-# MCP-Based Management UI - Unified "agents" Server
+# MCP-Based Management UI - Remaining Work
 
-## Implementation Status
+**Status**: Infrastructure complete (Waves A-I done). See `WAVE_EXECUTION_PLAN.md` and git history for completed work.
 
-✅ **Phases 0-5 COMPLETE** (as of 2025-11-19): Type consolidation, backend MCP server, frontend MCP client (StreamableHTTP + subscriptions), type generation, comprehensive testing (107+ tests passing), WebSocket analysis complete.
+**Reference**: Actual implementation in `adgn/src/adgn/agent/mcp_bridge/`, `adgn/src/adgn/agent/web/src/`, `adgn/tests/agent/mcp_bridge/`.
 
-See implementation in:
-- Backend MCP server: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
-- Frontend MCP client: `adgn/src/adgn/agent/web/src/features/mcp/`
-- Backend tests: `tests/agent/mcp_bridge/test_agents_server.py` (28 passing)
-- Frontend tests: `src/adgn/agent/web/src/features/mcp/*.test.ts` (79 passing)
-- E2E tests: `tests/agent/e2e/test_mcp_ui.py` (3 written, Docker required)
-
-**Environment Limitations**: Playwright browsers cannot install (CDN 403); Docker unavailable. E2E tests written, ready for Docker-enabled environment.
-
-## Test Coverage Summary
-
-✅ **107+ tests passing** (backend MCP + frontend MCP client + subscriptions). See test files:
-- Backend: `tests/agent/mcp_bridge/test_agents_server.py` (28 tests)
-- Frontend MCP client: `src/adgn/agent/web/src/features/mcp/client.test.ts` (38 tests)
-- Frontend subscriptions: `src/adgn/agent/web/src/features/mcp/subscriptions.test.ts` (41 tests)
-- Frontend components: `src/adgn/agent/web/src/components/*.test.ts` (45 tests blocked - Svelte 6 incompatibility)
-- E2E: `tests/agent/e2e/test_mcp_ui.py` (3 tests written, Docker required)
-
-**Known Limitations**: Svelte 6 + vitest incompatibility blocks 45 component tests (upstream fix pending). E2E tests require Docker daemon.
+---
 
 ## Remaining Work
 
@@ -31,326 +13,24 @@ See implementation in:
 **Current**: UI has left sidebar (agents + approvals tabs) + main ChatPane
 **Target**: Side-by-side Agent Timeline + Policy Editor + Message Composer (per UI mockups)
 
-**Reusable components** (exist, tested, not integrated):
-- `ApprovalTimeline.svelte` (✅ 25 tests) → **rename to `AgentTimeline.svelte`** (shows all events: approvals, tool calls, UI messages)
-- `GlobalApprovalsList.svelte` (✅ 20 tests) - global mailbox view
-- `ApprovalsPanel.svelte` - contains policy editor (needs extraction)
-
-**New components needed** (drafts created at `/components/{PolicyEditorPane,MessageComposer}.svelte`):
-- PolicyEditorPane.svelte - extract from ApprovalsPanel
-- MessageComposer.svelte - for local agents with UI server
+**Components exist but need integration**:
+- `ApprovalTimeline.svelte` (27 tests, 557 lines) → **rename to `AgentTimeline.svelte`** (shows all events: approvals, tool calls, UI messages)
+- `GlobalApprovalsList.svelte` (19 tests, 15KB) - global mailbox view
+- `PolicyEditorPane.svelte` (330 lines) - COMPLETE, needs integration
+- `MessageComposer.svelte` (198 lines) - COMPLETE, needs integration
+- `ApprovalsPanel.svelte` (3.9KB) - contains policy editor
 
 **Tasks** (8 parallel agents):
 1. Rename + enhance ApprovalTimeline → AgentTimeline: merge `UiDisplayItem[]` (UserMessage, AssistantMarkdown, Tool, EndTurn) from `uiState` store
-2. Extract PolicyEditorPane: policy view/edit + proposals
-3. Complete MessageComposer: send messages, abort agent
-4. Update App.svelte: CSS grid (timeline | policy) + conditional composer
-5. Wire MCP subscriptions: `resource://agents/{id}/approvals/history`, `resource://approval-policy/policy.py`
-6. Detect UI server: check `$agentStatus.ui?.ready`, conditional composer rendering (no badge - presence indicated by composer + UI messages in timeline)
-7. Add agent mode badge: [LOCAL] or [BRIDGE] (indicates agent loop presence; UI server shown implicitly via composer/timeline)
-8. Update routing: global approvals view, agent selection
-
-**IMPORTANT - Definition of Done for WebSocket Migration**:
-- Post-migration, there should be **ZERO WebSocket endpoints** on the backend
-- Current WebSocket channels (`/ws/session`, `/ws/mcp`, `/ws/approvals`, `/ws/policy`, `/ws/ui`, `/ws/agents`) are **NOT MCP protocol** - they are still WebSockets
-- These must be replaced with MCP resource subscriptions (listening to `resource_updated` notifications from MCP servers)
-- The frontend will subscribe to MCP resources instead of connecting to WebSocket channels
-- **Remove channel bundles entirely** - no "channel.bundle" or "_channel_bundle" should exist in repo post-migration
-- **Break up overlong Svelte files** (>500 lines): Extract CSS into separate files, split large components (e.g., ApprovalTimeline.svelte at 557 lines)
-- This is a **future wave** (not Wave 7) - requires MCP subscription infrastructure to be fully reliable
-
-### Wave D: Complete HTTP/WebSocket → MCP Migration
-
-**Principle**: Frontend ↔ Backend should **communicate ONLY via MCP** (resources + tools), not HTTP REST or WebSockets.
-
-**✅ Completed Prior to Wave D** (Waves A-C):
-- Wave A: Pre-requisite test fixes (ResponseUsage, CallToolResult, Event loops)
-- Wave B: MCP infrastructure (NotifyingFastMCP, subscriptions, StreamableHTTP client)
-- Wave C: Core MCP tools (agent CRUD, approvals, policy, MCP server management)
-- 107+ tests passing (backend MCP + frontend MCP client + subscriptions)
-
-**📋 Wave D Scope**: DELETE all HTTP/WebSocket endpoints, migrate frontend to MCP-only
-
-See comprehensive documentation:
-- **FRONTEND_HTTP_AUDIT.md** - Current endpoint usage audit (9 HTTP, 6 WebSocket)
-- **WS_TO_MCP_MIGRATION.md** - WebSocket → MCP subscription migration strategy
+2. Update App.svelte: CSS grid layout (timeline | policy) + conditional composer
+3. Wire MCP subscriptions: `resource://agents/{id}/approvals/history`, `resource://approval-policy/policy.py`
+4. Detect UI server: check `$agentStatus.ui?.ready`, conditional composer rendering
+5. Add agent mode badge: [LOCAL] or [BRIDGE] (indicates agent loop presence)
+6. Update routing: global approvals view, agent selection
+7. Extract CSS from overlong Svelte files (>500 lines): ApprovalTimeline.svelte at 557 lines
+8. Integration testing: Verify timeline updates, policy editing, message sending
 
 ---
-
-#### Phase 1: Backend MCP Resources (1 week)
-
-**Create 6 MCP resources** (replace WebSocket channels):
-
-| WebSocket Channel | MCP Resource | Data Returned |
-|-------------------|--------------|---------------|
-| `/ws/agents` | `resource://agents/list` | Agent list with status, lifecycle, pending approvals |
-| `/ws/session` | `resource://agents/{id}/session/state` | Session state, run state, transcript items |
-| `/ws/approvals` | `resource://agents/{id}/approvals/pending` | Pending approvals list |
-| `/ws/policy` | `resource://agents/{id}/policy/state` | Policy content, id, proposals |
-| `/ws/mcp` | `resource://agents/{id}/mcp/state` | MCP servers sampling snapshot |
-| `/ws/ui` | `resource://agents/{id}/ui/state` | UI state (if UI server attached) |
-
-**Additional resources**:
-- `resource://presets/list` - Agent presets (migrate from `GET /api/presets`)
-- `resource://agents/{id}/approvals/history` - Approval history (already exists, migrate frontend)
-
-**Wire notification calls** (emit `broadcast_resource_updated()` on events):
-- Registry: agent create/delete/status → `resource://agents/list`
-- Session: transcript events → `resource://agents/{id}/session/state`
-- Approval hub: approval requests/decisions → `resource://agents/{id}/approvals/pending`
-- Policy engine: policy updates → `resource://agents/{id}/policy/state`
-- Compositor: server attach/detach → `resource://agents/{id}/mcp/state`
-- UI manager: UI state changes → `resource://agents/{id}/ui/state`
-
-**Location**: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
-
----
-
-#### Phase 2: Frontend MCP Migration (1 week)
-
-**Migrate 6 components to MCP subscriptions**:
-
-1. **AgentsSidebar** → Subscribe to `resource://agents/list`
-2. **ChatPane** → Subscribe to `resource://agents/{id}/session/state`
-3. **ApprovalsPanel** → Subscribe to `resource://agents/{id}/approvals/pending`
-4. **PolicyEditorPane** → Subscribe to `resource://agents/{id}/policy/state` (+ replace 4 HTTP calls with MCP tools)
-5. **ServersPanel** → Subscribe to `resource://agents/{id}/mcp/state`
-6. **UI state handling** → Subscribe to `resource://agents/{id}/ui/state`
-
-**Migrate 3 components to MCP tools** (replace HTTP POST/PUT):
-- **PolicyEditorPane**: Use `set_policy`, `reject_proposal` tools (not HTTP PUT/POST)
-- **MessageComposer**: Use `prompt` tool (not HTTP POST)
-- **ApprovalTimeline**: Use `resource://agents/{id}/approvals/history` (not HTTP GET)
-
-**Subscription Pattern**:
-```typescript
-// Subscribe to resource
-const unsubscribe = await mcpClient.subscribe(
-  'resource://agents/{id}/session/state',
-  async () => {
-    // Re-read resource on notification
-    const result = await mcpClient.readResource('resource://agents/{id}/session/state');
-    sessionStore.set(JSON.parse(result.contents[0].text));
-  }
-);
-
-// Initial load (no notification for first read)
-const initial = await mcpClient.readResource('resource://agents/{id}/session/state');
-sessionStore.set(JSON.parse(initial.contents[0].text));
-```
-
-**Location**: `adgn/src/adgn/agent/web/src/`
-
----
-
-#### Phase 3: Cleanup (2-3 days)
-
-**DELETE WebSocket infrastructure**:
-- ❌ Delete `/ws/agents` endpoint and `AgentsWSHub` class
-- ❌ Delete `/ws/session` endpoint and `SessionChannelManager`
-- ❌ Delete `/ws/approvals` endpoint and `ApprovalsChannelManager`
-- ❌ Delete `/ws/policy` endpoint and `PolicyChannelManager`
-- ❌ Delete `/ws/mcp` endpoint and `McpChannelManager`
-- ❌ Delete `/ws/ui` endpoint and `UiChannelManager`
-- ❌ Delete `adgn/src/adgn/agent/server/channels/` directory (all channel code)
-- ❌ Delete channel bundle infrastructure (`bundle.py`, `_channel_bundle` references)
-
-**DELETE HTTP endpoints** (already have MCP equivalents):
-- ❌ `POST /api/agents` → `agents/create_agent()`
-- ❌ `GET /api/agents` → `resource://agents/list`
-- ❌ `GET /api/agents/{id}` → `resource://agents/{id}/info`
-- ❌ `DELETE /api/agents/{id}` → `agents/delete_agent()`
-- ❌ `POST /api/agents/{id}/prompt` → `agents/prompt()`
-- ❌ `POST /api/agents/{id}/abort` → `agents/abort_agent()`
-- ❌ `POST /api/agents/{id}/approve` → `agents/approve_tool_call()`
-- ❌ `POST /api/agents/{id}/deny_continue` → `agents/deny_tool_call()`
-- ❌ `POST /api/agents/{id}/deny_abort` → `agents/deny_abort()`
-- ❌ `GET /api/agents/{id}/policy` → `resource://agents/{id}/policy/state`
-- ❌ `PUT /api/agents/{id}/policy` → `agents/set_policy()`
-- ❌ `POST /api/agents/{id}/policy/proposals/{id}/approve` → `agents/approve_proposal()`
-- ❌ `POST /api/agents/{id}/policy/proposals/{id}/reject` → `agents/reject_proposal()`
-- ❌ `GET /api/agents/{id}/approvals/history` → `resource://agents/{id}/approvals/history`
-- ❌ `POST /api/agents/{id}/message` → `agents/prompt()`
-- ❌ `GET /api/presets` → `resource://presets/list`
-- ❌ `GET /api/capabilities` → Remove (capabilities are per-agent, use `resource://agents/{id}/info`)
-
-**KEEP as HTTP** (static/health only):
-- ✅ Static file serving (`/`, `/vite.svg`, etc.)
-- ✅ Health checks (`/health`)
-
-**Verify cleanup**:
-```bash
-# Verify ZERO WebSocket endpoints remain
-grep -r "/ws/" adgn/src/adgn/agent/server/ || echo "✅ No WebSocket endpoints"
-
-# Verify ZERO channel bundle references
-grep -r "_channel_bundle\|channel.bundle" adgn/ || echo "✅ No channel bundles"
-
-# Verify HTTP endpoints deleted
-grep -r "POST.*api/agents\|GET.*api/agents" adgn/src/adgn/agent/server/app.py || echo "✅ HTTP endpoints clean"
-```
-
----
-
-#### Phase 4: Token-Based Connection Routing (Optional - can be separate wave)
-
-**Pattern**: Single `/mcp` endpoint routes to different backend MCP servers based on Bearer token.
-
-See Architecture Overview section for detailed implementation pattern using `StreamableHTTPSessionManager`.
-
----
-
-#### Testing Requirements
-
-**Unit Tests** (already exist, need updates):
-- ✅ Backend MCP server tests (`tests/agent/mcp_bridge/test_agents_server.py`) - 28 tests passing
-- ✅ Frontend MCP client tests (`src/adgn/agent/web/src/features/mcp/client.test.ts`) - 38 tests passing
-- ✅ Frontend subscriptions tests (`src/adgn/agent/web/src/features/mcp/subscriptions.test.ts`) - 41 tests passing
-- ⚠️ Frontend component tests - 45 tests blocked by Svelte 6 + vitest incompatibility
-
-**Integration Tests** (need expansion):
-- ⚠️ **E2E tests need more scenarios** (`tests/agent/e2e/test_mcp_ui.py`)
-  - Currently: 3 basic tests (approval flow, multi-agent mailbox, timeline)
-  - **Need to add**:
-    - MCP subscription live updates (verify no page reload needed)
-    - Resource read error handling (404, timeout, malformed JSON)
-    - Concurrent subscription handling (multiple agents, rapid updates)
-    - Subscription unsubscribe/resubscribe behavior
-    - Performance under load (100+ approvals, rapid status changes)
-    - Edge cases (agent deleted while subscribed, network interruption)
-  - **Locations**: Add to `tests/agent/e2e/test_approvals.py`, `test_ui.py`, `test_mcp_ui.py`
-
-**Playwright Test Coverage Gaps**:
-1. **Missing: Resource subscription testing**
-   - Verify `resource_updated` notifications trigger UI updates
-   - Test subscription cleanup on component unmount
-   - Test multiple subscriptions to same resource
-
-2. **Missing: Error scenario testing**
-   - Resource not found (404)
-   - Malformed resource JSON
-   - Subscription notification timeout
-   - MCP server disconnect/reconnect
-
-3. **Missing: Performance testing**
-   - Large resource payloads (10+ MB)
-   - High-frequency updates (10+ per second)
-   - Many concurrent subscriptions (50+)
-
-4. **Missing: Edge case testing**
-   - Agent deleted while frontend subscribed
-   - Network interruption during resource read
-   - Subscription to non-existent resource URI
-
-**Test Execution Status**:
-- ✅ Backend unit tests: Pass (28 passing)
-- ✅ Frontend unit tests (MCP client/subscriptions): Pass (79 passing)
-- ⚠️ Frontend component tests: Blocked (Svelte 6 incompatibility)
-- ⚠️ E2E tests: Need Docker + Playwright (3 basic tests exist, need expansion)
-
----
-
-#### Deferred to Future Waves
-
-**Out of Scope for Wave D**:
-- Runs & Events (`/api/runs/*`) - deferred until pagination/filtering design
-- `GET /api/agents/{id}/status` - deferred (complex structure, may merge with agent info resource)
-
-**Important Clarifications**:
-- `withdraw_proposal` tool is **AGENT-FACING ONLY** (agents withdraw their own proposals via compositor)
-- NOT exposed to human UI/frontend
-- Already exists in agent-facing MCP servers, no frontend changes needed
-
-### Waves 8-11: Code Quality, Cleanup & Verification
-- Wave 8: Code Quality Scans (28 parallel scan agents)
-- Wave 9: Violation Analysis
-- Wave 10: Parallel Cleanup (5 agents)
-- Wave 11: Final Verification
-
-### WebSocket Test Fixture Cleanup
-- Fix 10 tests using removed `/ws` endpoint → `/ws/session`
-- Files: `tests/agent/conftest.py:347`, `tests/agent/server/test_agents_ws.py:59`
-- Envelope format: `Envelope(session_id,...)` → `ChannelEnvelope(channel,...)`
-
-### Pre-existing Test Fixes
-1. **ResponseUsage** (13 tests): Add `input_tokens_details`, `output_tokens_details` (OpenAI SDK breaking change)
-2. **CallToolResult** (3 tests): Add `meta={}` parameter (FastMCP breaking change)
-3. **Event loops** (20+ tests): Fix `asyncio.Runner` misuse patterns
-   - **Note**: `@pytest.mark.asyncio` decorators NOT needed - `asyncio_mode = "auto"` already configured in pyproject.toml:184
-   - Actual issues: incorrect async/await usage, Runner context management problems
-
-### Agent State Notifications
-- Wire `resource://agents/{id}/state` to emit `resource_updated` on:
-  - User prompt, assistant message, tool call, approval decision
-- Pattern: compositor/session events → `server.broadcast_resource_updated(resources.agent_state(agent_id))`
-
-### Approvals / Proposals
-- Add HTTP endpoint: `POST /api/agents/{id}/proposals {content}`
-- Mount proposer/admin servers by default for live agents
-- MCP tests: create→visible, withdraw→removed
-
-### Loop Hooks / DB
-- Implement `loop.enable_hook/disable_hook` with `loop://hooks/{id}` resources
-- Orchestrator bridge: coalesced notifications → hooks
-- Read-only DB MCP server: `db://view/*`, `query`
-
-### Chat / UI Delivery
-- Promote MCP-native chat inbox (`ui://chat/inbox`, `chat_read_since`)
-- Runtime bridges: human chat notifications → `UiState`, assistant outputs → `chat.assistant.post`
-- Remove legacy `ui` MCP server after migration
-
-### Documentation
-- Update MCP runtime docs after loop hooks + DB server land
-- Document chat inbox architecture
-- Cross-reference seatbelt TODO in sandboxer/MCP docs
-- Compress plan.md completed sections (reference code, not specs)
-
-### Misc Cleanups
-- Seatbelt: structured findings, remove implicit trace write, CLI shim
-- Tests: `_tool_choice_from_policy`, resource-window
-- CI: `adgn-trivial-patterns`, split lanes (WT/Docker)
-- Code hygiene: remove named volume comments
-- NotifyingFastMCP: replace private attr overrides if public hooks available
-- Policy gateway: document error stamps, add spoofing tests
-- Rename `adgn/src/adgn/agent/server/agents_ws.py` (TODO: determine appropriate name)
-- Inline `adgn/src/adgn/agent/server/channels/endpoints.py` - too thin (17 lines), just call register_endpoint() from each channel module directly at call site
-- **Consider replacing `ApprovalBrief` with `ToolCall` directly** (protocol.py:46-51)
-
-### Type Simplification: ApprovalBrief vs ToolCall
-
-**Current State**: `ApprovalBrief` is a single-field wrapper around `ToolCall`:
-```python
-class ApprovalBrief(BaseModel):
-    """Brief approval information for wire protocol (embeds canonical ToolCall)."""
-    tool_call: ToolCall
-```
-
-**Usage**: 7 locations across protocol, runtime, channels, infrastructure
-- Construction: `ApprovalBrief(tool_call=req.tool_call)` or `ApprovalBrief(tool_call=tool_call)`
-- Access: `approval.tool_call` to get the ToolCall
-
-**Decision**: **Keep `ApprovalBrief` as-is** (do not simplify to bare `ToolCall`)
-
-**Rationale**:
-1. **Semantic clarity**: `ApprovalBrief` signals "this is an approval pending action", not just "a tool call". The name documents intent.
-2. **Wire protocol stability**: Changing `list[ApprovalBrief]` → `list[ToolCall]` breaks existing API contracts and frontend code
-3. **Future extensibility**: May want to add approval metadata (timestamp, status, priority) without breaking changes
-4. **Type safety**: `ApprovalBrief` vs `ToolCall` distinguishes "pending approval" from "generic tool call" at type level
-5. **Small cost**: Single-field wrapper adds ~7 construction sites, but improves code clarity
-
-**Alternative considered**: Use `ToolCall` directly and rely on context (e.g., variable names, field names)
-- **Rejected**: Less clear intent, no type distinction, harder to extend
-
-**Note**: This is distinct from `AgentBrief` (agents_ws.py:32) which has multiple fields (id, live, active_run_id, lifecycle) and is genuinely useful.
-
-**Type Hint Migration (REQUIRED)**: Replace `agent_id: str` with `agent_id: AgentID` throughout codebase for type safety
-- AgentID is NewType-based: `AgentID = NewType("AgentID", str)`
-- Search pattern: function/method parameters named `agent_id` with type `str`
-- Also apply to `call_id`, `proposal_id`, `policy_id` if similar NewTypes exist
-- Tool signatures in mcp_bridge/servers/agents.py should use `agent_id: AgentID`
-- Update all callers to use `AgentID(agent_id_string)` when converting from str
-
-**Verification**: `uv run ruff check . --fix && uv run python -m mypy adgn && pytest -q adgn/tests/agent`
 
 ## Web Frontend Followups
 
@@ -370,272 +50,123 @@ class ApprovalBrief(BaseModel):
 
 **Testing needed** (deferred):
 - Unit Tests: filtering logic, sorting logic, argument formatting, timestamp formatting
-- Integration Tests: API fetch, WebSocket messages, live updates, error states
+- Integration Tests: API fetch, live updates, error states
 - E2E Tests: user filters timeline, searches tools, toggles sort order, expands arguments
 
-### TypeScript Generated Types Integration (Wave 2+)
+### TypeScript Generated Types Integration
 
-**Status**: Generated types file created and verified (18/18 tests passing); shared types actively used throughout codebase.
+**Status**: Generated types file created and verified; shared types actively used throughout codebase.
 
-**Phase 2: Immediate Next Steps (Wave 2)**:
+**Future tasks**:
 1. **Update API Layer** (`features/agents/api.ts`)
    - Import generated types from `src/generated/types.ts`
    - Type API responses using generated types
-   - Example: `/agents` endpoint should return `AgentList` type
 
 2. **Add Type Guards**
    - Create utilities to validate runtime data matches generated types
-   - Use for API responses and WebSocket messages
-   - Example: `isPendingApproval(data: unknown): data is PendingApproval`
+   - Use for API responses and resource reads
 
 3. **Update Store Types**
    - Use generated types in Svelte stores where applicable
    - Map between generated and shared types as needed
-
-**Phase 3: Gradual Migration (Wave 3+)**:
-1. Start with API layer - ensure fetch/response use generated types
-2. Update stores to use generated types internally
-3. Update component props to accept generated types
-4. Add type mapping utilities (e.g., `approvalOutcomeToKind()`, `proposalInfoToProposal()`)
-5. Deprecate duplicate shared types once migration complete
 
 **Key Type Overlaps** (keep both, map where needed):
 - `ApprovalOutcome` (generated, 6 variants) vs `ApprovalKind` (shared, 3 variants)
 - `PolicyProposalInfo` (generated, complete) vs `Proposal` (shared, simplified)
 - `AgentInfo` (generated, static config) vs `AgentRow`/`AgentStatus` (shared, runtime state)
 
-**Documentation**:
-- See `TYPES_ANALYSIS.md` (consolidated into this section)
-- Add comments in code explaining when to use each type
-
-### GlobalApprovalsList Component Requirements
+### GlobalApprovalsList Component
 
 **Component**: `src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
 
-**Backend Requirements** (MUST implement):
-
-1. **MCP StreamableHTTP Endpoint** (REQUIRED)
-   - Mount MCP bridge server at `/api/mcp` with StreamableHTTP transport
-   - Accept bearer token authentication
-   - Currently only runs internally; needs HTTP exposure
-   - Example mounting code needed in `server/app.py`:
-     ```python
-     from fastmcp.server.streamable_http import StreamableHTTPServerTransport
-     mcp_bridge = app.state.mcp_bridge_registry
-     transport = StreamableHTTPServerTransport("/api/mcp")
-     app.mount("/api/mcp", transport.handle_request)
-     ```
-
-2. **Resource Subscriptions** (OPTIONAL - polling fallback already implemented)
-   - Backend MCP server broadcasts `ResourceUpdated` notifications
-   - Verify StreamableHTTP subscription support
-   - If not available, component gracefully falls back to polling (5-second interval)
-
 **Future enhancements**:
-- Real-time Subscriptions: Replace polling with WebSocket resource subscriptions (instant updates)
+- Real-time Subscriptions: Replace polling with resource subscriptions (instant updates)
 - Bulk Actions: Multi-select approvals, approve/reject multiple at once
 - Filtering and Search: Filter by agent_id, search by tool name, filter by timestamp
-- Approval History: Show recently approved/rejected items, undo capability for recent actions
+- Approval History: Show recently approved/rejected items, undo capability
 - Notifications: Browser notifications for new approvals, optional sound alerts
 
 ### Component Testing Status
 
 **Blocked Tests**:
-- `src/adgn/agent/web/src/components/GlobalApprovalsList.test.ts` (20 tests written)
-- `src/adgn/agent/web/src/components/ApprovalTimeline.test.ts` (25 tests written)
+- `src/adgn/agent/web/src/components/GlobalApprovalsList.test.ts` (19 tests written)
+- `src/adgn/agent/web/src/components/ApprovalTimeline.test.ts` (27 tests written)
 - **Blocker**: Svelte 6 + vitest incompatibility (waiting for upstream support)
 
 **Manual Testing Approach** (interim):
 - TypeScript compilation validates component interfaces
 - E2E tests can verify functionality once vitest support lands
-- See component test files for coverage expectations
 
 ### Pre-existing TypeScript Errors
 
-**Note**: 11 discriminated union property access errors in Svelte components (pre-existing, unrelated to generated types work):
+**Note**: 11 discriminated union property access errors in Svelte components (pre-existing):
 - Files: `ServersPanel.svelte`, `RightSidebar.svelte`, `ChatPane.svelte`, etc.
 - Issue: Accessing variant-specific properties without type narrowing
 - Status: Not blocking; should be addressed separately
 
-**MCP Client Configuration** (1 pre-existing error):
-- File: `features/mcp/client.ts`
-- Issue: Invalid capability structure
-- Status: Not blocking; pre-existing configuration issue
+---
+
+## Future Work
+
+### Agent State Notifications
+- Wire `resource://agents/{id}/state` to emit `resource_updated` on:
+  - User prompt, assistant message, tool call, approval decision
+- Pattern: compositor/session events → `server.broadcast_resource_updated(resources.agent_state(agent_id))`
+
+### Loop Hooks / DB
+- Implement `loop.enable_hook/disable_hook` with `loop://hooks/{id}` resources
+- Orchestrator bridge: coalesced notifications → hooks
+- Read-only DB MCP server: `db://view/*`, `query`
+
+### Chat / UI Delivery
+- Promote MCP-native chat inbox (`ui://chat/inbox`, `chat_read_since`)
+- Runtime bridges: human chat notifications → `UiState`, assistant outputs → `chat.assistant.post`
+
+### Documentation
+- Update MCP runtime docs after loop hooks + DB server land
+- Document chat inbox architecture
+- Cross-reference seatbelt TODO in sandboxer/MCP docs
+
+### Misc Cleanups
+- Seatbelt: structured findings, remove implicit trace write, CLI shim
+- Tests: `_tool_choice_from_policy`, resource-window
+- CI: `adgn-trivial-patterns`, split lanes (WT/Docker)
+- NotifyingFastMCP: replace private attr overrides if public hooks available
+- Policy gateway: document error stamps, add spoofing tests
+
+### Type Hint Migration
+Replace `agent_id: str` with `agent_id: AgentID` throughout codebase for type safety:
+- AgentID is NewType-based: `AgentID = NewType("AgentID", str)`
+- Search pattern: function/method parameters named `agent_id` with type `str`
+- Also apply to `call_id`, `proposal_id`, `policy_id` if similar NewTypes exist
+- Tool signatures in mcp_bridge/servers/agents.py should use `agent_id: AgentID`
 
 ---
 
-## Executive Summary
-
-Replace custom WebSocket channels with a unified **`agents` MCP server** that provides cross-agent management. This single server routes to per-agent infrastructure and can be delegated to other agents for self-orchestration. The frontend becomes a simple MCP client, and the same server can later be given to agents for spawning, approving, and managing other agents.
-
-**Important**: This implementation may break backward compatibility with previous versions. Breaking changes are acceptable to achieve a cleaner architecture and better type safety.
-
-## Key Decisions
+## Key Decisions (Historical Context)
 
 ### Type Organization
-**Decision**: New persistence types (`Decision`, `ToolCallExecution`, `ToolCallRecord`) will live in `adgn/src/adgn/agent/persist/__init__.py` alongside `ApprovalRecord`. This keeps persistence models together.
+New persistence types (`Decision`, `ToolCallExecution`, `ToolCallRecord`) live in `adgn/src/adgn/agent/persist/__init__.py` alongside `ApprovalRecord`.
 
 ### Type Consolidation
-**Decision**: Keep two `ToolCall` types (Option B):
-- Simple `ToolCall` in `approvals.py` (renamed from `ApprovalToolCall`) - for persistence/approvals
+Keep two `ToolCall` types:
+- Simple `ToolCall` in `approvals.py` - for persistence/approvals
 - Discriminated `ToolCall` in `protocol.py` (with `type` field) - for wire protocol
-- TODO: Reconsider if this becomes confusing
 
 ### Policy Proposals UI Access
-**Decision**: Frontend directly uses existing policy server resources (Option B). No routing through agents server. The policy server already exposes proposals resources that work correctly.
+Frontend directly uses existing policy server resources. No routing through agents server.
 
 ### Agents Server Pattern
-**Decision**: Follow compositor pattern - `agents` server should be a FastMCP proxy doing translation/routing to per-agent MCP servers. This avoids duplicating routing logic 500 times.
+`agents` server is a FastMCP proxy doing translation/routing to per-agent MCP servers (compositor pattern).
 
 ### Database Migration Strategy
-**Decision**: Drop and recreate databases (Option B). Document that existing approval history will be lost. Acceptable for personal infrastructure during development phase.
+Drop and recreate databases (existing approval history will be lost). Acceptable for personal infrastructure during development.
 
-## Known Gaps & Future Work
+---
 
-This plan focuses on **core approval and timeline functionality**. The following features are mentioned in mockups/API but are **out of scope** for initial phases:
+## UI Mockups Reference
 
-**Out of Scope (Phase 1-5)**:
-- Policy proposals resource (`resource://agents/{id}/policy/proposals`) - Policy server handles this
-- UI server blocks resource (`resource://ui/{id}/blocks`) - Will be integrated when UI server is attached
-- `send_message` tool - Only needed when UI server is attached
-- Policy editor UI component - Will reuse existing policy server resources
-
-**Clarifications**:
-- `AgentMode` already exists in `adgn/src/adgn/agent/mcp_bridge/types.py` - import it, don't redefine
-- `ToolCallEntry` (timeline display model) vs `ToolCallRecord` (persistence model) serve different purposes
-- Breaking backward compatibility is acceptable for cleaner architecture
-
-## Architecture Overview
-
-### Token-Based Connection Routing Pattern
-
-**Key Architecture Decision**: Single MCP endpoint with per-connection routing based on Bearer token lookup (Wave D).
-
-MCP subscriptions **ALREADY WORK** (`NotifyingFastMCP.broadcast_resource_updated()` implemented in Wave B).
-
-**Pattern**: Use `StreamableHTTPSessionManager` to route connections to different backend MCP servers based on Bearer token.
-
-```python
-from enum import StrEnum
-from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from starlette.types import Scope, Receive, Send
-
-class TokenRole(StrEnum):
-    """MCP connection routing roles from token table lookup."""
-    HUMAN = "human"  # Routes to agents management server
-    AGENT = "agent"  # Routes to agent's compositor
-
-class MCPRoutingHandler:
-    """Custom ASGI app that routes MCP connections based on Bearer token."""
-
-    def __init__(self, token_table: dict[str, dict], registry: AgentRegistry):
-        self.token_table = token_table
-        self.registry = registry
-        # Cache session managers per backend
-        self.session_managers: dict[str, StreamableHTTPSessionManager] = {}
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        # Extract Bearer token from Authorization header
-        token = extract_bearer_token(scope["headers"])
-
-        # Look up token in table
-        token_info = self.token_table.get(token)  # {role: "human" | "agent", agent_id?: str}
-
-        if not token_info:
-            # Return 401 Unauthorized
-            return
-
-        role = TokenRole(token_info["role"])
-
-        # Get or create session manager for the appropriate backend
-        if role == TokenRole.AGENT:
-            agent_id = token_info["agent_id"]
-            backend_key = f"agent:{agent_id}"
-            if backend_key not in self.session_managers:
-                # Get agent's compositor MCP server
-                infra = await self.registry.get_infrastructure(agent_id)
-                compositor_server = infra.compositor._mcp_server
-                self.session_managers[backend_key] = StreamableHTTPSessionManager(
-                    app=compositor_server,
-                    json_response=False
-                )
-        elif role == TokenRole.HUMAN:
-            backend_key = "human"
-            if backend_key not in self.session_managers:
-                # Get agents management MCP server
-                management_server = get_agents_management_server()
-                self.session_managers[backend_key] = StreamableHTTPSessionManager(
-                    app=management_server,
-                    json_response=False
-                )
-
-        # Route this connection to the appropriate session manager
-        manager = self.session_managers[backend_key]
-        await manager.handle_request(scope, receive, send)
-```
-
-**Benefits**:
-- Single HTTP endpoint `/mcp`, single port
-- ALL MCP protocol messages forwarded to appropriate backend
-- No prefixes - client sees backend tools/resources directly
-- Per-connection routing (not per-request middleware)
-- Each connection transparently proxies to correct backend
-- No filtering logic needed - backend serves correct capabilities
-
-### System Architecture Diagram
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                     Frontend (Browser)                       │
-│  - Single MCP client (Streamable HTTP)                      │
-│  - Bearer token in Authorization header                     │
-│  - Connects to: /mcp endpoint                               │
-│  - Subscriptions: live updates via resource_updated         │
-└──────────────┬───────────────────────────────────────────────┘
-               │ HTTP with Authorization: Bearer <token>
-               │ Streamable HTTP (MCP protocol)
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│           Management UI Server (Port 8081)                   │
-│  - Serves static files                                       │
-│  - Single endpoint: /mcp (token-based routing)              │
-│                                                              │
-│  MCPRoutingHandler (per-connection routing):                │
-│  ├─ Token lookup → route to backend                         │
-│  │                                                           │
-│  ├─ Resources (flat structure):                             │
-│  │  ├─ resource://agents/list                               │
-│  │  ├─ resource://agents/{id}/state                         │
-│  │  ├─ resource://agents/{id}/approvals/pending            │
-│  │  ├─ resource://agents/{id}/policy/proposals             │
-│  │  └─ resource://approvals/pending (GLOBAL mailbox)       │
-│  │                                                           │
-│  └─ Tools (route to per-agent infrastructure):             │
-│     ├─ approve_tool_call(agent_id, call_id)  [human+admin] │
-│     ├─ reject_tool_call(agent_id, call_id)   [human+admin] │
-│     ├─ abort_agent(agent_id)                 [human+admin] │
-│     ├─ withdraw_proposal(id, proposal_id)    [AGENT ONLY]  │
-│     ├─ create_agent(preset)                  [ADMIN ONLY]  │
-│     └─ delete_agent(agent_id)                [ADMIN ONLY]  │
-└──────────────▲───────────────────────────────────────────────┘
-               │ InfrastructureRegistry
-               │ Routes: approve(123) → lookup(123).approval_engine.approve()
-               │
-┌──────────────────────────────────────────────────────────────┐
-│              MCP Server (Port 8080)                          │
-│  - Token-authenticated MCP-over-HTTP                        │
-│  - Routes to per-agent compositor                           │
-│  - For external agents (ChatGPT, Claude Desktop, etc.)      │
-└──────────────────────────────────────────────────────────────┘
-```
-
-## UI Organization & API Structure
-
-### Frontend Layout
-
-The UI uses a **side-by-side layout** with tool call timeline and policy editor. For local agents with UI server attached, a message composer appears below.
-
-#### Agent WITH UI Server (Local Loop)
+### Agent WITH UI Server (Local Loop)
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │ Agent: agent-1                                [LOCAL] [Agent Loop ✓]│
@@ -680,7 +211,7 @@ The UI uses a **side-by-side layout** with tool call timeline and policy editor.
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Agent WITHOUT UI Server (Remote/Bridge)
+### Agent WITHOUT UI Server (Remote/Bridge)
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │ Agent: chatgpt-session-xyz                           [BRIDGE]      │
@@ -721,7 +252,7 @@ The UI uses a **side-by-side layout** with tool call timeline and policy editor.
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### Timeline Data Sources (Unbundled)
+### Timeline Data Sources
 
 **Key insight**: Tool call timeline is **independent** of UI server attachment.
 
@@ -731,25 +262,8 @@ The UI uses a **side-by-side layout** with tool call timeline and policy editor.
 - **Includes**: Auto-approved, user-approved, rejected calls
 - **API**: `resource://agents/{id}/approvals/history`
 
-```python
-class ToolCallEntry(BaseModel):
-    """Tool call from policy gate timeline."""
-    call_id: str
-    tool: str
-    args: dict
-    decision: DecisionType  # APPROVED / REJECTED
-    decision_method: DecisionMethod  # AUTO / USER / POLICY
-    reason: str | None  # For rejections
-    timestamp: datetime
-    decided_by: str  # "policy" | "human" | agent_id
-```
-
 #### 2. UI Server Blocks (Optional)
 - **Source**: UI MCP server (when attached)
 - **Provides**: Agent-generated UI elements (messages, cards, structured data)
 - **Orthogonal to**: Local/remote agent loop distinction
 - **API**: `resource://ui/{id}/blocks` (if UI server attached)
-
----
-
-**Implementation Details**: See actual code in `adgn/src/adgn/agent/mcp_bridge/`, `adgn/src/adgn/agent/web/src/`, `adgn/tests/agent/mcp_bridge/`. Phases 0-5 complete and committed.
