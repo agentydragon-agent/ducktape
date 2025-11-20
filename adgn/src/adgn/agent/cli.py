@@ -100,9 +100,7 @@ def _configure_logging_info() -> None:
 def _configure_logging_debug() -> None:
     """Configure logging with DEBUG level on console for UI commands to show OpenAI traffic."""
     configure_logging()
-    # Set root logger level to DEBUG
     logging.getLogger().setLevel(logging.DEBUG)
-    # Set console handler to DEBUG
     for h in logging.getLogger().handlers:
         if isinstance(h, logging.StreamHandler):
             h.setLevel(logging.DEBUG)
@@ -135,10 +133,7 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
 
     cfg = _build_cfg_and_print(mcp_configs)
 
-    # Build model client
     client = build_client(model)
-
-    # Build in-proc Compositor and mount servers
 
     comp = Compositor("compositor")
     for name, spec in cfg.mcpServers.items():
@@ -169,7 +164,6 @@ async def _serve_async(host: str, port: int, model: str, system: str | None, mcp
     print("mini-codex serve: starting agent + UI server")
 
     _ = _build_cfg_and_print(mcp_configs)
-    # Build the FastAPI app; agent lifecycle is handled by the runtime container (registry)
     app = create_app()
 
     def _run() -> None:

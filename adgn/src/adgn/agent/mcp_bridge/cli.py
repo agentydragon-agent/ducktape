@@ -83,18 +83,15 @@ def serve(
         raise click.UsageError("Cannot use both --agent-id and --auth-tokens")
     if not agent_id and not auth_tokens:
         raise click.UsageError("Must provide either --agent-id or --auth-tokens")
-    # Load MCP config
     if mcp_config and mcp_config.exists():
         config = MCPConfig.model_validate_json(mcp_config.read_text())
     else:
         config = MCPConfig(mcpServers={})
 
-    # Load initial policy
     policy_source = None
     if initial_policy and initial_policy.exists():
         policy_source = initial_policy.read_text()
 
-    # Run async server
     asyncio.run(
         _run_server(
             agent_id=agent_id,
@@ -119,14 +116,11 @@ async def _run_server(
     ui_port: int,
     initial_policy: str | None,
 ):
-    # Initialize persistence
     db_path.parent.mkdir(parents=True, exist_ok=True)
     persistence = SQLitePersistence(db_path)
 
-    # Initialize Docker client
     docker_client = docker.from_env()
 
-    # Ensure database schema
     await persistence.ensure_schema()
 
     if agent_id:
@@ -151,15 +145,12 @@ async def _run_server(
             mcp_server = uvicorn.Server(mcp_config_obj)
             await mcp_server.serve()
     else:
-        # Multi-agent mode: create both MCP server and management UI
         assert auth_tokens_path is not None
 
-        # Create shared infrastructure registry
         registry = InfrastructureRegistry(
             persistence=persistence, docker_client=docker_client, mcp_config=mcp_config, initial_policy=initial_policy
         )
 
-        # Create both apps
         mcp_app = await create_mcp_server_app(auth_tokens_path=auth_tokens_path, registry=registry)
         ui_app, ui_token = await create_management_ui_app(registry=registry)
 
@@ -169,14 +160,12 @@ async def _run_server(
         logger.info(f"Management UI: http://{host}:{ui_port}?token={ui_token}")
         logger.info(f"  - MCP: ws://{host}:{ui_port}/ws/mcp?agent_id=<id>")
 
-        # Create servers
         mcp_config_obj = uvicorn.Config(app=mcp_app, host=host, port=mcp_port, log_level="info")
         mcp_server = uvicorn.Server(mcp_config_obj)
 
         ui_config_obj = uvicorn.Config(app=ui_app, host=host, port=ui_port, log_level="info")
         ui_server = uvicorn.Server(ui_config_obj)
 
-        # Run both servers concurrently
         await asyncio.gather(mcp_server.serve(), ui_server.serve())
 
 

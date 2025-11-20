@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from hamcrest import all_of, assert_that, contains_string, has_item, has_properties
 import requests
@@ -12,6 +12,9 @@ from uvicorn import Config, Server
 from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 from adgn.util.net import pick_free_port
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 # System notification tag constants
 SYSTEM_NOTIFICATION_START_TAG = "<system notification>"
@@ -99,6 +102,44 @@ def e2e_open_agent_page(page: Any, base_url: str, agent_id: str, *, timeout: int
     page.locator(".ws .dot.on").wait_for(timeout=timeout)
 
 
+def wait_for_pending_approvals(page: Page, count: int | None = None, timeout: int = 10000, **kwargs: Any) -> None:
+    """Wait for Pending Approvals indicator to appear or disappear.
+
+    Shared by all E2E tests to reduce duplication of the common
+    wait for approval notification pattern (appears 19+ times).
+
+    Args:
+        page: Playwright page object
+        count: Expected number of pending approvals (if known)
+        timeout: Timeout in milliseconds (default 10s)
+        **kwargs: Additional arguments to pass to wait_for (e.g., state="detached")
+    """
+    text = f"Pending Approvals ({count})" if count is not None else "Pending Approvals"
+    page.get_by_text(text).wait_for(timeout=timeout, **kwargs)
+
+
+def approve_first_pending(page: Page) -> None:
+    """Click Approve button for first pending approval.
+
+    Common E2E pattern for approving tool calls during agent execution.
+    """
+    page.get_by_role("button", name="Approve").first.click()
+
+
+def send_prompt(page: Page, text: str) -> None:
+    """Fill prompt textarea and click Send button.
+
+    Common E2E pattern for submitting prompts to agent UI.
+    Reduces duplication across ~26 E2E test cases.
+
+    Args:
+        page: Playwright page object
+        text: Prompt text to send
+    """
+    page.locator('textarea[placeholder^="Type a prompt"]').fill(text)
+    page.get_by_role("button", name="Send").click()
+
+
 # ------------------------------
 # HTTP agent endpoint helpers
 # ------------------------------
@@ -159,3 +200,24 @@ def expect_run_finished(payloads: Sequence[ServerMessage]) -> None:
     assert_that(
         payloads, has_item(has_properties(type="run_status", run_state=has_properties(status=RunStatus.FINISHED)))
     )
+
+
+# --------------------------------
+# E2E MCP server attachment helpers
+# --------------------------------
+
+
+def attach_echo_mcp(base_url: str, agent_id: str) -> None:
+    """Attach echo MCP server to agent for testing.
+
+    Common E2E setup pattern for MCP integration tests.
+    Uses the simple echo server from testing utilities.
+    """
+    spec = {
+        "echo": {
+            "transport": "inproc",
+            "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"
+        }
+    }
+    patch = requests.patch(base_url + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
+    assert patch.ok, patch.text

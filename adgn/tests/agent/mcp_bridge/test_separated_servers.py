@@ -90,16 +90,12 @@ async def test_mcp_server_routes_to_agent_infrastructure(
 
     client = TestClient(mcp_app)
 
-    # Make request with agent-1 token
     _ = client.get("/sse", headers={"Authorization": "Bearer test-token-1"})
 
-    # Should create infrastructure for agent-1
     assert "agent-1" in infrastructure_registry._agents
 
-    # Make request with agent-2 token
     _ = client.get("/sse", headers={"Authorization": "Bearer test-token-2"})
 
-    # Should create infrastructure for agent-2
     assert "agent-2" in infrastructure_registry._agents
 
 
@@ -116,16 +112,13 @@ async def test_websocket_channels_available_on_ui_server(infrastructure_registry
 
 async def test_infrastructure_registry_caches_per_agent(infrastructure_registry: InfrastructureRegistry):
     """Test that infrastructure registry caches infrastructure per agent."""
-    # Create infrastructure for agent-1
     running1, app1 = await infrastructure_registry.get_or_create_infrastructure(AgentID("agent-1"))
 
-    # Get again - should return cached
     running1_cached, app1_cached = await infrastructure_registry.get_or_create_infrastructure(AgentID("agent-1"))
 
     assert running1 is running1_cached, "Should return cached infrastructure"
     assert app1 is app1_cached, "Should return cached app"
 
-    # Create infrastructure for agent-2
     running2, app2 = await infrastructure_registry.get_or_create_infrastructure(AgentID("agent-2"))
 
     assert running2 is not running1, "Different agents should have different infrastructure"
@@ -141,7 +134,6 @@ async def test_infrastructure_registry_get_nonexistent(infrastructure_registry: 
 async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastructure_registry: InfrastructureRegistry):
     """Test that /api/agents endpoint delegates to agents MCP server."""
     # Register a local agent in the registry
-    # Create mock infrastructure for a local agent
     mock_infra = Mock(spec=RunningInfrastructure)
     mock_infra.approval_hub = Mock()
     mock_infra.approval_hub.pending = {}
@@ -150,14 +142,11 @@ async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastruct
     mock_infra.approval_engine.persistence.list_tool_calls = AsyncMock(return_value=[])
     mock_infra.approval_engine.persistence.list_policy_proposals = AsyncMock(return_value=[])
 
-    # Create mock local runtime
     mock_runtime = Mock()
     mock_runtime.agent = Mock()
 
-    # Create mock compositor app
     mock_compositor_app = Mock()
 
-    # Register the agent
     infrastructure_registry.register_local_agent(
         agent_id=AgentID("test-local-agent"),
         running=mock_infra,
@@ -165,12 +154,10 @@ async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastruct
         local_runtime=mock_runtime,
     )
 
-    # Create management UI app
     ui_app, ui_token = await create_management_ui_app(registry=infrastructure_registry)
 
     client = TestClient(ui_app)
 
-    # Call /api/agents with valid token
     response = client.get("/api/agents", headers={"Authorization": f"Bearer {ui_token}"})
     assert response.status_code == 200, "API should work with valid token"
 
@@ -180,7 +167,6 @@ async def test_management_ui_agents_endpoint_delegates_to_mcp_server(infrastruct
     agents = data["agents"]
     assert isinstance(agents, list), "agents should be a list"
 
-    # Find our test agent
     test_agent = next((a for a in agents if a["agent_id"] == "test-local-agent"), None)
     assert test_agent is not None, "test-local-agent should be in the list"
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 

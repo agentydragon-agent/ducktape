@@ -44,28 +44,24 @@ async def test_schema_creation_drops_old_tables(tmp_path: Path) -> None:
     db_path = tmp_path / "test.db"
     persist = SQLitePersistence(db_path)
 
-    # Create schema
     await persist.ensure_schema()
 
     # Verify tool_calls table exists and old approvals table doesn't
     from sqlalchemy import select, text
 
     async with persist._session() as session:
-        # Check that tool_calls table exists
         result = await session.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='tool_calls'")
         )
         row = result.fetchone()
         assert row is not None, "tool_calls table should exist"
 
-        # Check that old approvals table doesn't exist
         result = await session.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='approvals'")
         )
         row = result.fetchone()
         assert row is None, "approvals table should not exist"
 
-        # Check that schema_version table doesn't exist
         result = await session.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'")
         )
@@ -75,7 +71,6 @@ async def test_schema_creation_drops_old_tables(tmp_path: Path) -> None:
 
 async def test_save_and_get_tool_call_pending(persistence: SQLitePersistence) -> None:
     """Test saving and retrieving a PENDING tool call (no decision, no execution)."""
-    # Create a PENDING tool call record
     record = ToolCallRecord(
         call_id="test-call-1",
         run_id=None,
@@ -85,13 +80,10 @@ async def test_save_and_get_tool_call_pending(persistence: SQLitePersistence) ->
         execution=None,
     )
 
-    # Save it
     await persistence.save_tool_call(record)
 
-    # Retrieve it
     retrieved = await persistence.get_tool_call("test-call-1")
 
-    # Verify
     assert retrieved is not None
     assert retrieved.call_id == "test-call-1"
     assert retrieved.run_id is None
@@ -104,7 +96,6 @@ async def test_save_and_get_tool_call_pending(persistence: SQLitePersistence) ->
 
 async def test_save_and_get_tool_call_executing(persistence: SQLitePersistence) -> None:
     """Test saving and retrieving an EXECUTING tool call (decision but no execution)."""
-    # Create an EXECUTING tool call record
     decision = Decision(outcome=ApprovalOutcome.USER_APPROVE, decided_at=datetime.now(UTC), reason=None)
     record = ToolCallRecord(
         call_id="test-call-2",
@@ -115,13 +106,10 @@ async def test_save_and_get_tool_call_executing(persistence: SQLitePersistence) 
         execution=None,
     )
 
-    # Save it
     await persistence.save_tool_call(record)
 
-    # Retrieve it
     retrieved = await persistence.get_tool_call("test-call-2")
 
-    # Verify
     assert retrieved is not None
     assert retrieved.call_id == "test-call-2"
     assert retrieved.tool_call.name == "another_tool"
@@ -133,7 +121,6 @@ async def test_save_and_get_tool_call_executing(persistence: SQLitePersistence) 
 
 async def test_save_and_get_tool_call_completed(persistence: SQLitePersistence) -> None:
     """Test saving and retrieving a COMPLETED tool call (decision and execution)."""
-    # Create a COMPLETED tool call record
     decision = Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=datetime.now(UTC), reason=None)
     execution = ToolCallExecution(
         completed_at=datetime.now(UTC),
@@ -148,13 +135,10 @@ async def test_save_and_get_tool_call_completed(persistence: SQLitePersistence) 
         execution=execution,
     )
 
-    # Save it
     await persistence.save_tool_call(record)
 
-    # Retrieve it
     retrieved = await persistence.get_tool_call("test-call-3")
 
-    # Verify
     assert retrieved is not None
     assert retrieved.call_id == "test-call-3"
     assert retrieved.tool_call.name == "exec"
@@ -169,7 +153,6 @@ async def test_save_and_get_tool_call_completed(persistence: SQLitePersistence) 
 
 async def test_list_tool_calls_all(persistence: SQLitePersistence) -> None:
     """Test listing all tool calls."""
-    # Create multiple records
     records = [
         ToolCallRecord(
             call_id=f"call-{i}",
@@ -182,14 +165,11 @@ async def test_list_tool_calls_all(persistence: SQLitePersistence) -> None:
         for i in range(5)
     ]
 
-    # Save all
     for record in records:
         await persistence.save_tool_call(record)
 
-    # List all
     all_calls = await persistence.list_tool_calls()
 
-    # Verify
     assert len(all_calls) == 5
     assert {r.call_id for r in all_calls} == {f"call-{i}" for i in range(5)}
 

@@ -11,7 +11,7 @@ import pytest
 import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent
+from tests.agent.helpers import api_create_agent, wait_for_pending_approvals, send_prompt
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -102,8 +102,7 @@ def test_malformed_resource_json(page: Page, run_server, responses_factory):
         page.locator(".ws .dot.on").wait_for(timeout=5000)
 
     # Try to interact and verify UI shows error gracefully
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("test broken resource")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "test broken resource")
 
     # Give it a moment to process
     page.wait_for_timeout(2000)
@@ -158,8 +157,7 @@ def test_resource_read_timeout(page: Page, run_server, responses_factory):
     assert page.title() is not None
 
     # Try to interact
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("test slow operation")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "test slow operation")
 
     # Wait a bit but not too long
     page.wait_for_timeout(3000)
@@ -211,8 +209,7 @@ def test_mcp_server_disconnect(page: Page, run_server, responses_factory):
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send a prompt to verify connection works
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("test connection")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "test connection")
 
     # Give it time to process
     page.wait_for_timeout(2000)
@@ -222,8 +219,7 @@ def test_mcp_server_disconnect(page: Page, run_server, responses_factory):
     assert detach.ok, detach.text
 
     # Try to send another message
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("test after disconnect")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "test after disconnect")
 
     # Wait for UI to process
     page.wait_for_timeout(2000)
@@ -278,8 +274,7 @@ def test_subscription_to_deleted_agent(page: Page, run_server, responses_factory
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Verify connection is established
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("hello")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "hello")
 
     # Wait for some activity
     page.wait_for_timeout(2000)

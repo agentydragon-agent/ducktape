@@ -72,7 +72,6 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         self.token_mapping = token_mapping
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        # Extract Authorization header
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             raise HTTPException(
@@ -81,7 +80,6 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Parse Bearer token
         parts = auth_header.split()
         if len(parts) != 2 or parts[0].lower() != "bearer":
             raise HTTPException(
@@ -92,14 +90,12 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
 
         token = parts[1]
 
-        # Map token to agent_id
         agent_id = self.token_mapping.get_agent_id(token)
         if agent_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"}
             )
 
-        # Inject agent_id into request state
         request.state.agent_id = agent_id
         logger.debug(f"Authenticated request: token → agent_id={agent_id}")
 
@@ -137,7 +133,6 @@ class UITokenAuthMiddleware(BaseHTTPMiddleware):
         self.expected_token = expected_token
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        # Extract Authorization header
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             raise HTTPException(
@@ -146,7 +141,6 @@ class UITokenAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Parse Bearer token
         parts = auth_header.split()
         if len(parts) != 2 or parts[0].lower() != "bearer":
             raise HTTPException(
@@ -157,7 +151,6 @@ class UITokenAuthMiddleware(BaseHTTPMiddleware):
 
         token = parts[1]
 
-        # Validate token
         if token != self.expected_token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"}

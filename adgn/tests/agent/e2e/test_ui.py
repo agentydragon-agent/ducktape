@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent
+from tests.agent.helpers import api_create_agent, send_prompt
 from tests.llm.support.openai_mock import make_mock
 
 pytestmark = pytest.mark.usefixtures()
@@ -83,13 +83,11 @@ def test_ui_create_chat_and_restore(page: Page, run_server, responses_factory):
         raise
 
     # 2) Send first prompt and expect Assistant message r1
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("hi")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "hi")
     page.locator(".messages .msg .text", has_text="r1").wait_for(timeout=5000)
 
     # 3) Send second prompt and expect Assistant message r2
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("again")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "again")
     page.locator(".messages .msg .text", has_text="r2").wait_for(timeout=5000)
 
     # Stop server A

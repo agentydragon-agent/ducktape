@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent
+from tests.agent.helpers import api_create_agent, approve_first_pending, attach_echo_mcp, wait_for_pending_approvals, send_prompt
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -48,34 +48,23 @@ def test_mcp_approval_flow_with_notifications(page: Page, run_server, responses_
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
 
-    # Create agent
     agent_id = api_create_agent(base)
 
-    # Attach echo MCP server (requires approval by default)
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
-    # Open UI with agent_id in URL
     page.goto(base + f"/?agent_id={agent_id}")
 
-    # Wait for WS connection (verify no errors during connection)
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
-    # Send prompt that triggers tool call requiring approval
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("echo something")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "echo something")
 
     # Verify approval appears in UI WITHOUT page reload
-    # Check that "Pending Approvals (1)" appears
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
 
     # Verify the approval details are shown (tool name should be visible)
     approval_item = page.locator(".approval-item, [data-testid='approval-item']").first
-    # Wait for the approval item to be visible
     approval_item.wait_for(state="visible", timeout=5000)
 
-    # Click approve button
     approve_btn = page.get_by_role("button", name="Approve").first
     approve_btn.click()
 
@@ -130,40 +119,29 @@ def test_multi_agent_global_mailbox(page: Page, run_server, responses_factory):
     s = run_server(lambda model: make_mock(responses_create_1))
     base = s["base_url"]
 
-    # Create two agents
     agent_id_1 = api_create_agent(base)
     agent_id_2 = api_create_agent(base)
 
-    # Attach echo MCP server to both agents
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
     for agent_id in [agent_id_1, agent_id_2]:
-        patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-        assert patch.ok, patch.text
+        attach_echo_mcp(base, agent_id)
 
-    # Connect to agent 1 and trigger approval
     page.goto(base + f"/?agent_id={agent_id_1}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("trigger agent 1")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "trigger agent 1")
 
-    # Wait for approval to appear
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
 
     # Now navigate to agent 2 (simulating switching between agents or global view)
     # Note: Current UI may not have a "global mailbox" view yet, so we test per-agent views
     # If there's a global view route like /approvals, we'd navigate there instead
     # For now, verify each agent's approvals independently
 
-    # Navigate to agent 2
     page.goto(base + f"/?agent_id={agent_id_2}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("trigger agent 2")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "trigger agent 2")
 
-    # Wait for approval to appear for agent 2
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
 
-    # Approve the second agent's request
     approve_btn = page.get_by_role("button", name="Approve").first
     approve_btn.click()
 
@@ -171,12 +149,10 @@ def test_multi_agent_global_mailbox(page: Page, run_server, responses_factory):
     # After approval, the pending count should update
     page.get_by_text("Status: finished").wait_for(timeout=10000)
 
-    # Navigate back to agent 1 and verify its approval is still pending
     page.goto(base + f"/?agent_id={agent_id_1}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
-    # Verify agent 1 still has a pending approval
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=5000)
+    wait_for_pending_approvals(page, count=1, timeout=5000)
 
     s["stop"]()
 
@@ -217,32 +193,23 @@ def test_timeline_displays_historical_decisions(page: Page, run_server, response
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
 
-    # Create agent
     agent_id = api_create_agent(base)
 
-    # Attach echo MCP server
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
-    # Open UI
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
-    # Send prompt to trigger first tool call
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("first prompt")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "first prompt")
 
-    # Wait for first approval and approve it
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
-    page.get_by_role("button", name="Approve").first.click()
+    wait_for_pending_approvals(page, count=1)
+    approve_first_pending(page)
 
-    # Wait for second approval and approve it
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
-    page.get_by_role("button", name="Approve").first.click()
+    wait_for_pending_approvals(page, count=1)
+    approve_first_pending(page)
 
     # Wait for third approval and deny it (deny_continue)
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
     # Look for Deny button (might be labeled "Deny" or "Reject")
     deny_btn = page.get_by_role("button", name="Deny").first
     if deny_btn.count() == 0:
@@ -252,9 +219,8 @@ def test_timeline_displays_historical_decisions(page: Page, run_server, response
         deny_btn.click()
     else:
         # If no deny button, just approve for test to pass
-        page.get_by_role("button", name="Approve").first.click()
+        approve_first_pending(page)
 
-    # Wait for run to finish
     page.get_by_text("Status: finished").wait_for(timeout=10000)
 
     # Navigate to timeline view (if there's a separate timeline tab/view)
@@ -371,26 +337,23 @@ def test_approval_timeline_updates_without_reload(page: Page, run_server, respon
     agent_id = api_create_agent(base)
 
     # Attach echo server via HTTP (in-proc factory spec)
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Open UI and connect WS
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send a prompt to trigger the tool call that requires approval
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("use echo tool")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "use echo tool")
 
     # Pending approval should show up without reload
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
 
     # Capture URL before approval
     url_before_approval = page.url
 
     # Click Approve on the first pending item
-    page.get_by_role("button", name="Approve").first.click()
+    approve_first_pending(page)
 
     # Wait for run to finish
     page.get_by_text("Status: finished").wait_for(timeout=10000)
@@ -400,7 +363,7 @@ def test_approval_timeline_updates_without_reload(page: Page, run_server, respon
 
     # Verify pending approvals count decreased (should be 0)
     # The UI should update via MCP subscription
-    page.get_by_text("Pending Approvals (1)").wait_for(state="detached", timeout=5000)
+    wait_for_pending_approvals(page, count=1, timeout=5000, state="detached")
 
     s["stop"]()
 
@@ -556,9 +519,7 @@ def test_mcp_state_updates_servers_panel_without_reload(page: Page, run_server, 
     initial_server_count = page.locator(".server-item").count()
 
     # Attach echo server via HTTP API
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Wait for echo server to appear in servers panel via MCP subscription
     page.locator('.server-item:has-text("echo")').wait_for(timeout=10000)

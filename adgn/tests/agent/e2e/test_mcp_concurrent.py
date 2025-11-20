@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent
+from tests.agent.helpers import api_create_agent, approve_first_pending, attach_echo_mcp, wait_for_pending_approvals, send_prompt
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -56,10 +56,8 @@ def test_multiple_agents_rapid_status_changes(page: Page, run_server, responses_
     agent_ids = [api_create_agent(base) for _ in range(5)]
 
     # Attach echo MCP server to all agents
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
     for agent_id in agent_ids:
-        patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-        assert patch.ok, patch.text
+        attach_echo_mcp(base, agent_id)
 
     # Connect to first agent
     page.goto(base + f"/?agent_id={agent_ids[0]}")
@@ -71,7 +69,7 @@ def test_multiple_agents_rapid_status_changes(page: Page, run_server, responses_
         assert resp.ok, resp.text
 
     # Wait for approvals to appear (we should see multiple pending)
-    page.get_by_text("Pending Approvals").wait_for(timeout=10000)
+    wait_for_pending_approvals(page)
 
     # Auto-approve all pending approvals by clicking approve repeatedly
     for _ in range(15):  # 5 agents x 3 calls each = 15 approvals
@@ -117,23 +115,20 @@ def test_subscribe_unsubscribe_resubscribe(page: Page, run_server, responses_fac
     agent_id = api_create_agent(base)
 
     # Attach echo MCP server
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Open UI
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send prompt to trigger tool call (this creates a subscription)
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("test")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "test")
 
     # Wait for approval
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
 
     # Approve
-    page.get_by_role("button", name="Approve").first.click()
+    approve_first_pending(page)
 
     # Wait for completion
     page.get_by_text("Status: finished").wait_for(timeout=10000)
@@ -179,20 +174,17 @@ def test_agent_deleted_while_subscribed(page: Page, run_server, responses_factor
     agent_id = api_create_agent(base)
 
     # Attach echo MCP server
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Open UI (establishes subscription)
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send prompt to start activity
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("test")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "test")
 
     # Wait for approval to appear
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
 
     # Delete agent via API while UI is connected
     delete_resp = requests.delete(base + f"/api/agents/{agent_id}")
@@ -241,10 +233,8 @@ def test_concurrent_subscriptions_to_different_agents(page: Page, run_server, re
     agent_ids = [api_create_agent(base) for _ in range(10)]
 
     # Attach echo MCP server to all agents
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
     for agent_id in agent_ids:
-        patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-        assert patch.ok, patch.text
+        attach_echo_mcp(base, agent_id)
 
     # Open multiple tabs/contexts (simulate by visiting different agents)
     # For this test, we'll just cycle through agents rapidly
@@ -253,14 +243,13 @@ def test_concurrent_subscriptions_to_different_agents(page: Page, run_server, re
         page.locator(".ws .dot.on").wait_for(timeout=10000)
 
         # Trigger a prompt
-        page.locator('textarea[placeholder^="Type a prompt"]').fill(f"agent {idx}")
-        page.get_by_role("button", name="Send").click()
+        send_prompt(page, f"agent {idx}")
 
         # Wait for approval
-        page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+        wait_for_pending_approvals(page, count=1)
 
         # Approve
-        page.get_by_role("button", name="Approve").first.click()
+        approve_first_pending(page)
 
         # Wait for completion
         page.get_by_text("Status: finished").wait_for(timeout=10000)
@@ -299,23 +288,20 @@ def test_subscription_survives_temporary_disconnect(page: Page, run_server, resp
     agent_id = api_create_agent(base)
 
     # Attach echo MCP server
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Open UI
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send first prompt
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("first")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "first")
 
     # Wait for approval
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
 
     # Approve
-    page.get_by_role("button", name="Approve").first.click()
+    approve_first_pending(page)
 
     # Wait for first call to complete
     page.get_by_text("Status: finished").wait_for(timeout=10000)
@@ -332,14 +318,13 @@ def test_subscription_survives_temporary_disconnect(page: Page, run_server, resp
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send second prompt after reconnect
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("second")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "second")
 
     # Wait for second approval
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
 
     # Approve
-    page.get_by_role("button", name="Approve").first.click()
+    approve_first_pending(page)
 
     # Verify second call completes
     page.get_by_text("Status: finished").wait_for(timeout=10000)

@@ -7,7 +7,7 @@ import pytest
 import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent
+from tests.agent.helpers import api_create_agent, send_prompt
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -65,7 +65,6 @@ def test_100_pending_approvals_ui_responsive(page: Page, run_server, responses_f
     start_time = time.time()
     page.goto(base + f"/?agent_id={agent_id}")
 
-    # Wait for WS connection
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Verify UI loads in <5 seconds
@@ -80,11 +79,9 @@ def test_100_pending_approvals_ui_responsive(page: Page, run_server, responses_f
     # Get the approvals container and scroll it
     approvals_container = page.locator(".approvals, [data-testid='approvals-list']").first
     if approvals_container.count() > 0:
-        # Scroll down
         page.evaluate("document.querySelector('.approvals, [data-testid=\"approvals-list\"]')?.scrollBy(0, 500)")
         # Small delay to ensure scroll is processed
         time.sleep(0.1)
-        # Scroll back up
         page.evaluate("document.querySelector('.approvals, [data-testid=\"approvals-list\"]')?.scrollBy(0, -500)")
 
     # If we got here without timeout, scrolling is responsive enough
@@ -118,7 +115,6 @@ def test_high_frequency_updates_10_per_second(page: Page, run_server, responses_
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
 
-    # Create agent
     agent_id = api_create_agent(base)
 
     # Attach echo MCP server with auto-approval for speed
@@ -186,13 +182,11 @@ def test_10_concurrent_subscriptions_all_work(page: Page, run_server, responses_
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
 
-    # Create 10 agents
     agent_ids = []
     for _ in range(10):
         agent_id = api_create_agent(base)
         agent_ids.append(agent_id)
 
-        # Attach echo MCP server to each
         spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
         patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
         assert patch.ok, patch.text
@@ -214,7 +208,6 @@ class ApprovalPolicy:
     page.goto(base + f"/?agent_id={agent_ids[0]}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
-    # Trigger prompts on all 10 agents concurrently
     for agent_id in agent_ids:
         resp = requests.post(base + f"/api/agents/{agent_id}/prompt", json={"text": f"test agent {agent_id}"})
         assert resp.ok, resp.text
@@ -259,16 +252,12 @@ def test_large_resource_payload_10mb(page: Page, run_server, responses_factory):
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
 
-    # Create agent
     agent_id = api_create_agent(base)
 
-    # Open UI
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
-    # Trigger prompt that will return large payload
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("get large data")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "get large data")
 
     # Verify the run finishes (large payload was handled)
     page.get_by_text("Status: finished").wait_for(timeout=30000)
@@ -307,15 +296,12 @@ def test_sustained_load_1000_updates(page: Page, run_server, responses_factory):
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
 
-    # Create agent
     agent_id = api_create_agent(base)
 
-    # Attach echo MCP server
     spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
     patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
     assert patch.ok, patch.text
 
-    # Set auto-approve policy
     policy_src = """
 from adgn.agent.policies.models import PolicyDecision
 
@@ -342,10 +328,8 @@ class ApprovalPolicy:
     last_check = 0
 
     for check_time in check_points:
-        # Wait until we reach the check point
         while time.time() - start_time < check_time:
             time.sleep(0.5)
-            # Check if finished early
             if page.locator("text=Status: finished").count() > 0:
                 break
 
@@ -355,7 +339,6 @@ class ApprovalPolicy:
         if textarea.count() > 0:
             textarea.wait_for(state="visible", timeout=5000)
 
-        # If already finished, break out
         if page.locator("text=Status: finished").count() > 0:
             break
 
@@ -364,7 +347,6 @@ class ApprovalPolicy:
 
     # With 1000 updates, this could take a while, so we allow generous timeout
 
-    # Final responsiveness check
     page.locator('textarea[placeholder^="Type a prompt"]').wait_for(state="visible", timeout=5000)
 
     s["stop"]()

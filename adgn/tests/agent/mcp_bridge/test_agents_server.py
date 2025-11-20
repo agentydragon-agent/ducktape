@@ -21,12 +21,9 @@ from adgn.mcp.snapshots import RunningServerEntry, SamplingSnapshot
 
 def read_text_json(result):
     """Helper to parse JSON from MCP resource result."""
-    # FastMCP client returns a list of TextResourceContents
     if isinstance(result, list) and len(result) > 0:
-        # Get the first content item and parse its text field
         text_content = result[0].text if hasattr(result[0], "text") else result[0]
         return json.loads(text_content) if isinstance(text_content, str) else text_content
-    # Or it might be a dict-like object
     return result
 
 
@@ -56,7 +53,6 @@ async def test_list_agents_resource(agents_client):
     agents = content["agents"]
     assert len(agents) == 2
 
-    # Check local agent
     local = next((a for a in agents if a["agent_id"] == "local-agent"), None)
     assert local is not None
     assert local["mode"] == "local"
@@ -66,7 +62,6 @@ async def test_list_agents_resource(agents_client):
     assert local["approvals_uri"] == "resource://agents/local-agent/approvals/pending"
     assert local["policy_proposals_uri"] == "resource://agents/local-agent/policy/proposals"
 
-    # Check bridge agent
     bridge = next((a for a in agents if a["agent_id"] == "bridge-agent"), None)
     assert bridge is not None
     assert bridge["mode"] == "bridge"
@@ -83,13 +78,11 @@ async def test_agent_state_resource_returns_snapshot(agents_client, mock_local_r
     result = await agents_client.read_resource("resource://agents/local-agent/state")
     content = read_text_json(result)
 
-    # Verify sampling snapshot structure
     assert "ts" in content
     assert "servers" in content
     assert content["ts"] == "2025-01-15T10:00:00Z"
     assert content["servers"] == {}
 
-    # Verify compositor.sampling_snapshot was called
     mock_local_runtime.running.compositor.sampling_snapshot.assert_called_once()
 
 
@@ -106,7 +99,6 @@ async def test_agent_ui_state_resource(agents_client, mock_local_runtime):
     result = await agents_client.read_resource("resource://agents/local-agent/ui/state")
     content = read_text_json(result)
 
-    # Verify UI state structure
     assert "seq" in content
     assert "state" in content
     assert content["seq"] == 0
@@ -125,7 +117,6 @@ async def test_agent_ui_state_resource_no_session(agents_client, mock_registry):
 @pytest.mark.asyncio
 async def test_agent_state_resource_with_servers(agents_client, mock_local_runtime):
     """Test resource://agents/{id}/state returns sampling snapshot with server data."""
-    # Create a more complex sampling snapshot with running server
     server_entry = RunningServerEntry(
         state="running",
         initialize=mcp_types.InitializeResult(
@@ -147,7 +138,6 @@ async def test_agent_state_resource_with_servers(agents_client, mock_local_runti
     result = await agents_client.read_resource("resource://agents/local-agent/state")
     content = read_text_json(result)
 
-    # Verify sampling snapshot structure
     assert content["ts"] == "2025-01-15T10:30:00Z"
     assert "test-server" in content["servers"]
 
@@ -162,8 +152,6 @@ async def test_agent_state_resource_with_servers(agents_client, mock_local_runti
 @pytest.mark.asyncio
 async def test_agent_state_resource_no_runtime(mock_registry, agents_client):
     """Test resource://agents/{id}/state fails when local agent has no runtime."""
-
-    # Mock get_local_runtime to return None for local-agent
     original_get_runtime = mock_registry.get_local_runtime
 
     def get_runtime_none(agent_id):
@@ -190,7 +178,6 @@ async def test_agent_approvals_pending_empty(agents_client):
 @pytest.mark.asyncio
 async def test_agent_approvals_pending_with_items(agents_client, mock_approval_hub):
     """Test resource://agents/{id}/approvals/pending with pending approvals."""
-    # Add pending approval
     tool_call = ToolCall(name="test_tool", call_id="call-123", args_json='{"arg1": "value1"}')
     request = ApprovalRequest(tool_call=tool_call)
     mock_approval_hub._requests["call-123"] = request
@@ -213,11 +200,9 @@ async def test_global_approvals_pending_empty(agents_client):
     """Test resource://approvals/pending with no pending approvals."""
     result = await agents_client.read_resource("resource://approvals/pending")
 
-    # FastMCP wraps ReadResourceResult in a list of TextResourceContents
     assert isinstance(result, list)
     assert len(result) == 1
 
-    # Parse the wrapped result
     wrapped = result[0]
     assert isinstance(wrapped, mcp_types.TextResourceContents)
     data = json.loads(wrapped.text)
@@ -227,7 +212,6 @@ async def test_global_approvals_pending_empty(agents_client):
 @pytest.mark.asyncio
 async def test_global_approvals_pending_multi_content(agents_client, mock_approval_hub):
     """Test resource://approvals/pending returns multi-content blocks."""
-    # Add pending approvals to the hub
     tool_call_1 = ToolCall(name="test_tool_1", call_id="call-123", args_json='{"arg1": "value1"}')
     tool_call_2 = ToolCall(name="test_tool_2", call_id="call-456", args_json='{"arg2": "value2"}')
 
@@ -236,11 +220,9 @@ async def test_global_approvals_pending_multi_content(agents_client, mock_approv
 
     result = await agents_client.read_resource("resource://approvals/pending")
 
-    # FastMCP wraps ReadResourceResult in a list of TextResourceContents
     assert isinstance(result, list)
     assert len(result) == 1
 
-    # Parse the wrapped result
     wrapped = result[0]
     assert isinstance(wrapped, mcp_types.TextResourceContents)
     data = json.loads(wrapped.text)
@@ -281,7 +263,6 @@ async def test_agent_approvals_history_empty(agents_client, mock_persistence):
 @pytest.mark.asyncio
 async def test_agent_approvals_history_with_records(agents_client, mock_persistence):
     """Test resource://agents/{id}/approvals/history with completed records."""
-    # Create completed tool call record
     decided_at = datetime(2025, 1, 15, 10, 30, 0, tzinfo=UTC)
     record = ToolCallRecord(
         call_id="call-123",
@@ -311,7 +292,6 @@ async def test_agent_approvals_history_with_records(agents_client, mock_persiste
 @pytest.mark.asyncio
 async def test_agent_approvals_history_filters_pending(agents_client, mock_persistence):
     """Test resource://agents/{id}/approvals/history filters out pending records."""
-    # Create pending record (no decision)
     pending_record = ToolCallRecord(
         call_id="call-pending",
         run_id="run-456",
@@ -321,7 +301,6 @@ async def test_agent_approvals_history_filters_pending(agents_client, mock_persi
         execution=None,
     )
 
-    # Create completed record
     decided_at = datetime(2025, 1, 15, 10, 30, 0, tzinfo=UTC)
     completed_record = ToolCallRecord(
         call_id="call-completed",
@@ -392,8 +371,6 @@ async def test_agent_not_found(agents_client):
 @pytest.mark.asyncio
 async def test_agent_not_initialized(mock_registry, agents_client):
     """Test accessing resources for agent that exists but isn't initialized."""
-
-    # Add uninitialized agent to registry
     def get_infrastructure_uninitialized(agent_id: AgentID):
         if agent_id == "uninitialized-agent":
             raise KeyError(f"Agent {agent_id} infrastructure not yet initialized")
@@ -416,24 +393,19 @@ async def test_agent_not_initialized(mock_registry, agents_client):
 @pytest.mark.asyncio
 async def test_approve_tool_call(agents_client, mock_approval_hub):
     """Test approve_tool_call resolves with ContinueDecision."""
-    # Setup pending approval
     tool_call = ToolCall(name="test_tool", call_id="call-123", args_json="{}")
     request = ApprovalRequest(tool_call=tool_call)
 
-    # Create future for the approval
     fut = asyncio.get_running_loop().create_future()
     mock_approval_hub._futures["call-123"] = fut
     mock_approval_hub._requests["call-123"] = request
 
-    # Call approve tool
     result = await agents_client.call_tool(
         "approve_tool_call", arguments={"agent_id": "local-agent", "call_id": "call-123"}
     )
 
-    # Should succeed
     assert result.is_error is False
 
-    # Check that the future was resolved with ContinueDecision
     assert fut.done()
     decision = fut.result()
     assert isinstance(decision, ContinueDecision)
@@ -445,24 +417,19 @@ async def test_approve_tool_call(agents_client, mock_approval_hub):
 @pytest.mark.asyncio
 async def test_reject_tool_call(agents_client, mock_approval_hub):
     """Test reject_tool_call resolves with AbortTurnDecision."""
-    # Setup pending approval
     tool_call = ToolCall(name="test_tool", call_id="call-456", args_json="{}")
     request = ApprovalRequest(tool_call=tool_call)
 
-    # Create future for the approval
     fut = asyncio.get_running_loop().create_future()
     mock_approval_hub._futures["call-456"] = fut
     mock_approval_hub._requests["call-456"] = request
 
-    # Call reject tool
     result = await agents_client.call_tool(
         "reject_tool_call", arguments={"agent_id": "local-agent", "call_id": "call-456", "reason": "Test rejection"}
     )
 
-    # Should succeed
     assert result.is_error is False
 
-    # Check that the future was resolved with AbortTurnDecision
     assert fut.done()
     decision = fut.result()
     assert isinstance(decision, AbortTurnDecision)
@@ -477,10 +444,8 @@ async def test_abort_agent_local(agents_client, mock_local_runtime):
     """Test abort_agent succeeds for local agents."""
     result = await agents_client.call_tool("abort_agent", arguments={"agent_id": "local-agent"})
 
-    # Should succeed
     assert result.is_error is False
 
-    # Verify agent.abort() was called
     mock_local_runtime.agent.abort.assert_called_once()
 
 
@@ -501,8 +466,6 @@ async def test_abort_agent_not_found(agents_client):
 @pytest.mark.asyncio
 async def test_abort_agent_no_runtime(mock_registry, agents_client):
     """Test abort_agent fails for local agent without runtime."""
-
-    # Mock get_local_runtime to return None for local-agent
     original_get_runtime = mock_registry.get_local_runtime
 
     def get_runtime_none(agent_id: AgentID):
@@ -522,24 +485,20 @@ async def test_abort_agent_no_runtime(mock_registry, agents_client):
 @pytest.mark.asyncio
 async def test_approve_nonexistent_call_id(agents_client):
     """Test approve_tool_call with non-existent call_id (no-op)."""
-    # Call approve for non-existent call_id
     result = await agents_client.call_tool(
         "approve_tool_call", arguments={"agent_id": "local-agent", "call_id": "nonexistent"}
     )
 
-    # Should succeed (no-op)
     assert result.is_error is False
 
 
 @pytest.mark.asyncio
 async def test_reject_nonexistent_call_id(agents_client):
     """Test reject_tool_call with non-existent call_id (no-op)."""
-    # Call reject for non-existent call_id
     result = await agents_client.call_tool(
         "reject_tool_call", arguments={"agent_id": "local-agent", "call_id": "nonexistent", "reason": "test"}
     )
 
-    # Should succeed (no-op)
     assert result.is_error is False
 
 
@@ -549,11 +508,9 @@ async def test_reject_nonexistent_call_id(agents_client):
 @pytest.mark.asyncio
 async def test_global_approvals_pending_different_per_agent(mock_persistence, mock_approval_engine):
     """Test resource://approvals/pending returns different approvals per agent."""
-    # Create separate approval hubs for each agent
     local_hub = ApprovalHub()
     bridge_hub = ApprovalHub()
 
-    # Create separate infrastructures
     local_infra = Mock()
     local_infra.approval_hub = local_hub
     local_infra.approval_engine = mock_approval_engine
@@ -562,7 +519,6 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
     bridge_infra.approval_hub = bridge_hub
     bridge_infra.approval_engine = mock_approval_engine
 
-    # Create a custom registry with separate infrastructures
     custom_registry = Mock()
 
     def known_agents():
@@ -582,10 +538,8 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
     custom_registry.get_infrastructure = get_infrastructure
     custom_registry.get_agent_mode = get_agent_mode
 
-    # Create server with custom registry
     server = await make_agents_server(custom_registry)
 
-    # Add different pending approvals to each agent
     tool_call_local_1 = ToolCall(name="local_tool_1", call_id="local-call-1", args_json='{"param": "value1"}')
     tool_call_local_2 = ToolCall(name="local_tool_2", call_id="local-call-2", args_json='{"param": "value2"}')
     tool_call_bridge_1 = ToolCall(name="bridge_tool_1", call_id="bridge-call-1", args_json='{"param": "value3"}')
@@ -597,20 +551,16 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
     async with Client(server) as client:
         result = await client.read_resource("resource://approvals/pending")
 
-        # FastMCP wraps ReadResourceResult in a list of TextResourceContents
         assert isinstance(result, list)
         assert len(result) == 1
 
-        # Parse the wrapped result
         wrapped = result[0]
         assert isinstance(wrapped, mcp_types.TextResourceContents)
         data = json.loads(wrapped.text)
 
-        # Should have multiple content blocks (3 total: 2 from local-agent + 1 from bridge-agent)
         contents = data["contents"]
         assert len(contents) == 3
 
-        # Parse all content blocks and verify agent_id, call_id, and tool are correct
         approvals_by_agent = {"local-agent": [], "bridge-agent": []}
         for content in contents:
             approval_data = json.loads(content["text"])
@@ -621,13 +571,11 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
 
             approvals_by_agent[agent_id].append({"call_id": call_id, "tool": tool})
 
-        # Verify local-agent has 2 approvals
         assert len(approvals_by_agent["local-agent"]) == 2
         local_calls = {a["call_id"] for a in approvals_by_agent["local-agent"]}
         assert "local-call-1" in local_calls
         assert "local-call-2" in local_calls
 
-        # Verify bridge-agent has 1 approval
         assert len(approvals_by_agent["bridge-agent"]) == 1
         bridge_calls = {a["call_id"] for a in approvals_by_agent["bridge-agent"]}
         assert "bridge-call-1" in bridge_calls
@@ -638,7 +586,6 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
     """Test resource://agents/{id}/approvals/history with mixed decision outcomes."""
     base_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
 
-    # Create tool call records with different outcomes
     records = [
         # POLICY_ALLOW
         ToolCallRecord(
@@ -837,7 +784,6 @@ async def test_agent_snapshot_no_runtime_fails(mock_registry, agents_client):
 @pytest.mark.asyncio
 async def test_agent_snapshot_with_servers(agents_client, mock_local_runtime):
     """Test resource://agents/{id}/snapshot returns snapshot with running servers."""
-    # Create a complex sampling snapshot with running server
     server_entry = RunningServerEntry(
         state="running",
         initialize=mcp_types.InitializeResult(
@@ -883,7 +829,6 @@ async def test_agent_snapshot_agent_not_found(agents_client):
 @pytest.mark.asyncio
 async def test_agent_info_local_running(agents_client, mock_local_runtime):
     """Test resource://agents/{id}/info returns correct info for running local agent."""
-    # Add model to the mock runtime
     mock_local_runtime.model = "claude-3-5-sonnet-20241022"
 
     result = await agents_client.read_resource("resource://agents/local-agent/info")
@@ -910,7 +855,6 @@ async def test_agent_info_bridge_no_model(agents_client):
 @pytest.mark.asyncio
 async def test_agent_info_local_stopped(mock_registry, agents_client):
     """Test resource://agents/{id}/info shows 'stopped' for local agent without runtime."""
-    # Mock get_local_runtime to return None for local-agent
     original_get_runtime = mock_registry.get_local_runtime
 
     def get_runtime_none(agent_id):
@@ -939,7 +883,6 @@ async def test_agent_info_not_found(agents_client):
 @pytest.mark.asyncio
 async def test_presets_list_empty(agents_client, monkeypatch):
     """Test resource://presets/list with no presets available."""
-    # Mock discover_presets to return empty dict
     import adgn.agent.mcp_bridge.servers.agents as agents_module
 
     monkeypatch.setattr(agents_module, "discover_presets", lambda env_dir: {})
@@ -954,7 +897,6 @@ async def test_presets_list_empty(agents_client, monkeypatch):
 @pytest.mark.asyncio
 async def test_presets_list_with_multiple_presets(agents_client, monkeypatch):
     """Test resource://presets/list returns all available presets."""
-    # Mock discover_presets to return sample presets
     import adgn.agent.mcp_bridge.servers.agents as agents_module
     from adgn.agent.presets import AgentPreset
 
@@ -991,8 +933,6 @@ async def test_presets_list_with_multiple_presets(agents_client, monkeypatch):
 @pytest.mark.asyncio
 async def test_presets_list_ordering(agents_client, monkeypatch):
     """Test resource://presets/list preserves preset ordering from discovery."""
-    # Mock discover_presets with ordered presets
-    # Use ordered dict to ensure specific order
     from collections import OrderedDict
 
     import adgn.agent.mcp_bridge.servers.agents as agents_module
@@ -1141,13 +1081,11 @@ async def test_agent_session_state_resource(agents_client, mock_local_runtime):
     from datetime import UTC, datetime
     from uuid import UUID
 
-    # Mock session manager and active run
     mock_session = mock_local_runtime.session
     mock_session._manager = Mock()
     mock_session._manager._session_id = "test-session-123"
     mock_session._run_counter = 5
 
-    # Mock active run
     mock_run = Mock()
     mock_run.run_id = UUID("12345678-1234-5678-1234-567812345678")
     mock_run.started_at = datetime(2025, 1, 15, 10, 30, 0, tzinfo=UTC)
@@ -1173,7 +1111,6 @@ async def test_agent_session_state_resource(agents_client, mock_local_runtime):
 @pytest.mark.asyncio
 async def test_agent_session_state_resource_no_active_run(agents_client, mock_local_runtime):
     """Test resource://agents/{id}/session/state with no active run."""
-    # Mock session manager without active run
     mock_session = mock_local_runtime.session
     mock_session._manager = Mock()
     mock_session._manager._session_id = "test-session-456"
@@ -1203,7 +1140,6 @@ async def test_agent_session_state_resource_bridge_agent(agents_client):
 @pytest.mark.asyncio
 async def test_agent_session_state_resource_no_session(mock_registry, agents_client):
     """Test resource://agents/{id}/session/state fails when local agent has no session."""
-    # Mock get_local_runtime to return runtime without session
     original_get_runtime = mock_registry.get_local_runtime
 
     def get_runtime_no_session(agent_id):

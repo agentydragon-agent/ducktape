@@ -13,7 +13,7 @@ import pytest
 import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent
+from tests.agent.helpers import api_create_agent, approve_first_pending, wait_for_pending_approvals, send_prompt
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -71,8 +71,7 @@ def test_subscription_to_nonexistent_resource_uri(page: Page, run_server, respon
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send prompt that triggers invalid subscription
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("subscribe to invalid resource")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "subscribe to invalid resource")
 
     # Wait for the run to complete (should finish despite error)
     page.get_by_text("Status: finished").wait_for(timeout=10000)
@@ -82,8 +81,7 @@ def test_subscription_to_nonexistent_resource_uri(page: Page, run_server, respon
     timeline.wait_for(state="visible", timeout=5000)
 
     # Verify agent is still responsive after error
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("test after error")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "test after error")
 
     s["stop"]()
 
@@ -168,13 +166,12 @@ def test_mcp_server_disconnect_reconnect(page: Page, run_server, responses_facto
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send prompt that triggers subscription
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("subscribe to resource")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "subscribe to resource")
 
     # Wait for approval (if needed) and approve
     try:
-        page.get_by_text("Pending Approvals (1)").wait_for(timeout=5000)
-        page.get_by_role("button", name="Approve").first.click()
+        wait_for_pending_approvals(page, count=1, timeout=5000)
+        approve_first_pending(page)
     except Exception:
         pass  # No approval needed
 
@@ -249,13 +246,12 @@ def test_network_interruption_during_resource_read(page: Page, run_server, respo
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send prompt that triggers slow resource read
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("read slow resource")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "read slow resource")
 
     # Wait for approval if needed and approve
     try:
-        page.get_by_text("Pending Approvals (1)").wait_for(timeout=5000)
-        page.get_by_role("button", name="Approve").first.click()
+        wait_for_pending_approvals(page, count=1, timeout=5000)
+        approve_first_pending(page)
     except Exception:
         pass  # No approval needed
 

@@ -96,18 +96,15 @@ class ApprovalHub:
             if fut is None:
                 fut = asyncio.get_running_loop().create_future()
                 self._futures[call_id] = fut
-        # Notify after lock release to avoid holding lock during notification
         if self._notifier:
             self._notifier()
         return await fut
 
     def resolve(self, call_id: str, decision: ContinueDecision | DenyContinueDecision | AbortTurnDecision) -> None:
         fut = self._futures.pop(call_id, None)
-        # Remove from pending requests map when resolved
         self._requests.pop(call_id, None)
         if fut is not None and not fut.done():
             fut.set_result(decision)
-        # Notify after resolution
         if self._notifier:
             self._notifier()
 

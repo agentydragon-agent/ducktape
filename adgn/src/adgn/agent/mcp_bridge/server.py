@@ -60,12 +60,10 @@ async def create_bridge_infrastructure(
     initial_policy: str | None = None,
 ):
     """Create RunningInfrastructure for external agent HTTP bridge."""
-    # Create infrastructure builder
     builder = MCPInfrastructure(
         agent_id=agent_id, persistence=persistence, docker_client=docker_client, initial_policy=initial_policy
     )
 
-    # Start core infrastructure and return (external agents have no sidecars)
     return await builder.start(mcp_config)
 
 
@@ -103,7 +101,6 @@ class InfrastructureRegistry:
         entry = self._agents[agent_id]
 
         async with entry.creation_lock:
-            # Check if already populated
             if entry.agent is not None:
                 return (entry.agent.running, entry.agent.compositor_app)
 
@@ -120,7 +117,6 @@ class InfrastructureRegistry:
 
             compositor_app: FastAPI = running.compositor.http_app()  # type: ignore[assignment]
 
-            # Populate entry
             entry.agent = RunningAgent(
                 running=running, compositor_app=compositor_app, mode=AgentMode.BRIDGE, local_runtime=None
             )
@@ -209,13 +205,10 @@ class InfrastructureRegistry:
 
         agent = self._agents[agent_id].agent
         if agent is not None:
-            # Close the infrastructure
             await agent.running.close()
 
-        # Remove from registry
         del self._agents[agent_id]
 
-        # Notify that agent list changed
         if self._notifier:
             await self._notifier("resource://agents/list")
 
@@ -230,13 +223,10 @@ async def create_mcp_server_app(auth_tokens_path: Path, registry: Infrastructure
         """Routes requests to the appropriate agent's compositor app."""
 
         async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-            # Get agent_id set by TokenAuthMiddleware
             agent_id = request.state.agent_id
 
-            # Get the compositor app for this agent
             compositor_app = await registry.get_compositor_app(agent_id)
 
-            # Create response containers
             response_started = False
             status_code = 200
             headers = []
@@ -251,15 +241,12 @@ async def create_mcp_server_app(auth_tokens_path: Path, registry: Infrastructure
                 elif message["type"] == "http.response.body":
                     body_parts.append(message.get("body", b""))
 
-            # Forward request to the compositor's ASGI app
             await compositor_app(request.scope, request.receive, send)
 
-            # Return the response
             response_headers = {k.decode(): v.decode() for k, v in headers}
             body = b"".join(body_parts)
             return Response(content=body, status_code=status_code, headers=response_headers)
 
-    # Create FastAPI app for MCP server
     token_mapping = TokenMapping(auth_tokens_path)
     mcp_app = FastAPI(title="MCP Server")
 
@@ -281,20 +268,16 @@ async def create_management_ui_app(registry: InfrastructureRegistry) -> tuple[Fa
     Returns:
         Tuple of (FastAPI app, UI token for Bearer authentication)
     """
-    # Generate UI token
     ui_token = generate_ui_token()
 
     ui_app = FastAPI(title="Management UI")
 
-    # Create agents MCP server and mount its HTTP app
     agents_server = await make_agents_server(registry)
     agents_http_app = agents_server.http_app()
     ui_app.mount("/mcp/agents", agents_http_app)
 
-    # Store agents server in app state for in-process access
     ui_app.state.agents_server = agents_server
 
-    # Apply UI token authentication middleware
     ui_app.add_middleware(UITokenAuthMiddleware, expected_token=ui_token)
 
     @ui_app.websocket("/ws/mcp")
@@ -311,7 +294,6 @@ async def create_management_ui_app(registry: InfrastructureRegistry) -> tuple[Fa
 
         Delegates to agents MCP server's resource://agents/list.
         """
-        # Create in-process client to agents server and read resource
         async with Client(agents_server) as client:
             agent_list = await read_text_json_typed(client, "resource://agents/list", AgentList)
             return agent_list.model_dump()

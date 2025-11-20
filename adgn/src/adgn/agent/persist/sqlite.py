@@ -30,7 +30,7 @@ from . import (
     ToolCallRecord,
 )
 from .events import EventRecord, parse_event
-from .models import Agent, Run, Event, ToolCall as ToolCallModel, Policy, ChatMessage, ChatLastRead, Base
+from .models import Agent, Run, Event, ToolCall as ToolCallModel, Policy, Base
 
 MAX_EVENT_PAYLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB hard limit per event payload
 
@@ -42,7 +42,6 @@ def _now() -> datetime:
 class SQLitePersistence(Persistence):
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
-        # Create async engine with foreign key support for SQLite
         self.engine: AsyncEngine = create_async_engine(
             f"sqlite+aiosqlite:///{self.db_path}",
             echo=False,
@@ -50,7 +49,6 @@ class SQLitePersistence(Persistence):
         )
         self.async_session_maker = async_sessionmaker(self.engine, expire_on_commit=False)
 
-        # Set up event listener to enable foreign keys for all connections
         from sqlalchemy import event
 
         @event.listens_for(self.engine.sync_engine, "connect")
@@ -70,7 +68,6 @@ class SQLitePersistence(Persistence):
         async with self.engine.begin() as conn:
             # Drop all tables for clean slate (no backward compatibility)
             await conn.run_sync(Base.metadata.drop_all)
-            # Create all tables
             await conn.run_sync(Base.metadata.create_all)
 
     # Agents -----------------------------------------------------------------
@@ -107,7 +104,6 @@ class SQLitePersistence(Persistence):
             agent = result.scalar_one_or_none()
             if not agent:
                 raise KeyError(f"agent not found: {agent_id}")
-            # Load persisted JSON and rehydrate to MCPConfig
             cfg = MCPConfig.model_validate(agent.mcp_config) if agent.mcp_config else MCPConfig()
             # Apply detach
             for name in detach:
@@ -210,7 +206,6 @@ GROUP BY a.id
                 .where(Policy.agent_id == agent_id, Policy.status == "ACTIVE")
                 .values(status="SUPERSEDED")
             )
-            # Create new ACTIVE policy
             policy = Policy(
                 agent_id=agent_id,
                 content=content,
@@ -287,7 +282,6 @@ GROUP BY a.id
         Returns the new active policy id.
         """
         async with self._session() as session:
-            # Get the proposal
             try:
                 policy_id = int(proposal_id)
             except ValueError:
@@ -448,7 +442,6 @@ GROUP BY a.id
             )
             events = result.scalars().all()
             for event in events:
-                # Parse event using dict representation
                 row_dict = {
                     "seq": event.seq,
                     "ts": event.event_at,  # Map event_at back to ts for compatibility
@@ -464,13 +457,11 @@ GROUP BY a.id
     async def save_tool_call(self, record: ToolCallRecord) -> None:
         """Save or update a tool call record."""
         async with self._session() as session:
-            # Check if already exists
             result = await session.execute(
                 select(ToolCallModel).where(ToolCallModel.call_id == record.call_id)
             )
             existing = result.scalar_one_or_none()
 
-            # Serialize nested Pydantic models to JSON
             tool_call_json = json.loads(record.tool_call.model_dump_json())
             decision_json = json.loads(record.decision.model_dump_json()) if record.decision else None
             execution_json = json.loads(record.execution.model_dump_json()) if record.execution else None

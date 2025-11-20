@@ -95,28 +95,22 @@ class MCPInfrastructure:
         await stack.__aenter__()
 
         try:
-            # Phase 1: Approval infrastructure
             approval_engine, approval_hub = await self._setup_approval_infrastructure()
 
-            # Phase 2: Create compositor with external servers
             compositor = Compositor("compositor", eager_open=True)
             for name, server_cfg in mcp_config.mcpServers.items():
                 await compositor.mount_server(name, server_cfg)
 
-            # Phase 3: Create client and notifications
             notif_buffer = NotificationsBuffer(compositor=compositor)
             compositor_client = Client(compositor, message_handler=notif_buffer.handler)
             await stack.enter_async_context(compositor_client)
 
-            # Phase 4: Mount approval policy servers
             policy_reader, policy_approver = await self._mount_approval_policy_servers(
                 compositor, approval_engine, stack
             )
 
-            # Phase 5: Install policy gateway
             await self._install_policy_gateway(compositor, approval_hub, policy_reader)
 
-            # Phase 6: Mount standard meta servers (resources, compositor_meta, compositor_admin)
             await mount_standard_inproc_servers(compositor=compositor, gateway_client=compositor_client)
 
             return RunningInfrastructure(
@@ -140,7 +134,6 @@ class MCPInfrastructure:
         """Resolves the initial policy source (from preset, initial_policy parameter,
         or default) and constructs the approval policy engine.
         """
-        # Resolve initial policy source via preset/persistence/override
         row = await self.persistence.get_agent(self.agent_id)
         preset_name: str | None = None
         if row and row.metadata is not None:
@@ -155,12 +148,10 @@ class MCPInfrastructure:
             or load_default_policy_source()
         )
 
-        # Construct the approval engine with the chosen initial policy
         approval_engine = make_policy_engine(
             agent_id=self.agent_id, persistence=self.persistence, docker_client=self.docker_client, policy_source=chosen
         )
 
-        # Create approval hub
         approval_hub = ApprovalHub()
 
         return (approval_engine, approval_hub)
@@ -176,25 +167,20 @@ class MCPInfrastructure:
             - policy_reader: for policy gateway middleware
             - policy_approver: for HTTP admin API
         """
-        # Create and mount reader server
         reader_server = ApprovalPolicyServer(approval_engine, name=APPROVAL_POLICY_SERVER_NAME_READER)
         await compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_READER, reader_server)
 
-        # Create and mount proposer server
         proposer_server = ApprovalPolicyProposerServer(
             engine=approval_engine, name=APPROVAL_POLICY_SERVER_NAME_PROPOSER
         )
         await compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_PROPOSER, proposer_server)
 
-        # Create approver server (admin only, not mounted in compositor)
         approver_server = ApprovalPolicyAdminServer(engine=approval_engine, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
 
-        # Create internal client to reader for policy gateway
         reader_client = Client(reader_server)
         await stack.enter_async_context(reader_client)
         policy_reader = PolicyReaderStub(TypedClient(reader_client))
 
-        # Create internal client to approver for admin API
         approver_client = Client(approver_server)
         await stack.enter_async_context(approver_client)
         policy_approver = PolicyApproverStub(TypedClient(approver_client))
