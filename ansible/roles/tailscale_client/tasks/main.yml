@@ -55,6 +55,8 @@
     --ephemeral
     --expiration 1h
     --output json | jq -r '.key'
+  args:
+    executable: /bin/bash
   delegate_to: "{{ headscale_delegate_host }}"
   register: tailscale_client_headscale_authkey_result
   changed_when: tailscale_client_headscale_authkey_result.rc == 0
