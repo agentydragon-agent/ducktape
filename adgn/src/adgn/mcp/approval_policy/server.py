@@ -10,7 +10,6 @@ from pydantic import AnyUrl, BaseModel
 
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist import Policy
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.mcp._shared.constants import (
@@ -28,14 +27,6 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 # IO types unified: use engine-level PolicyRequest and PolicyResponse
 
 logger = logging.getLogger(__name__)
-
-# Resource URI constants for policy proposals
-POLICIES_LIST_URI = "resource://policies/list"
-
-
-def policy_detail_uri(policy_id: str) -> str:
-    """Resource URI for a specific policy proposal."""
-    return f"resource://policies/{policy_id}"
 
 
 class CreateProposalArgs(BaseModel):
@@ -71,34 +62,6 @@ class ApproveProposalArgs(BaseModel):
 class RejectProposalArgs(BaseModel):
     id: str
     reason: str | None = None
-
-
-class PolicyListItem(BaseModel):
-    """Lightweight policy info for list view."""
-
-    id: str
-    description: str | None = None
-    enabled: bool = True
-
-
-class CreatePolicyArgs(BaseModel):
-    """Args for creating a new policy."""
-
-    id: str
-    text: str
-    description: str | None = None
-    enabled: bool = True
-
-
-class UpdatePolicyArgs(BaseModel):
-    """Args for updating an existing policy."""
-
-    id: str
-    text: str
-    description: str | None = None
-
-
-# IO types unified; see PolicyRequest/PolicyResponse in adgn.agent.approvals
 
 
 def _load_instructions() -> str:
@@ -210,27 +173,6 @@ class ApprovalPolicyServer(NotifyingFastMCP):
                 content=got.content,
             )
 
-        @self.resource(POLICIES_LIST_URI, name="policies_list", mime_type="application/json")
-        async def policies_list() -> list[PolicyListItem]:
-            """List all policies (returns lightweight metadata for list view)."""
-            policies = await self._engine.persistence.list_policies(offset=0, limit=100)
-            return [
-                PolicyListItem(
-                    id=p.id,
-                    description=p.description,
-                    enabled=p.enabled,
-                )
-                for p in policies
-            ]
-
-        @self.resource(policy_detail_uri("{policy_id}"), name="policy_detail", mime_type="application/json")
-        async def policy_detail(policy_id: str) -> Policy:
-            """Get full policy by ID."""
-
-            got = await self._engine.persistence.get_policy(policy_id)
-            if got is None:
-                raise KeyError(policy_id)
-            return got
 
         @self.flat_model()
         async def decide(input: PolicyRequest) -> PolicyResponse:
@@ -367,33 +309,6 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
                 # Notify about reload
                 self._engine.notify_resource(APPROVAL_POLICY_RESOURCE_URI)
 
-        @self.flat_model()
-        async def create_policy(input: CreatePolicyArgs) -> Policy:
-            """Create a new named policy in the policy library."""
-
-            policy = await self._engine.persistence.create_policy(
-                policy_id=input.id,
-                text=input.text,
-                description=input.description,
-                enabled=input.enabled,
-            )
-            # Notify about policy library change
-            self._engine.notify_resource(POLICIES_LIST_URI)
-            return policy
-
-        @self.flat_model()
-        async def update_policy(input: UpdatePolicyArgs) -> Policy:
-            """Update an existing policy's text and description."""
-
-            policy = await self._engine.persistence.update_policy(
-                policy_id=input.id,
-                text=input.text,
-                description=input.description,
-            )
-            # Notify about both the specific policy and the list
-            self._engine.notify_resource(policy_detail_uri(input.id))
-            self._engine.notify_resource(POLICIES_LIST_URI)
-            return policy
 
 
 async def attach_approval_policy_admin(

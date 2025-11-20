@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -160,7 +160,7 @@ class Policy(Base):
         Index("idx_policies_agent_status", "agent_id", "status"),
         Index("idx_policies_status", "status"),
         # Partial unique index: ensures only ONE ACTIVE policy per agent
-        Index("idx_policies_agent_active", "agent_id", unique=True, sqlite_where="status = 'ACTIVE'"),
+        Index("idx_policies_agent_active", "agent_id", unique=True, sqlite_where=text("status = 'ACTIVE'")),
     )
 
 

@@ -17,15 +17,21 @@ async def persistence(tmp_path: Path) -> SQLitePersistence:
     persist = SQLitePersistence(db_path)
     await persist.ensure_schema()
 
-    # Create test agents for all tests
+    # Create test agents for all tests using ORM
+    from adgn.agent.persist.models import Agent
+
     agent_ids = ["test-agent", "test-agent-1", "test-agent-2", "test-agent-3", "complex-agent"]
-    async with persist._open() as db:
-        for agent_id in agent_ids:
-            await db.execute(
-                "INSERT INTO agents (id, created_at, specs, metadata) VALUES (?, ?, ?, ?)",
-                (agent_id, datetime.now(UTC).isoformat(), "{}", None),
+    for agent_id_str in agent_ids:
+        # Manually insert using session to control ID
+        async with persist._session() as session:
+            agent = Agent(
+                id=agent_id_str,
+                created_at=datetime.now(UTC),
+                mcp_config={},
+                preset="test",
             )
-        await db.commit()
+            session.add(agent)
+            await session.commit()
 
     return persist
 
@@ -39,21 +45,29 @@ async def test_schema_creation_drops_old_tables(tmp_path: Path) -> None:
     await persist.ensure_schema()
 
     # Verify tool_calls table exists and old approvals table doesn't
-    async with persist._db_connection() as db:
+    from sqlalchemy import select, text
+
+    async with persist._session() as session:
         # Check that tool_calls table exists
-        cur = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tool_calls'")
-        result = await cur.fetchone()
-        assert result is not None, "tool_calls table should exist"
+        result = await session.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='tool_calls'")
+        )
+        row = result.fetchone()
+        assert row is not None, "tool_calls table should exist"
 
         # Check that old approvals table doesn't exist
-        cur = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='approvals'")
-        result = await cur.fetchone()
-        assert result is None, "approvals table should not exist"
+        result = await session.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='approvals'")
+        )
+        row = result.fetchone()
+        assert row is None, "approvals table should not exist"
 
         # Check that schema_version table doesn't exist
-        cur = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'")
-        result = await cur.fetchone()
-        assert result is None, "schema_version table should not exist"
+        result = await session.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'")
+        )
+        row = result.fetchone()
+        assert row is None, "schema_version table should not exist"
 
 
 async def test_save_and_get_tool_call_pending(persistence: SQLitePersistence) -> None:
