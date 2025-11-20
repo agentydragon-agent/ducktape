@@ -21,7 +21,13 @@ The walrus operator is valuable when you need to **use a value AND test/process 
 
 ## Detection Strategy
 
-**SUGGESTED High-Recall Scans** (not mandatory - style improvement, not bugs):
+**MANDATORY Step 0**: Run walrus operator opportunity scans.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL walrus candidate output using your intelligence
+- High recall required, high precision NOT required (~10-30% precision expected) - you determine which benefit from walrus
+- Review each for: variable scope, duplicate work, readability improvement
+- Prevents lazy analysis by forcing examination of ALL test-and-use patterns
 
 These scans surface candidates for manual review. High recall, low precision expected (~10-30% precision).
 
