@@ -10,7 +10,13 @@ import requests
 from uvicorn import Config, Server
 
 from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
-from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, OpenAIModelProto, ResponsesRequest, ResponsesResult
+from adgn.openai_utils.model import (
+    FunctionCallItem,
+    FunctionCallOutputItem,
+    OpenAIModelProto,
+    ResponsesRequest,
+    ResponsesResult,
+)
 from adgn.util.net import pick_free_port
 
 if TYPE_CHECKING:

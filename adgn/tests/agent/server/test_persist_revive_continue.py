@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from concurrent.futures import CancelledError
 
-from hamcrest import assert_that, has_items, has_properties
+from hamcrest import assert_that, has_items
 import pytest
 
 from adgn.agent.server.protocol import Envelope, RunStatus, RunStatusEvt, UiStateSnapshot
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ui_asserts import assert_ui_items_have, item_assistant_markdown
-from tests.agent.ws_helpers import drain_until_match, has_finished_run
+from tests.agent.ws_helpers import drain_until_match, has_finished_run, is_ui_message
 from tests.llm.support.openai_mock import make_mock
 
 
@@ -66,9 +66,7 @@ def test_persist_revive_continue_ui_flow(responses_factory, agent_ws_box):
             assert_that(
                 payloads_1,
                 has_items(
-                    has_properties(
-                        type="ui_message", message=has_properties(mime="text/markdown", content="**hello**")
-                    ),
+                    is_ui_message(content="**hello**", mime="text/markdown"),
                     has_finished_run(),
                 ),
             )
@@ -89,7 +87,8 @@ def test_persist_revive_continue_ui_flow(responses_factory, agent_ws_box):
             assert_that(
                 payloads_2,
                 has_items(
-                    has_properties(type="ui_message", message=has_properties(content="**world**")), has_finished_run()
+                    is_ui_message(content="**world**"),
+                    has_finished_run(),
                 ),
             )
 

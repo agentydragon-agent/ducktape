@@ -148,7 +148,7 @@ async def test_save_and_get_tool_call_completed(persistence: SQLitePersistence) 
     assert retrieved.execution is not None
     assert retrieved.execution.output.isError is False
     assert_that(retrieved.execution.output.content, has_length(1))
-    assert isinstance(retrieved.execution.output.content[0], mcp_types.TextContent)
+    assert_that(retrieved.execution.output.content[0], instance_of(mcp_types.TextContent))
     assert retrieved.execution.output.content[0].text == "Success!"
 
 
@@ -340,7 +340,7 @@ async def test_json_serialization_roundtrip(persistence: SQLitePersistence) -> N
     assert retrieved.execution is not None
     assert retrieved.execution.output.isError is True
     assert_that(retrieved.execution.output.content, has_length(2))
-    assert isinstance(retrieved.execution.output.content[0], mcp_types.TextContent)
+    assert_that(retrieved.execution.output.content[0], instance_of(mcp_types.TextContent))
     assert retrieved.execution.output.content[0].text == "Error occurred"
-    assert isinstance(retrieved.execution.output.content[1], mcp_types.ImageContent)
+    assert_that(retrieved.execution.output.content[1], instance_of(mcp_types.ImageContent))
     assert retrieved.execution.output.content[1].data == "base64data"

@@ -3,7 +3,7 @@ import shutil
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
-from hamcrest import assert_that, instance_of
+from hamcrest import assert_that, instance_of, has_item, has_property, starts_with
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
@@ -44,7 +44,7 @@ async def test_stdio_server_list_tools(make_compositor) -> None:
     async with make_compositor({"everything": spec}) as (sess, comp):
         tools = await sess.list_tools()
         assert_that(tools, instance_of(list))
-        assert any(t.name.startswith("everything_") for t in tools)
+        assert_that(tools, has_item(has_property("name", starts_with("everything_"))))
 
 
 async def test_direct_inprocess_server(make_compositor) -> None:
@@ -55,7 +55,7 @@ async def test_direct_inprocess_server(make_compositor) -> None:
         tools = await sess.list_tools()
         # Tools are composed under the compositor with namespaced tool names
         tool_name = build_mcp_function("local", "exec")
-        assert any(t.name == tool_name for t in tools)
+        assert_that(tools, has_item(has_property("name", tool_name)))
         # Sanity-call exec via the namespaced tool using the typed helper
         exec_stub = ToolStub(sess, tool_name, BaseExecResult)
         result = await exec_stub(DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100_000, timeout_ms=5000))

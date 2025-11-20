@@ -557,11 +557,11 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
     async with Client(server) as client:
         result = await client.read_resource("resource://approvals/pending")
 
-        assert isinstance(result, list)
+        assert_that(result, instance_of(list))
         assert_that(result, has_length(1))
 
         wrapped = result[0]
-        assert isinstance(wrapped, mcp_types.TextResourceContents)
+        assert_that(wrapped, instance_of(mcp_types.TextResourceContents))
         data = json.loads(wrapped.text)
 
         contents = data["contents"]
@@ -700,12 +700,12 @@ async def test_global_approvals_pending_ordering(agents_client, mock_approval_hu
     result = await agents_client.read_resource("resource://approvals/pending")
 
     # FastMCP wraps ReadResourceResult in a list of TextResourceContents
-    assert isinstance(result, list)
+    assert_that(result, instance_of(list))
     assert_that(result, has_length(1))
 
     # Parse the wrapped result
     wrapped = result[0]
-    assert isinstance(wrapped, mcp_types.TextResourceContents)
+    assert_that(wrapped, instance_of(mcp_types.TextResourceContents))
     data = json.loads(wrapped.text)
 
     # Each agent should have 3 approvals (6 total for 2 agents)
@@ -984,10 +984,10 @@ async def test_agents_list_resource_detailed_status(agents_client):
         )
 
         # Verify field types
-        assert isinstance(agent["live"], bool)
-        assert isinstance(agent["run_phase"], str)
-        assert isinstance(agent["pending_approvals"], int)
-        assert isinstance(agent["capabilities"], dict)
+        assert_that(agent["live"], instance_of(bool))
+        assert_that(agent["run_phase"], instance_of(str))
+        assert_that(agent["pending_approvals"], instance_of(int))
+        assert_that(agent["capabilities"], instance_of(dict))
 
 
 # --- Approval Hub Notification Tests ---
@@ -1076,8 +1076,8 @@ async def test_approval_hub_notifier_not_called_without_setup(mock_approval_hub)
 
     # Should complete successfully
     decision = await task
-    assert isinstance(decision, AbortTurnDecision)
-    assert decision.reason == "test"
+    assert_that(decision, all_of(instance_of(AbortTurnDecision), has_properties(reason="test")))
+
 
 
 @pytest.mark.asyncio

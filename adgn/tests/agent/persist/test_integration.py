@@ -408,7 +408,7 @@ async def test_complex_calltoolresult_content_types(persistence: SQLitePersisten
     retrieved2 = await persistence.get_tool_call("content-image")
     assert retrieved2 is not None
     assert_that(retrieved2.execution.output.content, has_length(1))
-    assert isinstance(retrieved2.execution.output.content[0], mcp_types.ImageContent)
+    assert_that(retrieved2.execution.output.content[0], instance_of(mcp_types.ImageContent))
     assert retrieved2.execution.output.content[0].mimeType == "image/png"
 
     # Test 3: Error content
@@ -454,9 +454,9 @@ async def test_complex_calltoolresult_content_types(persistence: SQLitePersisten
     retrieved4 = await persistence.get_tool_call("content-mixed")
     assert retrieved4 is not None
     assert_that(retrieved4.execution.output.content, has_length(3))
-    assert isinstance(retrieved4.execution.output.content[0], mcp_types.TextContent)
-    assert isinstance(retrieved4.execution.output.content[1], mcp_types.ImageContent)
-    assert isinstance(retrieved4.execution.output.content[2], mcp_types.TextContent)
+    assert_that(retrieved4.execution.output.content[0], instance_of(mcp_types.TextContent))
+    assert_that(retrieved4.execution.output.content[1], instance_of(mcp_types.ImageContent))
+    assert_that(retrieved4.execution.output.content[2], instance_of(mcp_types.TextContent))
 
     # Test 5: Empty content (edge case)
     record5 = ToolCallRecord(

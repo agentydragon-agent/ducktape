@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from hamcrest import all_of, assert_that, has_item, has_items, has_properties, instance_of, is_not
 
+from adgn.agent.server.state import ExecContent, ToolItem
+
 
 def is_user_message(text: str | None = None):
     props = {"kind": "UserMessage"}
@@ -35,8 +37,6 @@ def is_tool_item_typed(**props):
     Example: is_tool_item_typed(decision=None)
              is_tool_item_typed(kind="Tool", decision="approve")
     """
-    from adgn.agent.server.state import ToolItem
-
     m = [instance_of(ToolItem)]
     if props:
         m.append(has_properties(**props))
@@ -49,8 +49,6 @@ def is_exec_content_typed(**props):
     Composable matcher factory for ExecContent with type checking.
     Example: is_exec_content_typed(content_kind="Exec", stdout="ok", exit_code=0)
     """
-    from adgn.agent.server.state import ExecContent
-
     m = [instance_of(ExecContent)]
     if props:
         m.append(has_properties(**props))
