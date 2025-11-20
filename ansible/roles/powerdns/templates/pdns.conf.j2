@@ -5,8 +5,8 @@ launch=gsqlite3
 gsqlite3-database=/var/lib/powerdns/pdns.sqlite3
 gsqlite3-dnssec
 
-# Network binding
-local-address=0.0.0.0,::
+# Network binding - bind to public IP only (not 0.0.0.0 to avoid conflict with systemd-resolved)
+local-address={{ powerdns_dns_bind_address }}
 
 # Web Server configuration
 webserver=yes
