@@ -21,6 +21,15 @@ This specimen captures code quality findings in the adgn agent codebase, focusin
 - **013**: `Agent.id` should be typed as AgentID in SQLAlchemy model
 - **014**: `proposal_id` parameters should be int not str (9+ locations)
 - **015**: `Run.status` and `Event.type` should use StrEnum types
+- **016**: `event_count` should be derived from events table, not stored
+- **017**: Should leverage StrEnum directly, not `.value`
+- **018**: Type confusion about `run_id` (UUID vs str)
+- **019**: `list_runs` should use list comprehension not loop with append
+- **020**: Should construct Pydantic objects directly, not via dict
+- **021**: `created_at` should auto-default to current time
+- **022**: `AgentPreset.modified_at` should be datetime not str
+- **023**: Server stub should provide convenience method for stack context
+- **024**: `pending_notifier` should accept ToolCall directly
 
 See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations.
 
