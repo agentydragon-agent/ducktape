@@ -23,8 +23,9 @@ from . import (
     Decision,
     EventType,
     Persistence,
+    PersistenceRunStatus,
+    PolicyStatus,
     RunRow,
-    RunStatus,
     ToolCall,
     ToolCallExecution,
     ToolCallRecord,
@@ -188,7 +189,7 @@ GROUP BY a.id
         async with self._session() as session:
             result = await session.execute(
                 select(Policy)
-                .where(Policy.agent_id == agent_id, Policy.status == "ACTIVE")
+                .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE.value)
                 .order_by(Policy.id.desc())
                 .limit(1)
             )
@@ -203,13 +204,13 @@ GROUP BY a.id
             # Mark existing ACTIVE policy as SUPERSEDED
             await session.execute(
                 update(Policy)
-                .where(Policy.agent_id == agent_id, Policy.status == "ACTIVE")
-                .values(status="SUPERSEDED")
+                .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE.value)
+                .values(status=PolicyStatus.SUPERSEDED.value)
             )
             policy = Policy(
                 agent_id=agent_id,
                 content=content,
-                status="ACTIVE",
+                status=PolicyStatus.ACTIVE.value,
                 created_at=_now(),
                 decided_at=_now(),
             )
@@ -297,12 +298,12 @@ GROUP BY a.id
             # Mark existing ACTIVE policies as SUPERSEDED
             await session.execute(
                 update(Policy)
-                .where(Policy.agent_id == agent_id, Policy.status == "ACTIVE")
-                .values(status="SUPERSEDED")
+                .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE.value)
+                .values(status=PolicyStatus.SUPERSEDED.value)
             )
 
             # Mark proposal as ACTIVE
-            policy.status = "ACTIVE"
+            policy.status = PolicyStatus.ACTIVE.value
             policy.decided_at = _now()
             await session.commit()
             return policy.id
@@ -338,7 +339,7 @@ GROUP BY a.id
                 agent_id=agent_id,
                 started_at=started_at,
                 finished_at=None,
-                status=RunStatus.RUNNING.value,
+                status=PersistenceRunStatus.RUNNING.value,
                 system_message=system_message,
                 model=model,
                 model_params=model_params,
@@ -347,7 +348,7 @@ GROUP BY a.id
             session.add(run)
             await session.commit()
 
-    async def finish_run(self, run_id: UUID, *, status: RunStatus, finished_at: datetime) -> None:
+    async def finish_run(self, run_id: UUID, *, status: PersistenceRunStatus, finished_at: datetime) -> None:
         async with self._session() as session:
             await session.execute(
                 update(Run)
@@ -407,7 +408,7 @@ GROUP BY a.id
                         agent_id=AgentID(run.agent_id),
                         started_at=run.started_at,
                         finished_at=run.finished_at,
-                        status=RunStatus(run.status),
+                        status=PersistenceRunStatus(run.status),
                         system_message=run.system_message,
                         model=run.model,
                         model_params=run.model_params,
@@ -427,7 +428,7 @@ GROUP BY a.id
                 agent_id=AgentID(run.agent_id),
                 started_at=run.started_at,
                 finished_at=run.finished_at,
-                status=RunStatus(run.status),
+                status=PersistenceRunStatus(run.status),
                 system_message=run.system_message,
                 model=run.model,
                 model_params=run.model_params,

@@ -149,7 +149,7 @@ class Policy(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)  # ACTIVE|PROPOSED|REJECTED|SUPERSEDED
+    status: Mapped[str] = mapped_column(String, nullable=False)  # active|proposed|rejected|superseded (PolicyStatus)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -160,7 +160,7 @@ class Policy(Base):
         Index("idx_policies_agent_status", "agent_id", "status"),
         Index("idx_policies_status", "status"),
         # Partial unique index: ensures only ONE ACTIVE policy per agent
-        Index("idx_policies_agent_active", "agent_id", unique=True, sqlite_where=text("status = 'ACTIVE'")),
+        Index("idx_policies_agent_active", "agent_id", unique=True, sqlite_where=text("status = 'active'")),
     )
 
 

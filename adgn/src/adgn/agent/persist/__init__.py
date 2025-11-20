@@ -30,7 +30,12 @@ class AgentRow(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class RunStatus(StrEnum):
+class PersistenceRunStatus(StrEnum):
+    """Final run state stored in persistence layer.
+
+    Represents the terminal state of a run in the database.
+    For transient UI states, see protocol.RunStatus.
+    """
     RUNNING = "running"
     FINISHED = "finished"
     ERROR = "error"
@@ -55,12 +60,19 @@ class EventType(StrEnum):
     RESPONSE = "response"
 
 
+class PolicyStatus(StrEnum):
+    ACTIVE = "active"
+    SUPERSEDED = "superseded"
+    PROPOSED = "proposed"
+    REJECTED = "rejected"
+
+
 class RunRow(BaseModel):
     id: UUID
     agent_id: AgentID
     started_at: datetime
     finished_at: datetime | None
-    status: RunStatus
+    status: PersistenceRunStatus
     system_message: str | None
     model: str | None
     model_params: dict[str, JsonValue] | None
@@ -145,7 +157,7 @@ class Persistence(Protocol):
         started_at: datetime,
     ) -> None: ...
 
-    async def finish_run(self, run_id: UUID, *, status: RunStatus, finished_at: datetime) -> None: ...
+    async def finish_run(self, run_id: UUID, *, status: PersistenceRunStatus, finished_at: datetime) -> None: ...
 
     async def append_event(
         self,
