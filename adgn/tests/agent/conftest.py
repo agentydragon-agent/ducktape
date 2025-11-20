@@ -45,13 +45,18 @@ async def test_agent(persistence: SQLitePersistence) -> str:
 
     Used across all agent tests that need a test agent ID.
     """
+    from adgn.agent.persist.models import Agent
+
     agent_id = "test-agent-1"
-    async with persistence._db_connection() as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO agents (id, created_at, specs, metadata) VALUES (?, ?, ?, ?)",
-            (agent_id, datetime.now(UTC).isoformat(), "{}", None),
+    async with persistence._session() as session:
+        agent = Agent(
+            id=agent_id,
+            created_at=datetime.now(UTC),
+            mcp_config={},
+            preset="test",
         )
-        await db.commit()
+        session.add(agent)
+        await session.commit()
     return agent_id
 
 

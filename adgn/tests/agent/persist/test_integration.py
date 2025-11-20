@@ -570,13 +570,18 @@ async def test_error_handling_and_data_validation(tmp_path: Path, test_agent: st
     persist = SQLitePersistence(db_path)
     await persist.ensure_schema()
 
-    # Create a test agent
-    async with persist._db_connection() as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO agents (id, created_at, specs, metadata) VALUES (?, ?, ?, ?)",
-            (test_agent, datetime.now(UTC).isoformat(), "{}", None),
+    # Create a test agent using ORM
+    from adgn.agent.persist.models import Agent
+
+    async with persist._session() as session:
+        agent = Agent(
+            id=test_agent,
+            created_at=datetime.now(UTC),
+            mcp_config={},
+            preset="test",
         )
-        await db.commit()
+        session.add(agent)
+        await session.commit()
 
     # First, save a valid record
     valid_record = ToolCallRecord(
@@ -590,40 +595,43 @@ async def test_error_handling_and_data_validation(tmp_path: Path, test_agent: st
     await persist.save_tool_call(valid_record)
 
     # Test 1: Manually corrupt the JSON in the database
-    async with persist._open() as db:
-        await db.execute(
-            "UPDATE tool_calls SET tool_call_json = ? WHERE call_id = ?", ('{"invalid json syntax', "valid-call")
+    from sqlalchemy import text
+
+    async with persist._session() as session:
+        await session.execute(
+            text("UPDATE tool_calls SET tool_call_json = :json WHERE call_id = :call_id"),
+            {"json": '{"invalid json syntax', "call_id": "valid-call"},
         )
-        await db.commit()
+        await session.commit()
 
     # Attempting to retrieve should raise an error
     with pytest.raises(Exception):  # Could be JSONDecodeError or Pydantic validation error
         await persist.get_tool_call("valid-call")
 
     # Test 2: Insert record with missing required field in JSON
-    async with persist._open() as db:
+    async with persist._session() as session:
         # Insert a record missing the 'name' field in tool_call
-        await db.execute(
-            """
+        await session.execute(
+            text("""
             INSERT INTO tool_calls (
                 call_id, run_id, agent_id, tool_call_json,
                 decision_json, execution_json,
                 created_at, decided_at, completed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "missing-field",
-                None,
-                test_agent,
-                '{"call_id": "missing-field"}',  # Missing 'name' field
-                None,
-                None,
-                datetime.now(UTC).isoformat(),
-                None,
-                None,
-            ),
+            ) VALUES (:call_id, :run_id, :agent_id, :tool_call_json, :decision_json, :execution_json, :created_at, :decided_at, :completed_at)
+            """),
+            {
+                "call_id": "missing-field",
+                "run_id": None,
+                "agent_id": test_agent,
+                "tool_call_json": '{"call_id": "missing-field"}',  # Missing 'name' field
+                "decision_json": None,
+                "execution_json": None,
+                "created_at": datetime.now(UTC).isoformat(),
+                "decided_at": None,
+                "completed_at": None,
+            },
         )
-        await db.commit()
+        await session.commit()
 
     # Attempting to retrieve should raise a validation error
     with pytest.raises(Exception):  # Pydantic ValidationError
@@ -634,28 +642,28 @@ async def test_error_handling_and_data_validation(tmp_path: Path, test_agent: st
     assert result is None
 
     # Test 4: Test with malformed timestamp
-    async with persist._open() as db:
-        await db.execute(
-            """
+    async with persist._session() as session:
+        await session.execute(
+            text("""
             INSERT INTO tool_calls (
                 call_id, run_id, agent_id, tool_call_json,
                 decision_json, execution_json,
                 created_at, decided_at, completed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "bad-timestamp",
-                None,
-                test_agent,
-                '{"name": "tool", "call_id": "bad-timestamp"}',
-                '{"outcome": "policy_allow", "decided_at": "not-a-timestamp", "reason": null}',
-                None,
-                datetime.now(UTC).isoformat(),
-                "not-a-timestamp",  # Invalid timestamp
-                None,
-            ),
+            ) VALUES (:call_id, :run_id, :agent_id, :tool_call_json, :decision_json, :execution_json, :created_at, :decided_at, :completed_at)
+            """),
+            {
+                "call_id": "bad-timestamp",
+                "run_id": None,
+                "agent_id": test_agent,
+                "tool_call_json": '{"name": "tool", "call_id": "bad-timestamp"}',
+                "decision_json": '{"outcome": "policy_allow", "decided_at": "not-a-timestamp", "reason": null}',
+                "execution_json": None,
+                "created_at": datetime.now(UTC).isoformat(),
+                "decided_at": "not-a-timestamp",  # Invalid timestamp
+                "completed_at": None,
+            },
         )
-        await db.commit()
+        await session.commit()
 
     # Attempting to retrieve should raise an error
     with pytest.raises(Exception):  # Could be ValueError or Pydantic validation error
