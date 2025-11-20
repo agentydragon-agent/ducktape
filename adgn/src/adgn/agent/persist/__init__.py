@@ -76,7 +76,6 @@ class RunRow(BaseModel):
     system_message: str | None
     model: str | None
     model_params: dict[str, JsonValue] | None
-    event_count: int
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -128,7 +127,7 @@ class ToolCallRecord(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-from .events import EventRecord  # noqa: E402
+from .events import EventRecord, TypedPayload  # noqa: E402
 
 
 class Persistence(Protocol):
@@ -166,7 +165,7 @@ class Persistence(Protocol):
         seq: int,
         ts: datetime,
         type: EventType,
-        payload: dict[str, JsonValue],
+        payload: TypedPayload,
         call_id: str | None = None,
         tool_key: str | None = None,
     ) -> None: ...
@@ -199,8 +198,8 @@ class Persistence(Protocol):
     async def set_policy(self, agent_id: AgentID, *, content: str) -> int: ...
 
     # Approval policy proposals (single store impl: SQLite)
-    async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: str, content: str) -> None: ...
+    async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: int, content: str) -> None: ...
     async def list_policy_proposals(self, agent_id: AgentID) -> list[PolicyProposal]: ...
-    async def get_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> PolicyProposal | None: ...
-    async def approve_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> int: ...
-    async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None: ...
+    async def get_policy_proposal(self, agent_id: AgentID, proposal_id: int) -> PolicyProposal | None: ...
+    async def approve_policy_proposal(self, agent_id: AgentID, proposal_id: int) -> int: ...
+    async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: int) -> None: ...

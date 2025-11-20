@@ -119,9 +119,6 @@ class LocalAgentRuntime:
             ui_bus=self._ui_bus,
         )
 
-        # Add extra handlers if provided
-        all_handlers = list(handlers) + self._extra_handlers
-
         # Set persist handler on session
         sess.set_persist_handler(persist_handler)
 
@@ -141,7 +138,7 @@ class LocalAgentRuntime:
             mcp_client=self.running.compositor_client,
             system=base_system,
             client=client,
-            handlers=all_handlers,
+            handlers=list(handlers) + self._extra_handlers,
             dynamic_instructions=_dynamic_instructions,
             reasoning_effort=self._reasoning_effort,
             reasoning_summary=self._reasoning_summary,

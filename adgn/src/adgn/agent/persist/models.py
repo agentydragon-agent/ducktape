@@ -7,10 +7,45 @@ All models use native SQLAlchemy types with no custom serialization.
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from adgn.agent.types import AgentID
+
+
+# Define enums inline to avoid circular imports
+# These match the enums in __init__.py
+class PersistenceRunStatus(StrEnum):
+    """Final run state stored in persistence layer."""
+    RUNNING = "running"
+    FINISHED = "finished"
+    ERROR = "error"
+    ABORTED = "aborted"
+
+
+class EventType(StrEnum):
+    USER_TEXT = "user_text"
+    ASSISTANT_TEXT = "assistant_text"
+    TOOL_CALL = "tool_call"
+    FUNCTION_CALL_OUTPUT = "function_call_output"
+    REASONING = "reasoning"
+    RESPONSE = "response"
+
+
+class PolicyStatus(StrEnum):
+    ACTIVE = "active"
+    SUPERSEDED = "superseded"
+    PROPOSED = "proposed"
+    REJECTED = "rejected"
+
+
+class ChatAuthor(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
 
 
 class Base(DeclarativeBase):
@@ -28,8 +63,8 @@ class Agent(Base):
 
     __tablename__ = "agents"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    id: Mapped[AgentID] = mapped_column(String, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     mcp_config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)  # MCPConfig as JSON
     preset: Mapped[str] = mapped_column(String, nullable=False)  # AgentMetadata.preset
 
@@ -54,15 +89,14 @@ class Run(Base):
 
     __tablename__ = "runs"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)  # UUID as string
-    agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
+    id: Mapped[UUID] = mapped_column(String, primary_key=True)  # UUID stored as string
+    agent_id: Mapped[AgentID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False)  # RunStatus enum value
+    status: Mapped[PersistenceRunStatus] = mapped_column(String, nullable=False)
     system_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
     model_params: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    event_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Relationships
     agent: Mapped["Agent | None"] = relationship(back_populates="runs")
@@ -84,10 +118,10 @@ class Event(Base):
     __tablename__ = "events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
     seq: Mapped[int] = mapped_column(Integer, nullable=False)  # Sequence number within run
     event_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    type: Mapped[str] = mapped_column(String, nullable=False)  # EventType enum value
+    type: Mapped[EventType] = mapped_column(String, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)  # Typed payload per EventType
     call_id: Mapped[str | None] = mapped_column(String, nullable=True)  # For tool call correlation
     tool_key: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -111,12 +145,12 @@ class ToolCall(Base):
     __tablename__ = "tool_calls"
 
     call_id: Mapped[str] = mapped_column(String, primary_key=True)
-    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=True)
-    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=True)
+    agent_id: Mapped[AgentID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
     tool_call_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)  # ToolCall as JSON
     decision_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # Decision as JSON
     execution_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # ToolCallExecution as JSON
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -147,10 +181,10 @@ class Policy(Base):
     __tablename__ = "policies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    agent_id: Mapped[AgentID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)  # active|proposed|rejected|superseded (PolicyStatus)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[PolicyStatus] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
@@ -173,10 +207,10 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    agent_id: Mapped[AgentID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    author: Mapped[str] = mapped_column(String, nullable=False)
-    mime: Mapped[str] = mapped_column(String, nullable=False)
+    author: Mapped[ChatAuthor] = mapped_column(String, nullable=False)
+    mime: Mapped[str] = mapped_column(String, nullable=False)  # Keep as str (text/markdown, text/plain, etc.)
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Relationships
@@ -193,7 +227,7 @@ class ChatLastRead(Base):
 
     __tablename__ = "chat_last_read"
 
-    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), primary_key=True)
+    agent_id: Mapped[AgentID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), primary_key=True)
     server_name: Mapped[str] = mapped_column(String, primary_key=True)
     last_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

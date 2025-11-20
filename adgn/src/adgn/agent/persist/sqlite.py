@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastmcp.mcp_config import MCPConfig
 from pydantic import JsonValue
-from sqlalchemy import select, update, delete
+from sqlalchemy import event, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine, async_sessionmaker
 
 from adgn.agent.models.proposal_status import ProposalStatus
@@ -28,6 +28,7 @@ from . import (
     RunRow,
     ToolCall,
     ToolCallExecution,
+    TypedPayload,
     ToolCallRecord,
 )
 from .events import EventRecord, parse_event
@@ -49,8 +50,6 @@ class SQLitePersistence(Persistence):
             connect_args={"check_same_thread": False},
         )
         self.async_session_maker = async_sessionmaker(self.engine, expire_on_commit=False)
-
-        from sqlalchemy import event
 
         @event.listens_for(self.engine.sync_engine, "connect")
         def enable_foreign_keys(dbapi_conn, connection_record):
@@ -128,7 +127,7 @@ class SQLitePersistence(Persistence):
                 meta_val = AgentMetadata(preset=agent.preset)
                 out.append(
                     AgentRow(
-                        id=AgentID(agent.id),
+                        id=agent.id,
                         created_at=agent.created_at,
                         mcp_config=MCPConfig.model_validate(agent.mcp_config) if agent.mcp_config else MCPConfig(),
                         metadata=meta_val,
@@ -144,7 +143,7 @@ class SQLitePersistence(Persistence):
                 return None
             meta_val = AgentMetadata(preset=agent.preset)
             return AgentRow(
-                id=AgentID(agent.id),
+                id=agent.id,
                 created_at=agent.created_at,
                 mcp_config=MCPConfig.model_validate(agent.mcp_config) if agent.mcp_config else MCPConfig(),
                 metadata=meta_val,
@@ -189,7 +188,7 @@ GROUP BY a.id
         async with self._session() as session:
             result = await session.execute(
                 select(Policy)
-                .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE.value)
+                .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE)
                 .order_by(Policy.id.desc())
                 .limit(1)
             )
@@ -204,13 +203,13 @@ GROUP BY a.id
             # Mark existing ACTIVE policy as SUPERSEDED
             await session.execute(
                 update(Policy)
-                .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE.value)
-                .values(status=PolicyStatus.SUPERSEDED.value)
+                .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE)
+                .values(status=PolicyStatus.SUPERSEDED)
             )
             policy = Policy(
                 agent_id=agent_id,
                 content=content,
-                status=PolicyStatus.ACTIVE.value,
+                status=PolicyStatus.ACTIVE,
                 created_at=_now(),
                 decided_at=_now(),
             )
@@ -220,11 +219,10 @@ GROUP BY a.id
             return policy.id
 
     # ---- Policy proposals (single-store: SQLite) ----------------------------
-    async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: str, content: str) -> None:
+    async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: int, content: str) -> None:
         async with self._session() as session:
-            # Use proposal_id as the policy id (stored as string in old schema, but new schema uses int autoincrement)
-            # We need to handle this carefully - let's store the proposal with PROPOSED status
-            # The proposal_id from the old API is not used as the primary key in new schema
+            # proposal_id is provided but new schema uses autoincrement
+            # Store the proposal with PROPOSED status
             policy = Policy(
                 agent_id=agent_id,
                 content=content,
@@ -256,15 +254,10 @@ GROUP BY a.id
                 )
         return out
 
-    async def get_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> PolicyProposal | None:
+    async def get_policy_proposal(self, agent_id: AgentID, proposal_id: int) -> PolicyProposal | None:
         async with self._session() as session:
-            # proposal_id is now an integer in new schema
-            try:
-                policy_id = int(proposal_id)
-            except ValueError:
-                return None
             result = await session.execute(
-                select(Policy).where(Policy.id == policy_id, Policy.agent_id == agent_id)
+                select(Policy).where(Policy.id == proposal_id, Policy.agent_id == agent_id)
             )
             policy = result.scalar_one_or_none()
             if not policy:
@@ -277,19 +270,14 @@ GROUP BY a.id
                 content=policy.content,
             )
 
-    async def approve_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> int:
+    async def approve_policy_proposal(self, agent_id: AgentID, proposal_id: int) -> int:
         """Mark proposal approved and make it the active policy.
 
         Returns the new active policy id.
         """
         async with self._session() as session:
-            try:
-                policy_id = int(proposal_id)
-            except ValueError:
-                raise KeyError("proposal_not_found")
-
             result = await session.execute(
-                select(Policy).where(Policy.id == policy_id, Policy.agent_id == agent_id)
+                select(Policy).where(Policy.id == proposal_id, Policy.agent_id == agent_id)
             )
             policy = result.scalar_one_or_none()
             if not policy:
@@ -298,26 +286,21 @@ GROUP BY a.id
             # Mark existing ACTIVE policies as SUPERSEDED
             await session.execute(
                 update(Policy)
-                .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE.value)
-                .values(status=PolicyStatus.SUPERSEDED.value)
+                .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE)
+                .values(status=PolicyStatus.SUPERSEDED)
             )
 
             # Mark proposal as ACTIVE
-            policy.status = PolicyStatus.ACTIVE.value
+            policy.status = PolicyStatus.ACTIVE
             policy.decided_at = _now()
             await session.commit()
             return policy.id
 
-    async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None:
+    async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: int) -> None:
         async with self._session() as session:
-            try:
-                policy_id = int(proposal_id)
-            except ValueError:
-                return
-
             await session.execute(
                 update(Policy)
-                .where(Policy.id == policy_id, Policy.agent_id == agent_id)
+                .where(Policy.id == proposal_id, Policy.agent_id == agent_id)
                 .values(status=ProposalStatus.REJECTED, decided_at=_now())
             )
             await session.commit()
@@ -335,15 +318,14 @@ GROUP BY a.id
     ) -> None:
         async with self._session() as session:
             run = Run(
-                id=str(run_id),
+                id=run_id,
                 agent_id=agent_id,
                 started_at=started_at,
                 finished_at=None,
-                status=PersistenceRunStatus.RUNNING.value,
+                status=PersistenceRunStatus.RUNNING,
                 system_message=system_message,
                 model=model,
                 model_params=model_params,
-                event_count=0,
             )
             session.add(run)
             await session.commit()
@@ -352,8 +334,8 @@ GROUP BY a.id
         async with self._session() as session:
             await session.execute(
                 update(Run)
-                .where(Run.id == str(run_id))
-                .values(status=status.value, finished_at=finished_at)
+                .where(Run.id == run_id)
+                .values(status=status, finished_at=finished_at)
             )
             await session.commit()
 
@@ -364,30 +346,28 @@ GROUP BY a.id
         seq: int,
         ts: datetime,
         type: EventType,
-        payload: dict[str, JsonValue],
+        payload: TypedPayload,
         call_id: str | None = None,
         tool_key: str | None = None,
     ) -> None:
+        # Serialize TypedPayload to dict for persistence
+        payload_dict = payload.model_dump(mode="json", exclude_none=True)
         # Apply hard limit per event payload (serialized JSON)
-        s = json.dumps(payload, ensure_ascii=False)
+        s = json.dumps(payload_dict, ensure_ascii=False)
         if len(s.encode("utf-8")) > MAX_EVENT_PAYLOAD_BYTES:
             raise ValueError(f"event payload exceeds {MAX_EVENT_PAYLOAD_BYTES} bytes")
 
         async with self._session() as session:
             event = Event(
-                run_id=str(run_id),
+                run_id=run_id,
                 seq=seq,
                 event_at=ts,
-                type=type.value,
-                payload=payload,
+                type=type,
+                payload=payload_dict,
                 call_id=call_id,
                 tool_key=tool_key,
             )
             session.add(event)
-            # Increment event count
-            await session.execute(
-                update(Run).where(Run.id == str(run_id)).values(event_count=Run.event_count + 1)
-            )
             await session.commit()
 
     async def list_runs(self, *, agent_id: AgentID | None = None, limit: int = 50) -> list[RunRow]:
@@ -400,58 +380,57 @@ GROUP BY a.id
             result = await session.execute(query)
             runs = result.scalars().all()
 
-            out: list[RunRow] = []
-            for run in runs:
-                out.append(
-                    RunRow(
-                        id=UUID(run.id),
-                        agent_id=AgentID(run.agent_id),
-                        started_at=run.started_at,
-                        finished_at=run.finished_at,
-                        status=PersistenceRunStatus(run.status),
-                        system_message=run.system_message,
-                        model=run.model,
-                        model_params=run.model_params,
-                        event_count=run.event_count,
-                    )
+            return [
+                RunRow(
+                    id=run.id,
+                    agent_id=run.agent_id,
+                    started_at=run.started_at,
+                    finished_at=run.finished_at,
+                    status=run.status,
+                    system_message=run.system_message,
+                    model=run.model,
+                    model_params=run.model_params,
                 )
-        return out
+                for run in runs
+            ]
 
     async def get_run(self, run_id: UUID) -> RunRow | None:
         async with self._session() as session:
-            result = await session.execute(select(Run).where(Run.id == str(run_id)))
+            result = await session.execute(select(Run).where(Run.id == run_id))
             run = result.scalar_one_or_none()
             if not run:
                 return None
             return RunRow(
-                id=UUID(run.id),
-                agent_id=AgentID(run.agent_id),
+                id=run.id,
+                agent_id=run.agent_id,
                 started_at=run.started_at,
                 finished_at=run.finished_at,
-                status=PersistenceRunStatus(run.status),
+                status=run.status,
                 system_message=run.system_message,
                 model=run.model,
                 model_params=run.model_params,
-                event_count=run.event_count,
             )
 
     async def load_events(self, run_id: UUID) -> list[EventRecord]:
         out: list[EventRecord] = []
         async with self._session() as session:
             result = await session.execute(
-                select(Event).where(Event.run_id == str(run_id)).order_by(Event.seq.asc())
+                select(Event).where(Event.run_id == run_id).order_by(Event.seq.asc())
             )
             events = result.scalars().all()
             for event in events:
-                row_dict = {
-                    "seq": event.seq,
-                    "ts": event.event_at,  # Map event_at back to ts for compatibility
-                    "type": event.type,
-                    "payload": event.payload,
-                    "call_id": event.call_id,
-                    "tool_key": event.tool_key,
-                }
-                out.append(parse_event(row_dict))
+                out.append(
+                    parse_event(
+                        {
+                            "seq": event.seq,
+                            "ts": event.event_at,
+                            "type": event.type,
+                            "payload": event.payload,
+                            "call_id": event.call_id,
+                            "tool_key": event.tool_key,
+                        }
+                    )
+                )
         return out
 
     # Tool Calls (new ToolCallRecord persistence) --------------------------------
