@@ -9,6 +9,7 @@ This specimen captures code quality findings in the adgn agent codebase, focusin
 - **001**: Normalization function for type that cannot occur (`_normalize_call_arguments`)
 - **002**: Unused `--ui-port` flag misleads users about non-existent Management UI
 - **003**: Silent failure when `--mcp-config` or `--initial-policy` file doesn't exist
+- **004**: `AgentEntry` should be a dataclass
 
 See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations.
 
