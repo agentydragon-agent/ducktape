@@ -1,14 +1,23 @@
-# GNOME workspace switching shortcuts and extensions configuration
-# Configures Ctrl+Alt+Up/Down for workspace switching with vertical-workspaces extension
+# GNOME workspace switching shortcuts configuration
+# Configures Ctrl+Alt+Up/Down for workspace switching using GNOME's native vertical shortcuts
 {pkgs, ...}: {
-  # Install vertical-workspaces extension
+  # Note: V-Shell package included but extension disabled to avoid conflicts
   home.packages = with pkgs; [
-    gnomeExtensions.vertical-workspaces # ID 5177: V-Shell (Vertical Workspaces)
+    gnomeExtensions.vertical-workspaces # ID 5177: V-Shell (available but not enabled)
   ];
 
   dconf.settings = {
+    # Configure enabled extensions to avoid workspace conflicts
+    "org/gnome/shell" = {
+      disabled-extensions = [
+        "vertical-workspaces@G-dH.github.com"  # Available but disabled to avoid conflicts
+        "cosmic-workspaces@system76.com"       # Conflicts with workspace shortcuts
+        "pop-cosmic@system76.com"              # Causes JS errors with other extensions
+      ];
+    };
+
     # Pop!_OS workspace shortcuts workaround
-    # Clear Pop!_OS defaults to free up Ctrl+Alt+↑/↓ and enable WM keybindings
+    # Clear Pop!_OS defaults to free up Ctrl+Alt+↑/↓ for GNOME's native shortcuts
     "org/gnome/shell/extensions/pop-shell" = {
       pop-workspace-up = [];
       pop-workspace-down = [];
@@ -16,24 +25,29 @@
       pop-monitor-right = [];
       pop-monitor-up = [];
       pop-monitor-down = [];
-      # Enable WM keybindings so our workspace shortcuts work
-      key-bindings = true;
     };
 
-    # Clear GNOME vertical workspace shortcuts and set horizontal ones
-    "org/gnome/desktop/wm/keybindings" = {
-      # Clear vertical workspace shortcuts (used by extensions like vertical-workspaces)
-      switch-to-workspace-up = [];
-      switch-to-workspace-down = [];
-      move-to-workspace-up = [];
-      move-to-workspace-down = [];
+    # Clear cosmic-dock conflicting shortcuts that interfere with workspace switching
+    "org/gnome/shell/extensions/dash-to-dock" = {
+      app-hotkey-1 = [];
+      # Clear other potential conflicts if needed
+      hot-keys = false;
+    };
 
-      # Set horizontal workspace shortcuts to Ctrl+Alt+(Shift+)↑/↓
-      # These work with both horizontal and vertical workspace layouts
-      switch-to-workspace-left = ["<Primary><Alt>Up"];
-      switch-to-workspace-right = ["<Primary><Alt>Down"];
-      move-to-workspace-left = ["<Primary><Shift><Alt>Up"];
-      move-to-workspace-right = ["<Primary><Shift><Alt>Down"];
+    # Use GNOME's vertical workspace shortcuts (working configuration)
+    "org/gnome/desktop/wm/keybindings" = {
+      # Clear horizontal workspace shortcuts
+      switch-to-workspace-left = [];
+      switch-to-workspace-right = [];
+      move-to-workspace-left = [];
+      move-to-workspace-right = [];
+
+      # Set vertical workspace shortcuts to Ctrl+Alt+(Shift+)↑/↓
+      # This matches the working configuration
+      switch-to-workspace-up = ["<Primary><Alt>Up"];
+      switch-to-workspace-down = ["<Primary><Alt>Down"];
+      move-to-workspace-up = ["<Primary><Shift><Alt>Up"];
+      move-to-workspace-down = ["<Primary><Shift><Alt>Down"];
     };
   };
 }
