@@ -1,20 +1,31 @@
-# Scan: Duplicated Test Fixtures, Setup, and Matchers
+# Scan: Duplicated Code Patterns
 
 ## Context
 @../shared-context.md
 
 ## Overview
 
-Tests often accumulate duplicated code - identical or nearly-identical fixtures, setup logic, assertion patterns, and custom matchers. This scan identifies opportunities to extract shared test infrastructure to reduce maintenance burden and improve consistency.
+Codebases accumulate duplicated code across all domains:
+- **Test code**: Identical fixtures, setup logic, assertion patterns, custom matchers
+- **Production code**: Repeated business logic, data transformations, validation patterns
+- **Utilities**: Similar helper functions with slight variations
+- **Configuration**: Duplicated setup/teardown patterns
+
+This scan identifies opportunities to extract shared implementations to reduce maintenance burden and improve consistency.
 
 ## Core Principle
 
-**DRY in test code matters**: While test clarity sometimes justifies local duplication, systematic patterns should be factored into shared fixtures, conftest.py helpers, or custom matchers.
+**DRY (Don't Repeat Yourself) matters**: While local clarity sometimes justifies duplication, systematic patterns should be factored into shared implementations.
 
 **Balance**: Prefer local clarity over premature abstraction, but extract when:
-- Pattern appears 3+ times across different test modules
-- Setup logic is complex and error-prone to duplicate
-- Assertion pattern needs to evolve consistently
+- Pattern appears 3+ times across different modules
+- Logic is complex and error-prone to duplicate
+- Pattern needs to evolve consistently
+- Changes require updating multiple locations
+
+## Test Code Duplication (Primary Focus)
+
+Test code is particularly prone to duplication. While test clarity sometimes justifies local duplication, systematic patterns should be factored into shared fixtures, conftest.py helpers, or custom matchers.
 
 ## Pattern 1: Duplicated Fixtures
 
@@ -511,6 +522,54 @@ it('should require rejection reason to be non-empty', async () => {
 - **Reduced duplication**: 5 tests × 10 lines = 50 lines → 5 tests × 1 line = 5 lines
 
 ## Detection Strategy
+
+**MANDATORY Step 0**: Run duplication detection tools on the entire codebase.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL duplication candidates using your intelligence
+- High recall required, high precision NOT required - you determine which duplications warrant extraction
+- Review each for: duplication count (3+ instances?), complexity, likelihood of divergent evolution
+- Prevents lazy analysis by forcing examination of ALL concrete duplication candidates
+
+```bash
+# 1. Run jscpd to find duplicated code blocks (works for Python, JavaScript, etc.)
+jscpd . --min-lines 5 --min-tokens 30 --format "json" > duplication_report.json
+
+# View jscpd summary
+cat duplication_report.json | jq '.statistics'
+
+# View duplicated blocks with locations
+cat duplication_report.json | jq '.duplicates[] | {format, lines, tokens, firstFile: .firstFile.name, firstStart: .firstFile.start, secondFile: .secondFile.name, secondStart: .secondFile.start}'
+
+# 2. Find most common line.strip() strings (often indicates duplicated assertions/logic)
+# Extract all non-empty, non-comment lines, strip whitespace, count frequency
+rg --type py --no-heading --no-filename '^[[:space:]]*[^#].*\S' | \
+  sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | \
+  sort | uniq -c | sort -rn | head -50
+
+# 3. Find exact line matches with file:line locations (top 20 most common)
+rg --type py --no-heading '^[[:space:]]*[^#].*\S' | \
+  sed 's/^\([^:]*\):\([0-9]*\):[[:space:]]*\(.*\)/\3|\1:\2/' | \
+  awk -F'|' '{lines[$1] = lines[$1] $2 ", "} END {for (line in lines) print length(lines[line]), line, substr(lines[line], 1, length(lines[line])-2)}' | \
+  sort -rn | head -20
+```
+
+**What to review from jscpd output**:
+1. **Duplication count**: Does block appear 3+ times?
+2. **Complexity**: Is it complex enough to warrant extraction (5+ lines, not trivial)?
+3. **Consistency**: Should changes propagate consistently?
+4. **Domain**: Test fixtures, business logic, validation, utilities?
+5. **Evolution**: Will these likely evolve together or diverge?
+
+**What to review from common line patterns**:
+1. **Test assertions**: Same assertion pattern across multiple tests?
+2. **Setup/teardown**: Repeated initialization/cleanup?
+3. **Validation**: Same validation logic duplicated?
+4. **Data transformation**: Same transformation pattern?
+
+**Process ALL output**: Read each duplication candidate, use your judgment to identify extraction opportunities.
+
+---
 
 ### 1. AST-Based Detection (Most Reliable)
 

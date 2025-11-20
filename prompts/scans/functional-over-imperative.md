@@ -130,6 +130,36 @@ active_ids = [item.id for item in items if item.is_active]
 
 ## Detection Strategy
 
+**MANDATORY Step 0**: Discover ALL for-loops and .append usage in the codebase.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL for-loop and .append output using your intelligence
+- High recall required, high precision NOT required - you determine which are imperative antipatterns
+- Review each for: simple transformation/filtering only, no side effects, fits in 1-2 lines
+- Prevents lazy analysis by forcing examination of ALL loop-based list building
+
+```bash
+# Find ALL for-loops (with up to 10 lines of context to see body)
+rg --type py '^[[:space:]]*for ' -A 10 --line-number
+
+# Find ALL .append usage with context
+rg --type py '\.append\(' -B 1 -A 1 --line-number
+
+# Find ALL .extend usage with context (less common but worth checking)
+rg --type py '\.extend\(' -B 1 -A 1 --line-number
+```
+
+**What to review for each for-loop + .append**:
+1. **Is it just building a list?** Only transformation/filtering, no side effects
+2. **Are there side effects?** I/O operations, mutations, calls with side effects
+3. **Is the logic simple enough?** Fits in 1-2 lines as a comprehension
+4. **Early termination?** Has break/continue with complex conditions
+5. **Multiple collections?** Building multiple lists/dicts in same loop
+
+**Process ALL output**: Read each loop, use your judgment to identify simple transformation patterns.
+
+---
+
 **Goal**: Find imperative loops that should be functional patterns (high recall ~85%).
 
 **Recall/Precision**: High recall (~85%) with automation, medium precision (~70%)
@@ -141,7 +171,7 @@ active_ids = [item.id for item in items if item.is_active]
 - Easy to identify loop + append/extend
 - Most cases are simple transformations
 
-**Recommended approach**:
+**Recommended approach AFTER Step 0**:
 1. Search for loops with append: `for .* in .*:\n.*\.append\(`
 2. For each candidate, check:
    - **Is it just building a list?** (transformation/filtering only)
