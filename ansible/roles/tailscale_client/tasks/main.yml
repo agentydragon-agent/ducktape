@@ -271,6 +271,20 @@
   changed_when: false
   tags: [tailscale, status]
 
+- name: Ensure --accept-routes is configured (even if already registered)
+  ansible.builtin.shell: |
+    timeout {{ tailscale_up_timeout | default(30) }} \
+      tailscale up \
+        --login-server={{ tailscale_client_headscale_server_url }} \
+        --hostname={{ inventory_hostname }} \
+        --accept-routes
+  become: true
+  register: tailscale_client_ensure_routes
+  changed_when: false
+  failed_when: false
+  when: not (tailscale_client_registration_required | default(true))
+  tags: [tailscale, config]
+
 - name: Display tailscale status
   ansible.builtin.debug:
     var: tailscale_client_status.stdout_lines
