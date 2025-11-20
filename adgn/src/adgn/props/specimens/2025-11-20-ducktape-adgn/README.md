@@ -12,6 +12,8 @@ This specimen captures code quality findings in the adgn agent codebase, focusin
 - **004**: `AgentEntry` should be a dataclass
 - **005**: `get_local_runtime` should use walrus operator to avoid intermediate variable
 - **006**: `PolicyError.stage` should be StrEnum (if field should exist at all)
+- **007**: Unnecessary pre-serialization before persistence (model_dump in multiple locations)
+- **008**: Inline `result_model` variable in `on_tool_result_event`
 
 See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations.
 

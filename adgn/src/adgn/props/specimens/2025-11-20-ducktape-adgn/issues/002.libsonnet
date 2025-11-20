@@ -1,29 +1,6 @@
 local I = import '../../specimens/lib.libsonnet';
 
 // iss-002: Unused --ui-port flag misleads users about non-existent Management UI
-//
-// Context:
-// - CLI defines --ui-port flag (cli.py:63) with help text "Management UI port (WebSocket channels, no token auth)"
-// - In single-agent mode: ui-port is completely unused (no UI app created at all)
-// - In multi-agent mode: ui-port binds a stub FastAPI app that:
-//   - Has /ws/mcp WebSocket endpoint that returns "not_implemented" (server.py:287-289)
-//   - Has /api/agents endpoint that delegates to MCP server
-//   - Has NO web frontend (no HTML/JS/Svelte files)
-// - Log messages mislead users (cli.py:160-161):
-//   - "Management UI: http://{host}:{ui_port}" - implies functional UI exists
-//   - "MCP: ws://{host}:{ui_port}/ws/mcp" - wrong protocol (MCP uses SSE not WebSocket)
-//
-// The flag is only functionally used to bind uvicorn server (cli.py:166), but the
-// server serves nothing useful - just stubs and proxies to the real MCP server.
-//
-// Properties violated:
-// 1. no-dead-code: Flag accepted but serves no real purpose (stub functionality only)
-// 2. truthfulness: CLI help and log messages mislead about Management UI existence
-// 3. least-power: Creates unnecessary separation (two ports) when one would suffice
-//
-// Fix: Remove --ui-port flag entirely. Either:
-//   - Implement the Management UI with proper frontend, or
-//   - Remove the stub and serve all endpoints on mcp-port
 
 I.issueOneOccurrence(
   rationale=|||

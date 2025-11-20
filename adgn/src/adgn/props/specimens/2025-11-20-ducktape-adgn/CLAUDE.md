@@ -47,21 +47,12 @@ README.md should contain:
 
 ### 3. Jsonnet Issue File Template
 
+**IMPORTANT**: Keep comments MINIMAL. Use only a one-line title comment. All details belong in the structured fields (`rationale`, `properties`, `filesToRanges`).
+
 ```jsonnet
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-NNN: Brief title
-//
-// Context:
-// - Background information
-// - Why this code exists
-// - What makes it problematic
-//
-// Properties violated:
-// 1. property-id: Explanation
-// 2. property-id: Explanation
-//
-// Fix: Recommended solution
+// iss-NNN: Brief one-line title
 
 I.issueOneOccurrence(
   rationale=|||
@@ -69,45 +60,55 @@ I.issueOneOccurrence(
 
     Why it's wrong and what the correct approach should be.
     Include specific details, code patterns, and reasoning.
+
+    All context, properties violated, fix recommendations go HERE,
+    not in top-of-file comment blocks.
   |||,
   properties=['property-id', 'category/property-id'],
   filesToRanges={
     'path/to/file.py': [
-      123,              // Single line with comment explaining context
-      [200, 210],       // Range with comment
+      123,              // Single line with brief context
+      [200, 210],       // Range with brief note
     ],
     'other/file.py': [
-      [45, 50],         // Multiple locations for same issue
+      [45, 50],         // Multiple locations OK
     ],
   },
   gap_note=|||
-    Optional note about missing/unclear properties that should exist.
-    Used when issue is partially covered but lacks precise property definition.
+    Optional: Missing/unclear properties that should exist.
   |||,
 )
 ```
 
-### 4. Comments in Jsonnet
+### 4. Comments: What's Allowed vs Duplication
 
-**Inline comments at line ranges are encouraged:**
+**✅ ALLOWED - Inline comments at line ranges:**
 ```jsonnet
 filesToRanges={
   'foo.py': [
-    [86, 89],   // --mcp-config: silent fallback to empty config
-    [92, 93],   // --initial-policy: same pattern, should crash
+    [86, 89],   // --mcp-config: silent fallback
+    [92, 93],   // --initial-policy: same pattern
   ],
 }
 ```
+These are brief labels helping locate code quickly. Not duplication.
 
-**Top-of-file comments provide context:**
+**❌ FORBIDDEN - Large top-of-file comment blocks:**
 ```jsonnet
 // Context:
 // - User provides --mcp-config path
 // - Code checks if file exists
 // - If not: silently falls back without error
+//
+// Properties violated:
+// 1. truthfulness: Silent failure masks error
+// 2. no-swallowing-errors: Error ignored
+//
+// Fix: Remove exists() check or raise error
 ```
+This duplicates the `rationale` field. **Delete these blocks.**
 
-These are **implementation details** that help readers understand the Jsonnet structure. They are not the same as duplicating the full rationale in README.md.
+**Rule**: If information appears in structured fields (`rationale`, `properties`, `gap_note`), do NOT repeat it in comments.
 
 ### 5. When to Use GAP Notes
 

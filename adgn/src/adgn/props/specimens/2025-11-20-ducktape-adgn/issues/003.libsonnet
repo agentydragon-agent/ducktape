@@ -1,40 +1,6 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-003: Silent failure when --mcp-config file doesn't exist
-//
-// Context:
-// - User provides --mcp-config path/to/file.json (cli.py:59)
-// - Code checks if file exists (cli.py:86)
-// - If file doesn't exist: silently falls back to empty config (cli.py:89)
-// - No error message, no notification
-// - Server starts with no MCP servers, user assumes config was loaded
-//
-// Problem:
-// When user explicitly provides a config file path, non-existence likely indicates:
-// - Typo in path
-// - File moved/deleted
-// - Wrong working directory
-//
-// Silently ignoring the error and starting with empty config masks the problem.
-// User won't discover their config wasn't loaded until they notice servers missing.
-//
-// Correct behaviors (user's guidance):
-// Option 1: Don't handle non-existent file at all - let it crash naturally
-//   - Remove exists() check
-//   - Let FileNotFoundError propagate (with clear traceback showing path)
-//   - Fast-fail at startup (don't start server with wrong config)
-//
-// Option 2: Explicitly report error and exit (nice CLI behavior)
-//   - if mcp_config and not mcp_config.exists():
-//       raise click.UsageError(f"MCP config file not found: {mcp_config}")
-//   - Clear, actionable error message
-//
-// Note: initial_policy has the same pattern (cli.py:92-93) - same issue applies
-//
-// Properties violated:
-// 1. truthfulness: Silent failure masks error from user
-// 2. no-swallowing-errors: Error condition ignored without notification
-// 3. least-power: Defensive check adds complexity without benefit
+// iss-003: Silent failure when --mcp-config or --initial-policy file doesn't exist
 
 I.issueOneOccurrence(
   rationale=|||

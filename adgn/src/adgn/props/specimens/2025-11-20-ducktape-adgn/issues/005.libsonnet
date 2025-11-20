@@ -1,27 +1,6 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-005: get_local_runtime should use walrus operator to avoid intermediate variable
-//
-// Context:
-// - Method retrieves agent from registry and conditionally accesses local_runtime
-// - Uses two lines: first assigns to variable, second uses it in ternary
-//
-// Current (server.py:162-163):
-//   agent = self._agents[agent_id].agent
-//   return agent.local_runtime if agent else None
-//
-// Should use walrus operator (PEP 572):
-//   return agent.local_runtime if (agent := self._agents[agent_id].agent) else None
-//
-// Benefits:
-// - Single expression (no intermediate variable)
-// - Clearer intent: assignment scoped to conditional
-// - Follows modern Python idiom for "assign and check" pattern
-//
-// Properties violated:
-// 1. python/walrus: Walrus operator preferred for assign-and-use-once patterns
-// 2. no-oneoff-vars-and-trivial-wrappers: Intermediate variable used only once
-// 3. modern-python-idioms: Walrus is the idiomatic approach (Python 3.8+)
+// iss-005: get_local_runtime should use walrus operator
 
 I.issueOneOccurrence(
   rationale=|||

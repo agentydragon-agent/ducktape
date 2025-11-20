@@ -1,37 +1,6 @@
 local I = import '../../specimens/lib.libsonnet';
 
 // iss-004: AgentEntry should be a dataclass
-//
-// Context:
-// - AgentEntry is a simple data container with three fields (server.py:46-52)
-// - Has only __init__ method, no other methods
-// - Fields: agent (optional), creation_lock, operation_lock
-// - Used as registry entry in defaultdict[AgentID, AgentEntry]
-//
-// Current implementation:
-//   class AgentEntry:
-//       def __init__(self):
-//           self.agent: RunningAgent | None = None
-//           self.creation_lock = asyncio.Lock()
-//           self.operation_lock = asyncio.Lock()
-//
-// Should be dataclass with field() for mutable defaults:
-//   @dataclass
-//   class AgentEntry:
-//       agent: RunningAgent | None = None
-//       creation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-//       operation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-//
-// Properties violated:
-// 1. modern-python-idioms: Dataclasses preferred for data containers (PEP 557)
-// 2. least-power: Manual __init__ more complex than dataclass decorator
-// 3. structured-data-over-untyped-mappings: Dataclass provides better type hints
-//
-// Benefits of dataclass:
-// - Automatic __repr__, __eq__ for free
-// - Type hints visible at class level (not buried in __init__)
-// - field(default_factory=...) handles mutable defaults correctly
-// - Less boilerplate, more declarative
 
 I.issueOneOccurrence(
   rationale=|||
