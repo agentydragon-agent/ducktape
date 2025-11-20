@@ -76,27 +76,6 @@ class PolicyProposal(BaseModel):
     content: str
 
 
-class Policy(BaseModel):
-    """Stored policy with metadata."""
-
-    id: str
-    text: str
-    description: str | None = None
-    enabled: bool = True
-    created_at: datetime
-    updated_at: datetime
-
-
-class PolicyHistoryEntry(BaseModel):
-    """Historical version of a policy."""
-
-    id: int
-    policy_id: str
-    text: str
-    updated_at: datetime
-    updated_by: str | None = None
-
-
 class Decision(BaseModel):
     """Decision made about a tool call.
 
@@ -213,12 +192,3 @@ class Persistence(Protocol):
     async def get_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> PolicyProposal | None: ...
     async def approve_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> int: ...
     async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None: ...
-
-    # Named policies CRUD (policy library) --------------------------------------
-    async def list_policies(self, *, offset: int = 0, limit: int = 100) -> list[Policy]: ...
-    async def get_policy(self, policy_id: str) -> Policy | None: ...
-    async def create_policy(
-        self, *, policy_id: str, text: str, description: str | None = None, enabled: bool = True
-    ) -> Policy: ...
-    async def update_policy(self, policy_id: str, *, text: str, description: str | None = None) -> Policy: ...
-    async def delete_policy(self, policy_id: str) -> None: ...
