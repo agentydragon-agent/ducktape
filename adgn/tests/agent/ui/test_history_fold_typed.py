@@ -44,4 +44,4 @@ def test_fold_events_typed_ui_message() -> None:
     # Expect 2 UI items: user message and assistant markdown
     assert state.items[0].kind == "UserMessage"
     assert state.items[1].kind == "AssistantMarkdown"
-    assert getattr(state.items[1], "md", "") == "**hello**"
+    assert state.items[1].md == "**hello**"

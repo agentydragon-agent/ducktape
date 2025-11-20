@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from hamcrest import assert_that, not_none
 
 from adgn.agent.mcp_bridge.auth import generate_ui_token
 from adgn.agent.mcp_bridge.cli import _run_server
@@ -33,8 +34,8 @@ def test_generate_ui_token_creates_random_token(monkeypatch):
     token2 = generate_ui_token()
 
     # Should be non-empty
-    assert token1
-    assert token2
+    assert_that(token1, not_none())
+    assert_that(token2, not_none())
 
     # Should be different (extremely unlikely to collide)
     assert token1 != token2

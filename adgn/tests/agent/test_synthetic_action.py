@@ -36,4 +36,4 @@ async def test_mini_codex_handles_synthetic_action_without_api_calls(
         res = await agent.run("hi")
         assert res.text.strip() == "hello"
         # MiniCodex uses the protocol method `.responses_create` — ensure we made no API calls.
-        assert getattr(client, "calls", 0) == 0
+        assert client.calls == 0
