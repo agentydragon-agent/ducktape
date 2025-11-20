@@ -159,6 +159,54 @@ def get_user_data(user_id: str) -> User:
 
 ## Detection Strategy
 
+**MANDATORY Step 0**: Discover ALL unions, optionals, and loose type annotations.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL type annotation output using your intelligence
+- High recall required, high precision NOT required - you determine which are overly loose
+- Review each for: necessary looseness vs lazy typing, specific types available, runtime validation
+- Prevents lazy analysis by forcing examination of ALL loose type patterns
+
+```bash
+# Find ALL Union type annotations
+rg --type py '\| ' -B 1 -A 1 --line-number
+
+# Find ALL Optional type annotations
+rg --type py 'Optional\[' -B 1 -A 1 --line-number
+
+# Find ALL Any type annotations
+rg --type py ': Any' -B 1 -A 1 --line-number
+
+# Find dict[str, Any] patterns
+rg --type py 'dict\[str, Any\]' -B 1 -A 1 --line-number
+
+# Find object typing
+rg --type py ': object' -B 1 -A 1 --line-number
+
+# Count totals
+echo "Union types:" && rg --type py '\| ' | wc -l
+echo "Optional types:" && rg --type py 'Optional\[' | wc -l
+echo "Any types:" && rg --type py ': Any' | wc -l
+```
+
+**What to review for each loose type:**
+1. **Can we know the actual type?** Pydantic model, TypedDict, specific union instead of Any?
+2. **Is this from external source?** API response, user input requiring runtime validation?
+3. **Is loose typing justified?** Check library docs, API specs, data source
+4. **Runtime validation present?** isinstance() checks suggest we know the type
+5. **Union too broad?** `str | int | float | bool | None` → probably should be specific
+
+**Process ALL output**: Read each type annotation, use your judgment to identify overly loose patterns.
+
+**Common overly loose patterns to flag:**
+- `param: Any` - "I gave up on types"
+- `-> dict[str, Any]` when returning from Pydantic model (use actual model type)
+- `-> Any` returns - almost always wrong
+- `param: dict[str, Any]` when structure is known (use TypedDict or Pydantic)
+- `Union[str, int, float, ...]` kitchen sink unions (be more specific)
+
+---
+
 **Goal**: Find ALL instances of overly loose typing (100% recall target).
 
 **Recall/Precision**: High recall (~95%) for syntactic patterns, low precision (~30-40%)
@@ -172,7 +220,7 @@ def get_user_data(user_id: str) -> User:
 - `Any` is sometimes needed (typing.Protocol variance, gradual typing migration)
 - Need to understand: Is this loose typing necessary or lazy?
 
-**Recommended approach**:
+**Recommended approach AFTER Step 0**:
 1. Run grep/AST to find ALL candidates (~95% recall, ~30-40% precision)
 2. For each candidate, investigate:
    - **Can we know the actual type?** (Pydantic model, typed dict, specific union)
