@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Callable
 
+from hamcrest import assert_that, has_length
 import pytest
 
 from adgn.agent.agent import MiniCodex
@@ -55,7 +56,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
                 break
             await asyncio.sleep(0.05)
         pending = approval_hub._requests
-        assert len(pending) == 1, f"Expected 1 pending approval, got {len(pending)}"
+        assert_that(pending, has_length(1), f"Expected 1 pending approval, got {len(pending)}")
 
         # Get the call_id from the pending approval
         call_id = next(iter(pending.keys()))

@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from hamcrest import assert_that, not_none
+from hamcrest import assert_that, not_none, has_length, greater_than_or_equal_to, has_item, contains_string
 
 from adgn.agent.mcp_bridge.auth import generate_ui_token
 from adgn.agent.mcp_bridge.cli import _run_server
@@ -41,8 +41,10 @@ def test_generate_ui_token_creates_random_token(monkeypatch):
     assert token1 != token2
 
     # Should be URL-safe base64 (32 bytes = ~43 characters)
-    assert len(token1) >= 40
-    assert all(c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" for c in token1)
+    assert_that(token1, has_length(greater_than_or_equal_to(40)))
+    # All characters should be URL-safe base64
+    for c in token1:
+        assert c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 
 def test_generate_ui_token_respects_env_var(monkeypatch):
@@ -129,7 +131,7 @@ async def test_cli_single_agent_mode_no_ui_token(temp_db: Path, caplog: pytest.L
         assert not ui_logs, "Single-agent mode should not log Management UI URL"
 
         # Should have single-agent mode startup message
-        assert any("single-agent mode" in msg for msg in log_messages), "Should log single-agent mode startup"
+        assert_that(log_messages, has_item(contains_string("single-agent mode")), "Should log single-agent mode startup")
 
 
 @pytest.mark.asyncio

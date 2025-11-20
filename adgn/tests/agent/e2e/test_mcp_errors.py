@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
+from hamcrest import assert_that, has_length, greater_than
 from pydantic import BaseModel, ConfigDict
 import pytest
 import requests
@@ -46,7 +47,7 @@ def test_nonexistent_agent_resource_404(page: Page, run_server, responses_factor
         error_indicator.wait_for(state="visible", timeout=5000)
         # Verify error text mentions the problem
         error_text = error_indicator.inner_text()
-        assert len(error_text) > 0, "Error message should not be empty"
+        assert_that(error_text, has_length(greater_than(0)), "Error message should not be empty")
     except Exception:
         # Alternative: check if WS connection shows as disconnected/failed
         ws_status = page.locator(".ws .dot")

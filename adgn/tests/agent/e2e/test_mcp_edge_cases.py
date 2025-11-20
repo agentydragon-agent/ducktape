@@ -9,6 +9,7 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from fastmcp.server import FastMCP
+from hamcrest import assert_that, has_length, greater_than
 import pytest
 import requests
 
@@ -107,7 +108,7 @@ def test_rapid_agent_create_delete(run_server, responses_factory):
         # Create agent
         agent_id = api_create_agent(base)
         assert agent_id is not None
-        assert len(agent_id) > 0
+        assert_that(agent_id, has_length(greater_than(0)))
 
         # Immediately delete (before it's fully initialized)
         delete_resp = requests.delete(base + f"/api/agents/{agent_id}")

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastmcp.server import FastMCP
-from hamcrest import assert_that, contains_string
+from hamcrest import assert_that, contains_string, has_length
 import pytest
 
 from adgn.agent.agent import MiniCodex
@@ -82,7 +82,7 @@ async def test_tool_error_continues_turn(
     outputs = [evt for evt in rec.records if evt.get("kind") == "function_call_output"]
 
     # Should have 2 tool calls
-    assert len(tool_calls) == 2, f"Expected 2 tool calls, got {len(tool_calls)}"
+    assert_that(tool_calls, has_length(2), f"Expected 2 tool calls, got {len(tool_calls)}")
 
     # First call should fail with validation error
     first_output = outputs[0]

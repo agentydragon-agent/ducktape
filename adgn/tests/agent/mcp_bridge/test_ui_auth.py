@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from fastmcp.mcp_config import MCPConfig
-from hamcrest import assert_that, instance_of
+from hamcrest import assert_that, instance_of, has_length, greater_than
 import pytest
 
 from adgn.agent.mcp_bridge.auth import generate_ui_token
@@ -46,16 +46,18 @@ def test_generate_ui_token_random(monkeypatch):
 
     # Tokens should be non-empty strings
     assert_that(token1, instance_of(str))
-    assert len(token1) > 0
+    assert_that(token1, has_length(greater_than(0)))
     assert_that(token2, instance_of(str))
-    assert len(token2) > 0
+    assert_that(token2, has_length(greater_than(0)))
 
     # Tokens should be different (random)
     assert token1 != token2
 
     # Tokens should be URL-safe base64 (no special chars except - and _)
-    assert all(c.isalnum() or c in "-_" for c in token1)
-    assert all(c.isalnum() or c in "-_" for c in token2)
+    for c in token1:
+        assert c.isalnum() or c in "-_"
+    for c in token2:
+        assert c.isalnum() or c in "-_"
 
 
 async def test_ui_auth_middleware_valid_token(auth_test_app_factory):
