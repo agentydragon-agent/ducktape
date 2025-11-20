@@ -1,8 +1,103 @@
 # MCP-Based Management UI - Remaining Work
 
-**Status**: Infrastructure complete (Waves A-I done). See `WAVE_EXECUTION_PLAN.md` and git history for completed work.
+**Status**: Infrastructure complete (Waves A-I done). Active cleanup and migration tasks remaining.
 
 **Reference**: Actual implementation in `adgn/src/adgn/agent/mcp_bridge/`, `adgn/src/adgn/agent/web/src/`, `adgn/tests/agent/mcp_bridge/`.
+
+---
+
+## Priority Tasks
+
+### Wave 1: Code Quality Fixes (IMMEDIATE)
+
+**Estimated Time**: 1-2 hours
+
+#### 1.1 Fix Ruff Violations (41 remaining)
+```bash
+cd adgn
+uv run ruff check src/adgn/agent tests/agent --fix
+uv run ruff check src/adgn/agent tests/agent --fix --unsafe-fixes
+```
+
+**Known issues**:
+- I001: Import block sorting (1+ occurrences)
+- PT011: `pytest.raises(Exception)` too broad (4 occurrences)
+- F841: Unused local variables
+- Other fixable violations
+
+#### 1.2 Fix Mypy Type Errors (if present)
+```bash
+cd adgn
+uv run python -m mypy src/adgn/agent
+```
+
+**Potential issues** (from WAVE_EXECUTION_PLAN.md):
+- `src/adgn/agent/persist/sqlite.py:355,382` - ProposalStatus string conversion
+- `src/adgn/agent/mcp_bridge/servers/agents.py:520,730` - Type mismatches
+- Other type errors in reducer.py, runtime.py, agent.py
+
+#### 1.3 Fix Test Failures
+```bash
+cd adgn
+.venv/bin/pytest tests/agent -q -m "not live_llm"
+```
+
+**Known issues** (from WAVE_EXECUTION_PLAN.md):
+- Test failures related to WebSocket/HTTP endpoint removal
+- Import errors from deleted modules
+- Tests need updating to use MCP-based APIs
+
+---
+
+### Wave 2: WebSocket Migration to MCP (HIGH PRIORITY)
+
+**Estimated Time**: 3-4 hours
+
+#### 2.1 Migrate `/ws/session` to MCP
+**Status**: ❌ **NOT MIGRATED** - WebSocket still in use
+**File**: `adgn/src/adgn/agent/web/src/features/chat/stores_channels.ts:128`
+**Backend**: MCP resource `resource://agents/{id}/session/state` exists and functional
+
+**Tasks**:
+1. Remove 'session' channel from ChannelManager
+2. Create MCP subscription to `resource://agents/{id}/session/state`
+3. Update `handleSessionMessage` to `handleSessionUpdate` (process MCP resource data)
+4. Test transcript display, live updates, run status
+
+**Code change**:
+```typescript
+// In stores_channels.ts
+// REMOVE:
+manager.on('session', createChannelHandlers('session', handleSessionMessage))
+
+// ADD:
+const uri = `resource://agents/${agentId}/session/state`
+await subscriptionManager.subscribe(uri, handleSessionUpdate)
+```
+
+#### 2.2 Complete `/ws/policy` Migration
+**Status**: ⚠️ **PARTIALLY MIGRATED** - Mixed usage
+**File**: `adgn/src/adgn/agent/web/src/features/chat/stores_channels.ts:130`
+**Backend**: MCP resource `resource://agents/{id}/policy/state` exists and functional
+
+**Current state**:
+- PolicyEditorPane component: ✅ Uses MCP subscription
+- stores_channels.ts: ❌ Still uses WebSocket channel
+
+**Tasks**:
+1. Remove 'policy' channel from ChannelManager in `stores_channels.ts`
+2. Update `approvalPolicy` store to use MCP subscription (like PolicyEditorPane)
+3. Verify proposal notifications work via MCP
+4. Test policy editor, proposals panel
+
+**Testing checklist**:
+- [ ] `/ws/session` removed: Transcript updates work via MCP subscription
+- [ ] `/ws/policy` removed: Policy editor and proposals work via MCP
+- [ ] No WebSocket connections except MCP's `/mcp` endpoint
+- [ ] All frontend components using MCP subscriptions for live updates
+- [ ] E2E tests pass (test_mcp_ui.py, test_mcp_concurrent.py)
+
+**Note**: `/api/capabilities` HTTP endpoint is intentionally kept for bootstrap (before MCP connection established).
 
 ---
 
