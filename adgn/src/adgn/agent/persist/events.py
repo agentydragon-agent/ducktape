@@ -36,7 +36,7 @@ class ReasoningPayload(BaseModel):
 
 class ResponsePayload(BaseModel):
     # Minimal placeholder; expand as needed
-    content: Any | None = None
+    content: JsonValue | None = None
 
 
 TypedPayload = Annotated[
