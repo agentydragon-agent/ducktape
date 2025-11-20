@@ -25,6 +25,12 @@ uv run ruff check src/adgn/agent tests/agent --fix --unsafe-fixes
 - F841: Unused local variables
 - Other fixable violations
 
+**Background**: This is the final cleanup from Waves 1-3 of the code quality improvement project:
+- ✅ Wave 1 (Quick Wins): Dead imports, useless comments, E2E helpers - COMPLETE
+- ✅ Wave 2 (Type Safety): Enums (PolicyStatus, UserApprovalDecision, PersistenceRunStatus), loose typing, Pydantic docs - COMPLETE
+- ✅ Wave 3 (PyHamcrest): 110+ assertions migrated to composable matchers - COMPLETE
+- ❌ Wave 4 (Pre-commit): THIS TASK - fix all linting/type violations
+
 #### 1.2 Fix Mypy Type Errors (if present)
 ```bash
 cd adgn
