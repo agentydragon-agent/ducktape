@@ -5,118 +5,63 @@
 ## Status Summary
 
 - **Total Scan Prompts**: 30
-- **With MANDATORY Step 0**: 16 ✅
-- **Still Missing MANDATORY**: 14 ❌
+- **With MANDATORY Step 0**: 20 ✅ (67%)
+- **Still Missing MANDATORY**: 10 ❌ (33%)
 
 ## Prompts Still Missing MANDATORY Scans
 
-The following prompts do NOT have "MANDATORY Step 0" detection strategies. They should either:
-1. Add MANDATORY scans if high-recall automation is available, OR
-2. Explicitly document why automation is insufficient (subjective patterns, low recall, context-dependent)
+The following 10 prompts do NOT have "MANDATORY Step 0" detection strategies. All are correctly optional due to subjective/context-dependent nature.
 
-### 1. api-model-design.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Architectural decisions, subjective API design choices
-- **Status**: Correctly optional - no concrete scan would prevent lazy analysis
+### Correctly Optional (10 prompts) - No Action Needed
 
-### 2. denormalized-computed-fields.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Requires domain knowledge to identify denormalization
-- **Status**: Correctly optional - context-dependent
+These correctly lack MANDATORY scans - no concrete scans would prevent lazy analysis:
 
-### 3. error-swallowing.md ❌
-- **Current**: Has `scan_error_handling.py` (AST scanner) but not marked MANDATORY
-- **Should add**: MANDATORY Step 0 requiring scan_error_handling.py
-- **Why**: ~100% recall for all exception handlers, prevents lazy "looks fine" claims
-- **Action needed**: Add MANDATORY language
+1. **api-model-design.md** ❌
+   - Architectural decisions, subjective API design choices
 
-### 4. identifier-naming.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Highly subjective naming preferences
-- **Status**: Correctly optional - no scan prevents subjective judgment
+2. **denormalized-computed-fields.md** ❌
+   - Requires domain knowledge to identify denormalization
 
-### 5. legacy-aliases.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Project-specific deprecated names
-- **Status**: Correctly optional - requires project history knowledge
+3. **identifier-naming.md** ❌
+   - Highly subjective naming preferences
 
-### 6. library-type-misuse.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Library-specific knowledge required
-- **Status**: Correctly optional - no general scan available
+4. **legacy-aliases.md** ❌
+   - Project-specific deprecated names, requires history knowledge
 
-### 7. manual-serde-needs-pydantic.md ❌
-- **Current**: Has `scan_manual_serde.py` (AST scanner) but not marked MANDATORY
-- **Should add**: MANDATORY Step 0 requiring scan_manual_serde.py
-- **Why**: High recall for dict construction patterns and Pydantic models
-- **Action needed**: Add MANDATORY language
+5. **library-type-misuse.md** ❌
+   - Library-specific knowledge required, no general scan
 
-### 8. methods-vs-freestanding.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Architectural decisions about code organization
-- **Status**: Correctly optional - subjective design choices
+6. **methods-vs-freestanding.md** ❌
+   - Architectural decisions about code organization
 
-### 9. mypy-appeasing-code.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Requires understanding type system workarounds
-- **Status**: Correctly optional - context-dependent
+7. **mypy-appeasing-code.md** ❌
+   - Requires understanding type system workarounds
 
-### 10. pydantic-antipatterns.md ❌
-- **Current**: Has grep patterns for union types but not marked MANDATORY
-- **Should add**: MANDATORY Step 0 for union type + isinstance scans
-- **Why**: High recall for Pydantic type system defeats
-- **Action needed**: Add MANDATORY language
+8. **timestamp-naming.md** ❌
+   - Medium recall, style preference
 
-### 11. timestamp-naming.md ❌
-- **Current**: Optional/manual review with suggested grep
-- **Reason for no MANDATORY**: Medium recall, style preference
-- **Status**: Correctly optional - naming is subjective
+9. **trivial-forwarder-methods.md** ❌
+   - Requires understanding delegation intent
 
-### 12. trivial-forwarder-methods.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Requires understanding delegation intent
-- **Status**: Correctly optional - architectural context needed
+10. **unnecessary-verbosity.md** ❌
+    - Subjective judgment about verbosity
 
-### 13. unnecessary-verbosity.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Subjective judgment about verbosity
-- **Status**: Correctly optional - style preference
+11. **useless-test-classes.md** ❌
+    - Requires test context understanding
 
-### 14. useless-comments-and-docs.md ❌
-- **Current**: Has `scan_comments.py` (AST scanner) but not marked MANDATORY
-- **Should add**: MANDATORY Step 0 requiring scan_comments.py
-- **Why**: ~100% recall for all comments/docstrings
-- **Action needed**: Add MANDATORY language
+## All High-Priority Actions Completed ✅
 
-### 15. useless-test-classes.md ❌
-- **Current**: Optional/manual review
-- **Reason for no MANDATORY**: Requires test context understanding
-- **Status**: Correctly optional - no concrete scan available
+The 4 prompts with high-recall scanners already have MANDATORY Step 0:
 
-## Priority Actions
-
-### High Priority - Add MANDATORY Language (4 prompts)
-
-These have high-recall scanners but don't require them:
-
-1. **error-swallowing.md** → Add MANDATORY Step 0 for `scan_error_handling.py`
-2. **useless-comments-and-docs.md** → Add MANDATORY Step 0 for `scan_comments.py`
-3. **manual-serde-needs-pydantic.md** → Add MANDATORY Step 0 for `scan_manual_serde.py`
-4. **pydantic-antipatterns.md** → Add MANDATORY Step 0 for grep-based scans
-
-### Low Priority - Already Correct (10 prompts)
-
-These correctly lack MANDATORY scans due to:
-- Subjective judgments (naming, verbosity, design)
-- Context-dependent patterns (legacy, library-specific)
-- Architectural decisions (methods vs functions, API design)
-
-No action needed for these.
+- ✅ **error-swallowing.md** - Line 188: MANDATORY scan_error_handling.py
+- ✅ **useless-comments-and-docs.md** - Line 295: MANDATORY scan_comments.py
+- ✅ **manual-serde-needs-pydantic.md** - Line 204: MANDATORY scan_manual_serde.py
+- ✅ **pydantic-antipatterns.md** - Line 402: MANDATORY grep patterns
 
 ## Summary
 
-**16/30 prompts** (53%) now have MANDATORY Step 0 scans that force agents to review concrete candidates.
+**20/30 prompts (67%)** now have MANDATORY Step 0 scans that force agents to review concrete candidates.
 
-**4 prompts** still need MANDATORY language added despite having high-recall scanners.
+**10 prompts (33%)** correctly remain optional due to subjective/context-dependent nature where scans cannot prevent lazy analysis.
 
-**10 prompts** correctly remain optional due to subjective/context-dependent nature.
+**All actionable items completed** - no further MANDATORY scans need to be added.
