@@ -18,6 +18,9 @@ This specimen captures code quality findings in the adgn agent codebase, focusin
 - **010**: `Policy.status` should use PolicyStatus StrEnum type
 - **011**: `ChatMessage.author` and `mime` should use StrEnum types (if fixed valid values)
 - **012**: SQLAlchemy import inside function should be at module top
+- **013**: `Agent.id` should be typed as AgentID in SQLAlchemy model
+- **014**: `proposal_id` parameters should be int not str (9+ locations)
+- **015**: `Run.status` and `Event.type` should use StrEnum types
 
 See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations.
 
