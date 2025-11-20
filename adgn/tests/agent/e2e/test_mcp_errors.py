@@ -11,7 +11,7 @@ import pytest
 import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent, wait_for_pending_approvals, send_prompt
+from tests.agent.helpers import api_create_agent, attach_echo_mcp, wait_for_pending_approvals, send_prompt
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -198,9 +198,7 @@ def test_mcp_server_disconnect(page: Page, run_server, responses_factory):
     agent_id = api_create_agent(base)
 
     # Attach echo MCP server
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Open UI
     page.goto(base + f"/?agent_id={agent_id}")

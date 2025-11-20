@@ -65,14 +65,12 @@ async def build_local_agent(
     await runtime.close()
     await running.close()
     """
-    # Create UI components if needed
     ui_bus: ServerBus | None = None
     connection_manager: ConnectionManager | None = None
     if with_ui:
         ui_bus = ServerBus()
         connection_manager = ConnectionManager()
 
-    # Create infrastructure builder
     builder = MCPInfrastructure(
         agent_id=agent_id,
         persistence=persistence,
@@ -81,17 +79,14 @@ async def build_local_agent(
         connection_manager=connection_manager,
     )
 
-    # Start core infrastructure
     running = await builder.start(mcp_config)
 
-    # Attach sidecars for local agent
     if with_ui:
         assert ui_bus is not None
         await running.attach_sidecar(UISidecar(ui_bus))
     await running.attach_sidecar(ChatSidecar())
     await running.attach_sidecar(LoopControlSidecar())
 
-    # Create local agent runtime with UI components
     runtime = LocalAgentRuntime(
         running=running,
         model=model,

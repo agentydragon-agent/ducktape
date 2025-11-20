@@ -7,7 +7,7 @@ import pytest
 import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent, send_prompt
+from tests.agent.helpers import api_create_agent, attach_echo_mcp, send_prompt, wait_for_pending_approvals
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -49,9 +49,7 @@ def test_100_pending_approvals_ui_responsive(page: Page, run_server, responses_f
     agent_id = api_create_agent(base)
 
     # Attach echo MCP server (requires approval by default)
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Trigger the prompt that creates 100 approvals (without loading UI first)
     # This ensures approvals are already pending when we open the UI
@@ -73,7 +71,7 @@ def test_100_pending_approvals_ui_responsive(page: Page, run_server, responses_f
 
     # Wait for approvals to be visible (at least some of them)
     # Note: UI might paginate or virtualize, so we don't expect all 100 to be in DOM
-    page.get_by_text("Pending Approvals").wait_for(timeout=5000)
+    wait_for_pending_approvals(page, timeout=5000)
 
     # Test scrolling responsiveness
     # Get the approvals container and scroll it
@@ -118,9 +116,7 @@ def test_high_frequency_updates_10_per_second(page: Page, run_server, responses_
     agent_id = api_create_agent(base)
 
     # Attach echo MCP server with auto-approval for speed
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Set approval policy to auto-approve for this test
     policy_src = """
@@ -187,9 +183,7 @@ def test_10_concurrent_subscriptions_all_work(page: Page, run_server, responses_
         agent_id = api_create_agent(base)
         agent_ids.append(agent_id)
 
-        spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-        patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-        assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     # Set auto-approve policy for all agents
     policy_src = """
@@ -298,9 +292,7 @@ def test_sustained_load_1000_updates(page: Page, run_server, responses_factory):
 
     agent_id = api_create_agent(base)
 
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    attach_echo_mcp(base, agent_id)
 
     policy_src = """
 from adgn.agent.policies.models import PolicyDecision
