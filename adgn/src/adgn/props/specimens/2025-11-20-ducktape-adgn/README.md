@@ -36,6 +36,31 @@ The flag's only functional use is binding uvicorn to a port that serves stubs an
 - `truthfulness`: CLI help and logs mislead about Management UI existence
 - `least-power`: Creates unnecessary separation (two ports) when one would suffice
 
+### Issue 003: Silent failure when config file doesn't exist
+
+**Code**: File existence check in `adgn/src/adgn/agent/mcp_bridge/cli.py:86-89`
+
+When user provides `--mcp-config` path to a non-existent file, the code silently falls back to empty config without error or notification:
+```python
+if mcp_config and mcp_config.exists():
+    config = MCPConfig.model_validate_json(mcp_config.read_text())
+else:
+    config = MCPConfig(mcpServers={})  # Silent fallback
+```
+
+**Problem**: User explicitly specified a config file (not optional/auto-detected). Non-existence likely indicates typo, wrong directory, or deleted file. Silent fallback masks the error - server starts successfully, user discovers later that servers are missing.
+
+**Correct behavior** (per user guidance):
+- Option 1: Remove `exists()` check, let `FileNotFoundError` propagate naturally (fail fast)
+- Option 2: Explicitly report error: `raise click.UsageError(f"MCP config file not found: {mcp_config}")`
+
+Same pattern exists for `--initial-policy` flag (lines 92-93).
+
+**Properties violated**:
+- `truthfulness`: Silent failure masks error from user
+- `no-swallowing-errors`: Error condition ignored without notification
+- `least-power`: Defensive check adds complexity without benefit
+
 ## Scope
 
 Focus on the adgn agent core (`adgn/src/adgn/agent/`), particularly:
