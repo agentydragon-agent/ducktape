@@ -10,9 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "svelte-check --tsconfig ./tsconfig.app.json",
-    "generate-types": "adgn-generate-types",
-    "generate-mcp-constants": "adgn-generate-mcp-constants",
-    "prebuild": "npm run generate-types && npm run generate-mcp-constants"
+    "codegen": "adgn-generate-frontend-code",
+    "prebuild": "npm run codegen"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.22.0",
