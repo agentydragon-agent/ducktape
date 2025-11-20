@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from fastmcp.client.client import CallToolResult
+from hamcrest import all_of, assert_that, has_properties, instance_of
 from mcp import types
 
 from adgn.agent.server.bus import MimeType
@@ -45,10 +46,12 @@ def test_tool_call_exec_starts_exec_content_with_cmd():
         s2.items, is_tool_item(tool=build_mcp_function("seatbelt", "sandbox_exec"), call_id="c1")
     )
     it = s2.items[0]
-    assert isinstance(it, ToolItem)
-    assert it.decision is None
-    assert isinstance(it.content, ExecContent)
-    assert it.content.content_kind == "Exec"
+    assert_that(
+        it, all_of(instance_of(ToolItem), has_properties(decision=None))
+    )
+    assert_that(
+        it.content, all_of(instance_of(ExecContent), has_properties(content_kind="Exec"))
+    )
     # command assembled with conservative quoting
     assert it.content.cmd is not None
     assert it.content.cmd.startswith("echo ")
@@ -63,9 +66,8 @@ def test_tool_call_json_starts_json_content_with_args():
     assert s2.seq == 1
     assert_typed_items_have_one(s2.items, is_tool_item(call_id="c2"))
     it = s2.items[0]
-    assert isinstance(it, ToolItem)
-    assert it.content.content_kind == "Json"
-    assert it.content.args == args
+    assert_that(it, instance_of(ToolItem))
+    assert_that(it.content, has_properties(content_kind="Json", args=args))
 
 
 def test_approval_sets_single_decision():
@@ -73,9 +75,9 @@ def test_approval_sets_single_decision():
     s1 = reduce_ui_state(s, ToolCall(name=build_mcp_function("ui", "noop"), args_json="{}", call_id="c3"))
     s2 = reduce_ui_state(s1, ApprovalDecisionEvt(call_id="c3", decision=ApprovalApprove()))
     it = s2.items[0]
-    assert isinstance(it, ToolItem)
-    assert it.kind == "Tool"
-    assert it.decision == "approve"
+    assert_that(
+        it, all_of(instance_of(ToolItem), has_properties(kind="Tool", decision="approve"))
+    )
 
 
 def test_function_output_updates_exec_stream():
@@ -92,12 +94,11 @@ def test_function_output_updates_exec_stream():
     pydantic_result = convert_fastmcp_result(result)
     s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c4", result=pydantic_result))
     it = s2.items[0]
-    assert isinstance(it, ToolItem)
-    assert it.kind == "Tool"
-    assert isinstance(it.content, ExecContent)
-    assert it.content.content_kind == "Exec"
-    assert it.content.stdout == "ok"
-    assert it.content.exit_code == 0
+    assert_that(it, all_of(instance_of(ToolItem), has_properties(kind="Tool")))
+    assert_that(
+        it.content,
+        all_of(instance_of(ExecContent), has_properties(content_kind="Exec", stdout="ok", exit_code=0)),
+    )
 
 
 def test_function_output_updates_json_output_when_not_exec():
@@ -110,12 +111,10 @@ def test_function_output_updates_json_output_when_not_exec():
     pydantic_result = convert_fastmcp_result(result)
     s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c5", result=pydantic_result))
     it = s2.items[0]
-    assert isinstance(it, ToolItem)
-    assert it.kind == "Tool"
-    assert it.content.content_kind == "Json"
+    assert_that(it, all_of(instance_of(ToolItem), has_properties(kind="Tool")))
+    assert_that(it.content, has_properties(content_kind="Json"))
     stored = it.content.result
-    assert isinstance(stored, types.CallToolResult)
-    assert stored.structuredContent == payload
+    assert_that(stored, all_of(instance_of(types.CallToolResult), has_properties(structuredContent=payload)))
 
 
 def test_ui_message_becomes_assistant_markdown():
