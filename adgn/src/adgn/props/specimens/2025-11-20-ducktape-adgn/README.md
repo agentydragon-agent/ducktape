@@ -32,6 +32,8 @@ This specimen captures code quality findings in the adgn agent codebase, focusin
 - **024**: `pending_notifier` should accept ToolCall directly
 - **025**: Collection parameters should default to empty tuple, not None
 - **026**: Should return result directly, not reconstruct as dict
+- **027**: Should use walrus operator for assign-and-check-None pattern
+- **028**: Should raise ExceptionGroup instead of returning error strings
 
 See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations.
 
