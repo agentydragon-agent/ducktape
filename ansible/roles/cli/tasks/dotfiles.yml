@@ -66,10 +66,10 @@
         msg: |
           Dotfiles installation requires manual intervention.
 
-          SSH to the machine and run:
+          Run on the machine:
           RCRC={{ cli_ducktape_path }}/dotfiles/rcrc rcup -B {{ rcup_computer }}
 
-          You'll likely need to confirm overwriting pre-existing default files (like .bashrc).
+          You'll likely need to confirm overwriting pre-existing files.
       when:
         - cli_rcup_result.failed
         - "'overwrite' in cli_rcup_result.stdout"

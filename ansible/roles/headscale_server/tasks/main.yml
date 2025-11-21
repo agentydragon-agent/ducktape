@@ -17,6 +17,13 @@
     create_home: true
   tags: [headscale, install]
 
+- name: Add root to headscale group for administration
+  ansible.builtin.user:
+    name: root
+    groups: headscale
+    append: true
+  tags: [headscale]
+
 - name: Create headscale config directory
   ansible.builtin.file:
     path: /etc/headscale
@@ -44,7 +51,7 @@
     chmod 600 /var/lib/headscale/noise_private.key
   args:
     creates: /var/lib/headscale/noise_private.key
-  tags: [headscale, config]
+  tags: [headscale]
 
 - name: Generate headscale configuration
   ansible.builtin.template:
@@ -54,7 +61,7 @@
     group: headscale
     mode: '0644'
   notify: Restart Headscale
-  tags: [headscale, config]
+  tags: [headscale]
 
 - name: Deploy headscale ACL policy
   ansible.builtin.copy:
@@ -64,7 +71,7 @@
     group: headscale
     mode: '0644'
   notify: Restart Headscale
-  tags: [headscale, config]
+  tags: [headscale]
 
 - name: Create headscale systemd service
   ansible.builtin.template:
@@ -97,13 +104,13 @@
     var: headscale_server_status.status
   tags: [headscale, service]
 
-- name: Wait for headscale to be ready
+- name: Wait for headscale health endpoint
   ansible.builtin.uri:
-    url: "https://127.0.0.1:8080/health"
+    url: "https://{{ headscale_health_host }}:8080/health"
     method: GET
     status_code: 200
+    validate_certs: true
     timeout: 5
-    validate_certs: false
   register: headscale_server_health
   until: headscale_server_health.status is defined and headscale_server_health.status == 200
   retries: 10
@@ -111,12 +118,12 @@
   failed_when: false
   tags: [headscale, service]
 
-- name: Verify headscale readiness
+- name: Verify headscale health endpoint
   ansible.builtin.assert:
     that:
       - headscale_server_health.status is defined
       - headscale_server_health.status == 200
     fail_msg: >-
-      Headscale did not return HTTP 200 after the configured retries.
+      Headscale health endpoint did not return HTTP 200 after the configured retries.
       Last response: {{ headscale_server_health }}
   tags: [headscale, service]

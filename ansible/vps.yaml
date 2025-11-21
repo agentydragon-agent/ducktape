@@ -37,12 +37,13 @@
   roles:
     - role: common
     # - cli    # <- TODO:  needs ducktape, etc
-    - role: wireguard_uninstall
-      tags: [wireguard, wireguard_uninstall]
-    - role: powerdns
-      tags: [powerdns]
 
   tasks:
+    - name: Apply PowerDNS role
+      ansible.builtin.include_role:
+        name: powerdns
+      tags: [powerdns]
+
     # Configure systemd-resolved with split DNS for PowerDNS and Tailscale
     - name: Ensure systemd-resolved is enabled
       ansible.builtin.systemd:
@@ -74,16 +75,14 @@
           FallbackDNS=8.8.4.4#dns.google
           # Enable stub listener for local resolution
           DNSStubListener=yes
-          # Enable caching
           Cache=yes
-          # Don't use LLMNR/mDNS
           LLMNR=no
           MulticastDNS=no
         owner: root
         group: root
         mode: '0644'
       become: true
-      notify: restart systemd-resolved
+      notify: Restart systemd-resolved
       tags: [dns, powerdns]
 
     - name: Remove overly broad PowerDNS network configuration
@@ -107,8 +106,8 @@
         mode: '0644'
       become: true
       notify:
-        - restart systemd-networkd
-        - restart systemd-resolved
+        - Restart systemd-networkd
+        - Restart systemd-resolved
       tags: [dns, powerdns]
 
     - name: Ensure /etc/resolv.conf is symlinked to systemd-resolved
@@ -154,15 +153,7 @@
         createhome: true
         # NOTE: still need to ssh-copy-id over to the user manually.
 
-    - name: Wait for PowerDNS DNS port
-      ansible.builtin.wait_for:
-        host: "{{ powerdns_dns_bind_address }}"
-        port: 53
-        state: started
-        timeout: 60
-      tags: [powerdns, letsencrypt]
-
-    - name: "Let’s Encrypt | agentydragon.com"
+    - name: "Let's Encrypt | agentydragon.com"
       ansible.builtin.import_role:
         name: letsencrypt
       vars:
@@ -199,39 +190,8 @@
       tags: [letsencrypt, k3s-wildcard]
 
     - name: Apply headscale role
-      ansible.builtin.import_role:
+      ansible.builtin.include_role:
         name: headscale_server
-      tags: [headscale]
-
-    - name: Restart headscale service
-      ansible.builtin.systemd:
-        name: headscale
-        state: restarted
-        enabled: true
-      tags: [headscale]
-
-    - name: Wait for headscale health endpoint
-      ansible.builtin.uri:
-        url: "https://{{ headscale_health_host | default(inventory_hostname) }}:8080/health"
-        method: GET
-        status_code: 200
-        validate_certs: true
-        timeout: 5
-      register: headscale_health
-      until: headscale_health.status is defined and headscale_health.status == 200
-      retries: 10
-      delay: 3
-      failed_when: false
-      tags: [headscale]
-
-    - name: Verify headscale health endpoint
-      ansible.builtin.assert:
-        that:
-          - headscale_health.status is defined
-          - headscale_health.status == 200
-        fail_msg: >-
-          Headscale health endpoint did not return HTTP 200 after the configured retries.
-          Last response: {{ headscale_health }}
       tags: [headscale]
 
     - name: Apply tailscale role
@@ -247,18 +207,20 @@
 
     - name: Nginx website configs
       tags: [nginx]
+      vars:
+        nginx_sites:
+          - agentydragon.com
+          - adgn.link
+          - atlas.agentydragon.com
+          - k3s.agentydragon.com
+          - test-cluster.agentydragon.com
       block:
-        - name: "Render nginx configuration from template"
+        - name: "Render and enable nginx websites"
           ansible.builtin.template:
             src: nginx-sites/{{ item }}.j2
             dest: /etc/nginx/sites-available/{{ item }}
             mode: '0644'
-          loop:
-            - agentydragon.com
-            - adgn.link
-            - atlas.agentydragon.com
-            - k3s.agentydragon.com
-            - test-cluster.agentydragon.com
+          loop: "{{ nginx_sites }}"
           notify:
             - Reload nginx
 
@@ -276,12 +238,7 @@
             state: link
             src: /etc/nginx/sites-available/{{ item }}
             dest: /etc/nginx/sites-enabled/{{ item }}
-          loop:
-            - agentydragon.com
-            - adgn.link
-            - atlas.agentydragon.com
-            - k3s.agentydragon.com
-            - test-cluster.agentydragon.com
+          loop: "{{ nginx_sites }}"
           notify:
             - Reload nginx
 
@@ -402,32 +359,33 @@
                  - Or use GitHub CLI: gh auth login
             success_msg: "SSH key is set up for agentydragon user"
 
-        - name: Create code directory
-          become: true
-          become_user: agentydragon
-          ansible.builtin.file:
-            path: "/home/agentydragon/code"
-            state: directory
-            mode: '0755'
+    #    - name: Create code directory
+    #      become: true
+    #      become_user: agentydragon
+    #      ansible.builtin.file:
+    #        path: "/home/agentydragon/code"
+    #        state: directory
+    #        mode: '0755'
 
-        - name: Clone ducktape repository
-          become: true
-          become_user: agentydragon
-          ansible.builtin.git:
-            repo: git@github.com:agentydragon/ducktape.git
-            dest: "{{ cli_ducktape_path }}"
-            version: devel
-            accept_hostkey: true
-            depth: 1  # Shallow clone for speed
+    #    - name: Clone ducktape repository
+    #      become: true
+    #      become_user: agentydragon
+    #      ansible.builtin.git:
+    #        repo: git@github.com:agentydragon/ducktape.git
+    #        dest: "{{ cli_ducktape_path }}"
+    #        version: devel
+    #        accept_hostkey: true
+    #        depth: 1  # Shallow clone for speed
 
     # Apply CLI role (outside the block so tags work independently)
-    - name: Apply CLI role
-      ansible.builtin.import_role:
-        name: cli
-      vars:
-        cli_user: agentydragon
-      tags: [dotfiles]
-      # CLI role tasks that need root will handle their own become
+    # TODO: make this work sanely
+    # - name: Apply CLI role
+    #   ansible.builtin.import_role:
+    #     name: cli
+    #   vars:
+    #     cli_user: agentydragon
+    #   tags: [dotfiles]
+    #   # CLI role tasks that need root will handle their own become
 
     - name: Install shared development environment for agentydragon
       ansible.builtin.import_role:

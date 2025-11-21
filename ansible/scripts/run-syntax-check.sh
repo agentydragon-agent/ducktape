@@ -6,7 +6,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+# Change to ansible directory (parent of scripts)
+cd "$SCRIPT_DIR/.."
 
 # Export SKIP_VAULT to avoid password prompts
 export ANSIBLE_LINT_SKIP_VAULT=1

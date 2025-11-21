@@ -8,7 +8,7 @@
 
 **Pre-commit: Fast Syntax Check (1-3s)**
 ```bash
-# Uses ansible-playbook --syntax-check via ansible/run-syntax-check.sh
+# Uses ansible-playbook --syntax-check via ansible/scripts/run-syntax-check.sh
 cd ansible
 ansible-playbook --syntax-check wyrm.yaml  # 1-2 seconds
 ```

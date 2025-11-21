@@ -15,7 +15,15 @@
 - name: Flush handlers to ensure PowerDNS is restarted if needed
   ansible.builtin.meta: flush_handlers
 
-- name: Wait for PowerDNS to be ready
+- name: Wait for PowerDNS DNS port
+  ansible.builtin.wait_for:
+    host: "{{ powerdns_dns_bind_address }}"
+    port: 53
+    state: started
+    timeout: 60
+  tags: [powerdns, letsencrypt]
+
+- name: Wait for PowerDNS HTTP API to be ready
   ansible.builtin.uri:
     url: "http://{{ powerdns_webserver_address }}:{{ powerdns_webserver_port }}/api/v1/servers"
     headers:

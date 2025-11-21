@@ -30,8 +30,7 @@
       tags: [dev_env]
 
 
-    # TODO: does not seem to work. getting this on trying to suspend, plus
-    # freeze:
+    # TODO: does not seem to work. getting this on trying to suspend, plus freeze:
     #   usb usb-port14: disabled by hub (EMI?), re-enabling...
     #
     # # See 'Laptop does not stay suspended' Trilium note.
