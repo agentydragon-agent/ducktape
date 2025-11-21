@@ -23,6 +23,11 @@ dnsupdate=yes
 allow-dnsupdate-from={{ powerdns_allow_dnsupdate_from | default('127.0.0.1,172.16.0.0/12') }}
 
 # Logging
-loglevel=6
+loglevel=9
 log-dns-queries=yes
 log-dns-details=yes
+
+# Secondary/AXFR Configuration
+secondary=yes
+secondary-check-signature-freshness=yes
+axfr-fetch-timeout=30
