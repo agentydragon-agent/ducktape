@@ -5,8 +5,9 @@ launch=gsqlite3
 gsqlite3-database=/var/lib/powerdns/pdns.sqlite3
 gsqlite3-dnssec
 
-# Network binding - bind to public IP only (not 0.0.0.0 to avoid conflict with systemd-resolved)
-local-address={{ powerdns_dns_bind_address }}
+# Network binding - bind to public IP and Tailscale IP (avoid systemd-resolved conflict)
+# PowerDNS needs to listen on Tailscale IP (100.64.0.3) to receive NOTIFY from cluster
+local-address={{ powerdns_dns_bind_address }},100.64.0.3
 # Query source - let kernel routing choose source IP (for Tailscale AXFR)
 query-local-address=0.0.0.0
 
