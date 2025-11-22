@@ -45,3 +45,6 @@ powerdns_dns_bind_address: "{{ ansible_default_ipv4.address }}"
 
 # Allow DNS updates from localhost, Docker networks, and VPS IP
 powerdns_allow_dnsupdate_from: "127.0.0.1,172.16.0.0/12,172.235.48.86"
+
+# Allow NOTIFY from cluster PowerDNS via Tailscale (100.64.0.0/10)
+powerdns_allow_notify_from: "100.64.0.0/10"
