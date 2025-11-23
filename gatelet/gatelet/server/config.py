@@ -1,6 +1,7 @@
 """Configuration management for Gatelet server."""
 
 from datetime import timedelta
+from enum import StrEnum
 from functools import lru_cache
 import logging
 import os
@@ -12,6 +13,16 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
+
+
+class LogLevel(StrEnum):
+    """Logging level for server configuration."""
+
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
 
 
 class NoAuth(BaseModel):
@@ -48,7 +59,7 @@ class DatabaseSettings(BaseModel):
 class ServerSettings(BaseModel):
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8000)
-    log_level: str = Field(default="INFO")
+    log_level: LogLevel = Field(default=LogLevel.INFO)
     log_file: str = Field(default="gatelet.log")
 
 

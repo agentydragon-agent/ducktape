@@ -1,5 +1,6 @@
 """Clean configuration models with no dict manipulation or dynamic fields."""
 
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
@@ -19,6 +20,16 @@ from .models import (
     SubagentStopHookConfig,
     TaskProfile,
 )
+
+
+class LogLevel(StrEnum):
+    """Logging level for configuration."""
+
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
 
 
 class RuleConfig(BaseModel):
@@ -90,7 +101,7 @@ class ModularConfig(BaseModel):
     profiles: list[TaskProfile] = Field(default_factory=list, description="Pre-defined permission profiles")
 
     # Logging
-    log_level: str = Field("INFO", description="Logging level")
+    log_level: LogLevel = Field(LogLevel.INFO, description="Logging level")
     log_file: Path | None = Field(None, description="Log file path")
 
     @classmethod

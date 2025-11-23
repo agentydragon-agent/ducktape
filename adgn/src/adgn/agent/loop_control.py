@@ -19,7 +19,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from adgn.openai_utils.model import FunctionCallItem, UserMessage
+from adgn.openai_utils.model import (
+    AssistantMessageOut,
+    FunctionCallItem,
+    FunctionCallOutputItem,
+    ReasoningItem,
+    UserMessage,
+)
 
 # ---------------------------------------------------------------------------
 # Tool policy algebraic types (what the model is allowed/required to do next)
@@ -72,6 +78,8 @@ class NoLoopDecision:
 # Constraint (enforced at runtime): FunctionCallItem ONLY allowed when skip_sampling=True
 # Rationale: FunctionCallItem in normal path would create unresolved function call in API request
 InjectableItem = UserMessage | FunctionCallItem
+SyntheticOutputItem = ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
+InjectedItem = InjectableItem | SyntheticOutputItem
 
 
 @dataclass(frozen=True)
@@ -105,7 +113,7 @@ class Continue:
     # - Skip-sampling path (skip_sampling=True): Must be SyntheticOutputItem types, treated as model output
     # Type annotation accepts the union; caller must ensure items match the skip_sampling mode.
     # ReasoningItem MUST be produced by the SDK/model, never injected.
-    inserts_input: tuple[InjectableItem, ...] = ()
+    inserts_input: tuple[InjectedItem, ...] = ()
     # When True: do NOT call the model this phase; execute directly from inserts_input
     skip_sampling: bool = False
 

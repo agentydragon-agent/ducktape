@@ -7,10 +7,11 @@ from datetime import datetime
 import logging
 import os
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 # (runtime container constants used only in shared status builder)
-import docker  # type: ignore
+from docker.client import DockerClient
 from fastapi import Body, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -26,7 +27,7 @@ from adgn.agent.persist.events import EventRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import AgentPreset, discover_presets
 from adgn.agent.runtime.auto_attach import DEFAULT_AUTO_SERVER_NAMES
-from adgn.agent.runtime.container import default_client_factory
+from adgn.agent.runtime.container import AgentContainer, default_client_factory
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.agents_ws import AgentsWSHub, register_agents_ws
 from adgn.agent.server.exceptions import (
@@ -235,7 +236,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     app.state.persistence = SQLitePersistence(db_path)
     # Construct a single Docker client and pass through to the registry/containers
-    app.state.docker_client = docker.from_env()
+    app.state.docker_client = DockerClient.from_env()
     app.state.registry = AgentRegistry(
         persistence=app.state.persistence,
         model=DEFAULT_MODEL,
@@ -277,14 +278,15 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         await app.state.registry.close_all()
 
     # Helper functions to reduce boilerplate
-    async def get_container(agent_id: str):
+    async def get_container(agent_id: str) -> AgentContainer:
         """Get live container for agent, raising AgentNotFoundError if missing."""
+        registry = cast(AgentRegistry, app.state.registry)
         try:
-            return await app.state.registry.ensure_live(agent_id, with_ui=True)
+            return await registry.ensure_live(agent_id, with_ui=True)
         except KeyError as e:
             raise AgentNotFoundError(agent_id) from e
 
-    def get_session(container, agent_id: str) -> AgentSession:
+    def get_session(container: AgentContainer, agent_id: str) -> AgentSession:
         """Get session from container, raising AgentSessionNotReadyError if not initialized."""
         if container.session is None:
             raise AgentSessionNotReadyError(agent_id)
@@ -637,7 +639,9 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # -----------------------
 
     def _load_presets() -> dict[str, AgentPreset]:
-        return discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR"))
+        presets_dir = os.getenv("ADGN_AGENT_PRESETS_DIR")
+        presets = discover_presets(presets_dir)
+        return cast(dict[str, AgentPreset], presets)
 
     @app.get("/api/presets", response_model=PresetsList)
     async def api_list_presets() -> PresetsList:

@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
@@ -25,7 +25,14 @@ import tiktoken
 
 from adgn.llm.anthropic.types import Message as AnthropicMessage, MessageRole as AnthropicMessageRole
 from adgn.openai_utils.client_factory import get_async_openai
-from adgn.openai_utils.model import FunctionCallItem, ResponsesResult, SystemMessage, UserMessage
+from adgn.openai_utils.model import (
+    AssistantMessage,
+    FunctionCallItem,
+    InputItem,
+    ResponsesResult,
+    SystemMessage,
+    UserMessage,
+)
 from adgn.openai_utils.retry import chat_create_with_retries, responses_create_with_retries
 
 from .constants import TOOLS_HEADER
@@ -65,6 +72,14 @@ MAX_TOTAL_TOKENS = 400_000
 PER_OUTPUT_CAP = 128_000
 SAFETY_TOKENS = 1_024
 TARGET_PREFIX_TOKENS = 200_000  # budget for prefix JSON inside grader prompt
+
+
+# Metrics helpers
+class ToolStats(TypedDict):
+    total_samples: int
+    text_only: int
+    with_tools: int
+    function_counts: dict[str, int]
 
 
 # Models
@@ -234,8 +249,8 @@ def parse_grade_from_responses(response: ResponsesResult) -> Grade:
     for item in response.output:
         if isinstance(item, FunctionCallItem) and item.name == "grade":
             if item.arguments is None:
-                return Grade.model_validate({})
-            return Grade.model_validate_json(item.arguments)
+                return cast(Grade, Grade.model_validate({}))
+            return cast(Grade, Grade.model_validate_json(item.arguments))
     raise RuntimeError("No grade tool call in responses output")
 
 
@@ -263,21 +278,22 @@ def responses_extract_system_text(inp: Any) -> str:
     return "\n\n".join([t for t in buf if t])
 
 
-def responses_slice_prefix(inp: Any, end_idx: int) -> list[dict[str, Any]]:
+def responses_slice_prefix(inp: Any, end_idx: int) -> list[InputItem]:
     """Slice Responses API input up to end_idx, excluding system messages."""
-    out: list[dict[str, Any]] = []
+    out: list[InputItem] = []
     parsed = parse_response_messages(inp)
     if parsed is None:
         return out
     for it in parsed[:end_idx]:
         role = response_message_role(it)
-        if role not in (MessageRole.USER, MessageRole.ASSISTANT):
-            continue
-        content = it.content
-        if isinstance(content, list):
-            parts = TypeAdapter(list[ResponseContentPart]).validate_python(content)
-            content = [p.model_dump(mode="json", exclude_none=True) for p in parts]
-        out.append({"role": role, "content": content})
+        if role == MessageRole.USER:
+            text = response_message_content_as_text(it)
+            if text:
+                out.append(UserMessage.text(text))
+        elif role == MessageRole.ASSISTANT:
+            text = response_message_content_as_text(it)
+            if text:
+                out.append(AssistantMessage.text(text))
     return out
 
 
@@ -307,8 +323,8 @@ def generate_html_report(report_base: Path):
             correlation_id = grade_record.correlation_id
             if not correlation_id:
                 continue
-            grade = parse_grade_from_responses(grade_record.response)
-            grades_map[correlation_id] = grade
+            parsed_grade = parse_grade_from_responses(grade_record.response)
+            grades_map[correlation_id] = parsed_grade
 
     # Collect rows
     rows: list[dict[str, Any]] = []
@@ -329,9 +345,9 @@ def generate_html_report(report_base: Path):
             if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage):
                 # Crush item: reconstruct minimal views from responses_input
                 responses_input = sample_record.new_assistant_message.responses_input
-                original_system = responses_extract_system_text(responses_input)
-                rewritten_system = rewrite_system_with_template(original_system or "", template_file)
                 parsed_responses_input = parse_response_messages(responses_input)
+                original_system = responses_extract_system_text(parsed_responses_input or responses_input)
+                rewritten_system = rewrite_system_with_template(original_system or "", template_file)
                 display_messages = responses_to_ccr_messages(parsed_responses_input) if parsed_responses_input else []
                 last_assistant_index = index_of_last_assistant_before_final(display_messages)
                 if last_assistant_index is None:
@@ -356,7 +372,7 @@ def generate_html_report(report_base: Path):
                 else:
                     shared_prefix = [msg for msg in (messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM]
                     bad_branch = messages[last_assistant_index:]
-            grade = grades_map.get(correlation_id)
+            row_grade: Grade | None = grades_map.get(correlation_id)
             rows.append(
                 {
                     "correlation_id": correlation_id,
@@ -366,7 +382,7 @@ def generate_html_report(report_base: Path):
                     "shared_prefix": shared_prefix,
                     "bad_branch": bad_branch,
                     "alternative": sample_record.new_assistant_message.model_dump(),
-                    "grade": grade,
+                    "grade": row_grade,
                 }
             )
 
@@ -447,6 +463,9 @@ async def run_eval(
         async with sem:
             log_event({"event": "process_start", "cid": item.correlation_id})
             # Branch by source without coercing persisted formats
+            new_assistant_message: ChatAssistantMessage | ResponsesAssistantMessage
+            messages_for_grader: list[ChatCompletionMessageParam]
+            prev_assistant_index_for_grader: int
             if isinstance(item, CCRSample):  # CCR
                 # 1) Rewrite system via Node apply script
                 anthropic_request = item.anthropic_request
@@ -501,7 +520,7 @@ async def run_eval(
                 new_assistant_message = ChatAssistantMessage(message=sample.choices[0].message)
                 # For grader context: convert full Anthropic message list to ChatCompletionMessageParam
                 messages_for_grader = anthropic_messages_to_standard(anthropic_request.messages)
-                prev_assistant_index_for_grader: int = prev_assistant_index
+                prev_assistant_index_for_grader = prev_assistant_index
             else:
                 # Crush / Responses-native path
                 payload = item.oai_request
@@ -516,9 +535,13 @@ async def run_eval(
                     return None, None
                 input_prefix = responses_slice_prefix(request_input, prev_assistant_index)
                 # Prepend rewritten system entry
-                responses_input = [SystemMessage.text(new_system).model_dump(), *input_prefix]
+                responses_input_models: list[InputItem] = [SystemMessage.text(new_system), *input_prefix]
+                responses_input_payload = [
+                    item.model_dump(exclude_none=True) if isinstance(item, BaseModel) else item
+                    for item in responses_input_models
+                ]
                 base_request: dict[str, Any] = dict(payload) if isinstance(payload, dict) else {}
-                base_request["input"] = responses_input
+                base_request["input"] = responses_input_payload
                 if not base_request.get("model"):
                     base_request["model"] = SAMPLER_MODEL
                 sample_request = cast(dict[str, Any], base_request)
@@ -530,7 +553,7 @@ async def run_eval(
                     log_event(msg)
                     return None, None
                 new_assistant_message = ResponsesAssistantMessage(
-                    responses_input=responses_input, responses_output=sample
+                    responses_input=responses_input_models, responses_output=sample
                 )
                 # For grader context later, build ephemeral CCR-like messages
                 parsed_request_input = parse_response_messages(request_input)
@@ -648,25 +671,20 @@ async def run_eval(
 
     scores: list[float] = []
     # Secondary metrics: tooling usage
-    tool_stats = {
-        "total_samples": 0,
-        "text_only": 0,
-        "with_tools": 0,
-        "function_counts": {},  # name -> count of tool calls
-    }
+    tool_stats: ToolStats = {"total_samples": 0, "text_only": 0, "with_tools": 0, "function_counts": {}}
     # Per-source accumulators
     scores_by_source: dict[str, list[float]] = {"ccr": [], "crush": []}
-    tool_stats_by_source: dict[str, dict[str, Any]] = {
+    tool_stats_by_source: dict[str, ToolStats] = {
         "ccr": {"total_samples": 0, "text_only": 0, "with_tools": 0, "function_counts": {}},
         "crush": {"total_samples": 0, "text_only": 0, "with_tools": 0, "function_counts": {}},
     }
 
     def compute_and_write_summary(_final: bool = False) -> dict[str, Any]:
         # Secondary metrics helpers
-        total_samples = tool_stats.get("total_samples", 0)
-        text_only = tool_stats.get("text_only", 0)
-        with_tools = tool_stats.get("with_tools", 0)
-        function_counts = cast(dict[str, int], tool_stats.get("function_counts", {}))
+        total_samples = tool_stats["total_samples"]
+        text_only = tool_stats["text_only"]
+        with_tools = tool_stats["with_tools"]
+        function_counts = tool_stats["function_counts"]
         total_tool_calls = sum(function_counts.values()) if function_counts else 0
         function_pct = {k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in function_counts.items()}
 
@@ -681,14 +699,14 @@ async def run_eval(
             return m, ci_, m - ci_, m + ci_
 
         # Compute mean and CI for overall scores
-        mean, ci95, lcb, ucb = _mk_basic(scores)
+        mean, _ci95, lcb, ucb = _mk_basic(scores)
 
         by_source: dict[str, Any] = {}
         for sname in ("ccr", "crush"):
             m_s, _ci_s, l_s, u_s = _mk_basic(scores_by_source[sname])
             ts_s = tool_stats_by_source[sname]
-            total_s = ts_s["total_samples"] or 0
-            fc_s = cast(dict[str, int], ts_s.get("function_counts", {}))
+            total_s = ts_s["total_samples"]
+            fc_s = ts_s["function_counts"]
             total_tool_calls_s = sum(fc_s.values()) if fc_s else 0
             func_pct_s = {k: (v / total_tool_calls_s) if total_tool_calls_s > 0 else 0.0 for k, v in fc_s.items()}
             by_source[sname] = {
@@ -738,29 +756,29 @@ async def run_eval(
                     "crush" if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage) else "ccr"
                 )
                 # Update tool usage stats
-                tool_stats["total_samples"] = tool_stats.get("total_samples", 0) + 1
+                tool_stats["total_samples"] += 1
                 # Extract tool calls from ChatAssistantMessage
                 tool_calls = []
                 if isinstance(sample_record.new_assistant_message, ChatAssistantMessage):
                     message_tool_calls = sample_record.new_assistant_message.message.tool_calls
                     tool_calls = list(message_tool_calls) if message_tool_calls is not None else []
                 if not tool_calls:
-                    tool_stats["text_only"] = tool_stats.get("text_only", 0) + 1
+                    tool_stats["text_only"] += 1
                 else:
-                    tool_stats["with_tools"] = tool_stats.get("with_tools", 0) + 1
-                    function_counts = cast(dict[str, int], tool_stats["function_counts"])  # type: ignore[index]
+                    tool_stats["with_tools"] += 1
+                    function_counts = tool_stats["function_counts"]
                     for tool_call in tool_calls:
                         function_name = tool_call.function.name if tool_call.function else "UNKNOWN"
                         function_counts[function_name] = function_counts.get(function_name, 0) + 1
                 # Per-source tool stats
                 if source in tool_stats_by_source:
                     source_stats = tool_stats_by_source[source]
-                    source_stats["total_samples"] = source_stats.get("total_samples", 0) + 1
+                    source_stats["total_samples"] += 1
                     if not tool_calls:
-                        source_stats["text_only"] = source_stats.get("text_only", 0) + 1
+                        source_stats["text_only"] += 1
                     else:
-                        source_stats["with_tools"] = source_stats.get("with_tools", 0) + 1
-                        source_function_counts = cast(dict[str, int], source_stats["function_counts"])  # type: ignore[index]
+                        source_stats["with_tools"] += 1
+                        source_function_counts = source_stats["function_counts"]
                         for tool_call in tool_calls:
                             function_name = tool_call.function.name if tool_call.function else "UNKNOWN"
                             source_function_counts[function_name] = source_function_counts.get(function_name, 0) + 1

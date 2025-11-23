@@ -283,6 +283,8 @@ def create_grading_strategy(grading_config: GradingConfig, config_path: Path | N
         return MessageBasedGradingStrategy(criteria)
 
     if isinstance(grading_config, ComparisonGrading):
+        if grading_config.reference is None:
+            raise ValueError("ComparisonGrading configuration requires a reference output")
         return ComparisonGradingStrategy(reference=grading_config.reference, criteria=grading_config.criteria)
 
     raise ValueError(f"Unknown grading config type: {type(grading_config)}")

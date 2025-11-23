@@ -6,11 +6,18 @@ import json
 from typing import Any, cast
 
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionMessageToolCallParam
-from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputRefusal, ResponseOutputText
+from openai.types.responses import ResponseOutputMessage, ResponseOutputRefusal, ResponseOutputText
 from pydantic import TypeAdapter
 
 # Union type for response content parts
-ResponseContentPart = ResponseOutputText | ResponseOutputRefusal
+type ResponseContentPart = ResponseOutputText | ResponseOutputRefusal
+
+
+CHAT_TOOL_CALL_ADAPTER = TypeAdapter(list[ChatCompletionMessageToolCallParam])
+RESPONSES_MESSAGE_ADAPTER = TypeAdapter(list[ResponseOutputMessage])
+CHAT_MESSAGE_ADAPTER = TypeAdapter(list[ChatCompletionMessageParam])
+DICT_ADAPTER = TypeAdapter(dict[str, Any])
+DICT_LIST_ADAPTER = TypeAdapter(list[dict[str, Any]])
 
 
 class MessageRole(StrEnum):
@@ -54,7 +61,8 @@ def chat_param_message_tool_calls(message: ChatCompletionMessageParam) -> list[C
             tool_calls = message.get("tool_calls")
             if tool_calls is None:
                 return []
-            return TypeAdapter(list[ChatCompletionMessageToolCallParam]).validate_python(tool_calls)
+            validated = CHAT_TOOL_CALL_ADAPTER.validate_python(tool_calls)
+            return cast(list[ChatCompletionMessageToolCallParam], validated)
         case MessageRole.USER | MessageRole.SYSTEM | MessageRole.TOOL | MessageRole.FUNCTION | MessageRole.DEVELOPER:
             # Other message types don't have tool_calls
             return []
@@ -113,7 +121,8 @@ def parse_response_messages(messages: Any) -> list[ResponseOutputMessage] | None
     """Parse messages into validated ResponseOutputMessage objects."""
     if not messages:
         return None
-    return TypeAdapter(list[ResponseOutputMessage]).validate_python(messages)
+    validated = RESPONSES_MESSAGE_ADAPTER.validate_python(messages)
+    return cast(list[ResponseOutputMessage], validated)
 
 
 def dump_response_messages(messages: list[ResponseOutputMessage]) -> list[dict[str, Any]]:
@@ -123,32 +132,29 @@ def dump_response_messages(messages: list[ResponseOutputMessage]) -> list[dict[s
 
 def dump_chat_messages(messages: list[ChatCompletionMessageParam]) -> list[dict[str, Any]]:
     """Convert ChatCompletionMessageParam objects to dict form."""
-    return [TypeAdapter(dict[str, Any]).validate_python(msg) for msg in messages]
+    return [cast(dict[str, Any], DICT_ADAPTER.validate_python(msg)) for msg in messages]
 
 
 def parse_chat_messages(messages: Any) -> list[ChatCompletionMessageParam] | None:
     """Parse messages into validated ChatCompletionMessageParam objects."""
     if not messages:
         return None
-    return TypeAdapter(list[ChatCompletionMessageParam]).validate_python(messages)
+    validated = CHAT_MESSAGE_ADAPTER.validate_python(messages)
+    return cast(list[ChatCompletionMessageParam], validated)
 
 
 # Remove this function - parse the data into the right type first instead of handling unions
-
-
-def parse_response(response: dict[str, Any]) -> Response:
-    """Parse response data into validated Response object."""
-    return TypeAdapter(Response).validate_python(response)
 
 
 def parse_tool_params(params: str | dict[str, Any]) -> dict[str, Any]:
     """Parse tool parameters into a dict."""
     if isinstance(params, str):
         parsed = json.loads(params)
-        return TypeAdapter(dict[str, Any]).validate_python(parsed)
-    return TypeAdapter(dict[str, Any]).validate_python(params)
+        return cast(dict[str, Any], DICT_ADAPTER.validate_python(parsed))
+    return cast(dict[str, Any], DICT_ADAPTER.validate_python(params))
 
 
 def parse_tools_list(tools: Any) -> list[dict[str, Any]]:
     """Parse a list of tools into validated dicts."""
-    return TypeAdapter(list[dict[str, Any]]).validate_python(tools if tools else [])
+    validated = DICT_LIST_ADAPTER.validate_python(tools if tools else [])
+    return cast(list[dict[str, Any]], validated)

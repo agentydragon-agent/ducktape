@@ -84,6 +84,7 @@ repos:
           - fastapi>=0.115.0
           - mautrix>=0.20.0
           - textual>=0.78.0
+          - "docker>=7.0.0"
           - "sqlalchemy[mypy]>=2.0"
           # Type stubs
           - types-psycopg2

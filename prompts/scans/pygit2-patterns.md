@@ -202,6 +202,45 @@ ref.shorthand                       # str - short reference name
 
 ## Detection Strategy
 
+**MANDATORY Step 0**: Discover ALL pygit2 usage in the codebase.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL pygit2 usage output using your intelligence
+- High recall required, high precision NOT required - you determine which are non-idiomatic
+- Review each for: idiomatic API usage, Walker opportunities, proper type usage
+- Prevents lazy analysis by forcing examination of ALL git operations
+
+```bash
+# Find ALL pygit2 imports and usage
+rg --type py 'import pygit2|from pygit2' -B 1 -A 3 --line-number
+
+# Find pygit2.Repository usage
+rg --type py 'pygit2\.Repository|Repository\(' -B 1 -A 2 --line-number
+
+# Find Oid usage (often indicates manual SHA handling)
+rg --type py '\bOid\b' -B 1 -A 1 --line-number
+
+# Find common non-idiomatic patterns
+rg --type py 'revparse_single|parent_ids|\.parents\[' -B 2 -A 2 --line-number
+
+# Find Walker API usage (or lack thereof)
+rg --type py 'Walker|walk\(' -B 1 -A 2 --line-number
+
+# Count pygit2 usage
+echo "Total pygit2 usage:" && rg --type py 'pygit2\.' | wc -l
+```
+
+**What to review for each pygit2 usage:**
+1. **HEAD access**: Using `revparse_single("HEAD")` instead of `repo.head.target`?
+2. **Parent access**: Using `parent_ids[0]` instead of `.parents[0]`?
+3. **Manual walking**: Iterating with manual parent access instead of Walker?
+4. **Oid handling**: Manual SHA string to Oid conversion?
+5. **Trivial helpers**: One-line wrappers that should be inlined?
+
+**Process ALL output**: Read each pygit2 usage, use your judgment to identify non-idiomatic patterns.
+
+---
+
 **Goal**: Find ALL non-idiomatic pygit2 patterns (100% recall target).
 
 **Recall/Precision**: Medium-high recall (~70-80%) with targeted grep patterns
@@ -215,7 +254,7 @@ ref.shorthand                       # str - short reference name
 - But some require understanding API capabilities (knowing Walker exists, knowing .target vs .peel)
 - Need to verify refactored code works correctly
 
-**Recommended approach**:
+**Recommended approach AFTER Step 0**:
 1. Run targeted grep patterns to find known antipatterns (~70-80% recall)
 2. Verify each candidate:
    - Does proposed refactoring preserve behavior?

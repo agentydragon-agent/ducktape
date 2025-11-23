@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 
-from docker import DockerClient
+from docker.client import DockerClient
 
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse

@@ -1,20 +1,31 @@
-# Scan: Duplicated Test Fixtures, Setup, and Matchers
+# Scan: Duplicated Code Patterns
 
 ## Context
 @../shared-context.md
 
 ## Overview
 
-Tests often accumulate duplicated code - identical or nearly-identical fixtures, setup logic, assertion patterns, and custom matchers. This scan identifies opportunities to extract shared test infrastructure to reduce maintenance burden and improve consistency.
+Codebases accumulate duplicated code across all domains:
+- **Test code**: Identical fixtures, setup logic, assertion patterns, custom matchers
+- **Production code**: Repeated business logic, data transformations, validation patterns
+- **Utilities**: Similar helper functions with slight variations
+- **Configuration**: Duplicated setup/teardown patterns
+
+This scan identifies opportunities to extract shared implementations to reduce maintenance burden and improve consistency.
 
 ## Core Principle
 
-**DRY in test code matters**: While test clarity sometimes justifies local duplication, systematic patterns should be factored into shared fixtures, conftest.py helpers, or custom matchers.
+**DRY (Don't Repeat Yourself) matters**: While local clarity sometimes justifies duplication, systematic patterns should be factored into shared implementations.
 
 **Balance**: Prefer local clarity over premature abstraction, but extract when:
-- Pattern appears 3+ times across different test modules
-- Setup logic is complex and error-prone to duplicate
-- Assertion pattern needs to evolve consistently
+- Pattern appears 3+ times across different modules
+- Logic is complex and error-prone to duplicate
+- Pattern needs to evolve consistently
+- Changes require updating multiple locations
+
+## Test Code Duplication (Primary Focus)
+
+Test code is particularly prone to duplication. While test clarity sometimes justifies local duplication, systematic patterns should be factored into shared fixtures, conftest.py helpers, or custom matchers.
 
 ## Pattern 1: Duplicated Fixtures
 
@@ -171,6 +182,65 @@ def test_send_welcome_email(mock_email_client):
     mock_email_client.send.assert_called_once()
 ```
 
+### CRITICAL: Don't Mock Trivial Data Holders
+
+**ANTI-PATTERN**: Mocking Pydantic models, dataclasses, or simple data holders
+
+```python
+# BAD: Mock reimplements the data structure
+def make_mock_message(name: str, arguments: dict[str, Any] | None = None):
+    """Create a mock MCP CallToolRequest message."""
+    class MockMessage:
+        def __init__(self, name: str, arguments: dict[str, Any] | None):
+            self.name = name
+            self.arguments = arguments or {}
+    return MockMessage(name, arguments)
+
+# BAD: Using unittest.mock for simple data
+from unittest.mock import Mock
+def test_process_request():
+    mock_request = Mock()
+    mock_request.name = "tool_name"
+    mock_request.arguments = {"key": "value"}
+    process(mock_request)
+```
+
+**GOOD**: Use real instances with test data
+
+```python
+# GOOD: Use the actual Pydantic model
+from mcp.types import CallToolRequest
+
+def test_process_request():
+    request = CallToolRequest(
+        name="tool_name",
+        arguments={"key": "value"}
+    )
+    process(request)
+
+# GOOD: Use actual dataclass
+from dataclasses import dataclass
+
+@dataclass
+class User:
+    id: int
+    name: str
+
+def test_user_validation():
+    user = User(id=1, name="Test User")  # Real instance
+    assert validate_user(user)
+```
+
+**Why?**
+- Mocks hide schema changes (real models fail fast)
+- Mocks don't validate constraints (Pydantic validation, required fields)
+- Mocks create maintenance burden (reimplementing data structures)
+- Real instances are self-documenting (IDE autocomplete, type hints)
+- Tests become integration-like (closer to production behavior)
+
+**When to mock**: Only mock classes with behavior (services, clients, I/O)
+**When NOT to mock**: Never mock pure data containers (Pydantic, dataclasses, NamedTuple, TypedDict)
+
 ## Pattern 5: Duplicated Parameterization
 
 ### BAD: Repeated test data across modules
@@ -256,7 +326,250 @@ def test_create_user():
     assert_successful_user_response(response, user_data, status_code=201)
 ```
 
+## Pattern 7: Duplicated Test Data (TypeScript/Vitest Example)
+
+### BAD: Repeated mock data structure (real codebase example)
+
+```typescript
+// GlobalApprovalsList.test.ts - Pattern repeated 11+ times across tests
+it('should display approvals grouped by agent', async () => {
+  const mockApprovals = [
+    {
+      uri: 'resource://approvals/1',
+      mimeType: 'application/json',
+      text: JSON.stringify({
+        agent_id: 'agent-1',
+        call_id: 'call-1',
+        tool: 'read_file',
+        args: { path: '/test.txt' },
+        timestamp: '2025-01-01T00:00:00Z',
+      }),
+    },
+    // ... more approvals
+  ]
+  mockReadResource.mockResolvedValue(mockApprovals)
+  // ... test logic
+})
+
+it('should call approve tool when approve button is clicked', async () => {
+  const mockApprovals = [  // ❌ Same structure, 10 more times
+    {
+      uri: 'resource://approvals/1',
+      mimeType: 'application/json',
+      text: JSON.stringify({
+        agent_id: 'agent-1',
+        call_id: 'call-1',
+        tool: 'test_tool',
+        args: {},
+        timestamp: '2025-01-01T00:00:00Z',
+      }),
+    },
+  ]
+  mockReadResource.mockResolvedValue(mockApprovals)
+  // ... test logic
+})
+
+// Pattern continues in 9 more tests...
+```
+
+### GOOD: Extract fixture factory
+
+```typescript
+// tests/fixtures/approvals.ts
+export function createMockApproval(overrides?: Partial<PendingApproval>) {
+  return {
+    uri: overrides?.uri ?? 'resource://approvals/1',
+    mimeType: 'application/json',
+    text: JSON.stringify({
+      agent_id: overrides?.agent_id ?? 'agent-1',
+      call_id: overrides?.call_id ?? 'call-1',
+      tool: overrides?.tool ?? 'test_tool',
+      args: overrides?.args ?? {},
+      timestamp: overrides?.timestamp ?? '2025-01-01T00:00:00Z',
+    }),
+  }
+}
+
+export function mockApprovalsResource(approvals: ReturnType<typeof createMockApproval>[]) {
+  mockReadResource.mockResolvedValue(approvals)
+}
+
+// GlobalApprovalsList.test.ts
+import { createMockApproval, mockApprovalsResource } from './fixtures/approvals'
+
+it('should display approvals grouped by agent', async () => {
+  mockApprovalsResource([
+    createMockApproval({ agent_id: 'agent-1', tool: 'read_file' }),
+    createMockApproval({ agent_id: 'agent-1', tool: 'write_file', call_id: 'call-2' }),
+    createMockApproval({ agent_id: 'agent-2', tool: 'exec', call_id: 'call-3' }),
+  ])
+  // ... test logic
+})
+
+it('should call approve tool when approve button is clicked', async () => {
+  mockApprovalsResource([createMockApproval()])  // Defaults work for this test
+  // ... test logic
+})
+```
+
+## Pattern 8: Duplicated Test Workflows (TypeScript/Vitest Example)
+
+### BAD: Repeated interaction workflow (real codebase example)
+
+```typescript
+// GlobalApprovalsList.test.ts - "Open reject dialog" pattern repeated 5+ times
+it('should open reject dialog when reject button is clicked', async () => {
+  const mockApprovals = [/* ... */]
+  mockReadResource.mockResolvedValue(mockApprovals)
+
+  const { container } = render(GlobalApprovalsList)
+
+  await waitFor(() => {
+    expect(screen.getByText('test_tool')).toBeTruthy()
+  })
+
+  // Find and click reject button
+  const rejectButton = container.querySelector('.btn-reject')
+  expect(rejectButton).toBeTruthy()
+  if (rejectButton) {
+    await fireEvent.click(rejectButton)
+  }
+
+  await waitFor(() => {
+    expect(screen.getByText('Reject Tool Call')).toBeTruthy()
+  })
+})
+
+it('should require rejection reason to be non-empty', async () => {
+  const mockApprovals = [/* ... */]
+  mockReadResource.mockResolvedValue(mockApprovals)
+
+  const { container } = render(GlobalApprovalsList)
+
+  await waitFor(() => {
+    expect(screen.getByText('test_tool')).toBeTruthy()
+  })
+
+  // ❌ Exact same workflow - repeated 5 times
+  const rejectButton = container.querySelector('.btn-reject')
+  if (rejectButton) {
+    await fireEvent.click(rejectButton)
+  }
+
+  await waitFor(() => {
+    expect(screen.getByText('Reject Tool Call')).toBeTruthy()
+  })
+
+  // Test-specific logic here
+})
+
+// Pattern continues in 3 more tests...
+```
+
+### GOOD: Extract workflow helper
+
+```typescript
+// tests/helpers/interactions.ts
+export async function openRejectDialog(container: HTMLElement) {
+  const rejectButton = container.querySelector('.btn-reject')
+  expect(rejectButton).toBeTruthy()
+
+  if (rejectButton) {
+    await fireEvent.click(rejectButton)
+  }
+
+  await waitFor(() => {
+    expect(screen.getByText('Reject Tool Call')).toBeTruthy()
+  })
+}
+
+export async function renderWithApproval(
+  approvals: ReturnType<typeof createMockApproval>[] = [createMockApproval()]
+) {
+  mockApprovalsResource(approvals)
+  const result = render(GlobalApprovalsList)
+
+  await waitFor(() => {
+    expect(screen.getByText(approvals[0].tool ?? 'test_tool')).toBeTruthy()
+  })
+
+  return result
+}
+
+// GlobalApprovalsList.test.ts
+import { openRejectDialog, renderWithApproval } from './helpers/interactions'
+
+it('should open reject dialog when reject button is clicked', async () => {
+  const { container } = await renderWithApproval()
+  await openRejectDialog(container)
+  // Dialog is now open, test-specific assertions
+})
+
+it('should require rejection reason to be non-empty', async () => {
+  const { container } = await renderWithApproval()
+  await openRejectDialog(container)
+
+  // Test-specific logic
+  const confirmButton = container.querySelector('.btn-primary')
+  expect(confirmButton?.hasAttribute('disabled')).toBe(true)
+})
+```
+
+**Benefits of workflow extraction**:
+- **Single source of truth**: Dialog opening logic in one place
+- **Easier maintenance**: Update selector once if HTML structure changes
+- **Test intent clarity**: `openRejectDialog()` is self-documenting
+- **Reduced duplication**: 5 tests × 10 lines = 50 lines → 5 tests × 1 line = 5 lines
+
 ## Detection Strategy
+
+**MANDATORY Step 0**: Run duplication detection tools on the entire codebase.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL duplication candidates using your intelligence
+- High recall required, high precision NOT required - you determine which duplications warrant extraction
+- Review each for: duplication count (3+ instances?), complexity, likelihood of divergent evolution
+- Prevents lazy analysis by forcing examination of ALL concrete duplication candidates
+
+```bash
+# 1. Run jscpd to find duplicated code blocks (works for Python, JavaScript, etc.)
+jscpd . --min-lines 5 --min-tokens 30 --format "json" > duplication_report.json
+
+# View jscpd summary
+cat duplication_report.json | jq '.statistics'
+
+# View duplicated blocks with locations
+cat duplication_report.json | jq '.duplicates[] | {format, lines, tokens, firstFile: .firstFile.name, firstStart: .firstFile.start, secondFile: .secondFile.name, secondStart: .secondFile.start}'
+
+# 2. Find most common line.strip() strings (often indicates duplicated assertions/logic)
+# Extract all non-empty, non-comment lines, strip whitespace, count frequency
+rg --type py --no-heading --no-filename '^[[:space:]]*[^#].*\S' | \
+  sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | \
+  sort | uniq -c | sort -rn | head -50
+
+# 3. Find exact line matches with file:line locations (top 20 most common)
+rg --type py --no-heading '^[[:space:]]*[^#].*\S' | \
+  sed 's/^\([^:]*\):\([0-9]*\):[[:space:]]*\(.*\)/\3|\1:\2/' | \
+  awk -F'|' '{lines[$1] = lines[$1] $2 ", "} END {for (line in lines) print length(lines[line]), line, substr(lines[line], 1, length(lines[line])-2)}' | \
+  sort -rn | head -20
+```
+
+**What to review from jscpd output**:
+1. **Duplication count**: Does block appear 3+ times?
+2. **Complexity**: Is it complex enough to warrant extraction (5+ lines, not trivial)?
+3. **Consistency**: Should changes propagate consistently?
+4. **Domain**: Test fixtures, business logic, validation, utilities?
+5. **Evolution**: Will these likely evolve together or diverge?
+
+**What to review from common line patterns**:
+1. **Test assertions**: Same assertion pattern across multiple tests?
+2. **Setup/teardown**: Repeated initialization/cleanup?
+3. **Validation**: Same validation logic duplicated?
+4. **Data transformation**: Same transformation pattern?
+
+**Process ALL output**: Read each duplication candidate, use your judgment to identify extraction opportunities.
+
+---
 
 ### 1. AST-Based Detection (Most Reliable)
 

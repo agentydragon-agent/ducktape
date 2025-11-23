@@ -5,7 +5,7 @@ import logging
 import os
 
 import docker
-from docker import DockerClient
+from docker.client import DockerClient
 import docker.errors
 
 from adgn.agent.policies.policy_types import PolicyResponse

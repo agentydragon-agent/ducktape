@@ -60,6 +60,27 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+async def read_daemon_pid(pid_path: Path) -> int | None:
+    """Read daemon PID from file.
+
+    Returns:
+        PID as int if file exists and contains valid PID, None otherwise.
+    """
+    if not pid_path.exists():
+        return None
+
+    try:
+        pid_str = await asyncio.to_thread(pid_path.read_text)
+        pid_str = pid_str.strip()
+
+        if not pid_str:
+            return None
+
+        return int(pid_str)
+    except (OSError, ValueError):
+        return None
+
+
 class RpcError(RuntimeError):
     def __init__(self, code: int, message: str, data: object | None = None) -> None:
         super().__init__(message)
@@ -99,17 +120,12 @@ class WtClient:
             return by_name.absolute_path, (res.relative_path or None)
         return None, None
 
-    def _is_daemon_running(self) -> bool:
+    async def _is_daemon_running(self) -> bool:
         """Check if the daemon is running."""
         try:
-            if not self.config.daemon_pid_path.exists():
+            pid = await read_daemon_pid(self.config.daemon_pid_path)
+            if pid is None:
                 return False
-
-            pid_str = self.config.daemon_pid_path.read_text().strip()
-            if not pid_str:
-                return False
-
-            pid = int(pid_str)
 
             # Check if process exists and socket is accessible
             return bool(psutil.pid_exists(pid) and self.config.daemon_socket_path.exists())
@@ -121,7 +137,7 @@ class WtClient:
         """Start daemon if not running."""
 
         async with self._daemon_start_lock:
-            if self._is_daemon_running():
+            if await self._is_daemon_running():
                 logger.debug("Daemon already running for %s", self.config.main_repo)
                 return
 

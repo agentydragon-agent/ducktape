@@ -9,7 +9,7 @@ import logging
 import os
 from typing import cast
 
-from docker import DockerClient
+from docker.client import DockerClient
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 
@@ -213,7 +213,7 @@ class AgentContainer:
         if self._compositor_client is None:
             return {}
         meta = CompositorMetaClient(self._compositor_client)
-        return await meta.list_states()
+        return cast(dict[str, ServerEntry], await meta.list_states())
 
     # ---- Phase-based initialization methods ---------------------------------
 
@@ -307,9 +307,11 @@ class AgentContainer:
         # Attach in-proc UI/approval/runtime servers
         await self._attach_inproc_servers(self._ui_bus)
 
-        # Ensure policy reader is initialized by _attach_inproc_servers
+        # Ensure policy clients are initialized by _attach_inproc_servers
         if self._policy_reader is None:
             raise RuntimeError("policy reader not initialized")
+        if self._policy_approver is None:
+            raise RuntimeError("policy approver not initialized")
         assert approval_hub is not None
 
         async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
@@ -352,9 +354,13 @@ class AgentContainer:
         Returns:
             tuple: (session, agent)
         """
+        if self._cm is None:
+            raise RuntimeError("connection manager not initialized")
+        manager = self._cm
+
         # Create session
         sess = AgentSession(
-            self._cm,
+            manager,
             approval_hub=approval_hub,
             persistence=self.persistence,
             agent_id=self.agent_id,
@@ -372,7 +378,7 @@ class AgentContainer:
         # Build handlers
         handlers, persist_handler = build_handlers(
             poll_notifications=notifications.poll,
-            manager=self._cm,
+            manager=manager,
             persistence=self.persistence,
             approval_engine=approval_engine,
             approval_hub=approval_hub,
@@ -410,7 +416,7 @@ class AgentContainer:
 
         # Create UI facet if needed
         if self.with_ui and self._ui_bus is not None:
-            self.ui = UiFacet(manager=self._cm, ui_bus=self._ui_bus)
+            self.ui = UiFacet(manager=manager, ui_bus=self._ui_bus)
 
         # Store persist handler
         self.persist_handler = persist_handler

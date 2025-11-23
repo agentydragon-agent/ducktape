@@ -16,14 +16,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
 from openai.types.responses import Response as OpenAIResponse, ResponseCreateParams, ResponseStreamEvent, ResponseUsage
 
-from adgn.rspcache.models import (
-    ErrorPayload,
-    ResponseStatus,
-    parse_response,
-    stream_event_final_response,
-    stream_event_response_id,
-    stream_event_usage,
-)
+from adgn.rspcache.models import ErrorPayload, ResponseStatus, response_from_event
 from adgn.rspcache.responses_db import APIKeyRecord, ResponsesDB
 
 CacheKey = NewType("CacheKey", str)
@@ -79,29 +72,25 @@ class StreamingContext:
                 for frame in parsed:
                     frame_payload = ResponseStreamEvent.model_validate(frame)
                     ordinal += 1
-                    if (
-                        maybe_response_id := stream_event_response_id(frame_payload)
-                    ) and self.response_id != maybe_response_id:
-                        self.response_id = maybe_response_id
-                        await self.db.mark_in_progress(self.key, self.response_id)
-                    if usage := stream_event_usage(frame_payload):
-                        token_usage = usage
-                    if (response_candidate := stream_event_final_response(frame_payload)) is not None:
-                        latest_response = response_candidate
+                    self.response_id, usage_update, latest = await _update_response_state(
+                        frame=frame_payload, db=self.db, cache_key=self.key, response_id=self.response_id
+                    )
+                    if usage_update is not None:
+                        token_usage = usage_update
+                    if latest is not None:
+                        latest_response = latest
                     await self.db.append_frame(self.key, frame_payload, ordinal=ordinal, response_id=self.response_id)
             trailing_frames = _extract_remaining(text_buffer)
             for frame in trailing_frames:
                 frame_payload = ResponseStreamEvent.model_validate(frame)
                 ordinal += 1
-                if (
-                    maybe_response_id := stream_event_response_id(frame_payload)
-                ) and self.response_id != maybe_response_id:
-                    self.response_id = maybe_response_id
-                    await self.db.mark_in_progress(self.key, self.response_id)
-                if usage := stream_event_usage(frame_payload):
-                    token_usage = usage
-                if (response_candidate := stream_event_final_response(frame_payload)) is not None:
-                    latest_response = response_candidate
+                self.response_id, usage_update, latest = await _update_response_state(
+                    frame=frame_payload, db=self.db, cache_key=self.key, response_id=self.response_id
+                )
+                if usage_update is not None:
+                    token_usage = usage_update
+                if latest is not None:
+                    latest_response = latest
                 await self.db.append_frame(self.key, frame_payload, ordinal=ordinal, response_id=self.response_id)
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             if latest_response is not None and latest_response.usage is not None:
@@ -164,8 +153,11 @@ def _extract_client_token(request: Request, authorization: str | None, x_api_key
         for prefix in ("Bearer ", "bearer "):
             if (stripped := authorization.removeprefix(prefix)) != authorization and (token := stripped.strip()):
                 return token
-    if (header_token := request.headers.get("X-API-Key")) and (token := header_token.strip()):
-        return token
+    header_token = request.headers.get("X-API-Key")
+    if isinstance(header_token, str):
+        token = header_token.strip()
+        if token:
+            return token
     return None
 
 
@@ -243,13 +235,13 @@ async def _proxy_stream(
 
         frame_payload = ResponseStreamEvent.model_validate(frame_dict)
         ordinal += 1
-        if (maybe_response_id := stream_event_response_id(frame_payload)) and response_id != maybe_response_id:
-            response_id = maybe_response_id
-            await db.mark_in_progress(key, response_id)
-        if usage := stream_event_usage(frame_payload):
-            token_usage = usage
-        if (response_candidate := stream_event_final_response(frame_payload)) is not None:
-            latest_response = response_candidate
+        response_id, usage_update, latest = await _update_response_state(
+            frame=frame_payload, db=db, cache_key=key, response_id=response_id
+        )
+        if usage_update is not None:
+            token_usage = usage_update
+        if latest is not None:
+            latest_response = latest
         await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
 
     try:
@@ -412,7 +404,7 @@ async def responses_endpoint(
         )
         raise HTTPException(status_code=502, detail="Upstream returned non-JSON response") from exc
 
-    response_model = parse_response(resp_json)
+    response_model = OpenAIResponse.model_validate(resp_json)
     response_id = response_model.id
     await db.mark_in_progress(key, response_id)
     latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -424,3 +416,20 @@ async def responses_endpoint(
 
     headers = {"X-Cache-Hit": "0", "X-Cache-Key": key}
     return JSONResponse(content=resp_json, status_code=resp.status_code, headers=headers)
+
+
+async def _update_response_state(
+    *, frame: ResponseStreamEvent, db: ResponsesDB, cache_key: str, response_id: str | None
+) -> tuple[str | None, ResponseUsage | None, OpenAIResponse | None]:
+    """Update cached response metadata from a stream frame and record progress."""
+
+    response_obj = response_from_event(frame)
+    if response_obj is None:
+        return response_id, None, None
+
+    updated_id = response_id
+    if response_obj.id and response_obj.id != response_id:
+        updated_id = response_obj.id
+        await db.mark_in_progress(cache_key, updated_id)
+
+    return updated_id, response_obj.usage, response_obj

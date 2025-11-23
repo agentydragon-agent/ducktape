@@ -19,7 +19,7 @@ from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.server.app import create_app
-from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt
+from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt, ServerMessage
 from adgn.mcp.editor_server import make_editor_server
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
@@ -420,7 +420,7 @@ def agent_ws_box(ws_session, make_agent_http):
             http = make_agent_http(client, agent_id)
 
             def _collect(limit: int = 200):
-                out = []
+                out: list[ServerMessage] = []
                 for _ in range(limit):
                     env = Envelope.model_validate(ws.receive_json())
                     p = env.payload

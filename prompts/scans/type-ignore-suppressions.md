@@ -161,25 +161,47 @@ async def post(input: PostInput) -> PostResult:
 
 **Goal**: Find ALL suppression comments (100% recall).
 
-**Recall/Precision**:
-- `grep "type: ignore\|noqa"` has ~100% recall, ~100% precision for finding suppressions
-- Determining if suppression is "necessary" requires code analysis (lower precision)
+**MANDATORY Step 0**: Discover ALL type checker and linter suppression comments in the codebase.
 
-**Recommended approach**:
-1. Run grep to find all suppression comments (100% recall)
-   ```bash
-   grep -rn "type: ignore\|noqa" --include="*.py" .
-   ```
-2. Group by file and suppression type to identify patterns
-3. For each suppression:
-   - Read surrounding code to understand the error
-   - Determine if fixable (missing import, wrong type, etc.)
-   - Try removing suppression and running type checker
-   - Either fix underlying issue or document why needed
-4. Verification strategy:
-   - **Potentially fixable**: Deep investigation (check library types, imports, conversions)
-   - **Intentional (AST visitor, side-effect imports)**: Verify legitimacy, keep with clear comment
-   - **Private API access**: Architectural decision, may need refactoring
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL suppression output using your intelligence
+- High recall required, high precision NOT required - you determine which are fixable
+- Review each suppression for: missing imports, type conversions, proper types, architecture issues
+- Prevents lazy analysis by forcing examination of ALL type checker workarounds
+
+```bash
+# Find ALL type checker suppression comments with context
+rg --type py '# type: ignore' -B 2 -A 1 --line-number
+rg --type py '# noqa' -B 2 -A 1 --line-number
+rg --type py '# pyright: ignore' -B 2 -A 1 --line-number
+rg --type py '# pylint: disable' -B 2 -A 1 --line-number
+rg --type py '# mypy:' -B 2 -A 1 --line-number
+
+# Count total suppressions found
+(rg --type py '# type: ignore' && rg --type py '# noqa' && rg --type py '# pyright: ignore' && rg --type py '# pylint: disable' && rg --type py '# mypy:') | wc -l
+```
+
+**What to review for each suppression:**
+1. **Missing Type Conversion**: Return type mismatch that needs conversion function
+2. **Overly Broad Types**: Parameter/return types that should be narrowed
+3. **Type Assertions Needed**: Dynamic attributes or runtime checks needed
+4. **Type Narrowing**: Use `isinstance()`, `assert`, or `hasattr()` checks
+5. **Legitimate Suppressions**: AST visitors, monkey-patching, library limitations (keep with docs)
+
+**Process ALL output**: Read each suppression, use your judgment to identify which can be fixed using the hierarchy below.
+
+**Fix Hierarchy (BEST → ACCEPTABLE)**:
+1. **BEST**: Clean code with no hacks (proper types, refactoring, library upgrades)
+2. **GOOD**: Type assertions/narrowing (`cast()`, `isinstance()`, `assert`, `hasattr()`)
+3. **ACCEPTABLE**: Well-documented suppression with clear explanation why necessary
+
+---
+
+**Recall/Precision**:
+- Finding suppressions: ~100% recall, ~100% precision
+- Determining if "fixable": Requires code analysis (lower precision)
+- Some patterns have clear fixes (missing imports, type conversions)
+- Others require architectural changes (private API access)
 
 **Tool characteristics**:
 - Finding comments: 100% recall, 100% precision

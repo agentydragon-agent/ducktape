@@ -10,15 +10,8 @@ from pydantic import BaseModel
 # as a first-class input item so the agent can initiate web search via Responses
 # without custom tool plumbing.
 from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
-from adgn.agent.loop_control import Abort, Auto, Continue, LoopDecision, NoLoopDecision, RequireAny
-from adgn.openai_utils.model import (
-    AssistantMessageOut,
-    FunctionCallItem,
-    FunctionCallOutputItem,
-    InputItem,
-    ReasoningItem,
-    UserMessage,
-)
+from adgn.agent.loop_control import Abort, Auto, Continue, InjectedItem, LoopDecision, NoLoopDecision, RequireAny
+from adgn.openai_utils.model import ReasoningItem, UserMessage
 
 from .notifications.types import NotificationsBatch, NotificationsForModel, ResourcesServerNotice
 
@@ -77,7 +70,7 @@ class Reducer:
     def on_before_sample(self) -> LoopDecision:
         # Collect concrete decisions (non-NoLoopDecision) from handlers in order.
         decisions: list[LoopDecision] = []
-        collected_inserts: list[InputItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] = []
+        collected_inserts: list[InjectedItem] = []
         skip_value: bool | None = None
         for h in self._handlers:
             dec = h.on_before_sample()

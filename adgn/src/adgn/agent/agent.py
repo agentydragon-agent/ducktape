@@ -10,7 +10,7 @@ import copy
 from dataclasses import dataclass
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import anyio
 from fastmcp.client import Client
@@ -389,13 +389,23 @@ class MiniCodex:
             # model output items for this phase and process them via the normal
             # output path (adds assistant text, enqueues tool calls, etc.).
             # Caller must ensure inserts_input contains only output-side items when skip_sampling=True
-            resp_output = list(decision.inserts_input)  # Trust type system
+            resp_output = list(
+                cast(
+                    Sequence[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut],
+                    decision.inserts_input,
+                )
+            )
         elif isinstance(decision, Continue):
             # Inject any handler-provided pre-sample inserts into transcript
             # Runtime check: FunctionCallItem only allowed with skip_sampling=True
             if any(isinstance(item, FunctionCallItem) for item in decision.inserts_input):
                 raise TypeError("FunctionCallItem requires skip_sampling=True")
-            self._transcript.extend(decision.inserts_input)
+            normal_inserts: list[UserMessage] = []
+            for item in decision.inserts_input:
+                if not isinstance(item, UserMessage):
+                    raise TypeError("Only UserMessage is allowed when skip_sampling=False")
+                normal_inserts.append(item)
+            self._transcript.extend(normal_inserts)
             tool_choice = _tool_choice_from_policy(decision.tool_policy)
             reasoning_param = build_reasoning_params(self._reasoning_effort, self._reasoning_summary)
             # Build OpenAI Responses tools list via Policy Gateway client (proxy aggregates downstream)

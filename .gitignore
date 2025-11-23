@@ -18,9 +18,11 @@
 **/.mypy_cache/
 **/.ruff_cache/
 **/.venv/
+**/venv/
 **/.ipynb_checkpoints/
 **/.coverage
 **/.coverage.*
+**/htmlcov/
 
 # Development environments
 **/.devenv*

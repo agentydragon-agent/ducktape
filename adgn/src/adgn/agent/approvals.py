@@ -7,7 +7,7 @@ from importlib import resources
 import logging
 import uuid
 
-from docker import DockerClient
+from docker.client import DockerClient
 from pydantic import BaseModel
 
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision

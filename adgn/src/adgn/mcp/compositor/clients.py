@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
 from pydantic import BaseModel, Field
@@ -62,8 +64,7 @@ class CompositorMetaClient:
         comp = getattr(getattr(self._client, "transport", None), "server", None)
         if not isinstance(comp, Compositor):
             raise RuntimeError("CompositorMetaClient requires an in-process Compositor transport")
-        entries = await comp.server_entries()
-        return dict(entries)
+        return cast(dict[str, ServerEntry], await comp.server_entries())
 
 
 # Internal helper; prefer explicit imports

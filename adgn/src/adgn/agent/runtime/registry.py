@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from docker import DockerClient
+from docker.client import DockerClient
 from fastmcp.mcp_config import MCPConfig
 
 from adgn.agent.persist.sqlite import SQLitePersistence

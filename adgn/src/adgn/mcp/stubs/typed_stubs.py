@@ -24,7 +24,7 @@ def _structured_content(result: CallToolResult, *, tool_name: str) -> dict[str, 
     sc = result.structuredContent
     if sc is None:
         raise RuntimeError(f"{tool_name!r} did not return structuredContent; tests require structured outputs")
-    return sc
+    return TypeAdapter(dict[str, Any]).validate_python(sc)
 
 
 class ToolStub(Generic[T_Out]):

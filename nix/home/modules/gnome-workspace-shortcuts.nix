@@ -10,9 +10,9 @@
     # Configure enabled extensions to avoid workspace conflicts
     "org/gnome/shell" = {
       disabled-extensions = [
-        "vertical-workspaces@G-dH.github.com"  # Available but disabled to avoid conflicts
-        "cosmic-workspaces@system76.com"       # Conflicts with workspace shortcuts
-        "pop-cosmic@system76.com"              # Causes JS errors with other extensions
+        "vertical-workspaces@G-dH.github.com" # Available but disabled to avoid conflicts
+        "cosmic-workspaces@system76.com" # Conflicts with workspace shortcuts
+        "pop-cosmic@system76.com" # Causes JS errors with other extensions
       ];
     };
 

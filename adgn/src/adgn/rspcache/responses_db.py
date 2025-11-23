@@ -39,7 +39,7 @@ from adgn.rspcache.events import (
     ResponseStatusEvent,
     parse_event,
 )
-from adgn.rspcache.models import ErrorPayload, FinalResponseSnapshot, ResponseStatus, stream_event_response_id
+from adgn.rspcache.models import ErrorPayload, FinalResponseSnapshot, ResponseStatus, response_from_event
 
 __all__ = [
     "APIKeyRecord",
@@ -341,7 +341,8 @@ class ResponsesDB:
     ) -> int:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
-        derived_response_id = stream_event_response_id(frame_obj)
+        response = response_from_event(frame_obj)
+        derived_response_id = response.id if response is not None else None
         if response_id is None and derived_response_id is not None:
             response_id = derived_response_id
         frame_type = frame_obj.type

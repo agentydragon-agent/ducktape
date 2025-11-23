@@ -35,12 +35,14 @@ async def test_read_ccr_min():
     # Type narrowing: CCR dataset should only contain CCRSample instances
     assert isinstance(s, CCRSample), f"Expected CCRSample, got {type(s)}"
     msgs = s.anthropic_request.messages
-    assert_that(msgs[0]["role"], equal_to("user"))
+    first_msg = msgs[0].model_dump()
+    assert_that(first_msg["role"], equal_to("user"))
     # last user message should contain the <bad> marker
-    last_user = next(m for m in reversed(msgs) if m.get("role") == "user")
+    last_user = next(m for m in reversed(msgs) if getattr(m, "role", None) == "user")
+    last_user_dict = last_user.model_dump()
     # Matcher: has a content block that is text with substring
     assert_that(
-        last_user,
+        last_user_dict,
         has_entries(
             content=any_of(
                 text_block_contains("<bad>"),

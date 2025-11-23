@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..auth.dependencies import Auth
+from ..auth.handlers import AuthType
 from ..config import Settings, get_settings
 from ..database import get_db_session
 from ..models import WebhookIntegration, WebhookPayload
@@ -158,7 +159,7 @@ async def list_all_payloads(
 ):
     """List all webhook integrations and payloads."""
     # Get webhook integrations
-    if auth.auth_type == "admin":
+    if auth.auth_type == AuthType.ADMIN:
         integrations_query = select(WebhookIntegration)
     else:
         integrations_query = select(WebhookIntegration).where(WebhookIntegration.is_enabled)

@@ -19,7 +19,22 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter, field_serializer
 
 RESPONSE_ADAPTER: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
 ERROR_ADAPTER: TypeAdapter[ResponseError] = TypeAdapter(ResponseError)
-USAGE_ADAPTER: TypeAdapter[ResponseUsage] = TypeAdapter(ResponseUsage)
+
+
+def response_from_event(event: ResponseStreamEvent) -> OpenAIResponse | None:
+    """Return Response object for stream events that carry response payloads."""
+
+    if isinstance(
+        event,
+        ResponseCreatedEvent
+        | ResponseCompletedEvent
+        | ResponseFailedEvent
+        | ResponseInProgressEvent
+        | ResponseIncompleteEvent
+        | ResponseQueuedEvent,
+    ):
+        return RESPONSE_ADAPTER.validate_python(event.response)
+    return None
 
 
 class ResponseStatus(StrEnum):
@@ -52,45 +67,3 @@ class FinalResponseSnapshot(BaseModel):
     @field_serializer("status")
     def serialize_status(self, value: ResponseStatus) -> str:
         return value.value
-
-
-def stream_event_response_id(event: ResponseStreamEvent) -> str | None:
-    if isinstance(
-        event,
-        ResponseCreatedEvent
-        | ResponseCompletedEvent
-        | ResponseFailedEvent
-        | ResponseInProgressEvent
-        | ResponseIncompleteEvent
-        | ResponseQueuedEvent,
-    ):
-        return event.response.id
-    return None
-
-
-def stream_event_usage(event: ResponseStreamEvent) -> ResponseUsage | None:
-    if isinstance(
-        event,
-        ResponseCreatedEvent
-        | ResponseCompletedEvent
-        | ResponseFailedEvent
-        | ResponseInProgressEvent
-        | ResponseIncompleteEvent
-        | ResponseQueuedEvent,
-    ):
-        return event.response.usage
-    return None
-
-
-def stream_event_final_response(event: ResponseStreamEvent) -> OpenAIResponse | None:
-    if isinstance(
-        event,
-        ResponseCreatedEvent
-        | ResponseCompletedEvent
-        | ResponseFailedEvent
-        | ResponseInProgressEvent
-        | ResponseIncompleteEvent
-        | ResponseQueuedEvent,
-    ):
-        return event.response
-    return None

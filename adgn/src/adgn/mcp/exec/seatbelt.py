@@ -8,7 +8,7 @@ import sys
 
 import anyio
 import docker
-from docker import DockerClient
+from docker.client import DockerClient
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
