@@ -5,10 +5,8 @@ from pathlib import Path
 import tempfile
 import sys
 
-# Add the adgn module to path
-sys.path.insert(0, str(Path(__file__).parent / "adgn" / "src"))
-
-from adgn.props.unshare_isolation import run_isolated
+# Note: unshare_isolation was an experimental approach not included in final implementation
+# from props_core.unshare_isolation import run_isolated
 
 
 def test_basic_isolation():

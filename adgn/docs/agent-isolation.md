@@ -8,14 +8,49 @@ Props agents need to be isolated to prevent "cheating" - accessing reference sol
 
 ## Available Isolation Methods
 
-### 1. Docker/Podman (Recommended for Production)
+### 1. Bubblewrap (Recommended)
 
-**Status**: Preferred when available
+**Status**: **Recommended for most use cases**
 
-The codebase includes Docker-based isolation via `adgn/props/docker_env.py`:
+Strong isolation using Linux namespaces via bubblewrap:
 
 ```python
-from adgn.props.docker_env import properties_docker_spec
+from props_core.bwrap_isolation import run_with_bwrap
+
+result = run_with_bwrap(
+    ["python3", "agent.py"],
+    workspace_root=Path("/path/to/task"),
+    readonly=False,
+    timeout=60,
+)
+```
+
+**Requirements**:
+- bubblewrap package (`apt install bubblewrap`)
+- User namespaces (widely available)
+
+**Advantages**:
+- ✓ True filesystem isolation (cannot escape sandbox)
+- ✓ Process isolation (PID namespace)
+- ✓ Works in nested containers and restricted environments
+- ✓ No daemon required
+- ✓ Minimal dependencies
+- ✓ Read-only workspace enforcement actually works
+
+**Limitations**:
+- ✗ Network isolation unavailable (kernel limitations in nested containers)
+- ✗ CPU/memory limits require additional setup
+
+**Security Level**: **Good protection against cheating and casual attacks**
+
+### 2. Docker/Podman (Production with Full Kernel)
+
+**Status**: Strongest isolation when available
+
+The codebase includes Docker-based isolation via `props/core/src/props_core/docker_env.py`:
+
+```python
+from props_core.docker_env import properties_docker_spec
 
 wiring = properties_docker_spec(workspace_root, mount_properties=True)
 ```
@@ -31,14 +66,16 @@ wiring = properties_docker_spec(workspace_root, mount_properties=True)
 - Does NOT work in restricted sandbox environments
 - Requires kernel features that may not be available
 
-### 2. Simple Isolation (Fallback)
+**Security Level**: **Strongest isolation available**
 
-**Status**: Working in all environments
+### 3. Simple Isolation (Last Resort Fallback)
+
+**Status**: Works everywhere, but weakest isolation
 
 A lightweight isolation mechanism using filesystem copying and permissions:
 
 ```python
-from adgn.props.simple_isolation import isolated_workspace
+from props_core.simple_isolation import isolated_workspace
 
 task_files = {
     "main.py": "# agent code here",
@@ -70,29 +107,108 @@ with isolated_workspace(task_files, readonly_files) as ws:
 - ✓ Works in any environment (no special kernel features needed)
 
 **What It Does NOT Provide**:
-- ✗ Network isolation (agent can still access network)
+- ✗ True filesystem isolation (agent can traverse to parent dirs)
+- ✗ Network isolation
 - ✗ CPU/memory limits
 - ✗ Syscall filtering
 - ✗ Protection against determined malicious code
 
-**Security Level**: **Prevents accidental cheating, NOT malicious attacks**
+**Security Level**: **Prevents accidental cheating only**
 
 This is sufficient for:
 - Development and testing
-- Honest agents that shouldn't access reference files
-- Environments where Docker/Podman are unavailable
+- Environments where neither Docker nor bubblewrap are available
 
 This is NOT sufficient for:
+- Any scenario where stronger isolation is available
 - Untrusted/adversarial agents
-- Production security-critical evaluations
-- Preventing determined attempts to break out
+
+## Choosing the Right Isolation Method
+
+**Decision tree**:
+
+1. **Is Docker/Podman available and working?**
+   - Yes → Use Docker-based isolation (strongest)
+   - No → Continue to 2
+
+2. **Is bubblewrap available?**
+   - Yes → Use bwrap_isolation (**recommended**)
+   - No → Continue to 3
+
+3. **Fall back to simple_isolation** (basic protection only)
+
+### Auto-Detection Example
+
+```python
+import subprocess
+import docker
+from pathlib import Path
+
+
+def get_best_isolation():
+    """Automatically choose the best available isolation method."""
+    # Try Docker first
+    try:
+        client = docker.from_env()
+        client.ping()
+        return "docker"
+    except:
+        pass
+
+    # Try bubblewrap
+    try:
+        result = subprocess.run(
+            ["bwrap", "--version"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:
+            return "bwrap"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Fall back to simple
+    return "simple"
+
+
+# Use the best available method
+method = get_best_isolation()
+
+if method == "docker":
+    from props_core.docker_env import properties_docker_spec
+    wiring = properties_docker_spec(workspace_root)
+elif method == "bwrap":
+    from props_core.bwrap_isolation import run_with_bwrap
+    result = run_with_bwrap(cmd, workspace_root=workspace)
+else:
+    from props_core.simple_isolation import run_in_isolation
+    result, files = run_in_isolation(cmd, task_files)
+```
 
 ## Usage Examples
 
-### Basic Usage
+### Bubblewrap Basic Usage
 
 ```python
-from adgn.props.simple_isolation import run_in_isolation
+from props_core.bwrap_isolation import BwrapIsolation
+from pathlib import Path
+
+# Create isolation instance
+isolation = BwrapIsolation(
+    workspace_root=Path("/path/to/task"),
+    readonly_workspace=False,
+)
+
+# Run command
+result = isolation.run(["python3", "agent.py"], timeout=60)
+print(result.stdout)
+```
+
+### Simple Isolation Usage
+
+```python
+from props_core.simple_isolation import run_in_isolation
 
 result, output_files = run_in_isolation(
     ["python3", "agent.py"],
@@ -106,56 +222,19 @@ print(f"Output: {result.stdout}")
 print(f"Created files: {list(output_files.keys())}")
 ```
 
-### Context Manager
-
-```python
-from adgn.props.simple_isolation import isolated_workspace
-
-with isolated_workspace(task_files) as ws:
-    # Run multiple commands
-    ws.run(["pip", "install", "-r", "requirements.txt"])
-    result = ws.run(["python3", "main.py"])
-
-    # Collect results
-    files = ws.collect_files(pattern="*.json")
-```
-
-## Environment Detection
-
-To automatically choose the best isolation method:
-
-```python
-import docker
-
-def get_isolation_method():
-    """Detect which isolation method to use."""
-    try:
-        client = docker.from_env()
-        client.ping()
-        return "docker"
-    except:
-        return "simple"
-
-if get_isolation_method() == "docker":
-    # Use Docker-based isolation
-    from adgn.props.docker_env import properties_docker_spec
-    wiring = properties_docker_spec(workspace_root)
-else:
-    # Use simple isolation
-    from adgn.props.simple_isolation import isolated_workspace
-    # ... use isolated_workspace ...
-```
-
 ## Testing
 
 Run the test suites to verify isolation:
 
 ```bash
+# Test bubblewrap isolation
+python3 test_bwrap_simple.py
+
 # Test simple isolation
-python3 test_simple_isolation.py
+python3 adgn/tests/props/test_simple_isolation.py
 
 # Diagnose container support
-./diagnose_container_support.sh
+bash adgn/docs/diagnose_container_support.sh
 ```
 
 ## Why Docker/Podman Don't Work in Some Environments
@@ -173,23 +252,42 @@ This is typical when running inside:
 - Restricted cloud environments
 - Kubernetes pods without privileged access
 
-## Future Improvements
-
-Possible enhancements to simple isolation:
-
-1. **Network isolation**: Use `unshare --net` to disable networking
-2. **Resource limits**: Use `ulimit` for basic CPU/memory caps
-3. **Filesystem restrictions**: Use `unshare --mount` with proper pivotroot
-4. **Process limits**: Use `prlimit` to prevent fork bombs
-
-These would require:
-- More complex setup with user namespaces
-- Potentially root privileges
-- May still fail in nested containers
-
 ## Recommendations
 
-- **Development**: Use simple_isolation (always works)
-- **CI/Testing**: Use simple_isolation (reliable)
-- **Production with honest agents**: Use simple_isolation
-- **Production with untrusted agents**: Use Docker/Podman on bare metal/VM
+| Use Case | Recommended Method | Why |
+|----------|-------------------|-----|
+| **Development** | bubblewrap | Fast, good isolation, works everywhere |
+| **CI/Testing** | bubblewrap | Reliable, available in most CI systems |
+| **Honest agents** | bubblewrap | Strong enough protection |
+| **Untrusted agents** | Docker/Podman | Full containerization |
+| **Bare metal/VM** | Docker/Podman | All features available |
+| **Nested containers** | bubblewrap | Docker won't work |
+| **No bubblewrap available** | simple_isolation | Last resort only |
+
+### Quick Install
+
+```bash
+# Install bubblewrap (Ubuntu/Debian)
+sudo apt install bubblewrap
+
+# Or on RHEL/Fedora
+sudo dnf install bubblewrap
+
+# Verify it works
+bwrap --version
+```
+
+## Isolation Comparison
+
+| Feature | Docker/Podman | Bubblewrap | Simple |
+|---------|--------------|------------|--------|
+| Filesystem isolation | ✓✓✓ | ✓✓✓ | ✗ |
+| Process isolation | ✓✓✓ | ✓✓ | ✗ |
+| Network isolation | ✓✓✓ | ✗ | ✗ |
+| Works in nested containers | ✗ | ✓ | ✓ |
+| No daemon required | ✗ | ✓ | ✓ |
+| Resource limits | ✓✓✓ | ✗ | ✗ |
+| Works everywhere | ✗ | ✓✓ | ✓✓✓ |
+| Security level | Excellent | Good | Minimal |
+
+Legend: ✓✓✓ Excellent, ✓✓ Good, ✓ Basic, ✗ Not available

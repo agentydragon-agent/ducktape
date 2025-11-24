@@ -4,10 +4,7 @@
 from pathlib import Path
 import sys
 
-# Add adgn to path
-sys.path.insert(0, str(Path(__file__).parent / "adgn" / "src"))
-
-from adgn.props.simple_isolation import isolated_workspace, run_in_isolation
+from props_core.simple_isolation import isolated_workspace, run_in_isolation
 
 
 def test_basic_execution():
