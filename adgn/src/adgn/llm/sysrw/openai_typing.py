@@ -111,6 +111,13 @@ def chat_param_message_content_as_text(message: ChatCompletionMessageParam) -> s
 def parse_response_messages(messages: Any) -> list[ResponseOutputMessage] | None:
     """Parse messages into validated ResponseOutputMessage objects.
 
+    NOTE: This function should not exist. Callers should type data correctly at source.
+    If using OpenAI SDK, responses are already typed. If parsing raw JSON, parse to
+    typed objects immediately at the read site, not here. This defers type safety to
+    runtime instead of compile time.
+
+    TODO: Audit all callers and remove this function. See specimen issue 039.
+
     Args:
         messages: Unvalidated external payload (typically from OpenAI API response).
                   Structured validation happens via TypeAdapter within function.
@@ -123,18 +130,15 @@ def parse_response_messages(messages: Any) -> list[ResponseOutputMessage] | None
     return TypeAdapter(list[ResponseOutputMessage]).validate_python(messages)
 
 
-def dump_response_messages(messages: list[ResponseOutputMessage]) -> list[dict[str, Any]]:
-    """Convert validated ResponseOutputMessage objects back to dict form."""
-    return [msg.model_dump(by_alias=True) for msg in messages]
-
-
-def dump_chat_messages(messages: list[ChatCompletionMessageParam]) -> list[dict[str, Any]]:
-    """Convert ChatCompletionMessageParam objects to dict form."""
-    return [TypeAdapter(dict[str, Any]).validate_python(msg) for msg in messages]
-
-
 def parse_chat_messages(messages: Any) -> list[ChatCompletionMessageParam] | None:
     """Parse messages into validated ChatCompletionMessageParam objects.
+
+    NOTE: This function should not exist. Callers should type data correctly at source.
+    If using OpenAI SDK, responses are already typed. If parsing raw JSON, parse to
+    typed objects immediately at the read site, not here. This defers type safety to
+    runtime instead of compile time.
+
+    TODO: Audit all callers and remove this function. See specimen issue 039.
 
     Args:
         messages: Unvalidated external payload (typically from stored state or API).
@@ -148,25 +152,9 @@ def parse_chat_messages(messages: Any) -> list[ChatCompletionMessageParam] | Non
     return TypeAdapter(list[ChatCompletionMessageParam]).validate_python(messages)
 
 
-# Remove this function - parse the data into the right type first instead of handling unions
-
-
 def parse_response(response: dict[str, Any]) -> Response:
     """Parse response data into validated Response object."""
     return TypeAdapter(Response).validate_python(response)
-
-
-def parse_tool_params(params: dict[str, Any]) -> dict[str, Any]:
-    """Parse and validate tool parameters.
-
-    Args:
-        params: Tool parameters as dict. If you have a JSON string,
-                deserialize it first: parse_tool_params(json.loads(json_str))
-
-    Returns:
-        Validated parameter dict.
-    """
-    return TypeAdapter(dict[str, Any]).validate_python(params)
 
 
 def parse_tools_list(tools: Any) -> list[dict[str, Any]]:

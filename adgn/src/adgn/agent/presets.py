@@ -27,7 +27,7 @@ class AgentPreset(BaseModel):
     approval_policy: str | None = Field(None, description="Approval policy Python source code")
     # Source metadata (filled by loader; used by UI)
     file_path: str | None = Field(None, description="Source file path for this preset")
-    modified_at: str | None = Field(None, description="Last modification time (ISO-8601 string)")
+    modified_at: datetime | None = Field(None, description="Last modification time")
 
 
 def _load_yaml(path: Path) -> dict[str, JsonValue]:

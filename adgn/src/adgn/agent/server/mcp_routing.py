@@ -10,9 +10,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import Request, Response
+from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+BEARER_PREFIX = "Bearer "
+
 
 class TokenRole(StrEnum):
     """MCP connection routing roles."""
@@ -32,11 +35,27 @@ class TokenRole(StrEnum):
     AGENT = "agent"  # Routes to agent's compositor
 
 
-# Token table: token -> {role: str, agent_id?: str}
+class HumanTokenInfo(BaseModel):
+    """Token info for human connections (routes to agents management server)."""
+
+    role: Literal[TokenRole.HUMAN]
+
+
+class AgentTokenInfo(BaseModel):
+    """Token info for agent connections (routes to agent's compositor)."""
+
+    role: Literal[TokenRole.AGENT]
+    agent_id: AgentID  # Required for agent tokens
+
+
+TokenInfo = Annotated[HumanTokenInfo | AgentTokenInfo, Field(discriminator="role")]
+
+
+# Token table: token -> TokenInfo
 # In production, this would be a database lookup or external service
-TOKEN_TABLE: dict[str, dict[str, str]] = {
-    "human-token-123": {"role": "human"},
-    "agent-token-abc": {"role": "agent", "agent_id": "agent-1"},
+TOKEN_TABLE: dict[str, TokenInfo] = {
+    "human-token-123": HumanTokenInfo(role=TokenRole.HUMAN),
+    "agent-token-abc": AgentTokenInfo(role=TokenRole.AGENT, agent_id=AgentID("agent-1")),
 }
 
 
@@ -51,11 +70,7 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
     """
 
     def __init__(
-        self,
-        app: ASGIApp,
-        token_table: dict[str, dict[str, str]],
-        registry: AgentRegistry,
-        agents_server: NotifyingFastMCP,
+        self, app: ASGIApp, token_table: dict[str, TokenInfo], registry: AgentRegistry, agents_server: NotifyingFastMCP
     ):
         super().__init__(app)
         self.token_table = token_table
@@ -69,32 +84,28 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
         for name, value in headers:
             if name.lower() == b"authorization":
                 auth_value = value.decode("utf-8")
-                if auth_value.startswith("Bearer "):
-                    return auth_value[7:]  # Strip "Bearer " prefix
+                if auth_value.startswith(BEARER_PREFIX):
+                    return auth_value.removeprefix(BEARER_PREFIX)
         return None
 
-    async def _get_backend_app(self, role: TokenRole, agent_id: str | None) -> ASGIApp:
-        """Get or create backend ASGI app for the given role/agent_id."""
-        if role == TokenRole.HUMAN:
-            backend_key = "human"
-            if backend_key not in self._backend_apps:
-                # Use the agents management server's HTTP app
-                self._backend_apps[backend_key] = self.agents_server.http_app()  # type: ignore[assignment]
-            return self._backend_apps[backend_key]
+    async def _get_backend_app(self, token_info: TokenInfo) -> ASGIApp:
+        """Get or create backend ASGI app for the given token info."""
+        match token_info:
+            case HumanTokenInfo():
+                backend_key = "human"
+                if backend_key not in self._backend_apps:
+                    # Use the agents management server's HTTP app
+                    self._backend_apps[backend_key] = self.agents_server.http_app()  # type: ignore[assignment]
+                return self._backend_apps[backend_key]
 
-        if role == TokenRole.AGENT:
-            if not agent_id:
-                raise ValueError("Agent role requires agent_id")
-
-            backend_key = f"agent:{agent_id}"
-            if backend_key not in self._backend_apps:
-                # Get the agent's compositor HTTP app
-                container = await self.registry.ensure_live(AgentID(agent_id), with_ui=False)
-                compositor_app = container.running.compositor.http_app()
-                self._backend_apps[backend_key] = compositor_app  # type: ignore[assignment]
-            return self._backend_apps[backend_key]
-
-        raise ValueError(f"Unknown role: {role}")
+            case AgentTokenInfo(agent_id=agent_id):
+                backend_key = f"agent:{agent_id}"
+                if backend_key not in self._backend_apps:
+                    # Get the agent's compositor HTTP app
+                    container = await self.registry.ensure_live(agent_id, with_ui=False)
+                    compositor_app = container.running.compositor.http_app()
+                    self._backend_apps[backend_key] = compositor_app  # type: ignore[assignment]
+                return self._backend_apps[backend_key]
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         """Route request to appropriate backend based on token."""
@@ -104,45 +115,33 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
             logger.warning("Missing Authorization header")
             return Response(content="Missing Authorization header", status_code=401)
 
-        # Look up token
-        token_info = self.token_table.get(token)
-        if not token_info:
+        if not (token_info := self.token_table.get(token)):
             logger.warning(f"Invalid token: {token[:10]}...")
             return Response(content="Invalid token", status_code=401)
 
-        # Determine role and routing
-        try:
-            role = TokenRole(token_info["role"])
-            agent_id = token_info.get("agent_id")
+        logger.info(f"Routing MCP request: token_info={token_info}")
 
-            logger.info(f"Routing MCP request: role={role}, agent_id={agent_id}")
+        # Get backend app
+        backend_app = await self._get_backend_app(token_info)
 
-            # Get backend app
-            backend_app = await self._get_backend_app(role, agent_id)
+        # Forward request to backend ASGI app
+        response_started = False
+        status_code = 200
+        headers = []
+        body_parts = []
 
-            # Forward request to backend ASGI app
-            response_started = False
-            status_code = 200
-            headers = []
-            body_parts = []
+        async def send(message):
+            nonlocal response_started, status_code, headers
+            if message["type"] == "http.response.start":
+                response_started = True
+                status_code = message["status"]
+                headers = message.get("headers", [])
+            elif message["type"] == "http.response.body":
+                body_parts.append(message.get("body", b""))
 
-            async def send(message):
-                nonlocal response_started, status_code, headers
-                if message["type"] == "http.response.start":
-                    response_started = True
-                    status_code = message["status"]
-                    headers = message.get("headers", [])
-                elif message["type"] == "http.response.body":
-                    body_parts.append(message.get("body", b""))
+        # Call backend ASGI app
+        await backend_app(request.scope, request.receive, send)
 
-            # Call backend ASGI app
-            await backend_app(request.scope, request.receive, send)
-
-            # Return the response
-            response_headers = {k.decode(): v.decode() for k, v in headers}
-            body = b"".join(body_parts)
-            return Response(content=body, status_code=status_code, headers=response_headers)
-
-        except (KeyError, ValueError) as e:
-            logger.error(f"Routing error: {e}")
-            return Response(content=str(e), status_code=500)
+        return Response(
+            content=b"".join(body_parts), status_code=status_code, headers={k.decode(): v.decode() for k, v in headers}
+        )

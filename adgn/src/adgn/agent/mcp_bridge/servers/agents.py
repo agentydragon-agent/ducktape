@@ -324,8 +324,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
             raise ValueError(f"Agent {agent_id} is not a local agent")
 
-        local_runtime = registry.get_local_runtime(agent_id)
-        if local_runtime is None:
+        if (local_runtime := registry.get_local_runtime(agent_id)) is None:
             raise ValueError(f"Agent {agent_id} has no local runtime")
 
         # Get sampling snapshot from the compositor
@@ -348,8 +347,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
             raise ValueError(f"Agent {agent_id} is not a local agent")
 
-        local_runtime = registry.get_local_runtime(agent_id)
-        if local_runtime is None:
+        if (local_runtime := registry.get_local_runtime(agent_id)) is None:
             raise ValueError(f"Agent {agent_id} has no local runtime")
 
         # Delegate to compositor's sampling_snapshot()
@@ -371,8 +369,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
             raise ValueError(f"Agent {agent_id} is not a local agent")
 
-        local_runtime = registry.get_local_runtime(agent_id)
-        if local_runtime is None:
+        if (local_runtime := registry.get_local_runtime(agent_id)) is None:
             raise ValueError(f"Agent {agent_id} has no local runtime")
 
         compositor = local_runtime.running.compositor

@@ -33,7 +33,7 @@ def fold_events_to_ui_state(events: Sequence[EventRecord]) -> UiState:
     """
     state = new_state()
     for ev in events:
-        et = ev.type.value
+        et = ev.type
         payload = ev.payload.model_dump(mode="json")
         if et == "user_text":
             state = reduce_ui_state(state, UserText(text=str(payload.get("text", ""))))

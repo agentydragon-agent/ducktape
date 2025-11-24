@@ -35,7 +35,6 @@ from .openai_typing import (
     chat_param_message_content_as_text,
     chat_param_message_role,
     chat_param_message_tool_calls,
-    dump_chat_messages,
     iter_resolved_text,
     parse_chat_messages,
     parse_response_messages,
@@ -483,7 +482,7 @@ async def run_eval(
                 chat_tools = convert_responses_tools_to_chat_functions(tools_param)
                 sample_request = {
                     "model": SAMPLER_MODEL,
-                    "messages": dump_chat_messages(openai_messages),
+                    "messages": [TypeAdapter(dict[str, Any]).validate_python(msg) for msg in openai_messages],
                     "tools": chat_tools,
                     "tool_choice": "auto",
                     "parallel_tool_calls": True,

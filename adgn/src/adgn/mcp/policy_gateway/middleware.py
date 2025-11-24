@@ -129,7 +129,7 @@ class PolicyGatewayMiddleware(Middleware):
         policy_reader: PolicyReaderStub,
         persistence: Persistence,
         agent_id: AgentID,
-        pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
+        pending_notifier: Callable[[ToolCall], Awaitable[None]] | None = None,
         run_id: UUID | None = None,
     ) -> None:
         self._hub = hub
@@ -294,7 +294,7 @@ class PolicyGatewayMiddleware(Middleware):
         # Register + notify before awaiting
         wait_coro = self._hub.await_decision(call_id, req)
         if self._notify is not None:
-            await self._notify(call_id, tool_key, req.tool_call.args_json)
+            await self._notify(req.tool_call)
 
         decision_response = await wait_coro
 
@@ -367,7 +367,7 @@ def install_policy_gateway(
     policy_reader: PolicyReaderStub,
     persistence: Persistence,
     agent_id: AgentID,
-    pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
+    pending_notifier: Callable[[ToolCall], Awaitable[None]] | None = None,
     run_id: UUID | None = None,
 ) -> None:
     """Install PolicyGatewayMiddleware on a FastMCP-like server.

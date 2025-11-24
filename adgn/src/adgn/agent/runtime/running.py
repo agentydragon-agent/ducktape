@@ -26,12 +26,6 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class CloseResult:
-    drained: bool
-    error: str | None = None
-
-
-@dataclass
 class RunningInfrastructure:
     """Obtained by calling MCPInfrastructure.start().
 
@@ -69,26 +63,25 @@ class RunningInfrastructure:
         await sidecar.attach(self)
         self._sidecars.append(sidecar)
 
-    async def close(self) -> CloseResult:
+    async def close(self) -> None:
         """Sidecars are detached in reverse order of attachment."""
-        errors: list[str] = []
+        exceptions: list[Exception] = []
 
         # Detach sidecars in reverse order
         for sidecar in reversed(self._sidecars):
             try:
                 await sidecar.detach()
             except Exception as e:
-                errors.append(f"{type(sidecar).__name__}: {e}")
+                exceptions.append(e)
 
         # Close async exit stack
         try:
             await self._stack.aclose()
         except Exception as e:
-            errors.append(f"stack: {e}")
+            exceptions.append(e)
 
-        if errors:
-            return CloseResult(drained=False, error="; ".join(errors))
-        return CloseResult(drained=True)
+        if exceptions:
+            raise ExceptionGroup("Failed to close infrastructure", exceptions)
 
     async def __aenter__(self) -> RunningInfrastructure:
         return self

@@ -7,12 +7,14 @@ with proper type hints for better IDE support and type checking.
 from __future__ import annotations
 
 from collections.abc import Awaitable
+from contextlib import AsyncExitStack
 import inspect
 from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
+from fastmcp.client import Client
+
 if TYPE_CHECKING:
     from fastmcp import FastMCP
-    from fastmcp.client import Client
 
 from .typed_stubs import TypedClient
 
@@ -87,6 +89,27 @@ class ServerStub:
         """Create a typed stub from a FastMCP server and session."""
         # TypeVar bound to ServerStub ensures cls() accepts TypedClient
         return cast(TServerStub, cls(TypedClient.from_server(server, session)))
+
+    @classmethod
+    async def for_server(cls: type[TServerStub], stack: AsyncExitStack, server: FastMCP) -> TServerStub:
+        """Create a typed stub from a FastMCP server, managing lifecycle with async context stack.
+
+        This convenience method:
+        1. Creates a Client from the server
+        2. Enters it into the async context stack
+        3. Wraps in TypedClient
+        4. Returns the stub instance
+
+        Args:
+            stack: AsyncExitStack to manage the client lifecycle
+            server: FastMCP server to wrap
+
+        Returns:
+            Typed stub instance
+        """
+        client = Client(server)
+        await stack.enter_async_context(client)
+        return cast(TServerStub, cls(TypedClient(client)))
 
     def _stub(self, name: str, output_type: type):
         """Create a typed stub for a tool."""

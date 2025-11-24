@@ -40,8 +40,7 @@ class AgentRuntime:
     async def close(self):
         """Lifecycle management - close all components together."""
         await self.runtime.close()
-        result = await self.running.close()
-        return {"drained": result.drained, "error": result.error}
+        return await self.running.close()
 
 
 @dataclass
@@ -90,8 +89,7 @@ class AgentRegistry:
         if (agent_runtime := self.get(agent_id)) is not None:
             return agent_runtime
 
-        row = await self.persistence.get_agent(agent_id)
-        if row is None:
+        if (row := await self.persistence.get_agent(agent_id)) is None:
             raise KeyError(f"agent not found: {agent_id}")
 
         return await self.create(agent_id, row.mcp_config, with_ui=with_ui)

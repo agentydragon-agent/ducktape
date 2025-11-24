@@ -72,7 +72,7 @@ class ApprovalPolicyInfo(BaseModel):
 
     content: str
     id: int
-    proposals: list[ProposalInfo] = []
+    proposals: list[ProposalInfo] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 

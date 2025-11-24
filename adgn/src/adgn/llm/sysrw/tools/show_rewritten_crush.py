@@ -11,7 +11,6 @@ from typing import Any
 from ..extract_common import iter_wire_lines
 from ..openai_typing import (
     MessageRole,
-    dump_response_messages,
     parse_response_messages,
     response_message_content_as_text,
     response_message_role,
@@ -124,7 +123,7 @@ def build_rewritten_request(orig: dict[str, Any], new_system_text: str) -> dict[
 
     validated = parse_response_messages(req.get("input"))
     if validated:
-        req["input"] = dump_response_messages(validated)
+        req["input"] = [msg.model_dump(by_alias=True) for msg in validated]
     return req
 
 

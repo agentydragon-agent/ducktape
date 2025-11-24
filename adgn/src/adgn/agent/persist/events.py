@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, TYPE_CHECKING
 
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from . import EventType
+
+if TYPE_CHECKING:
+    from adgn.agent.handler import Response
 
 
 # Canonical typed payloads per event type
@@ -36,7 +39,7 @@ class ReasoningPayload(BaseModel):
 
 class ResponsePayload(BaseModel):
     # Minimal placeholder; expand as needed
-    content: JsonValue | None = None
+    content: Response | None = None
 
 
 TypedPayload = Annotated[

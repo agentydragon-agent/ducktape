@@ -1,0 +1,8 @@
+source:
+  vcs: github
+  org: agentydragon
+  repo: ducktape
+  ref: 2dbf906f83f43c70d9ed8c79167c2e2982e0a03b
+scope:
+  include:
+    - "adgn/src/adgn/agent/**/*.py"

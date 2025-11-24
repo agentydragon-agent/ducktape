@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 
 from mcp import types as mcp_types
 
@@ -33,6 +34,32 @@ from .state import (
 UiStateEvent = UserText | ToolCall | FunctionCallOutput | ApprovalDecisionEvt | UiMessageEvt | UiEndTurnEvt
 
 
+def extract_tool_command(args_json: str | None) -> tuple[str | None, dict | None]:
+    """Extract command string and parsed args from tool call args JSON.
+
+    Args:
+        args_json: JSON string containing tool arguments.
+
+    Returns:
+        Tuple of (command_string, parsed_args_dict). Command string is derived
+        from argv or cmd field if present. Returns (None, None) if parsing fails.
+    """
+    if not args_json:
+        return None, None
+    try:
+        args = json.loads(args_json)
+        if not isinstance(args, dict):
+            return None, None
+        argv = args.get("argv") or args.get("cmd")
+        if isinstance(argv, list):
+            cmd = shlex.join(str(a) for a in argv)
+        else:
+            cmd = None
+        return cmd, args
+    except json.JSONDecodeError:
+        return None, None
+
+
 def reduce_ui_state(state: UiState, evt: UiStateEvent) -> UiState:
     """Pure reducer: match by Pydantic type; never treat models as dicts.
 
@@ -42,14 +69,6 @@ def reduce_ui_state(state: UiState, evt: UiStateEvent) -> UiState:
 
     Returns:
         Updated UI state with the event applied.
-
-    Accepted event types:
-    - UserText: User text input
-    - ToolCall: Tool call start event
-    - FunctionCallOutput: Tool execution output
-    - ApprovalDecisionEvt: Approval decision event
-    - UiMessageEvt: Assistant message event
-    - UiEndTurnEvt: End turn separator event
     """
     # User message
     if isinstance(evt, UserText):
@@ -57,8 +76,7 @@ def reduce_ui_state(state: UiState, evt: UiStateEvent) -> UiState:
 
     # Assistant markdown (from ui.send_message)
     if isinstance(evt, UiMessageEvt):
-        md = evt.message.content
-        return UiState(seq=state.seq + 1, items=[*state.items, AssistantMarkdownItem(md=md)])
+        return UiState(seq=state.seq + 1, items=[*state.items, AssistantMarkdownItem(md=evt.message.content)])
 
     # End turn separator (from ui.end_turn)
     if isinstance(evt, UiEndTurnEvt):
@@ -66,26 +84,7 @@ def reduce_ui_state(state: UiState, evt: UiStateEvent) -> UiState:
 
     # Tool call start → begin a group (attempt to derive cmd from args_json for exec tools)
     if isinstance(evt, ToolCall):
-        cmd: str | None = None
-        parsed_args: dict | None = None
-        if evt.args_json:
-            try:
-                args = json.loads(evt.args_json)
-                parsed_args = args if isinstance(args, dict) else None
-                argv = args.get("argv") or args.get("cmd") if isinstance(args, dict) else None
-                if isinstance(argv, list):
-                    # shell-join with conservative quoting
-                    parts: list[str] = []
-                    for a in argv:
-                        if isinstance(a, str) and a and all(ch.isalnum() or ch in "_./-" for ch in a):
-                            parts.append(a)
-                        else:
-                            s = str(a).replace("'", "'\\''")
-                            parts.append(f"'{s}'")
-                    cmd = " ".join(parts)
-            except json.JSONDecodeError:
-                cmd = None
-                parsed_args = None
+        cmd, parsed_args = extract_tool_command(evt.args_json)
         # For ui.send_message and ui.end_turn: do not create a ToolItem; UiMessageEvt/UiEndTurnEvt after execution will surface AssistantMarkdown/EndTurn
         if evt.name in (
             build_mcp_function(UI_SERVER_NAME, WellKnownTools.SEND_MESSAGE),
