@@ -430,7 +430,7 @@ async def prompt_optimize(
             sum_unk = sum(int(x.get("unknown", 0) or 0) for x in data)
             recs = []
             for x in data:
-                val = x.get("fuzzy_recall") if x.get("fuzzy_recall") is not None else x.get("recall")
+                val = x.get("recall")
                 if isinstance(val, int | float):
                     recs.append(float(val))
             mean_recall = (sum(recs) / len(recs)) if recs else 0.0

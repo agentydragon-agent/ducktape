@@ -62,8 +62,6 @@ class MetricsRow(BaseModel):
     false_negatives: int
     precision: float
     recall: float
-    fuzzy_precision: float
-    fuzzy_recall: float
 
     model_config = ConfigDict(extra="forbid")
 

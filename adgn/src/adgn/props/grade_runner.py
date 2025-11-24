@@ -28,8 +28,6 @@ def _metrics_row(grade: GradeSubmitPayload, *, specimen: str | None = None) -> d
     row: dict[str, Any] = m.model_dump()
     if specimen is not None:
         row["specimen"] = specimen
-    row["fuzzy_precision"] = m.precision
-    row["fuzzy_recall"] = m.recall
     return row
 
 
