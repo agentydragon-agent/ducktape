@@ -14,11 +14,17 @@ from unittest.mock import AsyncMock, Mock
 from fastmcp.client import Client
 import pytest
 
-from adgn.agent.approvals import ApprovalHub, ApprovalRequest
+from adgn.agent.approvals import ApprovalHub, PendingApproval
 from adgn.agent.mcp_bridge.servers.agents import make_agents_server
 from adgn.agent.mcp_bridge.types import AgentID
 from adgn.agent.persist import ToolCall
 from adgn.mcp._shared.constants import APPROVAL_POLICY_RESOURCE_URI
+
+
+def add_pending_approval(hub: ApprovalHub, call_id: str, tool_call: ToolCall) -> None:
+    """Helper to add a pending approval to the hub for testing."""
+    fut = asyncio.get_event_loop().create_future()
+    hub._pending[call_id] = PendingApproval(tool_call=tool_call, future=fut)
 
 # --- Test-specific fixtures ---
 # Shared fixtures (mock_persistence, mock_approval_hub, mock_approval_engine,
@@ -53,9 +59,6 @@ async def test_policy_change_broadcasts_notification(agents_client_and_server, m
     # Track notifications
     notifications_received = []
 
-    # Subscribe to policy resource
-    await client.subscribe_resource(APPROVAL_POLICY_RESOURCE_URI)
-
     # Mock the server's broadcast method to capture notifications
     original_broadcast = server.broadcast_resource_updated
 
@@ -86,12 +89,7 @@ async def test_approve_tool_broadcasts_notifications(agents_client_and_server, m
 
     # Setup pending approval
     tool_call = ToolCall(name="test_tool", call_id="call-123", args_json="{}")
-    request = ApprovalRequest(tool_call=tool_call)
-
-    # Create future for the approval
-    fut = asyncio.get_running_loop().create_future()
-    mock_approval_hub._futures["call-123"] = fut
-    mock_approval_hub._requests["call-123"] = request
+    add_pending_approval(mock_approval_hub, "call-123", tool_call)
 
     # Track notifications
     notifications_received = []
@@ -104,8 +102,8 @@ async def test_approve_tool_broadcasts_notifications(agents_client_and_server, m
 
     server.broadcast_resource_updated = track_broadcast
 
-    # Call approve tool
-    await client.call_tool("approve_tool_call", arguments={"agent_id": "test-agent", "call_id": "call-123"})
+    # Call decide_approval tool with approve decision
+    await client.call_tool("decide_approval", arguments={"agent_id": "test-agent", "call_id": "call-123", "decision": "approve"})
 
     # Give time for notifications
     await asyncio.sleep(0.1)
@@ -128,12 +126,7 @@ async def test_reject_tool_broadcasts_notifications(agents_client_and_server, mo
 
     # Setup pending approval
     tool_call = ToolCall(name="test_tool", call_id="call-456", args_json="{}")
-    request = ApprovalRequest(tool_call=tool_call)
-
-    # Create future for the approval
-    fut = asyncio.get_running_loop().create_future()
-    mock_approval_hub._futures["call-456"] = fut
-    mock_approval_hub._requests["call-456"] = request
+    add_pending_approval(mock_approval_hub, "call-456", tool_call)
 
     # Track notifications
     notifications_received = []
@@ -146,9 +139,9 @@ async def test_reject_tool_broadcasts_notifications(agents_client_and_server, mo
 
     server.broadcast_resource_updated = track_broadcast
 
-    # Call reject tool
+    # Call decide_approval tool with deny_continue decision
     await client.call_tool(
-        "reject_tool_call", arguments={"agent_id": "test-agent", "call_id": "call-456", "reason": "Test"}
+        "decide_approval", arguments={"agent_id": "test-agent", "call_id": "call-456", "decision": "deny_continue", "reason": "Test"}
     )
 
     # Give time for notifications

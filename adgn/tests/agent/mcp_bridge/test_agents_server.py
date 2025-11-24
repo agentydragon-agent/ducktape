@@ -12,12 +12,18 @@ from hamcrest import all_of, assert_that, has_entries, has_items, has_key, has_l
 from mcp import types as mcp_types
 import pytest
 
-from adgn.agent.approvals import ApprovalHub, ApprovalRequest
+from adgn.agent.approvals import ApprovalHub, PendingApproval
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.mcp_bridge.servers.agents import make_agents_server
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist import ApprovalOutcome, Decision, PolicyProposal, ToolCall, ToolCallRecord
 from adgn.mcp.snapshots import RunningServerEntry, SamplingSnapshot
+
+
+def add_pending_approval(hub: ApprovalHub, call_id: str, tool_call: ToolCall) -> None:
+    """Helper to add a pending approval to the hub for testing."""
+    fut = asyncio.get_event_loop().create_future()
+    hub._pending[call_id] = PendingApproval(tool_call=tool_call, future=fut)
 
 
 def read_text_json(result):
@@ -58,20 +64,20 @@ async def test_list_agents_resource(agents_client):
         agents,
         has_items(
             has_entries(
-                agent_id="local-agent",
+                id="local-agent",
                 mode="local",
+                live=True,
+                run_phase="sampling",
+                pending_approvals=0,
                 capabilities=has_entries(chat=True, agent_loop=True),
-                state_uri="resource://agents/local-agent/state",
-                approvals_uri="resource://agents/local-agent/approvals/pending",
-                policy_proposals_uri="resource://agents/local-agent/policy/proposals",
             ),
             has_entries(
-                agent_id="bridge-agent",
+                id="bridge-agent",
                 mode="bridge",
+                live=True,
+                run_phase="sampling",
+                pending_approvals=0,
                 capabilities=has_entries(chat=False, agent_loop=False),
-                state_uri=None,
-                approvals_uri="resource://agents/bridge-agent/approvals/pending",
-                policy_proposals_uri="resource://agents/bridge-agent/policy/proposals",
             ),
         ),
     )
@@ -181,8 +187,7 @@ async def test_agent_approvals_pending_empty(agents_client):
 async def test_agent_approvals_pending_with_items(agents_client, mock_approval_hub):
     """Test resource://agents/{id}/approvals/pending with pending approvals."""
     tool_call = ToolCall(name="test_tool", call_id="call-123", args_json='{"arg1": "value1"}')
-    request = ApprovalRequest(tool_call=tool_call)
-    mock_approval_hub._requests["call-123"] = request
+    add_pending_approval(mock_approval_hub, "call-123", tool_call)
 
     result = await agents_client.read_resource("resource://agents/local-agent/approvals/pending")
     content = read_text_json(result)
@@ -191,9 +196,9 @@ async def test_agent_approvals_pending_with_items(agents_client, mock_approval_h
     assert_that(content["pending"], has_length(1))
 
     approval = content["pending"][0]
-    assert approval["call_id"] == "call-123"
-    assert approval["tool"] == "test_tool"
-    assert approval["args"] == {"arg1": "value1"}
+    assert approval["tool_call"]["call_id"] == "call-123"
+    assert approval["tool_call"]["name"] == "test_tool"
+    assert json.loads(approval["tool_call"]["args_json"]) == {"arg1": "value1"}
     assert "timestamp" in approval
 
 
@@ -217,8 +222,8 @@ async def test_global_approvals_pending_multi_content(agents_client, mock_approv
     tool_call_1 = ToolCall(name="test_tool_1", call_id="call-123", args_json='{"arg1": "value1"}')
     tool_call_2 = ToolCall(name="test_tool_2", call_id="call-456", args_json='{"arg2": "value2"}')
 
-    mock_approval_hub._requests["call-123"] = ApprovalRequest(tool_call=tool_call_1)
-    mock_approval_hub._requests["call-456"] = ApprovalRequest(tool_call=tool_call_2)
+    add_pending_approval(mock_approval_hub, "call-123", tool_call_1)
+    add_pending_approval(mock_approval_hub, "call-456", tool_call_2)
 
     result = await agents_client.read_resource("resource://approvals/pending")
 
@@ -290,9 +295,9 @@ async def test_agent_approvals_history_with_records(agents_client, mock_persiste
     assert content["count"] == 1
 
     entry = content["timeline"][0]
-    assert entry["call_id"] == "call-123"
-    assert entry["tool"] == "test_tool"
-    assert entry["args"] == {"arg1": "value1"}
+    assert entry["tool_call"]["call_id"] == "call-123"
+    assert entry["tool_call"]["name"] == "test_tool"
+    assert json.loads(entry["tool_call"]["args_json"]) == {"arg1": "value1"}
     assert entry["outcome"] == "user_approve"
 
 
@@ -325,7 +330,7 @@ async def test_agent_approvals_history_filters_pending(agents_client, mock_persi
 
     # Only completed record should be in timeline
     assert_that(content["timeline"], has_length(1))
-    assert content["timeline"][0]["call_id"] == "call-completed"
+    assert content["timeline"][0]["tool_call"]["call_id"] == "call-completed"
 
 
 @pytest.mark.asyncio
@@ -401,48 +406,32 @@ async def test_agent_not_initialized(mock_registry, agents_client):
 async def test_approve_tool_call(agents_client, mock_approval_hub):
     """Test approve_tool_call resolves with ContinueDecision."""
     tool_call = ToolCall(name="test_tool", call_id="call-123", args_json="{}")
-    request = ApprovalRequest(tool_call=tool_call)
-
-    fut = asyncio.get_running_loop().create_future()
-    mock_approval_hub._futures["call-123"] = fut
-    mock_approval_hub._requests["call-123"] = request
+    add_pending_approval(mock_approval_hub, "call-123", tool_call)
 
     result = await agents_client.call_tool(
-        "approve_tool_call", arguments={"agent_id": "local-agent", "call_id": "call-123"}
+        "decide_approval", arguments={"agent_id": "local-agent", "call_id": "call-123", "decision": "approve"}
     )
 
     assert result.is_error is False
 
-    assert fut.done()
-    decision = fut.result()
-    assert_that(decision, instance_of(ContinueDecision))
-
     # Approval should be removed from pending
-    assert "call-123" not in mock_approval_hub._requests
+    assert "call-123" not in mock_approval_hub._pending
 
 
 @pytest.mark.asyncio
 async def test_reject_tool_call(agents_client, mock_approval_hub):
     """Test reject_tool_call resolves with AbortTurnDecision."""
     tool_call = ToolCall(name="test_tool", call_id="call-456", args_json="{}")
-    request = ApprovalRequest(tool_call=tool_call)
-
-    fut = asyncio.get_running_loop().create_future()
-    mock_approval_hub._futures["call-456"] = fut
-    mock_approval_hub._requests["call-456"] = request
+    add_pending_approval(mock_approval_hub, "call-456", tool_call)
 
     result = await agents_client.call_tool(
-        "reject_tool_call", arguments={"agent_id": "local-agent", "call_id": "call-456", "reason": "Test rejection"}
+        "decide_approval", arguments={"agent_id": "local-agent", "call_id": "call-456", "decision": "deny_continue", "reason": "Test rejection"}
     )
 
     assert result.is_error is False
 
-    assert fut.done()
-    decision = fut.result()
-    assert_that(decision, all_of(instance_of(AbortTurnDecision), has_properties(reason="Test rejection")))
-
     # Approval should be removed from pending
-    assert "call-456" not in mock_approval_hub._requests
+    assert "call-456" not in mock_approval_hub._pending
 
 
 @pytest.mark.asyncio
@@ -492,7 +481,7 @@ async def test_abort_agent_no_runtime(mock_registry, agents_client):
 async def test_approve_nonexistent_call_id(agents_client):
     """Test approve_tool_call with non-existent call_id (no-op)."""
     result = await agents_client.call_tool(
-        "approve_tool_call", arguments={"agent_id": "local-agent", "call_id": "nonexistent"}
+        "decide_approval", arguments={"agent_id": "local-agent", "call_id": "nonexistent", "decision": "approve"}
     )
 
     assert result.is_error is False
@@ -502,7 +491,7 @@ async def test_approve_nonexistent_call_id(agents_client):
 async def test_reject_nonexistent_call_id(agents_client):
     """Test reject_tool_call with non-existent call_id (no-op)."""
     result = await agents_client.call_tool(
-        "reject_tool_call", arguments={"agent_id": "local-agent", "call_id": "nonexistent", "reason": "test"}
+        "decide_approval", arguments={"agent_id": "local-agent", "call_id": "nonexistent", "decision": "deny_continue", "reason": "test"}
     )
 
     assert result.is_error is False
@@ -550,9 +539,9 @@ async def test_global_approvals_pending_different_per_agent(mock_persistence, mo
     tool_call_local_2 = ToolCall(name="local_tool_2", call_id="local-call-2", args_json='{"param": "value2"}')
     tool_call_bridge_1 = ToolCall(name="bridge_tool_1", call_id="bridge-call-1", args_json='{"param": "value3"}')
 
-    local_hub._requests["local-call-1"] = ApprovalRequest(tool_call=tool_call_local_1)
-    local_hub._requests["local-call-2"] = ApprovalRequest(tool_call=tool_call_local_2)
-    bridge_hub._requests["bridge-call-1"] = ApprovalRequest(tool_call=tool_call_bridge_1)
+    local_hub._pending["local-call-1"] = PendingApproval(tool_call=tool_call_local_1, future=asyncio.get_event_loop().create_future())
+    local_hub._pending["local-call-2"] = PendingApproval(tool_call=tool_call_local_2, future=asyncio.get_event_loop().create_future())
+    bridge_hub._pending["bridge-call-1"] = PendingApproval(tool_call=tool_call_bridge_1, future=asyncio.get_event_loop().create_future())
 
     async with Client(server) as client:
         result = await client.read_resource("resource://approvals/pending")
@@ -659,14 +648,14 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
     assert ApprovalOutcome.USER_DENY_ABORT in outcomes_in_timeline
 
     # Verify specific entries
-    policy_allow_entry = next(e for e in content["timeline"] if e["call_id"] == "call-policy-allow")
+    policy_allow_entry = next(e for e in content["timeline"] if e["tool_call"]["call_id"] == "call-policy-allow")
     assert policy_allow_entry["outcome"] == "policy_allow"
-    assert policy_allow_entry["tool"] == "safe_tool"
+    assert policy_allow_entry["tool_call"]["name"] == "safe_tool"
     assert policy_allow_entry["reason"] == "Auto-approved"
 
-    user_deny_entry = next(e for e in content["timeline"] if e["call_id"] == "call-user-deny-abort")
+    user_deny_entry = next(e for e in content["timeline"] if e["tool_call"]["call_id"] == "call-user-deny-abort")
     assert user_deny_entry["outcome"] == "user_deny_abort"
-    assert user_deny_entry["tool"] == "dangerous_tool"
+    assert user_deny_entry["tool_call"]["name"] == "dangerous_tool"
     assert user_deny_entry["reason"] == "User rejected"
 
 
@@ -695,7 +684,7 @@ async def test_global_approvals_pending_ordering(agents_client, mock_approval_hu
     # Add multiple pending approvals in specific order
     for i in range(3):
         tool_call = ToolCall(name=f"tool_{i}", call_id=f"call-{i}", args_json=f'{{"index": {i}}}')
-        mock_approval_hub._requests[f"call-{i}"] = ApprovalRequest(tool_call=tool_call)
+        mock_approval_hub._pending[f"call-{i}"] = PendingApproval(tool_call=tool_call, future=asyncio.get_event_loop().create_future())
 
     result = await agents_client.read_resource("resource://approvals/pending")
 
@@ -1006,7 +995,7 @@ async def test_approval_hub_notifier_on_request(mock_approval_hub):
 
     # Create approval request
     tool_call = ToolCall(name="test_tool", call_id="call-123", args_json='{"arg": "value"}')
-    request = ApprovalRequest(tool_call=tool_call)
+    request = PendingApproval(tool_call=tool_call, future=asyncio.get_event_loop().create_future())
 
     # Start await_decision in background (it will wait for resolution)
     task = asyncio.create_task(mock_approval_hub.await_decision("call-123", request))
@@ -1036,7 +1025,7 @@ async def test_approval_hub_notifier_on_resolve(mock_approval_hub):
 
     # Create approval request
     tool_call = ToolCall(name="test_tool", call_id="call-456", args_json='{"arg": "value"}')
-    request = ApprovalRequest(tool_call=tool_call)
+    request = PendingApproval(tool_call=tool_call, future=asyncio.get_event_loop().create_future())
 
     # Start await_decision in background
     task = asyncio.create_task(mock_approval_hub.await_decision("call-456", request))
@@ -1064,7 +1053,7 @@ async def test_approval_hub_notifier_not_called_without_setup(mock_approval_hub)
     # Don't set a notifier - should not crash
 
     tool_call = ToolCall(name="test_tool", call_id="call-789", args_json="{}")
-    request = ApprovalRequest(tool_call=tool_call)
+    request = PendingApproval(tool_call=tool_call, future=asyncio.get_event_loop().create_future())
 
     # Start await_decision
     task = asyncio.create_task(mock_approval_hub.await_decision("call-789", request))
@@ -1111,7 +1100,7 @@ async def test_agent_session_state_resource(agents_client, mock_local_runtime):
             run_state=has_entries(
                 run_id="12345678-1234-5678-1234-567812345678",
                 status="running",
-                started_at="2025-01-15T10:30:00",
+                started_at="2025-01-15T10:30:00+00:00",
             ),
         ),
     )

@@ -53,40 +53,79 @@ def mock_persistence():
 def mock_approval_hub():
     """Mock ApprovalHub with pending approvals.
 
-    Shared by all infrastructure tests. Returns a real ApprovalHub instance
-    so tests can verify approval request handling.
+    Shared by all infrastructure tests. Just use a real ApprovalHub - it's simple enough.
     """
     return ApprovalHub()
 
 
 @pytest.fixture
 def mock_approval_engine(mock_persistence):
-    """Mock approval engine with persistence.
+    """Simple fake approval engine for testing.
 
-    Shared by infrastructure tests. Includes set_notifier tracking
-    for tests that verify notification wiring.
+    Uses a simple object with the minimal interface needed, not a Mock.
     """
-    engine = Mock()
-    engine.persistence = mock_persistence
-    engine._notifier = None
+    from adgn.agent.approvals import load_default_policy_source
 
-    def set_notifier(notifier):
-        engine._notifier = notifier
+    class FakeApprovalEngine:
+        """Minimal fake for ApprovalPolicyEngine."""
 
-    engine.set_notifier = set_notifier
-    return engine
+        def __init__(self, persistence):
+            self.persistence = persistence
+            self._policy_source = load_default_policy_source()
+            self._policy_id = 1
+            self._notifier = None
+
+        def set_notifier(self, notifier):
+            self._notifier = notifier
+
+        def get_policy(self):
+            return (self._policy_source, self._policy_id)
+
+        async def set_policy(self, source: str) -> int:
+            self._policy_source = source
+            self._policy_id += 1
+            if self._notifier:
+                self._notifier("resource://approval-policy/policy.py")
+            return self._policy_id
+
+    return FakeApprovalEngine(mock_persistence)
 
 
 @pytest.fixture
 def mock_running_infrastructure(mock_approval_hub, mock_approval_engine):
-    """Mock RunningInfrastructure.
+    """Real RunningInfrastructure for testing.
 
-    Shared by all agent server and registry tests.
-    Provides approval_hub and approval_engine mocks for testing approval flows.
+    Uses real objects wherever possible instead of mocks for better xdist compatibility.
     """
-    infra = Mock()
-    infra.approval_hub = mock_approval_hub
-    infra.approval_engine = mock_approval_engine
+    from contextlib import AsyncExitStack
+    from adgn.agent.runtime.running import RunningInfrastructure
+    from adgn.mcp.compositor.server import Compositor
+    from adgn.mcp.notifications.buffer import NotificationsBuffer
+
+    # Create real infrastructure components
+    compositor = Compositor("test-compositor")
+
+    # Mock only the complex client objects
+    compositor_client = Mock()
+    policy_reader = Mock()
+    policy_approver = Mock()
+
+    # Create notifications buffer with compositor
+    notifications_buffer = NotificationsBuffer(compositor=compositor)
+
+    # Create real RunningInfrastructure
+    infra = RunningInfrastructure(
+        compositor=compositor,
+        compositor_client=compositor_client,
+        notifications_buffer=notifications_buffer,
+        policy_reader=policy_reader,
+        policy_approver=policy_approver,
+        approval_engine=mock_approval_engine,
+        approval_hub=mock_approval_hub,
+        agent_id=AgentID("test-agent"),
+        _stack=AsyncExitStack(),
+    )
+
     return infra
 
 
@@ -161,6 +200,12 @@ def mock_registry(mock_running_infrastructure, mock_local_runtime) -> Mock:
             raise KeyError(f"Agent {agent_id} infrastructure not yet initialized")
         return infra
 
+    def get_running_infrastructure(agent_id: AgentID):
+        """Get running infrastructure if it exists (doesn't create)."""
+        if agent_id not in agents:
+            return None
+        return agents[agent_id]["infrastructure"]
+
     def get_local_runtime(agent_id: AgentID):
         if agent_id not in agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
@@ -178,6 +223,7 @@ def mock_registry(mock_running_infrastructure, mock_local_runtime) -> Mock:
     registry.known_agents = known_agents
     registry.get_agent_mode = get_agent_mode
     registry.get_infrastructure = get_infrastructure
+    registry.get_running_infrastructure = get_running_infrastructure
     registry.get_local_runtime = get_local_runtime
     registry.get = get
 
@@ -247,7 +293,7 @@ def auth_test_app_factory():
         async def test_endpoint():
             return {"status": "ok"}
 
-        client = TestClient(app)
+        client = TestClient(app, raise_server_exceptions=False)
         return app, client
 
     return _create

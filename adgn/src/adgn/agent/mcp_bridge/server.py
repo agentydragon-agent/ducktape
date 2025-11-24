@@ -15,17 +15,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from docker import DockerClient
-from fastapi import FastAPI, Request, Response, WebSocket
+from fastapi import FastAPI, Request, Response
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping, UITokenAuthMiddleware, generate_ui_token
-from adgn.agent.mcp_bridge.servers.agents import AgentList, make_agents_server
+from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.infrastructure import MCPInfrastructure, RunningInfrastructure
-from adgn.mcp._shared.resources import read_text_json_typed
 
 if TYPE_CHECKING:
     from adgn.agent.runtime.local_runtime import LocalAgentRuntime
@@ -254,5 +252,76 @@ async def create_mcp_server_app(auth_tokens_path: Path, registry: Infrastructure
     mcp_app.add_middleware(TokenAuthMiddleware, token_mapping=token_mapping)
 
     return mcp_app
+
+
+async def create_management_ui_app(
+    registry: InfrastructureRegistry, ui_token: str | None = None, static_files_dir: Path | None = None
+) -> tuple[FastAPI, str]:
+    """Create Management UI FastAPI app with global compositor access.
+
+    Returns tuple of (app, ui_token) where ui_token is the Bearer token for authentication.
+
+    The app exposes:
+    - Global compositor via streamable HTTP at /mcp (browser MCP client connects here)
+    - Basic REST API endpoints (/health, /api/agents)
+    - Static files if static_files_dir is provided
+    - WebSocket endpoint at /ws/mcp for real-time MCP communication
+
+    Args:
+        registry: Infrastructure registry managing all agents
+        ui_token: Optional UI token (auto-generated if not provided)
+        static_files_dir: Optional directory containing static UI files
+
+    Returns:
+        Tuple of (FastAPI app, UI token string)
+    """
+    from adgn.agent.mcp_bridge.auth import UITokenAuthMiddleware, generate_ui_token
+    from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
+
+    # Generate or use provided UI token
+    if ui_token is None:
+        ui_token = generate_ui_token()
+
+    app = FastAPI(title="Agent Management UI")
+
+    # Create global compositor (two-level architecture)
+    global_compositor = await create_global_compositor(registry)
+
+    # Mount compositor as ASGI app at /mcp for streamable HTTP transport
+    # The compositor (FastMCP) is itself an ASGI app
+    app.mount("/mcp", global_compositor)
+
+    # Add UI token authentication (applies to all routes except /mcp which has its own auth)
+    # Actually, we want auth on /mcp too, so add middleware
+    app.add_middleware(UITokenAuthMiddleware, expected_token=ui_token)
+
+    # Health check endpoint
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
+
+    # Basic agents API
+    @app.get("/api/agents")
+    async def list_agents():
+        """List all known agents."""
+        agents = []
+        for agent_id in registry.known_agents():
+            mode = registry.get_agent_mode(agent_id)
+            agents.append({"id": agent_id, "mode": mode})
+        return {"agents": agents}
+
+    # Static files (if provided)
+    if static_files_dir and static_files_dir.exists():
+        from fastapi.staticfiles import StaticFiles
+        from fastapi.responses import FileResponse
+
+        app.mount("/static", StaticFiles(directory=static_files_dir), name="static")
+
+        @app.get("/")
+        async def root():
+            return FileResponse(static_files_dir / "index.html")
+
+    return app, ui_token
+
 
 

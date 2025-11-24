@@ -18,7 +18,6 @@ from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field, TypeAdapter
 
-from adgn.agent.approvals import ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision, DenyContinueDecision
 from adgn.agent.mcp_bridge import resources
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
@@ -27,7 +26,6 @@ from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
 from adgn.agent.policies.policy_types import UserApprovalDecision
 from adgn.agent.presets import discover_presets
-from adgn.agent.server.state import ApprovalKind
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.compositor.server import MountEvent
@@ -49,13 +47,13 @@ logger = logging.getLogger(__name__)
 # Helper functions for data conversion
 
 
-def _convert_pending_approvals(pending_map: dict[str, ApprovalRequest]) -> list[PendingApproval]:
+def _convert_pending_approvals(pending_map: dict[str, ToolCall]) -> list[PendingApproval]:
     result: list[PendingApproval] = []
-    for _call_id, request in pending_map.items():
+    for _call_id, tool_call in pending_map.items():
         result.append(
             PendingApproval(
-                tool_call=request.tool_call,
-                timestamp=datetime.now(),  # TODO: Track creation time in ApprovalRequest
+                tool_call=tool_call,
+                timestamp=datetime.now(),  # TODO: Track creation time in PendingApproval or separately
             )
         )
     return result
@@ -406,12 +404,14 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             pending_approvals = _convert_pending_approvals(infra.approval_hub.pending)
 
             for approval in pending_approvals:
-                approval_uri = f"resource://agents/{agent_id}/approvals/{approval.call_id}"
+                approval_uri = f"resource://agents/{agent_id}/approvals/{approval.tool_call.call_id}"
+                # Parse args_json if present
+                args = json.loads(approval.tool_call.args_json) if approval.tool_call.args_json else {}
                 approval_data = {
                     "agent_id": agent_id,
-                    "call_id": approval.call_id,
-                    "tool": approval.tool,
-                    "args": approval.args,
+                    "call_id": approval.tool_call.call_id,
+                    "tool": approval.tool_call.name,
+                    "args": args,
                     "timestamp": approval.timestamp.isoformat(),
                 }
                 block = mcp_types.TextResourceContents(
@@ -511,7 +511,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
     async def agent_ui_state_resource(agent_id: AgentID) -> str:
         """UI state (optional, only if UI server attached)."""
         runtime = registry.get(agent_id)
-        if not runtime or not runtime.runtime.session:
+        if not runtime or not runtime.runtime or not runtime.runtime.session:
             raise ValueError(f"Agent {agent_id} has no session")
 
         ui_state = runtime.runtime.session.ui_state
@@ -606,7 +606,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
 
     @server.tool()
     async def decide_approval(
-        agent_id: AgentID, call_id: str, decision: ApprovalKind, reason: str | None = None
+        agent_id: AgentID, call_id: str, decision: UserApprovalDecision, reason: str | None = None
     ) -> None:
         """Unified tool for handling approval decisions.
 
@@ -771,15 +771,11 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         return SimpleOk(ok=True)
 
     @server.tool()
-    async def create_agent(preset: str, system_message: str | None = None) -> AgentBrief:
-        """Create a new agent with the given preset and optional system message.
+    async def create_agent() -> AgentBrief:
+        """Create a new agent.
 
         Generates a unique agent ID and initializes infrastructure for a new agent.
         The agent will be ready to accept connections and process requests.
-
-        Args:
-            preset: Agent preset name/configuration identifier.
-            system_message: Optional system message override for the agent.
 
         Returns:
             AgentBrief with the newly created agent's ID and initial state.
