@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 import pytest
+from hamcrest import all_of, assert_that, has_properties, instance_of
 
 from adgn.agent.agent import AgentResult, MiniCodex
 from adgn.agent.reducer import AutoHandler
@@ -21,10 +22,14 @@ async def _assert_exec_echo(sess) -> None:
     # Call via compositor using namespaced tool key
     stub = ToolStub(sess, build_mcp_function(SERVER_NAME, "exec"), BaseExecResult)
     res = await stub(ExecInput(cmd=ECHO_CMD, timeout_ms=10_000))
-    assert isinstance(res.exit, Exited)
-    assert res.exit.exit_code == 0
-    assert (res.stdout or "") == "hello"
-    assert (res.stderr or "") == ""
+    assert_that(
+        res,
+        has_properties(
+            exit=all_of(instance_of(Exited), has_properties(exit_code=0)),
+            stdout="hello",
+            stderr="",
+        ),
+    )
 
 
 @pytest.mark.requires_docker

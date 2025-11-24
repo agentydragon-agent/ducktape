@@ -292,142 +292,72 @@ with ThreadPoolExecutor() as executor:
 
 ## Detection Strategy
 
+**MANDATORY first step**: Run `scan_comments.py` and process ALL output.
+
+- This scan is **required** - do not skip this step
+- You **must** read and handle the complete scan output (can pipe to temp file)
+- Do not sample or skip any results - process every comment/docstring found
+- Prevents lazy analysis by forcing examination of all comments in the codebase
+
 **Goal**: Find ALL useless comments for manual review (100% recall target).
 
 **Approach**: Low-precision, high-recall extraction of ALL comments, then manual filtering.
 
-### Phase 1: Extract ALL Python Comments
+### Automated Scanning Tool
 
-```python
-import ast
-import re
-from pathlib import Path
+**Tool**: `prompts/scans/scan_comments.py` - AST-based scanner for all comments and docstrings
 
-def extract_all_comments(file_path: Path) -> list[dict]:
-    """Extract every comment from a Python file with surrounding context.
+**What it finds**:
+- **All comments**: Inline (`x = 1  # comment`), block (`# comment`), docstrings
+- **Context**: 3 lines before and after each comment
+- **Type classification**: Distinguishes inline/block/docstring
 
-    Returns list of dicts with:
-        - line_num: Line number of comment
-        - comment: Comment text (without # prefix)
-        - context_before: 3 lines before comment
-        - context_after: 3 lines after comment
-        - comment_type: "inline" | "block" | "docstring"
-    """
-    with open(file_path) as f:
-        lines = f.readlines()
+**Usage**:
+```bash
+# Run on entire codebase
+python prompts/scans/scan_comments.py . > comments_scan.json
 
-    comments = []
+# Run on specific directory
+python prompts/scans/scan_comments.py path/to/module > module_comments.json
 
-    # Extract regular comments (# ...)
-    for i, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if stripped.startswith('#') and not stripped.startswith('#!'):
-            comment_text = stripped.lstrip('#').strip()
-            context_before = lines[max(0, i-4):i-1]
-            context_after = lines[i:min(len(lines), i+3)]
-
-            comments.append({
-                'line_num': i,
-                'comment': comment_text,
-                'context_before': ''.join(context_before),
-                'context_after': ''.join(context_after),
-                'comment_type': 'inline' if '#' in line[:line.index('#')] else 'block'
-            })
-
-    # Extract docstrings via AST
-    try:
-        tree = ast.parse(''.join(lines), filename=str(file_path))
-        for node in ast.walk(tree):
-            docstring = ast.get_docstring(node)
-            if docstring and hasattr(node, 'lineno'):
-                line_num = node.lineno
-                context_before = lines[max(0, line_num-4):line_num-1]
-                context_after = lines[line_num:min(len(lines), line_num+10)]
-
-                comments.append({
-                    'line_num': line_num,
-                    'comment': docstring,
-                    'context_before': ''.join(context_before),
-                    'context_after': ''.join(context_after),
-                    'comment_type': 'docstring'
-                })
-    except SyntaxError:
-        pass  # Skip files with syntax errors
-
-    return comments
-
-
-def scan_codebase_comments(root_dir: Path) -> dict[str, list[dict]]:
-    """Scan all Python files and extract comments with context.
-
-    Returns dict mapping file paths to lists of comment dicts.
-    """
-    all_comments = {}
-    for py_file in root_dir.rglob('*.py'):
-        if 'venv' in py_file.parts or '__pycache__' in py_file.parts:
-            continue
-        comments = extract_all_comments(py_file)
-        if comments:
-            all_comments[str(py_file)] = comments
-    return all_comments
-
-
-# Example usage:
-# comments = scan_codebase_comments(Path('.'))
-# for file_path, file_comments in comments.items():
-#     print(f"\n{file_path}:")
-#     for c in file_comments:
-#         print(f"  Line {c['line_num']} [{c['comment_type']}]: {c['comment'][:60]}...")
+# Pretty-print summary
+python prompts/scans/scan_comments.py . 2>&1 | grep "===" -A 10
 ```
 
-### Phase 2: Automated Filtering (Low Precision)
+**Output structure**:
+- `summary`: Counts of comments and files
+- `comments`: Dict mapping file paths to lists of `{line, comment, context_before, context_after, type}`
 
-```python
-def is_likely_useless(comment_dict: dict) -> bool | None:
-    """Check if comment is likely useless (automated heuristics).
+**Tool characteristics**:
+- **100% recall**: Finds ALL comments and docstrings in valid Python files
+- **No filtering**: Tool surfaces raw data; you do filtering for "useless"
+- **Context included**: 3 lines before/after for manual review
 
-    Returns:
-        True: Likely useless (high confidence)
-        False: Likely useful (high confidence)
-        None: Unclear, requires manual review
-    """
-    comment = comment_dict['comment'].lower()
-    context_after = comment_dict['context_after'].lower()
+### Filtering Heuristics (For Your Review)
 
-    # High-confidence useless patterns
-    useless_patterns = [
-        # Duplicating type annotations
-        (r'(\w+) is a (\w+)', lambda: 'def ' in context_after and ':' in context_after),
-        # Obvious increments/decrements
-        (r'increment|decrement', lambda: '++' in context_after or '+= 1' in context_after or '-= 1' in context_after),
-        # Section headers with no semantic value
-        (r'^-+\s*(helper|utility|internal|private)\s*(functions?|methods?|classes?)\s*-+$', lambda: True),
-        # Empty TODOs
-        (r'^todo:?\s*$', lambda: True),
-    ]
+These patterns can guide your filtering of scan results. Apply these heuristics during manual review.
 
-    for pattern, check_context in useless_patterns:
-        if re.search(pattern, comment) and check_context():
-            return True
+**High-confidence useless patterns**:
+- Duplicating type annotations: "user is a User object" when signature shows `user: User`
+- Obvious operations: "increment counter" for `counter += 1`
+- Section headers with no semantic value: `# ---- Helper functions ----`
+- Empty TODOs: `# TODO:` with no description
 
-    # High-confidence useful patterns
-    useful_patterns = [
-        r'\bwhy\b',  # Explains reasoning
-        r'\bworkaround\b',  # Temporary fix
-        r'\bhack\b.*\bbecause\b',  # Explained hack
-        r'\bwarning\b',  # Warning about gotchas
-        r'\bedge case\b',  # Documents edge cases
-        r'see (issue|pr|docs?).*#\d+',  # References external context
-        r'todo:.*\([^)]+\)',  # TODO with context/assignee
-    ]
+**High-confidence useful patterns**:
+- Explains WHY: Contains "why", "because", "reason"
+- Documents workarounds: Contains "workaround", "temporary", "hack"
+- References context: "see issue #123", "per docs at..."
+- Edge cases/warnings: "edge case", "warning", "gotcha"
+- TODOs with context: "TODO(alice): refactor after v2.0"
 
-    for pattern in useful_patterns:
-        if re.search(pattern, comment):
-            return False
-
-    # Unclear - requires manual review
-    return None
-```
+**Verification approach**:
+1. Load scan results with comments + context
+2. For each comment, check:
+   - Does it duplicate information from code structure (types, names, decorators)?
+   - Does it explain WHY, not just WHAT?
+   - Is it accurate (check context_after against comment)?
+   - Could better naming/refactoring eliminate need for comment?
+3. Categorize: USELESS (remove), VAGUE (clarify or remove), USEFUL (keep)
 
 ### Automated Scan Commands
 

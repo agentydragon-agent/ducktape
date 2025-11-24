@@ -12,7 +12,7 @@ from wt.shared.github_models import PRData, PRState
 
 class PRFixtureEntry(BaseModel):
     number: int
-    state: str = "open"
+    state: PRState = PRState.OPEN
     draft: bool = False
     mergeable: bool = True
     merged_at: str | None = None
@@ -53,7 +53,7 @@ def load_pr_fixture(config: Configuration, branch_name: str) -> PRData | None:
         return None
     return PRData(
         pr_number=entry.number,
-        pr_state=PRState(entry.state),
+        pr_state=entry.state,
         draft=entry.draft,
         mergeable=entry.mergeable,
         merged_at=entry.merged_at,

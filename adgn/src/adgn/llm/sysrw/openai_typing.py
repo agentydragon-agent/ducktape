@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from enum import StrEnum
-import json
 from typing import Any, cast
 
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionMessageToolCallParam
@@ -110,7 +109,15 @@ def chat_param_message_content_as_text(message: ChatCompletionMessageParam) -> s
 
 
 def parse_response_messages(messages: Any) -> list[ResponseOutputMessage] | None:
-    """Parse messages into validated ResponseOutputMessage objects."""
+    """Parse messages into validated ResponseOutputMessage objects.
+
+    Args:
+        messages: Unvalidated external payload (typically from OpenAI API response).
+                  Structured validation happens via TypeAdapter within function.
+
+    Returns:
+        Validated list of ResponseOutputMessage objects, or None if messages is falsy.
+    """
     if not messages:
         return None
     return TypeAdapter(list[ResponseOutputMessage]).validate_python(messages)
@@ -127,7 +134,15 @@ def dump_chat_messages(messages: list[ChatCompletionMessageParam]) -> list[dict[
 
 
 def parse_chat_messages(messages: Any) -> list[ChatCompletionMessageParam] | None:
-    """Parse messages into validated ChatCompletionMessageParam objects."""
+    """Parse messages into validated ChatCompletionMessageParam objects.
+
+    Args:
+        messages: Unvalidated external payload (typically from stored state or API).
+                  Structured validation happens via TypeAdapter within function.
+
+    Returns:
+        Validated list of ChatCompletionMessageParam objects, or None if messages is falsy.
+    """
     if not messages:
         return None
     return TypeAdapter(list[ChatCompletionMessageParam]).validate_python(messages)
@@ -141,14 +156,27 @@ def parse_response(response: dict[str, Any]) -> Response:
     return TypeAdapter(Response).validate_python(response)
 
 
-def parse_tool_params(params: str | dict[str, Any]) -> dict[str, Any]:
-    """Parse tool parameters into a dict."""
-    if isinstance(params, str):
-        parsed = json.loads(params)
-        return TypeAdapter(dict[str, Any]).validate_python(parsed)
+def parse_tool_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Parse and validate tool parameters.
+
+    Args:
+        params: Tool parameters as dict. If you have a JSON string,
+                deserialize it first: parse_tool_params(json.loads(json_str))
+
+    Returns:
+        Validated parameter dict.
+    """
     return TypeAdapter(dict[str, Any]).validate_python(params)
 
 
 def parse_tools_list(tools: Any) -> list[dict[str, Any]]:
-    """Parse a list of tools into validated dicts."""
+    """Parse a list of tools into validated dicts.
+
+    Args:
+        tools: Unvalidated external payload (typically from API response or config).
+               Structured validation happens via TypeAdapter within function.
+
+    Returns:
+        Validated list of tool definition dicts.
+    """
     return TypeAdapter(list[dict[str, Any]]).validate_python(tools if tools else [])

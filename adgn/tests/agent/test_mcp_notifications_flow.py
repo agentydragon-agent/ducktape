@@ -4,6 +4,7 @@ from typing import Any
 
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
+from hamcrest import assert_that, has_length, has_item, greater_than_or_equal_to, matches
 from pydantic import BaseModel, ConfigDict
 import pytest
 
@@ -97,7 +98,7 @@ async def test_notifications_pre_sampling_out_of_band(
                                 return True
             return False
 
-        assert any(_has_sysfyi(req) for req in captured), "expected system notification in request input"
+        assert_that(captured, has_item(matches(_has_sysfyi)), "expected system notification in request input")
 
 
 async def test_notifications_within_turn_from_tool(
@@ -132,7 +133,7 @@ async def test_notifications_within_turn_from_tool(
         await agent.run("go")
 
         # The second create call (post-tool) should include the injected system notification
-        assert len(captured) >= 2, "expected at least two sampling calls"
+        assert_that(captured, has_length(greater_than_or_equal_to(2)), "expected at least two sampling calls")
         second = captured[-1]
         found = False
         for msg in second.input or []:
@@ -188,4 +189,4 @@ async def test_notifications_broadcast_outside_tool(responses_factory: Responses
                                 return True
             return False
 
-        assert any(_has_sysfyi(req) for req in captured), "expected system notification after out-of-tool broadcast"
+        assert_that(captured, has_item(matches(_has_sysfyi)), "expected system notification after out-of-tool broadcast")

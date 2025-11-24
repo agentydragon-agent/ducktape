@@ -1,6 +1,6 @@
 # mcp runtime v2: structured overview (sync first, async later)
 
-
+> **Note (Waves D-E)**: This document describes the internal runtime architecture. For information about **frontend communication and the new token-based `/mcp` endpoint**, see `@../mcp-architecture.md`. That document covers routing, subscriptions, deleted infrastructure (WebSocket/HTTP endpoints), and client-facing MCP resources.
 
 > This document reorganizes and consolidates the current design into a clear, implementation‑oriented flow. It links out to focused docs (<ui-chat.md>, <matrix.md>, <control.md>, <resources.md>), and calls out open questions. V1 covers in‑proc sync execution; later sections outline optional chat resource mode and minimal async needed for container‑initiated calls. See also <../vision.md> for the high‑level philosophy and goals.
 

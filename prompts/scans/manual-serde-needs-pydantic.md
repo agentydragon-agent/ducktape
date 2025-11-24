@@ -201,14 +201,14 @@ Use Pydantic when you have:
 
 ## Detection Strategy
 
-**Primary Method**: Manual code reading to identify dict-wrangling patterns in internal code.
+**MANDATORY first step**: Run `scan_manual_serde.py` and process ALL output.
 
-**Why automation is insufficient**:
-- Determining if `dict` "should be Pydantic" requires understanding context:
-  - I/O boundary (external API, files) vs internal code
-  - Known structure at development time vs dynamic keys
-  - Whether validation is actually needed
-- String-literal dict access appears everywhere - need semantic judgment
+- This scan is **required** - do not skip this step
+- You **must** read and handle the complete scan output (can pipe to temp file)
+- Do not sample or skip any results - process every dict literal and Pydantic model found
+- Prevents lazy analysis by forcing examination of all dict construction patterns
+
+**Note**: This scan has high false positives (many dict literals are legitimate at I/O boundaries), but you must still process all results to ensure comprehensive review.
 
 **Key questions for manual review**:
 1. Is this I/O boundary or internal code passing data?
@@ -216,7 +216,93 @@ Use Pydantic when you have:
 3. Is there documentation of dict structure in docstrings? (RED FLAG)
 4. Are same literal keys accessed multiple times?
 
-**Discovery aids** (very high false positive rate):
+### Automated Scanning Tool
+
+**Tool**: `prompts/scans/scan_manual_serde.py` - AST-based scanner for dict literals and Pydantic model analysis
+
+**What it finds**:
+1. **Dict literals with string keys** - All `{"key": value}` constructions in the codebase
+   - Surfaces candidates for manual composition that should be Pydantic `__init__` calls
+   - Particularly useful when dict is in internal code (not I/O boundary)
+2. **Pydantic BaseModel classes** - All models with their fields and types
+   - Raw data for you to analyze for design issues
+   - You can identify: overlapping fields, duplicate field sets, single-field models, opportunities for shared sub-models
+
+**Usage**:
+```bash
+# Run on entire codebase
+python prompts/scans/scan_manual_serde.py . > serde_scan.json
+
+# Run on specific directory
+python prompts/scans/scan_manual_serde.py path/to/module > module_serde.json
+
+# Pretty-print summary
+python prompts/scans/scan_manual_serde.py . 2>&1 | grep "===" -A 10
+```
+
+**Output structure**:
+- `summary`: Counts of dict literals and models found
+- `dict_literals`: Dict mapping file paths to lists of `{line, col, keys, context}`
+- `pydantic_models`: Dict mapping file paths to lists of `{line, name, fields}`
+
+**Manual review workflow**:
+
+1. **Review dict_literals**:
+   - Check context: Is this in internal code or I/O boundary?
+   - If internal + known keys → Candidate for Pydantic model
+   - Look for patterns: same keys appearing in multiple places
+   - Cross-reference with pydantic_models: Does a model already exist for this structure?
+
+2. **Analyze pydantic_models for overlapping fields**:
+   - Compare field sets across models
+   - Models sharing 50%+ fields → Should they share a common base model?
+   - Example: `UserRequest` and `UserResponse` both have `user_id, email, name`
+   - Consider: Create `UserCore` base model, inherit in both
+
+3. **Identify single-field models**:
+   - Filter models where `len(fields) == 1`
+   - Single-field models are often legitimate (NewType pattern, validation)
+   - But review: Is this just a wrapper? Could it be a type alias?
+   - Keep if: Custom validation, multiple methods, clear semantic meaning
+   - Replace if: Just wrapping a primitive with no behavior
+
+4. **Find duplicate field sets**:
+   - Group models by identical field sets
+   - Models with identical fields → Should one be eliminated?
+   - Check: Are these in different modules for different contexts? (might be OK)
+   - Consider: Consolidate into single model if semantically identical
+
+**Example analysis**:
+
+```bash
+# After running scan, analyze output with jq
+# Note: Output is grouped by file, so iterate over files then filter items
+
+# Review dict literals with 3+ keys (more likely to need models)
+cat serde_scan.json | jq '.dict_literals | to_entries[] | {file: .key, literals: [.value[] | select(.keys | length >= 3)]}'
+
+# Focus on dict literals in functions (internal code, not module-level)
+cat serde_scan.json | jq '.dict_literals | to_entries[] | {file: .key, literals: [.value[] | select(.context | contains("function"))]}'
+
+# Find single-field models for review
+cat serde_scan.json | jq '.pydantic_models | to_entries[] | {file: .key, models: [.value[] | select(.fields | length == 1)]}'
+
+# You can analyze overlapping fields by comparing model field sets across all files
+# Example: Load into Python and programmatically compare field sets
+```
+
+**Tool characteristics**:
+- **Dict literal finding**: ~100% recall (finds all dict literals), ~20% precision (most are legitimate)
+- **Model field extraction**: ~100% recall (finds all BaseModel classes and their fields)
+- **False positives are expected**: This is a discovery tool, not a verdict
+- **Manual verification required**: Context determines if each finding is actually problematic
+- **You do the analysis**: Tool surfaces raw data; you analyze overlaps, duplicates, single-field models
+
+**What the tool CANNOT tell you** (requires your judgment):
+- Whether a dict literal is at an I/O boundary (legitimate) or internal code (suspicious)
+- Whether overlapping fields indicate poor design or intentional separation of concerns
+- Whether a single-field model is a useful abstraction or unnecessary wrapper
+- Whether dict keys are truly "known at development time" or dynamic
 
 ### Grep Patterns
 

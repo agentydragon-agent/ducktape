@@ -1,6 +1,6 @@
 """Message formatting utilities for structured logging."""
 
-from typing import Any
+from typing import Any, Protocol
 
 from claude_code_sdk import (
     AssistantMessage,
@@ -11,6 +11,18 @@ from claude_code_sdk import (
     ToolUseBlock,
     UserMessage,
 )
+
+
+class StructuredLogger(Protocol):
+    """Protocol for structured logging (e.g., structlog)."""
+
+    def info(self, event: str, **kwargs: Any) -> None:
+        """Log an info-level message with structured fields."""
+        ...
+
+    def bind(self, **kwargs: Any) -> "StructuredLogger":
+        """Bind additional context to logger."""
+        ...
 
 
 class MessageFormatter:
@@ -41,12 +53,17 @@ class MessageFormatter:
         return content if isinstance(content, str) else str(content)
 
 
-def log_system_message(logger: Any, message: SystemMessage) -> None:
-    """Log system message details."""
+def log_system_message(logger: StructuredLogger, message: SystemMessage) -> None:
+    """Log system message details.
+
+    Args:
+        logger: Structured logger (e.g., structlog) with info() and bind() methods.
+        message: System message to log.
+    """
     logger.info("System message", subtype=message.subtype)
 
 
-def log_assistant_message(logger: Any, message: AssistantMessage) -> None:
+def log_assistant_message(logger: StructuredLogger, message: AssistantMessage) -> None:
     """Log assistant message with tool usage details."""
     tool_uses_full = []  # Complete data for JSON logs
     text_content = ""
@@ -71,7 +88,7 @@ def log_assistant_message(logger: Any, message: AssistantMessage) -> None:
         logger.info("Assistant message", content_preview=MessageFormatter.format_preview(text_content))
 
 
-def log_user_message(logger: Any, message: UserMessage) -> None:
+def log_user_message(logger: StructuredLogger, message: UserMessage) -> None:
     """Log user message, handling both string and list content."""
     # Handle list content (e.g., tool results)
     if isinstance(message.content, list) and message.content:
@@ -94,7 +111,7 @@ def log_user_message(logger: Any, message: UserMessage) -> None:
         logger.info("User message", content="empty")
 
 
-def log_result_message(logger: Any, message: ResultMessage) -> None:
+def log_result_message(logger: StructuredLogger, message: ResultMessage) -> None:
     """Log result message with execution details."""
     logger.info(
         "Result message", duration_ms=message.duration_ms, cost_usd=message.total_cost_usd, is_error=message.is_error
@@ -102,7 +119,9 @@ def log_result_message(logger: Any, message: ResultMessage) -> None:
 
 
 def log_message_summary(
-    message: SystemMessage | AssistantMessage | UserMessage | ResultMessage, logger: Any, agent_id: int | None = None
+    message: SystemMessage | AssistantMessage | UserMessage | ResultMessage,
+    logger: StructuredLogger,
+    agent_id: int | None = None,
 ) -> None:
     """Log a structured summary of a coding agent SDK message."""
     message_logger = logger.bind(agent_id=agent_id, message_type=type(message).__name__)
@@ -122,7 +141,12 @@ def log_message_summary(
 class MessageLogger:
     """Adapter providing structured message logging using MessageFormatter utilities."""
 
-    def __init__(self, logger: Any):
+    def __init__(self, logger: StructuredLogger):
+        """Initialize MessageLogger with a structured logger.
+
+        Args:
+            logger: Structured logger (e.g., structlog) with info() and bind() methods.
+        """
         self.logger = logger
 
     def log_system(self, message: SystemMessage) -> None:

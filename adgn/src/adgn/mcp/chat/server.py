@@ -181,7 +181,7 @@ class ChatStorePersisted(ChatStore):
 
     async def last_id_async(self) -> str | None:
         async with (
-            self._persistence._open_row() as db,
+            self._persistence._open() as db,
             db.execute("SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?", (self._agent,)) as cur,
         ):
             if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
@@ -190,7 +190,7 @@ class ChatStorePersisted(ChatStore):
 
     async def get_last_read_async(self, server_name: str) -> str | None:
         async with (
-            self._persistence._open_row() as db,
+            self._persistence._open() as db,
             db.execute(
                 "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
             ) as cur,
@@ -218,7 +218,7 @@ class ChatStorePersisted(ChatStore):
         except (TypeError, ValueError):
             return None
         async with (
-            self._persistence._open_row() as db,
+            self._persistence._open() as db,
             db.execute(
                 "SELECT id, ts, author, mime, content FROM chat_messages WHERE agent_id = ? AND id = ?",
                 (self._agent, seq),
@@ -240,7 +240,7 @@ class ChatStorePersisted(ChatStore):
         other = ChatAuthor.ASSISTANT if server_author is ChatAuthor.USER else ChatAuthor.USER
         cap = limit if isinstance(limit, int) and limit > 0 else None
         async with (
-            self._persistence._open_row() as db,
+            self._persistence._open() as db,
             db.execute(
                 "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
             ) as cur,
@@ -249,7 +249,7 @@ class ChatStorePersisted(ChatStore):
             after_seq = r["last_id"] if r else None
 
         # Fetch messages after HWM
-        async with self._persistence._open_row() as db:
+        async with self._persistence._open() as db:
             sql = (
                 "SELECT id, ts, author, mime, content FROM chat_messages "
                 "WHERE agent_id = ? AND id > ? AND author = ? ORDER BY id ASC"
@@ -275,7 +275,7 @@ class ChatStorePersisted(ChatStore):
             await self._notify_last_read(server_name=server_name)
         # last_id: query MAX(id)
         async with (
-            self._persistence._open_row() as db,
+            self._persistence._open() as db,
             db.execute("SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?", (self._agent,)) as cur,
         ):
             r = await cur.fetchone()

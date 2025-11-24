@@ -7,6 +7,7 @@ from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
 
 from ..config import BearerAuth, NoAuth, WebhookAuthConfig
+from .handlers import AuthType
 
 
 class AuthError(Exception):
@@ -60,9 +61,9 @@ def create_auth_handler(config: WebhookAuthConfig | dict[str, Any]) -> WebhookAu
     """Factory function to create appropriate authentication handler."""
     if isinstance(config, dict):
         auth_type = config.get("type")
-        if auth_type == "none":
+        if auth_type == AuthType.NONE:
             return NoAuthHandler(NoAuth())
-        if auth_type == "bearer":
+        if auth_type == AuthType.BEARER:
             return BearerAuthHandler(BearerAuth(token=config.get("token", "")))
         raise ValueError(f"Unknown authentication type in dict: {auth_type}")
     if isinstance(config, NoAuth):

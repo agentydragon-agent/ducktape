@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import contextlib
 from datetime import UTC, datetime
-import json
 import logging
 from typing import Any
 import uuid
@@ -15,10 +15,9 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist import RunStatus
+from adgn.agent.persist import PersistenceRunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
-from adgn.agent.server.agents_ws import AgentsWSHub
-from adgn.agent.server.bus import UiEndTurn, UiMessage
+from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
     ApprovalBrief,
     ApprovalPolicyInfo,
@@ -34,7 +33,7 @@ from adgn.agent.server.protocol import (
     SessionState,
     Snapshot,
     SnapshotDetails,
-    ToolCall as UiToolCall,
+    ToolCallEvt as UiToolCall,
     UiEndTurnEvt,
     UiMessageEvt,
     UiMessagePayload,
@@ -44,7 +43,7 @@ from adgn.agent.server.protocol import (
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
 from adgn.agent.server.status_shared import RunPhase, determine_run_phase
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 
 logger = logging.getLogger(__name__)
 
@@ -56,18 +55,18 @@ class ConnectionManager(BaseHandler):
         self._bg_tasks: set[asyncio.Task[Any]] = set()
         self._event_id: int = 0
         self._session_id: str = str(uuid.uuid4())
-        # Hub binding for status broadcasts (configured by WS layer)
-        self._status_hub: AgentsWSHub | None = None
-        self._status_agent_id: str | None = None
+        # Optional: session state change notifier for MCP resource updates
+        self._session_state_notifier: Callable[[], None] | None = None
 
     async def connect(self, ws: WebSocket) -> None:
         # Accept only if not already accepted by the route handler
         if ws.application_state is not WebSocketState.CONNECTED:
             try:
                 await ws.accept()
-            except Exception:
-                # If a close has already been sent or the client disconnected, skip
-                return
+            except Exception as e:
+                # If a close has already been sent or the client disconnected, log and propagate
+                logger.error("WebSocket accept failed", extra={"error": str(e)}, exc_info=True)
+                raise
         # If still not connected after best-effort accept, do not register
         if ws.application_state is not WebSocketState.CONNECTED:
             return
@@ -105,18 +104,28 @@ class ConnectionManager(BaseHandler):
                 )
                 await ws.send_json(payload)
             except Exception as e:
-                logger.warning(
-                    "ws send_json failed; disconnecting client", extra={"client_id": client_id, "error": str(e)}
+                logger.error(
+                    "ws send_json failed; stopping sender loop",
+                    extra={"client_id": client_id, "error": str(e)},
+                    exc_info=True,
                 )
+                # Break sender loop - connection is broken
                 break
 
     def _next_event_id(self) -> int:
         self._event_id += 1
         return self._event_id
 
-    async def send_json(self, payload: dict[str, Any]) -> None:
+    async def send_json(self, payload: ServerMessage) -> None:
+        envelope = Envelope(
+            session_id=self._session_id,
+            event_id=self._next_event_id(),
+            event_at=datetime.now(UTC),
+            payload=payload,
+        )
+        dumped = envelope.model_dump(mode="json")
         for _ws, q, _task in list(self._clients.values()):
-            q.put_nowait(payload)
+            q.put_nowait(dumped)
 
     async def _send_and_reduce(self, payload: ServerMessage) -> None:
         await self.send_payload(payload)
@@ -143,11 +152,7 @@ class ConnectionManager(BaseHandler):
                 await self._send_and_reduce(UiEndTurnEvt())
 
     async def send_payload(self, payload: ServerMessage) -> None:
-        await self.send_json(
-            Envelope(
-                session_id=self._session_id, event_id=self._next_event_id(), event_at=datetime.now(UTC), payload=payload
-            ).model_dump(mode="json")
-        )
+        await self.send_json(payload)
         # Mirror run status events to agents hub
         if isinstance(payload, RunStatusEvt):
             st = payload.run_state.status
@@ -161,7 +166,7 @@ class ConnectionManager(BaseHandler):
     def on_response(self, evt: Any) -> None:
         return None
 
-    def _spawn(self, coro: Any) -> None:
+    def _spawn(self, coro: Awaitable[None]) -> None:
         t: asyncio.Task[Any] = asyncio.create_task(coro)
         self._bg_tasks.add(t)
         t.add_done_callback(self._bg_tasks.discard)
@@ -175,45 +180,48 @@ class ConnectionManager(BaseHandler):
     def on_user_text_event(self, evt: UserText) -> None:
         ut = UiUserText(text=evt.text)
         self._spawn(self._send_and_reduce(ut))
+        # Notify MCP bridge of session state change
+        if self._session_state_notifier is not None:
+            self._session_state_notifier()
 
-    async def _send_direct_all(self, payload: dict[str, Any]) -> None:
+    async def _send_direct_all(self, payload: ServerMessage) -> None:
+        envelope = Envelope(
+            session_id=self._session_id,
+            event_id=self._next_event_id(),
+            event_at=datetime.now(UTC),
+            payload=payload,
+        )
+        dumped = envelope.model_dump(mode="json")
         for ws, _q, _task in list(self._clients.values()):
-            await ws.send_json(payload)
+            await ws.send_json(dumped)
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
         raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
-        tc = UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
-        self._spawn(self._send_and_reduce(tc))
+        self._spawn(self._send_and_reduce(UiToolCall(tool_call=evt)))
+        # Notify MCP bridge of session state change
+        if self._session_state_notifier is not None:
+            self._session_state_notifier()
 
     # No per-tool interception; Policy Gateway middleware emits approval_pending via notifier
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         # FastMCP CallToolResult is not a Pydantic model; project minimal fields
-        fco = FunctionCallOutput(call_id=evt.call_id, result=to_pydantic(evt.result))
+        fco = FunctionCallOutput(call_id=evt.call_id, result=convert_fastmcp_result(evt.result))
         self._spawn(self._send_and_reduce(fco))
         self._spawn(self._emit_ui_bus_messages())
+        # Notify MCP bridge of session state change
+        if self._session_state_notifier is not None:
+            self._session_state_notifier()
 
-    def configure_status_hub(self, hub: AgentsWSHub, agent_id: str) -> None:
-        self._status_hub = hub
-        self._status_agent_id = agent_id
+    def set_session_state_notifier(self, notifier: Callable[[], None]) -> None:
+        """Set notifier callback for session state changes (for MCP resource updates)."""
+        self._session_state_notifier = notifier
 
     async def broadcast_status(self, live: bool, active_run_id) -> None:
-        # No-op when not configured (unit tests may use manager without a WS hub)
-        if self._status_hub is None or self._status_agent_id is None:
-            return
-        logger.info(
-            "manager: broadcast_status",
-            extra={
-                "agent_id": self._status_agent_id,
-                "live": live,
-                "active_run_id": str(active_run_id) if active_run_id else None,
-            },
-        )
-        await self._status_hub.broadcast_agent_status(
-            agent_id=self._status_agent_id, live=live, active_run_id=active_run_id
-        )
+        # No-op: WebSocket status broadcasts removed
+        pass
 
 
 class AgentSession:
@@ -224,7 +232,7 @@ class AgentSession:
         *,
         persistence=None,
         agent_id: str | None = None,
-        ui_bus: Any | None = None,
+        ui_bus: ServerBus | None = None,
         approval_engine: ApprovalPolicyEngine | None = None,
     ) -> None:
         self._task: asyncio.Task | None = None
@@ -235,13 +243,15 @@ class AgentSession:
         self._agent: MiniCodex | None = None
         self._manager = manager
         self._persistence = persistence
-        self.ui_bus: Any | None = ui_bus
+        self.ui_bus: ServerBus | None = ui_bus
         self.ui_state: UiState = new_state()
         self.approval_engine: ApprovalPolicyEngine | None = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
         # Optional: agent identifier to associate runs with a specific hosted agent
         self.agent_id: str | None = agent_id
         # No Docker client on session; runtime server handles any containerization
+        # Optional: UI state change notifier for MCP resource updates
+        self._ui_state_notifier: Callable[[], None] | None = None
 
     def current_run_phase(self) -> RunPhase:
         """Compute the current run phase from live signals (no stored state).
@@ -263,19 +273,14 @@ class AgentSession:
     async def build_snapshot(self, sampling=None) -> Snapshot:
         if self.active_run:
             self.active_run.pending_approvals = [
-                ApprovalBrief(
-                    call_id=req.tool_call.call_id,
-                    tool_key=req.tool_key,
-                    args=(json.loads(req.tool_call.args_json or "{}") if req.tool_call.args_json else {}),
-                )
-                for req in self.approval_hub._requests.values()
+                ApprovalBrief(tool_call=req.tool_call) for req in self.approval_hub._requests.values()
             ]
 
         approval_policy = None
         if self.approval_engine is None:
             raise RuntimeError("approval_engine not configured for session")
 
-        content, version = self.approval_engine.get_policy()
+        content, policy_id = self.approval_engine.get_policy()
         proposals: list[ProposalInfo] = []
         # Load proposals from persistence policy store
         if self._persistence is not None and self.agent_id:
@@ -286,7 +291,7 @@ class AgentSession:
                 # Strict mapping; surface invalid data rather than swallowing
                 status = ProposalStatus(raw)
                 proposals.append(ProposalInfo(id=pid, status=status))
-        approval_policy = ApprovalPolicyInfo(content=content, version=version, proposals=proposals)
+        approval_policy = ApprovalPolicyInfo(content=content, id=policy_id, proposals=proposals)
 
         # Build preferred details bundle when all components are present
         details = None
@@ -316,9 +321,16 @@ class AgentSession:
     def set_persist_handler(self, handler: RunPersistenceHandler) -> None:
         self._persist_handler = handler
 
-    async def _apply_ui_event(self, evt: Any) -> None:
+    def set_ui_state_notifier(self, notifier: Callable[[], None]) -> None:
+        """Set notifier callback for UI state changes (for MCP resource updates)."""
+        self._ui_state_notifier = notifier
+
+    async def _apply_ui_event(self, evt: ServerMessage) -> None:
         self.ui_state = reduce_ui_state(self.ui_state, evt)
         await self._manager.send_payload(UiStateUpdated(v="ui_state_v1", seq=self.ui_state.seq, state=self.ui_state))
+        # Notify MCP bridge if notifier is set
+        if self._ui_state_notifier is not None:
+            self._ui_state_notifier()
 
     async def run(self, prompt: str) -> None:
         async with self._lock:
@@ -340,7 +352,9 @@ class AgentSession:
                 self._agent.abort_pending_tool_calls()
             except Exception:
                 # Best-effort; do not block abort on synthesis failures
-                logger.debug("abort_pending_tool_calls failed", exc_info=True)
+                logger.error("abort_pending_tool_calls failed", exc_info=True)
+                # Re-raise after logging - synthesis failures indicate broken state
+                raise
         t = self._task
         if t is None or t.done():
             return
@@ -387,17 +401,20 @@ class AgentSession:
                 run_id=run_id, status=UiRunStatus.RUNNING, started_at=started, pending_approvals=[], last_event_id=None
             )
             self._run_counter += 1
-            finish_status = RunStatus.FINISHED
+            # Notify MCP bridge of session state change (run started)
+            if self._manager._session_state_notifier is not None:
+                self._manager._session_state_notifier()
+            finish_status = PersistenceRunStatus.FINISHED
             try:
                 await self._agent.run(user_text=prompt)
             except asyncio.CancelledError:
                 await self._manager.send_payload(ErrorEvt(code=ErrorCode.ABORTED))
-                finish_status = RunStatus.ABORTED
+                finish_status = PersistenceRunStatus.ABORTED
             except Exception as e:
                 await self._manager.send_payload(
                     ErrorEvt(code=ErrorCode.AGENT_ERROR, message=f"agent_run_exception: {e}")
                 )
-                finish_status = RunStatus.ERROR
+                finish_status = PersistenceRunStatus.ERROR
             finally:
                 if self.active_run:
                     self.active_run.status = UiRunStatus.FINISHED
@@ -423,6 +440,9 @@ class AgentSession:
                 # Keep snapshot run_state in sync with finished status
                 await self._manager.send_payload(await self.build_snapshot())
                 await self._manager.broadcast_status(True, None)
+                # Notify MCP bridge of session state change (run finished)
+                if self._manager._session_state_notifier is not None:
+                    self._manager._session_state_notifier()
             return
         await self._manager.send_payload(ErrorEvt(code=ErrorCode.NO_AGENT, message="no_agent_attached"))
         return

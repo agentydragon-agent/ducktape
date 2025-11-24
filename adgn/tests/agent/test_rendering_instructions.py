@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from importlib import resources
 
+from hamcrest import all_of, assert_that, contains_string
 from mcp import types
 
 from adgn.agent.server.rendering import render_compositor_instructions
@@ -29,7 +30,12 @@ def test_render_single_running_with_instructions() -> None:
     )
     state = RunningServerEntry(initialize=init, tools=[])
     out = render_compositor_instructions({"docker_exec": state})
-    assert "The following MCP servers" in out
-    assert "# docker_exec" in out
-    assert "## Instructions" in out
-    assert "Hello world" in out
+    assert_that(
+        out,
+        all_of(
+            contains_string("The following MCP servers"),
+            contains_string("# docker_exec"),
+            contains_string("## Instructions"),
+            contains_string("Hello world"),
+        ),
+    )

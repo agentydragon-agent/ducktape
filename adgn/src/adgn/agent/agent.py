@@ -20,7 +20,7 @@ from pydantic import TypeAdapter
 
 from adgn.agent.handler import AssistantText, GroundTruthUsage, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import Abort, Auto, Continue, Forbid, RequireAny, RequireSpecific, ToolPolicy
-from adgn.mcp._shared.calltool import as_minimal_json
+from adgn.mcp._shared.calltool import serialize_tool_result_compact
 from adgn.openai_utils.model import (
     AssistantMessage,
     AssistantMessageOut,
@@ -94,7 +94,7 @@ def _dump_call_tool_result(res: CallToolResult, tool_call_info: str | None = Non
     Dumps a compact JSON with native snake_case keys to avoid lossy remapping.
     """
 
-    result = json.dumps(as_minimal_json(res), ensure_ascii=False)
+    result = json.dumps(serialize_tool_result_compact(res), ensure_ascii=False)
 
     # Safety check: OpenAI has a 10MB limit for input strings
     # Fail fast if tool output is too large to prevent API errors
@@ -146,13 +146,18 @@ def _abort_result(reason: str | None = None) -> CallToolResult:
     return _make_error_result(reason or DEFAULT_ABORT_ERROR)
 
 
-def _normalize_call_arguments(arguments: Any) -> str | None:
+def _normalize_call_arguments(arguments: dict[str, Any] | str | None) -> str | None:
+    """Normalize function call arguments to JSON string.
+
+    Args:
+        arguments: Structured data (dict), pre-serialized JSON string, or None.
+
+    Returns:
+        JSON string representation or None if arguments is None.
+    """
     if arguments is None or isinstance(arguments, str):
         return arguments
-    try:
-        return json.dumps(arguments)
-    except TypeError:
-        return str(arguments)
+    return json.dumps(arguments)
 
 
 def _call_tool_result_from_json(output: str) -> CallToolResult:

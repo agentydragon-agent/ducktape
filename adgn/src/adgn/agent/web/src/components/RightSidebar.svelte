@@ -2,8 +2,8 @@
   import ApprovalsPanel from './ApprovalsPanel.svelte'
   import ServersPanel from './ServersPanel.svelte'
   import SettingsPanel from './SettingsPanel.svelte'
-  
-  import { agentStatus as agentStatusStore, agentStatusError as agentStatusErrorStore } from '../features/agents/stores'
+
+  import { agentStatus as agentStatusStore, agentStatusError as agentStatusErrorStore, serverCapabilities } from '../features/agents/stores'
   import { wsConnected, runStatus as runStatusStore, pendingApprovals, approvalPolicy as approvalPolicyStore, mcpServerEntries as mcpServerEntriesStore, lastError as lastErrorStore, clearError as clearWsError, approve as wsApprove, denyContinue as wsDenyContinue, deny as wsDeny, setPolicy as wsSetPolicy, approveProposal as wsApproveProposal, withdrawProposal as wsWithdrawProposal } from '../features/chat/stores'
 
   // Local UI state
@@ -12,6 +12,9 @@
   let editingPolicy = ''
 
   export let deleteCurrentAgent: () => void
+
+  // Capabilities
+  $: showAgentState = $serverCapabilities?.components.agent_state ?? true
 
   
   function startEditingPolicy() { editingPolicy = ($approvalPolicyStore?.content) || ''; showPolicyEditor = true }
@@ -23,20 +26,24 @@
     <span class="dot {$wsConnected ? 'on' : 'off'}"></span>
     <span>{$wsConnected ? 'WS connected' : 'WS disconnected'}</span>
   </div>
-  <div class="status">Status: {$runStatusStore}</div>
+  {#if showAgentState}
+    <div class="status">Status: {$runStatusStore}</div>
+  {/if}
   {#if $agentStatusStore}
     <div class="row" style="gap: 0.5rem; font-size: 0.85rem; margin-top: 0.25rem;">
-      <span title="Lifecycle">Lifecycle: {$agentStatusStore.lifecycle ?? ($agentStatusStore.live ? 'ready' : 'persisted_only')}</span>
-      
+      {#if showAgentState}
+        <span title="Lifecycle">Lifecycle: {$agentStatusStore.lifecycle ?? ($agentStatusStore.live ? 'ready' : 'persisted_only')}</span>
+      {/if}
+
       {#if $agentStatusStore.policy}
         <span title="Policy">
-          Policy: { typeof $agentStatusStore.policy.version === 'number' ? `v${$agentStatusStore.policy.version}` : 'unavailable' }
+          Policy: { typeof $agentStatusStore.policy.id === 'number' ? `v${$agentStatusStore.policy.id}` : 'unavailable' }
         </span>
       {/if}
       {#if $agentStatusStore.mcp}
         <span title="MCP servers">MCP: {Object.values(($agentStatusStore.mcp.entries || {})).filter((e: any) => e?.state !== 'running').length} failed</span>
       {/if}
-      {#if $agentStatusStore.container}
+      {#if showAgentState && $agentStatusStore.container}
         <span title={$agentStatusStore.container.id ? `Container ${$agentStatusStore.container.id}` : 'Runtime container'}>
           Runtime: { $agentStatusStore.container.ephemeral ? 'ephemeral' : 'session' }
         </span>

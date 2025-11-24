@@ -89,7 +89,7 @@ class GitHubPRResponse(BaseModel):
     """Raw GitHub PR API response data"""
 
     number: int
-    state: str
+    state: PRState
     title: str
     draft: bool = False
     mergeable: bool | None = None

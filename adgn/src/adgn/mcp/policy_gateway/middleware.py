@@ -1,20 +1,24 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 import json
 import logging
 from typing import Any
 import uuid
+from uuid import UUID
 
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
 from mcp import McpError, types as mtypes
 from mcp.types import ErrorData
 
-from adgn.agent.approvals import ApprovalHub, ApprovalRequest, ApprovalToolCall
+from adgn.agent.approvals import ApprovalHub, ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
-from adgn.agent.persist import ApprovalOutcome
+from adgn.agent.persist import ApprovalOutcome, Decision, Persistence, ToolCall, ToolCallExecution, ToolCallRecord
 from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest
+from adgn.agent.types import AgentID
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 from adgn.mcp._shared.constants import (
     POLICY_BACKEND_RESERVED_MISUSE_CODE,
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
@@ -29,6 +33,10 @@ from adgn.mcp._shared.constants import (
 from adgn.mcp.approval_policy.clients import PolicyReaderStub
 
 logger = logging.getLogger(__name__)
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _raise_if_reserved_code(e: McpError, name: str) -> None:
@@ -118,19 +126,36 @@ class PolicyGatewayMiddleware(Middleware):
         self,
         *,
         hub: ApprovalHub,
-        pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
-        record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
         policy_reader: PolicyReaderStub,
+        persistence: Persistence,
+        agent_id: AgentID,
+        pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
+        run_id: UUID | None = None,
     ) -> None:
         self._hub = hub
         self._notify = pending_notifier
-        self._record = record_outcome
         self._policy_reader = policy_reader
+        self._persistence = persistence
+        self._run_id = run_id
+        self._agent_id = agent_id
 
     async def on_call_tool(self, context: MiddlewareContext[Any], call_next: CallNext[Any, ToolResult]) -> ToolResult:
         name = context.message.name
         arguments = context.message.arguments
         tool_key = name  # canonical function name
+        call_id = "pg:" + uuid.uuid4().hex
+
+        # Create PENDING tool call record
+        tool_call = ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None)
+        pending_record = ToolCallRecord(
+            call_id=call_id,
+            run_id=str(self._run_id) if self._run_id is not None else None,
+            agent_id=self._agent_id,
+            tool_call=tool_call,
+            decision=None,
+            execution=None,
+        )
+        await self._persistence.save_tool_call(pending_record)
 
         # Evaluate decision via MCP reader server when available; fallback to local evaluator
         try:
@@ -150,15 +175,40 @@ class PolicyGatewayMiddleware(Middleware):
         logger.debug("Policy decision: %s → %s (%s)", name, decision, rationale or "")
 
         if decision is ApprovalDecision.ALLOW:
-            if self._record is not None:
-                await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_ALLOW)
+            # Update with decision (PENDING → EXECUTING)
+            decision_obj = Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=_now(), reason=rationale)
+            executing_record = ToolCallRecord(
+                call_id=call_id,
+                run_id=str(self._run_id) if self._run_id is not None else None,
+                agent_id=self._agent_id,
+                tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                decision=decision_obj,
+                execution=None,
+            )
+            await self._persistence.save_tool_call(executing_record)
+
             try:
                 call_result = await call_next(context)
+
+                # Update with execution result (EXECUTING → COMPLETED)
+                execution_obj = ToolCallExecution(completed_at=_now(), output=convert_fastmcp_result(call_result))
+                completed_record = ToolCallRecord(
+                    call_id=call_id,
+                    run_id=str(self._run_id) if self._run_id is not None else None,
+                    agent_id=self._agent_id,
+                    tool_call=ToolCall(
+                        name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
+                    ),
+                    decision=decision_obj,
+                    execution=execution_obj,
+                )
+                await self._persistence.save_tool_call(completed_record)
+
                 # If downstream returned an error ToolResult instead of raising,
                 # remap reserved policy codes/messages here using typed parsing when available.
-                if bool(getattr(call_result, "is_error", False)):
+                if bool(call_result.is_error):
                     # Parse error details - ErrorData guarantees code: int per MCP/JSON-RPC spec
-                    err = getattr(call_result, "error", None)
+                    err = call_result.error
                     if err is None:
                         return call_result
 
@@ -208,55 +258,106 @@ class PolicyGatewayMiddleware(Middleware):
                 raise
 
         if decision is ApprovalDecision.DENY_ABORT:
-            if self._record is not None:
-                await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
+            # Update with decision (no execution)
+            decision_obj = Decision(outcome=ApprovalOutcome.POLICY_DENY_ABORT, decided_at=_now(), reason=rationale)
+            denied_record = ToolCallRecord(
+                call_id=call_id,
+                run_id=str(self._run_id) if self._run_id is not None else None,
+                agent_id=self._agent_id,
+                tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                decision=decision_obj,
+                execution=None,
+            )
+            await self._persistence.save_tool_call(denied_record)
+
             raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, rationale)
 
         if decision is ApprovalDecision.DENY_CONTINUE:
-            if self._record is not None:
-                await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_CONTINUE)
+            # Update with decision (no execution)
+            decision_obj = Decision(outcome=ApprovalOutcome.POLICY_DENY_CONTINUE, decided_at=_now(), reason=rationale)
+            denied_record = ToolCallRecord(
+                call_id=call_id,
+                run_id=str(self._run_id) if self._run_id is not None else None,
+                agent_id=self._agent_id,
+                tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                decision=decision_obj,
+                execution=None,
+            )
+            await self._persistence.save_tool_call(denied_record)
+
             raise _policy_denied_error(ApprovalDecision.DENY_CONTINUE, name, rationale)
 
         # ASK: block until resolved via ApprovalHub
-        call_id = "pg:" + uuid.uuid4().hex
         req = ApprovalRequest(
-            tool_key=tool_key,
-            tool_call=ApprovalToolCall(
-                name=name, call_id=call_id, args_json=(json.dumps(arguments) if arguments else None)
-            ),
+            tool_call=ToolCall(name=name, call_id=call_id, args_json=(json.dumps(arguments) if arguments else None))
         )
         # Register + notify before awaiting
         wait_coro = self._hub.await_decision(call_id, req)
         if self._notify is not None:
             await self._notify(call_id, tool_key, req.tool_call.args_json)
 
-        decision_obj = await wait_coro
+        decision_response = await wait_coro
 
-        if isinstance(decision_obj, ContinueDecision):
-            if self._record is not None:
-                await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
+        if isinstance(decision_response, ContinueDecision):
+            # User approved - update with decision (PENDING → EXECUTING)
+            decision_obj = Decision(outcome=ApprovalOutcome.USER_APPROVE, decided_at=_now(), reason=None)
+            executing_record = ToolCallRecord(
+                call_id=call_id,
+                run_id=str(self._run_id) if self._run_id is not None else None,
+                agent_id=self._agent_id,
+                tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                decision=decision_obj,
+                execution=None,
+            )
+            await self._persistence.save_tool_call(executing_record)
+
             try:
-                return await call_next(context)
+                call_result = await call_next(context)
+
+                # Update with execution result (EXECUTING → COMPLETED)
+                execution_obj = ToolCallExecution(completed_at=_now(), output=convert_fastmcp_result(call_result))
+                completed_record = ToolCallRecord(
+                    call_id=call_id,
+                    run_id=str(self._run_id) if self._run_id is not None else None,
+                    agent_id=self._agent_id,
+                    tool_call=ToolCall(
+                        name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None
+                    ),
+                    decision=decision_obj,
+                    execution=execution_obj,
+                )
+                await self._persistence.save_tool_call(completed_record)
+
+                return call_result
             except McpError as e:
                 _raise_if_reserved_code(e, name)
                 raise
-        if isinstance(decision_obj, AbortTurnDecision):
-            if self._record is not None:
-                await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
-            raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, decision_obj.reason)
-            # No separate deny-continue decision; only abort is supported explicitly.
-            # If UI wants to deny without abort, close the approval request without resolving;
-            # the call will remain blocked until policy ALLOW arrives.
 
-            # Unknown decision type: internal error for visibility
-            raise McpError(
-                ErrorData(
-                    code=-32603,
-                    message="internal_error: unknown approval decision type",
-                    data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "decision_type": type(decision_obj).__name__},
-                )
+        if isinstance(decision_response, AbortTurnDecision):
+            # User denied - update with decision (no execution)
+            decision_obj = Decision(
+                outcome=ApprovalOutcome.USER_DENY_ABORT, decided_at=_now(), reason=decision_response.reason
             )
-        return None
+            denied_record = ToolCallRecord(
+                call_id=call_id,
+                run_id=str(self._run_id) if self._run_id is not None else None,
+                agent_id=self._agent_id,
+                tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
+                decision=decision_obj,
+                execution=None,
+            )
+            await self._persistence.save_tool_call(denied_record)
+
+            raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, decision_response.reason)
+
+        # Unknown decision type: internal error for visibility
+        raise McpError(
+            ErrorData(
+                code=-32603,
+                message="internal_error: unknown approval decision type",
+                data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "decision_type": type(decision_response).__name__},
+            )
+        )
 
 
 def install_policy_gateway(
@@ -264,8 +365,10 @@ def install_policy_gateway(
     *,
     hub: ApprovalHub,
     policy_reader: PolicyReaderStub,
+    persistence: Persistence,
+    agent_id: AgentID,
     pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
-    record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
+    run_id: UUID | None = None,
 ) -> None:
     """Install PolicyGatewayMiddleware on a FastMCP-like server.
 
@@ -274,6 +377,11 @@ def install_policy_gateway(
     """
     comp.add_middleware(
         PolicyGatewayMiddleware(
-            hub=hub, pending_notifier=pending_notifier, record_outcome=record_outcome, policy_reader=policy_reader
+            hub=hub,
+            policy_reader=policy_reader,
+            persistence=persistence,
+            agent_id=agent_id,
+            pending_notifier=pending_notifier,
+            run_id=run_id,
         )
     )

@@ -7,6 +7,8 @@ import uuid
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.agent.policies.policy_types import UserApprovalDecision
+
 # ---- Display items (normalized, UI-friendly) ----
 
 
@@ -36,14 +38,14 @@ class EndTurnItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-ApprovalKind = Literal["approve", "deny_continue", "deny_abort"]
+ApprovalKind = UserApprovalDecision
 
 
 # Tool content variants nested under a single ToolItem
 class ExecContent(BaseModel):
     content_kind: Literal["Exec"] = "Exec"
     cmd: str | None = None
-    args: Any | None = None
+    args: dict[str, Any] | None = None
     stdout: str | None = None
     stderr: str | None = None
     exit_code: int | None = None
@@ -53,7 +55,7 @@ class ExecContent(BaseModel):
 
 class JsonContent(BaseModel):
     content_kind: Literal["Json"] = "Json"
-    args: Any | None = None
+    args: dict[str, Any] | None = None
     result: mcp_types.CallToolResult | None = None
     is_error: bool | None = None
     model_config = ConfigDict(extra="forbid")
@@ -63,13 +65,13 @@ ToolContent = Annotated[ExecContent | JsonContent, Field(discriminator="content_
 
 
 class ToolItem(BaseModel):
-    kind: Literal["Tool"] = "Tool"
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
-    ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    tool: str
-    call_id: str
-    decision: ApprovalKind | None = None
-    content: ToolContent
+    kind: Literal["Tool"] = Field("Tool", description="Item type identifier")
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex, description="Unique item identifier")
+    ts: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Timestamp when tool was called")
+    tool: str = Field(description="Tool name")
+    call_id: str = Field(description="Unique call identifier")
+    decision: ApprovalKind | None = Field(None, description="Approval decision (approve, deny_continue, or deny_abort)")
+    content: ToolContent = Field(description="Tool execution content (Exec or Json variant)")
     model_config = ConfigDict(extra="forbid")
 
 
@@ -100,7 +102,19 @@ def append_item(state: UiState, item: DisplayItem) -> UiState:
     return UiState(seq=state.seq + 1, items=[*state.items, item])
 
 
-def start_tool(state: UiState, *, tool: str, call_id: str, cmd: str | None, args: Any | None) -> UiState:
+def start_tool(state: UiState, *, tool: str, call_id: str, cmd: str | None, args: dict[str, Any] | None) -> UiState:
+    """Start a tool execution in the UI state.
+
+    Args:
+        state: Current UI state
+        tool: Tool name
+        call_id: Tool call ID
+        cmd: Command string for exec tools, None for JSON tools
+        args: Tool arguments as key-value dict, or None if not applicable.
+
+    Returns:
+        Updated UI state with new tool item.
+    """
     content: ToolContent = ExecContent(cmd=cmd, args=args) if cmd is not None else JsonContent(args=args)
     return append_item(state, ToolItem(tool=tool, call_id=call_id, content=content))
 

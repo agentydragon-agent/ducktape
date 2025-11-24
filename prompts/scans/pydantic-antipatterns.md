@@ -281,26 +281,171 @@ rg --type py 'def \w+\(.*: dict\['
    - If dict structure is well-defined but no model exists, create one
    - Use Pydantic's nested model support for complex structures
 
-## Detection Strategy
+## Pattern 3: Union Types Mixing Pydantic Models with Weak Types
 
-**Primary Method**: Manual code reading to identify manual serialization/validation patterns.
+**Core principle**: If you're doing `isinstance(x, BaseModel)` checks, you're not using Pydantic's type system properly.
 
-**Why automation is insufficient**:
-- Determining if code "should use Pydantic" requires understanding intent and domain
-- Some manual methods exist for good reasons (custom business logic, backwards compatibility)
-- Context matters: is this I/O boundary code or internal logic?
+### Antipattern: Runtime Type Checking on Pydantic Unions
 
-**Discovery aids** (candidates for manual review):
+```python
+# BAD: Union allows weak types, requires runtime checking
+def norm_item(x: BaseModel | str | dict[str, Any]) -> dict[str, Any] | str:
+    """Normalize an item for OpenAI API compatibility."""
+    if isinstance(x, BaseModel):
+        return x.model_dump(exclude_none=True)
+    return x
+
+# Used with:
+class ResponsesRequest(BaseModel):
+    input: list[InputItem] | str  # InputItem = union of Pydantic models
+
+# Problem: Callers pass dicts instead of Pydantic models
+payload["input"] = [norm_item(it) for it in input_value]
+```
+
+**Why this is bad:**
+- **Type system defeat**: Union with `dict` or `Any` defeats Pydantic's validation
+- **Runtime checking smell**: `isinstance(x, BaseModel)` means callers aren't using proper types
+- **Lost validation**: Passing raw dicts bypasses Pydantic's validation
+- **API ambiguity**: Callers don't know whether to pass models or dicts
+
+### Root Cause: Callers Not Using Pydantic Models
+
+The union exists because callers do this:
+
+```python
+# BAD: Passing weak types
+request = ResponsesRequest(input=[
+    {"role": "user", "content": "..."},  # Dict instead of UserMessage
+    "some string",                        # Mixed types
+])
+```
+
+Instead of:
+
+```python
+# GOOD: Passing proper Pydantic models
+request = ResponsesRequest(input=[
+    UserMessage.text("..."),  # Proper Pydantic model
+])
+```
+
+### Fix Strategy
+
+1. **Find all construction sites** where the union-typed field is populated
+2. **Make callers construct proper Pydantic models**:
+   ```python
+   # Before: Passing dict
+   ResponsesRequest(input=[{"role": "user", "content": "hello"}])
+
+   # After: Passing Pydantic model
+   ResponsesRequest(input=[UserMessage.text("hello")])
+   ```
+3. **Remove weak types from union** - change `list[InputItem] | str | dict` to `list[InputItem]`
+4. **Remove runtime type checking** - `norm_item` becomes trivial or inlineable:
+   ```python
+   # Before: Needed runtime checking
+   payload["input"] = [norm_item(it) for it in input_value]
+
+   # After: All items are BaseModel, no checking needed
+   payload["input"] = [x.model_dump(exclude_none=True) for x in input_value]
+   ```
+5. **Optional: Add factory methods** for convenience if deserved:
+   ```python
+   @classmethod
+   def from_text(cls, text: str) -> "UserMessage":
+       return cls(content=[InputTextPart(text=text)])
+   ```
+
+### When Union Types ARE Acceptable
+
+**Legitimate uses:**
+- **I/O boundaries**: Deserializing from external API that sends different formats
+  ```python
+  # OK: External API sends either format
+  class Response(BaseModel):
+      data: SuccessData | ErrorData  # Both are Pydantic models
+  ```
+- **Multiple Pydantic models**: Union of concrete Pydantic types
+  ```python
+  # OK: All union members are Pydantic models
+  InputItem = UserMessage | AssistantMessage | SystemMessage
+  ```
+
+**Code smell:**
+- **Mixing Pydantic with weak types**: `BaseModel | dict | Any | str`
+- **Runtime isinstance checks**: If you check `isinstance(x, BaseModel)`, fix callers
+
+### Detection
+
+**MANDATORY grep patterns** (high recall - surfaces all union type smells):
 
 ```bash
-# Find manual field-by-field model_dump patterns (may have valid reasons)
+# Find union types mixing BaseModel with weak types
+rg --type py 'BaseModel.*\|.*(dict|Any|str)'
+rg --type py '(dict|Any|str).*\|.*BaseModel'
+
+# Find isinstance checks on BaseModel (code smell - should be rare)
+rg --type py 'isinstance\(.*BaseModel\)'
+
+# Find union types in Pydantic field definitions
+rg --type py -A2 'class.*\(BaseModel\)' | rg ': .*\|'
+```
+
+**Review each match:**
+- Is this at an I/O boundary (deserializing external data)? → Might be OK
+- Is this internal code where callers should pass proper types? → FIX
+- Does the code have `isinstance(x, BaseModel)` checks? → Strong smell
+
+## Detection Strategy
+
+**MANDATORY first step**: Run grep patterns to find ALL Pydantic union type smells and runtime checks.
+
+- This scan is **required** - do not skip this step
+- You **must** read and handle the complete grep output
+- Do not sample or skip any results - process every union type and isinstance check found
+- Prevents lazy analysis by forcing examination of all Pydantic type usage patterns
+
+**High-priority patterns** (run these first - strong smells):
+
+```bash
+# 1. Union types mixing BaseModel with weak types (STRONGEST SMELL)
+rg --type py 'BaseModel.*\|.*(dict|Any|str)' --line-number
+rg --type py '(dict|Any|str).*\|.*BaseModel' --line-number
+
+# 2. isinstance checks on BaseModel (should be VERY rare in healthy code)
+rg --type py 'isinstance\(.*BaseModel\)' --line-number
+
+# 3. Union types in Pydantic field definitions (review all)
+rg --type py -A2 'class.*\(BaseModel\)' | rg ': .*\|' --line-number
+```
+
+**Secondary patterns** (lower priority - may have valid reasons):
+
+```bash
+# Find manual field-by-field model_dump patterns
 rg --type py -A5 "def (to_db|to_dict|serialize)" | rg "model_dump.*if.*else"
 
 # Find manual field-by-field validation classmethods
 rg --type py -A10 "@classmethod" | rg -B3 "return cls\("
+
+# Find complex model_validator with multiple type branches
+rg --type py -A10 '@model_validator.*mode="before"'
 ```
 
-**Manual review required**: Check each candidate to determine if Pydantic would actually simplify the code or if manual logic is justified.
+**Manual review for each match:**
+1. **Union with weak types** (`BaseModel | dict`):
+   - Is this at I/O boundary deserializing external data? → Might be OK
+   - Is this internal code where callers control the type? → **FIX CALLERS**
+
+2. **isinstance(x, BaseModel)** checks:
+   - Why is this needed? Usually means callers pass wrong types
+   - Fix callers to pass proper Pydantic models
+   - After fix, this check becomes unnecessary
+
+3. **Manual serialization/validation**:
+   - Does Pydantic already handle this? → Remove manual code
+   - Is custom logic truly necessary? → Document why
 
 ## Fix Strategy
 

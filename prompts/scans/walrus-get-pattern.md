@@ -1,70 +1,77 @@
-# Scan: Walrus Operator for `.get()` Patterns
+# Scan: Walrus Operator (`:=`) Opportunities
 
-**Goal**: Identify patterns where dictionary `.get()` is immediately followed by a conditional check, which could use the walrus operator (`:=`) for more concise code.
+**Goal**: Identify patterns that benefit from the walrus operator - avoiding duplicate computation/lookup while keeping scope tight.
 
-**Detection Strategy**:
+## When Walrus Wins
 
-1. **Pattern to find**:
-   ```bash
-   rg -U -A 2 '^\s+(\w+) = (\w+)\.get\(' <paths>
-   ```
+The walrus operator is valuable when you need to **use a value AND test/process it** in the same expression, avoiding:
+- Duplicating expensive computation or lookups
+- Polluting outer scope with temporary variables
+- Verbose multi-line patterns that obscure intent
 
-2. **Manual verification**: Look for these specific patterns:
+### Core Patterns
 
-   **Pattern A: Positive check**
-   ```python
-   # Current
-   value = dict.get(key)
-   if value:
-       use(value)
+1. **dict.get() + if check** - Avoid double lookup or unnecessary scope
+2. **while loop with fetch** - Read/fetch until exhausted pattern
+3. **Duplicate function calls** - Compute once in if condition, use in body
+4. **Regex match + use groups** - Match once, use groups if matched
+5. **List comprehension filter** - Filter on transformed value, keep transform
 
-   # Walrus
-   if (value := dict.get(key)):
-       use(value)
-   ```
+**Key insight**: Walrus prevents duplicate work (computation/lookup) while keeping variable scope tight to where it's used.
 
-   **Pattern B: Negative check**
-   ```python
-   # Current
-   value = dict.get(key)
-   if value is None:
-       handle_missing()
+## Detection Strategy
 
-   # Walrus
-   if (value := dict.get(key)) is None:
-       handle_missing()
-   ```
+**MANDATORY Step 0**: Run walrus operator opportunity scans.
 
-   **Pattern C: Not operator**
-   ```python
-   # Current
-   value = dict.get(key)
-   if not value:
-       handle_missing()
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL walrus candidate output using your intelligence
+- High recall required, high precision NOT required (~10-30% precision expected) - you determine which benefit from walrus
+- Review each for: variable scope, duplicate work, readability improvement
+- Prevents lazy analysis by forcing examination of ALL test-and-use patterns
 
-   # Walrus
-   if not (value := dict.get(key)):
-       handle_missing()
-   ```
+These scans surface candidates for manual review. High recall, low precision expected (~10-30% precision).
 
-3. **Grep for continuation patterns**:
-   ```bash
-   # Find assignment + if check within 2 lines
-   rg -U '(\w+) = (\w+)\.get\([^)]+\)\s*(#[^\n]*)?\n\s*if \1' <paths>
-   ```
+```bash
+# 1. dict.get() in if conditions (original pattern)
+# High recall for dict.get walrus opportunities
+rg --type py 'if.*\.get\(' -B 1 -A 3 --line-number
 
-## Examples
+# 2. Assignment followed by if/while using same variable (up to 3 blank lines between)
+# Catches: x = f(); if x: ... → if (x := f()): ...
+rg --type py -U '\w+ = .+(\n\s*){1,3}(if|while) \w+' -B 1 -A 3 --line-number
 
-### Example 1: Positive check (good candidate)
-**File**: `adgn/src/adgn/llm/sandboxer.py:291`
+# 3. re.match/search/findall in if conditions
+# Catches: if re.match(...): m = re.match(...) → if (m := re.match(...)): ...
+rg --type py 'if.*\bre\.(match|search|findall)\(' -B 2 -A 3 --line-number
 
+# 4. List comprehensions with if clause
+# Manual review for: [f(x) for x in items if f(x)] → [y for x in items if (y := f(x))]
+rg --type py '\[.+ for .+ in .+ if .+\]' -B 1 -A 1 --line-number
+
+# 5. While loops (check for pre-fetch pattern)
+# Catches: line = f.read(); while line: ... → while (line := f.read()): ...
+rg --type py '^[[:space:]]*while ' -B 2 -A 2 --line-number
+```
+
+**Manual verification process**:
+1. **Check variable usage**: Is variable ONLY used in the conditional block?
+2. **Verify pattern**: Assignment followed by test (if/while) using that variable?
+3. **Check for duplicate calls**: Same function called in condition and body?
+4. **Apply walrus**: Move assignment into conditional with `:=`
+5. **Readability check**: Does walrus make intent clearer or obscure it?
+
+## Pattern Examples
+
+### Pattern 1: dict.get() + if check
+
+**Example 1a: Positive check**
 ```python
 # Before
 p = child_env.get(key)
 if p:
     Path(p).mkdir(parents=True, exist_ok=True)
 
-# After
+# After - walrus
 if (p := child_env.get(key)):
     Path(p).mkdir(parents=True, exist_ok=True)
 ```
@@ -105,6 +112,67 @@ if (tool_class := TOOL_INPUT_MAP.get(tool_name)):
 
 **Benefits**: Saves one line, emphasizes get-and-check pattern.
 
+### Pattern 2: while loop with fetch/read
+
+```python
+# Before - pre-fetch then loop
+line = file.readline()
+while line:
+    process(line)
+    line = file.readline()
+
+# After - walrus
+while (line := file.readline()):
+    process(line)
+```
+
+**Benefits**: Eliminates duplicate readline logic, clearer "read until exhausted" pattern.
+
+### Pattern 3: Duplicate function call in if
+
+```python
+# Before - compute twice
+if expensive_computation(x) is not None:
+    result = expensive_computation(x)  # Wasteful!
+    use(result)
+
+# After - walrus
+if (result := expensive_computation(x)) is not None:
+    use(result)
+```
+
+**Benefits**: Avoids duplicate computation, clearer that we're testing then using the result.
+
+### Pattern 4: Regex match then use
+
+```python
+# Before - match twice
+if re.match(r"(\d+)-(\d+)", text):
+    m = re.match(r"(\d+)-(\d+)", text)  # Duplicate match!
+    start, end = m.groups()
+    process(start, end)
+
+# After - walrus
+if (m := re.match(r"(\d+)-(\d+)", text)):
+    start, end = m.groups()
+    process(start, end)
+```
+
+**Benefits**: Avoids duplicate regex execution, clearer match-and-use pattern.
+
+### Pattern 5: List comprehension with filter on transform
+
+```python
+# Before - transform twice per item
+configs = [parse_config(p) for p in paths if parse_config(p) is not None]
+# Calls parse_config() TWICE for each path!
+
+# After - walrus
+configs = [cfg for p in paths if (cfg := parse_config(p)) is not None]
+```
+
+**Benefits**: Avoids duplicate parse_config calls, much more efficient for expensive transforms.
+
 ### Example 4: Multi-use variable (skip)
 **File**: `adgn/src/adgn/rspcache/models.py:56`
 
@@ -133,69 +201,91 @@ if tmp_hint:
 
 **Reason**: Multiple `.get()` calls with fallbacks, walrus adds no clarity.
 
-## When NOT to apply
+## When NOT to Apply Walrus
 
-1. **Variable used outside the conditional block**:
-   ```python
-   value = data.get("key", default)
-   if value:
-       process(value)
-   log(value)  # Used outside the block
-   ```
+❌ **Variable used outside the conditional block**
+```python
+# BAD: value needed outside the block
+if (value := data.get("key")):
+    process(value)
+log(value)  # NameError! value not in scope
+```
 
-2. **Multiple checks on same variable**:
-   ```python
-   value = data.get("key")
-   if value is None:
-       return default
-   if not validate(value):
-       return fallback
-   return value
-   ```
+❌ **Multiple checks on same variable**
+```python
+# BAD: variable tested multiple times
+value = data.get("key")
+if value is None:
+    return default
+if not validate(value):
+    return fallback
+return value
+```
 
-3. **Default value specified**:
-   ```python
-   # This is already concise
-   value = data.get("key", default_value)
-   if value:
-       ...
-   ```
-   (Though walrus still works: `if (value := data.get("key", default_value)):`)
+❌ **Hurts readability with complex nesting**
+```python
+# BAD: Too complex
+if (x := a()) and (y := b(x)) and (z := c(y)) and z > 10:
+    ...
 
-4. **Complex boolean logic**:
-   ```python
-   # Keep as-is for readability
-   x = dict1.get("a")
-   y = dict2.get("b")
-   if x and y and other_condition:
-       ...
-   ```
+# GOOD: Multi-line for clarity
+x = a()
+y = b(x)
+z = c(y)
+if z > 10:
+    ...
+```
 
-## Conversion Process
+❌ **Value used only once in simple context**
+```python
+# BAD: Unnecessary walrus
+if (x := compute()):
+    return x
 
-1. **Search for candidates**:
-   ```bash
-   rg -U -A 2 '^\s+(\w+) = (\w+)\.get\(' adgn/src claude/claude_hooks llm/ducktape_llm_common
-   ```
+# GOOD: Just return directly
+return compute()
+```
 
-2. **For each candidate**:
-   - Check if variable is ONLY used in the immediate conditional
-   - Verify there's no `else` clause that also uses the variable outside its block
-   - Ensure the pattern is one of: `if var:`, `if not var:`, `if var is None:`, `if var is not None:`
+## Detection Summary: High-Recall Patterns
 
+These patterns can be detected with high recall (>80%) using the grep commands above:
+
+✅ **dict.get() + if/while** - Pattern: `if x.get(` or `x = d.get(); if x:`
+✅ **while with pre-fetch** - Pattern: `x = f(); while x:`
+✅ **re.match/search in if** - Pattern: `if re.match(` then body uses match
+✅ **Assignment + if/while** - Pattern: `x = compute(); if x:` or `while x:`
+⚠️ **List comprehension** - Pattern: `[f(x) for x in ... if f(x)]` - needs manual inspection
+
+**Expected precision**: 10-30% (many false positives, but that's okay - agent reviews all candidates)
+
+**Key to identify true positives**:
+1. Variable assigned, then immediately tested in if/while
+2. Variable only used within the conditional block
+3. Same computation appears in condition and body (duplicate work)
+4. No usage of variable outside the conditional scope
+
+## Application Process
+
+1. **Run high-recall scans** (commands in Detection Strategy section above)
+2. **For each candidate**, verify:
+   - Is variable ONLY used in the immediate conditional block?
+   - No `else` clause using the variable outside its block?
+   - Pattern matches one of: `if var:`, `if not var:`, `if var is None:`, `while var:`
+   - Or: duplicate function call in condition and body?
 3. **Apply transformation**:
-   - Move assignment into the conditional with walrus `:=`
-   - Add parentheses around the assignment
-   - Verify with linter/formatter that syntax is correct
+   - Move assignment into conditional: `if (var := expr):`
+   - Add parentheses around assignment (required by Python syntax)
+   - Verify with formatter/linter
+4. **Test**: Behavior unchanged (variable scope change shouldn't matter)
 
-4. **Test**: Ensure behavior is unchanged (variable scope change shouldn't matter if only used in the block)
+## Common False Positives
 
-## False Positives
+When reviewing scan results, these are NOT walrus candidates:
 
-- **Chained .get() calls**: `a.get("x").get("y")` - not the pattern
-- **Method calls named get()**: `parser.get()` - different semantic
-- **Attribute access after .get()**: `obj = dict.get("key"); obj.attr` - needs the variable
-- **`.get()` with complex default**: `dict.get(key, expensive_default())` - already reasonable
+- **Chained .get()**: `a.get("x").get("y")` - different pattern
+- **Variable used in multiple branches**: Needs outer scope
+- **Complex boolean logic**: Multiple variables, walrus hurts readability
+- **Default value with get()**: `dict.get(key, default)` - already concise
 
 ## Notes
 

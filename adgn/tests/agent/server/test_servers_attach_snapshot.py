@@ -23,10 +23,14 @@ def test_attach_server_populates_sampling_servers(agent_app_client):
     assert r.status_code == 200
     agent_id = r.json()["id"]
 
-    # Open agent WS and wait for accepted
-    with client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
-        env = Envelope.model_validate(ws.receive_json())
+    # Connect to MCP channel to ensure agent starts and to receive sampling updates
+    with client.websocket_connect(f"/ws/mcp?agent_id={agent_id}") as ws_mcp:
+        env = Envelope.model_validate(ws_mcp.receive_json())
         assert env.payload.type == "accepted"
+
+        # Receive initial MCP snapshot
+        snap_env = Envelope.model_validate(ws_mcp.receive_json())
+        assert snap_env.payload.type == "mcp_snapshot"
 
         # Attach an in-proc echo server via HTTP API
         # The API expects typed attach spec per server name

@@ -15,24 +15,27 @@ def _normalize_structured_content(sc: Any) -> Any:
     return sc
 
 
-def as_minimal_json(res: FMCallToolResult | mcp_types.CallToolResult) -> dict[str, Any]:
-    """Serialize a tool result to a compact JSON dict (structured content + flags)."""
+def serialize_tool_result_compact(res: FMCallToolResult | mcp_types.CallToolResult) -> dict[str, Any]:
+    """Serialize a tool result to a compact JSON dict (structured content + flags).
+
+    Uses MCP field names (camelCase: isError, structuredContent) as produced by mcp.types.CallToolResult.
+    """
     if isinstance(res, FMCallToolResult):
-        res = to_pydantic(res)
+        res = convert_fastmcp_result(res)
 
     if not isinstance(res, mcp_types.CallToolResult):  # pragma: no cover - defensive
         raise TypeError(f"Expected CallToolResult, got {type(res).__name__}")
 
     data = res.model_dump(mode="json", by_alias=False)
-    payload: dict[str, Any] = {"is_error": data.get("is_error", False)}
-    if "structured_content" in data:
-        payload["structured_content"] = data["structured_content"]
+    payload: dict[str, Any] = {"is_error": data["isError"]}
+    if "structuredContent" in data:
+        payload["structured_content"] = data["structuredContent"]
     if content := data.get("content"):
         payload["content"] = content
     return payload
 
 
-def to_pydantic(res: FMCallToolResult) -> mcp_types.CallToolResult:
+def convert_fastmcp_result(res: FMCallToolResult) -> mcp_types.CallToolResult:
     """Convert a FastMCP CallToolResult to mcp.types.CallToolResult.
 
     Builds a minimal payload with alias field names (structuredContent, isError).

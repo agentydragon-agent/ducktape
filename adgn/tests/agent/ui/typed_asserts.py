@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from hamcrest import assert_that, has_item, has_items, has_properties, instance_of, is_not
+from hamcrest import all_of, assert_that, has_item, has_items, has_properties, instance_of, is_not
+
+from adgn.agent.server.state import ExecContent, ToolItem
 
 
 def is_user_message(text: str | None = None):
@@ -24,6 +26,33 @@ def is_tool_item(tool: str | None = None, call_id: str | None = None):
     if call_id is not None:
         props["call_id"] = call_id
     return has_properties(**props)
+
+
+def is_tool_item_typed(**props):
+    """Matcher: ToolItem instance with optional property constraints.
+
+    Composable matcher factory combining type checking with property assertions.
+    Unlike is_tool_item which checks the 'kind' property, this checks the actual type.
+
+    Example: is_tool_item_typed(decision=None)
+             is_tool_item_typed(kind="Tool", decision="approve")
+    """
+    m = [instance_of(ToolItem)]
+    if props:
+        m.append(has_properties(**props))
+    return all_of(*m)
+
+
+def is_exec_content_typed(**props):
+    """Matcher: ExecContent instance with optional property constraints.
+
+    Composable matcher factory for ExecContent with type checking.
+    Example: is_exec_content_typed(content_kind="Exec", stdout="ok", exit_code=0)
+    """
+    m = [instance_of(ExecContent)]
+    if props:
+        m.append(has_properties(**props))
+    return all_of(*m)
 
 
 def assert_typed_items_have(items: list[object], *matchers):

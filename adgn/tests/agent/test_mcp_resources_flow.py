@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from hamcrest import assert_that, has_item, has_items, instance_of
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
@@ -40,15 +41,10 @@ async def test_model_reads_container_info_with_stubbed_openai(
 
         await agent.run("read container info")
         kinds = [e.get("kind") for e in rec.records]
-        assert "tool_call" in kinds
-        assert "function_call_output" in kinds
+        assert_that(kinds, has_items("tool_call", "function_call_output"))
         assert client.calls == 2
         # Verify that the second call included the function_call and function_call_output (stateless replay).
         second = client.captured[1]
         input_items = list(second.input or [])
-        assert any(isinstance(it, FunctionCallItem) for it in input_items), (
-            f"Expected FunctionCallItem in next-turn input: {input_items}"
-        )
-        assert any(isinstance(it, FunctionCallOutputItem) for it in input_items), (
-            f"Expected FunctionCallOutputItem in next-turn input: {input_items}"
-        )
+        assert_that(input_items, has_item(instance_of(FunctionCallItem)))
+        assert_that(input_items, has_item(instance_of(FunctionCallOutputItem)))

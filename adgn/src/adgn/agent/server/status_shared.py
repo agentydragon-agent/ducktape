@@ -7,9 +7,11 @@ from uuid import UUID
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict
 
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import RUNTIME_CONTAINER_INFO_URI
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp._shared.types import ContainerInfo
+from adgn.mcp.compositor.clients import CompositorMetaClient
 from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 
@@ -64,7 +66,7 @@ class AgentLifecycle(StrEnum):
 
 
 class PolicyState(BaseModel):
-    version: int | None = None
+    id: int | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -100,10 +102,10 @@ class AgentStatusCore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCore:
+async def build_agent_status_core(app: FastAPI, agent_id: AgentID) -> AgentStatusCore:
     """Shared builder for agent status used by HTTP and WS paths.
 
-    Computes policy presence/version, MCP server states, lifecycle,
+    Computes policy presence/id, MCP server states, lifecycle,
     container id (for non-ephemeral runtime), pending approvals, and run phase.
     """
     registry = app.state.registry
@@ -113,25 +115,26 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     present = c is not None
 
     # UI + approvals + active run
-    ui_ready = bool(c and c.ui is not None)
+    ui_ready = bool(c and c._ui_manager is not None)
     pending = 0
     active_run: UUID | None = None
-    if c and c.session is not None:
-        if c.session.active_run:
-            active_run = c.session.active_run.run_id
-        pending = len(c.session.approval_hub.pending)
+    if c and c.runtime.session is not None:
+        if c.runtime.session.active_run:
+            active_run = c.runtime.session.active_run.run_id
+        pending = len(c.runtime.session.approval_hub.pending)
 
     # Policy state from live engine only (single source of truth). If agent is not live, report absent.
-    version_val: int | None = None
-    if c and c.session is not None and c.session.approval_engine is not None:
-        _content, ver = c.session.approval_engine.get_policy()
-        version_val = ver
-    policy = PolicyState(version=version_val)
+    id_val: int | None = None
+    if c and c.runtime.session is not None and c.runtime.session.approval_engine is not None:
+        _content, policy_id = c.runtime.session.approval_engine.get_policy()
+        id_val = policy_id
+    policy = PolicyState(id=id_val)
 
     # MCP server entries — read via compositor_meta resources through container
     entries: dict[str, ServerEntry] = {}
     if c:
-        entries = await c.list_mcp_entries()
+        meta = CompositorMetaClient(c.running.compositor_client)
+        entries = await meta.list_states()
     mcp_state = McpState(entries=entries)
 
     # Lifecycle

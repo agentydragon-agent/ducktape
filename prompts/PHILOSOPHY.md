@@ -86,6 +86,148 @@ Different automated tools have different reliability profiles:
 3. **Subjective judgment** - Is documentation "useless"? Is a name "vague"? (human/LLM verification needed)
 4. **Low-recall patterns** - May need supplemental manual reading to find all issues
 
+## Prompt Writing Style: You-Language
+
+**All scan prompts are written in second person ("you") targeting the agent executing the scan.**
+
+Prompts are instructions to agents/LLMs, so address the reader directly:
+
+### ✅ GOOD: Direct you-language
+```markdown
+**Manual review workflow**:
+1. Review dict_literals - check context
+2. You analyze pydantic_models for overlapping fields
+3. Filter models where len(fields) == 1
+4. You compare field sets across models
+
+**Tool characteristics**:
+- Tool surfaces raw data; you do the analysis
+- You filter candidates based on context
+- Requires your judgment to determine if problematic
+```
+
+### ❌ BAD: Third-person LLM references
+```markdown
+**Manual review workflow**:
+1. LLM reviews dict_literals
+2. LLM does this analysis
+3. LLM filters models
+4. LLM compares field sets
+
+**Tool characteristics**:
+- Tool surfaces raw data; LLM analyzes it
+- LLM filters candidates
+- Requires human judgment
+```
+
+**Why you-language?**
+- **Clearer**: Direct instructions are easier to follow than descriptions
+- **Natural**: Prompts are imperative ("do this") not descriptive ("someone does this")
+- **Consistent**: Matches command tone ("Run scan", "Verify candidates")
+
+**Examples**:
+- "LLM can identify overlaps" → "You can identify overlaps"
+- "LLM does the filtering" → "You do the filtering"
+- "Requires human judgment" → "Requires your judgment"
+- "LLM verification approach" → "Verification approach" (implied you follow it)
+
+## Mandatory vs Optional Automated Scans
+
+**Principle**: Prompts should specify when automated scans are MANDATORY vs OPTIONAL to force agents to gather concrete candidates rather than being lazy.
+
+### When to Make Scans MANDATORY
+
+Automated scans should be **required as the first step** when:
+
+1. **Prevents agent laziness**
+   - Forces agent to gather concrete candidates before analyzing
+   - Agent might skip discovery and claim "looks fine" without thorough search
+   - **Example**: Running `scan_error_handling.py` forces review of every exception handler
+   - **Language**: "MUST run", "Begin by running", "First step: run"
+
+2. **Provides concrete starting points**
+   - Scan surfaces specific instances for agent to examine
+   - Agent analyzes real code rather than abstract patterns
+   - **Example**: `scan_comments.py` gives agent every comment to judge as useful/useless
+   - **Language**: "Run scan_*.py to gather ALL candidates for review"
+
+3. **Makes comprehensive review practical**
+   - Manual search across entire codebase is tedious and error-prone
+   - Automated scan makes it feasible to review all instances
+   - **Example**: Finding all dataclass candidates across 200 files
+   - **Language**: "Run automated scan (do not skip this step)"
+
+**Key insight**: Mandatory scans aren't just about tool recall - they're about forcing the agent to do the work of gathering and reviewing candidates rather than taking shortcuts.
+
+### When to Make Scans RECOMMENDED
+
+Automated scans should be **suggested but not required** when:
+
+1. **Helpful but agent likely won't skip**
+   - Grep patterns make search faster but agent would search anyway
+   - Saves time but not essential to prevent laziness
+   - **Example**: Grep for `asyncio.gather()` to find TaskGroup opportunities
+   - **Language**: "Recommended: run grep patterns below", "Consider using"
+
+2. **High false positive rate reduces value**
+   - Automation finds many candidates, most are legitimate
+   - Reviewing all candidates might take longer than targeted manual reading
+   - **Example**: Dict literals (many are at legitimate I/O boundaries)
+   - **Language**: "Can use automated scan to narrow candidates"
+
+3. **Agent will read code anyway**
+   - Pattern requires context that means agent must read code regardless
+   - Scan helps prioritize but doesn't prevent lazy skipping
+   - **Example**: Naming issues require reading surrounding code for context
+   - **Language**: "Optional: use tool for initial candidates"
+
+### When to Make Scans OPTIONAL
+
+Automated scans should be **mentioned as hints only** when:
+
+1. **Doesn't provide concrete candidates to force review**
+   - Tool output doesn't give agent specific instances to examine
+   - Agent must read code to understand context anyway
+   - **Example**: Short variable names (need context to judge if vague)
+   - **Language**: "Automation provides hints only; manual review required"
+
+2. **Subjective judgment required for every instance**
+   - No way to batch-review candidates; each requires deep analysis
+   - Forcing scan doesn't prevent lazy analysis of candidates
+   - **Example**: Is code "too verbose"? Is doc "useless"? (pure judgment)
+   - **Language**: "No reliable automated detection; read code manually"
+
+### Template Language
+
+```markdown
+## Detection Strategy
+
+**MANDATORY first step**: Run `scan_error_handling.py` to find ALL exception handlers.
+- Surfaces concrete candidates - forces you to review each exception handler
+- Prevents claiming "looks fine" without examining actual code
+- Output gives specific line numbers for every try-except block
+
+**Recommended (but not required)**: Use grep patterns to narrow candidates.
+- Helpful for finding common cases faster
+- Not essential - you'd likely search for these anyway
+- Supplement with manual reading for variations
+
+**Optional hints**: AST tool can flag short variable names.
+- Provides hints about where to look but doesn't force comprehensive review
+- Manual reading required to understand context
+- Use only to help prioritize which files to read first
+```
+
+### Audit Current Prompts
+
+**Current state** (as of 2025): Most scan prompts treat all automation as optional/recommended. This should be updated:
+
+- ✅ **Keep optional**: Patterns where scan doesn't prevent lazy analysis (naming, verbosity judgment)
+- ⚠️ **Should be mandatory**: Scans that surface concrete candidates to force review (error handling, comments, dataclass candidates)
+- ⚠️ **Should be recommended**: Scans that save time but agent would search anyway (grep patterns for specific APIs)
+
+**Key criterion**: Does making this scan mandatory force the agent to consider specific candidates it might otherwise skip?
+
 ## Scan Prompt Structure
 
 Every scan prompt should follow this structure:
@@ -105,8 +247,8 @@ Clear examples of BAD and GOOD code with explanations of why.
 - Tool X has ~100% recall, ~Y% precision
 - Tool Z has ~A% recall, ~B% precision
 
-**Recommended approach**:
-1. Run [specific tools: grep/AST/ruff/vulture/etc.] to gather candidates
+**[MANDATORY/RECOMMENDED/OPTIONAL] approach**:
+1. [MANDATORY first step IF high recall]: Run scan_*.py to find ALL instances
 2. [Verification strategy based on precision]:
    - High precision: Light verification
    - Low precision: Manual review or LLM filtering
@@ -115,6 +257,7 @@ Clear examples of BAD and GOOD code with explanations of why.
 ```
 
 **Include**:
+- **Mandatory/Recommended/Optional designation** for each automated tool based on recall
 - Specific useful tools (grep patterns, AST checks, linters, analyzers)
 - Characterization of each tool's recall/precision for this pattern
 - Clear verification strategy based on precision
@@ -125,6 +268,7 @@ Clear examples of BAD and GOOD code with explanations of why.
 - Hardcoded lists of specific values to search for
 - Claiming automation is sufficient without verification
 - Suggesting automated fixes for low-precision patterns without review
+- **Making high-recall scans optional when they should be mandatory**
 
 ### 3. Examples with Context
 

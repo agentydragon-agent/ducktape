@@ -44,15 +44,24 @@ class ProposalDescriptor(BaseModel):
     decided_at: datetime | None = None
 
 
+class ProposalDetail(BaseModel):
+    """Full proposal details including content and metadata."""
+
+    id: str
+    status: ProposalStatus
+    created_at: datetime
+    decided_at: datetime | None = None
+    content: str
+
+
 class ApproveProposalArgs(BaseModel):
     id: str
+    comment: str | None = None
 
 
 class RejectProposalArgs(BaseModel):
     id: str
-
-
-# IO types unified; see PolicyRequest/PolicyResponse in adgn.agent.approvals
+    reason: str | None = None
 
 
 def _load_instructions() -> str:
@@ -133,14 +142,37 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         @self.resource(APPROVAL_POLICY_RESOURCE_URI, name="policy.py", mime_type="text/x-python")
         def active_policy() -> str:
             # Single source of truth: engine
-            content, _version = self._engine.get_policy()
+            content, _policy_id = self._engine.get_policy()
             return content
 
-        @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
-        async def proposal_item(id: str) -> str:
-            if (got := await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)) is None:
+        @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/list", name="proposals_list", mime_type="application/json")
+        async def proposals_list() -> list[ProposalDescriptor]:
+            """List all policy proposals with status and timestamps."""
+            proposals = await self._engine.persistence.list_policy_proposals(self._engine.agent_id)
+            return [
+                ProposalDescriptor(
+                    id=p.id,
+                    status=ProposalStatus(p.status),
+                    created_at=p.created_at,
+                    decided_at=p.decided_at,
+                )
+                for p in proposals
+            ]
+
+        @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal_detail", mime_type="application/json")
+        async def proposal_detail(id: str) -> ProposalDetail:
+            """Get full proposal details including content and metadata."""
+            got = await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)
+            if got is None:
                 raise KeyError(id)
-            return got.content
+            return ProposalDetail(
+                id=got.id,
+                status=ProposalStatus(got.status),
+                created_at=got.created_at,
+                decided_at=got.decided_at,
+                content=got.content,
+            )
+
 
         @self.flat_model()
         async def decide(input: PolicyRequest) -> PolicyResponse:
@@ -222,11 +254,15 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
         @self.flat_model()
         async def approve_proposal(input: ApproveProposalArgs) -> None:
             """Approve a pending policy proposal by id (activates policy)."""
+            if input.comment:
+                logger.info("Approving proposal %s with comment: %s", input.id, input.comment)
             await self._engine.approve_proposal(input.id)
 
         @self.flat_model()
         async def reject_proposal(input: RejectProposalArgs) -> None:
             """Reject a pending policy proposal by id."""
+            if input.reason:
+                logger.info("Rejecting proposal %s with reason: %s", input.id, input.reason)
             await self._engine.reject_proposal(input.id)
 
         @self.flat_model()
@@ -235,6 +271,44 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
             # Self-check program using engine's docker client
             self._engine.self_check(input.source)
             self._engine.set_policy(input.source)
+
+        @self.flat_model()
+        async def validate_policy(input: ValidatePolicyArgs) -> ValidationResult:
+            """Validate policy source code without activating it."""
+            errors: list[str] = []
+            try:
+                # Try syntax validation first
+                compile(input.source, "<policy>", "exec")
+            except SyntaxError as e:
+                errors.append(f"Syntax error at line {e.lineno}: {e.msg}")
+                return ValidationResult(valid=False, errors=errors)
+
+            # Try running self-check (validates runtime execution)
+            try:
+                self._engine.self_check(input.source)
+            except Exception as e:
+                errors.append(f"Runtime validation failed: {e!s}")
+                return ValidationResult(valid=False, errors=errors)
+
+            return ValidationResult(valid=True, errors=[])
+
+        @self.flat_model()
+        async def reload_policy(input: ReloadPolicyArgs) -> None:
+            """Reload policy from persistence or provided source."""
+            if input.source is not None:
+                # Reload from provided source
+                self._engine.self_check(input.source)
+                self._engine.set_policy(input.source)
+            else:
+                # Reload from persistence
+                result = await self._engine.persistence.get_latest_policy(self._engine.agent_id)
+                if result is None:
+                    raise ValueError("No policy found in persistence")
+                content, policy_id = result
+                self._engine.load_policy(content, policy_id=policy_id)
+                # Notify about reload
+                self._engine.notify_resource(APPROVAL_POLICY_RESOURCE_URI)
+
 
 
 async def attach_approval_policy_admin(
@@ -252,3 +326,22 @@ class SetPolicyTextArgs(BaseModel):
     """
 
     source: str
+
+
+class ValidatePolicyArgs(BaseModel):
+    """Validation request for policy source code."""
+
+    source: str
+
+
+class ValidationResult(BaseModel):
+    """Result of policy validation."""
+
+    valid: bool
+    errors: list[str] = []
+
+
+class ReloadPolicyArgs(BaseModel):
+    """Arguments for policy reload operation."""
+
+    source: str | None = None  # If provided, reload from this source; otherwise reload from persistence

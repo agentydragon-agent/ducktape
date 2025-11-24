@@ -282,23 +282,14 @@ class HabitifyClient:
         # Create the date range
         start_dt, end_dt, date_range = create_date_range(start_date=start_date, end_date=end_date, days=days)
 
-        # Prepare coroutines for each date
-        tasks = []
-
-        # Create all the coroutines
-        for date in date_range:
-            task = asyncio.create_task(self.check_habit_status(habit_id, date))
-            tasks.append(task)
-
-        # Run all tasks concurrently
+        # Run all tasks concurrently using TaskGroup for automatic cancellation on error
         try:
-            # Wait for all tasks to complete, getting results in completion order
-            results = await asyncio.gather(*tasks)
+            async with asyncio.TaskGroup() as tg:
+                tasks = [tg.create_task(self.check_habit_status(habit_id, date)) for date in date_range]
+            # Wait for all tasks to complete
+            results = [await t for t in tasks]
         except Exception as e:
-            # Cancel any pending tasks if one fails
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
+            # TaskGroup automatically cancels pending tasks on error
             logger.error(f"Error fetching habit status: {e!s}")
             raise
 

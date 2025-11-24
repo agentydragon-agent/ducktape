@@ -71,7 +71,7 @@ class DisplayEventsHandler(BaseHandler):
         if not tc.name:
             raise ValueError("ToolCall.name must be a non-empty namespaced tool name")
         name = tc.name
-        parsed: Any | None = _parse_json_or_none(tc.args_json)
+        parsed: dict[str, Any] | list[Any] | str | int | bool | None = _parse_json_or_none(tc.args_json)
         args = parsed if parsed is not None else ({"_raw": tc.args_json} if tc.args_json else {})
         header = f"▶ {name} input:"
         return f"{header}\n{self._pp_json(args)}"
@@ -144,7 +144,7 @@ class DisplayEventsHandler(BaseHandler):
         return self._truncate_text(text)
 
 
-def _parse_json_or_none(s: str | None) -> Any | None:
+def _parse_json_or_none(s: str | None) -> dict[str, Any] | list[Any] | str | int | bool | None:
     if not s:
         return None
     try:

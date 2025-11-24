@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from hamcrest import all_of, assert_that, has_length, has_properties, instance_of
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loop_control import Abort, Auto, Continue
@@ -32,9 +33,13 @@ class _AbortHandler(BaseHandler):
 def test_aggregating_merges_inserts_additively():
     ctrl = Reducer([_InsertsHandler("m1"), _InsertsHandler("m2")])
     dec = ctrl.on_before_sample()
-    assert isinstance(dec, Continue)
-    assert dec.tool_policy.__class__ is Auto
-    assert len(dec.inserts_input) == 2
+    assert_that(
+        dec,
+        all_of(
+            instance_of(Continue),
+            has_properties(tool_policy=instance_of(Auto), inserts_input=has_length(2)),
+        ),
+    )
     # Extract texts from input messages and assert ordering
     texts = extract_input_text_content(dec.inserts_input)
     assert texts == ["payload:m1", "payload:m2"]

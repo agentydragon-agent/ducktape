@@ -222,6 +222,45 @@ def get_status(input: GetStatusArgs) -> GetStatusResponse:
 
 ## Detection Strategy
 
+**MANDATORY Step 0**: Discover ALL FastMCP tools and resources in the codebase.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL tool/resource output using your intelligence
+- High recall required, high precision NOT required - you determine which need documentation improvements
+- Review each for: Field descriptions, polling guidance, context in docstrings
+- Prevents lazy analysis by forcing examination of ALL FastMCP endpoints
+
+```bash
+# Find ALL @mcp.tool and @server.tool decorators
+rg --type py '@(mcp|server)\.(tool|flat_model)' -B 2 -A 15 --line-number
+
+# Find ALL FastMCP server instantiations
+rg --type py 'FastMCP\(|Server\(' -B 1 -A 5 --line-number
+
+# Find ALL response models (BaseModel subclasses in MCP servers)
+rg --type py 'class.*Response.*BaseModel' -A 10 --line-number
+
+# Find ALL request/input models (often Args or Request suffix)
+rg --type py 'class.*(Args|Request|Input).*BaseModel' -A 10 --line-number
+
+# Find FastMCP-specific imports and usage
+rg --type py 'from fastmcp import|import fastmcp' -B 1 -A 3 --line-number
+
+# Find resource definitions (@server.resource or mcp.resource)
+rg --type py '@(mcp|server)\.resource' -B 2 -A 10 --line-number
+```
+
+**What to review for each tool/resource**:
+1. **Response models**: Do all fields have `Field(description=...)`?
+2. **Field descriptions**: Provide context (formats, usage patterns, relationships)?
+3. **Docstrings**: Focus on behavior/polling, not schema structure?
+4. **Redundancy**: Does docstring duplicate Pydantic schema info?
+5. **Polling guidance**: Do async operations have polling recommendations?
+
+**Process ALL output**: Read each tool/resource, use your judgment to identify documentation gaps.
+
+---
+
 **Primary Method**: Manual code reading of MCP server implementations.
 
 **Discovery aids**:

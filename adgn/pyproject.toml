@@ -73,6 +73,7 @@ dev = [
   "pytest-xdist>=3.0",
   'pytest-mock>=3.10.0',
   'pytest-env>=1.1.3',
+  'pytest-cov>=6.0',
   # UI E2E (browser) testing
   'pytest-playwright>=0.5.0',
   'playwright>=1.45.0',
@@ -156,6 +157,9 @@ addopts = [
     "no:pytest_playwright",
     "-p",
     "no:playwright",
+    "--cov=adgn",
+    "--cov-report=term-missing",
+    "--cov-report=html",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
@@ -184,6 +188,14 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 
+[tool.coverage.run]
+source = ["adgn"]
+omit = ["*/tests/*", "*/test_*.py", "*/__pycache__/*", "*/conftest.py"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+
 [tool.adgn.trivial-patterns]
 skip-globs = ["tests/detectors/fixtures/**"]
 
@@ -192,6 +204,7 @@ rspcache = "adgn.rspcache.cli:app"
 # LLM console scripts
 adgn-sysrw = "adgn.llm.sysrw.cli:app"
 adgn-mini-codex = "adgn.agent.cli:main"
+adgn-mcp-bridge = "adgn.agent.mcp_bridge.cli:cli"
 adgn-properties = "adgn.props.cli:main"
 adgn-properties2 = "adgn.props.cli_app.main:app"
 git-commit-ai = "adgn.git_commit_ai.cli:main"
@@ -206,6 +219,7 @@ adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
 adgn-matrix-bot = "adgn.agent.matrix_bot:main"
 adgn-detectors-custom = "adgn.props.detectors.cli_custom:main"
 adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
+adgn-generate-frontend-code = "adgn.scripts.generate_frontend_code:main"
 
 # Mypy configuration moved to central /mypy.ini at repo root
 

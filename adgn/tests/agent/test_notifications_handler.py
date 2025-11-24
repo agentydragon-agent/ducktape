@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from hamcrest import all_of, assert_that, contains_string, has_length, has_properties, instance_of
+
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.notifications.types import NotificationsBatch, ResourceUpdateEvent
 from adgn.agent.reducer import NotificationsHandler
@@ -27,9 +29,10 @@ def test_notifications_handler_batches_single_message():
     buf = _FakeBuffer()
     h = NotificationsHandler(buf.poll)
     dec = h.on_before_sample()
-    assert isinstance(dec, Continue)
-    assert isinstance(dec.tool_policy, Auto)
-    assert len(dec.inserts_input) == 1
+    assert_that(
+        dec,
+        all_of(instance_of(Continue), has_properties(tool_policy=instance_of(Auto), inserts_input=has_length(1))),
+    )
     msg = dec.inserts_input[0]
     # Extract input_text content from the message
     texts = extract_input_text_content([msg])
@@ -38,8 +41,7 @@ def test_notifications_handler_batches_single_message():
     # Strip system notification wrapper if present
     text = strip_system_notification_wrapper(text)
     # Simple repr-snippet assertion: ensure server names are present
-    assert "git-ro" in text
-    assert "editor" in text
+    assert_that(text, all_of(contains_string("git-ro"), contains_string("editor")))
     # Second call returns NoLoopDecision (empty)
     dec2 = h.on_before_sample()
     # NoLoopDecision has no attributes; assert by type name

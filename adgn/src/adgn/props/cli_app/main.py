@@ -510,7 +510,9 @@ async def prompt_eval(
             (out_dir_spec / "grade.json").write_text(grade.model_dump_json(indent=2), encoding="utf-8")
             return row
 
-        rows: list[dict[str, Any]] = await asyncio.gather(*[one(s) for s in specimens])
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(one(s)) for s in specimens]
+        rows: list[dict[str, Any]] = [await t for t in tasks]
         (root / "results.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
         print(json.dumps(rows, indent=2))
         return rows

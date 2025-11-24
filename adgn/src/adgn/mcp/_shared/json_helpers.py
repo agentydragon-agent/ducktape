@@ -2,8 +2,11 @@
 
 import asyncio
 import json
+import logging
 import sys
 from typing import IO, Any
+
+logger = logging.getLogger(__name__)
 
 
 async def read_line_json_dict_async(
@@ -48,9 +51,12 @@ def read_line_json_dict(inp: IO[bytes], timeout: float | None = None) -> dict[st
     try:
         result = json.loads(line.decode())
         if not isinstance(result, dict):
+            logger.warning("JSON parse result was not a dict: %s", type(result).__name__)
             return None
         return result
-    except Exception:
+    except Exception as e:
+        # JSON parsing failure - log and return None per function contract
+        logger.warning("Failed to parse JSON line: %s", e, exc_info=True)
         return None
 
 

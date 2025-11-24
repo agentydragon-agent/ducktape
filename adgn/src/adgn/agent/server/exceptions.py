@@ -6,11 +6,13 @@ appropriate HTTP responses. This avoids repetitive try/except blocks in endpoint
 
 from __future__ import annotations
 
+from adgn.agent.types import AgentID
+
 
 class AgentNotFoundError(Exception):
     """Raised when an agent ID is not found in the registry."""
 
-    def __init__(self, agent_id: str) -> None:
+    def __init__(self, agent_id: AgentID) -> None:
         self.agent_id = agent_id
         super().__init__(f"Agent not found: {agent_id}")
 
@@ -18,7 +20,7 @@ class AgentNotFoundError(Exception):
 class AgentSessionNotReadyError(Exception):
     """Raised when an agent container exists but session is not initialized."""
 
-    def __init__(self, agent_id: str) -> None:
+    def __init__(self, agent_id: AgentID) -> None:
         self.agent_id = agent_id
         super().__init__(f"Agent session not ready: {agent_id}")
 

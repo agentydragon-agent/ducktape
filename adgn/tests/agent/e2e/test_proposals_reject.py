@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent
+from tests.agent.helpers import api_create_agent, e2e_open_agent_page
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -31,17 +31,12 @@ async def test_policy_proposal_reject_updates_ui(
 
     # Create agent via helper
     agent_id = api_create_agent(base)
+    e2e_open_agent_page(page, base, agent_id)
 
-    # Open UI and connect WS
-    page.goto(base + f"/?agent_id={agent_id}")
-    page.locator(".ws .dot.on").wait_for(timeout=10000)
-
-    # Create a proposal directly via persistence (no named volumes)
     # Insert a proposal for this agent
     await sqlite_persistence.create_policy_proposal(agent_id, "p-e2e", policy_allow_all)
-    # Open UI and connect WS
-    page.goto(base + f"/?agent_id={agent_id}")
-    page.locator(".ws .dot.on").wait_for(timeout=10000)
+    # Reload UI to see proposal
+    e2e_open_agent_page(page, base, agent_id)
 
     # Open proposal should appear in the Approvals tab without reload
     page.get_by_text("Open Proposals (1)").wait_for(timeout=10000)

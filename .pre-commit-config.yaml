@@ -124,6 +124,18 @@ repos:
         language: system
         files: \.nix$
 
+  # Web frontend (MiniCodex UI) - TypeScript type checking
+  - repo: local
+    hooks:
+      - id: web-check
+        name: svelte-check (web frontend)
+        language: node
+        entry: npm run check
+        files: ^adgn/src/adgn/agent/web/
+        pass_filenames: false
+        stages: [commit]
+        working_directory: adgn/src/adgn/agent/web
+
   # Jsonnet formatter for specimen .libsonnet files (adgn_llm)
   # - repo: https://github.com/serokell/jsonnet-pre-commit
   #   rev: v0.2.0
@@ -132,21 +144,3 @@ repos:
   #       name: jsonnetfmt (format adgn_llm specimen .libsonnet files)
   #       files: "^llm/adgn_llm/src/adgn_llm/properties/specimens/.*\\.libsonnet$"
   #       args: ["-i"]
-
-  # TODO: Svelte UI typecheck (MiniCodex UI)
-  #- repo: local
-  #  hooks:
-  #    - id: svelte-check
-  #      name: svelte-check (UI)
-  #      language: node
-  #      entry: svelte-check --tsconfig adgn/src/adgn/agent/ui/web/tsconfig.app.json
-  #      files: ^adgn/src/adgn/agent/ui/web/
-  #      pass_filenames: false
-  #      additional_dependencies:
-  #        - svelte@^5.38.1
-  #        - svelte-check@^4.3.1
-  #        - typescript@~5.8.3
-  #        - tsconfig/svelte@^5.0.4
-  #        - dompurify@^3.0.9
-  #        - json-formatter-js@^2.5.1
-  #        - marked@^12.0.2

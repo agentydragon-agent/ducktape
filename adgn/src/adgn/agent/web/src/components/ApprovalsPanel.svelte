@@ -38,7 +38,7 @@
 
 <div class="approvals-tab">
   <div class="policy">
-    <h4>Approval Policy {#if approvalPolicy}<small>(v{approvalPolicy.version})</small>{/if}</h4>
+    <h4>Approval Policy {#if approvalPolicy}<small>(v{approvalPolicy.id})</small>{/if}</h4>
     {#if !showPolicyEditor}
       {#if approvalPolicy}
         <pre class="policy-content"><code class="hljs language-python">{@html renderHighlightedPython(approvalPolicy.content)}</code></pre>

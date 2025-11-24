@@ -26,6 +26,8 @@ import json
 from pathlib import Path
 import time
 
+import aiofiles
+
 from .constants import BAD_MARKER
 from .extract_common import (
     find_last_user_text_from_msg as find_last_user_text,
@@ -43,8 +45,8 @@ async def process_file(p: Path) -> list[dict]:
     kept = 0
     last_tick = time.monotonic()
     interval = 2.0  # seconds
-    with p.open("r", encoding="utf-8") as f:
-        for line in f:
+    async with aiofiles.open(p, encoding="utf-8") as f:
+        async for line in f:
             lines += 1
             rec = json.loads(line)
             if rec.get("event") != "inbound_request":

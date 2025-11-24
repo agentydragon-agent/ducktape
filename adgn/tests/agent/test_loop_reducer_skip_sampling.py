@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from hamcrest import all_of, assert_that, has_properties, instance_of
 
 from adgn.agent.loop_control import Auto, Continue
 from adgn.agent.reducer import BaseHandler, Reducer
@@ -21,10 +22,13 @@ def test_all_continue_same_policy_skip_true_merge():
     m2 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "b"}]}
     ctrl = Reducer([_SkipHandler(skip=True, inserts=(m1,)), _SkipHandler(skip=True, inserts=(m2,))])
     dec = ctrl.on_before_sample()
-    assert isinstance(dec, Continue)
-    assert isinstance(dec.tool_policy, Auto)
-    assert getattr(dec, "skip_sampling", False) is True
-    assert tuple(dec.inserts_input) == (m1, m2)
+    assert_that(
+        dec,
+        all_of(
+            instance_of(Continue),
+            has_properties(tool_policy=instance_of(Auto), skip_sampling=True, inserts_input=(m1, m2)),
+        ),
+    )
 
 
 def test_all_continue_same_policy_no_skip_merge():
@@ -32,10 +36,13 @@ def test_all_continue_same_policy_no_skip_merge():
     m2 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "y"}]}
     ctrl = Reducer([_SkipHandler(skip=False, inserts=(m1,)), _SkipHandler(skip=False, inserts=(m2,))])
     dec = ctrl.on_before_sample()
-    assert isinstance(dec, Continue)
-    assert isinstance(dec.tool_policy, Auto)
-    assert getattr(dec, "skip_sampling", False) is False
-    assert tuple(dec.inserts_input) == (m1, m2)
+    assert_that(
+        dec,
+        all_of(
+            instance_of(Continue),
+            has_properties(tool_policy=instance_of(Auto), skip_sampling=False, inserts_input=(m1, m2)),
+        ),
+    )
 
 
 def test_mixed_skip_sampling_conflict_raises():

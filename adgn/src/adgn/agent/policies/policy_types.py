@@ -19,6 +19,18 @@ class ApprovalDecision(StrEnum):
     DENY_ABORT = "deny_abort"
 
 
+class UserApprovalDecision(StrEnum):
+    """User decision for approval requests (UI-facing).
+
+    Distinct from policy evaluation decisions; these are the concrete
+    approval responses submitted by the user to approve/deny tool calls.
+    """
+
+    APPROVE = "approve"
+    DENY_CONTINUE = "deny_continue"
+    DENY_ABORT = "deny_abort"
+
+
 class PolicyRequest(BaseModel):
     """Input to approval policy evaluation: tool name + JSON arguments."""
 

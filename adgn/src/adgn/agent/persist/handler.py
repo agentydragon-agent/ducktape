@@ -8,10 +8,19 @@ from typing import Any
 from uuid import UUID
 
 from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import convert_fastmcp_result
 from adgn.openai_utils.model import ReasoningItem
 
 from . import EventType, Persistence
+from .events import (
+    AssistantTextPayload,
+    FunctionCallOutputPayload,
+    ReasoningPayload,
+    ResponsePayload,
+    ToolCallPayload,
+    TypedPayload,
+    UserTextPayload,
+)
 
 logger = logging.getLogger("adgn.persist.handler")
 
@@ -76,7 +85,7 @@ class RunPersistenceHandler(BaseHandler):
             raise RuntimeError(f"persistence_drain_failed: {', '.join(kinds)}")
 
     def _record_event(
-        self, *, type: EventType, payload: dict[str, Any], call_id: str | None = None, tool_key: str | None = None
+        self, *, type: EventType, payload: TypedPayload, call_id: str | None = None, tool_key: str | None = None
     ) -> None:
         """Common append path: guard run, bump seq, enqueue append_event.
 
@@ -90,13 +99,15 @@ class RunPersistenceHandler(BaseHandler):
             self._last_run_id = rid
             self._seq = 0
         self._seq += 1
+        # Convert TypedPayload to dict for persistence
+        payload_dict = payload.model_dump(mode="json", exclude_none=True)
         self._spawn(
             self._persistence.append_event(
                 run_id=rid,
                 seq=self._seq,
                 ts=self._now(),
                 type=type,
-                payload=payload,
+                payload=payload_dict,
                 call_id=call_id,
                 tool_key=tool_key,
             )
@@ -104,27 +115,32 @@ class RunPersistenceHandler(BaseHandler):
 
     # BaseHandler typed hooks --------------------------------------------------
     def on_user_text_event(self, evt: UserText) -> None:
-        self._record_event(type=EventType.USER_TEXT, payload=evt.model_dump(mode="json", exclude_none=True))
+        self._record_event(type=EventType.USER_TEXT, payload=UserTextPayload(text=evt.text))
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        self._record_event(type=EventType.ASSISTANT_TEXT, payload=evt.model_dump(mode="json", exclude_none=True))
+        self._record_event(type=EventType.ASSISTANT_TEXT, payload=AssistantTextPayload(text=evt.text))
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._record_event(
             type=EventType.TOOL_CALL,
-            payload=evt.model_dump(mode="json", exclude_none=True),
+            payload=ToolCallPayload(name=evt.name, args_json=evt.args_json, call_id=evt.call_id),
             call_id=evt.call_id,
             tool_key=evt.name,
         )
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         # Persist full Pydantic MCP CallToolResult (with content when available)
-        payload_model = to_pydantic(evt.result)
-        payload = payload_model.model_dump(mode="json", by_alias=True)
-        self._record_event(type=EventType.FUNCTION_CALL_OUTPUT, payload=payload, call_id=evt.call_id)
+        result_model = convert_fastmcp_result(evt.result)
+        self._record_event(
+            type=EventType.FUNCTION_CALL_OUTPUT,
+            payload=FunctionCallOutputPayload(call_id=evt.call_id, result=result_model),
+            call_id=evt.call_id,
+        )
 
     def on_reasoning(self, item: ReasoningItem) -> None:
-        self._record_event(type=EventType.REASONING, payload=item.model_dump(mode="json", exclude_none=True))
+        self._record_event(type=EventType.REASONING, payload=ReasoningPayload(text=item.text))
 
     def on_response(self, evt: Response) -> None:
-        self._record_event(type=EventType.RESPONSE, payload=evt.model_dump(mode="json", exclude_none=True))
+        # Convert Response to ResponsePayload; for now pass full dumped content
+        content_dict = evt.model_dump(mode="json", exclude_none=True)
+        self._record_event(type=EventType.RESPONSE, payload=ResponsePayload(content=content_dict))

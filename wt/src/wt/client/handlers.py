@@ -247,7 +247,8 @@ async def handle_kill_daemon(config) -> None:
         return
 
     try:
-        pid_str = pid_file.read_text().strip()
+        pid_str = await asyncio.to_thread(pid_file.read_text)
+        pid_str = pid_str.strip()
 
         if not pid_str:
             click.echo("Empty PID file - cleaning up stale files")

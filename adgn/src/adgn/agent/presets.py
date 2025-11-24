@@ -20,14 +20,14 @@ def _xdg_presets_dir() -> Path:
 
 
 class AgentPreset(BaseModel):
-    name: str
-    description: str | None = None
-    system: str | None = None
-    specs: dict[str, JsonValue] = Field(default_factory=dict)
-    approval_policy: str | None = None
+    name: str = Field(description="Preset name identifier")
+    description: str | None = Field(None, description="Human-readable description of the preset")
+    system: str | None = Field(None, description="System message for the agent")
+    specs: dict[str, JsonValue] = Field(default_factory=dict, description="Agent specifications (arbitrary JSON)")
+    approval_policy: str | None = Field(None, description="Approval policy Python source code")
     # Source metadata (filled by loader; used by UI)
-    file_path: str | None = None
-    modified_at: str | None = None  # ISO-8601 string
+    file_path: str | None = Field(None, description="Source file path for this preset")
+    modified_at: str | None = Field(None, description="Last modification time (ISO-8601 string)")
 
 
 def _load_yaml(path: Path) -> dict[str, JsonValue]:

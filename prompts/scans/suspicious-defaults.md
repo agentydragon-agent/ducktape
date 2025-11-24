@@ -217,6 +217,47 @@ def format_error(message: str) -> str:
 
 ## Detection Strategy
 
+**MANDATORY Step 0**: Discover ALL function parameter defaults and field defaults in the codebase.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL default value output using your intelligence
+- High recall required, high precision NOT required - you determine which defaults are suspicious
+- Review each for: appropriate optionality, semantic meaning, type consistency
+- Prevents lazy analysis by forcing examination of ALL default value decisions
+
+```bash
+# Find ALL function parameter defaults with context
+rg --type py 'def \w+\([^)]*=' -B 1 -A 2 --line-number
+
+# Find ALL field defaults (class attributes with = assignments)
+rg --type py '^[[:space:]]+\w+:.*=' -B 2 -A 1 --line-number
+
+# Find dataclass field defaults
+rg --type py '@dataclass' -A 10 --line-number
+
+# Count total defaults found
+echo "Function defaults:" && rg --type py 'def \w+\([^)]*=' | wc -l
+echo "Field defaults:" && rg --type py '^[[:space:]]+\w+:.*=' | wc -l
+```
+
+**What to review for each default:**
+1. **Optionality**: Does it make sense for this to be optional in this context?
+2. **Semantic meaning**: Is default value semantically appropriate (e.g., `=0` for count vs `=None`)?
+3. **Type consistency**: Does default match the declared type?
+4. **Mutable defaults**: Is this `=[]` or `={}` without `field(default_factory=...)`? (BUG!)
+5. **Defensive `or` patterns**: Is there both a default AND `x or default` usage? (redundant)
+
+**Process ALL output**: Read each default, use your judgment to identify suspicious patterns.
+
+**Common suspicious patterns to watch for:**
+- `param: str = ""` when None would be more honest
+- `param: dict = {}` (mutable default bug in non-dataclass)
+- `param: T | None = None` but immediately converted with `or default`
+- `count: int = 0` when semantically it should be required
+- `field: list = []` (mutable default bug)
+
+---
+
 **Goal**: Find ALL instances of suspicious defaults (high recall target ~80-90%).
 
 **Recall/Precision**: High recall (~90%) with automation, medium precision (~60%)
@@ -229,7 +270,7 @@ def format_error(message: str) -> str:
 - Almost all instances follow `x or <literal>` pattern
 - Variations are rare (mostly just `{}`, `""`, `[]`, `()`)
 
-**Recommended approach**:
+**Recommended approach AFTER Step 0**:
 1. Run grep to find all `or {}`, `or ""`, `or []` patterns (~90% recall, ~60% precision)
 2. For each candidate, analyze:
    - **What is the type of the value being checked?**

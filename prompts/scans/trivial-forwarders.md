@@ -115,6 +115,47 @@ def get_user(user_id: str) -> User:
 
 ## Detection Strategy
 
+**MANDATORY Step 0**: Run single-line function body scanner.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL single-line function output using your intelligence
+- High recall required, high precision NOT required - you determine which should be inlined
+- Review each for: call count, architectural role, complexity reduction, legitimate reasons
+- Prevents lazy analysis by forcing examination of ALL trivial function candidates
+
+**Tool**: `prompts/scans/scan_single_line_functions.py` - AST-based scanner for single-line function bodies
+
+**What it finds**:
+- All functions (sync and async) with exactly ONE line of real code (excluding docstrings)
+- Includes: function name, file, line number, the single statement, decorators, signature
+- Groups by file for easier review
+
+**Usage**:
+```bash
+# Run on entire codebase
+python prompts/scans/scan_single_line_functions.py . > single_line_functions.json
+
+# Pretty-print summary
+cat single_line_functions.json | jq '.summary'
+
+# View all single-line functions
+cat single_line_functions.json | jq '.functions[] | {name, file, line, statement}'
+
+# View by file
+cat single_line_functions.json | jq '.by_file'
+```
+
+**What to review for each function:**
+1. **Call count**: How many times is it called? (use grep, AST analysis)
+2. **Architectural role**: Is this a facade, interface implementation, or API boundary?
+3. **Complexity**: Would inlining make call sites more OR less complex?
+4. **Legitimate reasons**: Protocol implementation, decorator target, backward compatibility
+5. **Decision**: Inline if doesn't reduce complexity, keep if legitimate architectural reason
+
+**Low precision expected (~20-30%)**: Many single-line functions are legitimate (facades, interface implementations, API boundaries). Agent must use judgment to distinguish trivial forwarders from legitimate simple functions.
+
+---
+
 **Goal**: Find ALL functions that should be inlined (100% recall target).
 
 **Recall/Precision**: High recall (~90%) with automation, low precision (~20-30%)
@@ -127,8 +168,8 @@ def get_user(user_id: str) -> User:
 - Can't tell from syntax alone whether function reduces complexity at call sites
 - Need to understand: call count, architectural role, complexity trade-offs
 
-**Recommended approach**:
-1. Run high-recall retrievers to gather ALL candidates (~90% recall, ~20-30% precision)
+**Recommended approach AFTER Step 0**:
+1. Process single-line function scanner output (MANDATORY Step 0)
 2. For each candidate, analyze:
    - **Call count**: How many times is it called? (vulture, grep, AST)
    - **Complexity**: Would inlining make call sites more complex?
@@ -138,7 +179,7 @@ def get_user(user_id: str) -> User:
 4. Inline confirmed trivial forwarders
 5. **Supplement with manual reading** to find complex cases automation misses
 
-**High-recall, low-precision retrievers**:
+**High-recall, low-precision retrievers AFTER Step 0**:
 
 ### 1. Functions Called Exactly Once (Especially Same File)
 

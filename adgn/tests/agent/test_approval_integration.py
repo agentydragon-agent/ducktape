@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Callable
 
+from hamcrest import assert_that, has_length
 import pytest
 
 from adgn.agent.agent import MiniCodex
@@ -10,6 +11,7 @@ from adgn.agent.approvals import ApprovalHub
 from adgn.agent.handler import ContinueDecision
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
@@ -37,8 +39,6 @@ async def test_approval_system_wired_and_blocks_on_ask(
     client = FakeOpenAIModel(seq)
 
     # Approval reader server for middleware evaluation
-    from adgn.mcp.approval_policy.server import ApprovalPolicyServer
-
     reader = ApprovalPolicyServer(engine)
     servers = dict(make_echo_spec())
     servers["approval_policy"] = reader
@@ -56,7 +56,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
                 break
             await asyncio.sleep(0.05)
         pending = approval_hub._requests
-        assert len(pending) == 1, f"Expected 1 pending approval, got {len(pending)}"
+        assert_that(pending, has_length(1), f"Expected 1 pending approval, got {len(pending)}")
 
         # Get the call_id from the pending approval
         call_id = next(iter(pending.keys()))

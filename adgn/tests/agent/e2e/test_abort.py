@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.agent.helpers import api_create_agent
+from tests.agent.helpers import api_create_agent, send_prompt
+from tests.llm.support.openai_mock import make_mock
 
 pytestmark = pytest.mark.usefixtures()
 
@@ -43,8 +44,6 @@ def test_ui_abort_sampling(page: Page, run_server, responses_factory):
             return responses_factory.make_assistant_message("too-late")
         return responses_factory.make_assistant_message("done")
 
-    from tests.llm.support.openai_mock import make_mock
-
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
 
@@ -58,8 +57,7 @@ def test_ui_abort_sampling(page: Page, run_server, responses_factory):
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send a prompt to kick off sampling; Abort button should appear while running
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("start long task")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "start long task")
 
     # Wait for Abort button to become visible and click it
     abort_btn = page.get_by_role("button", name="Abort")

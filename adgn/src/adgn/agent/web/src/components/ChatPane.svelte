@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import { uiState as uiStateStore, lastError as lastErrorStore, runStatus as runStatusStore } from '../features/chat/stores'
-  import { sendPrompt, abortRun } from '../features/chat/stores'
+  import { uiState as uiStateStore, lastError as lastErrorStore, subscribeToAgentUiState, unsubscribeFromAgentUiState, clearError } from '../features/chat/stores_mcp'
+  import { sendPrompt } from '../features/agents/api'
   import { currentAgentId } from '../features/agents/stores'
   import { renderMarkdown as renderMarkdownHtml } from '../shared/markdown'
   import DOMPurify from 'dompurify'
@@ -10,24 +10,47 @@
   import CollapsedToolsGroup from './CollapsedToolsGroup.svelte'
   import type { UiDisplayItem, ToolItem as TToolItem } from '../shared/types'
   import { isCollapsedToolKey } from '../lib/collapsedTools'
+  import { createMCPClient, callTool, readResource, MCPClientError } from '../features/mcp/client'
+  import { getOrExtractToken } from '../shared/token'
+  import { backendOrigin } from '../features/agents/api'
+  import type { AgentList, AgentMode } from '../generated/types'
+  import { MCPUris } from '../generated/mcpConstants'
 
   export let renderMarkdown: boolean = true
 
   let prompt = ''
   let messagesEl: HTMLDivElement | null = null
   let promptEl: HTMLTextAreaElement | null = null
-  $: runStatus = $runStatusStore
+  let agentMode: AgentMode | null = null
+  let abortErrorMessage: string | null = null
+  let runStatus: string = 'idle'
   // Consider agent busy for these transient states; allow send only when idle/finished
   $: busy = runStatus === 'running' || runStatus === 'awaiting_approval' || runStatus === 'starting' || runStatus === 'aborting'
+  // Show abort button only for LOCAL mode agents that are running
+  $: showAbortButton = agentMode === 'local' && (runStatus === 'running' || runStatus === 'starting')
 
 
-  function sendPromptLocal() {
+  async function sendPromptLocal() {
     if (busy || !prompt.trim()) return
-    sendPrompt(prompt)
-    // Clear the prompt immediately on submit and persist cleared draft
     const id = $currentAgentId
+    if (!id) return
+
+    const message = prompt
+    // Clear the prompt immediately on submit and persist cleared draft
     prompt = ''
-    if (id) localStorage.setItem(`composer:${id}`, '')
+    localStorage.setItem(`composer:${id}`, '')
+
+    // Set status to starting
+    runStatus = 'starting'
+
+    try {
+      await sendPrompt(id, message)
+      // Status updates will come via MCP subscription
+    } catch (error) {
+      console.error('Failed to send prompt:', error)
+      $lastErrorStore = error instanceof Error ? error.message : 'Failed to send prompt'
+      runStatus = 'idle'
+    }
   }
   function onPromptKeydown(e: KeyboardEvent) {
     // Send on Enter (no Shift), also accept Cmd/Ctrl+Enter. Preserve IME composing.
@@ -43,6 +66,76 @@
   function onPromptInput() {
     const id = $currentAgentId
     if (id) localStorage.setItem(`composer:${id}`, prompt)
+  }
+
+  // Fetch agent mode from MCP resource
+  async function fetchAgentMode() {
+    const id = $currentAgentId
+    if (!id) {
+      agentMode = null
+      return
+    }
+
+    try {
+      const token = getOrExtractToken()
+      if (!token) {
+        console.warn('No auth token available for MCP client')
+        agentMode = null
+        return
+      }
+
+      const client = await createMCPClient({
+        name: 'chat-pane-client',
+        url: `${backendOrigin()}/mcp`,
+        token
+      })
+
+      const contents = await readResource(client, MCPUris.agentsListUri)
+
+      // Parse the resource contents
+      if (Array.isArray(contents) && contents.length > 0) {
+        const firstContent = contents[0]
+        if (firstContent.type === 'text' && firstContent.text) {
+          const agentList = JSON.parse(firstContent.text) as AgentList
+          const agentInfo = agentList.agents.find(a => a.agent_id === id)
+          agentMode = agentInfo?.mode ?? null
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch agent mode:', error)
+      agentMode = null
+    }
+  }
+
+  // Abort current run via MCP
+  async function abortRunMCP() {
+    const id = $currentAgentId
+    if (!id) return
+
+    abortErrorMessage = null
+
+    try {
+      const token = getOrExtractToken()
+      if (!token) {
+        abortErrorMessage = 'Authentication required'
+        return
+      }
+
+      const client = await createMCPClient({
+        name: 'chat-pane-abort-client',
+        url: `${backendOrigin()}/mcp`,
+        token
+      })
+
+      await callTool(client, 'abort_agent', { agent_id: id })
+    } catch (error) {
+      if (error instanceof MCPClientError) {
+        abortErrorMessage = `Abort failed: ${error.message}`
+      } else {
+        abortErrorMessage = 'Failed to abort agent'
+      }
+      console.error('Abort failed:', error)
+    }
   }
 
   // Do not auto-clear prompt on finish; allow composing while a run is in progress
@@ -68,21 +161,46 @@
   }
   function scrollToBottom() { if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight }
   onMount(() => { requestAnimationFrame(() => { promptEl?.focus() }) })
+  onDestroy(() => {
+    // Cleanup subscriptions when component is destroyed
+    if (lastAgentId) {
+      unsubscribeFromAgentUiState(lastAgentId).catch((error) => {
+        console.error('Failed to cleanup subscription:', error)
+      })
+    }
+  })
 
-  // Per-agent draft persistence
+  // Per-agent draft persistence, mode fetching, and MCP subscription
   let lastAgentId: string | null = null
   $: if ($currentAgentId !== lastAgentId) {
     // Save previous agent's draft
-    if (lastAgentId) localStorage.setItem(`composer:${lastAgentId}`, prompt)
+    if (lastAgentId) {
+      localStorage.setItem(`composer:${lastAgentId}`, prompt)
+      // Unsubscribe from previous agent's UI state
+      unsubscribeFromAgentUiState(lastAgentId).catch((error) => {
+        console.error('Failed to unsubscribe from previous agent:', error)
+      })
+    }
+
     // Load new agent's draft
     const id = $currentAgentId
     if (id) {
       const saved = localStorage.getItem(`composer:${id}`)
       prompt = saved ?? ''
+      // Fetch agent mode for new agent
+      fetchAgentMode()
+      // Subscribe to new agent's UI state
+      subscribeToAgentUiState(id).catch((error) => {
+        console.error('Failed to subscribe to agent UI state:', error)
+        $lastErrorStore = error instanceof Error ? error.message : 'Failed to subscribe to UI state'
+      })
     } else {
       prompt = ''
+      agentMode = null
     }
     lastAgentId = id ?? null
+    abortErrorMessage = null
+    runStatus = 'idle'
   }
 
   // No DOM scanning needed; Marked emits highlighted HTML with 'hljs' class
@@ -144,6 +262,9 @@
   {#if $lastErrorStore}
     <div class="error">Error: {$lastErrorStore}</div>
   {/if}
+  {#if abortErrorMessage}
+    <div class="error">{abortErrorMessage}</div>
+  {/if}
 
   <div class="messages" bind:this={messagesEl} on:scroll={onMessagesScroll}>
     {#if !$uiStateStore || !($uiStateStore.items && $uiStateStore.items.length)}
@@ -193,8 +314,8 @@
       on:input={onPromptInput}
       on:keydown={onPromptKeydown}
     ></textarea>
-    {#if $runStatusStore === 'running' || $runStatusStore === 'starting'}
-      <button type="button" class="abort" title="Abort current run" on:click={() => abortRun()}>Abort</button>
+    {#if showAbortButton}
+      <button type="button" class="abort" title="Abort current run" on:click={() => abortRunMCP()}>Abort</button>
     {/if}
     <button type="submit" disabled={busy || !prompt.trim()} aria-disabled={busy || !prompt.trim()}>Send</button>
   </form>

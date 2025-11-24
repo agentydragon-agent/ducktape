@@ -5,18 +5,21 @@
   import AgentsSidebar from './components/AgentsSidebar.svelte'
   import ChatPane from './components/ChatPane.svelte'
   import SidebarToggle from './components/SidebarToggle.svelte'
-  import { stopAgentStatusPolling } from './features/agents/stores'
+  import { stopAgentStatusPolling, loadServerCapabilities, serverCapabilities } from './features/agents/stores'
   import { currentAgentId as currentAgentIdStore, setAgentId } from './shared/router'
   import { initAgentUiController } from './features/controller'
   import { prefs } from './shared/prefs'
   import { LEFT_MIN, LEFT_MAX } from './shared/layout'
-  
+
   import { disconnectAgentWs } from './features/chat/stores'
-  import { backendOrigin } from './features/agents/api'
+  import { deleteAgent } from './features/agents/api'
 
   let hasAgent = false
   // Current agent id
   let agentId: string | null = null
+
+  // Capabilities
+  $: showChat = $serverCapabilities?.components.chat ?? true
 
   onDestroy(() => {
     stopAgentStatusPolling()
@@ -89,10 +92,9 @@
   async function deleteCurrentAgent() {
     if (!agentId) return
     try {
-      const res = await fetch(`${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' })
-      const body = await res.json().catch(() => null)
-      if (!res.ok || !body?.ok) {
-        throw new Error(body?.error || ('HTTP ' + res.status))
+      const result = await deleteAgent(agentId)
+      if (!result.ok) {
+        throw new Error(result.error || 'Delete failed')
       }
       // Clear current agent; center pane shows AgentsList
       setAgentId(null)
@@ -109,6 +111,9 @@
   }
 
   onMount(() => {
+    // Load server capabilities on startup
+    loadServerCapabilities()
+
     const disposeCtrl = initAgentUiController()
     onDestroy(() => {
       disposeCtrl()
@@ -163,8 +168,15 @@
       action={() => prefs.update(p => ({ ...p, showAgentsSidebar: true }))}
     />
   {/if}
-  {#if hasAgent}
+  {#if hasAgent && showChat}
     <ChatPane renderMarkdown={$prefs.renderMarkdown} style={`grid-column: ${$prefs.showAgentsSidebar ? 2 : 1}; grid-row: 1; min-width: 0; min-height: 0;`} />
+  {:else if hasAgent && !showChat}
+    <div style={`grid-column: ${$prefs.showAgentsSidebar ? 2 : 1}; grid-row: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; color: var(--muted); min-height: 0;`}>
+      <div style="font-size: 1.2rem;">MCP Bridge Mode</div>
+      <div style="font-size: 0.9rem; max-width: 400px; text-align: center;">
+        This server is running in MCP Bridge mode. Use the Approvals and MCP tabs in the left sidebar to manage external agent access.
+      </div>
+    </div>
   {:else}
     <div style={`grid-column: ${$prefs.showAgentsSidebar ? 2 : 1}; grid-row: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); min-height: 0;`}>Select an agent from the left sidebar</div>
   {/if}

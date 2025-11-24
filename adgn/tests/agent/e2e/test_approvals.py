@@ -3,10 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent
+from tests.agent.helpers import api_create_agent, approve_first_pending, attach_echo_mcp, send_prompt, wait_for_pending_approvals
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -45,23 +44,20 @@ def test_approvals_delivery_and_user_approve(page: Page, run_server, responses_f
     # Create agent via helper
     agent_id = api_create_agent(base)
 
-    # Attach echo server via HTTP (in-proc factory spec)
-    spec = {"echo": {"transport": "inproc", "factory": "adgn.mcp.testing.simple_servers:make_simple_mcp"}}
-    patch = requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-    assert patch.ok, patch.text
+    # Attach echo server
+    attach_echo_mcp(base, agent_id)
 
     # Open UI and connect WS
     page.goto(base + f"/?agent_id={agent_id}")
     page.locator(".ws .dot.on").wait_for(timeout=10000)
 
     # Send a prompt to trigger the tool call that requires approval
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("use echo tool")
-    page.get_by_role("button", name="Send").click()
+    send_prompt(page, "use echo tool")
 
     # Pending approval should show up without reload; Approvals tab is the default
-    page.get_by_text("Pending Approvals (1)").wait_for(timeout=10000)
+    wait_for_pending_approvals(page, count=1)
     # Click Approve on the first pending item
-    page.get_by_role("button", name="Approve").first.click()
+    approve_first_pending(page)
 
     # Run should proceed to end_turn and finish; wait for UI to reflect completion
     page.get_by_text("Status: finished").wait_for(timeout=10000)

@@ -1,15 +1,24 @@
 <script lang="ts">
-  import { agents, currentAgentId, setAgentId } from '../features/agents/stores'
-  import { deleteAgent as apiDeleteAgent, createAgent as apiCreateAgent, listPresets, createAgentFromPreset } from '../features/agents/api'
-  import type { AgentRow } from '../shared/types'
+  import { writable } from 'svelte/store'
+  import { currentAgentId, setAgentId } from '../features/agents/stores'
+  import { deleteAgent as apiDeleteAgent, listPresets, createAgentFromPreset } from '../features/agents/api'
+  import { createMCPClient, readResource, subscribeToResource, type MCPClientConfig } from '../features/mcp/client'
+  import { getOrExtractToken } from '../shared/token'
+  import type { AgentInfo, AgentList } from '../generated/types'
+  import { MCPUris } from '../generated/mcpConstants'
   import { prefs } from '../shared/prefs'
   import { LEFT_MIN, LEFT_MAX } from '../shared/layout'
   import SidebarToggle from './SidebarToggle.svelte'
   import ModalBackdrop from './ModalBackdrop.svelte'
+  import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
+  import { ResourceUpdatedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
 
   export let onStartResize: (e: MouseEvent) => void
 
-  $: agentList = $agents as AgentRow[]
+  // Local state for agents from MCP
+  const agents = writable<AgentInfo[]>([])
+
+  $: agentList = $agents
   $: selected = $currentAgentId
   let listEl: HTMLDivElement | null = null
   let presets: Array<{ name: string; description?: string | null }> = []
@@ -18,6 +27,10 @@
   let showPresetModal = false
   let modalPreset: string | null = null
   let modalSystem: string = ''
+
+  let mcpClient: Client | null = null
+  let mcpError: string | null = null
+
   // Restore scroll position
   import { onMount, onDestroy } from 'svelte'
   async function refreshPresets() {
@@ -34,6 +47,64 @@
       // ignore refresh failure
     }
   }
+  async function fetchAgentsList() {
+    if (!mcpClient) {
+      console.warn('MCP client not connected, cannot fetch agents')
+      return
+    }
+    try {
+      const result = await readResource(mcpClient, MCPUris.agentsListUri)
+      // result is an array of content items
+      if (result && result.length > 0) {
+        const content = result[0]
+        if ('text' in content) {
+          const data = JSON.parse(content.text) as AgentList
+          agents.set(data.agents)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch agents list:', err)
+      mcpError = err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  async function setupMCPClient() {
+    const token = getOrExtractToken()
+    if (!token) {
+      mcpError = 'No authentication token found'
+      console.error(mcpError)
+      return
+    }
+
+    try {
+      const config: MCPClientConfig = {
+        name: 'agents-sidebar',
+        url: `${window.location.protocol}//${window.location.host}/mcp`,
+        token,
+      }
+      mcpClient = await createMCPClient(config)
+
+      // Set up notification handler for resource updates
+      mcpClient.setNotificationHandler(
+        ResourceUpdatedNotificationSchema,
+        async (notification) => {
+          if (notification.params?.uri === MCPUris.agentsListUri) {
+            await fetchAgentsList()
+          }
+        }
+      )
+
+      // Subscribe to agents list updates
+      await subscribeToResource(mcpClient, MCPUris.agentsListUri)
+
+      // Fetch initial list
+      await fetchAgentsList()
+    } catch (err) {
+      console.error('Failed to setup MCP client:', err)
+      mcpError = err instanceof Error ? err.message : String(err)
+    }
+  }
+
   onMount(() => {
     try {
       const saved = localStorage.getItem('agentsSidebarScrollTop')
@@ -46,9 +117,19 @@
     const onVis = () => { if (document.visibilityState === 'visible') void refreshPresets() }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVis)
+
+    // Setup MCP client for agents list
+    void setupMCPClient()
+
     return () => {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVis)
+      // Clean up MCP client
+      if (mcpClient) {
+        try {
+          mcpClient.close()
+        } catch {}
+      }
     }
   })
 
@@ -103,7 +184,7 @@
       const body = await apiDeleteAgent(id)
       if (!body?.ok) throw new Error(body?.error || 'delete failed')
       // Optimistically update list and selection
-      agents.update(list => (list || []).filter(a => a.id !== id))
+      agents.update(list => (list || []).filter(a => a.agent_id !== id))
       if ($currentAgentId === id) setAgentId(null)
       confirmingId = null
     } catch (e) {
@@ -122,19 +203,22 @@
     }
   }
 
-  function lastUpdatedTitle(a: AgentRow): string {
-    const lu = a.last_updated ? `\nlast updated: ${a.last_updated}` : ''
-    const s = a.working ? 'working (active run in progress)' : (a.live ? 'on (live container running)' : 'off (no live container)')
-    return `Agent ${a.id}\n${s}${lu}`
+  function agentTitle(a: AgentInfo): string {
+    const caps = Object.entries(a.capabilities)
+      .filter(([_, enabled]) => enabled)
+      .map(([cap]) => cap)
+      .join(', ')
+    return `Agent ${a.agent_id}\nMode: ${a.mode}\nCapabilities: ${caps || 'none'}`
   }
 
-  function lifecycleLabel(a: AgentRow): string {
-    const lc = a.lifecycle
-    if (lc === 'ready') return 'ready'
-    if (lc === 'starting') return 'starting'
-    if (lc === 'persisted_only') return 'persisted'
-    // Fallback when lifecycle not provided yet
-    return a.live ? 'ready' : 'persisted'
+  function formatMode(mode: string): string {
+    return mode.toUpperCase()
+  }
+
+  function getEnabledCapabilities(caps: Record<string, boolean>): string[] {
+    return Object.entries(caps)
+      .filter(([_, enabled]) => enabled)
+      .map(([cap]) => cap)
   }
 </script>
 
@@ -155,30 +239,34 @@
   <div class="agents-list" bind:this={listEl} on:scroll={() => {
     try { localStorage.setItem('agentsSidebarScrollTop', String(listEl?.scrollTop || 0)) } catch {}
   }}>
+    {#if mcpError}
+      <div class="error-message" role="alert">
+        <strong>Error:</strong> {mcpError}
+      </div>
+    {/if}
     {#each agentList as a}
       <div
-        class="agent-row {a.id === selected ? 'current' : ''}"
-        title={lastUpdatedTitle(a)}
-        aria-current={a.id === selected ? 'true' : undefined}
+        class="agent-row {a.agent_id === selected ? 'current' : ''}"
+        title={agentTitle(a)}
+        aria-current={a.agent_id === selected ? 'true' : undefined}
         role="button"
         tabindex="0"
-        on:click={() => open(a.id)}
-        on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(a.id) } }}
+        on:click={() => open(a.agent_id)}
+        on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(a.agent_id) } }}
       >
-        <button type="button" class="agent-open" on:click={(e) => { e.stopPropagation(); open(a.id) }}>
-          <span class="dot {a.working ? 'working' : (a.live ? 'on' : 'off')}"></span>
-          <span class="agent-id">{a.id.slice(0,8)}</span>
-          <span class="badge lifecycle lc-{a.lifecycle ?? (a.live ? 'ready' : 'persisted_only')}" title={`Lifecycle: ${lifecycleLabel(a)}`}>{lifecycleLabel(a)}</span>
-          {#if a.metadata?.preset}
-            <span class="preset" title={`Preset: ${a.metadata.preset}`}>{a.metadata.preset}</span>
-          {/if}
+        <button type="button" class="agent-open" on:click={(e) => { e.stopPropagation(); open(a.agent_id) }}>
+          <span class="agent-id">{a.agent_id.slice(0,8)}</span>
+          <span class="badge mode mode-{a.mode}" title={`Mode: ${formatMode(a.mode)}`}>{formatMode(a.mode)}</span>
+          {#each getEnabledCapabilities(a.capabilities) as cap}
+            <span class="badge capability" title={`Capability: ${cap}`}>{cap}</span>
+          {/each}
         </button>
         <div class="row-actions">
-          {#if confirmingId === a.id}
-            <button class="danger small" on:click|stopPropagation={() => doDelete(a.id)}>Confirm</button>
+          {#if confirmingId === a.agent_id}
+            <button class="danger small" on:click|stopPropagation={() => doDelete(a.agent_id)}>Confirm</button>
             <button class="secondary small" on:click|stopPropagation={() => (confirmingId = null)}>Cancel</button>
           {:else}
-            <button class="danger small icon" aria-label="Delete agent" title="Delete agent" on:click|stopPropagation={() => (confirmingId = a.id)}>×</button>
+            <button class="danger small icon" aria-label="Delete agent" title="Delete agent" on:click|stopPropagation={() => (confirmingId = a.agent_id)}>×</button>
           {/if}
         </div>
       </div>
@@ -243,17 +331,14 @@
   .agent-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.25rem; border-radius: 4px; width: 100%; cursor: pointer; }
   .agent-row:hover { background: var(--surface-2); }
   .agent-row.current { background: rgba(25,118,210,0.1); }
-  .agent-open { display: inline-flex; align-items: center; gap: 0.5rem; background: none; border: 1px solid transparent; cursor: pointer; padding: 0.2rem 0.25rem; }
+  .agent-open { display: inline-flex; align-items: center; gap: 0.5rem; background: none; border: 1px solid transparent; cursor: pointer; padding: 0.2rem 0.25rem; flex-wrap: wrap; }
   .agent-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: #bbb; display: inline-block; }
-  .dot.on { background: #2ecc71; }
-  .dot.off { background: #bbb; }
-  .badge.lifecycle { font-size: 0.65rem; padding: 0.05rem 0.3rem; border-radius: 0.5rem; text-transform: lowercase; border: 1px solid var(--border); }
-  .badge.lifecycle.lc-ready { background: rgba(46, 204, 113, 0.15); color: #2e7d32; border-color: rgba(46, 204, 113, 0.4); }
-  .badge.lifecycle.lc-starting { background: rgba(255, 193, 7, 0.15); color: #b26a00; border-color: rgba(255, 193, 7, 0.4); }
-  .badge.lifecycle.lc-persisted_only { background: rgba(158, 158, 158, 0.15); color: #616161; border-color: rgba(158, 158, 158, 0.4); }
-  .dot.working { background: #f39c12; animation: blink 1s infinite ease-in-out; }
-  @keyframes blink { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+  .badge { font-size: 0.65rem; padding: 0.05rem 0.3rem; border-radius: 0.5rem; text-transform: lowercase; border: 1px solid var(--border); white-space: nowrap; }
+  .badge.mode { font-weight: 600; }
+  .badge.mode.mode-local { background: rgba(46, 204, 113, 0.15); color: #2e7d32; border-color: rgba(46, 204, 113, 0.4); }
+  .badge.mode.mode-bridge { background: rgba(33, 150, 243, 0.15); color: #1565c0; border-color: rgba(33, 150, 243, 0.4); }
+  .badge.capability { background: rgba(255, 193, 7, 0.15); color: #b26a00; border-color: rgba(255, 193, 7, 0.4); }
+  .error-message { padding: 0.5rem; background: rgba(176, 0, 32, 0.1); border: 1px solid rgba(176, 0, 32, 0.3); border-radius: 4px; color: #b00020; margin: 0.5rem; }
   /* Keep the resize handle within the sidebar to avoid overlaying the chat area */
   .left-resize { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; background: transparent; border: none; padding: 0; }
   .row { display: flex; gap: 0.5rem; align-items: center; }

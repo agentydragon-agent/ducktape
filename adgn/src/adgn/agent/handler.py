@@ -12,21 +12,21 @@ from datetime import datetime
 from typing import Any, Literal
 
 from fastmcp.client.client import CallToolResult
-from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from adgn.agent.loop_control import LoopDecision, NoLoopDecision
-from adgn.openai_utils.model import ReasoningItem
+from adgn.agent.types import ToolCall
+from adgn.openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem
 
 
 # ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
 class GroundTruthUsage(BaseModel):
-    model: str
-    input_tokens: int | None = None
-    input_tokens_details: InputTokensDetails | None = None
-    output_tokens: int | None = None
-    output_tokens_details: OutputTokensDetails | None = None
-    total_tokens: int | None = None
+    model: str = Field(description="Model name used for the request")
+    input_tokens: int | None = Field(None, description="Number of input tokens consumed")
+    input_tokens_details: InputTokensDetails | None = Field(None, description="Breakdown of input token usage")
+    output_tokens: int | None = Field(None, description="Number of output tokens generated")
+    output_tokens_details: OutputTokensDetails | None = Field(None, description="Breakdown of output token usage")
+    total_tokens: int | None = Field(None, description="Total tokens consumed (input + output)")
 
 
 # ---- Typed events (no shared runtime base required) ----
@@ -38,12 +38,6 @@ class AssistantText(BaseModel):
     text: str
 
 
-class ToolCall(BaseModel):
-    name: str
-    args_json: str | None = None
-    call_id: str
-
-
 class ToolCallOutput(BaseModel):
     call_id: str
     result: CallToolResult
@@ -53,13 +47,20 @@ class ToolCallOutput(BaseModel):
 
 
 class ContinueDecision(BaseModel):
-    """Proceed with normal execution."""
+    """Proceed with normal execution (approve tool call)."""
 
     action: Literal["continue"] = "continue"
 
 
+class DenyContinueDecision(BaseModel):
+    """Deny the tool call but continue the turn (skip this tool, let agent proceed)."""
+
+    action: Literal["deny_continue"] = "deny_continue"
+    reason: str | None = None
+
+
 class AbortTurnDecision(BaseModel):
-    """Request abort of the entire turn."""
+    """Deny the tool call and abort the entire turn."""
 
     action: Literal["abort"] = "abort"
     reason: str | None = None

@@ -156,6 +156,47 @@ def skip_global_compinit() -> None:
 
 ## Detection Strategy
 
+**MANDATORY Step 0**: Run comment and docstring extraction scanner.
+
+- This scan is **required** - do not skip this step
+- You **must** read and process ALL comment/docstring output using your intelligence
+- High recall required, high precision NOT required - you determine which are useless
+- Review each for: duplicating obvious info, outdated content, lack of semantic value
+- Prevents lazy analysis by forcing examination of ALL documentation
+
+**Tool**: `prompts/scans/scan_comments.py` - AST-based scanner for all comments and docstrings
+
+**What it finds**:
+- All comments (inline, block)
+- All docstrings (module, class, function)
+- Surrounding context for each
+
+**Usage**:
+```bash
+# Run on entire codebase
+python prompts/scans/scan_comments.py . > comments_scan.json
+
+# Pretty-print summary
+cat comments_scan.json | jq '.summary'
+
+# View docstrings only
+cat comments_scan.json | jq '.docstrings'
+
+# View all comments with context
+cat comments_scan.json | jq '.comments'
+```
+
+**What to review for each comment/docstring:**
+1. **Duplicates obvious info?** Function name says "validate_config", docstring says "Validate config"
+2. **Outdated/contradicts code?** Documentation doesn't match implementation
+3. **Adds no semantic value?** Just restates types/decorators already visible
+4. **Too vague?** "Process data" - what does it actually do?
+5. **Public API context?** Public APIs need more docs than internal functions
+
+**Process ALL output**: Read each doc/comment, use your judgment to identify useless ones.
+
+---
+
 **Primary Method**: Manual code reading or LLM-assisted review. Automated patterns are discovery aids only.
 
 **Why automation is insufficient**: Determining if documentation is "useless" requires understanding:
@@ -164,7 +205,7 @@ def skip_global_compinit() -> None:
 - If the function is public API (needs more docs) vs internal (needs less)
 - Whether behavior is truly obvious or just seems obvious to the author
 
-### Discovery Approach: Code Skeleton Generation
+### Discovery Approach AFTER Step 0: Code Skeleton Generation
 
 Create an intermediate file that strips function bodies, preserving only signatures, types, and documentation. This allows LLM to efficiently review many functions without reading implementations.
 
