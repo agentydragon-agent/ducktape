@@ -2,7 +2,7 @@ source:
   vcs: github
   org: agentydragon
   repo: ducktape
-  ref: 96954248ceb8c309cc90ced6de1d402b56f1161c
+  ref: 84b4eb915af9e31215ced2ba8b2e719bf5c766a9
 scope:
   include:
     - "**/*.py"
