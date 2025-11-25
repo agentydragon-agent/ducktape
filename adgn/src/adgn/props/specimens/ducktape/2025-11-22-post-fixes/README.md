@@ -31,6 +31,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **025**: Redundant PolicyErrorCode enum duplicating PolicyErrorStage (READ_ERROR vs READ, PARSE_ERROR vs PARSE)
 - **026**: Duplicated notification data and redundant data structures (NotificationsBatch stores raw+parsed, NotificationsForModel duplicates NotificationsBatch)
 - **027**: Manual dictionary parsing instead of Pydantic discriminated unions (parse_event with if-elif chains)
+- **028**: SQLAlchemy and database quality issues (inline comments vs comment=, raw SQL vs ORM, walrus opportunities, useless comments)
 
 ## Scope
 
