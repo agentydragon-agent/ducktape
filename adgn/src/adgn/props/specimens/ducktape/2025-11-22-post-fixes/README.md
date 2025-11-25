@@ -39,6 +39,13 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **033**: Leaking environment variable handling into downstream components (infrastructure.py manually reads ADGN_AGENT_PRESETS_DIR, discover_presets should handle it)
 - **034**: LocalAgentRuntime lifecycle confusion and may-be-initialized antipattern (missing type annotations, incomplete close(), nullable fields, not a context manager)
 - **035**: Dead WebSocket code and outdated documentation (registry.py "WebSocket connection manager", fields set after init, ConnectionManager dead methods)
+- **036**: ToolItem duplicates ToolCall structure (server/state.py duplicates types.py)
+- **037**: RunPhase duplicates and supersedes less comprehensive enums (status_shared.py 7 states vs mcp_bridge/types.py 3 states vs protocol.py 7 different states)
+- **038**: McpState, PolicyState, and pending_approvals redundant with 2-layer compositor (thin wrappers should use MCP resources)
+- **039**: has_inflight always False indicates unimplemented feature (runtime.py and status_shared.py always pass False, TOOLS_RUNNING unreachable)
+- **040**: Empty dedent string creates useless constant (system_message.py _APPROVALS_AND_TOOLS = dedent("").strip())
+- **041**: Swallowed errors in catch blocks without logging or user feedback (agents/stores.ts, channels.ts, prefs.ts, token.ts, markdown.ts, schema.ts)
+- **042**: Repeated type casting to any instead of using typed content models (ToolExec.svelte and ToolJson.svelte use (item.content as any) instead of ExecContent/JsonContent)
 
 ## Scope
 
