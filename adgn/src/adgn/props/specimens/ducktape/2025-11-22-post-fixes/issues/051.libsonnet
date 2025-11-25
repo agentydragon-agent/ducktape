@@ -39,24 +39,8 @@ I.issueWithOccurrences(
     Modal structures (backdrop, content, header, body, footer) are duplicated.
 
     - GlobalApprovalsList.svelte (lines 148-186)
-
-    **AgentsSidebar.svelte (lines 347-353):**
-    ```css
-    .modal { background: var(--surface); color: var(--text); min-width: 320px; max-width: 90vw; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
-    .modal header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-weight: 600; }
-    .modal .body { padding: 0.75rem; display: grid; grid-template-columns: 1fr; gap: 0.5rem; }
-    .modal .row { display: flex; gap: 0.5rem; align-items: center; }
-    .modal footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--border); }
-    ```
-
-    **ServersPanel.svelte (lines 56-64):**
-    ```css
-    .modal { background: var(--surface); color: var(--text); width: min(1000px, 92vw); max-height: 90vh; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); display: flex; flex-direction: column; }
-    .modal header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-weight: 600; }
-    .modal .body { padding: 0.75rem; display: grid; grid-template-columns: 1fr; gap: 0.75rem; overflow: auto; }
-    .modal .row { display: flex; gap: 1rem; align-items: center; }
-    .modal footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--border); }
-    ```
+    - AgentsSidebar.svelte (lines 347-353)
+    - ServersPanel.svelte (lines 56-64)
 
     (Note: ModalBackdrop component exists but modals still duplicate content/layout styles)
 
@@ -64,197 +48,43 @@ I.issueWithOccurrences(
 
     Badge components with similar patterns redefined across files.
 
-    **AgentsSidebar.svelte (lines 336-340):**
-    ```css
-    .badge { font-size: 0.65rem; padding: 0.05rem 0.3rem; border-radius: 0.5rem; text-transform: lowercase; border: 1px solid var(--border); white-space: nowrap; }
-    .badge.mode { font-weight: 600; }
-    .badge.mode.mode-local { background: rgba(46, 204, 113, 0.15); color: #2e7d32; border-color: rgba(46, 204, 113, 0.4); }
-    .badge.mode.mode-bridge { background: rgba(33, 150, 243, 0.15); color: #1565c0; border-color: rgba(33, 150, 243, 0.4); }
-    .badge.capability { background: rgba(255, 193, 7, 0.15); color: #b26a00; border-color: rgba(255, 193, 7, 0.4); }
-    ```
-
-    **ProposalCard.svelte (lines 5-6):**
-    ```css
-    .badge { font-size: 0.7rem; padding: 0.05rem 0.3rem; border-radius: 2px; margin-left: 0.25rem; }
-    .badge { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
-    ```
-
-    **ServersPanel.svelte (line 53):**
-    ```css
-    .badge { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.4rem; font-size: 0.7rem; margin-left: 0.25rem; color: var(--muted); }
-    ```
+    - AgentsSidebar.svelte (lines 336-340)
+    - ProposalCard.svelte (lines 5-6)
+    - ServersPanel.svelte (line 53)
 
     **5. Form controls (inputs, textareas, selects)**
 
     Form elements share common styling but it's redefined in every component.
 
-    **PolicyEditorPane.svelte (lines 49-61):**
-    ```css
-    .policy-editor {
-      width: 100%;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-      font-size: 0.8rem;
-      resize: vertical;
-      padding: 0.5rem;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: var(--surface-2);
-      color: var(--text);
-      min-height: 300px;
-    }
-    ```
-
-    **MessageComposer.svelte (lines 33-53):**
-    ```css
-    .message-input {
-      width: 100%;
-      padding: 0.5rem;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: var(--surface-2);
-      color: var(--text);
-      font-family: system-ui, -apple-system, sans-serif;
-      font-size: 0.9rem;
-      resize: vertical;
-      min-height: 60px;
-    }
-
-    .message-input:focus {
-      outline: none;
-      border-color: #2ecc71;
-    }
-
-    .message-input:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    ```
-
-    **ServersPanel.svelte (lines 11-13):**
-    ```css
-    textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; }
-    input[type="text"], select { width: 100%; }
-    ```
-
-    **GlobalApprovalsList.svelte (lines 175-181):**
-    ```css
-    .modal-content textarea {
-      width: 100%;
-      padding: 0.5rem;
-      border: 1px solid var(--border, #ddd);
-      border-radius: 4px;
-      font-family: inherit;
-      resize: vertical;
-    }
-    ```
+    - PolicyEditorPane.svelte (lines 49-61)
+    - MessageComposer.svelte (lines 33-53)
+    - ServersPanel.svelte (lines 11-13)
+    - GlobalApprovalsList.svelte (lines 175-181)
 
     **6. Typography (headings)**
 
     h3 and h4 heading styles repeated with slight variations.
 
-    **GlobalApprovalsList.svelte (lines 9-17):**
-    ```css
-    h3 {
-      margin: 0 0 1rem 0;
-      font-size: 1.25rem;
-    }
-
-    h4 {
-      margin: 0.5rem 0;
-      font-size: 1rem;
-      color: var(--text-primary, #333);
-    }
-    ```
-
-    **PolicyEditorPane.svelte (lines 8-23):**
-    ```css
-    h3 {
-      margin: 0 0 1rem 0;
-      font-size: 1.1rem;
-      color: var(--text);
-    }
-
-    h4 {
-      margin: 0.5rem 0 0.5rem 0;
-      font-size: 0.95rem;
-      color: var(--text);
-    }
-
-    h4 small {
-      color: var(--muted);
-      font-weight: normal;
-    }
-    ```
-
-    **MessageComposer.svelte (lines 15-18):**
-    ```css
-    h4 {
-      margin: 0;
-      font-size: 0.9rem;
-      color: var(--text);
-    }
-    ```
+    - GlobalApprovalsList.svelte (lines 9-17)
+    - PolicyEditorPane.svelte (lines 8-23)
+    - MessageComposer.svelte (lines 15-18)
 
     **7. Monospace font stack**
 
     The same long font-family chain for monospace appears in multiple places.
 
-    **AgentsSidebar.svelte (line 335):**
-    ```css
-    .agent-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; }
-    ```
-
-    **ServersPanel.svelte (lines 11, 27, 35, 43):**
-    ```css
-    textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; }
-    .server-name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; font-weight: 500; }
-    .tool-name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.8rem; }
-    .tool-description { color: #555; font-size: 0.8rem; margin: 0 0 0.5rem 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
-    .pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; }
-    ```
-
-    **PolicyEditorPane.svelte (line 51):**
-    ```css
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-    ```
+    - AgentsSidebar.svelte (line 335)
+    - ServersPanel.svelte (lines 11, 27, 35, 43)
+    - PolicyEditorPane.svelte (line 51)
 
     **8. Status indicators (.empty, .loading, .muted text)**
 
     Repeated muted/empty/status text styling.
 
-    **GlobalApprovalsList.svelte (line 19):**
-    ```css
-    .status, .empty {
-      color: var(--muted, #666);
-      font-style: italic;
-    }
-    ```
-
-    **ChatPane.svelte (line 7):**
-    ```css
-    .empty { color: var(--muted); }
-    ```
-
-    **ServersPanel.svelte (lines 15, 47):**
-    ```css
-    .note { color: var(--muted); font-size: 0.85rem; }
-    .empty { color: var(--muted); }
-    ```
-
-    **PolicyEditorPane.svelte (lines 25-32):**
-    ```css
-    .loading,
-    .error,
-    .empty {
-      padding: 0.5rem;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-
-    .error {
-      color: #b00020;
-    }
-    ```
+    - GlobalApprovalsList.svelte (line 19)
+    - ChatPane.svelte (line 7)
+    - ServersPanel.svelte (lines 15, 47)
+    - PolicyEditorPane.svelte (lines 25-32)
 
     **Why this is problematic:**
 
@@ -269,129 +99,9 @@ I.issueWithOccurrences(
 
     **Option 1: Dedicated CSS file with utility classes**
 
-    Create `src/adgn/agent/web/src/styles/components.css`:
-
-    ```css
-    /* Buttons */
-    .btn {
-      padding: 0.5rem 1rem;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      cursor: pointer;
-      font-size: 0.9rem;
-      background: var(--surface-2);
-      color: var(--text);
-    }
-
-    .btn:hover:not(:disabled) {
-      background: var(--surface-3);
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn-primary {
-      background: #007bff;
-      color: white;
-      border-color: #0056b3;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      background: #0056b3;
-    }
-
-    .btn-success {
-      background: #28a745;
-      color: white;
-      border-color: #1e7e34;
-    }
-
-    .btn-success:hover:not(:disabled) {
-      background: #218838;
-    }
-
-    .btn-danger {
-      background: #dc3545;
-      color: white;
-      border-color: #c82333;
-    }
-
-    .btn-danger:hover:not(:disabled) {
-      background: #c82333;
-    }
-
-    .btn-small {
-      font-size: 0.75rem;
-      padding: 0.2rem 0.4rem;
-    }
-
-    /* Error messages */
-    .error {
-      background: #fee;
-      border: 1px solid #fcc;
-      padding: 0.75rem;
-      border-radius: 4px;
-      color: #b00020;
-    }
-
-    /* Badges */
-    .badge {
-      font-size: 0.7rem;
-      padding: 0.05rem 0.3rem;
-      border-radius: 0.5rem;
-      border: 1px solid var(--border);
-      white-space: nowrap;
-    }
-
-    /* Modal components */
-    .modal {
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-    }
-
-    .modal-header {
-      padding: 0.5rem 0.75rem;
-      border-bottom: 1px solid var(--border);
-      font-weight: 600;
-    }
-
-    .modal-body {
-      padding: 0.75rem;
-    }
-
-    .modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.5rem;
-      padding: 0.5rem 0.75rem;
-      border-top: 1px solid var(--border);
-    }
-
-    /* Typography */
-    .font-mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-    }
-
-    .text-muted {
-      color: var(--muted);
-    }
-
-    .text-error {
-      color: #b00020;
-    }
-    ```
-
-    Import in `App.svelte`:
-    ```svelte
-    <script>
-      import './styles/components.css';
-    </script>
-    ```
+    - Create `src/adgn/agent/web/src/styles/components.css`
+    - Implement shared styles for buttons, errors, badges, modals, typography
+    - Import in `App.svelte`
 
     Then use classes directly:
     ```svelte

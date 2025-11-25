@@ -134,20 +134,29 @@ repos:
   #       files: "^llm/adgn_llm/src/adgn_llm/properties/specimens/.*\\.libsonnet$"
   #       args: ["-i"]
 
-  # TODO: Svelte UI typecheck (MiniCodex UI)
-  #- repo: local
-  #  hooks:
-  #    - id: svelte-check
-  #      name: svelte-check (UI)
-  #      language: node
-  #      entry: svelte-check --tsconfig adgn/src/adgn/agent/ui/web/tsconfig.app.json
-  #      files: ^adgn/src/adgn/agent/ui/web/
-  #      pass_filenames: false
-  #      additional_dependencies:
-  #        - svelte@^5.38.1
-  #        - svelte-check@^4.3.1
-  #        - typescript@~5.8.3
-  #        - tsconfig/svelte@^5.0.4
-  #        - dompurify@^3.0.9
-  #        - json-formatter-js@^2.5.1
-  #        - marked@^12.0.2
+  # Svelte/TypeScript checks for MiniCodex UI
+  - repo: local
+    hooks:
+      # ESLint: Import ordering, code quality
+      - id: eslint
+        name: eslint (MiniCodex UI)
+        language: system
+        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run lint -- --fix'
+        files: ^adgn/src/adgn/agent/web/src/.*\.(ts|svelte)$
+        pass_filenames: false
+
+      # Prettier: Code formatting
+      - id: prettier
+        name: prettier (MiniCodex UI)
+        language: system
+        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run format'
+        files: ^adgn/src/adgn/agent/web/src/.*\.(ts|svelte|css)$
+        pass_filenames: false
+
+      # Svelte-check: Type checking
+      - id: svelte-check
+        name: svelte-check (MiniCodex UI)
+        language: system
+        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run check'
+        files: ^adgn/src/adgn/agent/web/
+        pass_filenames: false

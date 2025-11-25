@@ -15,77 +15,27 @@ I.issueWithOccurrences(
     immediately after the opening `<script>` tag. Imports scattered throughout the
     file make dependencies harder to track and violate linter expectations.
 
-    **AgentsSidebar.svelte (lines 34-35):**
-    ```typescript
-    // ... other imports at lines 1-13 ...
-
-    // Local state for agents from MCP
-
-    // Modal state for preset selection
-
-    // Restore scroll position
-    import { onMount, onDestroy } from 'svelte'
-    ```
+    ## AgentsSidebar.svelte (lines 34-35)
 
     The `import { onMount, onDestroy }` appears on line 35, after comments and far
     below the other imports (lines 2-13). It should be at the top with other imports.
 
-    **ApprovalsPanel.svelte (lines 26-27, 32):**
-    ```typescript
-    // ... imports at lines 1-3 ...
-
-    // Callbacks provided by parent
-
-    // Syntax highlighting for current policy (Python)
-    import hljs from 'highlight.js/lib/common'
-
-    // ... code ...
-
-    import ProposalCard from './ProposalCard.svelte'
-
-    // Split proposals into open and past for display
-    ```
+    ## ApprovalsPanel.svelte (lines 26-27, 32)
 
     Two imports (hljs at line 27, ProposalCard at line 32) appear after comments
     and code, not at the top of the script block.
 
-    **JsonDisclosure.svelte (line 11):**
-    ```typescript
-    <script lang="ts">
-      // @ts-ignore - library ships no types
-      import JSONFormatter from 'json-formatter-js'
-
-      // ... several lines of code/declarations ...
-
-      import { onMount } from 'svelte'
-    ```
+    ## JsonDisclosure.svelte (line 11)
 
     The `onMount` import appears on line 11, after other imports and declarations.
     Should be grouped with the JSONFormatter import at the top.
 
-    **ToolJson.svelte (lines 24-25):**
-    ```typescript
-    // ... imports at lines 1-3 ...
-
-    // ... component code ...
-
-    // Prefer structured_content when present (FastMCP CallToolResult)
-    import { z } from 'zod'
-    ```
+    ## ToolJson.svelte (lines 24-25)
 
     The `zod` import appears on line 25, after comments and component logic. Should
     be at the top with other imports.
 
-    **ServersPanel.svelte (lines 18-20):**
-    ```typescript
-    // ... imports at lines 1-9 ...
-
-    // Info modal state
-
-    // Collapsible JSON view action
-    // @ts-ignore - library ships no types
-    import JSONFormatter from 'json-formatter-js'
-    ```
+    ## ServersPanel.svelte (lines 18-20)
 
     The JSONFormatter import appears on line 20, after comments and state declarations.
     Should be at the top with other imports (lines 1-9).
