@@ -139,8 +139,6 @@ Present facts and technical rationale, not opinions or attributed suggestions.
 
 ### 5. Jsonnet Issue File Template
 
-**IMPORTANT**: Keep comments MINIMAL. Use only a one-line title comment. All details belong in the structured fields (`rationale`, `properties`, `filesToRanges`).
-
 **IMPORTANT**: Do NOT include long code blocks in rationale. Readers have specimen code open - cite file paths and line ranges, briefly summarize what's there. Long code citations bloat issue files unnecessarily.
 
 **Code citation guidelines:**
@@ -153,8 +151,6 @@ Present facts and technical rationale, not opinions or attributed suggestions.
 ```jsonnet
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-NNN: Brief one-line title
-
 I.issueOneOccurrence(
   rationale=|||
     Full explanation of the problem.
@@ -163,14 +159,13 @@ I.issueOneOccurrence(
     Cite file:line ranges, briefly summarize patterns.
 
     Do NOT paste long code blocks - reader has specimen open.
-    All context, properties violated, fix recommendations go HERE,
-    not in top-of-file comment blocks.
+    All context, properties violated, fix recommendations go in rationale.
   |||,
   properties=['property-id', 'category/property-id'],
   filesToRanges={
     'path/to/file.py': [
-      123,              // Single line with brief context
-      [200, 210],       // Range with brief note
+      123,              // Brief context (when needed)
+      [200, 210],       // Brief note (when needed)
     ],
     'other/file.py': [
       [45, 50],         // Multiple locations OK
@@ -182,35 +177,36 @@ I.issueOneOccurrence(
 )
 ```
 
-### 4. Comments: What's Allowed vs Duplication
+### 6. Comments: Use Sparingly
 
-**✅ ALLOWED - Inline comments at line ranges:**
+**Ideal: Zero comments.** All information should go in structured fields (`rationale`, `properties`, `filesToRanges`, `gap_note`).
+
+**When to use comments (rare cases):**
+- Uncertainty about proper issue categorization
+- Historical context on how issue arose (if not suitable for rationale)
+- Temporary notes during specimen authoring
+- Clarification that doesn't fit structured format
+
+**✅ Acceptable inline comments at line ranges:**
 ```jsonnet
 filesToRanges={
   'foo.py': [
-    [86, 89],   // --mcp-config: silent fallback
-    [92, 93],   // --initial-policy: same pattern
+    [86, 89],   // --mcp-config flag parsing
+    [92, 93],   // --initial-policy flag
   ],
 }
 ```
-These are brief labels helping locate code quickly. Not duplication.
+Brief labels for code location context only.
 
-**❌ FORBIDDEN - Large top-of-file comment blocks:**
+**❌ FORBIDDEN - Comments duplicating structured fields:**
 ```jsonnet
-// Context:
-// - User provides --mcp-config path
-// - Code checks if file exists
-// - If not: silently falls back without error
-//
-// Properties violated:
-// 1. truthfulness: Silent failure masks error
-// 2. no-swallowing-errors: Error ignored
-//
+// Problem: Silent fallback without error
+// Properties: truthfulness, no-swallowing-errors
 // Fix: Remove exists() check or raise error
 ```
-This duplicates the `rationale` field. **Delete these blocks.**
+This information belongs in `rationale`, not comments. **Delete such blocks.**
 
-**Rule**: If information appears in structured fields (`rationale`, `properties`, `gap_note`), do NOT repeat it in comments.
+**Rule**: If information can go in a structured field, it MUST go there, not in comments.
 
 ### 5. When to Use GAP Notes
 
