@@ -1,0 +1,10 @@
+source:
+  vcs: git
+  url: file://../specimens.bundle
+  ref: refs/tags/specimen-2025-11-22-post-fixes
+scope:
+  include:
+    - "adgn/**/*.py"
+bundle:
+  include:
+    - adgn/

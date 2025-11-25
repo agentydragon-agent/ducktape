@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from adgn.props.cli_app.main import app
 
-SPECIMEN_NAME = "2025-09-02-ducktape_wt"
+SPECIMEN_NAME = "ducktape/2025-11-20-adgn"
 
 
 def _extract_saved_prompt_path(stdout: str) -> Path:

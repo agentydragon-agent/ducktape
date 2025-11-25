@@ -19,19 +19,18 @@ class Split(StrEnum):
 
 # Explicit train/valid/test assignment for each specimen
 # Format: specimen_slug -> split_name
-# Total: 304 issues across 9 specimens
-# Constraint: valid and test must each have >=60 issues
+# Total: 282 issues across 8 specimens (hierarchical specimens only)
+# Note: Flat specimen 2025-08-29-pyright_watch_report excluded until migrated
 SPECIMEN_SPLITS: dict[str, Split] = {
-    # Train set (157 issues, 51.6%)
+    # Train set: 157 issues
     "ducktape/2025-09-03-llm": Split.TRAIN,  # 71 issues
     "ducktape/2025-11-20-adgn": Split.TRAIN,  # 45 issues
     "crush/2025-08-30-internal_db": Split.TRAIN,  # 41 issues
-    # Validation set (79 issues, 26.0%)
+    # Validation set: 57 issues
     "ducktape/2025-11-21-repo": Split.VALID,  # 39 issues
-    "2025-08-29-pyright_watch_report": Split.VALID,  # 20 issues
     "ducktape/2025-11-22-repo": Split.VALID,  # 17 issues
-    "2025-11-22-post-fixes": Split.VALID,  # 3 issues
-    # Test set (68 issues, 22.4%)
+    "ducktape/2025-11-22-post-fixes": Split.VALID,  # 1 issue
+    # Test set: 68 issues
     "ducktape/2025-11-22-repo-2": Split.TEST,  # 37 issues
     "ducktape/2025-11-20-repo": Split.TEST,  # 31 issues
 }
