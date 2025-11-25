@@ -4,7 +4,7 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueOneOccurrence(
   rationale= |||
-    Two unrelated issues:
+    Three related issues with dead parameters and misleading documentation:
 
     **Problem 1: Misleading comment about dependencies**
 
@@ -144,10 +144,70 @@ I.issueOneOccurrence(
     # Update all call sites to remove the unused arguments
     ```
 
+    **Problem 3: More dead parameters in build_handlers()**
+
+    The `build_handlers()` function declares `approval_engine`, `approval_hub`, and
+    `agent_id` parameters but never uses them.
+
+    **Current implementation (handlers.py, lines 19-42):**
+    ```python
+    def build_handlers(
+        *,
+        poll_notifications: Callable[[], NotificationsBatch],
+        manager: ConnectionManager,
+        persistence: Persistence,
+        approval_engine: ApprovalPolicyEngine,  # ← Not used
+        approval_hub: ApprovalHub,              # ← Not used
+        get_run_id: Callable[[], UUID | None],
+        agent_id: AgentID,                      # ← Not used
+        ui_bus: ServerBus | None = None,
+    ) -> tuple[list[BaseHandler], RunPersistenceHandler]:
+        """Construct the standard handler stack for an agent."""
+        persist_handler = RunPersistenceHandler(persistence=persistence, get_run_id=get_run_id)
+        handlers: list[BaseHandler] = [manager, persist_handler]
+        if ui_bus is not None:
+            handlers.extend([
+                ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications),
+                DisplayEventsHandler()
+            ])
+        else:
+            handlers.append(NotificationsHandler(poll_notifications))
+        return handlers, persist_handler
+    ```
+
+    Only `poll_notifications`, `manager`, `persistence`, `get_run_id`, and `ui_bus`
+    are actually used.
+
+    **The correct approach:**
+
+    Remove unused parameters:
+    ```python
+    def build_handlers(
+        *,
+        poll_notifications: Callable[[], NotificationsBatch],
+        manager: ConnectionManager,
+        persistence: Persistence,
+        get_run_id: Callable[[], UUID | None],
+        ui_bus: ServerBus | None = None,
+    ) -> tuple[list[BaseHandler], RunPersistenceHandler]:
+        """Construct the standard handler stack for an agent."""
+        persist_handler = RunPersistenceHandler(persistence=persistence, get_run_id=get_run_id)
+        handlers: list[BaseHandler] = [manager, persist_handler]
+        if ui_bus is not None:
+            handlers.extend([
+                ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications),
+                DisplayEventsHandler()
+            ])
+        else:
+            handlers.append(NotificationsHandler(poll_notifications))
+        return handlers, persist_handler
+    ```
+
     **Summary:**
 
     1. Clarify shim.py comment: "shim is stdlib-only, policies can use adgn"
     2. Remove unused `agent_id`, `persistence`, `docker_client` from `attach_default_servers()`
+    3. Remove unused `approval_engine`, `approval_hub`, `agent_id` from `build_handlers()`
   |||,
   properties=['accurate-documentation', 'remove-dead-code'],
   filesToRanges={
@@ -156,6 +216,9 @@ I.issueOneOccurrence(
     ],
     'adgn/src/adgn/agent/runtime/auto_attach.py': [
       [40, 42],  // Dead parameters: agent_id, persistence, docker_client
+    ],
+    'adgn/src/adgn/agent/runtime/handlers.py': [
+      [19, 31],  // Dead parameters: approval_engine, approval_hub, agent_id
     ],
   },
   gap_note= |||
