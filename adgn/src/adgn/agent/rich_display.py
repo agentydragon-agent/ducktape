@@ -168,10 +168,9 @@ class RichDisplayHandler(BaseHandler):
         Prepends prefix to title.
         """
         style = f"bold {color}" if bold else color
-        # Incorporate prefix into title, escaping Rich markup brackets
-        escaped_prefix = self._prefix.replace("[", "[[").replace("]", "]]") if self._prefix else ""
-        full_title = f"{escaped_prefix}{title}"
-        formatted_title = f"[{style}]{full_title}[/{style}]"
+        # Incorporate prefix into title as a Text object (no markup interpretation)
+        full_title = f"{self._prefix}{title}" if self._prefix else title
+        formatted_title = Text(full_title, style=style)
 
         # Wrap content with MaxHeight to enforce limit without padding
         constrained_content = MaxHeight(content, self._max_lines)
