@@ -20,11 +20,13 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **014**: Multiple simplification opportunities in _run_editor_flow (textwrap.indent, inline vars, extract scissors parsing)
 - **015**: Spawning subprocess to get GIT_EDITOR instead of using pygit2 config API (_get_editor)
 - **016**: Logging configuration in backend function instead of main (generate_commit_message_minicodex)
+- **017**: Redundant "Default: no-op" comments in hook methods (BaseHandler, 6 occurrences)
 
 ## Scope
 
 Python code in `adgn/src/adgn/` including:
 - `git_commit_ai/` - AI-powered commit message generation
 - `mcp/git_ro/` - Read-only Git MCP server
+- `agent/` - MiniCodex agent framework
 
 See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations.
