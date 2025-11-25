@@ -24,14 +24,22 @@ I.issueOneOccurrence(
     - CLI: `_stage_all_if_requested()` (line 524)
     - CLI: `prepare_commit_msg()` (line 698)
 
+    **Similar pattern for --amend flag (cli.py, line 672):**
+    ```python
+    is_amend = "--amend" in passthru
+    ```
+    This manual parsing should also be replaced with an explicit CLI argument.
+
     **Problems:**
 
     1. **Fragile parsing**: String-in-list checking doesn't handle edge cases like
        `--all=false`, `-aV`, or other flag combinations correctly
     2. **Unclear interface**: Functions accept a generic `passthru: list[str]` but
-       only care about one specific flag
+       only care about specific flags
     3. **Coupling**: Core logic couples to CLI argument parsing conventions
     4. **Type safety**: Can't type-check or document that "passthru should contain -a/--all"
+    5. **Inconsistency**: Different flags handled with different patterns (some parsed
+       inline like `--amend`, some via helper functions like `-a`)
 
     **The correct approach:**
 
@@ -72,6 +80,7 @@ I.issueOneOccurrence(
       [145, 145], // _format_amend_comparison: using passthru
       [153, 153], // _get_diff_to_commit: using passthru
       [524, 524], // _stage_all_if_requested: using passthru
+      [672, 672], // is_amend = "--amend" in passthru: inline flag parsing
       [698, 698], // prepare_commit_msg: using passthru
     ],
   },

@@ -83,6 +83,9 @@ I.issueOneOccurrence(
       [55, 55],   // "# -------------" - separator with no content
       [58, 58],   // "# ---------- constants" - restates obvious
       [176, 176], // "# Core logic" - vague and useless
+      [680, 680], // "# Stage if requested" - restates obvious
+      [683, 683], // "# Get previous commit message if amending" - restates obvious
+      [687, 687], // "# Check if there's truly nothing to commit" - restates obvious
     ],
   },
   gap_note= |||
