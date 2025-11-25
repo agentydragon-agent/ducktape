@@ -32,6 +32,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **026**: Duplicated notification data and redundant data structures (NotificationsBatch stores raw+parsed, NotificationsForModel duplicates NotificationsBatch)
 - **027**: Manual dictionary parsing instead of Pydantic discriminated unions (parse_event with if-elif chains)
 - **028**: SQLAlchemy and database quality issues (inline comments vs comment=, raw SQL vs ORM, walrus opportunities, useless comments)
+- **029**: ContainerPolicyEvaluator should be dataclass and remove redundant checks (manual __init__, if not agent_id, inline payload, model_dump, useless comment)
 
 ## Scope
 
