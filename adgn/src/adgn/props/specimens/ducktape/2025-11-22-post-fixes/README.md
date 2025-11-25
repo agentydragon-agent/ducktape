@@ -34,6 +34,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **028**: SQLAlchemy and database quality issues (inline comments vs comment=, raw SQL vs ORM, walrus opportunities, useless comments)
 - **029**: ContainerPolicyEvaluator should be dataclass and remove redundant checks (manual __init__, if not agent_id, inline payload, model_dump, useless comment)
 - **030**: Inconsistent policy evaluation API layers and dict middle ground (input_payload: dict, runner.py/container.py split, manual Pydantic→dict conversion)
+- **031**: Redundant variables and manual JSON parsing in runner.py (client rename, inline cmd/env, model_validate_json, splitlines[-1] constraint)
 
 ## Scope
 
