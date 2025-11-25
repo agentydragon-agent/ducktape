@@ -1,366 +1,335 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-046: GlobalApprovalsList manual JSON parsing should use Zod from Pydantic
+// iss-050: ApprovalTimeline subscribes to unimplemented WebSocket endpoint
 
 I.issueOneOccurrence(
   rationale= |||
-    The `GlobalApprovalsList.svelte` component uses manual `JSON.parse()` to parse
-    tool call arguments instead of using Zod schemas that could be generated from
-    the backend Pydantic models (like `ToolCall`).
+    The `ApprovalTimeline.svelte` component attempts to subscribe to a WebSocket
+    endpoint (`/ws/approvals`) that doesn't exist in the backend, resulting in
+    non-functional live updates.
 
-    **Problem: Manual JSON parsing without validation**
+    **Problem: Frontend subscribes to non-existent endpoint**
 
-    **Current implementation (GlobalApprovalsList.svelte, lines 29-36):**
+    **Current implementation (ApprovalTimeline.svelte, lines 54-61):**
     ```typescript
-    /**
-     * Parse tool call args_json to object
-     */
-    function parseArgs(argsJson: string | null): Record<string, unknown> {
-      if (!argsJson) return {}
+    function subscribeToUpdates() {
+      if (!agentId) return
+
       try {
-        return JSON.parse(argsJson)
-      } catch {
-        return {}  // Silent failure, returns empty object
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        const wsUrl = `${protocol}//${window.location.host}/ws/approvals?agent_id=${encodeURIComponent(agentId)}`
+
+        ws = new WebSocket(wsUrl)
+        // ... message handlers
+      } catch (e) {
+        console.error('Failed to create WebSocket:', e)
       }
     }
     ```
 
-    **Also in fetchApprovals (lines 115-121):**
+    **Expected WebSocket messages (lines 64-87):**
     ```typescript
-    try {
-      const data = JSON.parse(block.text)
-      parsedApprovals.push({
-        agent_id: data.agent_id,
-        tool_call: data.tool_call,
-        timestamp: data.timestamp
-      })
-    } catch (parseError) {
-      console.error('Failed to parse approval block:', parseError, block)
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data)
+
+      // Handle approval decision messages
+      if (msg.type === 'approval_decision') {
+        const entry: ApprovalHistoryEntry = {
+          tool_call: { name: msg.tool || msg.tool_key || 'unknown', ... },
+          outcome: msg.outcome,
+          reason: msg.reason || null,
+          timestamp: new Date().toISOString()
+        }
+        timeline = [entry, ...timeline]
+      }
+
+      // Handle history snapshot messages
+      if (msg.type === 'approvals_snapshot' && msg.timeline) {
+        timeline = msg.timeline
+      }
     }
     ```
+
+    **Backend status (app.py):**
+    ```python
+    ## WebSocket message models moved to ws.py
+    # TODO: Register websocket routes (placeholder)
+    ```
+
+    The WebSocket routes are not registered. The `/ws/approvals` endpoint doesn't exist.
 
     **Why this is problematic:**
 
-    1. **No validation**: `JSON.parse()` accepts any valid JSON, doesn't check structure
-    2. **Silent failures**: `parseArgs` returns `{}` on error, losing information
-    3. **Type unsafe**: `Record<string, unknown>` doesn't match actual shape
-    4. **No schema checking**: Can't detect missing/extra fields
-    5. **Duplication**: Backend has `ToolCall` Pydantic model, frontend has manual parsing
+    1. **Non-functional feature**: Component appears to work but doesn't receive updates
+    2. **Silent failure**: WebSocket connection fails, no user feedback
+    3. **Misleading UX**: UI suggests live updates work when they don't
+    4. **Wasted resources**: Attempts connection that always fails
+    5. **Incomplete implementation**: Frontend built for feature backend doesn't provide
 
-    **Backend has Pydantic models (types.py, lines 20-25):**
+    **The correct approach depends on intent:**
+
+    **Option 1: Implement the backend (if feature is needed)**
+
+    Add WebSocket endpoint for approval timeline updates:
+
     ```python
-    class ToolCall(BaseModel):
-        """Tool call information (simple version without discriminator)."""
+    # In app.py or ws.py:
+    from fastapi import WebSocket
 
-        name: str = Field(description="Tool name")
-        call_id: str = Field(description="Unique call identifier")
-        args_json: str | None = Field(None, description="Tool arguments as JSON string")
+    @app.websocket("/ws/approvals")
+    async def approvals_websocket(websocket: WebSocket, agent_id: str):
+        await websocket.accept()
+
+        try:
+            # Send initial snapshot
+            timeline = await get_approval_timeline(agent_id)
+            await websocket.send_json({
+                "type": "approvals_snapshot",
+                "timeline": [entry.model_dump() for entry in timeline]
+            })
+
+            # Subscribe to approval events
+            async for event in approval_events(agent_id):
+                if event.type == "approval_decision":
+                    await websocket.send_json({
+                        "type": "approval_decision",
+                        "call_id": event.call_id,
+                        "tool": event.tool_name,
+                        "outcome": event.outcome,
+                        "reason": event.reason,
+                        "timestamp": event.timestamp.isoformat()
+                    })
+
+        except WebSocketDisconnect:
+            pass
+        finally:
+            # Cleanup subscription
+            pass
     ```
 
-    **The correct approach: Use Zod generated from Pydantic**
+    **Option 2: Remove WebSocket code (if not implementing)**
 
-    **1. Generate Zod schema from Pydantic model:**
-
-    Tools like `pydantic-to-typescript` or custom scripts can generate both TypeScript
-    types and Zod schemas from Pydantic models.
+    If WebSocket endpoint won't be implemented soon, remove the dead code:
 
     ```typescript
-    // Generated from Pydantic ToolCall model
-    import { z } from 'zod'
+    // Remove subscribeToUpdates() and WebSocket code
+    // Use polling instead:
 
-    export const ToolCallSchema = z.object({
-      name: z.string(),
-      call_id: z.string(),
-      args_json: z.string().nullable()
+    let refreshInterval: number | null = null
+
+    onMount(() => {
+      fetchTimeline()  // Initial fetch
+      refreshInterval = window.setInterval(fetchTimeline, 5000)  // Poll every 5s
     })
 
-    export type ToolCall = z.infer<typeof ToolCallSchema>
-
-    export const PendingApprovalSchema = z.object({
-      agent_id: z.string(),
-      tool_call: ToolCallSchema,
-      timestamp: z.string()
+    onDestroy(() => {
+      if (refreshInterval) {
+        window.clearInterval(refreshInterval)
+      }
     })
-
-    export type PendingApproval = z.infer<typeof PendingApprovalSchema>
     ```
 
-    **2. Use Zod for parsing:**
+    **Option 3: Use MCP subscriptions (architectural fit)**
+
+    Instead of custom WebSocket endpoint, use MCP resource subscriptions:
 
     ```typescript
-    import { ToolCallSchema, PendingApprovalSchema } from '../generated/schemas'
+    import { mcpClient } from '../stores/mcp-client'
+    import { subscribeToResource } from '../features/mcp/client'
 
-    /**
-     * Parse tool call args_json with validation
-     */
-    function parseArgs(argsJson: string | null): Record<string, unknown> | null {
-      if (!argsJson) return null
+    async function subscribeToTimeline() {
+      const client = get(mcpClient)
+      if (!client) return
 
-      try {
-        // Parse JSON first
-        const parsed = JSON.parse(argsJson)
-        // Could add schema validation here if we have ArgSchema
-        return parsed
-      } catch (error) {
-        console.error('Failed to parse tool args:', error)
-        return null  // Return null instead of empty object to signal failure
-      }
+      // Subscribe to approval timeline resource
+      await subscribeToResource(client, `resources://approvals/${agentId}/timeline`)
+
+      // Resource updates will trigger refresh
+      // (Handled by MCP client store)
     }
 
-    /**
-     * Parse approval block with Zod validation
-     */
-    function parseApprovalBlock(text: string): PendingApproval & { agent_id: string } | null {
-      try {
-        const data = JSON.parse(text)
-        // Validate with Zod
-        const validated = PendingApprovalSchema.parse(data)
-        return validated
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          console.error('Invalid approval schema:', error.errors)
-        } else {
-          console.error('Failed to parse approval:', error)
-        }
-        return null
-      }
-    }
-
-    // In fetchApprovals:
-    for (const block of contents) {
-      if ('text' in block && block.mimeType === 'application/json') {
-        const approval = parseApprovalBlock(block.text)
-        if (approval) {
-          parsedApprovals.push(approval)
-        }
-      }
-    }
+    onMount(() => {
+      subscribeToTimeline()
+    })
     ```
 
-    **Benefits of Zod validation:**
+    This fits the 2-level compositor architecture better than custom WebSocket.
 
-    1. **Type safety**: Schema matches backend Pydantic model exactly
-    2. **Runtime validation**: Catches malformed data from backend
-    3. **Better errors**: Zod provides detailed validation errors
-    4. **No silent failures**: Explicitly handle validation errors
-    5. **Single source of truth**: Backend Pydantic → Frontend Zod
-    6. **Catch backend changes**: If backend changes model, validation fails
+    **Current silent failure behavior:**
 
-    **User's note: "parsing tool calls should use zod copied from json side
-    pydantic (possibly ToolCall?)"**
+    The component handles WebSocket errors but doesn't inform the user:
 
-    Yes, the backend has `ToolCall` Pydantic model in `agent/types.py`. The frontend
-    should use a Zod schema generated from this model instead of manual parsing.
-
-    **Workflow for Pydantic → Zod:**
-
-    A type generator script already exists (see commit 7c6cae7ad on branch
-    `claude/review-frontend-http-audit-...`): `adgn/scripts/generate_types.py`
-
-    This script generates TypeScript interfaces from Pydantic models. To also generate
-    Zod schemas, the script would need extension:
-
-    1. Current: Pydantic → JSON Schema → TypeScript interfaces
-    2. Needed: Pydantic → JSON Schema → TypeScript interfaces + Zod schemas
-
-    Tools for Zod generation:
-    - `json-schema-to-zod` (npm package)
-    - Extend `generate_types.py` to also output Zod schemas
-
-    Usage (after Zod support added):
+    **Lines 92-98:**
     ```typescript
-    import { ToolCallSchema } from '../generated/schemas'
-    const toolCall = ToolCallSchema.parse(data)
+    ws.onerror = () => {
+      console.warn('WebSocket error for approval timeline')  // Silent
+    }
+
+    ws.onclose = () => {
+      console.log('WebSocket closed for approval timeline')  // Silent
+    }
     ```
 
-    **Example: Comprehensive parsing with Zod**
+    Users have no indication that live updates aren't working.
+
+    **Better error handling if keeping WebSocket:**
 
     ```typescript
-    import { z } from 'zod'
-
-    // Generated from backend Pydantic models
-    const ToolCallSchema = z.object({
-      name: z.string(),
-      call_id: z.string(),
-      args_json: z.string().nullable().optional()
-    })
-
-    const ApprovalBlockSchema = z.object({
-      agent_id: z.string(),
-      tool_call: ToolCallSchema,
-      timestamp: z.string().datetime()
-    })
-
-    type ApprovalBlock = z.infer<typeof ApprovalBlockSchema>
-
-    function parseApprovalSafely(text: string): ApprovalBlock | null {
-      try {
-        const json = JSON.parse(text)
-        return ApprovalBlockSchema.parse(json)
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          console.error('Approval validation failed:', {
-            issues: error.issues,
-            data: text
-          })
-        } else if (error instanceof SyntaxError) {
-          console.error('Invalid JSON:', text)
-        } else {
-          console.error('Unexpected error:', error)
-        }
-        return null
-      }
+    ws.onerror = () => {
+      console.error('WebSocket connection failed')
+      // Show user feedback
+      error = 'Live updates unavailable. Timeline will not auto-refresh.'
+      // Or fall back to polling
+      startPolling()
     }
 
-    // Usage:
-    const approval = parseApprovalSafely(block.text)
-    if (approval) {
-      parsedApprovals.push(approval)
-    } else {
-      // Handle invalid data explicitly
-      metrics.increment('approvals.parse_error')
+    ws.onclose = (event) => {
+      if (!event.wasClean) {
+        console.warn('WebSocket closed unexpectedly')
+        // Attempt reconnect or show error
+      }
     }
     ```
 
-    **Why manual parsing happened:**
+    **User's instruction: "ApprovalTimeline subscribes to a websockets. check if
+    it's implemented. if it isn't, upsert issue."**
 
-    1. Pydantic models existed in backend
-    2. Frontend types manually created (duplicating structure)
-    3. No automated Pydantic → TypeScript/Zod generation
-    4. Quick fix: manual `JSON.parse()` instead of proper validation
+    **Status:** WebSocket endpoint `/ws/approvals` is **not implemented**. Backend
+    has TODO placeholder but no actual endpoint.
 
-    **Migration steps:**
+    **Recommendation:**
 
-    1. Set up Pydantic → JSON Schema export
-    2. Generate Zod schemas from JSON Schema
-    3. Replace manual parsing with Zod validation
-    4. Add error handling for validation failures
-    5. Consider metrics/logging for parse errors
+    1. **Short term**: Remove WebSocket code, use polling or MCP subscriptions
+    2. **Long term**: If WebSocket is needed, implement backend endpoint
+    3. **Best**: Use MCP resource subscriptions (fits architecture)
+
+    **Why this happened:**
+
+    1. Frontend component built expecting WebSocket endpoint
+    2. Backend WebSocket routes marked as TODO
+    3. Feature left partially implemented
+    4. No error surfaced to user or developers
+    5. Component appears functional but isn't
+
+    **Similar issues:**
+
+    - GlobalApprovalsList expects `/api/mcp` endpoint that may not exist (issue 047)
+    - Multiple components assume backend features not yet implemented
+    - Silent failures hide incomplete implementation
   |||,
-  properties=['use-platform-primitives', 'schema-validation', 'avoid-manual-parsing', 'type-safe-apis'],
+  properties=['remove-incomplete-features', 'no-swallowing-errors', 'provide-user-feedback', 'implement-or-remove'],
   filesToRanges={
-    'adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte': [
-      [29, 36],    // parseArgs manual JSON.parse
-      [115, 121],  // Manual parsing in fetchApprovals
+    'adgn/src/adgn/agent/web/src/components/ApprovalTimeline.svelte': [
+      [54, 61],   // WebSocket subscription to non-existent endpoint
+      [92, 98],   // Silent error/close handlers
+    ],
+    'adgn/src/adgn/agent/server/app.py': [
+      [1, 1],     // TODO placeholder for WebSocket routes (actual line varies)
     ],
   },
   gap_note= |||
-    This finding illustrates **"schema-validation"**: when parsing data from external
-    sources (backend API, user input, files), use schema validation (Zod, Yup, etc.)
-    instead of manual parsing.
+    This finding illustrates **"implement-or-remove"**: features that appear
+    functional but depend on unimplemented backend endpoints should either be
+    completed or removed.
 
-    Principle: Validate at boundaries
-    - API responses: validate with schemas
-    - User input: validate before use
-    - Config files: validate on load
-    - Messages: validate before processing
+    Principle: No half-implemented features
+    - If backend doesn't support it, don't ship frontend
+    - If frontend exists, backend must support it
+    - If incomplete, remove until ready
+    - Don't leave broken features that silently fail
 
-    Related to **"use-platform-primitives"**: Zod is the TypeScript standard for
-    runtime validation. Use it instead of manual `try/catch` around `JSON.parse()`.
+    Related to **"remove-incomplete-features"**: code that doesn't work and won't
+    work without significant backend changes should be removed.
 
-    Related to **"type-safe-apis"**: Backend Pydantic models should generate
-    frontend types and schemas, ensuring consistency.
+    Related to **"no-swallowing-errors"**: when WebSocket connection fails, user
+    should know. Don't log and continue as if everything is fine.
 
-    Why schema validation matters:
+    Why half-implemented features are harmful:
 
-    **Without validation (manual parsing):**
+    **User confusion:**
+    - Feature appears to exist but doesn't work
+    - No feedback about why it's not working
+    - Users assume bug in their setup
+
+    **Developer confusion:**
+    - New developers don't know feature is incomplete
+    - Unclear if feature ever worked
+    - Wastes time debugging non-existent backend
+
+    **Technical debt:**
+    - Frontend code depends on backend that doesn't exist
+    - Can't delete "TODO" backend code (frontend needs it)
+    - Both sides stuck in limbo
+
+    **Resource waste:**
+    - Connection attempts that always fail
+    - Error handling for errors that always happen
+    - Code maintained but never used
+
+    Correct patterns:
+
+    **Feature flags:**
     ```typescript
-    function parse(json: string) {
-      try {
-        const data = JSON.parse(json)
-        // Hope data has the right shape...
-        return { name: data.name, id: data.id }
-      } catch {
-        return null  // What went wrong? Unknown.
-      }
+    const WEBSOCKET_ENABLED = false  // Set when backend ready
+
+    if (WEBSOCKET_ENABLED) {
+      subscribeToWebSocket()
+    } else {
+      startPolling()
     }
     ```
 
-    Problems:
-    - No validation (accepts any JSON)
-    - Silent coercion (`data.name` might be undefined)
-    - No error details
-    - TypeScript can't help
-
-    **With schema validation (Zod):**
+    **Graceful degradation with user feedback:**
     ```typescript
-    const UserSchema = z.object({
-      name: z.string(),
-      id: z.string().uuid()
-    })
-
-    function parse(json: string) {
-      try {
-        const data = JSON.parse(json)
-        return UserSchema.parse(data)  // Throws if invalid
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          // Detailed validation errors
-          console.error('Validation failed:', error.issues)
-        }
-        return null
-      }
+    try {
+      await subscribeToWebSocket()
+      updateStatus('Live updates enabled')
+    } catch (e) {
+      console.error('WebSocket unavailable:', e)
+      updateStatus('Using polling (live updates unavailable)')
+      startPolling()
     }
     ```
 
-    Benefits:
-    - Runtime validation (catches malformed data)
-    - Detailed errors (know exactly what's wrong)
-    - Type safety (TypeScript knows validated shape)
-    - Documentation (schema is self-documenting)
-
-    **Pydantic → Zod workflow:**
-
-    1. Backend exports Pydantic to JSON Schema
-    2. Tool generates Zod from JSON Schema
-    3. Frontend uses Zod for parsing/validation
-
-    Tools:
-    - **Existing script**: `adgn/scripts/generate_types.py` (commit 7c6cae7ad)
-      Currently generates TypeScript interfaces; needs extension for Zod
-    - Alternative tools: `pydantic-to-typescript`, `json-schema-to-zod`, `datamodel-code-generator`
-
-    **Example generation:**
-
-    ```python
-    # Backend (Python)
-    from pydantic import BaseModel
-
-    class User(BaseModel):
-        name: str
-        email: str
-
-    # Export JSON Schema
-    schema = User.model_json_schema()
-    ```
-
+    **Backend capability detection:**
     ```typescript
-    // Frontend (generated)
-    import { z } from 'zod'
-
-    export const UserSchema = z.object({
-      name: z.string(),
-      email: z.string().email()
-    })
-
-    export type User = z.infer<typeof UserSchema>
-
-    // Usage
-    const user = UserSchema.parse(apiResponse)
+    const capabilities = await fetchCapabilities()
+    if (capabilities.websockets) {
+      subscribeToWebSocket()
+    } else {
+      startPolling()
+    }
     ```
 
-    **When to use Zod:**
+    **Complete removal:**
+    ```typescript
+    // Remove all WebSocket code
+    // Use polling until WebSocket implemented
+    onMount(() => {
+      fetchData()
+      setInterval(fetchData, 5000)
+    })
+    ```
 
-    - Parsing API responses
-    - Validating form input
-    - Loading config files
-    - Processing message queues
-    - Any external/untrusted data
+    When to keep incomplete features:
+    - Clearly marked as experimental
+    - Behind feature flag
+    - Fails loudly with clear error message
+    - Documented what's missing
+    - Plan to complete soon
 
-    **When manual parsing OK:**
+    When to remove:
+    - Silently fails
+    - No plan to implement
+    - Confuses users/developers
+    - Depends on unimplemented backend
+    - No feature flag or warning
 
-    - Internal trusted data (same codebase)
-    - Performance-critical paths (pre-validated)
-    - Schema is trivial (single primitive)
+    Red flags:
+    - "TODO: Implement backend endpoint"
+    - Silent WebSocket error handlers
+    - Features that appear to work but don't
+    - No user feedback when feature unavailable
+    - Connection attempts that always fail
   |||,
 )

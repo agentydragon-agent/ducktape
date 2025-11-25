@@ -1,334 +1,366 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-045: GlobalApprovalsList explicit constructions should use factories with defaults
+// iss-046: GlobalApprovalsList manual JSON parsing should use Zod from Pydantic
 
 I.issueOneOccurrence(
   rationale= |||
-    The `GlobalApprovalsList.svelte` component contains extensive explicit tool and
-    resource constructions that should use factories or helper functions with
-    reasonable default values for cleaner, more maintainable test code.
+    The `GlobalApprovalsList.svelte` component uses manual `JSON.parse()` to parse
+    tool call arguments instead of using Zod schemas that could be generated from
+    the backend Pydantic models (like `ToolCall`).
 
-    **Problem: Verbose explicit constructions without helpers**
+    **Problem: Manual JSON parsing without validation**
 
-    **Current implementation examples (throughout component):**
-
-    **Line 69 - Explicit MCP client creation:**
+    **Current implementation (GlobalApprovalsList.svelte, lines 29-36):**
     ```typescript
-    mcpClient = await createMCPClient({
-      name: 'global-approvals-ui',
-      url: `${window.location.origin}/api/mcp`,
-      token
-    })
+    /**
+     * Parse tool call args_json to object
+     */
+    function parseArgs(argsJson: string | null): Record<string, unknown> {
+      if (!argsJson) return {}
+      try {
+        return JSON.parse(argsJson)
+      } catch {
+        return {}  // Silent failure, returns empty object
+      }
+    }
     ```
 
-    **Line 78 - Explicit resource subscription:**
+    **Also in fetchApprovals (lines 115-121):**
     ```typescript
-    await subscribeToResource(mcpClient, MCPUris.approvalsPendingUri)
-    ```
-
-    **Line 107 - Explicit resource reading:**
-    ```typescript
-    const contents = await readResource(mcpClient, MCPUris.approvalsPendingUri)
-    ```
-
-    **Lines 115-121 - Explicit approval object construction:**
-    ```typescript
-    parsedApprovals.push({
-      agent_id: data.agent_id,
-      tool_call: data.tool_call,
-      timestamp: data.timestamp
-    })
-    ```
-
-    **Lines 138-142 - Explicit tool call:**
-    ```typescript
-    await callTool(mcpClient, 'approve_tool_call', {
-      agent_id: agentId,
-      call_id: callId
-    })
-    ```
-
-    **Lines 175-180 - Another explicit tool call:**
-    ```typescript
-    await callTool(mcpClient, 'reject_tool_call', {
-      agent_id: rejectAgentId,
-      call_id: rejectCallId,
-      reason: rejectReason
-    })
+    try {
+      const data = JSON.parse(block.text)
+      parsedApprovals.push({
+        agent_id: data.agent_id,
+        tool_call: data.tool_call,
+        timestamp: data.timestamp
+      })
+    } catch (parseError) {
+      console.error('Failed to parse approval block:', parseError, block)
+    }
     ```
 
     **Why this is problematic:**
 
-    1. **Verbose boilerplate**: Repeated MCP client creation, tool calls, resource reads
-    2. **No default values**: Every call must specify all parameters
-    3. **Hard to test**: Can't easily mock or stub without recreating full objects
-    4. **Duplication**: Same patterns repeated across component
-    5. **Fragile**: Changes to MCP API require updating many call sites
+    1. **No validation**: `JSON.parse()` accepts any valid JSON, doesn't check structure
+    2. **Silent failures**: `parseArgs` returns `{}` on error, losing information
+    3. **Type unsafe**: `Record<string, unknown>` doesn't match actual shape
+    4. **No schema checking**: Can't detect missing/extra fields
+    5. **Duplication**: Backend has `ToolCall` Pydantic model, frontend has manual parsing
 
-    **The correct approach: Create factories and helpers**
+    **Backend has Pydantic models (types.py, lines 20-25):**
+    ```python
+    class ToolCall(BaseModel):
+        """Tool call information (simple version without discriminator)."""
 
-    **For MCP client creation:**
-    ```typescript
-    // In features/mcp/client-factory.ts
-    export function createApprovalsClient(options?: {
-      name?: string
-      url?: string
-      token?: string
-    }) {
-      return createMCPClient({
-        name: options?.name ?? 'approvals-client',
-        url: options?.url ?? `${window.location.origin}/api/mcp`,
-        token: options?.token ?? getOrExtractToken()
-      })
-    }
-
-    // In component:
-    mcpClient = await createApprovalsClient()
+        name: str = Field(description="Tool name")
+        call_id: str = Field(description="Unique call identifier")
+        args_json: str | None = Field(None, description="Tool arguments as JSON string")
     ```
 
-    **For approval operations:**
-    ```typescript
-    // In features/approvals/api.ts
-    export async function fetchPendingApprovals(client: Client) {
-      const contents = await readResource(client, MCPUris.approvalsPendingUri)
-      return parseApprovalContents(contents)
-    }
+    **The correct approach: Use Zod generated from Pydantic**
 
-    export async function approveToolCall(
-      client: Client,
-      agentId: string,
-      callId: string
-    ) {
-      return callTool(client, 'approve_tool_call', { agent_id: agentId, call_id: callId })
-    }
+    **1. Generate Zod schema from Pydantic model:**
 
-    export async function rejectToolCall(
-      client: Client,
-      agentId: string,
-      callId: string,
-      reason: string
-    ) {
-      return callTool(client, 'reject_tool_call', {
-        agent_id: agentId,
-        call_id: callId,
-        reason
-      })
-    }
-
-    // In component:
-    const approvals = await fetchPendingApprovals(mcpClient)
-    await approveToolCall(mcpClient, agentId, callId)
-    await rejectToolCall(mcpClient, agentId, callId, reason)
-    ```
-
-    **For approval parsing:**
-    ```typescript
-    // In features/approvals/parsing.ts
-    export function parseApprovalContents(
-      contents: Array<TextResourceContents>
-    ): Array<PendingApproval & { agent_id: string }> {
-      return contents
-        .filter(block => 'text' in block && block.mimeType === 'application/json')
-        .map(block => {
-          try {
-            const data = JSON.parse(block.text)
-            return createApproval(data)
-          } catch (e) {
-            console.error('Failed to parse approval block:', e, block)
-            return null
-          }
-        })
-        .filter((a): a is NonNullable<typeof a> => a !== null)
-    }
-
-    function createApproval(data: any): PendingApproval & { agent_id: string } {
-      return {
-        agent_id: data.agent_id,
-        tool_call: data.tool_call,
-        timestamp: data.timestamp ?? new Date().toISOString()
-      }
-    }
-
-    // In component:
-    const approvals = parseApprovalContents(contents)
-    ```
-
-    **Benefits of factories/helpers:**
-
-    1. **Default values**: Reasonable defaults for common cases
-    2. **Centralized logic**: Parsing, validation in one place
-    3. **Easier testing**: Mock helper functions, not raw MCP calls
-    4. **Type safety**: Helpers enforce correct types
-    5. **Less duplication**: Reuse helpers across components
-    6. **Easier refactoring**: Change helper implementation, not every call site
-
-    **Test example with factories:**
+    Tools like `pydantic-to-typescript` or custom scripts can generate both TypeScript
+    types and Zod schemas from Pydantic models.
 
     ```typescript
-    // Before (explicit):
-    test('approves tool call', async () => {
-      const client = await createMCPClient({ name: 'test', url: 'http://test', token: 'tok' })
-      await callTool(client, 'approve_tool_call', { agent_id: 'a1', call_id: 'c1' })
-      // verify...
+    // Generated from Pydantic ToolCall model
+    import { z } from 'zod'
+
+    export const ToolCallSchema = z.object({
+      name: z.string(),
+      call_id: z.string(),
+      args_json: z.string().nullable()
     })
 
-    // After (with factory):
-    test('approves tool call', async () => {
-      const client = await createTestClient()  // Uses test defaults
-      await approveToolCall(client, 'a1', 'c1')  // Clear intent
-      // verify...
+    export type ToolCall = z.infer<typeof ToolCallSchema>
+
+    export const PendingApprovalSchema = z.object({
+      agent_id: z.string(),
+      tool_call: ToolCallSchema,
+      timestamp: z.string()
     })
+
+    export type PendingApproval = z.infer<typeof PendingApprovalSchema>
     ```
 
-    **When to create factories/helpers:**
+    **2. Use Zod for parsing:**
 
-    - **Repeated patterns** (3+ similar constructions)
-    - **Complex initialization** (multiple required fields)
-    - **Testing needed** (want to mock/stub behavior)
-    - **Default values useful** (most calls use same values)
-    - **Encapsulation** (hide implementation details)
-
-    **When explicit construction is OK:**
-
-    - **One-off use** (only appears once)
-    - **All parameters vary** (no common defaults)
-    - **Testing not needed** (simple DTO/value object)
-    - **Simple structure** (< 3 fields, no nesting)
-
-    **Related patterns:**
-
-    **Builder pattern (for complex construction):**
     ```typescript
-    const client = new McpClientBuilder()
-      .withName('approvals')
-      .withAuth(token)
-      .withTimeout(5000)
-      .build()
-    ```
+    import { ToolCallSchema, PendingApprovalSchema } from '../generated/schemas'
 
-    **Factory with options (flexible defaults):**
-    ```typescript
-    function createApproval(options: Partial<Approval> & Required<Pick<Approval, 'agent_id'>>) {
-      return {
-        tool_call: { name: 'unknown', call_id: uuid(), args_json: null },
-        timestamp: new Date().toISOString(),
-        ...options
+    /**
+     * Parse tool call args_json with validation
+     */
+    function parseArgs(argsJson: string | null): Record<string, unknown> | null {
+      if (!argsJson) return null
+
+      try {
+        // Parse JSON first
+        const parsed = JSON.parse(argsJson)
+        // Could add schema validation here if we have ArgSchema
+        return parsed
+      } catch (error) {
+        console.error('Failed to parse tool args:', error)
+        return null  // Return null instead of empty object to signal failure
       }
     }
-    ```
 
-    **User's note: "lots of explicit tool and resource constructions, those should
-    use some factories / helpers with reasonable/helpful default values."**
-
-    This applies throughout the component:
-    - MCP client creation (line 69)
-    - Resource subscription (line 78)
-    - Resource reading (line 107)
-    - Approval parsing (lines 115-121)
-    - Tool calls (lines 138-142, 175-180)
-
-    All of these should have helper functions with sensible defaults.
-  |||,
-  properties=['use-factories', 'avoid-boilerplate', 'provide-defaults', 'encapsulate-construction'],
-  filesToRanges={
-    'adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte': [
-      [69, 71],    // Explicit MCP client creation
-      [78, 78],    // Explicit resource subscription
-      [107, 107],  // Explicit resource reading
-      [115, 121],  // Explicit approval construction
-      [138, 142],  // Explicit approve tool call
-      [175, 180],  // Explicit reject tool call
-    ],
-  },
-  gap_note= |||
-    This finding illustrates **"use-factories"**: repeated explicit object
-    construction should use factory functions or builders with reasonable defaults.
-
-    Principle: Encapsulate construction complexity
-    - Factory functions provide default values
-    - Builders enable fluent construction
-    - Helpers centralize common patterns
-    - Test factories make testing easier
-
-    Related to **"provide-defaults"**: functions should have reasonable default
-    values for optional parameters, reducing boilerplate at call sites.
-
-    Related to **"encapsulate-construction"**: hide construction details behind
-    factory functions, making code easier to maintain and test.
-
-    Patterns for construction:
-
-    **Factory function:**
-    ```typescript
-    function createUser(name: string, options?: Partial<User>): User {
-      return {
-        id: uuid(),
-        name,
-        email: options?.email ?? `${name}@example.com`,
-        role: options?.role ?? 'user',
-        createdAt: options?.createdAt ?? new Date()
+    /**
+     * Parse approval block with Zod validation
+     */
+    function parseApprovalBlock(text: string): PendingApproval & { agent_id: string } | null {
+      try {
+        const data = JSON.parse(text)
+        // Validate with Zod
+        const validated = PendingApprovalSchema.parse(data)
+        return validated
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          console.error('Invalid approval schema:', error.errors)
+        } else {
+          console.error('Failed to parse approval:', error)
+        }
+        return null
       }
     }
-    ```
 
-    **Builder pattern:**
-    ```typescript
-    class UserBuilder {
-      private user: Partial<User> = {}
-
-      withName(name: string) {
-        this.user.name = name
-        return this
-      }
-
-      withRole(role: string) {
-        this.user.role = role
-        return this
-      }
-
-      build(): User {
-        return {
-          id: this.user.id ?? uuid(),
-          name: this.user.name ?? 'Unknown',
-          email: this.user.email ?? 'user@example.com',
-          role: this.user.role ?? 'user',
-          createdAt: this.user.createdAt ?? new Date()
+    // In fetchApprovals:
+    for (const block of contents) {
+      if ('text' in block && block.mimeType === 'application/json') {
+        const approval = parseApprovalBlock(block.text)
+        if (approval) {
+          parsedApprovals.push(approval)
         }
       }
     }
-
-    const user = new UserBuilder().withName('Alice').withRole('admin').build()
     ```
 
-    **Test factory:**
+    **Benefits of Zod validation:**
+
+    1. **Type safety**: Schema matches backend Pydantic model exactly
+    2. **Runtime validation**: Catches malformed data from backend
+    3. **Better errors**: Zod provides detailed validation errors
+    4. **No silent failures**: Explicitly handle validation errors
+    5. **Single source of truth**: Backend Pydantic → Frontend Zod
+    6. **Catch backend changes**: If backend changes model, validation fails
+
+    **User's note: "parsing tool calls should use zod copied from json side
+    pydantic (possibly ToolCall?)"**
+
+    Yes, the backend has `ToolCall` Pydantic model in `agent/types.py`. The frontend
+    should use a Zod schema generated from this model instead of manual parsing.
+
+    **Workflow for Pydantic → Zod:**
+
+    A type generator script already exists (see commit 7c6cae7ad on branch
+    `claude/review-frontend-http-audit-...`): `adgn/scripts/generate_types.py`
+
+    This script generates TypeScript interfaces from Pydantic models. To also generate
+    Zod schemas, the script would need extension:
+
+    1. Current: Pydantic → JSON Schema → TypeScript interfaces
+    2. Needed: Pydantic → JSON Schema → TypeScript interfaces + Zod schemas
+
+    Tools for Zod generation:
+    - `json-schema-to-zod` (npm package)
+    - Extend `generate_types.py` to also output Zod schemas
+
+    Usage (after Zod support added):
     ```typescript
-    export function createTestApproval(overrides?: Partial<Approval>): Approval {
-      return {
-        agent_id: 'test-agent',
-        tool_call: {
-          name: 'test_tool',
-          call_id: 'test-call',
-          args_json: '{}'
-        },
-        timestamp: '2024-01-01T00:00:00Z',
-        ...overrides
+    import { ToolCallSchema } from '../generated/schemas'
+    const toolCall = ToolCallSchema.parse(data)
+    ```
+
+    **Example: Comprehensive parsing with Zod**
+
+    ```typescript
+    import { z } from 'zod'
+
+    // Generated from backend Pydantic models
+    const ToolCallSchema = z.object({
+      name: z.string(),
+      call_id: z.string(),
+      args_json: z.string().nullable().optional()
+    })
+
+    const ApprovalBlockSchema = z.object({
+      agent_id: z.string(),
+      tool_call: ToolCallSchema,
+      timestamp: z.string().datetime()
+    })
+
+    type ApprovalBlock = z.infer<typeof ApprovalBlockSchema>
+
+    function parseApprovalSafely(text: string): ApprovalBlock | null {
+      try {
+        const json = JSON.parse(text)
+        return ApprovalBlockSchema.parse(json)
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          console.error('Approval validation failed:', {
+            issues: error.issues,
+            data: text
+          })
+        } else if (error instanceof SyntaxError) {
+          console.error('Invalid JSON:', text)
+        } else {
+          console.error('Unexpected error:', error)
+        }
+        return null
       }
     }
 
-    // Test:
-    const approval = createTestApproval({ agent_id: 'my-agent' })
+    // Usage:
+    const approval = parseApprovalSafely(block.text)
+    if (approval) {
+      parsedApprovals.push(approval)
+    } else {
+      // Handle invalid data explicitly
+      metrics.increment('approvals.parse_error')
+    }
     ```
 
-    Benefits for testing:
-    - **Readable**: `createTestUser({ role: 'admin' })` vs full object literal
-    - **Maintainable**: Change defaults in one place
-    - **Flexible**: Override only what matters for test
-    - **Type-safe**: Factory enforces required fields
+    **Why manual parsing happened:**
 
-    Red flags:
-    - Repeated object literals with same/similar values
-    - Tests creating complex objects inline
-    - Constructor calls with many parameters
-    - Copy-paste of initialization code
+    1. Pydantic models existed in backend
+    2. Frontend types manually created (duplicating structure)
+    3. No automated Pydantic → TypeScript/Zod generation
+    4. Quick fix: manual `JSON.parse()` instead of proper validation
+
+    **Migration steps:**
+
+    1. Set up Pydantic → JSON Schema export
+    2. Generate Zod schemas from JSON Schema
+    3. Replace manual parsing with Zod validation
+    4. Add error handling for validation failures
+    5. Consider metrics/logging for parse errors
+  |||,
+  properties=['use-platform-primitives', 'schema-validation', 'avoid-manual-parsing', 'type-safe-apis'],
+  filesToRanges={
+    'adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte': [
+      [29, 36],    // parseArgs manual JSON.parse
+      [115, 121],  // Manual parsing in fetchApprovals
+    ],
+  },
+  gap_note= |||
+    This finding illustrates **"schema-validation"**: when parsing data from external
+    sources (backend API, user input, files), use schema validation (Zod, Yup, etc.)
+    instead of manual parsing.
+
+    Principle: Validate at boundaries
+    - API responses: validate with schemas
+    - User input: validate before use
+    - Config files: validate on load
+    - Messages: validate before processing
+
+    Related to **"use-platform-primitives"**: Zod is the TypeScript standard for
+    runtime validation. Use it instead of manual `try/catch` around `JSON.parse()`.
+
+    Related to **"type-safe-apis"**: Backend Pydantic models should generate
+    frontend types and schemas, ensuring consistency.
+
+    Why schema validation matters:
+
+    **Without validation (manual parsing):**
+    ```typescript
+    function parse(json: string) {
+      try {
+        const data = JSON.parse(json)
+        // Hope data has the right shape...
+        return { name: data.name, id: data.id }
+      } catch {
+        return null  // What went wrong? Unknown.
+      }
+    }
+    ```
+
+    Problems:
+    - No validation (accepts any JSON)
+    - Silent coercion (`data.name` might be undefined)
+    - No error details
+    - TypeScript can't help
+
+    **With schema validation (Zod):**
+    ```typescript
+    const UserSchema = z.object({
+      name: z.string(),
+      id: z.string().uuid()
+    })
+
+    function parse(json: string) {
+      try {
+        const data = JSON.parse(json)
+        return UserSchema.parse(data)  // Throws if invalid
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          // Detailed validation errors
+          console.error('Validation failed:', error.issues)
+        }
+        return null
+      }
+    }
+    ```
+
+    Benefits:
+    - Runtime validation (catches malformed data)
+    - Detailed errors (know exactly what's wrong)
+    - Type safety (TypeScript knows validated shape)
+    - Documentation (schema is self-documenting)
+
+    **Pydantic → Zod workflow:**
+
+    1. Backend exports Pydantic to JSON Schema
+    2. Tool generates Zod from JSON Schema
+    3. Frontend uses Zod for parsing/validation
+
+    Tools:
+    - **Existing script**: `adgn/scripts/generate_types.py` (commit 7c6cae7ad)
+      Currently generates TypeScript interfaces; needs extension for Zod
+    - Alternative tools: `pydantic-to-typescript`, `json-schema-to-zod`, `datamodel-code-generator`
+
+    **Example generation:**
+
+    ```python
+    # Backend (Python)
+    from pydantic import BaseModel
+
+    class User(BaseModel):
+        name: str
+        email: str
+
+    # Export JSON Schema
+    schema = User.model_json_schema()
+    ```
+
+    ```typescript
+    // Frontend (generated)
+    import { z } from 'zod'
+
+    export const UserSchema = z.object({
+      name: z.string(),
+      email: z.string().email()
+    })
+
+    export type User = z.infer<typeof UserSchema>
+
+    // Usage
+    const user = UserSchema.parse(apiResponse)
+    ```
+
+    **When to use Zod:**
+
+    - Parsing API responses
+    - Validating form input
+    - Loading config files
+    - Processing message queues
+    - Any external/untrusted data
+
+    **When manual parsing OK:**
+
+    - Internal trusted data (same codebase)
+    - Performance-critical paths (pre-validated)
+    - Schema is trivial (single primitive)
   |||,
 )

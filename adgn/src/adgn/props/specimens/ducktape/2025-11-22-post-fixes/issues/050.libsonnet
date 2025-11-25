@@ -1,335 +1,281 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-050: ApprovalTimeline subscribes to unimplemented WebSocket endpoint
+// iss-054: Multiple components create separate MCP clients instead of using shared client
 
-I.issueOneOccurrence(
+I.issueWithOccurrences(
   rationale= |||
-    The `ApprovalTimeline.svelte` component attempts to subscribe to a WebSocket
-    endpoint (`/ws/approvals`) that doesn't exist in the backend, resulting in
-    non-functional live updates.
+    Four Svelte components each create their own MCP client connections instead of
+    using a shared client instance. This violates the 2-level compositor architecture,
+    wastes resources, creates inconsistent state, and duplicates connection management.
 
-    **Problem: Frontend subscribes to non-existent endpoint**
+    **Problem: Separate client per component**
 
-    **Current implementation (ApprovalTimeline.svelte, lines 54-61):**
-    ```typescript
-    function subscribeToUpdates() {
-      if (!agentId) return
+    Components creating independent MCP clients:
+    1. **AgentsSidebar** - creates client to list agents
+    2. **ChatPane** - creates TWO separate clients (list agents, abort agent)
+    3. **MessageComposer** - creates client per message send
+    4. **GlobalApprovalsList** - creates client to `/api/mcp` (non-existent endpoint)
 
-      try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const wsUrl = `${protocol}//${window.location.host}/ws/approvals?agent_id=${encodeURIComponent(agentId)}`
-
-        ws = new WebSocket(wsUrl)
-        // ... message handlers
-      } catch (e) {
-        console.error('Failed to create WebSocket:', e)
-      }
-    }
-    ```
-
-    **Expected WebSocket messages (lines 64-87):**
-    ```typescript
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data)
-
-      // Handle approval decision messages
-      if (msg.type === 'approval_decision') {
-        const entry: ApprovalHistoryEntry = {
-          tool_call: { name: msg.tool || msg.tool_key || 'unknown', ... },
-          outcome: msg.outcome,
-          reason: msg.reason || null,
-          timestamp: new Date().toISOString()
-        }
-        timeline = [entry, ...timeline]
-      }
-
-      // Handle history snapshot messages
-      if (msg.type === 'approvals_snapshot' && msg.timeline) {
-        timeline = msg.timeline
-      }
-    }
-    ```
-
-    **Backend status (app.py):**
-    ```python
-    ## WebSocket message models moved to ws.py
-    # TODO: Register websocket routes (placeholder)
-    ```
-
-    The WebSocket routes are not registered. The `/ws/approvals` endpoint doesn't exist.
+    Each creation involves handshake, authentication, session setup, and dedicated connection.
 
     **Why this is problematic:**
 
-    1. **Non-functional feature**: Component appears to work but doesn't receive updates
-    2. **Silent failure**: WebSocket connection fails, no user feedback
-    3. **Misleading UX**: UI suggests live updates work when they don't
-    4. **Wasted resources**: Attempts connection that always fails
-    5. **Incomplete implementation**: Frontend built for feature backend doesn't provide
-
-    **The correct approach depends on intent:**
-
-    **Option 1: Implement the backend (if feature is needed)**
-
-    Add WebSocket endpoint for approval timeline updates:
-
-    ```python
-    # In app.py or ws.py:
-    from fastapi import WebSocket
-
-    @app.websocket("/ws/approvals")
-    async def approvals_websocket(websocket: WebSocket, agent_id: str):
-        await websocket.accept()
-
-        try:
-            # Send initial snapshot
-            timeline = await get_approval_timeline(agent_id)
-            await websocket.send_json({
-                "type": "approvals_snapshot",
-                "timeline": [entry.model_dump() for entry in timeline]
-            })
-
-            # Subscribe to approval events
-            async for event in approval_events(agent_id):
-                if event.type == "approval_decision":
-                    await websocket.send_json({
-                        "type": "approval_decision",
-                        "call_id": event.call_id,
-                        "tool": event.tool_name,
-                        "outcome": event.outcome,
-                        "reason": event.reason,
-                        "timestamp": event.timestamp.isoformat()
-                    })
-
-        except WebSocketDisconnect:
-            pass
-        finally:
-            # Cleanup subscription
-            pass
-    ```
-
-    **Option 2: Remove WebSocket code (if not implementing)**
-
-    If WebSocket endpoint won't be implemented soon, remove the dead code:
-
-    ```typescript
-    // Remove subscribeToUpdates() and WebSocket code
-    // Use polling instead:
-
-    let refreshInterval: number | null = null
-
-    onMount(() => {
-      fetchTimeline()  // Initial fetch
-      refreshInterval = window.setInterval(fetchTimeline, 5000)  // Poll every 5s
-    })
-
-    onDestroy(() => {
-      if (refreshInterval) {
-        window.clearInterval(refreshInterval)
-      }
-    })
-    ```
-
-    **Option 3: Use MCP subscriptions (architectural fit)**
-
-    Instead of custom WebSocket endpoint, use MCP resource subscriptions:
-
-    ```typescript
-    import { mcpClient } from '../stores/mcp-client'
-    import { subscribeToResource } from '../features/mcp/client'
-
-    async function subscribeToTimeline() {
-      const client = get(mcpClient)
-      if (!client) return
-
-      // Subscribe to approval timeline resource
-      await subscribeToResource(client, `resources://approvals/${agentId}/timeline`)
-
-      // Resource updates will trigger refresh
-      // (Handled by MCP client store)
-    }
-
-    onMount(() => {
-      subscribeToTimeline()
-    })
-    ```
-
-    This fits the 2-level compositor architecture better than custom WebSocket.
-
-    **Current silent failure behavior:**
-
-    The component handles WebSocket errors but doesn't inform the user:
-
-    **Lines 92-98:**
-    ```typescript
-    ws.onerror = () => {
-      console.warn('WebSocket error for approval timeline')  // Silent
-    }
-
-    ws.onclose = () => {
-      console.log('WebSocket closed for approval timeline')  // Silent
-    }
-    ```
-
-    Users have no indication that live updates aren't working.
-
-    **Better error handling if keeping WebSocket:**
-
-    ```typescript
-    ws.onerror = () => {
-      console.error('WebSocket connection failed')
-      // Show user feedback
-      error = 'Live updates unavailable. Timeline will not auto-refresh.'
-      // Or fall back to polling
-      startPolling()
-    }
-
-    ws.onclose = (event) => {
-      if (!event.wasClean) {
-        console.warn('WebSocket closed unexpectedly')
-        // Attempt reconnect or show error
-      }
-    }
-    ```
-
-    **User's instruction: "ApprovalTimeline subscribes to a websockets. check if
-    it's implemented. if it isn't, upsert issue."**
-
-    **Status:** WebSocket endpoint `/ws/approvals` is **not implemented**. Backend
-    has TODO placeholder but no actual endpoint.
-
-    **Recommendation:**
-
-    1. **Short term**: Remove WebSocket code, use polling or MCP subscriptions
-    2. **Long term**: If WebSocket is needed, implement backend endpoint
-    3. **Best**: Use MCP resource subscriptions (fits architecture)
-
-    **Why this happened:**
-
-    1. Frontend component built expecting WebSocket endpoint
-    2. Backend WebSocket routes marked as TODO
-    3. Feature left partially implemented
-    4. No error surfaced to user or developers
-    5. Component appears functional but isn't
-
-    **Similar issues:**
-
-    - GlobalApprovalsList expects `/api/mcp` endpoint that may not exist (issue 047)
-    - Multiple components assume backend features not yet implemented
-    - Silent failures hide incomplete implementation
-  |||,
-  properties=['remove-incomplete-features', 'no-swallowing-errors', 'provide-user-feedback', 'implement-or-remove'],
-  filesToRanges={
-    'adgn/src/adgn/agent/web/src/components/ApprovalTimeline.svelte': [
-      [54, 61],   // WebSocket subscription to non-existent endpoint
-      [92, 98],   // Silent error/close handlers
-    ],
-    'adgn/src/adgn/agent/server/app.py': [
-      [1, 1],     // TODO placeholder for WebSocket routes (actual line varies)
-    ],
-  },
-  gap_note= |||
-    This finding illustrates **"implement-or-remove"**: features that appear
-    functional but depend on unimplemented backend endpoints should either be
-    completed or removed.
-
-    Principle: No half-implemented features
-    - If backend doesn't support it, don't ship frontend
-    - If frontend exists, backend must support it
-    - If incomplete, remove until ready
-    - Don't leave broken features that silently fail
-
-    Related to **"remove-incomplete-features"**: code that doesn't work and won't
-    work without significant backend changes should be removed.
-
-    Related to **"no-swallowing-errors"**: when WebSocket connection fails, user
-    should know. Don't log and continue as if everything is fine.
-
-    Why half-implemented features are harmful:
-
-    **User confusion:**
-    - Feature appears to exist but doesn't work
-    - No feedback about why it's not working
-    - Users assume bug in their setup
-
-    **Developer confusion:**
-    - New developers don't know feature is incomplete
-    - Unclear if feature ever worked
-    - Wastes time debugging non-existent backend
-
-    **Technical debt:**
-    - Frontend code depends on backend that doesn't exist
-    - Can't delete "TODO" backend code (frontend needs it)
-    - Both sides stuck in limbo
-
     **Resource waste:**
-    - Connection attempts that always fail
-    - Error handling for errors that always happen
-    - Code maintained but never used
+    - Multiple WebSocket/HTTP connections to same backend
+    - Repeated handshake + auth + session setup
+    - Memory overhead per client instance
+    - File descriptor consumption
 
-    Correct patterns:
+    **Architectural violation:**
+    - Intended: Single 2-level compositor (UI → shared client → compositor → agents)
+    - Actual: Parallel connections bypassing shared architecture
+    - GlobalApprovalsList targets non-existent `/api/mcp` endpoint
 
-    **Feature flags:**
+    **Inconsistent state:**
+    - Separate sessions don't see each other's state
+    - Resource subscriptions on different connections
+    - Race conditions between clients
+    - No coordination on updates
+
+    **Maintenance burden:**
+    - Multiple reconnection logic paths
+    - Error handling duplicated
+    - Token refresh per client
+    - Hard to track connection status
+
+    **ChatPane is worst offender:**
+    Creates TWO clients in same component for no reason - one to list agents,
+    another to abort agents. Even without shared infrastructure, should reuse
+    its own client.
+
+    **The correct approach: Shared MCP client**
+
+    **Architecture: Single client per application**
+
+    Create global MCP client store/context:
     ```typescript
-    const WEBSOCKET_ENABLED = false  // Set when backend ready
+    // stores/mcp-client.ts
+    import { writable } from 'svelte/store'
+    import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 
-    if (WEBSOCKET_ENABLED) {
-      subscribeToWebSocket()
-    } else {
-      startPolling()
+    export const mcpClient = writable<Client | null>(null)
+    export const mcpClientStatus = writable<'disconnected' | 'connecting' | 'connected'>('disconnected')
+
+    export async function connectMCP(url: string, token: string) {
+      mcpClientStatus.set('connecting')
+      try {
+        const client = await createMCPClient({ name: 'app-client', url, token })
+        mcpClient.set(client)
+        mcpClientStatus.set('connected')
+        return client
+      } catch (e) {
+        mcpClientStatus.set('disconnected')
+        throw e
+      }
     }
     ```
 
-    **Graceful degradation with user feedback:**
+    **Initialize once at app startup:**
     ```typescript
-    try {
-      await subscribeToWebSocket()
-      updateStatus('Live updates enabled')
-    } catch (e) {
-      console.error('WebSocket unavailable:', e)
-      updateStatus('Using polling (live updates unavailable)')
-      startPolling()
-    }
-    ```
-
-    **Backend capability detection:**
-    ```typescript
-    const capabilities = await fetchCapabilities()
-    if (capabilities.websockets) {
-      subscribeToWebSocket()
-    } else {
-      startPolling()
-    }
-    ```
-
-    **Complete removal:**
-    ```typescript
-    // Remove all WebSocket code
-    // Use polling until WebSocket implemented
-    onMount(() => {
-      fetchData()
-      setInterval(fetchData, 5000)
+    // App.svelte
+    onMount(async () => {
+      const token = getOrExtractToken()
+      if (token) {
+        await connectMCP(`${backendOrigin()}/mcp`, token)
+      }
     })
     ```
 
-    When to keep incomplete features:
-    - Clearly marked as experimental
-    - Behind feature flag
-    - Fails loudly with clear error message
-    - Documented what's missing
-    - Plan to complete soon
+    **Components use shared client:**
+    ```typescript
+    // Any component
+    import { mcpClient } from '../stores/mcp-client'
 
-    When to remove:
-    - Silently fails
-    - No plan to implement
-    - Confuses users/developers
-    - Depends on unimplemented backend
-    - No feature flag or warning
+    $: client = $mcpClient
+
+    async function fetchData() {
+      if (!client) throw new Error('MCP not connected')
+      const contents = await readResource(client, uri)
+      return parseContents(contents)
+    }
+    ```
+
+    **Benefits:**
+    - Single connection for all operations
+    - Connection reuse (no repeated handshakes)
+    - Consistent state across components
+    - Centralized reconnection logic
+    - Easy to track connection status
+    - Resource subscriptions work correctly
+
+    **GlobalApprovalsList special case:**
+    Component attempts to connect to `/api/mcp` endpoint that doesn't exist.
+    Backend comments indicate feature not ready. Should either:
+    1. Delete component until backend supports it, OR
+    2. Expose global approvals resource through shared compositor
+
+    User notes suggest deleting is cleaner until feature is complete.
+  |||,
+  properties=['use-shared-client', 'single-connection-instance', 'avoid-duplicate-connections', 'consistent-architecture'],
+  occurrences=[
+    {
+      files: {
+        'adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte': [[85, 85]],
+      },
+      note: 'Creates MCP client to list agents; should use shared client from store/context',
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/web/src/components/ChatPane.svelte': [[87, 91], [124, 128]],
+      },
+      note: 'Creates TWO separate clients in same component: chat-pane-client (line 87-91) for listing, chat-pane-abort-client (line 124-128) for aborting. Worst offender - not even reusing its own client',
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/web/src/components/MessageComposer.svelte': [[16, 20]],
+      },
+      note: 'Creates new MCP client per message send operation; should use shared client',
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte': [[69, 71]],
+      },
+      note: 'Creates separate client targeting /api/mcp (non-existent endpoint). Violates 2-level compositor architecture. User suggests: delete component or expose agent-global resource through compositor',
+    },
+  ],
+  gap_note= |||
+    This finding illustrates **"single-connection-instance"**: network clients
+    (HTTP, WebSocket, MCP, database) should be shared across components, not
+    created per operation or per component.
+
+    Principle: One client per connection type
+    - MCP client: one shared instance for entire app
+    - HTTP client: browser pools connections automatically
+    - WebSocket: one connection, multiple subscriptions
+    - Database: connection pool, not connection per query
+
+    Related to **"use-shared-client"**: when a system needs external connections,
+    centralize client management in store/context/service.
+
+    Related to **"consistent-architecture"**: when architecture defines a pattern
+    (2-level compositor with shared client), all components must follow it.
+
+    Why multiple clients are bad:
+
+    **Per-component clients:**
+    - Each component creates on mount
+    - Handshake + auth + session repeated
+    - N components = N connections
+    - Unmount doesn't guarantee cleanup
+
+    **Per-operation clients:**
+    - MessageComposer creates client per send
+    - Extreme waste: handshake per message
+    - No connection reuse
+    - Defeats purpose of persistent connections
+
+    **Two clients in same component (ChatPane):**
+    - Most egregious violation
+    - Not even architectural ignorance
+    - Pure redundancy within one file
+
+    Patterns for shared clients:
+
+    **Svelte store (reactive):**
+    ```typescript
+    // stores/client.ts
+    export const client = writable<Client | null>(null)
+
+    // Component
+    $: myClient = $client
+    if (myClient) {
+      await myClient.call(...)
+    }
+    ```
+
+    **React context:**
+    ```typescript
+    const ClientContext = createContext<Client | null>(null)
+
+    function useClient() {
+      const client = useContext(ClientContext)
+      if (!client) throw new Error('Client not initialized')
+      return client
+    }
+    ```
+
+    **Singleton (simple but less testable):**
+    ```typescript
+    let globalClient: Client | null = null
+
+    export async function getClient(): Promise<Client> {
+      if (!globalClient) {
+        globalClient = await createClient(...)
+      }
+      return globalClient
+    }
+    ```
+
+    **Dependency injection (testable):**
+    ```typescript
+    class AgentsService {
+      constructor(private client: Client) {}
+
+      async listAgents() {
+        return await this.client.readResource(...)
+      }
+    }
+
+    // Tests inject mock client
+    ```
+
+    When multiple clients ARE appropriate:
+    - Different backends (app API vs auth API)
+    - Different auth contexts (user vs service account)
+    - Isolation requirements (tenant separation)
+    - But document why exception exists
 
     Red flags:
-    - "TODO: Implement backend endpoint"
-    - Silent WebSocket error handlers
-    - Features that appear to work but don't
-    - No user feedback when feature unavailable
-    - Connection attempts that always fail
+    - `createClient()` called in multiple components
+    - Client created in component mount hook
+    - Client created per operation/message
+    - Multiple clients to same backend
+    - No client reuse within component
+
+    2-level compositor architecture:
+    - Level 1: Backend compositor aggregates MCP servers
+    - Level 2: UI connects once to compositor
+    - All agent functions accessible through single client
+    - Parallel connections bypass this design
+
+    Cost of architectural violations:
+    - Resource waste (connections, memory)
+    - State inconsistencies (separate sessions)
+    - Maintenance burden (multiple code paths)
+    - User confusion (why multiple endpoints?)
+    - Hard to debug (which client failed?)
+
+    Migration path:
+    1. Create shared client store/context
+    2. Initialize client at app startup
+    3. Replace component `createMCPClient` with store access
+    4. Remove per-component/per-operation clients
+    5. Test connection lifecycle (startup, reconnect, errors)
+    6. Delete GlobalApprovalsList or fix backend
+
+    Special case (GlobalApprovalsList):
+    - Targets /api/mcp endpoint that doesn't exist
+    - Backend comments: "TODO: Register websocket routes"
+    - Feature incomplete, component non-functional
+    - User recommendation: delete until backend ready
+    - If keeping: expose via compositor, use shared client
+
+    Benefits of shared client:
+    - One connection for all operations
+    - Connection reuse, no wasted handshakes
+    - Consistent state across UI
+    - Centralized error handling
+    - Easier to add features (logging, metrics, retries)
+    - Simpler testing (inject one mock)
   |||,
 )
