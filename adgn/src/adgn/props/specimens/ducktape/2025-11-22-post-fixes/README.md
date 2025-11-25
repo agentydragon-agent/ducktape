@@ -19,6 +19,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **013**: Duplicated git commit invocation across immediate and editor flows (_commit_immediately, _run_editor_flow)
 - **014**: Multiple simplification opportunities in _run_editor_flow (textwrap.indent, inline vars, extract scissors parsing)
 - **015**: Spawning subprocess to get GIT_EDITOR instead of using pygit2 config API (_get_editor)
+- **016**: Logging configuration in backend function instead of main (generate_commit_message_minicodex)
 
 ## Scope
 
