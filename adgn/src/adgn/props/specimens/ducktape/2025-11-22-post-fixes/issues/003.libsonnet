@@ -15,9 +15,10 @@ I.issueOneOccurrence(
         return ("-a" in passthru) or ("--all" in passthru)
     ```
 
-    **Used in 6 locations:**
+    **Used in 7 locations:**
     - `diffstat()` (line 170)
     - `build_prompt()` (line 190)
+    - CLI: `_build_amend_diff()` (line 128) - takes passthru instead of bool
     - CLI: `_format_amend_comparison()` (line 145)
     - CLI: `_get_diff_to_commit()` (line 153)
     - CLI: `_stage_all_if_requested()` (line 524)
@@ -67,6 +68,7 @@ I.issueOneOccurrence(
     ],
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [52, 52],   // import of include_all_from_passthru
+      [128, 128], // _build_amend_diff: takes passthru instead of bool
       [145, 145], // _format_amend_comparison: using passthru
       [153, 153], // _get_diff_to_commit: using passthru
       [524, 524], // _stage_all_if_requested: using passthru
