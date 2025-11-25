@@ -10,17 +10,21 @@ Precision is secondary (and may appear artificially low due to incomplete labeli
 
 ## Data Splits
 
-- **TRAIN**: A sample from the same distribution as validation. Use for debugging, experimentation, and deep analysis.
+**Important:** Train, validation, and test splits may contain specimens from different codebases, different files, and even different programming languages. Do not assume all specimens share the same structure, conventions, or language features. Your prompt must generalize across diverse codebases.
+
+- **TRAIN**: A sample for debugging, experimentation, and deep analysis.
   - Full per-specimen metrics and artifacts available for detailed investigation
   - Read specimen code at `/specimens/train/{slug}/`
   - Read ground truth issues at `/specimen_defs/train/{slug}/` (manifest, issues/*.libsonnet, README.md)
   - Read transcripts at `/artifacts/prompt_evals/eval_<timestamp>/{train_specimen}/critic/events.jsonl`
   - Analyze where the critic missed issues or got confused by comparing reported issues to ground truth
   - **Important:** Train is for exploration only. Your goal is **validation recall**, not train recall.
+  - **Avoid overfitting:** Don't optimize for patterns specific to train specimens (file names, directory structure, coding style). Validation may be completely different codebases.
 
 - **VALID**: Your target metric. Only aggregate metrics provided to prevent overfitting.
   - No per-specimen breakdown available
   - **This is what you're optimizing for:** maximize valid_recall
+  - Validation specimens may be from entirely different projects/languages than train
 
 ## Tools (prompt_eval MCP server)
 
