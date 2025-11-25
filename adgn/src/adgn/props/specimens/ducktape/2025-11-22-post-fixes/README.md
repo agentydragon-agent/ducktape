@@ -26,6 +26,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **020**: Deprecated datetime.utcnow() usage (2 occurrences in TranscriptHandler)
 - **021**: Manual isinstance validation instead of Pydantic TypeAdapter (TokenMapping.reload)
 - **022**: Duplicated XDG user data directory path construction (user_data_dir calls in multiple places)
+- **023**: Unmounted resource URIs in resources.py (agent_state, agent_snapshot, agent_mcp_state, 10 unused helpers)
 
 ## Scope
 
