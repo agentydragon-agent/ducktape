@@ -32,6 +32,18 @@ class Scope(BaseModel):
     exclude: list[str] | None = None
 
 
+class BundleFilter(BaseModel):
+    """Filters for bundle creation: which files to include/exclude when snapshotting.
+
+    Uses gitignore-style patterns:
+    - Trailing slash means directory (e.g., "web/" excludes the web directory)
+    - No wildcards needed for "everything under" (e.g., "adgn/" includes all of adgn/)
+    """
+
+    include: list[str] | None = None
+    exclude: list[str] | None = None
+
+
 class SpecimenDoc(BaseModel):
     """Unified specimen document (v2): source/scope and items (Jsonnet-only).
 
@@ -41,4 +53,5 @@ class SpecimenDoc(BaseModel):
 
     source: Source
     scope: Scope
+    bundle: BundleFilter | None = None
     model_config = ConfigDict(extra="forbid")

@@ -8,6 +8,6 @@ I.issueOneOccurrence(
   // properties=[],
   filesToRanges={
     'internal/lsp/watcher/watcher.go': [[583, 672]],
-    'internal/fsext/fileutil.go': [[1, 200]],
+    'internal/fsext/fileutil.go': [[1, 196]],
   },
 )

@@ -14,6 +14,6 @@ I.issueOneOccurrence(
   // properties=['pathlib'],
   gap_note='Design to minimize conversions between different representations (e.g., str<->Path, dict<->Pydantic models, uuid<->str, multiple ad-hoc variables vs one combined structure). Avoid introducing extra conversion surface area that downstream callers must handle.',
   filesToRanges={
-    'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [[564, 573], [572, 575]],
+    'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [[460, 466], [476, 485], [508, 508]],
   },
 )

@@ -6,12 +6,13 @@
   ...
 }: {
   # Basic packages available in the shell
-  packages = [pkgs.git pkgs.nodejs_20];
+  # stdenv.cc.cc.lib provides libstdc++.so.6 needed by numpy, jsonnet, etc.
+  packages = [pkgs.git pkgs.nodejs_20 pkgs.stdenv.cc.cc.lib pkgs.zlib];
 
   # Python (devenv-managed venv)
   languages.python = {
     enable = true;
-    package = pkgs.python311;
+    package = pkgs.python312;
     uv = {
       enable = true;
       sync = {
@@ -39,6 +40,10 @@
   # Lightweight shell entry; dependency management handled by uv sync
   enterShell = ''
     set -euo pipefail
+
+    # Add native library paths for Python C extensions (numpy, jsonnet, etc.)
+    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
     python --version
     echo "Tip: run 'devenv up' to start the Vite UI dev server in the background, or use 'ui-dev'/'mini-codex-serve' scripts."
   '';

@@ -23,6 +23,6 @@ I.issueOneOccurrence(
     - Ensure callers of PR view use the same typed contract across all codepaths.
   |||,
   filesToRanges={
-    'wt/wt/server/github_client.py': [[16, 34], [110, 120]],
+    'wt/wt/server/github_client.py': [[16, 34], [110, 119]],
   },
 )

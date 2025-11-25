@@ -19,6 +19,7 @@ from urllib.parse import urlunparse
 
 import _jsonnet
 from platformdirs import user_cache_dir
+import pygit2
 import yaml
 from typing import Any, Callable, cast
 
@@ -229,31 +230,87 @@ def _create_archive_from_git(
     gitconfig: Path | None,
 ) -> bool:
     tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-git-"))
-    env = dict(**os.environ)
-    if gitconfig is not None:
-        env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
-    subprocess.run(
-        ["git", "init", str(tmpdir)],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        env=env,
-    )
-    subprocess.run(
-        ["git", "-C", str(tmpdir), "remote", "add", "origin", url],
-        check=True,
-        env=env,
-    )
-    subprocess.run(
-        ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
-        check=True,
-        env=env,
-    )
-    subprocess.run(
-        ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
-        check=True,
-        env=env,
-    )
+
     try:
+        # Check if URL points to a bundle file
+        if url.startswith("file://"):
+            file_path = url.removeprefix("file://")
+            if file_path.endswith(".bundle"):
+                # For bundles, use subprocess since pygit2 doesn't handle bundles well
+                env = dict(**os.environ)
+                if gitconfig is not None:
+                    env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
+
+                # Clone from bundle using subprocess
+                subprocess.run(
+                    ["git", "clone", file_path, str(tmpdir)],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=env,
+                )
+                subprocess.run(
+                    ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
+                    check=True,
+                    env=env,
+                )
+            else:
+                # Regular file:// repository - use standard approach with subprocess
+                # (pygit2 has issues with file:// URLs)
+                env = dict(**os.environ)
+                if gitconfig is not None:
+                    env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
+
+                subprocess.run(
+                    ["git", "init", str(tmpdir)],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    env=env,
+                )
+                subprocess.run(
+                    ["git", "-C", str(tmpdir), "remote", "add", "origin", url],
+                    check=True,
+                    env=env,
+                )
+                subprocess.run(
+                    ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
+                    check=True,
+                    env=env,
+                )
+                subprocess.run(
+                    ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
+                    check=True,
+                    env=env,
+                )
+        else:
+            # For non-file URLs, fall back to subprocess for now
+            # (pygit2 network operations can be complex with auth)
+            env = dict(**os.environ)
+            if gitconfig is not None:
+                env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
+
+            subprocess.run(
+                ["git", "init", str(tmpdir)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                env=env,
+            )
+            subprocess.run(
+                ["git", "-C", str(tmpdir), "remote", "add", "origin", url],
+                check=True,
+                env=env,
+            )
+            subprocess.run(
+                ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
+                check=True,
+                env=env,
+            )
+            subprocess.run(
+                ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
+                check=True,
+                env=env,
+            )
+
         # Drop VCS internals to keep archives small and writable on extract
         shutil.rmtree(tmpdir / ".git", ignore_errors=True)
         _repack_dir_with_mtime(tmpdir, out_archive, mtime=0)
@@ -314,8 +371,18 @@ def ensure_archive_for_specimen_slug(
             ):
                 _repack_tar_with_mtime(out, mtime=0)
                 return out
+        # Resolve relative file:// URLs relative to the manifest directory
+        url = man.source.url
+        if url.startswith("file://"):
+            # Remove the file:// prefix
+            file_path = url.removeprefix("file://")
+            # If it's a relative path, resolve it relative to manifest directory
+            if not file_path.startswith("/"):
+                resolved_path = (manifest_path.parent / file_path).resolve()
+                url = f"file://{resolved_path}"
+
         if (
-            _create_archive_from_git(man.source.url, man.source.ref, out, gitconfig)
+            _create_archive_from_git(url, man.source.ref, out, gitconfig)
             and out.exists()
         ):
             return out
