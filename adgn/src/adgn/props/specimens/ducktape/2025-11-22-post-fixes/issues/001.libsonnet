@@ -1,7 +1,5 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-001: approve/reject tools silently ignore already-resolved futures
-
 I.issueOneOccurrence(
   rationale=|||
     approve() and reject() tools in ApprovalHub check if a future is already done,

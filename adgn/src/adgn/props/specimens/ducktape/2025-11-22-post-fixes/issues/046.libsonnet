@@ -154,21 +154,24 @@ I.issueOneOccurrence(
 
     **Workflow for Pydantic → Zod:**
 
-    1. **Export Pydantic to JSON Schema:**
-       ```python
-       from pydantic import BaseModel
-       schema = ToolCall.model_json_schema()
-       ```
+    A type generator script already exists (see commit 7c6cae7ad on branch
+    `claude/review-frontend-http-audit-...`): `adgn/scripts/generate_types.py`
 
-    2. **Generate Zod schema:**
-       - Use `json-schema-to-zod` (npm package)
-       - Or custom script to convert JSON Schema → Zod
+    This script generates TypeScript interfaces from Pydantic models. To also generate
+    Zod schemas, the script would need extension:
 
-    3. **Use in frontend:**
-       ```typescript
-       import { ToolCallSchema } from '../generated/schemas'
-       const toolCall = ToolCallSchema.parse(data)
-       ```
+    1. Current: Pydantic → JSON Schema → TypeScript interfaces
+    2. Needed: Pydantic → JSON Schema → TypeScript interfaces + Zod schemas
+
+    Tools for Zod generation:
+    - `json-schema-to-zod` (npm package)
+    - Extend `generate_types.py` to also output Zod schemas
+
+    Usage (after Zod support added):
+    ```typescript
+    import { ToolCallSchema } from '../generated/schemas'
+    const toolCall = ToolCallSchema.parse(data)
+    ```
 
     **Example: Comprehensive parsing with Zod**
 
@@ -313,9 +316,9 @@ I.issueOneOccurrence(
     3. Frontend uses Zod for parsing/validation
 
     Tools:
-    - `pydantic-to-typescript` (generates TS types + Zod)
-    - `json-schema-to-zod` (converts JSON Schema → Zod)
-    - `datamodel-code-generator` (Python, generates from Pydantic)
+    - **Existing script**: `adgn/scripts/generate_types.py` (commit 7c6cae7ad)
+      Currently generates TypeScript interfaces; needs extension for Zod
+    - Alternative tools: `pydantic-to-typescript`, `json-schema-to-zod`, `datamodel-code-generator`
 
     **Example generation:**
 

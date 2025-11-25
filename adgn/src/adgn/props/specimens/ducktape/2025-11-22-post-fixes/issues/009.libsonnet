@@ -12,11 +12,7 @@ I.issueOneOccurrence(
     ```python
     def _validate_no_message_flag(passthru: list[str]) -> None:
         if any(a in {"-m", "--message"} or a.startswith("--message=") for a in passthru):
-            print(
-                "Error: -m/--message is not supported; this tool supplies the commit message. "
-                "Remove -m/--message and try again.",
-                file=sys.stderr,
-            )
+            print("Error: ...", file=sys.stderr)
             raise ExitWithCode(2)
     ```
 
@@ -38,7 +34,7 @@ I.issueOneOccurrence(
 
     **The correct approach:**
 
-    Use the CLI framework (argparse or similar) to parse flags explicitly:
+    Use a CLI framework (argparse or similar) to parse flags explicitly:
 
     ```python
     # In CLI argument parser setup

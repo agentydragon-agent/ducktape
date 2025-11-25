@@ -137,12 +137,21 @@ I.issueOneOccurrence(
 
     **Recommended approach:**
 
-    1. Export Pydantic `ServerSpec` to JSON Schema
-    2. Generate TypeScript types from JSON Schema
-    3. Use generated types in frontend
-    4. Apply presets by constructing `ServerSpec` instances
+    A type generator script already exists (see commit 7c6cae7ad on branch
+    `claude/review-frontend-http-audit-...`): `adgn/scripts/generate_types.py`
 
-    This ensures frontend and backend share exact same type structure.
+    This script:
+    1. Extracts Pydantic models from agent package
+    2. Exports them to JSON Schema using `TypeAdapter.json_schema()`
+    3. Generates TypeScript interfaces using `json-schema-to-typescript`
+    4. Writes to `adgn/src/adgn/agent/web/src/generated/types.ts`
+
+    Usage:
+    ```bash
+    python adgn/scripts/generate_types.py
+    ```
+
+    This approach ensures frontend and backend share exact same type structure.
 
     **When thin wrappers are OK:**
 
@@ -223,8 +232,8 @@ I.issueOneOccurrence(
     across the stack.
 
     Tools for Pydantic → TypeScript:
-    - `pydantic-to-typescript` (npm)
-    - `datamodel-code-generator` (Python)
-    - Custom script: `model.model_json_schema()` → `json-schema-to-typescript`
+    - **Existing script**: `adgn/scripts/generate_types.py` (commit 7c6cae7ad)
+      Uses `TypeAdapter.json_schema()` + `json-schema-to-typescript` CLI
+    - Alternative tools: `pydantic-to-typescript` (npm), `datamodel-code-generator` (Python)
   |||,
 )
