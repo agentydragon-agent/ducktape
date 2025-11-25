@@ -48,6 +48,12 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **042**: Repeated type casting to any instead of using typed content models (ToolExec.svelte and ToolJson.svelte use (item.content as any) instead of ExecContent/JsonContent)
 - **043**: applyPresetFrom thin wrapper should inline at call site (ServersPanel.svelte single-use function, should use schema copying from Python)
 - **044**: MessageComposer creates second MCP client instead of using shared client (creates new client per message instead of reusing shared compositor connection)
+- **045**: GlobalApprovalsList explicit constructions should use factories with defaults (MCP client creation, tool calls, resource reads need helper functions)
+- **046**: GlobalApprovalsList manual JSON parsing should use Zod from Pydantic (parseArgs uses JSON.parse instead of schema validation, should generate from backend ToolCall model)
+- **047**: GlobalApprovalsList uses separate MCP client instead of 2-level compositor (targets /api/mcp independently, breaks architectural intent, user suggests: delete component or expose agent-global resource)
+- **048**: Subscription fallback swallows legitimate backend error (treats subscription failure as normal when backend should support it, silently degrades to polling)
+- **049**: ChatPane creates two separate MCP clients instead of using shared client (chat-pane-client for listing, chat-pane-abort-client for aborting)
+- **050**: ApprovalTimeline subscribes to unimplemented WebSocket endpoint (connects to /ws/approvals which doesn't exist, backend has TODO placeholder, feature non-functional)
 
 ## Scope
 
