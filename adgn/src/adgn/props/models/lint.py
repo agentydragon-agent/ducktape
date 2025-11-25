@@ -15,20 +15,6 @@ class Correction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class PropertyIncorrectlyAssigned(BaseModel):
-    kind: Literal["PROPERTY_INCORRECTLY_ASSIGNED"] = "PROPERTY_INCORRECTLY_ASSIGNED"
-    property: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class PropertyShouldBeAssigned(BaseModel):
-    kind: Literal["PROPERTY_SHOULD_BE_ASSIGNED"] = "PROPERTY_SHOULD_BE_ASSIGNED"
-    property: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class AnchorIncorrect(BaseModel):
     kind: Literal["ANCHOR_INCORRECT"] = "ANCHOR_INCORRECT"
     correction: Correction
@@ -71,9 +57,7 @@ class RationaleImprovement(BaseModel):
 
 
 IssueLintFinding = Annotated[
-    PropertyIncorrectlyAssigned
-    | PropertyShouldBeAssigned
-    | AnchorIncorrect
+    AnchorIncorrect
     | FalsePositive
     | TruePositive
     | OtherError

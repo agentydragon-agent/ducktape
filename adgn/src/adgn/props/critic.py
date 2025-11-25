@@ -30,7 +30,7 @@ from adgn.props.models.issue import IssueId, LineRange, Occurrence
 class ReportedIssue(BaseModel):
     """Candidate issue reported by the critic (flattened header).
 
-    Exposes only id and rationale; internal-only fields like should_flag/gap_note are not part of the critic schema.
+    Exposes only id and rationale; internal-only fields like should_flag are not part of the critic schema.
 
     Note: occurrences may be empty while the critique is being built incrementally; the submit tool enforces ≥1.
     """

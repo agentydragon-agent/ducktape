@@ -24,10 +24,10 @@ async def test_hydrated_copy_git_specimen_has_wt_tree_rooted_correctly() -> None
     """Hydrated git/github specimen should yield a content root whose subtree
     contains wt/src/wt/server directly under the yielded directory.
 
-    Using specimen 'ducktape/2025-11-20-adgn', assert that <root>/wt/src/wt/server exists
+    Using specimen 'ducktape/2025-11-20-repo', assert that <root>/wt/src/wt/server exists
     and contains at least one file or subdirectory.
     """
-    rec = SpecimenRegistry.load_strict("ducktape/2025-11-20-adgn")
+    rec = SpecimenRegistry.load_strict("ducktape/2025-11-20-repo")
 
     async with rec.hydrated_copy() as root:
         assert root.is_dir(), f"hydrated content root not a directory: {root}"

@@ -26,39 +26,33 @@ Required fields per issue:
 - id: stable string like iss-001 (sequential; keep order meaningful)
 - should_flag: true for real issues; false for canonical do-not-flag
 - rationale: multiline text block (||| ... |||) wrapped ~100 cols; keep exact user language when provided
-- properties: list of property slugs only when the issue clearly violates a definition as written; otherwise []
 - files / linesByFile: precise localization; prefer exact line ranges; use null only when genuinely unspecified
 
 Cardinality guidelines:
 - Use multi_instances when there are many independent occurrences (imports at top, pathlike misuse across files)
 - Use single when it’s one conceptual cross-cutting problem (a duplicated flow within one file; a dead module)
 
-Coverage semantics in this format:
-- should_flag=true and properties != []  → covered by existing property
-- should_flag=true and properties == []  → not covered yet (gap)
-- should_flag=false                      → canonical negative (do-not-flag)
+Issue classification:
+- should_flag=true  → real issues that should be flagged
+- should_flag=false → canonical negative (do-not-flag)
 
 Examples (Jsonnet):
 
 ```jsonnet
 // Many inline imports across files
 I.issueOccurrencesFromLines(
-  id='iss-001',
   rationale=|||
   Inline imports inside functions that have no reason to be lazy. Move to module top.
   |||,
-  properties=['imports-top'],
   linesByFile={'pkg/a.py': [101, 158], 'pkg/b.py': [[10, 12]]},
 ),
 
 // Single cross-cutting duplication within one file
 I.issueOneOccurrence(
-  id='iss-002',
   rationale=|||
   Duplicate hydration/post-creation script invocation paths; consolidate on production path.
   |||,
-  properties=['no-dead-code'],
-  files={'app/service.py': [[98, 164], [299, 380]]},
+  filesToRanges={'app/service.py': [[98, 164], [299, 380]]},
 ),
 ```
 

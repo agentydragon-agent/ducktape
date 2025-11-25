@@ -22,7 +22,7 @@ from adgn.openai_utils.model import (
     UserMessage,
 )
 from adgn.props.models.issue import IssueCore, IssueId, LineRange, Occurrence
-from adgn.props.models.lint import AnchorIncorrect, PropertyIncorrectlyAssigned, PropertyShouldBeAssigned
+from adgn.props.models.lint import AnchorIncorrect
 
 from .lint_issue import lint_issue_run
 
@@ -44,19 +44,13 @@ class RationaleExpectation(BaseModel):
     )
 
 
-class PropertyFindingExpectation(BaseModel):
-    kind: Literal["property_finding"] = "property_finding"
-    finding: Literal["PROPERTY_INCORRECTLY_ASSIGNED", "PROPERTY_SHOULD_BE_ASSIGNED"]
-    property: str = Field(..., description="Property id expected in the finding payload")
-
-
 class FindingsMatcherExpectation(BaseModel):
     kind: Literal["findings_matcher"] = "findings_matcher"
     matcher: Any
 
 
 Expectation = Annotated[
-    AnchorExpectation | RationaleExpectation | PropertyFindingExpectation | FindingsMatcherExpectation,
+    AnchorExpectation | RationaleExpectation | FindingsMatcherExpectation,
     Field(discriminator="kind"),
 ]
 
@@ -311,27 +305,6 @@ async def eval_issue_spec(
                     }
                 )
                 case_pass = case_pass and ok
-            elif isinstance(exp, PropertyFindingExpectation):
-                # Verify that the linter emitted the expected property finding
-                found = False
-                details: list[dict[str, str]] = []
-                for fr in payload.findings:
-                    f = fr.finding
-                    # All variants have kind; only some carry a property field
-                    kind = f.kind
-                    if isinstance(f, PropertyIncorrectlyAssigned | PropertyShouldBeAssigned):
-                        details.append({"kind": str(kind), "property": str(f.property)})
-                        if kind == exp.finding and f.property == exp.property:
-                            found = True
-                exp_results.append(
-                    {
-                        "kind": "property_finding",
-                        "expected": {"finding": exp.finding, "property": exp.property},
-                        "observed": details,
-                        "passed": bool(found),
-                    }
-                )
-                case_pass = case_pass and found
             elif isinstance(exp, FindingsMatcherExpectation):
                 # Apply a PyHamcrest matcher to the REAL finding objects (not flattened dicts)
                 try:
@@ -390,7 +363,6 @@ SAMPLES: list[IssueEvalSpec] = [
             id="iss-014",
             should_flag=True,
             rationale="Delete StatusSnapshot - dead code; never used and should be removed.",
-            # properties=["no-dead-code"],
         ),
         cases=list(WT_ISS014_CASES),
     ),
@@ -402,7 +374,6 @@ SAMPLES: list[IssueEvalSpec] = [
             rationale=(
                 "Prefer a single pre-check + list comprehension for simple arg filtering to reduce nesting and eliminate one-off append/continue state."
             ),
-            # properties=["minimize-nesting"],
         ),
         cases=[
             OccurrenceCase(
@@ -420,7 +391,6 @@ SAMPLES: list[IssueEvalSpec] = [
             id="iss-046",
             should_flag=True,
             rationale="`parse_gitstatusd_response` is a thin wrapper around GitStatusdProtocol; migrate callers to Protocol methods and delete.",
-            # properties=["no-dead-code"],
         ),
         cases=[
             OccurrenceCase(
@@ -443,7 +413,6 @@ SAMPLES: list[IssueEvalSpec] = [
             id="iss-047",
             should_flag=True,
             rationale="`create_gitstatusd_request` is a thin wrapper around GitStatusdProtocol; migrate callers to Protocol methods and delete.",
-            # properties=["no-dead-code"],
         ),
         cases=[
             OccurrenceCase(
@@ -456,79 +425,6 @@ SAMPLES: list[IssueEvalSpec] = [
                     RationaleExpectation(
                         rubric="Original says migrate callers; there are no callers. New rationale should simply prescribe deleting dead code without mentioning callers."
                     ),
-                ],
-            )
-        ],
-    ),
-    # New sample: duplication misassigned to no-oneoff...
-    IssueEvalSpec(
-        specimen="2025-09-02-ducktape_wt",
-        issue=IssueCore(
-            id="iss-049",
-            should_flag=True,
-            rationale=(
-                "Duplicate `daemon_cleanup` helper defined twice (one copy at 216-222); extract a single helper and reuse."
-            ),
-            # properties=["no-oneoff-vars-and-trivial-wrappers"],
-        ),
-        cases=[
-            OccurrenceCase(
-                occurrence=Occurrence(
-                    files={"wt/tests/integration/test_shell_integration.py": [LineRange(start_line=216, end_line=222)]},
-                    note="daemon_cleanup duplicate",
-                ),
-                expectations=[
-                    FindingsMatcherExpectation(
-                        matcher=has_item(PropertyIncorrectlyAssigned(property="no-oneoff-vars-and-trivial-wrappers"))
-                    )
-                ],
-            )
-        ],
-    ),
-    # New sample: iss-031 should NOT be early-bailout (misassignment)
-    IssueEvalSpec(
-        specimen="2025-09-03-ducktape-llm",
-        issue=IssueCore(
-            id="iss-031",
-            should_flag=True,
-            rationale=(
-                "Remove no-op timeout branch (dead code); prefer fail-fast or enforce real timeout. Delete empty branch."
-            ),
-            # properties=["no-dead-code", "early-bailout"],
-        ),
-        cases=[
-            OccurrenceCase(
-                occurrence=Occurrence(
-                    files={"adgn/src/adgn/llm/mcp/docker_exec/server.py": [LineRange(start_line=181, end_line=183)]},
-                    note="no-op timeout branch",
-                ),
-                expectations=[
-                    FindingsMatcherExpectation(matcher=has_item(PropertyIncorrectlyAssigned(property="early-bailout")))
-                ],
-            )
-        ],
-    ),
-    # New sample: iss-054 should NOT be marked as no-oneoff-vars-and-trivial-wrappers (misassignment)
-    IssueEvalSpec(
-        specimen="2025-09-02-ducktape_wt",
-        issue=IssueCore(
-            id="iss-054",
-            should_flag=True,
-            rationale=(
-                "`format_list_with_more` exposes an unused `max_items` parameter; callers never vary it so the parameter should be removed. Prefer a named constant for the default if needed."
-            ),
-            # properties=["no-oneoff-vars-and-trivial-wrappers"],
-        ),
-        cases=[
-            OccurrenceCase(
-                occurrence=Occurrence(
-                    files={"wt/wt/client/view_formatter.py": [LineRange(start_line=37, end_line=37)]},
-                    note="format_list_with_more max_items unused",
-                ),
-                expectations=[
-                    FindingsMatcherExpectation(
-                        matcher=has_item(PropertyIncorrectlyAssigned(property="no-oneoff-vars-and-trivial-wrappers"))
-                    )
                 ],
             )
         ],
