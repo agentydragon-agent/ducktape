@@ -65,7 +65,6 @@ I.issueOneOccurrence(
     - Prevents future bugs: Can't accidentally instantiate with None
     - Clearer API: Required parameters document requirements
   |||,
-  properties=['api-design', 'type-safety', 'fail-fast', 'defensive-programming'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py': [
       [53, 53],    // Optional global_compositor parameter

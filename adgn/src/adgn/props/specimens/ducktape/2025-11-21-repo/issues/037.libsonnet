@@ -231,7 +231,6 @@ I.issueOneOccurrence(
     - Session notifiers (UI state, session state)
     - All the wiring code in agents.py (lines 833-932)
   |||,
-  properties=['architectural-design', 'error-handling', 'async-patterns'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [82, 82],    // ApprovalHub._notifier field

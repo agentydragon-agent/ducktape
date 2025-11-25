@@ -25,7 +25,6 @@ I.issueOneOccurrence(
     Note: this is appropriate when the dumped content comfortably fits in memory. If the list
     can be very large (streaming required), keep the streaming form; prefer clarity over micro-optimizations.
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'pyright_watch_report.py': [[292, 299]],
   },

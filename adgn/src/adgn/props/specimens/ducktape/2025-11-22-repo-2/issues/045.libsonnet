@@ -94,7 +94,6 @@ I.issueOneOccurrence(
     - Clear semantics
     - IDE autocomplete works
   |||,
-  properties=['structured-data-over-untyped-mappings', 'type-correctness-and-specificity'],
   filesToRanges={
     'adgn/src/adgn/agent/persist/__init__.py': [
       188,

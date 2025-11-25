@@ -34,7 +34,6 @@ I.issueOneOccurrence(
     **After inlining:**
     Delete the `get_json_schema` function entirely (lines 183-186).
   |||,
-  properties=['code-style', 'simplicity', 'dead-code'],
   filesToRanges={
     'adgn/scripts/generate_frontend_code.py': [
       [183, 186],  // get_json_schema function - should be deleted

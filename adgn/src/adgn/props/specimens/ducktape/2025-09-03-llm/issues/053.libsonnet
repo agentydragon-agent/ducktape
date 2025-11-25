@@ -10,7 +10,6 @@ I.issueOneOccurrence(
     Suggestion: replace the poll+drain pair with one loop that reads, writes to the aggregator, and breaks
     on EOF/exception. Add a brief comment documenting the exit conditions.
   |||,
-  // properties=['minimize-nesting','early-bailout'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[568, 583]],
   },

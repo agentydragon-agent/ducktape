@@ -15,7 +15,6 @@ I.issueOneOccurrence(
     a specific, expected error, catch it narrowly with context and re-raise — but
     in this location the correct fix is to remove the try/except entirely.
   |||,
-  // properties=['scoped-try-except','early-bailout'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/agent.py': [[204, 207]],
   },

@@ -5,7 +5,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueOneOccurrence(
   rationale='Historical "deadcode pruned" comment appears to document an edit history ("emitStage1 was unused") and is no longer useful to readers; delete the comment to avoid confusion.',
-  // properties=['no-useless-docs'],
   filesToRanges={
     'e2e/mock_openai_responses.go': [[218, 219]],
   },

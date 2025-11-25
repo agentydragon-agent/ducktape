@@ -33,7 +33,6 @@ I.issueOneOccurrence(
     from the same refactor, though that's less critical since the `error` method overall
     is simpler.
   |||,
-  properties=['code-style', 'readability'],
   filesToRanges={
     'adgn/src/adgn/mcp/stubs/typed_stubs.py': [
       [205, 207],  // models assignment and check in __getattr__

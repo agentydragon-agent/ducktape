@@ -5,7 +5,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueOneOccurrence(
   rationale='Constructing file paths via string concatenation is error-prone (OS path separators) and less idiomatic. Use filepath.Join(dir, "old") / filepath.Join(dir, "new") for portability and clarity.',
-  // properties=['pathlike'],
   filesToRanges={
     'internal/diff/word_inline.go': [[41, 46], [48, 48]],
   },

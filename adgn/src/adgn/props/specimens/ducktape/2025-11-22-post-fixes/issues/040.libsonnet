@@ -146,65 +146,10 @@ I.issueOneOccurrence(
 
     But this should have a clear TODO with owner and reason, not just an empty placeholder.
   |||,
-  properties=['remove-dead-code', 'avoid-empty-constants', 'no-speculative-code'],
   filesToRanges={
     'adgn/src/adgn/agent/server/system_message.py': [
       [28, 28],   // dedent("").strip() creates empty constant
       [56, 56],   // Empty constant included in join
     ],
   },
-  gap_note= |||
-    This finding illustrates **"avoid-empty-constants"**: hardcoded empty string
-    constants (especially with transformations like `dedent("").strip()`) should
-    be removed, not kept as placeholders.
-
-    Related to **"no-speculative-code"**: don't create constants "in case we need
-    them later" with empty values. Add them when you have content.
-
-    Principle: Empty should mean absent
-    - If a value is always empty, don't pass it around
-    - If a constant is always `""`, remove it from joins/concatenations
-    - If a field is always `None`, remove it from the model (or make it truly optional)
-
-    When empty constants are OK:
-    - Loaded from external source: `content = file.read()` might be empty
-    - Runtime-computed: `prefix = get_prefix() if enabled else ""`
-    - Configuration: `separator = os.getenv("SEP", "")`
-    - Extension point: `plugin_header = plugin.get_header() if plugin else ""`
-
-    When they're NOT OK:
-    - Literal: `BANNER = ""`
-    - No-op transformation: `HEADER = dedent("").strip()`
-    - "Might add later": `FOOTER = ""  # TODO`
-    - Placeholder in join: `"\n".join([a, "", c])`
-
-    How to clean up:
-    ```python
-    # Before:
-    EMPTY = dedent("").strip()
-    parts = [header, EMPTY, footer]
-    text = "\n\n".join(parts)
-
-    # After:
-    # Remove EMPTY entirely
-    parts = [header, footer]
-    text = "\n\n".join(parts)
-    ```
-
-    For conditional content:
-    ```python
-    # Before:
-    OPTIONAL = ""  # Might have content
-    parts = [header, OPTIONAL, footer]
-
-    # After:
-    parts = [header]
-    if optional_content:
-        parts.append(optional_content)
-    parts.append(footer)
-    text = "\n\n".join(parts)
-    ```
-
-    This makes intent explicit: we only include content when it exists.
-  |||,
 )

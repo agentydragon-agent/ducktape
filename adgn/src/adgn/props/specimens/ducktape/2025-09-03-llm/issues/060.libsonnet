@@ -8,7 +8,7 @@ I.issueOneOccurrence(
 
     Benefits: less duplication, easier edits to prompt policy, and consistent structure.
   |||,
-  // properties=['minimize-nesting'],
+
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[1110, 1120], [1121, 1128]],
   },

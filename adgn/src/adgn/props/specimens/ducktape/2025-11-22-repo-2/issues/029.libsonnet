@@ -28,7 +28,6 @@ I.issueOneOccurrence(
 
     This removes the unnecessary intermediate variable.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [382, 393],  // proposals_list resource with one-off proposals variable

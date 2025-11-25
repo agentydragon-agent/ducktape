@@ -49,7 +49,6 @@ I.issueOneOccurrence(
     - You need string operations (splitting, regex, etc.)
     - Logging/formatting requires string representation
   |||,
-  properties=['avoid-redundant-conversions', 'use-modern-types'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [662, 662],  // str(Path.cwd()) in discover_repository call
@@ -58,18 +57,4 @@ I.issueOneOccurrence(
       [163, 163],  // str(Path.cwd()) in discover_repository call
     ],
   },
-  gap_note= |||
-    This finding illustrates **"use-modern-types"**: prefer modern type-aware APIs
-    and pass typed objects (like `Path`) directly rather than converting to strings
-    prematurely.
-
-    Python's `pathlib.Path` was introduced in Python 3.4, and modern libraries accept
-    both `str` and `Path` for path arguments. When a library accepts `str | Path`:
-    - Pass `Path` objects directly
-    - Let the library handle any necessary conversion internally
-    - Only convert to `str` when the API strictly requires it
-
-    Related to "avoid-redundant-conversions": don't add conversion steps that the
-    callee will perform anyway (or doesn't need at all).
-  |||,
 )

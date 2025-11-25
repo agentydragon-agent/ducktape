@@ -74,7 +74,6 @@ I.issueOneOccurrence(
     - Consistent with hamcrest usage elsewhere in tests
     - Eliminates mutable state (found flag)
   |||,
-  properties=['test-quality', 'hamcrest-matchers', 'readability', 'declarative-style'],
   filesToRanges={
     'adgn/tests/agent/test_mcp_notifications_flow.py': [
       [136, 147],  // Complex nested loop assertion

@@ -37,7 +37,6 @@ I.issueOneOccurrence(
     **Note:** For precise token counting, use a tokenizer (e.g., `tiktoken`). For
     rough caps, character count is a better heuristic than byte length.
   |||,
-  properties=['appropriate-abstractions', 'simplicity'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/core.py': [
       [8, 8],     // MAX_PROMPT_CONTEXT_BYTES constant (wrong unit)
@@ -50,18 +49,4 @@ I.issueOneOccurrence(
       [163, 165], // _build_ai_context: final byte-based truncation
     ],
   },
-  gap_note= |||
-    This finding illustrates **"appropriate-abstractions"**: when modeling a
-    constraint (LLM token budget), use units that match the domain.
-
-    - Bytes are appropriate for: file I/O, network transfer, memory allocation
-    - Characters are appropriate for: text processing, LLM token estimation
-    - Tokens are appropriate for: precise LLM budget tracking (requires tokenizer)
-
-    Choosing the wrong unit adds complexity (encoding/decoding) and reduces
-    accuracy (multi-byte UTF-8 skews the estimate).
-
-    Related to "simplicity": the simpler implementation (character counting) is
-    also more correct for this use case.
-  |||,
 )

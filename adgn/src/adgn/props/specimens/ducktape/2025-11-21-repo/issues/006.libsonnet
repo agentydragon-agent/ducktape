@@ -72,7 +72,6 @@ I.issueOneOccurrence(
     - Clearer that nothing happens in this path
     - Can always restore from git if actually needed
   |||,
-  properties=['dead-code', 'YAGNI', 'speculative-generality'],
   filesToRanges={
     'adgn/src/adgn/inop/runners/containerized_claude.py': [
       [578, 585],  // _setup_wrapper no-op method definition

@@ -98,7 +98,6 @@ I.issueOneOccurrence(
     - Multiple components assume backend features not yet implemented
     - Silent failures hide incomplete implementation
   |||,
-  properties=['remove-incomplete-features', 'no-swallowing-errors', 'provide-user-feedback', 'implement-or-remove'],
   filesToRanges={
     'adgn/src/adgn/agent/web/src/components/ApprovalTimeline.svelte': [
       [54, 61],   // WebSocket subscription to non-existent endpoint
@@ -108,71 +107,4 @@ I.issueOneOccurrence(
       [1, 1],     // TODO placeholder for WebSocket routes (actual line varies)
     ],
   },
-  gap_note= |||
-    This finding illustrates **"implement-or-remove"**: features that appear
-    functional but depend on unimplemented backend endpoints should either be
-    completed or removed.
-
-    Principle: No half-implemented features
-    - If backend doesn't support it, don't ship frontend
-    - If frontend exists, backend must support it
-    - If incomplete, remove until ready
-    - Don't leave broken features that silently fail
-
-    Related to **"remove-incomplete-features"**: code that doesn't work and won't
-    work without significant backend changes should be removed.
-
-    Related to **"no-swallowing-errors"**: when WebSocket connection fails, user
-    should know. Don't log and continue as if everything is fine.
-
-    Why half-implemented features are harmful:
-
-    **User confusion:**
-    - Feature appears to exist but doesn't work
-    - No feedback about why it's not working
-    - Users assume bug in their setup
-
-    **Developer confusion:**
-    - New developers don't know feature is incomplete
-    - Unclear if feature ever worked
-    - Wastes time debugging non-existent backend
-
-    **Technical debt:**
-    - Frontend code depends on backend that doesn't exist
-    - Can't delete "TODO" backend code (frontend needs it)
-    - Both sides stuck in limbo
-
-    **Resource waste:**
-    - Connection attempts that always fail
-    - Error handling for errors that always happen
-    - Code maintained but never used
-
-    Correct patterns:
-
-    - **Feature flags**: Use `WEBSOCKET_ENABLED` flag; subscribe if true, poll if false
-    - **Graceful degradation**: Try WebSocket, catch failure, show status message, fall back to polling
-    - **Capability detection**: Fetch backend capabilities, check `websockets` field
-    - **Complete removal**: Delete WebSocket code, use polling until backend ready
-
-    When to keep incomplete features:
-    - Clearly marked as experimental
-    - Behind feature flag
-    - Fails loudly with clear error message
-    - Documented what's missing
-    - Plan to complete soon
-
-    When to remove:
-    - Silently fails
-    - No plan to implement
-    - Confuses users/developers
-    - Depends on unimplemented backend
-    - No feature flag or warning
-
-    Red flags:
-    - "TODO: Implement backend endpoint"
-    - Silent WebSocket error handlers
-    - Features that appear to work but don't
-    - No user feedback when feature unavailable
-    - Connection attempts that always fail
-  |||,
 )

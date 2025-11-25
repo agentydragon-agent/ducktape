@@ -32,7 +32,6 @@ I.issueOneOccurrence(
     4. Testability: Easy to test with direct boolean values
     5. Robust: No string parsing edge cases
   |||,
-  properties=['explicit-over-implicit', 'separation-of-concerns'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/core.py': [
       [61, 63],   // include_all_from_passthru: fragile flag parsing
@@ -52,17 +51,4 @@ I.issueOneOccurrence(
       [77, 77],   // include_verbose = ("-v" in passthru) or ("--verbose" in passthru)
     ],
   },
-  gap_note= |||
-    This finding illustrates the principle of **"explicit-over-implicit"**:
-    Functions should accept explicit, typed parameters for the values they need
-    rather than accepting generic containers and parsing out what they want.
-
-    This is particularly important at architectural boundaries:
-    - CLI layer should parse flags into typed values
-    - Core/business logic should accept typed parameters
-    - Don't pass raw `sys.argv` or `**kwargs` deep into the stack
-
-    Related to "separation-of-concerns": core logic shouldn't know about
-    command-line flag syntax.
-  |||,
 )

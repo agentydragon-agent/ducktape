@@ -19,7 +19,7 @@ I.issueOneOccurrence(
 
     Fix: Remove function entirely. Use `function_call.arguments` directly in agent.py:269.
   |||,
-  properties=['type-correctness-and-specificity', 'no-dead-code', 'truthfulness'],
+
   filesToRanges={
     'adgn/src/adgn/agent/agent.py': [
       [149, 160],  // Function definition

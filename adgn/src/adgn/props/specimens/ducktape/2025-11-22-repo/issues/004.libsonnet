@@ -88,7 +88,6 @@ I.issueOneOccurrence(
 
     This is standard practice in idiomatic Python code.
   |||,
-  properties=['code-style', 'simplicity', 'readability', 'python-idioms'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/compositor_factory.py': [
       [47, 50],   // Unnecessary policy_server variable

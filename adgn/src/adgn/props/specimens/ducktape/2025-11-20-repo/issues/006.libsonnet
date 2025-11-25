@@ -60,7 +60,6 @@ I.issueOneOccurrence(
     - Consistent pattern across all agent tests
     - Eliminates verbose tuple destructuring
   |||,
-  properties=['test-quality', 'dry-principle', 'fixture-design', 'maintainability'],
   filesToRanges={
     'adgn/tests/agent/test_policy_validation_reload.py': [
       [18, 36],  // engine_and_persistence fixture returning tuple

@@ -51,7 +51,6 @@ I.issueOneOccurrence(
     2. Remove error-swallowing exception handlers
     3. Make test expectations explicit - either approval is needed or it isn't
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers', 'python/no-swallowing-errors'],
   filesToRanges={
     'adgn/tests/agent/e2e/test_mcp_edge_cases.py': [
       [38, 51],   // Duplicated responses_create pattern #1

@@ -11,7 +11,6 @@ I.issueOneOccurrence(
 
     In this specimen the MCP config loader uses `os.path.exists(path)`; prefer `Path(path).exists()` (or accept a Path at the API boundary) to tighten the contract.
   |||,
-  // properties=['pathlib','type-correctness-and-specificity'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py': [[32, 35]],
   },

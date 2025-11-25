@@ -45,7 +45,6 @@ I.issueOneOccurrence(
 
     Similar patterns at lines 171-176, 308-309, 320-321.
   |||,
-  properties=['test-quality', 'type-safety', 'maintainability', 'consistency'],
   filesToRanges={
     'adgn/tests/mcp/approval_policy/test_policy_resources.py': [
       [53, 61],   // Server fixtures - should share with conftest

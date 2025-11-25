@@ -87,7 +87,6 @@ I.issueOneOccurrence(
     3. Consider generating TypeScript types from Pydantic models
     4. Add ESLint rule to discourage `as any`
   |||,
-  properties=['type-safe-apis', 'avoid-type-casting', 'use-platform-primitives', 'avoid-duplication'],
   filesToRanges={
     'adgn/src/adgn/agent/web/src/components/ToolExec.svelte': [
       [40, 51],   // Repeated (item.content as any) casts
@@ -96,83 +95,4 @@ I.issueOneOccurrence(
       [33, 33],   // (c as any).content_kind and (c as any).result
     ],
   },
-  gap_note= |||
-    This finding illustrates **"avoid-type-casting"**: repeated `as any` casts
-    indicate missing type guards or improperly used types.
-
-    Principle: Use discriminated unions + type guards
-    - TypeScript discriminated unions (tagged unions) enable type narrowing
-    - Type guard: `if (content.content_kind === 'Exec') { /* content is ExecContent */ }`
-    - Avoid: `(content as any).field`
-
-    Related to **"type-safe-APIs"**: when backend types exist (Pydantic models),
-    frontend should use matching TypeScript types, not ad-hoc parsing.
-
-    Related to **"use-platform-primitives"**: TypeScript's discriminated unions
-    are the idiomatic way to handle variant types. Don't bypass with `as any`.
-
-    Patterns for discriminated unions:
-
-    **Good - Type guard with discriminated union:**
-    ```typescript
-    type ExecContent = { kind: 'Exec'; cmd: string }
-    type JsonContent = { kind: 'Json'; result: unknown }
-    type Content = ExecContent | JsonContent
-
-    function handle(content: Content) {
-      if (content.kind === 'Exec') {
-        // TypeScript knows: content is ExecContent
-        console.log(content.cmd)
-      } else {
-        // TypeScript knows: content is JsonContent
-        console.log(content.result)
-      }
-    }
-    ```
-
-    **Good - Reactive statement in Svelte:**
-    ```svelte
-    <script lang="ts">
-      export let item: ToolItem
-      $: execContent = item.content.kind === 'Exec' ? item.content : null
-    </script>
-    {#if execContent}
-      <pre>{execContent.cmd}</pre>
-    {/if}
-    ```
-
-    **Bad - Repeated type casts:**
-    ```svelte
-    {#if (item.content as any).cmd}
-      <pre>{(item.content as any).cmd}</pre>
-    {/if}
-    {#if (item.content as any).stdout}
-      <pre>{(item.content as any).stdout}</pre>
-    {/if}
-    ```
-
-    **Automation: Pydantic to TypeScript**
-
-    Tools to generate TypeScript from Pydantic:
-    - `pydantic-to-typescript` (npm package)
-    - `datamodel-code-generator` (Python, generates from JSON Schema)
-    - `json-schema-to-typescript` (from Pydantic's JSON Schema output)
-
-    Workflow:
-    1. Export Pydantic models to JSON Schema: `model.model_json_schema()`
-    2. Generate TypeScript types: `json2ts schema.json > types.ts`
-    3. Use generated types in frontend
-
-    Benefits:
-    - Single source of truth (Pydantic models)
-    - No manual type duplication
-    - Automatic updates when backend changes
-    - Type safety across backend/frontend boundary
-
-    Red flags in code review:
-    - `as any` repeated multiple times
-    - Same field accessed with multiple casts
-    - Manual Zod schemas duplicating existing types
-    - Type casts instead of type guards
-  |||,
 )

@@ -42,7 +42,6 @@ I.issueOneOccurrence(
     3. **Single responsibility**: Extract scissors parsing into testable function
     4. **More maintainable**: Changing scissors logic happens in one place
   |||,
-  properties=['use-stdlib', 'extract-helper', 'remove-noise'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [573, 574],  // Manual indentation loop
@@ -52,22 +51,4 @@ I.issueOneOccurrence(
       [601, 609],  // Manual scissors+comment parsing
     ],
   },
-  gap_note= |||
-    This finding illustrates **"use-stdlib"**: prefer standard library utilities over
-    manual reimplementation. Python's standard library provides well-tested, optimized
-    implementations for common patterns.
-
-    Examples from this code:
-    - `textwrap.indent()` for adding prefixes to lines
-    - `str.removeprefix()` / `str.removesuffix()` for string trimming (Python 3.9+)
-    - `itertools` for complex iteration patterns
-    - `pathlib.Path` for file operations (already used, good)
-
-    Related to "extract-helper": when standard library doesn't provide the exact
-    utility you need (like scissors parsing), extract it into a named, testable helper
-    rather than keeping complex logic inline.
-
-    Related to "remove-noise": unnecessary intermediate variables (like `saved` when
-    only used once, or `content_before` as a rename) add cognitive load without value.
-  |||,
 )

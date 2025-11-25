@@ -7,7 +7,6 @@ I.issueWithOccurrences(
 
     Prefer module-level imports to keep dependency graphs visible and simplify testing and bundling.
   |||,
-  // properties=['imports-top'],
   occurrences=[
     { files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/agent.py': [[29, 29], [46, 46], [85, 85]] }, note: 'function-local imports: _is_retryable, _openai_client, load_mcp_file' },
     { files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[87, 87]] }, note: 'function-local import in _run_proc' },

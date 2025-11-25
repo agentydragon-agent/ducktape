@@ -78,7 +78,6 @@ I.issueOneOccurrence(
     - Import errors caught at module load time, not runtime
     - Better for static analysis tools (linters, type checkers)
   |||,
-  properties=['python/imports-top'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [
       180,

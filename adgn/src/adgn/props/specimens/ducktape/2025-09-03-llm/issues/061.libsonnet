@@ -14,7 +14,7 @@ I.issueOneOccurrence(
 
     Prefer non-quoted annotations (`-> McpManager`) for clarity and consistency.
   |||,
-  // properties=['type-hints'],
+
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py': [[191, 191], [226, 226]],
   },

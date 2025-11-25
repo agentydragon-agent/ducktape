@@ -33,24 +33,10 @@ I.issueOneOccurrence(
 
     This simplifies call sites to: got = await persistence.get_policy_proposal_or_raise(...)
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [357, 358],  // approve_proposal: get + None check + raise
       [399, 401],  // proposal_detail: get + None check + raise
     ],
   },
-  gap_note= |||
-    This finding illustrates a pattern that could be a property: "extract-repeated-guards"
-    or "consolidate-validation-patterns".
-
-    When the same validation/guard pattern (get + None check + raise) appears at
-    multiple call sites, extract it into:
-    - A helper method at the appropriate layer (preferred for API methods)
-    - A local helper (for internal use only)
-    - Or strengthen the underlying API to handle the case (e.g., non-nullable variant)
-
-    Related to DRY and "no-oneoff-vars-and-trivial-wrappers" but specifically
-    about consolidating guard/validation patterns that repeat across call sites.
-  |||,
 )

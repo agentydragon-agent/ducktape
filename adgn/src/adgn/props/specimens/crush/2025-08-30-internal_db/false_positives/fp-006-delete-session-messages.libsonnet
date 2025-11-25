@@ -20,7 +20,6 @@ I.issueOneOccurrence(
 
     Both forms are acceptable: using `if message.SessionID != sessionID { continue }` is valid, but the original form is equally clear and idiomatic. No change is necessary; retain whichever form reads better to maintainers.
   |||,
-  properties=[],
   filesToRanges={
     'internal/message/message.go': [[160, 172]],
   },

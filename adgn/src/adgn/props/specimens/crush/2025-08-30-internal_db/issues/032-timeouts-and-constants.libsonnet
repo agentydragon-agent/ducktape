@@ -5,7 +5,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueWithOccurrences(
   rationale='Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner, app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or configurable options) to make tuning, consistency, and discovery easier. Where appropriate, consider making them configuration options (with safe defaults). Preserve local comments about semantics when migrating to named constants.',
-  // properties=[],
   occurrences=[
     { files: { 'internal/lsp/client.go': [{ start_line: 241, end_line: 246 }, { start_line: 312, end_line: 318 }, { start_line: 316, end_line: 319 }, { start_line: 522, end_line: 526 }] }, note: 'LSP client: Close() uses 5*time.Second; WaitForServerReady uses 30*time.Second and ticker 500*time.Millisecond; maxFilesToOpen constant-like value 5. Define named consts like LSPStopTimeout, LSPWaitReadyTimeout, LSPReadyPollInterval, MaxFilesToOpen.' },
     { files: { 'internal/diff/external.go': [{ start_line: 54, end_line: 63 }] }, note: 'External diff runner uses context.WithTimeout(..., 2*time.Second). Define ExternalDiffTimeout = 2 * time.Second or make configurable via config.Diff.ExternalCommand timeout.' },

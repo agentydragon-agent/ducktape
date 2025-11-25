@@ -63,7 +63,6 @@ I.issueOneOccurrence(
     - Improves code readability by removing noise
     - Can always restore from git history if needed
   |||,
-  properties=['dead-code', 'maintainability', 'clarity'],
   filesToRanges={
     'adgn/src/adgn/openai_utils/model.py': [
       [219, 225],  // AssistantMessageOut.from_input_item - dead code

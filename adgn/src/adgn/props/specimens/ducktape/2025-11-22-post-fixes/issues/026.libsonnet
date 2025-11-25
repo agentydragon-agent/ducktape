@@ -169,40 +169,10 @@ I.issueOneOccurrence(
     The principle: store data in ONE efficient representation, derive other views
     on-demand via methods/properties.
   |||,
-  properties=['avoid-duplication', 'single-source-of-truth', 'efficient-representation'],
   filesToRanges={
     'adgn/src/adgn/agent/notifications/types.py': [
       [14, 30],  // NotificationsBatch with redundant fields
       [33, 51],  // ResourcesServerNotice and NotificationsForModel (redundant with NotificationsBatch)
     ],
   },
-  gap_note= |||
-    This finding illustrates **"efficient-representation"**: choose data structures
-    that are both memory-efficient and provide fast access for common operations.
-
-    Principles for choosing representations:
-    - Store data once in the most useful shape for primary use cases
-    - Derive other views on-demand (via methods/properties)
-    - Group related data together (dict[str, Notice] not flat list)
-    - Use sets for uniqueness, frozenset for immutability
-    - Avoid storing both raw and parsed forms of the same data
-
-    Common inefficiencies to avoid:
-    - Flat lists when grouped dicts would be better (lookup by key)
-    - Lists when sets would deduplicate and provide faster membership tests
-    - Storing derived data that can be computed from source
-    - Multiple representations of the same data (raw + parsed)
-    - Mutable collections when immutable would be safer
-
-    When multiple views are needed:
-    - Pick ONE authoritative representation (the most efficient/natural one)
-    - Provide methods/properties for other views
-    - Example: `batch.iter_updated_uris()` instead of storing flat `resources_updated` list
-
-    Related to **"single-source-of-truth"**: don't store the same information
-    in multiple forms (raw + parsed, flat + grouped). Store once, derive others.
-
-    Related to **"avoid-duplication"**: applies to data structures too - don't
-    define two types that represent the same domain concept in different shapes.
-  |||,
 )

@@ -105,7 +105,6 @@ I.issueOneOccurrence(
     - Line 175 comment says "resource versions for the MCP protocol" but that's what the ID should be
     - If MCP needs version numbers separate from IDs, create a separate `_policy_version` field
   |||,
-  properties=['data-integrity', 'persistence', 'immutability', 'correctness'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [150, 153],  // Comments and _policy_id initialization

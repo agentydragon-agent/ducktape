@@ -32,7 +32,6 @@ I.issueOneOccurrence(
 
     This is more concise and makes it clear we're debugging/logging a variable's value.
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [
       99,

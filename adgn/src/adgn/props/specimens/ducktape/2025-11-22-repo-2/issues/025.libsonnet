@@ -40,7 +40,6 @@ I.issueOneOccurrence(
 
     This removes the unnecessary intermediate variable while maintaining clarity. The comment still explains what's being sorted and why.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [196, 204],  // approvals_list assignment and return

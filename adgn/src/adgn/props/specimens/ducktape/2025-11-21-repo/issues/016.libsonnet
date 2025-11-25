@@ -36,7 +36,6 @@ I.issueOneOccurrence(
     **Note:**
     This is a simple readability improvement that doesn't change behavior.
   |||,
-  properties=['modern-python', 'conciseness', 'idioms'],
   filesToRanges={
     'adgn/src/adgn/mcp/approval_policy/server.py': [
       [165, 167],  // got variable assignment and None check

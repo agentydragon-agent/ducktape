@@ -23,7 +23,7 @@ I.issueOneOccurrence(
 
     May require investigation of SQLAlchemy 2.0+ support for NewType or custom type handlers.
   |||,
-  properties=['type-correctness-and-specificity'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/models.py': [
       70,           // id: Mapped[str]
@@ -32,9 +32,5 @@ I.issueOneOccurrence(
       131,          // id=AgentID(agent.id)
       147,          // id=AgentID(agent.id)
     ],
-  },
-  gap_note=|||
-    Requires investigation: Can SQLAlchemy 2.0+ map NewType directly? May need custom
-    type handler or TypeDecorator.
-  |||,
+  }
 )

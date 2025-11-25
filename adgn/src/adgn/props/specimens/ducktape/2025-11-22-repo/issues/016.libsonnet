@@ -63,7 +63,6 @@ I.issueOneOccurrence(
         await client.__aexit__(None, None, None)
     ```
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/tests/agent/test_policy_validation_reload.py': [
       [47, 48],   // Test 1 stub creation
@@ -75,11 +74,4 @@ I.issueOneOccurrence(
       [131, 132], // Test 7 stub creation
     ],
   },
-  gap_note=|||
-    This pattern deserves a property like "extract-test-fixtures": when test setup
-    code is duplicated across multiple test functions, it should be extracted into
-    pytest fixtures. This is more specific than general "no-oneoff-vars-and-trivial-wrappers"
-    as it addresses test organization, DRY principle in test suites, and pytest
-    best practices for sharing test setup/teardown logic.
-  |||,
 )

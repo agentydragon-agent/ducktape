@@ -22,7 +22,7 @@ I.issueOneOccurrence(
     - Convert __init__ body to field declarations
     - Use field(default_factory=asyncio.Lock) for Lock instances (mutable defaults)
   |||,
-  properties=['python/modern-python-idioms', 'least-power', 'structured-data-over-untyped-mappings'],
+
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/server.py': [
       [46, 52],     // AgentEntry class definition

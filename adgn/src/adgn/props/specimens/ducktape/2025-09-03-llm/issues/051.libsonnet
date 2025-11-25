@@ -9,7 +9,6 @@ I.issueOneOccurrence(
 
     This yields predictable size, avoids double work, and makes tradeoffs explicit between sections.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [
       [133, 137],  // _cap_append(status)

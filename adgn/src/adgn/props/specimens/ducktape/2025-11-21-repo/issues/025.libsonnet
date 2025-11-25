@@ -106,7 +106,6 @@ I.issueOneOccurrence(
     The exact fix depends on what information is actually needed by consumers. The current field
     is definitely misleading and needs to be redesigned.
   |||,
-  properties=['api-design', 'semantic-correctness', 'clarity'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [197, 201],  // ServerStatus enum with misleading name

@@ -22,7 +22,7 @@ I.issueOneOccurrence(
     Fix: Remove --ui-port flag. Either implement the promised UI or consolidate all endpoints
     onto mcp-port.
   |||,
-  properties=['no-dead-code', 'truthfulness', 'least-power'],
+
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/cli.py': [
       63,           // --ui-port flag definition

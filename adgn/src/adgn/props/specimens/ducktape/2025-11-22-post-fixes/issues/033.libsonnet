@@ -190,7 +190,6 @@ I.issueOneOccurrence(
     - Testing uses explicit parameters, not env var mocking
     - Changes to env var names are localized to one module
   |||,
-  properties=['encapsulate-environment-access', 'single-responsibility', 'avoid-leaking-abstractions'],
   filesToRanges={
     'adgn/src/adgn/agent/runtime/infrastructure.py': [
       [142, 142],  // Manual os.getenv("ADGN_AGENT_PRESETS_DIR")
@@ -199,59 +198,4 @@ I.issueOneOccurrence(
       [59, 78],  // discover_presets should read env var internally
     ],
   },
-  gap_note= |||
-    This finding illustrates **"encapsulate-environment-access"**: modules that
-    provide discovery/resolution functions should handle their own environment
-    variables internally, not require callers to read and pass them.
-
-    Principle: Each module owns its configuration sources:
-    - Environment variables
-    - Config files
-    - Default values
-    - Override mechanisms
-
-    Callers should only need to:
-    - Call the function with domain parameters (e.g., preset name)
-    - Optionally provide explicit overrides for testing
-    - NOT know about env var names or config file locations
-
-    Benefits of encapsulating env access:
-    - Single source of truth for configuration
-    - Easy to change env var names (one place)
-    - Clear ownership (which module owns which config)
-    - Better testing (explicit overrides, not env mocking)
-    - Less duplication (not every caller reads env vars)
-
-    Common patterns:
-
-    **Good: Function handles env var internally**
-    ```python
-    def resolve_foo(*, override: str | None = None) -> str:
-        if override is not None:
-            return override
-        return os.getenv("APP_FOO") or "default"
-    ```
-
-    **Bad: Caller must read env var**
-    ```python
-    def resolve_foo(value: str | None = None) -> str:
-        return value or "default"
-
-    # Every caller:
-    foo = resolve_foo(os.getenv("APP_FOO"))  # ← Duplication
-    ```
-
-    When to expose configuration parameters:
-    - For testing (explicit override, clearly documented)
-    - For programmatic configuration (not from environment)
-    - For dependency injection (pass configured objects)
-
-    Related to **"single-responsibility"**: the presets module is responsible for
-    all preset discovery logic, including reading relevant environment variables.
-    Infrastructure code shouldn't need to know how presets are discovered.
-
-    Related to **"avoid-leaking-abstractions"**: environment variable names are
-    implementation details. Callers shouldn't need to know them to use discovery
-    functions.
-  |||,
 )

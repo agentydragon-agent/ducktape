@@ -5,7 +5,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueWithOccurrences(
   rationale='Many tools duplicate the pattern `WithResponseMetadata(NewTextResponse(text), SomeResponseMetadata{...})`. Introduce a small helper (e.g., WrapTextWithMeta(text string, meta any) (ToolResponse, error)) and per-tool unexported constructors to reduce duplication and clarify metadata shaping.',
-  // properties=[],
   occurrences=[
     { files: { 'internal/llm/tools/glob.go': [{ start_line: 133, end_line: 134 }] }, note: 'Glob tool uses WithResponseMetadata/NewTextResponse at these lines; factor via WrapTextWithMeta.' },
     { files: { 'internal/llm/tools/bash.go': [{ start_line: 487, end_line: 490 }] }, note: 'Bash tool wraps stdout/no-output with BashResponseMetadata - use helper to centralize.' },

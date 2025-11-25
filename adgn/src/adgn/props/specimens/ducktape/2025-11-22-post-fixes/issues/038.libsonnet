@@ -167,7 +167,6 @@ I.issueOneOccurrence(
 
     This keeps the architecture consistent and avoids synchronization issues.
   |||,
-  properties=['avoid-duplication', 'single-source-of-truth', 'use-platform-primitives'],
   filesToRanges={
     'adgn/src/adgn/agent/server/status_shared.py': [
       [66, 68],   // PolicyState thin wrapper
@@ -175,32 +174,4 @@ I.issueOneOccurrence(
       [91, 91],   // pending_approvals redundant field
     ],
   },
-  gap_note= |||
-    This finding illustrates **"use-platform-primitives"**: when adopting a protocol
-    like MCP, use it consistently rather than creating parallel custom APIs.
-
-    Principle: If it's in MCP, don't duplicate it elsewhere
-    - MCP resources expose server state → don't add `mcp: McpState` to status
-    - Approval policy is an MCP server → don't add `policy: PolicyState` and `pending_approvals: int`
-    - Compositor provides resource subscriptions → don't build custom push mechanisms
-
-    Related to **"single-source-of-truth"**: MCP resources should be authoritative,
-    not synchronized copies in custom status models.
-
-    When to use custom fields vs MCP resources:
-    - Custom: Core agent state not naturally an MCP concept (lifecycle, active run)
-    - MCP: Anything that fits the resource/tool model (servers, policies, approvals)
-
-    Benefits of MCP-first architecture:
-    - Consistent protocol (tools, resources, subscriptions)
-    - Automatic change notifications
-    - No manual synchronization
-    - Standard client libraries
-    - Reduced custom code
-
-    Red flags for duplication:
-    - Thin wrapper types with single field (`McpState`, `PolicyState`)
-    - Counts/summaries of data available via MCP (`pending_approvals`)
-    - Custom APIs that mirror MCP resources (REST endpoint for server list)
-  |||,
 )

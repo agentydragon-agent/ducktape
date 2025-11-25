@@ -84,7 +84,6 @@ I.issueOneOccurrence(
     - Safer: compiler/type checker catches errors
     - More maintainable: adding new TokenInfo types is straightforward
   |||,
-  properties=['type-safety', 'stringly-typed', 'api-design', 'maintainability'],
   filesToRanges={
     'adgn/src/adgn/agent/server/mcp_routing.py': [
       [80, 80],   // _backend_apps dict with string keys

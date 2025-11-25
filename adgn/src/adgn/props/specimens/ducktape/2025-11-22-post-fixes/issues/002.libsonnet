@@ -32,7 +32,6 @@ I.issueOneOccurrence(
     **Note:** The `STATUS_LETTER_TO_TEXT` dict (lines 67-73) can remain as-is since
     it maps to display text ("new file:", "modified:"), which is presentation-specific.
   |||,
-  properties=['avoid-duplication', 'use-platform-primitives'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/core.py': [
       [36, 54],   // _format_name_status: manual delta status→letter mapping
@@ -42,22 +41,4 @@ I.issueOneOccurrence(
       [99, 108],  // _status_char: manual delta status→letter mapping (3rd occurrence)
     ],
   },
-  gap_note= |||
-    This finding illustrates two principles:
-
-    1. **"use-platform-primitives"**: When a library provides a canonical utility
-       for a task (especially one that wraps the underlying C library's official
-       implementation), prefer it over reimplementing the logic manually. This is
-       particularly important for Git operations where libgit2 is the authoritative
-       source.
-
-    2. **"avoid-duplication"**: When the same logic appears in multiple places,
-       it's a signal that either (a) it should be factored into a shared helper,
-       or (b) as in this case, there's likely a platform primitive that handles
-       it already.
-
-    The combination of these principles suggests checking library documentation
-    before implementing mappings or conversions that seem fundamental to the
-    library's domain.
-  |||,
 )

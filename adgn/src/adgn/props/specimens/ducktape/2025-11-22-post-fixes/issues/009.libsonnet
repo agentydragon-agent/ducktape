@@ -41,28 +41,10 @@ I.issueOneOccurrence(
     **Related functions (cli.py:508-520, core.py:61-63):**
     All three passthru-parsing functions should be replaced with proper CLI argument parsing.
   |||,
-  properties=['explicit-over-implicit', 'separation-of-concerns', 'robust-parsing'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [513, 520],  // _validate_no_message_flag: fragile string parsing
       [508, 510],  // filter_commit_passthru: filters -a/--all from passthru
     ],
   },
-  gap_note= |||
-    This finding illustrates **"robust-parsing"**: when accepting structured inputs
-    (command-line flags, configuration files, API parameters), use a proper parser
-    or schema validator rather than manual string checking.
-
-    Benefits of robust parsing:
-    - Handles edge cases (flag formats, escaping, encoding)
-    - Provides clear error messages
-    - Documents expected format through schema/types
-    - Enables validation before business logic runs
-
-    Related to "explicit-over-implicit": explicit parsed arguments are better than
-    implicit string inspection.
-
-    This issue is closely related to issue 003 (include_all_from_passthru) - both
-    should be addressed by refactoring to proper CLI argument parsing.
-  |||,
 )

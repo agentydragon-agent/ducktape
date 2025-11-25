@@ -18,7 +18,7 @@ I.issueOneOccurrence(
 
     Should remove comment entirely.
   |||,
-  properties=['no-useless-comments'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [
       [112, 113],   // Useless "Break sender loop" comment

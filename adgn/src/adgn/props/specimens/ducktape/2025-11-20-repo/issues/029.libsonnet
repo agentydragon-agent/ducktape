@@ -55,7 +55,6 @@ I.issueOneOccurrence(
     1. cli.py:114-115 - remove mkdir, keep just SQLitePersistence call
     2. app.py:152-153 - remove mkdir, keep just SQLitePersistence call
   |||,
-  properties=['encapsulation', 'api-design', 'DRY', 'maintainability'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/cli.py': [
       [114, 115],  // Manual mkdir before SQLitePersistence

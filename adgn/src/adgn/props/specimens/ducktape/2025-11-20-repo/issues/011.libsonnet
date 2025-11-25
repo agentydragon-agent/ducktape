@@ -40,7 +40,6 @@ I.issueOneOccurrence(
       tests for unimplemented features in the main test suite
     - Better to track this as a feature request in documentation rather than broken tests
   |||,
-  properties=['test-validity', 'dead-code', 'technical-debt'],
   filesToRanges={
     'adgn/tests/mcp/approval_policy/test_policy_resources.py': [
       [1, 384],  // Entire file tests non-existent functionality

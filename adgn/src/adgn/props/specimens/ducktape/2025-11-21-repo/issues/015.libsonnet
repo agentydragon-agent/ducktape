@@ -55,7 +55,6 @@ I.issueOneOccurrence(
     **Note:**
     The `await` expression in the comprehension is valid Python syntax and doesn't hurt readability.
   |||,
-  properties=['simplicity', 'variable-usage'],
   filesToRanges={
     'adgn/src/adgn/mcp/approval_policy/server.py': [
       [148, 160],  // proposals_list with unnecessary proposals variable

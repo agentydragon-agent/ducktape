@@ -40,7 +40,7 @@ I.issueOneOccurrence(
 
     The variables have no semantic value and aren't referenced elsewhere.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [
       [120, 128],   // send_json envelope and dumped

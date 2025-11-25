@@ -61,19 +61,9 @@ I.issueOneOccurrence(
     3. **Easier maintenance**: Update task creation in one place
     4. **Less duplication**: Only the varying parts are in the branches
   |||,
-  properties=['avoid-duplication', 'hoist-invariants'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [360, 368],  // update_task and runner duplication across branches
     ],
   },
-  gap_note= |||
-    This finding illustrates **"hoist-invariants"**: when code is repeated across
-    branches with only small variations, hoist the invariant parts outside the
-    conditional and keep only the varying parts inside.
-
-    This is a specific application of "avoid-duplication" focused on conditional
-    structures: identify what changes between branches, extract that into variables,
-    then perform common operations once using those variables.
-  |||,
 )

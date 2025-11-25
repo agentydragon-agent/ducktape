@@ -5,7 +5,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueWithOccurrences(
   rationale='Prefer early returns/continues to reduce nesting and make happy-path obvious. Replace large wrapped bodies guarded by a single conditional with small guard-clauses (return/continue) at the top where appropriate.',
-  // properties=['minimize-nesting'],
   occurrences=[
     { files: { 'internal/logging/recover.go': [{ start_line: 11, end_line: 24 }] }, note: 'RecoverPanic currently wraps its whole body in a recover-check; prefer early-return guard or narrower scope to reduce nesting.' },
     { files: { 'internal/app/lsp_events.go': [{ start_line: 63, end_line: 85 }] }, note: 'updateLSPState/updateLSPDiagnostics wrap large blocks; prefer early return/guard clauses where applicable.' },

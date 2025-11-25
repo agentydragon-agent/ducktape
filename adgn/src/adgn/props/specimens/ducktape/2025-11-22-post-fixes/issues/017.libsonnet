@@ -102,7 +102,6 @@ I.issueOneOccurrence(
     3. **Less maintenance**: No need to update "Default: X" if implementation changes
     4. **Standard pattern**: Python hooks/callbacks conventionally have no-op defaults
   |||,
-  properties=['meaningful-comments', 'remove-noise'],
   filesToRanges={
     'adgn/src/adgn/agent/handler.py': [
       [132, 137],  // on_response: "Default: no-op"
@@ -113,21 +112,4 @@ I.issueOneOccurrence(
       [177, 182],  // on_reasoning: "Default: no-op"
     ],
   },
-  gap_note= |||
-    This finding illustrates **"meaningful-comments"** in the context of API documentation:
-    docstrings should document the contract (what the method does, parameters, return
-    values), not the default implementation.
-
-    For base class hooks/callbacks:
-    - Focus on when the hook is called and what it receives
-    - Document return value semantics if applicable
-    - Don't document that the base implementation is a no-op (that's conventional)
-
-    The base implementation being a no-op is a pattern, not a special case worth documenting.
-    Subclasses will override these methods; the docstring helps them understand the contract,
-    not the default behavior.
-
-    Related to "remove-noise": implementation details ("Default: no-op") don't belong in
-    API documentation. The code itself shows what the default does.
-  |||,
 )

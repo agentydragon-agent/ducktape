@@ -76,7 +76,6 @@ I.issueOneOccurrence(
     3. Inline payload and use `model_dump(include=...)` (line 52)
     4. Delete comment about moved function (line 58)
   |||,
-  properties=['use-dataclasses', 'trust-type-system', 'prefer-concise-code', 'use-platform-primitives', 'remove-noise'],
   filesToRanges={
     'adgn/src/adgn/agent/policy_eval/container.py': [
       [17, 46],  // Manual __init__ instead of @dataclass
@@ -85,44 +84,4 @@ I.issueOneOccurrence(
       [58, 58],  // Useless comment about moved function
     ],
   },
-  gap_note= |||
-    This finding illustrates **"use-dataclasses"**: when a class is primarily a
-    data container with simple field initialization, use `@dataclass` instead of
-    writing manual `__init__` methods.
-
-    When to use dataclasses:
-    - Simple field initialization with no complex logic
-    - Need __repr__, __eq__, __hash__ for free
-    - Want type hints on fields visible to IDEs
-    - Don't need fine control over initialization order
-
-    When NOT to use dataclasses:
-    - Complex validation logic in __init__
-    - Need to compute fields from constructor arguments
-    - Inheritance hierarchies with tricky initialization
-    - Performance-critical code (minimal overhead but not zero)
-
-    Dataclass benefits:
-    - Less boilerplate (no manual field assignment)
-    - Free __repr__ shows all fields
-    - Free __eq__ compares by value
-    - Type hints on fields (not just parameters)
-    - Can use field(default_factory=...) for mutable defaults
-
-    Related to **"trust-type-system"**: if a parameter is typed as `AgentID`
-    (not `AgentID | None`), trust that callers provide it. Don't add runtime
-    checks for what the type system already guarantees.
-
-    When defensive checks ARE appropriate:
-    - Validating user input from outside the system
-    - Checking data from untyped sources (JSON, databases)
-    - Enforcing business rules (not type correctness)
-    - Validating invariants the type system can't express
-
-    Related to **"use-platform-primitives"**: Pydantic models have `.model_dump()`
-    for serialization. Don't manually construct dicts with `{"field": obj.field}`.
-
-    Related to **"prefer-concise-code"**: inline variables used only once, don't
-    create unnecessary intermediates.
-  |||,
 )

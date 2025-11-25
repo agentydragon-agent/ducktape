@@ -80,7 +80,6 @@ I.issueOneOccurrence(
     - Easier to maintain
     - Could even inline some of these one-liners if they're called in few places
   |||,
-  properties=[],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/server.py': [
       [158, 165],
@@ -88,19 +87,4 @@ I.issueOneOccurrence(
       [224, 237],
     ],
   },
-  gap_note= |||
-    This finding represents a generalizable DRY principle specific to accessor patterns:
-    "extract-common-lookup-validation" or "consolidate-getter-logic".
-
-    When multiple getters share identical validation/lookup steps and only differ in
-    which field they return, extract the common validation into a shared helper.
-
-    Pattern:
-    - Multiple methods with same guard checks (exists? initialized? valid?)
-    - Only difference is the final return (different field/transformation)
-    - Extract validation to `_get_X_or_raise()`, then accessors become one-liners
-
-    This is more specific than general "no code duplication" - it's about the
-    accessor/getter pattern specifically.
-  |||,
 )

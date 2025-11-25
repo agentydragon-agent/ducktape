@@ -5,7 +5,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueWithOccurrences(
   rationale='Function parameters named generically `id` are ambiguous; prefer explicit names like `messageID` or `sessionID` to make intent/units obvious and avoid accidental misuses.',
-  // properties=['self-describing-names'],
   occurrences=[
     { files: { 'internal/message/middleware/debounce.go': [{ start_line: 33, end_line: 41 }, { start_line: 94, end_line: 105 }] }, note: 'debounce.getOrCreate/deleteEntry/Delete use `id string` where this represents message IDs — rename to messageID.' },
     { files: { 'internal/message/middleware/serialized.go': [{ start_line: 27, end_line: 36 }, { start_line: 134, end_line: 141 }, { start_line: 134, end_line: 152 }] }, note: 'sessionWorker.id / newSessionWorker(id) / Delete(ctx,id) opaque `id` represents sessionID or messageID in different contexts — make names explicit.' },

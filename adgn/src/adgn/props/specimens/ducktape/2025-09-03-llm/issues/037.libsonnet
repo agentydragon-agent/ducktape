@@ -15,7 +15,6 @@ I.issueOneOccurrence(
     Concretely: extract a shared helper (or call through to agent) used by both paths, removing the duplicate
     try/except + instruction assembly + tools list + responses.create blocks.
   |||,
-  // properties=['minimize-nesting'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[188, 218], [276, 306]],
   },

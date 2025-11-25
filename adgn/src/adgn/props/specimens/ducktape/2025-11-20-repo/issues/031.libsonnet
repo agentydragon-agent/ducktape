@@ -45,7 +45,6 @@ I.issueOneOccurrence(
 
     All three locations have the same pattern and should be updated consistently.
   |||,
-  properties=['code-style', 'simplicity'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/server.py': [
       [63, 67],  // builder extraction and immediate use

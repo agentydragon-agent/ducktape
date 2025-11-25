@@ -188,7 +188,6 @@ I.issueOneOccurrence(
         # ... cache logic
     ```
   |||,
-  properties=['remove-dead-code', 'no-speculative-parameters', 'implement-or-remove'],
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [
       [249, 249],   // has_inflight = False with comment "not exposed at this layer"
@@ -199,52 +198,4 @@ I.issueOneOccurrence(
       [162, 163],   // has_inflight = False with comment "not exposed here"
     ],
   },
-  gap_note= |||
-    This finding illustrates **"implement-or-remove"**: when code has parameters or
-    features that are planned but not implemented, either implement them or remove them.
-    Don't leave half-implemented features with "TODO" comments and dead parameters.
-
-    Related to **"no-speculative-parameters"**: don't add parameters "for future use"
-    with hardcoded values. Add parameters when you implement the feature, not before.
-
-    Signs of unimplemented features:
-    - Parameters always set to constant values
-    - Comments saying "not implemented", "not exposed", "TODO"
-    - Enum values that are never reached
-    - Function branches that are never taken
-    - Documentation describing behavior that doesn't happen
-
-    When you find these:
-    1. Evaluate if the feature is needed now
-    2. If yes: implement it (add tracking, expose the data)
-    3. If no: remove it (delete parameter, remove enum value, simplify logic)
-    4. If unsure: ask product/users whether it's valuable
-
-    Don't leave it in limbo with "maybe later" thinking.
-
-    Example refactorings:
-    ```python
-    # Before (dead parameter):
-    def phase(active: bool, pending: int, inflight: bool) -> Phase:
-        # inflight always False, TOOLS_RUNNING never returned
-        if inflight:
-            return Phase.TOOLS_RUNNING
-        ...
-
-    # Option 1: Implement
-    def phase(active: bool, pending: int, inflight: bool) -> Phase:
-        # inflight now actually computed
-        if inflight:
-            return Phase.TOOLS_RUNNING
-        ...
-
-    # Option 2: Remove
-    def phase(active: bool, pending: int) -> Phase:
-        # Simplified, no inflight tracking
-        ...
-    ```
-
-    Related to **"remove-dead-code"**: unreachable enum values and unused parameters
-    are forms of dead code.
-  |||,
 )

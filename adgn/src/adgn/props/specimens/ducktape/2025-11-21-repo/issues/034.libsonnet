@@ -85,7 +85,6 @@ I.issueOneOccurrence(
     named `delete_agent`, the summary "Delete an agent" is sufficient unless there are non-obvious
     behaviors or exceptions to document.
   |||,
-  properties=['documentation', 'verbosity', 'obvious-comments'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [796, 810],  // Overly verbose docstring

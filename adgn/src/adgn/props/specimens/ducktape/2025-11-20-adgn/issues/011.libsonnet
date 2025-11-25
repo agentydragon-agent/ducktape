@@ -26,15 +26,11 @@ I.issueOneOccurrence(
     - Clear documentation of valid values
     - Refactoring support
   |||,
-  properties=['python/strenum', 'type-correctness-and-specificity'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/models.py': [
       178,          // author: Mapped[str]
       179,          // mime: Mapped[str]
     ],
-  },
-  gap_note=|||
-    Requires investigation of actual usage patterns. If author/mime have fixed valid values,
-    create enums. If truly arbitrary, document why strings are appropriate.
-  |||,
+  }
 )

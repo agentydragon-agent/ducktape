@@ -116,7 +116,6 @@ I.issueOneOccurrence(
     The useful information ("The entire Decision/ToolCallExecution object is optional on ToolCallRecord")
     is preserved. Only the redundant "All fields are REQUIRED" and inline "# REQUIRED" comments are removed.
   |||,
-  properties=['documentation', 'code-clarity', 'redundancy'],
   filesToRanges={
     'adgn/src/adgn/agent/persist/__init__.py': [
       [90, 98],    // Decision class with misleading "All fields are REQUIRED" comment

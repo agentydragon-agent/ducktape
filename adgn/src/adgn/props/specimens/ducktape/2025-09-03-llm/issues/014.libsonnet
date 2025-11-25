@@ -12,7 +12,6 @@ I.issueOneOccurrence(
 
     Prefer inlining this call at call sites (or elevate it to a small utility only if multiple call sites need the same documented semantic) and delete the helper to reduce indirection.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [[32, 34]],
     'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py': [[44, 44]],

@@ -41,7 +41,6 @@ I.issueOneOccurrence(
     Since it's a no-op, removing all calls has zero behavioral change. No tests will break
     (unless they explicitly test that this method exists, which would be testing dead code).
   |||,
-  properties=['dead-code', 'maintainability', 'cleanup'],
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [
       [223, 225],  // broadcast_status no-op method definition

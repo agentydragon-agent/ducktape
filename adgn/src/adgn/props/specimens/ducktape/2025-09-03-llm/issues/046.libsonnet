@@ -12,7 +12,6 @@ I.issueOneOccurrence(
     (or raise a specific error). This exposes misconfigurations instead of silently skipping
     and reduces control-flow complexity.
   |||,
-  // properties=['minimize-nesting','early-bailout'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[596, 598]],
   },

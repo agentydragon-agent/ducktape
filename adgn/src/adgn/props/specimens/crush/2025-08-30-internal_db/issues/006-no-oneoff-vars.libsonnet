@@ -5,7 +5,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueWithOccurrences(
   rationale='Inline single-use temporaries and trivial wrapper locals (prefer struct literals or direct expressions) to reduce noise and make intent clearer.',
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   occurrences=[
     { files: { 'internal/csync/maps.go': [{ start_line: 111, end_line: 114 }] }, note: 'JSONSchemaAlias returns a throwaway temp map `m` — inline the literal return value.' },
     { files: { 'internal/format/spinner.go': [{ start_line: 44, end_line: 69 }] }, note: 'NewSpinner builds a local `model` and `prog` only used once to construct Spinner — inline into the returned struct where sensible.' },

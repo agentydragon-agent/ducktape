@@ -31,27 +31,10 @@ I.issueOneOccurrence(
     4. **Clearer flow**: Main logic shows sequential steps explicitly
     5. **Easier changes**: Modify commit flags/behavior in one place
   |||,
-  properties=['avoid-duplication', 'single-responsibility'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [558, 564],  // _commit_immediately: duplicates commit execution
       [611, 615],  // _run_editor_flow: duplicates commit execution
     ],
   },
-  gap_note= |||
-    This finding illustrates **"single-responsibility"**: functions should do one
-    thing. When multiple functions share a common final step (like "execute git commit"),
-    that step should be extracted into its own function.
-
-    This is closely related to "avoid-duplication" (DRY), but focuses on the design
-    principle: each function should have one reason to change. Here:
-    - `_commit_immediately` changes if: message validation OR commit execution changes
-    - `_run_editor_flow` changes if: editor logic OR commit execution changes
-
-    After refactoring:
-    - `_prepare_commit_message` changes if: message preparation changes
-    - `_execute_commit` changes if: commit execution changes
-
-    This makes each function more focused and easier to maintain.
-  |||,
 )

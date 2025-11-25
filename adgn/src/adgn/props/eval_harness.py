@@ -217,7 +217,6 @@ async def eval_issue_spec(
             id=f"{id_prefix}{spec.issue.id}",
             should_flag=spec.issue.should_flag,
             rationale=spec.issue.rationale,
-            gap_note=spec.issue.gap_note,
         )
     )
 
@@ -404,9 +403,6 @@ SAMPLES: list[IssueEvalSpec] = [
                 "Prefer a single pre-check + list comprehension for simple arg filtering to reduce nesting and eliminate one-off append/continue state."
             ),
             # properties=["minimize-nesting"],
-            gap_note=(
-                "GAP: Prefer comprehensions for simple filter/map over loops with append/continue when it fits on one readable line."
-            ),
         ),
         cases=[
             OccurrenceCase(

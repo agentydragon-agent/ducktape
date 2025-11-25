@@ -28,17 +28,8 @@ I.issueOneOccurrence(
     This would eliminate the misleading directory structure and consolidate type definitions
     in one clear location.
   |||,
-  properties=['truthfulness', 'no-dead-code'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/__init__.py': [1],  // Misleading docstring
     'adgn/src/adgn/agent/mcp_bridge/servers/types.py': [],  // Should be moved
   },
-  gap_note=|||
-    This pattern deserves a property like "no-misleading-module-structure": when a
-    directory or module name implies certain contents (e.g., "servers" implying multiple
-    server implementations), but actually contains something different (just type definitions),
-    the structure should be refactored to match the name or the name should be changed to
-    reflect the actual contents. This is distinct from general "truthfulness" as it specifically
-    addresses package/module organization and the expectations set by directory/module naming.
-  |||,
 )

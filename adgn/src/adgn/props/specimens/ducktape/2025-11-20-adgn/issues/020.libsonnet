@@ -36,7 +36,7 @@ I.issueOneOccurrence(
 
     The row_dict pattern suggests legacy migration from dict-based storage.
   |||,
-  properties=['structured-data-over-untyped-mappings', 'no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/sqlite.py': [
       [445, 454],   // row_dict construction and parse_event call

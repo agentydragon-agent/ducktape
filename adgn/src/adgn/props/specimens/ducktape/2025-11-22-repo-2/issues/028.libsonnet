@@ -25,20 +25,10 @@ I.issueOneOccurrence(
     - DRY: check not repeated at call sites
     - Cleaner API: callers don't need to know about Docker availability
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [344, 345],  // create_proposal: if self.docker_client is not None
       [360, 361],  // approve_proposal: if self.docker_client is not None
     ],
   },
-  gap_note= |||
-    This pattern deserves a property like "encapsulate-preconditions" to capture:
-    When a method has optional dependencies or preconditions, the method itself
-    should handle them (early return, skip, or raise), not force every caller to
-    check the precondition before calling.
-
-    Related to but distinct from "no-defensive-programming" - this is about API
-    design and encapsulation, not redundant validation.
-  |||,
 )

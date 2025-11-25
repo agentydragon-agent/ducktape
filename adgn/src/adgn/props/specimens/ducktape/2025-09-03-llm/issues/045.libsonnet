@@ -7,7 +7,6 @@ I.issueOneOccurrence(
     Prefer printing provider and model_name directly (e.g., `provider=..., model=...`) and drop `model_str`.
     If a composite is ever needed, derive `f"{provider}:{model_name}"` at the point of use.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[74, 95]],
   },

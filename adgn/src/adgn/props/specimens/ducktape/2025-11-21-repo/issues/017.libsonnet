@@ -79,7 +79,6 @@ I.issueOneOccurrence(
     ProposalDescriptor (server.py:40-44) is different from PolicyProposal - it's a lightweight
     descriptor WITHOUT content field, so it should remain separate.
   |||,
-  properties=['dry-principle', 'duplication', 'type-design'],
   filesToRanges={
     'adgn/src/adgn/mcp/approval_policy/server.py': [
       [47, 54],    // ProposalDetail duplicate type definition

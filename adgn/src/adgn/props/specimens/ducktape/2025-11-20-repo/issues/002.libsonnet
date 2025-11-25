@@ -32,7 +32,6 @@ I.issueOneOccurrence(
     Note: Lines 84-89, 94-99, 132-137, 160-165 have 4 arguments and could remain multi-line,
     though they're borderline cases.
   |||,
-  properties=['code-style', 'readability', 'consistency'],
   filesToRanges={
     'adgn/tests/mcp/approval_policy/test_policy_resources.py': [
       [183, 186],  // CreatePolicyArgs 2 args

@@ -55,7 +55,6 @@ I.issueOneOccurrence(
 
     This is a case of dead test code testing against a non-existent/deprecated API.
   |||,
-  properties=['no-dead-code', 'truthfulness'],
   filesToRanges={
     'adgn/src/adgn/agent/web/src/components/ApprovalTimeline.test.ts': [
       486,  // ws://localhost/ws/approvals reference
@@ -67,12 +66,4 @@ I.issueOneOccurrence(
       332,  // TODO comment about WebSocket routes never registered
     ],
   },
-  gap_note=|||
-    This pattern deserves a property like "no-tests-for-nonexistent-apis": when tests
-    reference API endpoints (HTTP, WebSocket, etc.) that don't exist in the implementation,
-    either the tests are wrong or the implementation is incomplete. This is more specific
-    than "no-dead-code" as it's about test-implementation mismatch, and more specific than
-    "truthfulness" as it's specifically about tests claiming to test functionality that
-    doesn't exist. It's related to test quality and API contract verification.
-  |||,
 )

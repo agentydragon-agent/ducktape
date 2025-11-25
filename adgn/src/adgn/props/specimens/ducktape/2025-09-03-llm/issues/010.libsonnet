@@ -6,7 +6,6 @@ I.issueWithOccurrences(
     Avoid one-off variables created only to be used once in the next line(s).
     Inline simple expressions when they don't harm readability, and reduce redundant parallel names that just mirror each other.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   occurrences=[
     { files: { 'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[776, 781]] }, note: 'Inline single-use log_file in logging setup (pass Path(...) directly to FileHandler)' },
     { files: { 'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[462, 465]] }, note: 'Inline mtime expression in cache eviction loop (avoid temporary mtime_s)' },

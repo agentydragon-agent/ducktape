@@ -143,7 +143,6 @@ I.issueOneOccurrence(
     If the invariant ever needs to change (e.g., LOCAL agents without local_runtime), that would
     require refactoring the entire agent infrastructure, not just adding None checks.
   |||,
-  properties=['redundancy', 'code-clarity', 'dry-principle'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [322, 326],  // agent_state - fully redundant

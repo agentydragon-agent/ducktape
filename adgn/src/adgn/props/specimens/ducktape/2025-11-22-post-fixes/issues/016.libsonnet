@@ -88,7 +88,6 @@ I.issueOneOccurrence(
 
     Configuration belongs at the application boundary (main/CLI), not in business logic.
   |||,
-  properties=['layering', 'separation-of-concerns', 'avoid-global-state'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/minicodex_backend.py': [
       [190, 194],  // configure_logging() and logger silencing in backend
@@ -98,25 +97,4 @@ I.issueOneOccurrence(
       [675, 675],  // Call to _init_logging in async_main
     ],
   },
-  gap_note= |||
-    This finding illustrates **"layering"**: different layers of an application have
-    different responsibilities. Configuration (including logging) belongs at the
-    application boundary, not in business logic layers.
-
-    Typical layers:
-    - **Entry point** (main/CLI): Parse args, configure logging, setup dependencies
-    - **Business logic** (backends/services): Implement features, use logging
-    - **Utilities** (helpers/libraries): Pure functions, minimal dependencies
-
-    Each layer should only depend on layers below it, and should not configure layers
-    above it. Backend functions shouldn't reach up and configure the application's
-    logging system.
-
-    Related to "separation-of-concerns": configuration (how the app runs) is separate
-    from implementation (what the app does). Keep them in separate places.
-
-    Related to "avoid-global-state": functions that modify global state (like root
-    logger configuration) are harder to test, compose, and reason about. Prefer
-    accepting configuration as parameters or assuming it's already set up.
-  |||,
 )

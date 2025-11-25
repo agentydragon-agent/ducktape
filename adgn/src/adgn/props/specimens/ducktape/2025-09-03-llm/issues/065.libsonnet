@@ -16,7 +16,7 @@ I.issueOneOccurrence(
     Refactor into a function (e.g., `extract_message_body(final_content: str) -> list[str]` or
     `is_empty_message(text: str) -> bool`) so the behavior is testable and consistently reused.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[955, 964]],
   },

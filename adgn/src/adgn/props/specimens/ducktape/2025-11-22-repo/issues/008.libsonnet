@@ -70,7 +70,6 @@ I.issueOneOccurrence(
     in the condition. Line 95-96 is different because `pending` is NOT used in the
     condition, only in the else branch.
   |||,
-  properties=['code-style', 'python-idioms', 'conciseness', 'pep572'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [95, 96],   // pending = get(); if None pattern that should use walrus

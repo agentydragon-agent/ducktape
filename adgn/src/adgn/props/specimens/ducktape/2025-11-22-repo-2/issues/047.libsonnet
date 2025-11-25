@@ -40,7 +40,6 @@ I.issueOneOccurrence(
 
     This ensures single source of truth and prevents documentation drift.
   |||,
-  properties=['no-useless-docs'],
   filesToRanges={
     'adgn/src/adgn/agent/persist/__init__.py': [
       [104, 109],  // ToolCallRecord class docstring with states

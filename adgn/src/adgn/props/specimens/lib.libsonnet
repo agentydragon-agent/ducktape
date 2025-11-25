@@ -6,15 +6,14 @@
 //     I.issueMultiFromLines(
 //       id='iss-001',
 //       rationale='Inline imports inside functions; move to module top.',
-//       properties=['imports-top'],
-//       linesByFile={
+//
+  //       linesByFile={
 //         'wt/wt/cli.py': [101, 158, 193, 198, 206, 253],
 //         'wt/wt/client/handlers.py': [10, 16, 50, 75, 86, 89, 94, 97, 104, 120, 127, 134, 136, 142, 152, [164,168], 194, 196, 201, 214, 220, 226, 238, 240, [242,243], 249, 254, 263, 277, 298, [301,302], 310, 342],
 //       }
 //     ),
 //     I.issueSingle(id='iss-009', should_flag=false, rationale='shlex.quote requires str', files={ 'wt/wt/client/worktree_utils.py': [ 98 ] }),
 //   ])
-
 
 // Normalize a line spec into a LineRange object.
 // Accepts either an int (single line) or a [start,end] array; also accepts objects that already have start_line/end_line.
@@ -73,25 +72,17 @@ local instancesFromLinesByFile(linesByFile) = std.flattenArrays([
 // Parameters:
 //   rationale: Full explanation of what's wrong and recommended fix
 //   filesToRanges: Dict of file paths → array of line ranges
-//   properties: Array of property IDs from props/ that this issue violates
-//   gap_note: Documents gaps in property taxonomy - when finding relates to existing properties
-//             but represents a generalizable principle deserving its own property definition.
-//             Describe what property SHOULD exist to capture this pattern more precisely.
 //   should_flag: Whether this should be flagged (default: true)
-local issueOneOccurrence(rationale, filesToRanges, properties=[], gap_note=null, should_flag=true) = {
+local issueOneOccurrence(rationale, filesToRanges, should_flag=true) = {
   should_flag: should_flag,
   rationale: rationale,
-  properties: properties,
-  gap_note: gap_note,
   instances: [{ files: normFiles(filesToRanges) }],
 };
 
 // Many occurrences (explicit list)
-local issueWithOccurrences(rationale, occurrences, properties=[], gap_note=null, should_flag=true) = {
+local issueWithOccurrences(rationale, occurrences, should_flag=true) = {
   should_flag: should_flag,
   rationale: rationale,
-  properties: properties,
-  gap_note: gap_note,
   instances: [
     // Each instance.files may be a {file: [ranges]|null} map; normalize arrays to LineRange
     { files: normFiles(inst.files) }
@@ -100,18 +91,16 @@ local issueWithOccurrences(rationale, occurrences, properties=[], gap_note=null,
 };
 
 // Many occurrences, each single-file/single-range (built from shorthand mapping)
-local issueOccurrencesFromLines(rationale, linesByFile, properties=[], gap_note=null, should_flag=true) =
-  issueWithOccurrences(rationale=rationale, occurrences=instancesFromLinesByFile(linesByFile), properties=properties, gap_note=gap_note, should_flag=should_flag);
+local issueOccurrencesFromLines(rationale, linesByFile, should_flag=true) =
+  issueWithOccurrences(rationale=rationale, occurrences=instancesFromLinesByFile(linesByFile), should_flag=should_flag);
 
 // Multi-occurrence issue built from a simple list of files → each file as an instance with unspecified range
 local instancesFromFiles(filesList) = [{ files: { [f]: null } } for f in filesList];
 // Treat as a special case of linesByFile with empty arrays (unspecified ranges per file)
-local issueOccurrencesFromFiles(rationale, filesList, properties=[], gap_note=null, should_flag=true) =
+local issueOccurrencesFromFiles(rationale, filesList, should_flag=true) =
   issueOccurrencesFromLines(
     rationale=rationale,
     linesByFile={ [f]: [] for f in filesList },
-    properties=properties,
-    gap_note=gap_note,
     should_flag=should_flag,
   );
 

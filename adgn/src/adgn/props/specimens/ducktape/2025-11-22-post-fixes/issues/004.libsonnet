@@ -50,7 +50,6 @@ I.issueOneOccurrence(
     # Should only show the definition
     ```
   |||,
-  properties=['remove-dead-code', 'keep-code-minimal'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/core.py': [
       [260, 263], // _extract_message_from_text: unused function definition

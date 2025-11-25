@@ -31,7 +31,6 @@ I.issueOneOccurrence(
     lightweight helper extraction (e.g., isDirAndShouldSkip) is fine, but
     forcing this stylistic rewrite is unnecessary.
   |||,
-  properties=[],
   filesToRanges={
     'internal/fsext/ls.go': [[202, 206]],
   },

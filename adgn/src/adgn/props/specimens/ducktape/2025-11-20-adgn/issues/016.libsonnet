@@ -22,7 +22,7 @@ I.issueOneOccurrence(
 
     Storage denormalization only justified for performance-critical paths, not evident here.
   |||,
-  properties=['no-redundant-state', 'truthfulness'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/models.py': [
       65,           // event_count: Mapped[int] field definition

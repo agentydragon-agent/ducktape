@@ -30,7 +30,7 @@ I.issueOneOccurrence(
 
     Inlining improves readability by showing the transformation inline at the use site.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/handler.py': [
       [133, 136],   // result_model assignment and immediate use

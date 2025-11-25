@@ -80,7 +80,7 @@ IssueId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{0,200}$", mi
 class IssueCore(BaseModel):
     """Issue metadata without occurrences.
 
-    Minimal header describing a logical problem (no property IDs linkage).
+    Minimal header describing a logical problem.
     When sending or storing per-location data separately, pair an IssueCore with
     one or more Occurrence objects rather than repeating metadata.
     """
@@ -88,6 +88,5 @@ class IssueCore(BaseModel):
     id: IssueId
     should_flag: bool
     rationale: str
-    gap_note: str | None = None
 
     model_config = ConfigDict(extra="forbid")

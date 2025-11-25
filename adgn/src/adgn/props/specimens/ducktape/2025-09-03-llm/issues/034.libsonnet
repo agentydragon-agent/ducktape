@@ -10,8 +10,6 @@ I.issueOneOccurrence(
     Prefer explicit dependency injection: pass a Docker client via parameters or a factory, or manage per-request
     context that resolves the container ref at call time. Keep state local to the request boundary.
   |||,
-  // properties=[],
-  gap_note='Add a property discouraging mutable global state/singletons; require DI or scoped contexts.',
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py': [[53, 58], [60, 71]],
   },

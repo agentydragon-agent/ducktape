@@ -29,5 +29,4 @@ I.issueWithOccurrences(
     { files: { 'internal/session/session.go': [[21, 23], [140, 146]] } },
     { files: { 'internal/transform/transform.go': [[34, 38]] } },
   ],
-  // properties=[],
 )

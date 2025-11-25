@@ -33,7 +33,6 @@ I.issueOneOccurrence(
     The duplication makes tests harder to maintain - changes to policy format or client
     initialization patterns require updates in many places.
   |||,
-  properties=['test-quality', 'dry-principle', 'maintainability'],
   filesToRanges={
     'adgn/tests/mcp/approval_policy/test_proposals_resources.py': [
       [25, 25],   // proposer creation

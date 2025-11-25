@@ -49,7 +49,6 @@ I.issueOneOccurrence(
 
     This eliminates unnecessary indirection.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       160,  // pending_map = self.pending

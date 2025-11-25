@@ -172,7 +172,6 @@ I.issueOneOccurrence(
     This issue is related to issue 026 (list_agents should use Pydantic). Both functions manually
     construct JSON and should be refactored together for consistency.
   |||,
-  properties=['type-safety', 'maintainability', 'code-consistency'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [395, 424],  // approvals_pending_global with manual dict construction

@@ -7,7 +7,6 @@ I.issueOneOccurrence(
 
     Swallowing initialization-time parsing/shape errors leads to silently degraded runtime behavior and hard-to-diagnose failures later. If the file exists, treat errors parsing/using it as fatal.
   |||,
-  // properties=['scoped-try-except','early-bailout'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[336, 346]],
   },

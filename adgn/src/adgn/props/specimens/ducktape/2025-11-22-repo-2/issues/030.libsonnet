@@ -31,7 +31,6 @@ I.issueOneOccurrence(
     This is a type correctness issue - types should match at boundaries
     without runtime conversion.
   |||,
-  properties=['type-correctness-and-specificity'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       388,  // proposals_list: status=ProposalStatus(p.status)

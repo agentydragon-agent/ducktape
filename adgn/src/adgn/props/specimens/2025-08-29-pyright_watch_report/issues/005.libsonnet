@@ -16,7 +16,6 @@ I.issueOneOccurrence(
 
     Document the chosen mode in output to avoid confusion.
   |||,
-  properties=['truthfulness'],
   filesToRanges={
     'pyright_watch_report.py': [],  // File-wide documentation issue
   },

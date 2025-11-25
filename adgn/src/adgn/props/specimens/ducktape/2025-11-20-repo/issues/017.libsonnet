@@ -76,7 +76,6 @@ I.issueOneOccurrence(
     like "The data associated with the gateway error". Real documentation requires
     understanding what actually gets stored here and documenting those specifics.
   |||,
-  properties=['api-design', 'type-safety', 'documentation', 'clarity'],
   filesToRanges={
     'adgn/src/adgn/mcp/policy_gateway/signals.py': [
       [33, 37],   // PolicyGatewayError model with vague 'data' field

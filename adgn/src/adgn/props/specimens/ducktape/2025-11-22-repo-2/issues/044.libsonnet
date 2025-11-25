@@ -109,7 +109,6 @@ I.issueOneOccurrence(
     - Simpler logic (no confusing elif)
     - DRY (single run_phase implementation)
   |||,
-  properties=['python/no-swallowing-errors'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/server.py': [
       [245, 249],
@@ -117,22 +116,4 @@ I.issueOneOccurrence(
       [255, 315],
     ],
   },
-  gap_note= |||
-    This finding touches on multiple principles:
-
-    1. "iterate-over-valid-structure" - When iterating, the collection should contain
-    only items in a valid state for the iteration body. Don't iterate over a superset
-    then filter/skip via exception handling.
-
-    2. "extract-duplicated-business-logic" - Complex business logic (like determining
-    run phase) that appears in multiple places should be extracted to a helper method,
-    even if it's only a few lines.
-
-    The existing "no-swallowing-errors" property covers not catching exceptions, but
-    doesn't specifically address the iteration pattern issue (iterating over the wrong
-    collection and catching errors vs. iterating over the right collection).
-
-    A dedicated property for iteration patterns would help catch cases where iteration
-    structure doesn't match iteration logic.
-  |||,
 )

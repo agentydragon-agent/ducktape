@@ -54,18 +54,9 @@ I.issueOneOccurrence(
     Or even better, unify with TokenMapping to have a single token configuration file
     that serves both purposes.
   |||,
-  properties=['no-dead-code'],
   filesToRanges={
     'adgn/src/adgn/agent/server/mcp_routing.py': [
       [60, 63],  // Hardcoded TOKEN_TABLE with mock data
     ],
   },
-  gap_note=|||
-    This pattern deserves a property like "no-mock-code-in-production": when mock/stub
-    implementations exist in production code with comments like "this would be X in production",
-    they should be replaced with the real implementation. This is distinct from "no-dead-code"
-    as it's not about unused code, but rather about temporary/placeholder code that should
-    have been replaced before reaching production. It's also related to configuration
-    management - hardcoded config that should come from files/environment.
-  |||,
 )

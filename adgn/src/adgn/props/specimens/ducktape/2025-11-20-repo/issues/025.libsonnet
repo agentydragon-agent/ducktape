@@ -70,7 +70,6 @@ I.issueOneOccurrence(
     - Line 11: Can remove `import json` if it's not used elsewhere
     - Need to add: `from pydantic import TypeAdapter`
   |||,
-  properties=['simplicity', 'validation', 'error-messages', 'type-safety'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [
       [44, 55],  // Manual JSON parsing and validation loop

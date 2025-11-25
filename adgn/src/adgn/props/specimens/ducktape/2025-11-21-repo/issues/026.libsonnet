@@ -142,7 +142,6 @@ I.issueOneOccurrence(
     The return type should change from `-> str` to `-> AgentsList`, and the framework should handle
     the JSON serialization (removing the manual `json.dumps()` call).
   |||,
-  properties=['type-safety', 'maintainability', 'code-consistency'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [261, 312],  // list_agents function with manual dict construction

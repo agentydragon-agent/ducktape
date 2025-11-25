@@ -113,27 +113,9 @@ I.issueOneOccurrence(
     - Subclasses override only what they need to specialize
     - Empty overrides are code smell (either do something or don't override)
   |||,
-  properties=['remove-noise', 'avoid-unnecessary-overrides'],
   filesToRanges={
     'adgn/src/adgn/agent/reducer.py': [
       [244, 265],  // 7 unnecessary no-op method overrides
     ],
   },
-  gap_note= |||
-    This finding illustrates **"avoid-unnecessary-overrides"**: don't override methods
-    just to do the same thing the base class does. Unnecessary overrides:
-
-    - Add maintenance burden (must track base class changes)
-    - Create false signals (reader thinks override does something special)
-    - Add noise (more code to read without added behavior)
-
-    The absence of an override IS information - it tells readers "this class uses the
-    base behavior for that hook."
-
-    Related to "remove-noise": code that adds no behavior should be removed.
-
-    This is particularly important for hook/callback patterns where base classes
-    provide many optional extension points. Subclasses should override only what
-    they specialize, leaving the rest to inherit naturally.
-  |||,
 )

@@ -72,7 +72,6 @@ I.issueOneOccurrence(
     does something non-obvious or counterintuitive. Simple variable assignments and function calls
     don't need commentary.
   |||,
-  properties=['code-clarity', 'comment-noise', 'conciseness'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [785, 792],  // Function body with useless comments and empty lines

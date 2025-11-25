@@ -76,7 +76,6 @@ I.issueOneOccurrence(
 
     This eliminates the split conditional and reduces cognitive load.
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'adgn/src/adgn/agent/runtime/builder.py': [
       [70, 72],  // First if with_ui block

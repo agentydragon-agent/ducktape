@@ -10,7 +10,6 @@ I.issueOneOccurrence(
     This reduces duplication, centralizes the narrow exception handling decision, and keeps
     the instruction composition logic consistent across call sites.
   |||,
-  // properties=['minimize-nesting'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[199, 204], [285, 290]],
   },

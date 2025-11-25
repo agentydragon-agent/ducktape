@@ -19,7 +19,6 @@ I.issueOneOccurrence(
 
     Benefits: flatter control flow, clearer happy path, fewer indentation-driven mistakes.
   |||,
-  // properties=['minimize-nesting','early-bailout'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [[475, 475]],
   },

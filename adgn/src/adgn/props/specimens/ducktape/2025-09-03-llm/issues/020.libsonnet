@@ -10,7 +10,6 @@ I.issueOneOccurrence(
     - Keeps types as Path objects and avoids repeated str() conversions.
     - Clearer intent and small performance/readability improvements.
   |||,
-  // properties=['pathlib'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/agent.py': [[85, 92]],
   },

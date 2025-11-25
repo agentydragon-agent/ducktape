@@ -133,7 +133,6 @@ I.issueOneOccurrence(
     distinguish between different decision outcomes or sources. All approval decisions
     appear as REJECTED in the system.
   |||,
-  properties=['python/no-swallowing-errors', 'truthfulness', 'type-correctness-and-specificity'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [70, 76],   // ApprovalStatus enum definition (loses source information)
@@ -143,27 +142,4 @@ I.issueOneOccurrence(
       [36, 42],   // ApprovalOutcome enum (preserves both outcome and source)
     ],
   },
-  gap_note= |||
-    This finding represents two related principles:
-
-    1. **"single-source-domain-types"**: Domain concepts should have exactly one canonical
-       type definition, not duplicated across architectural layers (API, persistence, etc.).
-       When the same concept appears in multiple layers, use the same type everywhere.
-
-    2. **"preserve-semantic-distinctions-in-domain-model"**: When unifying types, verify
-       you're not losing semantic information. The two enums here captured orthogonal aspects
-       (outcome + decision source). Simply dropping to the simpler enum loses the "who decided"
-       information which is critical for audit trails.
-
-    The correct solution is to have ONE type that captures BOTH aspects, eliminating
-    duplication while preserving all semantic distinctions.
-
-    Related to:
-    - "truthfulness" - data should accurately represent reality (including who made decisions)
-    - "type-correctness-and-specificity" - types should capture all relevant distinctions
-    - "no-swallowing-errors" - converters must fail fast, not hide systematic failures
-
-    The error-hiding converter is a symptom. The root causes are: (1) type duplication
-    across layers, and (2) the simpler type losing critical semantic information.
-  |||,
 )

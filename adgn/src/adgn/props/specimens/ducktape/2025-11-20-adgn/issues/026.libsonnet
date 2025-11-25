@@ -30,7 +30,7 @@ I.issueOneOccurrence(
     so dict reconstruction serves no purpose. If serialization needed, use
     dataclasses.asdict() or Pydantic.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers', 'structured-data-over-untyped-mappings'],
+
   filesToRanges={
     'adgn/src/adgn/agent/runtime/registry.py': [
       [43, 44],     // result extraction and dict reconstruction

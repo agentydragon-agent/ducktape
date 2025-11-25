@@ -165,7 +165,6 @@ I.issueOneOccurrence(
 
     Then both dimensions are explicit and independently trackable.
   |||,
-  properties=['avoid-duplication', 'single-source-of-truth', 'prefer-most-granular'],
   filesToRanges={
     'adgn/src/adgn/agent/server/status_shared.py': [
       [18, 25],   // Most comprehensive RunPhase (7 states)
@@ -178,47 +177,4 @@ I.issueOneOccurrence(
       [80, 87],   // RunStatus (different granularity, possibly different concern)
     ],
   },
-  gap_note= |||
-    This finding illustrates **"prefer-most-granular"**: when multiple enums
-    represent the same concept at different levels of detail, prefer the most
-    granular version and delete coarser ones.
-
-    Principle: One enum per semantic dimension
-    - Don't create multiple enums for the same thing (run phase) with different detail
-    - If you need coarse projections, write mapping functions from fine-grained enum
-    - If enums track different dimensions (phase vs lifecycle), name them clearly
-
-    Related to **"single-source-of-truth"**: run phase should have one canonical
-    enum, not three parallel versions.
-
-    When to keep multiple enums:
-    - They track different dimensions (RunPhase vs AgentLifecycle vs RunOutcome)
-    - They're used in different protocols (internal vs external API)
-    - There's an explicit adapter layer between them
-
-    When to consolidate:
-    - Same semantic dimension (execution phase)
-    - Name collision (two RunPhase enums)
-    - Subset relationship (3-state is a projection of 7-state)
-    - No clear boundary between them
-
-    Pattern for projections:
-    ```python
-    # Canonical (fine-grained)
-    class RunPhase(StrEnum):
-        IDLE = "idle"
-        SAMPLING = "sampling"
-        TOOLS_RUNNING = "tools_running"
-        WAITING_APPROVAL = "waiting_approval"
-
-    # Projection function (not a separate enum)
-    def is_active(phase: RunPhase) -> bool:
-        return phase not in (RunPhase.IDLE,)
-
-    # Or use methods on the enum:
-    @property
-    def is_executing(self) -> bool:
-        return self in (RunPhase.SAMPLING, RunPhase.TOOLS_RUNNING)
-    ```
-  |||,
 )

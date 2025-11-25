@@ -35,7 +35,6 @@ I.issueOneOccurrence(
     Note: base_system (line 129) is used twice (lines 142 and 152), so should
     NOT be inlined to avoid duplication or re-evaluation.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/runtime/local_runtime.py': [
       123,          // all_handlers = list(handlers) + self._extra_handlers

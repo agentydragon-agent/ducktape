@@ -161,7 +161,6 @@ I.issueOneOccurrence(
     6. Implement proper `__aexit__` that nulls out resources
     7. Or: use factory pattern if context manager doesn't fit use case
   |||,
-  properties=['proper-resource-management', 'avoid-two-step-initialization', 'type-safe-apis', 'use-context-managers'],
   filesToRanges={
     'adgn/src/adgn/agent/runtime/local_runtime.py': [
       [81, 82],   // Missing type annotations for ui_bus, connection_manager
@@ -171,55 +170,4 @@ I.issueOneOccurrence(
       [160, 165], // close() doesn't null out session/agent
     ],
   },
-  gap_note= |||
-    This finding illustrates **"avoid-two-step-initialization"**: classes that
-    require calling an initialization method after construction are error-prone
-    and hard to type-check.
-
-    Two-step initialization problems:
-    - Object exists but isn't usable (half-initialized)
-    - Every method needs `if not self._initialized: raise`
-    - Type system can't help (fields are `T | None`)
-    - Easy to forget initialization step
-    - Can't use object immediately after construction
-
-    Better patterns:
-
-    **1. Context manager (for resource management):**
-    ```python
-    async with Resource(...) as r:
-        r.use()  # Always initialized
-    ```
-
-    **2. Factory function (when context doesn't fit):**
-    ```python
-    r = await Resource.create(...)
-    r.use()  # Always initialized
-    ```
-
-    **3. Builder pattern (for complex configuration):**
-    ```python
-    r = ResourceBuilder().with_foo(...).with_bar(...).build()
-    r.use()  # Always initialized
-    ```
-
-    Related to **"proper-resource-management"**: objects that acquire resources
-    (connections, sessions, etc.) should either:
-    - Be context managers (`async with`)
-    - Have clear `create()`/`close()` lifecycle with docs
-    - Be single-use (no cleanup needed)
-
-    Related to **"use-context-managers"**: when a class has `start()`/`close()`,
-    `open()`/`close()`, or similar pairs, it should usually be a context manager.
-
-    Context manager benefits:
-    - Automatic cleanup (guaranteed even on exceptions)
-    - Clear lifetime (inside/outside context)
-    - Idiomatic (everyone knows `with`/`async with`)
-    - Type-safe (resources always set in context)
-
-    Related to **"type-safe-apis"**: missing type annotations force users to
-    read implementation or docs to understand expected types. Type checkers
-    can't validate usage without annotations.
-  |||,
 )

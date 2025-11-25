@@ -216,7 +216,6 @@ I.issueOneOccurrence(
     This is a common pattern of technical debt: infrastructure remains after the use case
     changes, making the codebase harder to understand.
   |||,
-  properties=['remove-dead-code', 'accurate-documentation', 'set-fields-in-constructor'],
   filesToRanges={
     'adgn/src/adgn/agent/runtime/registry.py': [
       [27, 27],   // Outdated "WebSocket connection manager" documentation
@@ -231,42 +230,4 @@ I.issueOneOccurrence(
       [135, 135], // Comment about removed WebSocket functionality
     ],
   },
-  gap_note= |||
-    This finding illustrates **"remove-dead-code"**: when functionality is removed
-    or replaced, all related code should be deleted, not left around "just in case".
-
-    Common causes of dead code:
-    - Architecture changes (WebSocket → ServerBus)
-    - Feature removal (endpoints no longer mounted)
-    - Refactoring (methods moved elsewhere)
-    - "Might need it later" thinking
-
-    Why dead code is harmful:
-    - Confuses readers (is this used or not?)
-    - Suggests wrong patterns (imports WebSocket, has connect/disconnect)
-    - Increases maintenance burden (must update unused code)
-    - Makes codebase larger (harder to navigate)
-    - Outdated documentation (says "WebSocket" when that's gone)
-
-    How to identify dead code:
-    - Search for callers (no imports of method → dead)
-    - Look for decorators (no @app.websocket → dead)
-    - Check commit history (when was this last changed?)
-    - Use coverage tools (never executed → dead)
-
-    Related to **"accurate-documentation"**: when implementation changes,
-    documentation must change too. Comments and docstrings that reference
-    removed functionality are misleading.
-
-    Related to **"set-fields-in-constructor"**: dataclass/class fields should
-    be set in `__init__`, not by assignment after construction. This is especially
-    true for dataclasses where `__init__` is auto-generated.
-
-    When to keep "unused" code:
-    - Explicitly marked as experimental (`# EXPERIMENTAL: not yet used`)
-    - Part of a public API contract (even if not used internally)
-    - Temporarily disabled with clear plan to re-enable
-
-    In these cases: add prominent comments explaining why it exists but isn't called.
-  |||,
 )

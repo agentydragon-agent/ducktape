@@ -65,7 +65,6 @@ I.issueOneOccurrence(
 
     This eliminates manual counting (addressed in finding 010) and the imperative style.
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py': [
       [64, 65],   // approvals_list initialization and pending loop

@@ -50,7 +50,6 @@ I.issueOneOccurrence(
     - Manual list initialization and append
     - The imperative loop pattern
   |||,
-  properties=['python/modern-python-idioms', 'no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [
       [267, 274], // proposals list building with for loop

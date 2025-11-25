@@ -41,25 +41,10 @@ I.issueOneOccurrence(
     This eliminates the duplication entirely by extracting or unifying the
     two use cases.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [
       [75, 91],   // TokenAuthMiddleware extracts Bearer token
       [144, 161], // UITokenAuthMiddleware extracts Bearer token
     ],
   },
-  gap_note= |||
-    This finding represents a pattern that could be a property: "extract-duplicated-logic"
-    or "DRY-across-similar-classes".
-
-    When the same logic (token extraction, validation, parsing) appears in multiple
-    classes or functions:
-    - Extract to a shared helper function (preferred for simple cases)
-    - Use framework-provided utilities if available
-    - Consolidate into a single parameterized implementation if the classes are similar
-
-    Related to but broader than "no-oneoff-vars-and-trivial-wrappers" - this is about
-    identifying and extracting duplicated logic patterns across multiple contexts,
-    not just within a single function.
-  |||,
 )

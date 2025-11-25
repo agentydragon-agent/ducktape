@@ -33,7 +33,7 @@ I.issueOneOccurrence(
 
     Affects: Agent, ToolCall, Policy models.
   |||,
-  properties=['no-defensive-programming', 'no-redundant-code'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/models.py': [
       32,           // Agent.created_at

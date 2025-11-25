@@ -11,7 +11,6 @@ I.issueWithOccurrences(
     - Reduces cognitive translation for readers (they read `list[int]` directly rather than mentally mapping to `List[int]`).
 
   |||,
-  // properties=['type-hints','type-correctness-and-specificity'],
   occurrences=[
     { files: { 'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py': [[48, 48]] }, note: 'extra_py: Optional[str] — prefer `str | None`' },
     { files: { 'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_mcp_launch.py': [[23, 31]] }, note: 'log_dir: Optional[Path] — prefer `Path | None`' },

@@ -73,7 +73,6 @@ I.issueOneOccurrence(
     protocol) would make things quite complicated and is not recommended. The simpler solution is
     to use IDs and let clients construct URIs when needed.
   |||,
-  properties=['redundancy', 'data-modeling', 'dry-principle'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [178, 178],  // Redundant proposal_uri field

@@ -23,7 +23,7 @@ I.issueOneOccurrence(
     Only use str for timestamps when interfacing with systems that strictly require strings
     and you need precise control over format. Not the case here (internal model).
   |||,
-  properties=['type-correctness-and-specificity', 'python/datetime'],
+
   filesToRanges={
     'adgn/src/adgn/agent/presets.py': [
       30,           // modified_at: str | None

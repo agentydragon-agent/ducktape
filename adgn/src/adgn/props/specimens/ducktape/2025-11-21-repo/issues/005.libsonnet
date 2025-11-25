@@ -41,7 +41,6 @@ I.issueOneOccurrence(
     - Clearer that default behavior is being used
     - One less place to look when searching for on_response implementations
   |||,
-  properties=['dead-code', 'redundant-override'],
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [
       [167, 168],  // Redundant on_response override

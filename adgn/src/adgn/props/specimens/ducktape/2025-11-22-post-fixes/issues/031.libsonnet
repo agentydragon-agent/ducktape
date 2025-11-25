@@ -230,7 +230,6 @@ I.issueOneOccurrence(
     4. Use `model_validate_json()` instead of `json.loads()` + `model_validate()`
     5. Either parse entire output or clearly document/handle multi-line output
   |||,
-  properties=['prefer-concise-code', 'use-platform-primitives', 'avoid-unnecessary-constraints'],
   filesToRanges={
     'adgn/src/adgn/agent/policy_eval/runner.py': [
       [32, 32],  // client = docker_client (redundant rename)
@@ -238,36 +237,4 @@ I.issueOneOccurrence(
       [76, 83],  // Manual json.loads + splitlines[-1] instead of model_validate_json
     ],
   },
-  gap_note= |||
-    This finding illustrates **"use-platform-primitives"**: Pydantic provides
-    `model_validate_json()` which parses JSON and validates in one step. Don't
-    do `json.loads()` then `model_validate()` separately.
-
-    Pydantic JSON parsing benefits:
-    - Works directly on bytes (no decode needed)
-    - Uses fast Rust-based parser (faster than stdlib json)
-    - Better error messages (shows validation path)
-    - Type-safe (returns typed model, not dict)
-
-    When to use which Pydantic parsing method:
-    - `model_validate_json(str | bytes)` - Parse JSON directly
-    - `model_validate(dict)` - Validate already-parsed dict
-    - `model_validate_python(Any)` - Validate any Python object
-
-    Related to **"prefer-concise-code"**: inline variables used only once:
-    - `cmd = [...]; create(command=cmd)` → `create(command=[...])`
-    - `client = docker_client; client.do()` → `docker_client.do()`
-
-    Related to **"avoid-unnecessary-constraints"**: don't artificially restrict
-    input/output formats without good reason:
-    - `.splitlines()[-1]` assumes JSON is on last line only
-    - Breaks if policy outputs pretty-printed JSON
-    - Breaks if JSON contains newlines in string values
-
-    If you need to extract JSON from mixed output:
-    - Have policy output ONLY JSON (recommended)
-    - Send debug output to stderr, not stdout
-    - Use a clear delimiter if mixing is necessary
-    - Document the expected output format
-  |||,
 )

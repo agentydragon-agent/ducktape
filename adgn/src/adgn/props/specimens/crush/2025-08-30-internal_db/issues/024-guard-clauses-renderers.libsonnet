@@ -5,7 +5,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueWithOccurrences(
   rationale='Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ... }` and then build args inside the success branch. Prefer failing-fast guard clauses (if err := json.Unmarshal(...); err != nil { return fallback } ) and proceed on the happy path to reduce nesting and improve readability. The Bash renderer already uses the guard-clause style.',
-  // properties=['early-bailout'],
   occurrences=[
     { files: { 'internal/tui/components/chat/messages/renderer.go': [{ start_line: 290, end_line: 297 }] }, note: 'editRenderer.Render: use guard clause for json unmarshal of params, proceed on happy path.' },
     { files: { 'internal/tui/components/chat/messages/renderer.go': [{ start_line: 335, end_line: 344 }] }, note: 'multiEditRenderer.Render: use guard clause for params unmarshal.' },

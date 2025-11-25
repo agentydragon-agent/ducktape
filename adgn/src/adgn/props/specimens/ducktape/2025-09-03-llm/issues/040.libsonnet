@@ -14,7 +14,6 @@ I.issueOneOccurrence(
     while providing no extra clarity. Prefer logging the `config.timeout` value directly (or its standard
     representation), and drop this one-off label entirely.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[792, 799]],
   },

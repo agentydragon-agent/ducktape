@@ -31,7 +31,7 @@ I.issueOneOccurrence(
 
     Note: Not applicable when variable is reassigned inside if block.
   |||,
-  properties=['python/walrus-operator'],
+
   filesToRanges={
     'adgn/src/adgn/agent/runtime/registry.py': [
       [93, 95],     // get_agent then check

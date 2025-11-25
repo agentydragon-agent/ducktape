@@ -45,7 +45,6 @@ I.issueOneOccurrence(
 
     Either option makes configuration problems visible to users and avoids silently violating explicit `--config` intent.
   |||,
-  properties=['python/no-swallowing-errors'],
   filesToRanges={
     'pyright_watch_report.py': [[46, 51]],
   },

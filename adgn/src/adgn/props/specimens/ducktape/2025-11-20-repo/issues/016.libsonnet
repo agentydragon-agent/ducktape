@@ -57,7 +57,6 @@ I.issueOneOccurrence(
     All three should be replaced with direct `model_validate` calls (with appropriate
     try/except if None handling is genuinely needed, but that should be caller's decision).
   |||,
-  properties=['fail-fast', 'validation', 'error-handling', 'simplicity', 'dead-code'],
   filesToRanges={
     'adgn/src/adgn/mcp/policy_gateway/signals.py': [
       [56, 60],   // _ErrorFields protocol - should be deleted

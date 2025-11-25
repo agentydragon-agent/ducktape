@@ -98,7 +98,6 @@ I.issueOneOccurrence(
         continue
     ```
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'pyright_watch_report.py': [
       [272, 279],  // incl_stats

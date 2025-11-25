@@ -106,7 +106,6 @@ I.issueOneOccurrence(
     General principle: Comments should explain *why*, not *what*. If the code
     is self-explanatory, remove the comment.
   |||,
-  properties=['no-useless-docs'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/compositor_factory.py': [
       40,

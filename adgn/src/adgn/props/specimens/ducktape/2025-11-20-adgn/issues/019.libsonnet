@@ -29,7 +29,7 @@ I.issueOneOccurrence(
 
     Loop-and-append is imperative style; list comprehension is functional/declarative.
   |||,
-  properties=['python/listcomps', 'no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/sqlite.py': [
       [403, 417],   // list_runs loop-and-append pattern

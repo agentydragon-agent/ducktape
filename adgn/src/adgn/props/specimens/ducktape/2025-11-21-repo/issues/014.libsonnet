@@ -131,7 +131,6 @@ I.issueOneOccurrence(
     - Each save updates the same record reference
     - State transitions become obvious: set .decision, save; set .execution, save
   |||,
-  properties=['dry-principle', 'duplication', 'maintainability', 'clarity'],
   filesToRanges={
     'adgn/src/adgn/mcp/policy_gateway/middleware.py': [
       [142, 358],  // Entire on_call_tool method

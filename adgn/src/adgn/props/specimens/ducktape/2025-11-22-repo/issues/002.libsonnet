@@ -71,7 +71,6 @@ I.issueOneOccurrence(
     - The function name "dynamically" is fine - it means "at runtime" not "only after startup"
     - Both startup and create_agent are "dynamic" mounting (as opposed to static config)
   |||,
-  properties=['code-duplication', 'dry-principle', 'maintainability', 'consistency'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/compositor_factory.py': [
       [95, 103],    // Duplicated mounting logic

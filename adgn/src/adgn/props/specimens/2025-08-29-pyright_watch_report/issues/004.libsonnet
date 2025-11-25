@@ -12,7 +12,6 @@ I.issueOneOccurrence(
 
     Annotate as `Path` (not `Path | None`).
   |||,
-  properties=['type-correctness-and-specificity'],
   filesToRanges={
     'pyright_watch_report.py': [50],
   },

@@ -125,7 +125,7 @@ def _jsonnet_load_dir(
             )
             continue
         try:
-            core_input = {k: obj.get(k) for k in ("rationale", "gap_note")}
+            core_input = {k: obj.get(k) for k in ("rationale",)}
             core_input["id"] = stem
             core_input["should_flag"] = should_flag
             core = IssueCore.model_validate(core_input)

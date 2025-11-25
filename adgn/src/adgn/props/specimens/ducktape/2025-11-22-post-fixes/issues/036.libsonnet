@@ -137,7 +137,6 @@ I.issueOneOccurrence(
         expanded: bool = False  # UI-specific
     ```
   |||,
-  properties=['avoid-duplication', 'composition-over-duplication', 'single-source-of-truth'],
   filesToRanges={
     'adgn/src/adgn/agent/server/state.py': [
       [71, 72],   // tool and call_id duplicate ToolCall fields
@@ -146,27 +145,4 @@ I.issueOneOccurrence(
       [20, 25],   // Canonical ToolCall definition
     ],
   },
-  gap_note= |||
-    This finding illustrates **"composition-over-duplication"**: when creating
-    specialized types (like UI models), embed existing domain types rather than
-    duplicating their fields.
-
-    Related to **"single-source-of-truth"**: tool call information should have
-    one canonical representation (`ToolCall`), with other types composing it.
-
-    Pattern: Domain type + UI enrichment
-    - Domain: Order(id, items, total)
-    - UI: OrderDisplay(order: Order, selected: bool, expanded: bool)
-
-    Don't flatten for convenience:
-    - Bad: OrderDisplay(id, items, total, selected, expanded)  # Duplicates Order
-    - Good: OrderDisplay(order: Order, selected, expanded)      # Composes Order
-
-    Benefits of composition:
-    - Single source of truth for domain data
-    - Type changes propagate automatically
-    - Clear separation of concerns (domain vs UI)
-    - All domain data accessible (no lost fields)
-    - Conversion functions centralized
-  |||,
 )

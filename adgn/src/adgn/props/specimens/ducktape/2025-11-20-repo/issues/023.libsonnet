@@ -64,7 +64,6 @@ I.issueOneOccurrence(
     **Related issues:**
     Connected to issue 022 about using wrong ID in create_proposal.
   |||,
-  properties=['type-safety', 'api-design', 'consistency'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [211, 220],  // notify_proposal_change method with str signature

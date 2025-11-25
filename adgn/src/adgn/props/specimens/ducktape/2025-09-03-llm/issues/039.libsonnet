@@ -11,9 +11,7 @@ I.issueOneOccurrence(
     Prefer tightening the signature: drop the default (require an explicit value from callers)
     or make the parameter mandatory only where needed via a higher-level object.
   |||,
-  // properties=['type-correctness-and-specificity'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[280, 281]],
   },
-  gap_note='Consider a property about minimizing unused defaults at API boundaries.',
 )

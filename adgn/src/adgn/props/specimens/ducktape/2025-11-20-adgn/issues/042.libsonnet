@@ -22,7 +22,7 @@ I.issueOneOccurrence(
 
     The variable has no semantic value and isn't referenced elsewhere.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/reducer.py': [
       [60, 61],     // md variable and immediate use

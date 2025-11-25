@@ -57,7 +57,6 @@ I.issueOneOccurrence(
     2. Update test_tokens fixture to construct Pydantic model instances
     3. Delete assertions at lines 149-150
   |||,
-  properties=['test-quality', 'type-safety', 'pydantic-usage', 'test-value'],
   filesToRanges={
     'adgn/tests/agent/server/test_mcp_routing.py': [
       [15, 21],   // test_tokens fixture using plain dict

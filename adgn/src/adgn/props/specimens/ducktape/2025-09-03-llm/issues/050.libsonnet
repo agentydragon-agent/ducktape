@@ -12,7 +12,6 @@ I.issueOneOccurrence(
 
     This reduces ambiguity, communicates scope precisely, and prevents misinterpretation.
   |||,
-  // properties=['self-describing-names'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[60, 60], [135, 137], [155, 156], [175, 176], [194, 195], [201, 205]],
   },

@@ -33,7 +33,6 @@ I.issueOneOccurrence(
 
     This makes real problems visible and avoids silent data loss.
   |||,
-  properties=['python/no-swallowing-errors'],
   filesToRanges={
     'pyright_watch_report.py': [[292, 301]],
   },

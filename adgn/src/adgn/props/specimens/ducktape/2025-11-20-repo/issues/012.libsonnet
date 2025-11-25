@@ -26,7 +26,6 @@ I.issueOneOccurrence(
     - More concise without sacrificing readability
     - Standard Python 3.8+ pattern for "create and immediately use" scenarios
   |||,
-  properties=['code-style', 'readability'],
   filesToRanges={
     'adgn/src/adgn/props/eval_harness.py': [
       [580, 581],  // eval_index extraction and immediate write use

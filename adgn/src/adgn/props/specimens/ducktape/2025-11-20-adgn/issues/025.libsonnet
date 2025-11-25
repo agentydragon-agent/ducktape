@@ -40,7 +40,7 @@ I.issueOneOccurrence(
 
     This is a standard Python idiom for collection parameters.
   |||,
-  properties=['no-defensive-programming', 'type-correctness-and-specificity'],
+
   filesToRanges={
     'adgn/src/adgn/agent/runtime/local_runtime.py': [
       73,           // extra_handlers: Iterable[BaseHandler] | None = None

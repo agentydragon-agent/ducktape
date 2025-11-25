@@ -74,7 +74,6 @@ I.issueOneOccurrence(
 
     But most likely: mounting is initialization, initialization failures should crash.
   |||,
-  properties=['python/no-swallowing-errors', 'early-bailout'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/compositor_factory.py': [
       [93, 95],

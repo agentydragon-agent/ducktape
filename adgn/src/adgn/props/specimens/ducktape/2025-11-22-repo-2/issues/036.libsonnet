@@ -26,7 +26,6 @@ I.issueOneOccurrence(
     - Clearer intent (assigning based on condition)
     - Variable is const-assigned (not mutated)
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/cli.py': [
       [88, 90],

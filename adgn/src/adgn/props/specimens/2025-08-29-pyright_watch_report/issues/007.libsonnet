@@ -36,7 +36,6 @@ I.issueOneOccurrence(
 
     This reduces moving parts and cognitive load needed do understand the pipeline.
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'pyright_watch_report.py': [218, 236],
   },

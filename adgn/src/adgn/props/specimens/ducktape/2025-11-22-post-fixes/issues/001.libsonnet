@@ -30,7 +30,6 @@ I.issueOneOccurrence(
     - Prevents silent corruption of approval state
     - Forces callers to handle the race condition properly
   |||,
-  properties=['python/no-swallowing-errors', 'early-bailout'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [185, 189],  // approve() tool - silent ignore if future.done()

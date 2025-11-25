@@ -10,8 +10,6 @@ I.issueOccurrencesFromLines(
       - Else, handle the 10% case explicitly.
     As a reviewer, seeing try/except signals "what's on fire" (unexpected), not a routine precondition check.
   |||,
-  // properties=['scoped-try-except', 'early-bailout'],
-  gap_note='General heuristic: avoid exceptions for normal control flow; use explicit capability/condition checks. Not fully captured by existing properties.',
   linesByFile={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [304],
   },

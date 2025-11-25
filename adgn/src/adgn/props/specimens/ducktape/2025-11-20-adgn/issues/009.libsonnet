@@ -25,7 +25,7 @@ I.issueOneOccurrence(
     - Full state documentation lives on PolicyStatus enum
     - Database constraint documented via __table_args__ comment if needed
   |||,
-  properties=['no-useless-docs', 'truthfulness'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/models.py': [
       [135, 145],   // Policy docstring with duplicated enum values

@@ -27,7 +27,7 @@ I.issueOneOccurrence(
 
     The variables don't add clarity, just line count.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers', 'no-useless-comments'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/mcp_routing.py': [
       [141, 144],   // response_headers, body variables and return

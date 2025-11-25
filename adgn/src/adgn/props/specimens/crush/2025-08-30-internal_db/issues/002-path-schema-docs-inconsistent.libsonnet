@@ -15,5 +15,4 @@ I.issueWithOccurrences(
     { files: { 'internal/llm/tools/ls.go': [{ start_line: 109, end_line: 109 }, { start_line: 119, end_line: 123 }] }, note: 'ToolInfo.Required lists "path" as required (line 109), but Run allows empty path and defaults to workingDir (lines 119-123).' },
     { files: { 'internal/llm/tools/edit.go': [{ start_line: 48, end_line: 104 }, { start_line: 155, end_line: 157 }] }, note: 'Description says absolute path only, but Run joins relative paths with workingDir.' },
   ],
-  // properties=[],
 )

@@ -30,37 +30,9 @@ I.issueOneOccurrence(
     4. Testable: can patch the paths module
     5. Follows XDG Base Directory Specification correctly across platforms
   |||,
-  properties=['single-source-of-truth', 'centralize-config'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/cli.py': [
       [36, 36],  // user_data_dir("adgn", "agentydragon") for DEFAULT_DB_PATH
     ],
   },
-  gap_note= |||
-    This finding illustrates **"centralize-config"**: application-wide configuration
-    (paths, constants, defaults) should be defined in a central location, not scattered
-    throughout the codebase.
-
-    Benefits of centralized configuration:
-    - Single source of truth for defaults
-    - Easy to find and understand all config points
-    - Simple to override for testing or different environments
-    - Consistent behavior across modules
-
-    This principle applies to:
-    - File paths (XDG directories, data files, config files)
-    - Constants (timeouts, buffer sizes, limits)
-    - Default values (model names, API endpoints)
-    - Feature flags (enabled/disabled features)
-
-    Related to "single-source-of-truth": don't duplicate configuration values.
-    When you need the same value in multiple places, import it from one canonical
-    location.
-
-    Common patterns:
-    - `config.py` or `settings.py` - application settings
-    - `paths.py` - file system paths
-    - `constants.py` - magic numbers and strings
-    - `defaults.py` - default values for optional parameters
-  |||,
 )

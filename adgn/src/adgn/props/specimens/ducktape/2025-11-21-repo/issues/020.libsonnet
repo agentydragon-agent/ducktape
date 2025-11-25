@@ -65,7 +65,6 @@ I.issueOneOccurrence(
     **Note:**
     If these fields are being populated somewhere, that code should also be removed as part of this fix.
   |||,
-  properties=['api-design', 'clarity', 'unused-fields'],
   filesToRanges={
     'adgn/src/adgn/agent/models/policy_error.py': [
       [23, 24],  // Ambiguous index and length fields

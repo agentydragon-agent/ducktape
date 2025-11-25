@@ -24,7 +24,6 @@ I.issueOneOccurrence(
 
     If type-only imports are needed in the future, they can be added back with actual imports. These empty blocks provide no value.
   |||,
-  properties=['no-dead-code'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [31, 32],  // if TYPE_CHECKING: pass

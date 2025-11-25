@@ -85,7 +85,6 @@ I.issueOneOccurrence(
     currently exist separately (`AGENTS_POLICY_PROPOSALS_URI_FMT`, `AGENTS_POLICY_STATE_URI_FMT`),
     as the approval policy server URIs will directly match the agent resource namespace.
   |||,
-  properties=['architectural-design', 'uri-structure', 'consistency'],
   filesToRanges={
     'adgn/src/adgn/mcp/_shared/constants.py': [
       [47, 48],   // Global APPROVAL_POLICY_RESOURCE_URI and PROPOSALS_INDEX_URI constants

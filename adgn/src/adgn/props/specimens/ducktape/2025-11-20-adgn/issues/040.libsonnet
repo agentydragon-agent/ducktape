@@ -37,7 +37,7 @@ I.issueOneOccurrence(
 
     These wrappers do none of those things.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers', 'no-useless-code'],
+
   filesToRanges={
     'adgn/src/adgn/llm/sysrw/openai_typing.py': [
       [126, 128],   // dump_response_messages

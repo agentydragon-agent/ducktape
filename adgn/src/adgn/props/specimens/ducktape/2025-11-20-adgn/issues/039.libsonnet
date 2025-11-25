@@ -35,15 +35,11 @@ I.issueOneOccurrence(
 
     Same principle applies to parse_chat_messages.
   |||,
-  properties=['type-correctness-and-specificity', 'no-defensive-programming'],
+
   filesToRanges={
     'adgn/src/adgn/llm/sysrw/openai_typing.py': [
       [111, 123],   // parse_response_messages function
       [136, 148],   // parse_chat_messages (same pattern)
     ],
-  },
-  gap_note=|||
-    Requires auditing callers to understand why they have Any-typed messages.
-    Likely need to improve API response parsing at source.
-  |||,
+  }
 )

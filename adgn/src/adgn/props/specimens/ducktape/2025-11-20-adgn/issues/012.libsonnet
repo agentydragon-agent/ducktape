@@ -31,7 +31,7 @@ I.issueOneOccurrence(
 
     None of these apply here - sqlalchemy is already imported at top of file.
   |||,
-  properties=['python/imports-top'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/sqlite.py': [
       53,           // from sqlalchemy import event (inside __init__)

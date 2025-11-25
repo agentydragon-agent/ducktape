@@ -139,7 +139,6 @@ I.issueOneOccurrence(
     The string values are compatible, so existing database data doesn't need migration.
     Just update the code to use the unified enum consistently.
   |||,
-  properties=['type-safety', 'code-duplication', 'enum-design', 'semantic-clarity', 'maintainability'],
   filesToRanges={
     'adgn/src/adgn/agent/models/proposal_status.py': [
       [6, 10],   // ProposalStatus enum definition (should be removed/unified)

@@ -12,7 +12,6 @@ I.issueOneOccurrence(
     - Less boilerplate (bind+check in a single expression)
     - Consistent handling across all subprocess sites
   |||,
-  // properties=['walrus','early-bailout'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [
       [599, 606],  // pre-commit hook wrapper

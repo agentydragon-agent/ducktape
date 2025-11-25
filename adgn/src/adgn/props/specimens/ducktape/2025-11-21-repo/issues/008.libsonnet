@@ -100,7 +100,6 @@ I.issueOneOccurrence(
     The `pending` property (lines 111-114) currently returns `self._requests` directly.
     After refactoring, it needs to extract requests from the dataclass (as shown above).
   |||,
-  properties=['data-structure', 'type-safety', 'maintainability', 'parallel-dicts'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [75, 78],   // Two parallel dicts definition

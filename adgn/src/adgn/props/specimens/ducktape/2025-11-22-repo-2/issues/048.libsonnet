@@ -24,7 +24,6 @@ I.issueOneOccurrence(
 
     Fix: Remove the docstring entirely. The method signature is self-documenting.
   |||,
-  properties=['no-useless-docs'],
   filesToRanges={
     'adgn/src/adgn/agent/persist/__init__.py': [
       [175, 176],  // Protocol method with useless docstring

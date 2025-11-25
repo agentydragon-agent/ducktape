@@ -41,7 +41,6 @@ I.issueOneOccurrence(
 
     Or just reference the union: "Accepts UiStateEvent (see type definition)."
   |||,
-  properties=['no-useless-docs', 'truthfulness'],
   filesToRanges={
     'adgn/src/adgn/agent/server/reducer.py': [
       [46, 52],     // Verbose event type enumeration in docstring

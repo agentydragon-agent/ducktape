@@ -42,45 +42,10 @@ I.issueOneOccurrence(
     6. **Easy to extend**: Add new event type = add new payload class to union
     7. **Declarative**: Schema describes what's valid, not how to parse
   |||,
-  properties=['use-platform-primitives', 'declarative-validation'],
   filesToRanges={
     'adgn/src/adgn/agent/persist/events.py': [
       [47, 50],  // TypedPayload union with discriminator=None
       [67, 100], // Manual parse_event() with if-elif chains
     ],
   },
-  gap_note= |||
-    This finding illustrates **"use-platform-primitives"**: Pydantic provides
-    discriminated union parsing with automatic dispatch based on a discriminator
-    field. Don't reimplement this with manual if-elif chains.
-
-    Discriminated unions (tagged unions) are a common pattern for parsing
-    heterogeneous data where a "type" field determines the payload structure.
-    Pydantic handles this idiomatically:
-
-    1. Each variant has a Literal field matching its type
-    2. The union is annotated with Field(discriminator="field_name")
-    3. Pydantic automatically dispatches to the correct variant based on that field
-
-    When to use discriminated unions:
-    - JSON/API responses with a "type" or "kind" field determining structure
-    - Event streams where event type determines payload shape
-    - Polymorphic data (e.g., different tool call types, notification types)
-    - Configuration objects with different schemas per type
-
-    Common mistakes:
-    - Setting `discriminator=None` (disables discriminated union parsing)
-    - Manual if-elif dispatching instead of letting Pydantic do it
-    - Not adding the discriminator field to each variant
-    - Forgetting to use Literal for the discriminator value
-
-    Related to **"declarative-validation"**: describe WHAT the data should be
-    (union of typed payloads) rather than HOW to parse it (if-elif chains).
-
-    The Pydantic way:
-    - Define schemas declaratively (BaseModel classes with Literal discriminators)
-    - Let the framework parse and validate
-    - Get clear, structured errors for free
-    - Type checkers understand the union and narrow types correctly
-  |||,
 )

@@ -117,7 +117,6 @@ I.issueOneOccurrence(
     3. Remove `PolicyErrorCode` enum
     4. Add `TESTS` to unified enum if using the merged approach
   |||,
-  properties=['avoid-duplication', 'single-source-of-truth'],
   filesToRanges={
     'adgn/src/adgn/agent/models/policy_error.py': [
       [9, 11],   // PolicyErrorCode enum (redundant)
@@ -125,33 +124,4 @@ I.issueOneOccurrence(
       [21, 22],  // PolicyError with both stage and code fields
     ],
   },
-  gap_note= |||
-    This finding illustrates **"avoid-redundant-enums"**: when two enums are
-    subset-related or have a deterministic 1:1 mapping, keep only one and derive
-    the other programmatically if needed.
-
-    Common patterns of redundant enums:
-    - One enum is a subset of another (e.g., ErrorCode ⊂ ErrorStage)
-    - Values differ only by prefix/suffix (e.g., `READ` vs `READ_ERROR`)
-    - One can be computed from the other (e.g., stage → code via `f"{stage}_error"`)
-    - Both enums always appear together in data structures
-
-    When to merge enums:
-    - Values have 1:1 correspondence
-    - One is always derived from the other
-    - Adding a variant requires updating both
-
-    When separate enums are appropriate:
-    - Represent orthogonal concerns (e.g., priority vs status)
-    - Values can combine independently (not always paired)
-    - Different lifecycle/ownership (e.g., HTTP status vs app error code)
-
-    Related to **"single-source-of-truth"**: don't store the same information
-    in multiple fields. If `code` can always be derived from `stage`, don't
-    store both - either compute `code` on demand or only store the unified value.
-
-    This also relates to **"avoid-duplication"** at the type level: defining
-    redundant types (enums, classes, aliases) that represent the same domain
-    concept in slightly different forms.
-  |||,
 )

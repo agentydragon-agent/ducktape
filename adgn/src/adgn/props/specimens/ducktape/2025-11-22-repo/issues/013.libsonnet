@@ -66,7 +66,6 @@ I.issueOneOccurrence(
     In this case, `max_retries` is documented because it explains the retry behavior,
     not just the type.
   |||,
-  properties=['no-useless-docs'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py': [
       [142, 143], // create_agent Args

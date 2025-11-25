@@ -194,7 +194,6 @@ I.issueOneOccurrence(
 
     The helper method approach is the clear winner.
   |||,
-  properties=['code-duplication', 'dry-principle', 'maintainability', 'refactoring'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py': [
       [67, 100],   // Duplicated logic in list_agents

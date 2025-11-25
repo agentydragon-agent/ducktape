@@ -45,7 +45,6 @@ I.issueOneOccurrence(
     - Modern Python idiom (walrus operator introduced in Python 3.8)
     - Variable scope is explicit (only exists where needed)
   |||,
-  properties=['python/walrus'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [
       [75, 76],   // TokenAuthMiddleware.dispatch(): auth_header + if

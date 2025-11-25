@@ -5,7 +5,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueWithOccurrences(
   rationale='Call-sites frequently chain nil checks (cfg != nil && cfg.Options != nil && cfg.Options.X != nil ...) which is noisy and error-prone. Centralize nil-safe accessors on Config (nil-receiver-safe methods) or pass *config.Config by DI to eliminate repetitive pointer chains and consolidate defaults.',
-  // properties=[],
   occurrences=[
     { files: { 'internal/diff/external.go': [{ start_line: 41, end_line: 43 }, { start_line: 92, end_line: 93 }] }, note: 'Example: Diff.ExternalCommand / ParseMode guarded by multi-level nil checks; centralize via config.Diff().ParseMode or a nil-safe helper.' },
     { files: { 'internal/lsp/watcher/watcher.go': [{ start_line: 320, end_line: 356 }] }, note: 'Numerous checks for cfg.Options.DebugLSP and config-derived guards; prefer config.DebugLSP()/config.CurrentLSPIgnore() helpers or DI.' },

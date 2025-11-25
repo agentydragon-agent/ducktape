@@ -33,7 +33,6 @@ I.issueOneOccurrence(
     **Note:** The "token →" prefix doesn't add value since we're not logging the actual
     token (for security reasons). The {agent_id=} format is sufficient.
   |||,
-  properties=['code-style', 'readability'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [
       [99, 99],  // logger.debug with manual interpolation

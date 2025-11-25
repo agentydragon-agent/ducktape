@@ -74,7 +74,6 @@ I.issueOneOccurrence(
     4. Inline `policies` variable in list comprehension
     5. Remove comment about removed methods
   |||,
-  properties=['use-platform-primitives', 'prefer-concise-code', 'remove-noise'],
   filesToRanges={
     'adgn/src/adgn/agent/persist/models.py': [
       [68, 69],   // Inline comments instead of comment= parameter
@@ -92,34 +91,4 @@ I.issueOneOccurrence(
       [530, 533], // Useless comment about removed code
     ],
   },
-  gap_note= |||
-    This finding illustrates **"use-platform-primitives"**: SQLAlchemy provides
-    built-in features (comment=, func.max, func.coalesce) that should be used
-    instead of workarounds (inline comments, raw SQL).
-
-    When using ORMs:
-    - Use `comment=` for column documentation (visible in DB schema)
-    - Use ORM query APIs instead of raw SQL when possible
-    - Leverage func.* for SQL functions (max, coalesce, etc.)
-    - Trust the ORM to generate correct SQL
-
-    Benefits of ORM over raw SQL:
-    - Type safety (catch column name typos)
-    - Refactor-friendly (IDE tracks renames)
-    - Database portable (works on SQLite, PostgreSQL, etc.)
-    - Better testing (can mock/stub ORM objects)
-    - Clear errors (SQLAlchemy shows what's wrong where)
-
-    When raw SQL is appropriate:
-    - Complex queries that ORM can't express efficiently
-    - Database-specific features not in SQLAlchemy
-    - Performance-critical paths (with benchmarks proving ORM is slower)
-    - Data migrations that operate outside the ORM
-
-    Related to **"prefer-concise-code"**: use walrus operators for check-and-use
-    patterns, inline variables only used once.
-
-    Related to **"remove-noise"**: delete comments about removed code (it's in git),
-    don't explain what's not there.
-  |||,
 )

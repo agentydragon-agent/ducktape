@@ -16,7 +16,6 @@ I.issueOneOccurrence(
     recorded history reflects the state at the time of the write. Therefore this pattern should
     not be flagged as an issue. Leave as-is.
   |||,
-  properties=[],
   filesToRanges={
     'internal/llm/tools/write.go': [[148, 151], [161, 167], [174, 182]],
   },

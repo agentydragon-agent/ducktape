@@ -13,7 +13,6 @@ I.issueOneOccurrence(
     - Append "[TIMEOUT]" after truncation (ensuring room for the marker), so the signal is never lost.
     - Hoist markers to constants (e.g., `TRUNCATED_MARKER`, `TIMEOUT_MARKER`) and reuse.
   |||,
-  // properties=['minimize-nesting'],
   filesToRanges={
     // TIMEOUT before truncation; duplicate truncate calls (timeout branch)
     'llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py': [[37, 46], [18, 22]],

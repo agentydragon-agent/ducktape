@@ -27,7 +27,6 @@ I.issueOneOccurrence(
     Fallback discovery as in specimen would only be acceptable as "friendly default" when no explicit `--config` passed.
     (Motivating scary example: imagine a PII-holding server, with `--config=explicit_config.json`, `explicit_config.json` having `{"dangerous_pii_exposing_debug_switch"=false}` (type) and silently discovered fallback `random_debug_developer_config.json` setting it to `true`).
   |||,
-  properties=['python/no-swallowing-errors', 'early-bailout'],
   filesToRanges={
     'pyright_watch_report.py': [
       12,  // config_path argument

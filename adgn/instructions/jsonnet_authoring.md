@@ -5,7 +5,6 @@
 - Each file is ONE standalone Jsonnet expression that returns a single Issue object built via helpers from `specimens/lib.libsonnet`
 - Start every file with: `local I = import '../../specimens/lib.libsonnet';`
 - File name must equal the issue id (e.g., `issues/iss-032.libsonnet`). Do not include id in the Jsonnet; the loader derives it from the filename.
-- Deprecated: do not include a properties/propertyIds field in Issue Jsonnet; classification now happens downstream, not in IssueCore.
 
 ## Triple‑bar text blocks (|||) — exact house style
 - Opening delimiter: exactly one space before it
@@ -21,7 +20,6 @@ I.issueOneOccurrence(
     First line of rationale...
     Second line...
   |||,
-  // properties=['some-prop'],  // DEPRECATED: do not include properties/propertyIds in Issue Jsonnet
   filesToRanges={ 'path/to/file.py': [[10, 20]] },
 )
 ```

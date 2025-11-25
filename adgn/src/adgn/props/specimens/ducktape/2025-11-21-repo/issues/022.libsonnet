@@ -83,7 +83,6 @@ I.issueOneOccurrence(
     If these fields ARE being populated somewhere that wasn't found in the search, that code should
     also be deleted as part of this fix.
   |||,
-  properties=['redundancy', 'data-modeling', 'dry-principle'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [144, 146],  // Redundant URI fields in AgentInfo

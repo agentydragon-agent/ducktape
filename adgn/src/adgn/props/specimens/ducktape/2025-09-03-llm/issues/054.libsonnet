@@ -8,7 +8,7 @@ I.issueOneOccurrence(
     formatting when necessary (or use logger.isEnabledFor(logging.DEBUG)). This keeps config centralized and
     removes redundant conditionals at call sites.
   |||,
-  // properties=['minimize-nesting'],
+
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[1172, 1176]],
   },

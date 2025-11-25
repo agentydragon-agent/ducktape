@@ -50,7 +50,6 @@ I.issueOneOccurrence(
 
     This ensures errors are surfaced immediately rather than silently swallowed, and notifications only occur when state actually changes.
   |||,
-  properties=['python/no-swallowing-errors'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [142, 148],  // resolve() with pop(call_id, None)

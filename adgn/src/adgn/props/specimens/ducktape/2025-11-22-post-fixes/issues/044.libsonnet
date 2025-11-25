@@ -111,7 +111,6 @@ I.issueOneOccurrence(
 
     All of these should have helper functions with sensible defaults.
   |||,
-  properties=['use-factories', 'avoid-boilerplate', 'provide-defaults', 'encapsulate-construction'],
   filesToRanges={
     'adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte': [
       [69, 71],    // Explicit MCP client creation
@@ -122,95 +121,4 @@ I.issueOneOccurrence(
       [175, 180],  // Explicit reject tool call
     ],
   },
-  gap_note= |||
-    This finding illustrates **"use-factories"**: repeated explicit object
-    construction should use factory functions or builders with reasonable defaults.
-
-    Principle: Encapsulate construction complexity
-    - Factory functions provide default values
-    - Builders enable fluent construction
-    - Helpers centralize common patterns
-    - Test factories make testing easier
-
-    Related to **"provide-defaults"**: functions should have reasonable default
-    values for optional parameters, reducing boilerplate at call sites.
-
-    Related to **"encapsulate-construction"**: hide construction details behind
-    factory functions, making code easier to maintain and test.
-
-    Patterns for construction:
-
-    **Factory function:**
-    ```typescript
-    function createUser(name: string, options?: Partial<User>): User {
-      return {
-        id: uuid(),
-        name,
-        email: options?.email ?? `${name}@example.com`,
-        role: options?.role ?? 'user',
-        createdAt: options?.createdAt ?? new Date()
-      }
-    }
-    ```
-
-    **Builder pattern:**
-    ```typescript
-    class UserBuilder {
-      private user: Partial<User> = {}
-
-      withName(name: string) {
-        this.user.name = name
-        return this
-      }
-
-      withRole(role: string) {
-        this.user.role = role
-        return this
-      }
-
-      build(): User {
-        return {
-          id: this.user.id ?? uuid(),
-          name: this.user.name ?? 'Unknown',
-          email: this.user.email ?? 'user@example.com',
-          role: this.user.role ?? 'user',
-          createdAt: this.user.createdAt ?? new Date()
-        }
-      }
-    }
-
-    const user = new UserBuilder().withName('Alice').withRole('admin').build()
-    ```
-
-    **Test factory:**
-    ```typescript
-    export function createTestApproval(overrides?: Partial<Approval>): Approval {
-      return {
-        agent_id: 'test-agent',
-        tool_call: {
-          name: 'test_tool',
-          call_id: 'test-call',
-          args_json: '{}'
-        },
-        timestamp: '2024-01-01T00:00:00Z',
-        ...overrides
-      }
-    }
-
-    // Test:
-    const approval = createTestApproval({ agent_id: 'my-agent' })
-    ```
-
-    Benefits for testing:
-    - **Readable**: `createTestUser({ role: 'admin' })` vs full object literal
-    - **Maintainable**: Change defaults in one place
-    - **Flexible**: Override only what matters for test
-    - **Type-safe**: Factory enforces required fields
-
-    Red flags:
-    - Repeated object literals with same/similar values
-    - Tests creating complex objects inline
-    - Constructor calls with many parameters
-    - Copy-paste of initialization code
-  |||,
 )

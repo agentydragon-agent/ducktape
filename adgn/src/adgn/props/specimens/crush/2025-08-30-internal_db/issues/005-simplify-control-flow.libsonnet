@@ -6,7 +6,6 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueWithOccurrences(
   rationale='Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see Early bailout).',
-  // properties=['minimize-nesting'],
   occurrences=[
     { files: { 'internal/tui/components/chat/chat.go': [{ start_line: 508, end_line: 516 }, { start_line: 837, end_line: 841 }] }, note: 'Combine nested type+value checks into single if (e.g., asMsg,ok := item.(MessageCmp); ok && asMsg.GetMessage().ID == messageID) and guard for tc.Spinning with a single condition.' },
     { files: { 'internal/message/content.go': [{ start_line: 211, end_line: 300 }] }, note: 'Flatten nested type/id/finished guards across Content/Reasoning/Finish helper methods to reduce repetition and nesting.' },

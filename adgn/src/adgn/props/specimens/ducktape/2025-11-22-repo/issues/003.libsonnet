@@ -78,7 +78,6 @@ I.issueOneOccurrence(
     immediately rather than hiding it. This is the correct behavior - the corruption
     should be fixed, not masked.
   |||,
-  properties=['fail-fast', 'error-handling', 'system-reliability', 'consistency', 'defensive-programming'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/compositor_factory.py': [
       [96, 103],   // try/except that silently suppresses mount failures

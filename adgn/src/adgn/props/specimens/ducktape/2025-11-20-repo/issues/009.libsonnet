@@ -114,7 +114,6 @@ I.issueOneOccurrence(
     In these cases, the variable names don't add clarity and the expressions are
     straightforward function/method calls.
   |||,
-  properties=['code-style', 'readability', 'dry-principle'],
   filesToRanges={
     'adgn/tests/agent/test_loop_reducer_skip_sampling.py': [
       [24, 31],  // dec extraction + assertion (test 1)

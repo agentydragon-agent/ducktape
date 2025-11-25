@@ -27,7 +27,7 @@ I.issueOneOccurrence(
     - No ValueError handling needed
     - Clear type contract in signatures
   |||,
-  properties=['type-correctness-and-specificity', 'no-defensive-programming'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/__init__.py': [
       202,          // create_policy_proposal proposal_id: str return type

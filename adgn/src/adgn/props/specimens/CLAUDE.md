@@ -8,7 +8,7 @@ specimen-name/
 ├── README.md          # Brief overview with issue list (no detailed descriptions)
 ├── CLAUDE.md          # This file - authoring instructions
 └── issues/
-    ├── 001.libsonnet  # Detailed issue with rationale, properties, locations
+    ├── 001.libsonnet  # Detailed issue with rationale, locations
     ├── 002.libsonnet
     └── ...
 ```
@@ -42,9 +42,7 @@ specimen-name/
 
 Each `.libsonnet` file contains:
 - **Rationale**: Full explanation of what's wrong and why
-- **Properties violated**: List of property IDs from `props/`
 - **File locations**: Exact paths and line ranges
-- **GAP notes** (optional): Missing/unclear properties that should exist
 - **Comments**: Inline comments at line ranges explaining context
 
 **Do NOT duplicate this information in README.md or other files.**
@@ -64,7 +62,6 @@ If a README exists, it should ONLY contain:
 - Issue list with one-line summaries (redundant with issue files)
 - Full rationale or problem explanations (belongs in libsonnet)
 - Code snippets or examples (belongs in libsonnet)
-- Properties violated lists (belongs in libsonnet)
 - "Correct behavior" sections (belongs in libsonnet)
 - Detailed analysis (belongs in libsonnet)
 
@@ -159,9 +156,8 @@ I.issueOneOccurrence(
     Cite file:line ranges, briefly summarize patterns.
 
     Do NOT paste long code blocks - reader has specimen open.
-    All context, properties violated, fix recommendations go in rationale.
+    All context and fix recommendations go in rationale.
   |||,
-  properties=['property-id', 'category/property-id'],
   filesToRanges={
     'path/to/file.py': [
       123,              // Brief context (when needed)
@@ -171,15 +167,12 @@ I.issueOneOccurrence(
       [45, 50],         // Multiple locations OK
     ],
   },
-  gap_note=|||
-    Optional: Missing/unclear properties that should exist.
-  |||,
 )
 ```
 
 ### 6. Comments: Use Sparingly
 
-**Ideal: Zero comments.** All information should go in structured fields (`rationale`, `properties`, `filesToRanges`, `gap_note`).
+**Ideal: Zero comments.** All information should go in structured fields (`rationale`, `filesToRanges`).
 
 **When to use comments (rare cases):**
 - Uncertainty about proper issue categorization
@@ -201,45 +194,11 @@ Brief labels for code location context only.
 **❌ FORBIDDEN - Comments duplicating structured fields:**
 ```jsonnet
 // Problem: Silent fallback without error
-// Properties: truthfulness, no-swallowing-errors
 // Fix: Remove exists() check or raise error
 ```
 This information belongs in `rationale`, not comments. **Delete such blocks.**
 
 **Rule**: If information can go in a structured field, it MUST go there, not in comments.
-
-### 5. When to Use GAP Notes
-
-Use `gap_note` to document **gaps in the property taxonomy** - when a finding relates to existing properties but also represents a generalizable principle that deserves its own property definition.
-
-Use `gap_note` when:
-- Issue is covered by existing property (list it in `properties`)
-- But the finding represents a more specific pattern that deserves its own property
-- You want to document what property SHOULD exist without creating it yet
-- The gap note describes the abstraction gap between existing and ideal properties
-
-**What to include in gap_note:**
-- Description of the generalizable principle
-- Suggested property name (e.g., "fail-fast-on-missing-explicit-inputs")
-- How it differs from/refines existing properties
-
-**What NOT to use gap_note for:**
-- General recommendations or notes (those go in `rationale`)
-- Location-specific details (those go in occurrence `note`)
-- Property violations (those go in `properties` array)
-
-Example:
-```jsonnet
-properties=['no-swallowing-errors'],  // Existing property that covers this
-gap_note=|||
-  This pattern deserves a more specific property like "fail-fast-on-missing-explicit-inputs"
-  to distinguish between:
-  - Intentionally-missing optional files (acceptable to ignore)
-  - User-explicitly-provided file paths that are missing (should fail-fast)
-
-  The existing "no-swallowing-errors" is too generic to capture this distinction.
-|||
-```
 
 ## Why This Structure?
 

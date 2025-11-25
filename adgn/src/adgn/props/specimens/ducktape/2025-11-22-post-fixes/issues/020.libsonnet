@@ -74,37 +74,10 @@ I.issueOneOccurrence(
     - `datetime.utcnow()` → `datetime.now(timezone.utc)`
     - `datetime.utcfromtimestamp(ts)` → `datetime.fromtimestamp(ts, tz=timezone.utc)`
   |||,
-  properties=['use-modern-apis', 'timezone-aware'],
   filesToRanges={
     'adgn/src/adgn/agent/transcript_handler.py': [
       [45, 45],   // datetime.utcnow() in metadata timestamp
       [52, 52],   // datetime.utcnow() in event timestamp
     ],
   },
-  gap_note= |||
-    This finding illustrates **"use-modern-apis"**: prefer current, non-deprecated
-    APIs over legacy ones, especially when the replacement is more correct.
-
-    `datetime.utcnow()` was deprecated because:
-    - It returns timezone-naive objects (ambiguous)
-    - Encourages manual timezone handling (error-prone)
-    - Python 3.2+ introduced timezone-aware datetimes
-    - The "obvious" way should be the right way
-
-    The replacement `datetime.now(timezone.utc)` is better because:
-    - Returns timezone-aware datetime (unambiguous)
-    - Explicitly states the timezone in the type
-    - Eliminates manual "Z" suffix handling
-    - Aligns with Python's push toward timezone-aware datetimes
-
-    Related to **"timezone-aware"**: always use timezone-aware datetimes for
-    timestamps that represent absolute points in time (UTC, specific zones).
-    Reserve naive datetimes for "local" times where timezone doesn't matter
-    (e.g., "9:00 AM meeting" where location is contextual).
-
-    When migrating from deprecated APIs:
-    - Check Python release notes for deprecation warnings
-    - Update to recommended replacements proactively
-    - Test that output format remains compatible
-  |||,
 )

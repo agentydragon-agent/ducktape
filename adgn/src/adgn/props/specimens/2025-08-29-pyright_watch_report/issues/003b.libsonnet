@@ -19,7 +19,6 @@ I.issueOneOccurrence(
 
     This makes the message not misleading and avoids future drift.
   |||,
-  properties=['truthfulness'],
   filesToRanges={
     'pyright_watch_report.py': [36],
   },

@@ -77,7 +77,6 @@ I.issueOneOccurrence(
         Llama = None
     ```
   |||,
-  properties=['meaningful-comments', 'remove-noise'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [55, 55],   // "# -------------" - separator with no content
@@ -88,24 +87,4 @@ I.issueOneOccurrence(
       [687, 687], // "# Check if there's truly nothing to commit" - restates obvious
     ],
   },
-  gap_note= |||
-    This finding illustrates **"meaningful-comments"**: comments should add
-    information that isn't obvious from the code itself.
-
-    Good comments explain:
-    - Why (rationale for decisions)
-    - How (complex algorithms)
-    - What not to do (gotchas, pitfalls)
-    - Context (historical reasons, external constraints)
-
-    Bad comments:
-    - Restate what the code does
-    - Label obvious sections
-    - Repeat information from names/types
-    - State the obvious
-
-    Related to "remove-noise": every line in a file competes for attention.
-    Useless comments are worse than no comments because they train readers
-    to ignore all comments.
-  |||,
 )

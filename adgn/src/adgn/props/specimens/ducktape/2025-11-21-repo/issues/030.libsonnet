@@ -71,7 +71,6 @@ I.issueOneOccurrence(
     f-strings or string concatenation) should be replaced with constants from `_shared/constants.py`.
     If a needed constant doesn't exist, it should be added there rather than constructing the URI inline.
   |||,
-  properties=['centralization', 'maintainability', 'constants'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [407, 407],  // Manual URI construction

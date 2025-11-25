@@ -103,7 +103,6 @@ I.issueOneOccurrence(
 
     This would eliminate 40+ lines of duplicated code across the test suite.
   |||,
-  properties=['python/no-swallowing-errors', 'no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/tests/agent/e2e/test_mcp_concurrent.py': [
       [75, 82],   // Error-swallowing exception handler
@@ -112,11 +111,4 @@ I.issueOneOccurrence(
       [269, 283], // Duplicated responses_create pattern #3
     ],
   },
-  gap_note=|||
-    The duplicated responses_create pattern suggests a property like "extract-test-fixtures":
-    when the same test setup/mock pattern appears across multiple test files (especially
-    stateful mocks or complex fixtures), it should be extracted into a shared fixture or
-    helper function. This is distinct from general "no-oneoff-vars-and-trivial-wrappers"
-    as it specifically addresses test code organization and the pytest fixture pattern.
-  |||,
 )

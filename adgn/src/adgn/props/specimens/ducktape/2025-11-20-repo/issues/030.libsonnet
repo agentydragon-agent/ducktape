@@ -54,7 +54,6 @@ I.issueOneOccurrence(
     - cli.py:139-140 (single-agent mode)
     - cli.py:155-156 (multi-agent mode)
   |||,
-  properties=['code-style', 'simplicity'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/cli.py': [
       [139, 141],  // mcp_config_obj in single-agent mode

@@ -36,7 +36,7 @@ I.issueOneOccurrence(
 
     Constant should be module-level for reuse across auth code.
   |||,
-  properties=['no-magic-values', 'python/removeprefix'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/mcp_routing.py': [
       [72, 73],     // Bearer prefix check and magic [7:] slice

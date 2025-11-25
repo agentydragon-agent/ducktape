@@ -49,7 +49,6 @@ I.issueOneOccurrence(
     This is a simple refactoring that doesn't change behavior. The variable serves no
     documentation or reuse purpose.
   |||,
-  properties=['simplicity', 'variable-usage'],
   filesToRanges={
     'adgn/src/adgn/mcp/policy_gateway/middleware.py': [
       [150, 158],  // pending_record creation and single use

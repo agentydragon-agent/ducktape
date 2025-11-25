@@ -225,7 +225,6 @@ I.issueOneOccurrence(
 
     The agents bridge should follow the same proven pattern.
   |||,
-  properties=['architectural-design', 'complexity', 'compositor-pattern', 'notifications'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [1, 932],  // Entire monolithic AgentsServer file

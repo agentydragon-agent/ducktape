@@ -26,7 +26,7 @@ I.issueOneOccurrence(
 
     Same pattern as issue 010 (Policy.status).
   |||,
-  properties=['python/strenum', 'type-correctness-and-specificity', 'structured-data-over-untyped-mappings'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/models.py': [
       61,           // Run.status: Mapped[str] with RunStatus comment

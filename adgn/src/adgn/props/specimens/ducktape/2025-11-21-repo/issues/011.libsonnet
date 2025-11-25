@@ -94,7 +94,6 @@ I.issueOneOccurrence(
     This is fine as-is since it's just displaying raw contents and has different requirements
     (sync vs async, no parsing needed).
   |||,
-  properties=['dry-principle', 'duplication', 'maintainability'],
   filesToRanges={
     'wt/src/wt/client/wt_client.py': [
       [108, 113],  // Duplicated PID reading in is_daemon_running

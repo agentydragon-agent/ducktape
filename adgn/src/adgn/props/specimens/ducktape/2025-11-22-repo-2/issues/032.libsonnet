@@ -45,7 +45,6 @@ I.issueOneOccurrence(
     Note: Methods like await_decision(), get_policy(), load_policy(), and self_check()
     should NOT be inlined - they're called externally by production code.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers', 'no-dead-code'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [142, 148],  // ApprovalHub.resolve() definition

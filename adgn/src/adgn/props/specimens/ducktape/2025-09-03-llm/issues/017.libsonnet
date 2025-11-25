@@ -13,7 +13,6 @@ I.issueWithOccurrences(
 
     Prefer failing loudly when security is expected; silent fallbacks lead to subtle and dangerous bugs.
   |||,
-  // properties=['no-dead-code'],
   occurrences=[
     { files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py': [[49, 56]] }, note: '_run_in_sandbox implementation: falls back to unsandboxed on non-Linux or missing bwrap' },
     { files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[124, 133]] }, note: 'run_in_sandbox wrapper: public-facing name promises sandboxing but behavior weakens on some platforms' },

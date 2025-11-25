@@ -76,7 +76,6 @@ I.issueOneOccurrence(
     serialization in one place. The current split only makes sense if there were
     multiple evaluator types or usage patterns, which there aren't.
   |||,
-  properties=['consistent-abstraction-layers', 'avoid-unnecessary-indirection', 'type-safe-apis'],
   filesToRanges={
     'adgn/src/adgn/agent/policy_eval/runner.py': [
       [16, 23],  // input_payload: dict is weird middle ground
@@ -90,42 +89,4 @@ I.issueOneOccurrence(
       [310, 313], // Direct call to run_policy_source with manual dict
     ],
   },
-  gap_note= |||
-    This finding illustrates **"consistent-abstraction-layers"**: APIs should work
-    with consistent types at each layer. Don't have a middle layer that takes `dict`
-    when the layer above works with Pydantic models and the layer below serializes
-    to JSON.
-
-    Principle: each abstraction layer should have a clear contract:
-    - **High level**: Domain types (Pydantic models, dataclasses)
-    - **Low level**: Primitive types (str, bytes, int)
-    - **Don't mix**: `dict` is neither high-level (no validation) nor low-level (already parsed)
-
-    When `dict` parameters are appropriate:
-    - Truly dynamic data (plugin configs, user metadata)
-    - Interfacing with untyped external systems
-    - Performance-critical paths where validation is separate
-
-    When to avoid `dict` parameters:
-    - You have a Pydantic model that describes the shape
-    - Callers are constructing dicts from models (they should pass the model)
-    - The function immediately serializes to JSON (take the model, serialize inside)
-
-    Related to **"avoid-unnecessary-indirection"**: don't split code into multiple
-    modules/classes when one would suffice. Ask: does this split provide value?
-    - Multiple implementations? → Split makes sense
-    - Shared by many callers? → Split makes sense
-    - Different lifecycles? → Split makes sense
-    - Just one thin wrapper? → Merge it
-
-    Related to **"type-safe-apis"**: prefer Pydantic models over dicts in function
-    signatures. The type system can't help with `dict[str, Any]`, but it can validate
-    `PolicyRequest`.
-
-    When considering a split:
-    1. Count actual vs potential users (1 wrapper class isn't "reuse")
-    2. Check if the split introduces conversion layers (Pydantic → dict → JSON)
-    3. Look for duplicated logic at call sites (manual dict construction)
-    4. Verify the abstraction has clear benefits (not just "separation of concerns")
-  |||,
 )

@@ -7,7 +7,7 @@ I.issueOneOccurrence(
     Prefer a more specific name like `system_message` to communicate intent clearly (pairs with
     `SYSTEM_INSTRUCTIONS`). Rename the arg and private field for clarity.
   |||,
-  // properties=['self-describing-names'],
+
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/agent.py': [[96, 106]],
   },

@@ -71,7 +71,6 @@ I.issueOneOccurrence(
     Pytest tests generally shouldn't have __main__ blocks. Run with `pytest` command instead.
     If needed for IDE convenience, use pytest's built-in mechanisms, but this is outdated pattern.
   |||,
-  properties=['test-quality', 'hamcrest-matchers', 'fixture-design', 'api-ergonomics', 'dry-principle'],
   filesToRanges={
     'adgn/tests/agent/test_policy_validation_reload.py': [
       [62, 63],   // Multiple assertions for error checking

@@ -56,7 +56,6 @@ I.issueOneOccurrence(
     - Less cognitive overhead - no "what's the difference?" questions
     - Easier to search and refactor
   |||,
-  properties=['type-safety', 'clarity', 'simplicity', 'indirection'],
   filesToRanges={
     'adgn/src/adgn/agent/server/state.py': [
       [41, 41],   // ApprovalKind type alias definition - delete

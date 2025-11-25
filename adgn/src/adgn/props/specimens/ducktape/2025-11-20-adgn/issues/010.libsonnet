@@ -26,7 +26,7 @@ I.issueOneOccurrence(
     Same pattern should apply to any other fields using string with comment
     listing valid values.
   |||,
-  properties=['python/strenum', 'type-correctness-and-specificity', 'structured-data-over-untyped-mappings'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/models.py': [
       152,          // status: Mapped[str] with PolicyStatus comment

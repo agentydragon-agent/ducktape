@@ -23,7 +23,6 @@ I.issueOneOccurrence(
 
     This is a readability-focused micro-refactor: it reduces branching for a simple, readable output and keeps intent clear.
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'pyright_watch_report.py': [[259, 262]],
   },

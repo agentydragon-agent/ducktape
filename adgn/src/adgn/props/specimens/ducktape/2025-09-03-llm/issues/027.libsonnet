@@ -13,7 +13,6 @@ I.issueOneOccurrence(
 
     This reduces lines and the mental map of short-lived temporaries without harming readability for small literal payloads.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [[202, 208]],
   },

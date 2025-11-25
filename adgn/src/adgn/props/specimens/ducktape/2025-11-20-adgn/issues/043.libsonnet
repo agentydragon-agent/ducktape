@@ -60,14 +60,9 @@ I.issueOneOccurrence(
     - Clear separation: parsing vs formatting
     - Reusable: if needed elsewhere
   |||,
-  properties=['no-hand-rolled-implementations', 'no-inline-complex-logic'],
   filesToRanges={
     'adgn/src/adgn/agent/server/reducer.py': [
       [69, 88],     // Inline cmd/argv extraction logic
     ],
   },
-  gap_note=|||
-    shlex.join() is available in Python 3.8+. If targeting older Python, use
-    shlex.quote() in list comprehension: ' '.join(shlex.quote(a) for a in argv).
-  |||,
 )

@@ -29,7 +29,6 @@ I.issueOneOccurrence(
 
     This simplifies the server code and reduces the chance of count/list mismatch bugs.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py': [
       38,  // pending_count field
@@ -38,11 +37,4 @@ I.issueOneOccurrence(
       116, // pending_count in response
     ],
   },
-  gap_note=|||
-    This pattern deserves a property like "no-redundant-stored-fields": when a field
-    stores computed/derived information that can be trivially calculated from other
-    fields in the response, it should be removed. This is distinct from
-    "no-oneoff-vars-and-trivial-wrappers" which focuses on local variables/helper functions,
-    whereas this is about API response design and data duplication.
-  |||,
 )

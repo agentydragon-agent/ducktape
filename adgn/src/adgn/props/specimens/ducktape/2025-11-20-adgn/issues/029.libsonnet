@@ -29,7 +29,7 @@ I.issueOneOccurrence(
 
     The variables have no semantic value and aren't reused.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'adgn/src/adgn/agent/runtime/sidecars.py': [
       [35, 36],     // ui_server one-use variable

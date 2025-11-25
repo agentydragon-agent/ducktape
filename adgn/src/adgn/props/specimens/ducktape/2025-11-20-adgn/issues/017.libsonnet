@@ -28,7 +28,7 @@ I.issueOneOccurrence(
 
     The .value calls are unnecessary verbosity that obscures the StrEnum type.
   |||,
-  properties=['python/strenum', 'no-useless-code'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/sqlite.py': [
       192,          // PolicyStatus.ACTIVE.value in WHERE

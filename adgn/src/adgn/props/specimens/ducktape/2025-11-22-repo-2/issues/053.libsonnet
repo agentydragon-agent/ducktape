@@ -72,7 +72,6 @@ I.issueOneOccurrence(
     3. Pick ONE expected behavior per test and assert it happens
     4. Extract duplicated responses_create into shared fixture (see finding 052)
   |||,
-  properties=['python/no-swallowing-errors', 'no-oneoff-vars-and-trivial-wrappers', 'no-dead-code'],
   filesToRanges={
     'adgn/tests/agent/e2e/test_mcp_errors.py': [
       [44, 55],   // Error-swallowing fallback for unimplemented error UI
@@ -88,14 +87,4 @@ I.issueOneOccurrence(
       [230, 232], // suppress(Exception) hiding errors
     ],
   },
-  gap_note=|||
-    This deserves a property like "no-alternative-test-paths": tests should verify one specific
-    expected behavior, not accept multiple completely different outcomes as valid. When a test
-    says "either X should happen OR Y should happen", it's not really testing anything - it will
-    pass regardless of what the system does. Tests should fail fast when expectations aren't met,
-    not fall back to checking something completely different.
-
-    Related to "no-dead-code" (tests for unimplemented features) and "python/no-swallowing-errors"
-    (error suppression), but specifically about test design anti-patterns.
-  |||,
 )

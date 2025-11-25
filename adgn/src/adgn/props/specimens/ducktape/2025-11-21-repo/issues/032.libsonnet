@@ -49,7 +49,6 @@ I.issueOneOccurrence(
     If this alias exists because some callers specifically need `SimpleOk`, that's a code smell.
     The caller should handle the wrapping, not create a duplicate function in the API.
   |||,
-  properties=['unnecessary-abstraction', 'code-bloat', 'api-design'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [672, 689],  // abort_run alias with verbose docstring

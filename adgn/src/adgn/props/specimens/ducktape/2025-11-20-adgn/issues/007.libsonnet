@@ -30,7 +30,7 @@ I.issueOneOccurrence(
     - Single serialization point (DRY)
     - Clearer responsibility boundaries
   |||,
-  properties=['least-power', 'structured-data-over-untyped-mappings', 'type-correctness-and-specificity'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/handler.py': [
       [102, 103],   // payload.model_dump() before append_event

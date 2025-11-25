@@ -35,15 +35,11 @@ I.issueOneOccurrence(
 
     This suggests base class method or helper function in server stub framework.
   |||,
-  properties=['no-useless-code', 'no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'adgn/src/adgn/agent/runtime/infrastructure.py': [
       [180, 182],   // PolicyReaderStub creation
       [184, 186],   // PolicyApproverStub creation
     ],
-  },
-  gap_note=|||
-    Requires design: Should this be on stub base class, or separate helper? Consider
-    whether stubs have common base supporting this pattern.
-  |||,
+  }
 )

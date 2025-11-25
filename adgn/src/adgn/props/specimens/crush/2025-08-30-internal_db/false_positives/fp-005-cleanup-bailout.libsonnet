@@ -18,7 +18,6 @@ I.issueOneOccurrence(
     existing form is brief and clear; rewriting to use `continue` yields no measurable improvement and
     is not necessary. Keep as-is.
   |||,
-  properties=[],
   filesToRanges={
     'internal/app/app.go': [[200, 206]],
   },

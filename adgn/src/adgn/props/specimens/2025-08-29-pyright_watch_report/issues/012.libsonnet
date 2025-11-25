@@ -25,7 +25,6 @@ I.issueOneOccurrence(
 
     This is clearer, fewer moving parts, and avoids an imperative accumulation pattern.
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'pyright_watch_report.py': [[228, 231]],
   },

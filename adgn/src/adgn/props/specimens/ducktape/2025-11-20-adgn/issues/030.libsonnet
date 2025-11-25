@@ -36,7 +36,7 @@ I.issueOneOccurrence(
 
     Code already uses TokenRole enum, should extend to full typed model.
   |||,
-  properties=['structured-data-over-untyped-mappings', 'type-correctness-and-specificity'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/mcp_routing.py': [
       [37, 40],     // TOKEN_TABLE definition

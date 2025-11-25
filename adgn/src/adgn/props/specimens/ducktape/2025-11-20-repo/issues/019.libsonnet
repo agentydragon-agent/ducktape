@@ -30,7 +30,6 @@ I.issueOneOccurrence(
     string is still needed. This is not about removing the intermediate variable, just using
     the cleaner Path API.
   |||,
-  properties=['code-style', 'readability', 'consistency'],
   filesToRanges={
     'adgn/scripts/generate_frontend_code.py': [
       [52, 53],  // open() with manual read instead of Path.read_text()

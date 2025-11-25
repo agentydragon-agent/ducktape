@@ -26,7 +26,7 @@ I.issueOneOccurrence(
 
     Current state creates confusion: is run_id a UUID or string?
   |||,
-  properties=['type-correctness-and-specificity', 'no-defensive-programming'],
+
   filesToRanges={
     'adgn/src/adgn/agent/persist/models.py': [
       57,           // Run.id: Mapped[str]
@@ -35,9 +35,5 @@ I.issueOneOccurrence(
       378,          // Event creation: run_id=str(run_id)
       389,          // WHERE Run.id == str(run_id)
     ],
-  },
-  gap_note=|||
-    Should search for all str(run_id) conversions to document full extent. May affect
-    other UUID-typed fields like agent_id.
-  |||,
+  }
 )

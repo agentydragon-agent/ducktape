@@ -41,7 +41,6 @@ I.issueOneOccurrence(
 
     This removes unnecessary intermediate variables and makes the code more concise while maintaining complete clarity about what's happening.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [215, 216],  // approve: decision = ContinueDecision(...); self.resolve(...)

@@ -49,7 +49,6 @@ I.issueOneOccurrence(
 
     These changes make the code more concise and idiomatic.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers', 'python/walrus'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/server.py': [
       [85, 89],

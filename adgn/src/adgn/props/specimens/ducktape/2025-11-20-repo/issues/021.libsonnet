@@ -40,7 +40,6 @@ I.issueOneOccurrence(
     The list is immediately consumed at line 274: `output_file.write_text("\n".join(ts_output))`,
     so there's no benefit to incremental construction.
   |||,
-  properties=['code-style', 'readability'],
   filesToRanges={
     'adgn/scripts/generate_frontend_code.py': [
       [268, 272],  // ts_output construction with repeated append

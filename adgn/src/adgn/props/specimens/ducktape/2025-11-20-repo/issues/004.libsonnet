@@ -70,7 +70,6 @@ I.issueOneOccurrence(
     - `or ""` is redundant (stdout is already a string type)
     - Hamcrest provides better error messages showing which property failed
   |||,
-  properties=['code-style', 'test-quality', 'pep8', 'readability'],
   filesToRanges={
     'adgn/tests/mcp/approval_policy/test_policy_resources.py': [
       [35, 37],  // Imports inside fixture function

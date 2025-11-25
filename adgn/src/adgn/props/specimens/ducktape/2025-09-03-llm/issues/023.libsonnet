@@ -11,7 +11,6 @@ I.issueOneOccurrence(
 
     Benefits: reduces confusion about whether a timeout is seconds, milliseconds, or fractional seconds; makes call sites clearer and avoids silent misconfigurations.
   |||,
-  // properties=['self-describing-names','type-correctness-and-specificity'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py': [[55, 55]],
   },

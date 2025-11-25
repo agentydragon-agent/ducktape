@@ -30,14 +30,10 @@ I.issueOneOccurrence(
 
     The current signature suggests legacy from when ToolCall didn't exist as a type.
   |||,
-  properties=['structured-data-over-untyped-mappings', 'no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'adgn/src/adgn/agent/runtime/infrastructure.py': [
       [197, 203],   // _pending_notifier definition and ToolCall reconstruction
     ],
-  },
-  gap_note=|||
-    Requires checking install_policy_gateway signature to ensure it can accept
-    Callable[[ToolCall], Awaitable[None]] interface.
-  |||,
+  }
 )

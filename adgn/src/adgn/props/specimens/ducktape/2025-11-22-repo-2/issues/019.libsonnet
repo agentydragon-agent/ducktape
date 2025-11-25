@@ -26,7 +26,6 @@ I.issueOneOccurrence(
 
     This removes the redundant parameter and makes the API cleaner by avoiding unnecessary data extraction at the call site.
   |||,
-  properties=['no-random-renames'],
   filesToRanges={
     'adgn/src/adgn/agent/agent.py': [
       305,  // outcome = await invoker(fc, fc.arguments)

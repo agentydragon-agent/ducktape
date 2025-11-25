@@ -122,7 +122,6 @@ I.issueOneOccurrence(
     - Better coverage reporting (shows exactly which cases pass/fail)
     - Follows pytest best practices
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'adgn/tests/agent/persist/test_integration.py': [
       [288, 351], // test_decision_outcome_variants with for loop
@@ -130,11 +129,4 @@ I.issueOneOccurrence(
       [533, 640], // test_error_handling_and_data_validation with 4+ subtests
     ],
   },
-  gap_note=|||
-    This pattern deserves a property like "pytest-one-concern-per-test": test functions
-    should test exactly one concern and use pytest parameterization for variations,
-    rather than using loops or bundling multiple independent tests. This is more specific
-    than general "python/modern-python-idioms" as it addresses test organization,
-    pytest best practices, test naming, and failure isolation in test suites.
-  |||,
 )

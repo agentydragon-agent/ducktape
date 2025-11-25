@@ -7,7 +7,6 @@ I.issueOneOccurrence(
 
     A StrEnum centralizes the allowed values as runtime objects, improves discoverability and IDE support, makes parsing and validation simpler (ToolPolicy(value) will raise on unknown values), and reduces accidental typos in call sites.
   |||,
-  // properties=['strenum','type-hints'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/agent.py': [[101, 101], [121, 121]],
   },

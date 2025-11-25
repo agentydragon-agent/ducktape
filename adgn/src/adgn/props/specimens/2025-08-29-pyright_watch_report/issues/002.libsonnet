@@ -16,7 +16,6 @@ I.issueOneOccurrence(
         last_print = time.monotonic()
     ```
   |||,
-  properties=['self-describing-names'],
   filesToRanges={
     'pyright_watch_report.py': [165, 179, 196, 241, 253],
   },

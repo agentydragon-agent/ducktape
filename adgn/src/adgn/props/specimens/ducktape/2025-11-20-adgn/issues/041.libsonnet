@@ -54,15 +54,11 @@ I.issueOneOccurrence(
 
     This is "parse, don't validate" principle: use types to prevent invalid states.
   |||,
-  properties=['type-correctness-and-specificity', 'invalid-state-unrepresentable', 'no-defensive-programming'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/mcp_routing.py': [
       [76, 97],     // _get_backend_app with role+agent_id parameters
       86,           // Runtime check: if not agent_id
     ],
-  },
-  gap_note=|||
-    Requires refactoring TOKEN_TABLE (issue 030) to use tagged union TokenInfo.
-    Then propagate typed TokenInfo through dispatch method.
-  |||,
+  }
 )

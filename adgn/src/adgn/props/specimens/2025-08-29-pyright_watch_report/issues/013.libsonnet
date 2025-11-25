@@ -30,7 +30,6 @@ I.issueOneOccurrence(
 
     Counter saves the initialization/default-to-zero and documents intent (counts/histogram) succinctly.
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'pyright_watch_report.py': [
       [104, 105],  // exclude_hits initialization

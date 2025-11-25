@@ -31,7 +31,7 @@ I.issueOneOccurrence(
     If custom error responses needed, use Starlette exception handlers or
     middleware, not scattered try/except blocks.
   |||,
-  properties=['fail-fast', 'no-defensive-programming'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/mcp_routing.py': [
       [146, 148],   // except (KeyError, ValueError) catch

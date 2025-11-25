@@ -60,7 +60,6 @@ I.issueOneOccurrence(
     Line 5 imports `from aiosqlite import Row` and line 29 defines `_row_to_message(row: Row)`.
     These should be removed after migration to ORM, as they're only needed for raw SQL approach.
   |||,
-  properties=['architectural-inconsistency', 'maintainability', 'type-safety'],
   filesToRanges={
     'adgn/src/adgn/mcp/chat/server.py': [
       [5, 5],       // Import aiosqlite.Row (should use ORM models instead)

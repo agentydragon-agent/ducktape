@@ -91,7 +91,6 @@ I.issueOneOccurrence(
     **Note:**
     This issue should be fixed together with issue 026 (converting list_agents to use Pydantic models).
   |||,
-  properties=['type-safety', 'code-consistency', 'enums'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [284, 294],  // run_phase assignment with string literals

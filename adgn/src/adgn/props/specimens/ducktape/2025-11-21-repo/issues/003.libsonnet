@@ -41,7 +41,6 @@ I.issueOneOccurrence(
     Good comments explain WHY (business logic, workarounds, non-obvious choices).
     This comment just explains WHAT (validation happens), which is already clear from the code.
   |||,
-  properties=['code-style', 'comments', 'simplicity'],
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [
       [292, 294],  // Comment and status variable to inline

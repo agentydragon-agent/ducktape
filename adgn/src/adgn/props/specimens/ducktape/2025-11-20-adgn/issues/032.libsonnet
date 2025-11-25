@@ -28,7 +28,7 @@ I.issueOneOccurrence(
 
     The comment is purely descriptive of what the code obviously does.
   |||,
-  properties=['no-useless-comments', 'python/walrus-operator'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/mcp_routing.py': [
       [107, 111],   // "Look up token" comment and assign-check pattern

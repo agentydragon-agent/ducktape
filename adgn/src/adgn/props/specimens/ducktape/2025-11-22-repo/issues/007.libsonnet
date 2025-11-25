@@ -123,7 +123,6 @@ I.issueOneOccurrence(
 
     This is a classic case of unnecessary abstraction creating complexity without benefit.
   |||,
-  properties=['api-design', 'simplicity', 'dry-principle', 'redundancy'],
   filesToRanges={
     'adgn/src/adgn/agent/agent.py': [
       [261, 265],  // _invoke signature with redundant args_json

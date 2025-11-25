@@ -29,36 +29,9 @@ I.issueOneOccurrence(
     4. Robust: handles edge cases correctly
     5. Composable: can reuse the adapter elsewhere
   |||,
-  properties=['use-platform-primitives', 'declarative-validation'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [
       [60, 69],   // Manual isinstance validation loop
     ],
   },
-  gap_note= |||
-    This finding illustrates **"declarative-validation"**: prefer declarative schemas
-    (Pydantic models, TypeAdapters) over imperative validation code (isinstance checks,
-    manual loops).
-
-    Declarative validation:
-    - Describes WHAT the data should be (types, constraints)
-    - Library handles HOW to validate
-    - Produces structured, informative errors
-    - Composable and reusable
-
-    Imperative validation:
-    - Describes HOW to check the data (if/isinstance/for loops)
-    - You handle edge cases manually
-    - Produces generic error messages
-    - Hard to reuse or compose
-
-    Related to "use-platform-primitives": Pydantic is the standard validation library
-    in modern Python. Use its features instead of reinventing validation logic.
-
-    When to use TypeAdapter:
-    - Validating simple types (dict[str, int], list[Foo], etc.)
-    - One-off validation without defining a full model
-    - Loading config/data files with known structure
-    - Parsing API responses into typed structures
-  |||,
 )

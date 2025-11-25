@@ -35,7 +35,6 @@ I.issueOneOccurrence(
 
     This primarily reduces nesting and temporary counters while keeping the same semantics.
   |||,
-  properties=['python/modern-python-idioms'],
   filesToRanges={
     'pyright_watch_report.py': [[232, 244]],
   },

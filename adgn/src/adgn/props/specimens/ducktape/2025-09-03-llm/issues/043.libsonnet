@@ -8,8 +8,6 @@ I.issueOccurrencesFromLines(
     is misleading and unnecessary. Remove the shebang from library modules; reserve shebangs for true scripts
     under bin/ (if any).
   |||,
-  // properties=[],
-  gap_note='Add a property disallowing shebangs on importable library modules when console_scripts shims are used.',
   linesByFile={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [1],
     'llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py': [1],

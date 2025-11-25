@@ -88,7 +88,6 @@ I.issueOneOccurrence(
     Check if there's actually a circular import by trying to move the import to the top. If it fails,
     refactor the module structure to break the cycle properly rather than suppressing the warning.
   |||,
-  properties=['code-organization', 'imports', 'pep8'],
   filesToRanges={
     'adgn/src/adgn/agent/persist/__init__.py': [
       [130, 130],  // Late import with noqa suppression

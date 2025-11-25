@@ -47,7 +47,7 @@ I.issueOneOccurrence(
     ExceptionGroup designed exactly for this use case: collecting multiple
     exceptions during cleanup/teardown operations.
   |||,
-  properties=['python/exception-group', 'fail-fast'],
+
   filesToRanges={
     'adgn/src/adgn/agent/runtime/running.py': [
       [72, 91],     // close() method with error collection

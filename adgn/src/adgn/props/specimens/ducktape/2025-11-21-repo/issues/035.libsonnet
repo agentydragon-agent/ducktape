@@ -80,7 +80,6 @@ I.issueOneOccurrence(
     in the type signature. For simple functions with obvious parameters and return types, omit
     these sections.
   |||,
-  properties=['documentation', 'verbosity', 'obvious-comments'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [815, 829],  // Full docstring

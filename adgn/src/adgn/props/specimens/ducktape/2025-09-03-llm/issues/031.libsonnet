@@ -17,7 +17,6 @@ I.issueOneOccurrence(
 
     Preferred fix: require an always-correct timeout path. If a timeout is requested and the wrapper is unavailable, fail fast (refuse to run) instead of best-effort; or ensure the implementation enforces termination reliably. Delete the empty branch.
   |||,
-  // properties=['no-dead-code','early-bailout'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py': [[181, 183]],
   },

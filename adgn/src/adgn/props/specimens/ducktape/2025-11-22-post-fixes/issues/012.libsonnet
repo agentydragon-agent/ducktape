@@ -100,7 +100,6 @@ I.issueOneOccurrence(
     3. Callers must know implementation details (does it return or raise?)
     4. Error handling becomes ad-hoc and incomplete
   |||,
-  properties=['consistent-conventions', 'explicit-control-flow'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [551, 556],  // ExitWithCode class with TODO about approach
@@ -109,21 +108,4 @@ I.issueOneOccurrence(
       [728, 732],  // Callers expecting int, unreachable sys.exit() after exception paths
     ],
   },
-  gap_note= |||
-    This finding illustrates **"consistent-conventions"**: when a codebase needs to
-    signal outcomes (success/failure, exit codes, errors), pick ONE mechanism and
-    use it everywhere:
-
-    - Return values (codes, enums, Result types)
-    - Exceptions (for errors)
-    - Result monads (Ok/Err)
-
-    Don't mix mechanisms for the same purpose. If some functions return codes and
-    others raise exceptions for the same semantic outcome (exit code), callers can't
-    reason about error handling systematically.
-
-    Related to "explicit-control-flow": the control flow should be clear from type
-    signatures. A function typed `-> int` should not raise exceptions as part of
-    normal control flow (only for truly exceptional conditions).
-  |||,
 )

@@ -72,7 +72,6 @@ I.issueOneOccurrence(
     of redundancy. The `function_calls` list is used for error handling/cleanup (line 340),
     while `calls` is iterated. This could all be done with just `function_calls`.
   |||,
-  properties=['redundancy', 'data-duplication', 'simplicity'],
   filesToRanges={
     'adgn/src/adgn/agent/agent.py': [
       [255, 258],  // Redundant tuple construction

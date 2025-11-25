@@ -123,7 +123,6 @@ I.issueWithOccurrences(
     - Solution: shared utilities, base classes, decorators
     - Frontend CSS duplication is exactly analogous
   |||,
-  properties=['avoid-duplication', 'centralize-shared-code', 'consistent-styling', 'use-design-system'],
   occurrences=[
     {
       files: {
@@ -199,85 +198,4 @@ I.issueWithOccurrences(
       note: 'Status/empty states: .empty, .loading, .status with muted color styling repeated across 4 components',
     },
   ],
-  gap_note= |||
-    This finding illustrates **"use-design-system"**: when UI components share
-    visual patterns (buttons, forms, modals, errors), extract them to a shared
-    design system rather than duplicating styles in each component.
-
-    Principle: One definition per visual pattern
-    - Buttons: defined once, used everywhere
-    - Error states: single error style, consistent feedback
-    - Modal layouts: shared structure, predictable UX
-    - Typography: design tokens, not magic numbers
-    - Colors: semantic naming (--color-danger), not hardcoded hex
-
-    Related to **"avoid-duplication"**: CSS duplication has same maintainability
-    costs as code duplication.
-
-    Related to **"centralize-shared-code"**: shared styles are shared code; they
-    belong in a central location (stylesheet, utility classes, framework).
-
-    Why style duplication is especially harmful:
-
-    **Visual inconsistency:**
-    - Different components have slightly different button sizes/colors
-    - Users notice inconsistency even if developers don't
-    - Breaks user mental model of "this looks like a button, acts like a button"
-
-    **Maintenance burden:**
-    - Designer requests "make danger buttons darker red"
-    - Developer must update 6 files
-    - Easy to miss one, creating even more inconsistency
-
-    **Accessibility issues:**
-    - Color contrast fixes must be applied everywhere
-    - One component fixed, five still fail WCAG
-    - Hard to audit, hard to test
-
-    **Onboarding friction:**
-    - New developer: "Which button style should I use?"
-    - Existing styles differ slightly
-    - Leads to copy-paste of random example, perpetuating duplication
-
-    Solutions by scale:
-
-    - **Small project**: Shared CSS file structure (tokens.css, components.css, utilities.css)
-    - **Medium project**: Utility-first framework (Tailwind, DaisyUI, Open Props)
-    - **Large project**: Full design system with component library, Storybook, visual regression testing, Figma integration
-
-    Red flags:
-    - Same class name defined in multiple `<style>` blocks
-    - Similar but not identical styles (button variants with slight differences)
-    - Magic numbers repeated (padding: 0.5rem, border-radius: 4px everywhere)
-    - Long CSS files in individual components
-    - Comments like "TODO: extract to shared styles"
-
-    Benefits of design system:
-    - Visual consistency: users see predictable patterns
-    - Development speed: compose from existing components
-    - Maintainability: change once, apply everywhere
-    - Accessibility: fix once, benefit all components
-    - Testing: snapshot tests catch unintended changes
-    - Documentation: single source of truth for design decisions
-
-    When to duplicate styles:
-    - Component-specific layout (not shared patterns)
-    - Truly unique one-off styling
-    - Temporary prototype before extracting pattern
-    - But document why it's different
-
-    Migration path:
-    1. Audit existing styles (this issue)
-    2. Extract most common patterns to shared CSS
-    3. Replace component styles incrementally
-    4. Add linting to prevent new duplication
-    5. Document design tokens and usage
-    6. Consider framework adoption for long-term
-
-    Tools to prevent duplication:
-    - stylelint: enforce style patterns, detect duplication
-    - Prettier: consistent formatting
-    - CSS-in-JS with design tokens
-    - Visual regression testing (Percy, Chromatic)
-  |||,
 )

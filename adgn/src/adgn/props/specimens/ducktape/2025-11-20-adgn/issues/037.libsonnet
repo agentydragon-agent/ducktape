@@ -49,7 +49,7 @@ I.issueOneOccurrence(
     - Easier to maintain: change once, affects both
     - Clear separation: envelope creation vs distribution
   |||,
-  properties=['no-redundant-code'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [
       [119, 128],   // send_json method

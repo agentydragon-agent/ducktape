@@ -33,7 +33,6 @@ I.issueOneOccurrence(
 
     The name should make it clear what temporal event is being recorded, and the semantics should be consistent across both pending and decided states.
   |||,
-  properties=['self-describing-names', 'truthfulness'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [79, 85],  // ApprovalItem class definition with timestamp field

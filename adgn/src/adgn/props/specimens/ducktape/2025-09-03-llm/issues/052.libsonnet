@@ -7,7 +7,6 @@ I.issueOneOccurrence(
     constants at each site. Prefer giving `_cap_append` sensible defaults (or deriving the note from the cap)
     so callers only pass the varying pieces. This reduces duplication and drift risk across call sites.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [
       [133, 137],

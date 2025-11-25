@@ -81,19 +81,9 @@ I.issueOneOccurrence(
     3. **Easier maintenance**: Changes in one place
     4. **Testable**: Helper can be tested independently
   |||,
-  properties=['avoid-duplication', 'extract-helper'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [319, 330],  // Duplicated select-read-sleep loops
     ],
   },
-  gap_note= |||
-    This finding illustrates **"extract-helper"**: when a code pattern is repeated
-    with minor variations, extract it into a helper function or method that accepts
-    the varying parts as parameters.
-
-    This is closely related to "avoid-duplication" (DRY principle) but focuses
-    specifically on the refactoring technique: recognize the pattern, identify
-    what varies, parameterize the variation.
-  |||,
 )

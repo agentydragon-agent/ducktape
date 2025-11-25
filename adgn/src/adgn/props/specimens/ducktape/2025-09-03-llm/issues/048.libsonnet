@@ -8,9 +8,7 @@ I.issueOneOccurrence(
     config reader fallback (`repo.config_reader().get_value("core", "editor", default)`). This reduces
     subprocess boilerplate and simplifies control flow.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[731, 739]],
   },
-  gap_note='Prefer native repo APIs (repo.git.var / config_reader) instead of shelling out for simple queries.',
 )

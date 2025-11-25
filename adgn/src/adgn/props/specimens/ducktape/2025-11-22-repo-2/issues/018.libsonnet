@@ -20,7 +20,6 @@ I.issueOneOccurrence(
 
     These changes eliminate unnecessary indirection and make the code more direct and readable.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/scripts/generate_frontend_code.py': [
       [183, 186],  // get_json_schema function

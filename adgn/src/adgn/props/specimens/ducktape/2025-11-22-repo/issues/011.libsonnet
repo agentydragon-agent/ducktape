@@ -50,17 +50,9 @@ I.issueOneOccurrence(
     status = OUTCOME_TO_STATUS.get(record.decision.outcome, ApprovalStatus.REJECTED)
     ```
   |||,
-  properties=['type-correctness-and-specificity', 'python/modern-python-idioms'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py': [
       [86, 97], // if-elif-else chain for ApprovalOutcome to ApprovalStatus mapping
     ],
   },
-  gap_note=|||
-    This pattern deserves a property like "single-source-domain-types": when the same
-    domain concept is represented by multiple types requiring conversion between them,
-    they should be unified into a single authoritative type. This is distinct from
-    general "type-correctness-and-specificity" as it specifically addresses type
-    proliferation and unnecessary conversions in domain modeling.
-  |||,
 )

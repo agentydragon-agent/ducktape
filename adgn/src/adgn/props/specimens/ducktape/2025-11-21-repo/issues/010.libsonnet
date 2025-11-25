@@ -113,7 +113,6 @@ I.issueOneOccurrence(
     This should be moved to PendingApproval or tracked separately, not used as justification
     to keep the wrapper class.
   |||,
-  properties=['unnecessary-abstraction', 'simplicity', 'indirection'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [63, 64],   // ApprovalRequest class definition

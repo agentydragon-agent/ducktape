@@ -209,7 +209,6 @@ I.issueOneOccurrence(
     2. Remove unused `agent_id`, `persistence`, `docker_client` from `attach_default_servers()`
     3. Remove unused `approval_engine`, `approval_hub`, `agent_id` from `build_handlers()`
   |||,
-  properties=['accurate-documentation', 'remove-dead-code'],
   filesToRanges={
     'adgn/src/adgn/agent/policy_eval/shim.py': [
       [14, 17],  // Misleading "dependency-free" comment
@@ -221,42 +220,4 @@ I.issueOneOccurrence(
       [19, 31],  // Dead parameters: approval_engine, approval_hub, agent_id
     ],
   },
-  gap_note= |||
-    This finding illustrates **"accurate-documentation"**: comments and docstrings
-    should precisely describe what the code does, not create confusion or state
-    things that are misleading when read literally.
-
-    Common documentation pitfalls:
-    - Ambiguous terms ("dependency-free" - of what?)
-    - Outdated comments from previous implementations
-    - Comments that contradict immediately following statements
-    - Using "should" when you mean "must" or "can"
-
-    How to write clear documentation:
-    - Be specific: "shim is stdlib-only" vs "only stdlib is used" (by whom?)
-    - State what IS true, not what isn't: "policies CAN import adgn" vs "no dependencies"
-    - Keep comments and code in sync during refactoring
-    - Remove misleading statements rather than leaving them vague
-
-    Related to **"remove-dead-code"**: unused function parameters are a form of
-    dead code. They:
-    - Confuse readers (why is this parameter here?)
-    - Make call sites more verbose (passing unused args)
-    - Hide refactoring opportunities (can't see true dependencies)
-    - Create maintenance burden (must keep in sync across call sites)
-
-    How to detect dead parameters:
-    - Ruff rule ARG001 (unused function argument)
-    - Ruff rule ARG002 (unused method argument)
-    - Pylint unused-argument warning
-    - IDE graying out unused variables
-
-    When unused parameters ARE appropriate:
-    - Implementing a protocol/interface that requires them
-    - Placeholder for future implementation (document with TODO)
-    - Callback signature that might not use all parameters
-    - Testing/mocking where signature must match
-
-    In these cases: add `# noqa: ARG001` or `_ = param` to show it's intentional.
-  |||,
 )

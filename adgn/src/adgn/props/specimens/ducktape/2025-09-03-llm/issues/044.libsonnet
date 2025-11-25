@@ -13,7 +13,6 @@ I.issueOneOccurrence(
 
     This removes duplication, reduces drift risk across call sites, and keeps the diff semantics consistent.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [
       [144, 153],

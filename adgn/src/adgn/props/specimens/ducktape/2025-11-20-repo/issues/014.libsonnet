@@ -52,7 +52,6 @@ I.issueOneOccurrence(
     - Reduces cognitive load when reading either method
     - Makes it clear that the loop is "extract and store" pattern
   |||,
-  properties=['code-complexity', 'readability', 'maintainability', 'single-responsibility'],
   filesToRanges={
     'adgn/src/adgn/mcp/stubs/typed_stubs.py': [
       [109, 178],  // Entire from_server method

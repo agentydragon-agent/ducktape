@@ -41,7 +41,6 @@ I.issueOneOccurrence(
 
     This makes intent clear and reduces duplication.
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'pyright_watch_report.py': [165, 179, 196, 241, 253],
   },

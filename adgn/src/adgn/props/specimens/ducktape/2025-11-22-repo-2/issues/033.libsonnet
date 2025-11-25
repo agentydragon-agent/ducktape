@@ -36,23 +36,9 @@ I.issueOneOccurrence(
     - No redundant storage
     - Backward compatible if needed
   |||,
-  properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/handler.py': [
       29,  // total_tokens field definition
     ],
   },
-  gap_note= |||
-    This finding represents a pattern that could be a property: "prefer-computed-properties"
-    or "no-derived-fields".
-
-    When a field's value is always a trivial computation of other fields
-    (sum, concatenation, boolean combination), prefer:
-    - Removing the field and computing on demand
-    - Making it a @property (for API compatibility)
-    - NOT storing it as a redundant field that must be kept in sync
-
-    Related to DRY but specifically about data modeling and avoiding redundant
-    derived state that can get out of sync.
-  |||,
 )

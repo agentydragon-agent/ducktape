@@ -9,7 +9,6 @@ I.issueOneOccurrence(
 
     This reduces duplicated state and keeps the config focused on primary fields.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[74, 95]],
   },

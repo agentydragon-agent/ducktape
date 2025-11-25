@@ -20,7 +20,6 @@ I.issueOneOccurrence(
 
     Fix: Delete both comments. The method names and types are sufficient.
   |||,
-  properties=['no-useless-docs'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       319,  // "Call persistence to get ACTUAL ID"

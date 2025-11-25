@@ -11,7 +11,6 @@ I.issueOneOccurrence(
     - New readers assume the shim is live behavior and may write code to support it, increasing cruft.
     - Tests depending on obsolete shims should be migrated or wrapped in explicit test fixtures rather than perpetuating legacy surface area.
   |||,
-  // properties=['no-dead-code'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [[23, 27]],
   },

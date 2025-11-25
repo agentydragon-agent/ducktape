@@ -7,7 +7,6 @@ I.issueWithOccurrences(
     Examples here: editor return code and subprocess return code after create_subprocess_exec can be checked inline, reducing temporary variables and making control flow clearer.
     For single-use path conditions, consider using walrus when it improves clarity without harming readability.
   |||,
-  // properties=['walrus'],
   occurrences=[
     { files: { 'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[927, 933]] }, note: 'Inline editor returncode: if (rc := await editor_proc.wait()) != 0: ...' },
     { files: { 'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[599, 606]] }, note: 'Inline subprocess returncode: if (rc := await proc.wait()) != 0: ...' },

@@ -92,7 +92,6 @@ I.issueOneOccurrence(
     If performance is a concern (it shouldn't be for lists of this size), the client can cache the
     computed count rather than having the server send it every time.
   |||,
-  properties=['redundancy', 'data-modeling', 'dry-principle'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [168, 168],  // Redundant count field in model

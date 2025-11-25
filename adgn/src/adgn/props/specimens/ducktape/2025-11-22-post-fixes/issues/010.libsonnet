@@ -61,27 +61,10 @@ I.issueOneOccurrence(
     **Note:** This is separate from issue 012 about mixed exit code conventions.
     This issue is specifically about the redundant handler that adds no value.
   |||,
-  properties=['remove-noise', 'avoid-unnecessary-indentation'],
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/cli.py': [
       [660, 660],  // try: at start of async_main
       [733, 734],  // except ExitWithCode as e: sys.exit(e.code)
     ],
   },
-  gap_note= |||
-    This finding illustrates **"avoid-unnecessary-indentation"**: don't add try-except
-    blocks that only forward exceptions unchanged. Every level of indentation makes
-    code harder to read, so only add it when necessary.
-
-    Exception handlers should DO something:
-    - Transform the exception (wrap, enrich, map to another type)
-    - Log or record the error
-    - Perform cleanup
-    - Recover and continue execution
-
-    If a handler just calls another function with the same information (like
-    `sys.exit(e.code)`), it's redundant noise.
-
-    Related to "remove-noise": code that doesn't add value should be removed.
-  |||,
 )

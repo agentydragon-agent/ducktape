@@ -12,7 +12,6 @@ I.issueOneOccurrence(
 
     This reduces duplication and makes tests simpler (just pass a client/fake).
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/agent.py': [[45, 55], [100, 111]],
   },

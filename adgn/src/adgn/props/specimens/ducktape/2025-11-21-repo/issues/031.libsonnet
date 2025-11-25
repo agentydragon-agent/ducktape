@@ -116,7 +116,6 @@ I.issueOneOccurrence(
     **Note:**
     This also resolves issue 024 (proposal_uri field) by removing PolicyProposalInfo entirely.
   |||,
-  properties=['unnecessary-abstraction', 'data-modeling', 'simplicity'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [171, 178],  // PolicyProposalInfo unnecessary wrapper type

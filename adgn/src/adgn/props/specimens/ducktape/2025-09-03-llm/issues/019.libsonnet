@@ -14,8 +14,6 @@ I.issueWithOccurrences(
 
     Gap note: sometimes it is reasonable to keep values as strings when the entire path value flows as a str through the stack (e.g., an HTTP request param immediately passed to a Docker API that expects strings). The decision is a cost-vs-benefit judgment: use Path where you benefit from pathlib API; avoid needless wrap/unwrap where it buys little.
   |||,
-  // properties=['pathlib','type-correctness-and-specificity'],
-  gap_note='Sometimes it is acceptable to keep values as strings when they flow as strings through the stack (e.g., an HTTP request param immediately passed to a Docker API). Decide by cost-vs-benefit: use Path where pathlib APIs are beneficial.',
   occurrences=[
     { files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[340, 343]] }, note: 'cfg_path computed with Path(..) vs os.path usage; prefer Path APIs' },
     { files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[122, 123]] }, note: 'cwd handling: prefer Path.cwd()/Path(...) semantics instead of os.getcwd()/os.path' },

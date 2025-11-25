@@ -9,7 +9,6 @@ I.issueOneOccurrence(
 
     Prefer: log full traceback and re-raise (or exit non-zero) so CI/tests detect the issue. Only suppress known, explicitly documented non-fatal exceptions.
   |||,
-  // properties=['scoped-try-except','no-useless-docs'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [[343, 343]],
   },

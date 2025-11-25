@@ -10,7 +10,6 @@ I.issueWithOccurrences(
     - Passing Path preserves richer semantics (e.g., platform-specific paths, pathlike wrappers) and is less error-prone.
     - Modern APIs (subprocess, os.open, many stdlib functions) accept Path objects and will do the correct conversion; explicit str() casts are unnecessary.
   |||,
-  // properties=['pathlib'],
   occurrences=[
     { files: { 'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/kernel_exec.py': [[44, 44]] }, note: 'os.open(log_path, ...) — pass Path directly' },
     { files: { 'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_mcp_launch.py': [[47, 47], [57, 57]] }, note: 'subprocess args include str(path) casts — pass Path objects where supported' },

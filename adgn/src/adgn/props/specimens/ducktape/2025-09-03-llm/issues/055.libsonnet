@@ -9,7 +9,7 @@ I.issueOneOccurrence(
 
     This eliminates a misleading, unused parameter and makes data flow explicit.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[544, 549], [615, 615]],
   },

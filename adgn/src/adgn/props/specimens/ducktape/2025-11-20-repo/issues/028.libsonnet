@@ -34,7 +34,6 @@ I.issueOneOccurrence(
     Both versions correctly type as `str | None`. The ternary makes the two possible
     values (read_text() result or None) more visually apparent.
   |||,
-  properties=['code-style', 'readability'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/cli.py': [
       [88, 90],  // policy_source conditional assignment

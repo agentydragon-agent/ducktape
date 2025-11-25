@@ -49,7 +49,6 @@ I.issueWithOccurrences(
 
     ESLint `import/order` rule can enforce this automatically.
   |||,
-  properties=['imports-at-top', 'follow-conventions', 'consistent-import-ordering'],
   occurrences=[
     {
       files: {
@@ -82,40 +81,4 @@ I.issueWithOccurrences(
       note: 'Import JSONFormatter on line 20, after comments and state declarations',
     },
   ],
-  gap_note= |||
-    This finding illustrates **"imports-at-top"**: all module imports should appear
-    at the beginning of the file/script block, not scattered throughout.
-
-    Principle: Imports declare dependencies, not runtime logic
-    - Imports at top: clear dependency graph, easy to scan
-    - Imports scattered: looks like runtime code, hard to track
-    - Consistent placement: tools expect imports first
-
-    Why import placement matters:
-
-    **Cognitive overhead:**
-    - Seeing `import` mid-file: "Is this conditional? Lazy-loaded?"
-    - All imports at top: "These are dependencies, everything below uses them"
-
-    **Tool compatibility:**
-    - Linters expect imports at top (ESLint import/order, import/first)
-    - Bundlers optimize by hoisting imports
-    - Formatters (Prettier) assume standard placement
-
-    **Maintainability:**
-    - Adding import: always go to top, consistent location
-    - Removing unused: scan one location, not entire file
-
-    When late imports ARE acceptable:
-    - Dynamic imports: `const mod = await import('./lazy')`
-    - Conditional loading: `if (DEBUG) { const log = await import('./logger') }`
-    - Circular dependency workaround (document why)
-
-    But static imports must be at top.
-
-    Automation:
-    - ESLint `import/order`: enforce import grouping
-    - ESLint `import/first`: enforce imports at top
-    - Prettier: auto-format import statements
-  |||,
 )

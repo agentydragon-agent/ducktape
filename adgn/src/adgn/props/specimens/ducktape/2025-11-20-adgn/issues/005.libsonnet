@@ -20,7 +20,7 @@ I.issueOneOccurrence(
     Conversion:
     return agent.local_runtime if (agent := self._agents[agent_id].agent) else None
   |||,
-  properties=['python/walrus', 'no-oneoff-vars-and-trivial-wrappers', 'python/modern-python-idioms'],
+
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/server.py': [
       [162, 163],   // Two-line pattern that should be single walrus expression

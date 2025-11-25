@@ -56,7 +56,6 @@ I.issueOneOccurrence(
     - Clearer code without defensive fallback for impossible case
     - If someone violates types, they'll get a clear error instead of silent fallback
   |||,
-  properties=['dead-code', 'fail-fast', 'type-safety'],
   filesToRanges={
     'adgn/src/adgn/agent/event_renderer.py': [
       [85, 89],  // try/except AttributeError fallback - unreachable

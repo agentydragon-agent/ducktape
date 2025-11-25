@@ -7,7 +7,7 @@ I.issueOneOccurrence(
     Declare variables as close as possible to their first use to improve locality and reduce mental overhead.
     Move this assignment down to the point where it is used.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
+
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[884, 884], [918, 918]],
   },

@@ -44,7 +44,6 @@ I.issueOneOccurrence(
     **Note:** Lines 19-32 define fc1 and fc2 for constructing the response sequence.
     Those are fine - they're used in sequence construction, not single-use assertion variables.
   |||,
-  properties=['code-style', 'readability', 'dry-principle'],
   filesToRanges={
     'adgn/tests/agent/test_reasoning_threading.py': [
       [89, 94],   // fc1 extraction + assertion

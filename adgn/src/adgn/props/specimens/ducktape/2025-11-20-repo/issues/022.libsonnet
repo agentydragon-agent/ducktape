@@ -44,7 +44,6 @@ I.issueOneOccurrence(
     **Related issues:**
     This is connected to issue 023 about proposal_id type inconsistency.
   |||,
-  properties=['correctness', 'bug', 'data-consistency'],
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
       [232, 237],  // create_proposal using placeholder ID 0

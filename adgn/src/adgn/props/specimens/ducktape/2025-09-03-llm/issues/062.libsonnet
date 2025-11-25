@@ -10,7 +10,7 @@ I.issueOneOccurrence(
 
     This removes a one-off local and keeps the condition compact.
   |||,
-  // properties=['walrus'],
+
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[448, 451]],
   },

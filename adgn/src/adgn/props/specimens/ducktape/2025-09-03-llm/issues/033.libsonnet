@@ -15,7 +15,6 @@ I.issueOneOccurrence(
     Combine them into a single `if known.debug:` to reduce duplicated conditionals,
     group related debug behavior together, and simplify control flow.
   |||,
-  // properties=['minimize-nesting'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[792, 807]],
   },

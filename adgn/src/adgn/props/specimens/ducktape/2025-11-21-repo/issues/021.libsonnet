@@ -107,7 +107,6 @@ I.issueOneOccurrence(
     at creation time (when the approval request is registered), not at query time. But currently
     the timestamp serves no purpose and should just be removed.
   |||,
-  properties=['unnecessary-abstraction', 'misleading-data', 'simplicity'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [120, 124],  // PendingApproval wrapper class

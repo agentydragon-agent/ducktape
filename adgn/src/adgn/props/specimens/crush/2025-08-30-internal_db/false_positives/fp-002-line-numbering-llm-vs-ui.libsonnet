@@ -19,7 +19,6 @@ I.issueOneOccurrence(
     for counting decimal digits, or a small utility to normalize line endings) is acceptable and encouraged.
     Keep the surface-level formatting and rendering behavior separate so each consumer can evolve independently.
   |||,
-  properties=[],
   filesToRanges={
     'internal/llm/tools/view.go': [[258, 276]],
     'internal/tui/components/chat/messages/renderer.go': [[817, 883]],

@@ -218,7 +218,6 @@ I.issueOneOccurrence(
     so it shouldn't be included in this refactoring. The registry_notifier (lines 929-930) is
     also different (already async and simple).
   |||,
-  properties=['duplication', 'dry-principle', 'maintainability'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [833, 932],  // All notification wiring code

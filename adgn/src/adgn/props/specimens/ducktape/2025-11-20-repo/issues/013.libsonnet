@@ -48,7 +48,6 @@ I.issueOneOccurrence(
 
     This should be unified using wrapper pattern with consistent `kind` discriminators.
   |||,
-  properties=['api-design', 'type-safety', 'consistency', 'maintainability'],
   filesToRanges={
     'adgn/src/adgn/openai_utils/model.py': [
       [26, 33],   // AssistantMessage with role discriminator

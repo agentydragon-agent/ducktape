@@ -7,7 +7,6 @@ I.issueOneOccurrence(
 
     Unused parameters add cognitive overhead and misleading API surface. Remove the unused parameter (or use it if there is a real need) to tighten the function signature and reduce confusion.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers','self-describing-names'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [[192, 208]],
   },

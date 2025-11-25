@@ -16,7 +16,6 @@ I.issueOneOccurrence(
     It is acceptable to keep the public flag name `--yolo` as a tongue-in-cheek user-facing label while
     keeping any internal semantic name (e.g., skip-permissions) in code where helpful. No change required.
   |||,
-  properties=[],
   filesToRanges={
     'internal/cmd/root.go': [[29, 31], [132, 169]],
   },

@@ -9,7 +9,6 @@ I.issueOneOccurrence(
     Prefer a single source of truth: derive the human text from the cap (e.g., f"[Context truncated to {MAX_PROMPT_CONTEXT_BYTES // 1024} KiB]")
     or use a generic stable marker like "[Context truncated]". Keep the message in one place and reuse it.
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [
       [135, 136],

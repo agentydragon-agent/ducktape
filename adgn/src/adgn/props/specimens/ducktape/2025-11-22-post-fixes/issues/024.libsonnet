@@ -37,7 +37,6 @@ I.issueOneOccurrence(
     They add noise without meaningful abstraction, increase maintenance burden, and make it harder
     to see what's actually being accessed.
   |||,
-  properties=['avoid-duplication', 'avoid-thin-wrappers'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/server.py': [
       [252, 279],  // list_agents duplicates agent info construction
@@ -45,43 +44,4 @@ I.issueOneOccurrence(
       [187, 198],  // Thin wrapper methods (get_infrastructure, get_agent_mode, get_local_runtime)
     ],
   },
-  gap_note= |||
-    This finding illustrates **"avoid-thin-wrappers"**: don't create trivial wrapper
-    methods that just forward to another method and access one field. These add noise
-    without adding value.
-
-    When to avoid wrappers:
-    - Single field access (`return self.foo.bar`)
-    - Single method call with no logic (`return self.foo.baz()`)
-    - No additional validation, transformation, or error handling
-    - Doesn't hide complexity or provide meaningful abstraction
-
-    When wrappers ARE appropriate:
-    - Converting between representations (e.g., `to_json()`, `to_dict()`)
-    - Adding cross-cutting concerns (logging, metrics, authorization)
-    - Adapting an interface for a specific use case
-    - Providing backwards compatibility during refactoring
-    - Hiding complex initialization or validation logic
-
-    The test: if removing the wrapper and inlining it would make code clearer,
-    the wrapper is probably unnecessary.
-
-    Examples of bad wrappers:
-    ```python
-    def get_name(self): return self.person.name
-    def is_active(self): return self.status == Status.ACTIVE
-    def get_config(self): return self._config
-    ```
-
-    Better approach - let callers access directly:
-    ```python
-    # Instead of wrapper methods, just:
-    person = self.get_person()  # meaningful operation
-    name = person.name  # direct access
-    ```
-
-    Related to **"avoid-duplication"**: this finding also shows duplicated logic
-    for building AgentInfo. The duplication could be eliminated by either extracting
-    a helper method or having list_agents call get_agent_info.
-  |||,
 )

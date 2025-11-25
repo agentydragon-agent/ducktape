@@ -33,7 +33,6 @@ I.issueOneOccurrence(
     This is a textbook case for walrus operator: we get a value, check if it's truthy,
     and use it in the if body. No need for separate assignment.
   |||,
-  properties=['code-style', 'readability'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [
       [113, 116],  // env_token extraction and check

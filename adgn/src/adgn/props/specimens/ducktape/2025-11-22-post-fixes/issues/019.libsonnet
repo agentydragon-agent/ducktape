@@ -97,7 +97,6 @@ I.issueOneOccurrence(
     - You can always strip timestamps if needed (can't add them back)
     - The overhead is minimal (one ISO timestamp string per event)
   |||,
-  properties=['avoid-duplication', 'single-source-of-truth'],
   filesToRanges={
     'adgn/src/adgn/agent/transcript_handler.py': [
       [38, 39],   // Both _events_path and _transcript_path defined
@@ -105,25 +104,4 @@ I.issueOneOccurrence(
       [53, 57],   // Double write: events.jsonl and transcript.jsonl
     ],
   },
-  gap_note= |||
-    This finding illustrates **"single-source-of-truth"**: data should be stored in
-    one canonical location/format, not duplicated across multiple places.
-
-    When you need multiple representations of the same data:
-    - Store the most complete/rich version (e.g., with timestamps)
-    - Derive other formats on-demand or via export functions
-    - Don't maintain multiple synchronized copies in real-time
-
-    Duplicate storage causes:
-    - Sync issues (what if only one file is written/updated?)
-    - Confusion (which file is authoritative?)
-    - Waste (storage, I/O, maintenance)
-
-    Related to "avoid-duplication": don't duplicate data any more than you duplicate code.
-
-    The principle applies broadly:
-    - Database normalization (don't duplicate data across tables)
-    - Caching (cache is derived from source, not authoritative)
-    - Logs vs metrics (choose one primary format, export others)
-  |||,
 )

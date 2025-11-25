@@ -78,7 +78,6 @@ I.issueOneOccurrence(
     and over loop-and-append for simple transformations. This aligns with the
     Pythonic principle of "Simple is better than complex."
   |||,
-  properties=['code-style', 'python-idioms', 'functional-programming', 'conciseness'],
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
       [50, 59],   // Loop-and-append pattern that should be list comprehension

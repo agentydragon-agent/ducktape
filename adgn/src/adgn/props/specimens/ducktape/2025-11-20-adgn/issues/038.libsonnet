@@ -31,7 +31,7 @@ I.issueOneOccurrence(
 
     Same issue as #013 (Agent.id should be AgentID in models), but for runtime layer.
   |||,
-  properties=['type-correctness-and-specificity'],
+
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [
       234,          // agent_id: str | None parameter

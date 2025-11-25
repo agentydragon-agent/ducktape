@@ -14,7 +14,6 @@ I.issueOneOccurrence(
     with
       StdioServerParameters(command=shell, args=[...], ...)
   |||,
-  // properties=['no-oneoff-vars-and-trivial-wrappers'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py': [[61, 71]],
   },

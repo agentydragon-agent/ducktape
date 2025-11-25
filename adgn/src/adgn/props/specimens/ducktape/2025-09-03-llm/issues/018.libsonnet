@@ -11,7 +11,6 @@ I.issueOneOccurrence(
 
     Suggested fix: add `from __future__ import annotations` at the module top and replace quoted return/type annotations with the direct types (optionally keep `typing` imports minimal when needed).
   |||,
-  // properties=['type-hints'],
   filesToRanges={
     'llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py': [[184, 192]],
   },

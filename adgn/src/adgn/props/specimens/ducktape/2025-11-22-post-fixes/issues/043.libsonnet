@@ -61,67 +61,10 @@ I.issueOneOccurrence(
     Create abstractions when you have multiple uses, not "in case we need it later."
     Start inline, extract to function when second use appears.
   |||,
-  properties=['avoid-thin-wrappers', 'inline-single-use', 'type-safe-apis'],
   filesToRanges={
     'adgn/src/adgn/agent/web/src/components/ServersPanel.svelte': [
       [185, 197],  // applyPresetFrom function definition
       [257, 257],  // Single call site
     ],
   },
-  gap_note= |||
-    This finding illustrates **"inline-single-use"**: functions used only once
-    should be inlined unless they encapsulate complex logic or are part of a
-    public API.
-
-    Related to **"avoid-thin-wrappers"**: don't create function abstractions
-    for single-use cases. Extract when second use appears.
-
-    Rule of thumb: YAGNI (You Aren't Gonna Need It)
-    - Don't create abstractions "in case we need them later"
-    - Inline first, abstract when you have 2-3 uses
-    - Extract when logic becomes complex (>15 lines, multiple concerns)
-
-    When to keep single-use functions:
-    - Complex logic that benefits from naming
-    - Needs unit testing in isolation
-    - Part of hook/lifecycle (e.g., Svelte reactive)
-    - Callback passed to framework
-    - Public API / library export
-
-    When to inline:
-    - Simple transformation (< 10 lines)
-    - Only one caller
-    - Logic is clear inline
-    - No testing needed
-
-    Svelte-specific patterns:
-
-    **Inline event handler:**
-    ```svelte
-    <button on:click={() => { foo = bar; baz() }}>
-    ```
-
-    **Reactive statement (for complex derived values):**
-    ```svelte
-    $: derivedValue = computeSomething(props)
-    ```
-
-    **Named function (for reuse or clarity):**
-    ```svelte
-    <script>
-      function handleSubmit() { /* ... */ }
-    </script>
-    <form on:submit|preventDefault={handleSubmit}>
-    ```
-
-    Related to **"type-safe-APIs"** (user's note about schema copying):
-    When backend has Pydantic models, generate TypeScript types instead of
-    manually duplicating structure. This prevents drift and enables type checking
-    across the stack.
-
-    Tools for Pydantic → TypeScript:
-    - **Existing script**: `adgn/scripts/generate_types.py` (commit 7c6cae7ad)
-      Uses `TypeAdapter.json_schema()` + `json-schema-to-typescript` CLI
-    - Alternative tools: `pydantic-to-typescript` (npm), `datamodel-code-generator` (Python)
-  |||,
 )
