@@ -21,7 +21,8 @@ RUN --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
         nodejs \
         npm \
         universal-ctags \
-        jq
+        jq \
+        fd-find
 
 WORKDIR /opt/adgn
 

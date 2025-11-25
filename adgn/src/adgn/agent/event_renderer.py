@@ -23,21 +23,29 @@ class DisplayEventsHandler(BaseHandler):
     console output entirely.
     """
 
-    def __init__(self, *, max_lines: int = 200, max_bytes: int = 8192, write: Callable[[str], None] = print) -> None:
+    def __init__(
+        self,
+        *,
+        max_lines: int = 200,
+        max_bytes: int = 8192,
+        write: Callable[[str], None] = print,
+        prefix: str = "",
+    ) -> None:
         self._max_lines = max_lines
         self._max_bytes = max_bytes
         self._write = write
+        self._prefix = prefix
         self._calls: dict[str, ToolCall] = {}
 
     # Observer hooks ---------------------------------------------------------
 
     def on_user_text_event(self, evt: UserText) -> None:
         if evt.text:
-            self._write(f"user:\n{self._truncate_text(evt.text)}")
+            self._write_with_prefix(f"user:\n{self._truncate_text(evt.text)}")
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
         if evt.text:
-            self._write(f"assistant:\n{self._truncate_text(evt.text)}")
+            self._write_with_prefix(f"assistant:\n{self._truncate_text(evt.text)}")
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._calls[evt.call_id] = evt
@@ -46,17 +54,17 @@ class DisplayEventsHandler(BaseHandler):
             call_args = _parse_json_or_none(evt.args_json) or {}
             if isinstance(call_args, dict) and (cmd := call_args.get("cmd")) is not None:
                 cmd_line = shlex.join([str(x) for x in cmd]) if isinstance(cmd, list) else str(cmd)
-                self._write(f"$ {cmd_line}")
+                self._write_with_prefix(f"$ {cmd_line}")
             return
         s = self._render_tool_call(evt)
         if s:
-            self._write(s)
+            self._write_with_prefix(s)
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         c = self._calls.get(evt.call_id)
         s = self._render_tool_result(c, evt)
         if s:
-            self._write(s)
+            self._write_with_prefix(s)
 
     def on_reasoning(self, item: ReasoningItem) -> None:
         return None
@@ -123,6 +131,16 @@ class DisplayEventsHandler(BaseHandler):
         return "\n".join(out_parts)
 
     # Utility methods --------------------------------------------------------
+
+    def _write_with_prefix(self, msg: str) -> None:
+        """Write message with optional prefix."""
+        if self._prefix:
+            # Prefix each line of the message
+            lines = msg.splitlines()
+            prefixed = "\n".join(f"{self._prefix}{line}" for line in lines)
+            self._write(prefixed)
+        else:
+            self._write(msg)
 
     def _truncate_text(self, s: str) -> str:
         raw = s.encode("utf-8", errors="replace")

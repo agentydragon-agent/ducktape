@@ -11,21 +11,34 @@ from pathlib import Path
 from fastmcp.client import Client
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.handler import BaseHandler, Response
 from adgn.agent.reducer import GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp._shared.constants import GRADER_SUBMIT_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.openai_utils.cost import calculate_cost
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic import CriticSubmitPayload, CriticSubmitState, ReportedIssue, attach_critic_submit
-from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
+from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grader import GradeInputs, GradeSubmitPayload, GradeSubmitState, build_grader_submit_tools
-from adgn.props.ids import CANON_FP_PREFIX, CANON_TP_PREFIX, ensure_crit_id
+from adgn.props.ids import CANON_FP_PREFIX, CANON_TP_PREFIX, ensure_crit_id, ensure_with_prefix
 from adgn.props.lint_issue import BootstrapInspectHandler
 from adgn.props.prompts.builder import build_grade_from_json_prompt
 from adgn.props.specimens.registry import IssueRecord, SpecimenRecord
+
+
+class CostTrackingHandler(BaseHandler):
+    """Handler that tracks total cost from Response events."""
+
+    def __init__(self) -> None:
+        self.total_cost: float = 0.0
+
+    def on_response(self, evt: Response) -> None:
+        """Accumulate cost from response usage."""
+        self.total_cost += calculate_cost(evt.usage)
 
 
 def _prefix_critique_ids(critique: CriticSubmitPayload) -> CriticSubmitPayload:
@@ -44,8 +57,6 @@ def _prefix_critique_ids(critique: CriticSubmitPayload) -> CriticSubmitPayload:
 
 def _issue_with_id_prefix(ri: ReportedIssue, prefix: str) -> ReportedIssue:
     """Add a prefix to an issue ID (shared helper for grading)."""
-    from adgn.props.ids import ensure_with_prefix
-
     nid = ri.id
     new_id = ensure_with_prefix(nid, prefix)
     rid = new_id if isinstance(new_id, str) else nid
@@ -87,7 +98,7 @@ async def run_critic_agent(
     transcript_dir: Path,
     mount_properties: bool = False,
     gitconfig: Path | None = None,
-    verbose: bool = False,
+    extra_handlers: tuple[BaseHandler, ...] = (),
 ) -> CriticSubmitPayload:
     """Run critic agent on a specimen with custom prompts.
 
@@ -99,7 +110,7 @@ async def run_critic_agent(
         transcript_dir: Where to write transcript
         mount_properties: Whether to mount /props (False for prompt eval, True for others)
         gitconfig: Optional gitconfig for private repos
-        verbose: If True, display agent events on stdout
+        extra_handlers: Additional handlers (e.g., CostTrackingHandler, DisplayEventsHandler)
 
     Returns:
         CriticSubmitPayload on success
@@ -123,16 +134,17 @@ async def run_critic_agent(
         def _defer_bootstrap() -> bool:
             return not bootstrap._done
 
-        handlers = [
+        handlers: list[BaseHandler] = [
             bootstrap,
             TranscriptHandler(dest_dir=transcript_dir),
             GateUntil(_ready_state, defer_when=_defer_bootstrap),
         ]
-
-        if verbose:
-            handlers.insert(0, DisplayEventsHandler(max_lines=10))
+        handlers.extend(extra_handlers)
 
         async with Client(comp) as mcp_client:
+            # Mount standard servers (resources, compositor_meta, compositor_admin)
+            # Must be done after creating the client so resources server has gateway access
+            await mount_standard_inproc_servers(compositor=comp, gateway_client=mcp_client)
             agent = await MiniCodex.create(
                 model=client.model,
                 mcp_client=mcp_client,
@@ -170,7 +182,7 @@ async def run_grader_agent(
     client: OpenAIModelProto,
     transcript_dir: Path,
     gitconfig: Path | None = None,
-    verbose: bool = False,
+    extra_handlers: tuple[BaseHandler, ...] = (),
 ) -> GradeSubmitPayload:
     """Run grader agent to match critique against canonical issues.
 
@@ -183,7 +195,7 @@ async def run_grader_agent(
         client: OpenAI-compatible client
         transcript_dir: Where to write transcript
         gitconfig: Optional gitconfig for private repos
-        verbose: If True, display agent events on stdout
+        extra_handlers: Additional handlers (e.g., CostTrackingHandler, DisplayEventsHandler)
 
     Returns:
         GradeSubmitPayload on success
@@ -236,15 +248,15 @@ async def run_grader_agent(
     build_grader_submit_tools(server, grader_state, inputs=inputs)
     await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, server)
 
-    handlers = [
+    handlers: list[BaseHandler] = [
         GateUntil(lambda: grader_state.result is not None),
         TranscriptHandler(dest_dir=transcript_dir),
     ]
-
-    if verbose:
-        handlers.insert(0, DisplayEventsHandler(max_lines=10))
+    handlers.extend(extra_handlers)
 
     async with Client(comp) as mcp_client:
+        # Mount standard servers (resources, compositor_meta, compositor_admin)
+        await mount_standard_inproc_servers(compositor=comp, gateway_client=mcp_client)
         agent = await MiniCodex.create(
             model="gpt-5",
             mcp_client=mcp_client,

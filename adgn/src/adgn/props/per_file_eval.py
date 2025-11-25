@@ -13,13 +13,15 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.handler import BaseHandler
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.props.agent_runners import run_critic_agent, run_grader_agent
+from adgn.props.agent_runners import CostTrackingHandler, run_critic_agent, run_grader_agent
 from adgn.props.critic import CriticSubmitPayload
 from adgn.props.grader import GradeSubmitPayload
 from adgn.props.lint_issue import extract_canonical_issue_ids
 from adgn.props.prompts.util import render_prompt_template
-from adgn.props.specimens.registry import IssueRecord, SpecimenRecord, SpecimenRegistry
+from adgn.props.specimens.registry import IssueRecord, SpecimenRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ class PerFileRunResult(BaseModel):
         description="Issue IDs that were successfully detected (matched as TP by grader)",
     )
     critique_dir: str = Field(description="Directory containing critique artifacts (transcript, unknowns, etc)")
+    cost: float = Field(description="Total cost for this file (critic + grader)")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -134,7 +137,7 @@ def build_file_issues_index(issues: dict[str, IssueRecord]) -> FileIssuesIndex:
     for issue_id, issue_rec in issues.items():
         files_for_issue: set[str] = set()
         for occ in issue_rec.instances:
-            for file_path in occ.files.keys():
+            for file_path in occ.files:
                 files_for_issue.add(file_path)
 
         files_list = sorted(files_for_issue)
@@ -215,6 +218,13 @@ async def run_per_file_eval(
         scope_text = f"Review the following file:\n- {file_path}"
         user_prompt = render_prompt_template("critic_user_prompt.j2.md", scope_text=scope_text)
 
+        # Set up cost tracking and optional verbose display
+        cost_tracker = CostTrackingHandler()
+        handlers_list: list[BaseHandler] = [cost_tracker]
+        if verbose:
+            handlers_list.insert(0, DisplayEventsHandler(max_lines=10, prefix="  [EVAL] "))
+        extra_handlers = tuple(handlers_list)
+
         critique = await run_critic_agent(
             specimen_rec=rec,
             system_prompt=system_prompt,
@@ -223,13 +233,17 @@ async def run_per_file_eval(
             transcript_dir=file_run_dir / "critic",
             mount_properties=False,
             gitconfig=gitconfig,
-            verbose=verbose,
+            extra_handlers=extra_handlers,
         )
 
+        critic_cost = cost_tracker.total_cost  # Capture critic cost before grader resets
         logger.info(f"Grading critique for {file_path}")
 
         # Filter issues to only those in this file
         filtered_issues = {k: v for k, v in rec.issues.items() if k in issues_in_file}
+
+        # Reset cost tracker for grader
+        cost_tracker.total_cost = 0.0
 
         grade = await run_grader_agent(
             specimen_rec=rec,
@@ -240,8 +254,12 @@ async def run_per_file_eval(
             client=client,
             transcript_dir=file_run_dir / "grader",
             gitconfig=gitconfig,
-            verbose=verbose,
+            extra_handlers=extra_handlers,
         )
+
+        grader_cost = cost_tracker.total_cost
+        # Total cost for this file (critic + grader)
+        total_file_cost = critic_cost + grader_cost
 
         # Extract canon_tp_ IDs and strip prefix to get original issue IDs
         detected_ids = extract_canonical_issue_ids(grade.true_positive_ids)
@@ -253,6 +271,7 @@ async def run_per_file_eval(
             grade=grade,
             detected_issue_ids=detected_ids,
             critique_dir=str(file_run_dir),
+            cost=total_file_cost,
         )
 
     # Run all files in parallel

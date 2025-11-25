@@ -9,10 +9,12 @@ import yaml
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import BaseHandler, GateUntil
+from adgn.agent.rich_display import RichDisplayHandler
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp._shared.constants import GRADER_SUBMIT_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic import CriticSubmitPayload, ReportedIssue
@@ -41,13 +43,29 @@ def _issue_with_id_prefix(ri: ReportedIssue, prefix: str) -> ReportedIssue:
 
 
 async def grade_critic_output(
-    specimen: str, critic_obj: CriticSubmitPayload, client: OpenAIModelProto, *, transcript_out_dir: Path
+    specimen: str,
+    critic_obj: CriticSubmitPayload,
+    client: OpenAIModelProto,
+    *,
+    transcript_out_dir: Path,
+    extra_handlers: tuple[BaseHandler, ...] = (),
+    verbose: bool = False,
+    verbose_prefix: str = "",
 ):
     """Grade a critic output JSON for a specimen; return GradeSubmitPayload model.
 
     - Loads canonical positives and known false positives from SpecimenRegistry
     - Builds a grading prompt and runs MiniCodex with an in-proc grader_submit server
     - If transcript_out_dir is provided, writes JSONL transcript under transcript_out_dir/"grader"
+
+    Args:
+        specimen: Specimen slug
+        critic_obj: Critique payload to grade
+        client: OpenAI-compatible client
+        transcript_out_dir: Directory for transcript and unknowns
+        extra_handlers: Additional handlers (e.g., CostTrackingHandler) - excludes RichDisplayHandler
+        verbose: If True, create RichDisplayHandler with proper server wiring
+        verbose_prefix: Prefix for RichDisplayHandler output
     """
     rec = SpecimenRegistry.load_strict(specimen)
 
@@ -108,12 +126,31 @@ async def grade_critic_output(
     )
     build_grader_submit_tools(server, grader_state, inputs=inputs)
     await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, server)
+
+    # Collect servers for schema extraction
+    servers = {
+        GRADER_SUBMIT_SERVER_NAME: server,
+    }
+
     handlers: list[BaseHandler] = [
         GateUntil(lambda: grader_state.result is not None),
         # Canonical per-run transcript JSONL (events.jsonl + metadata.json)
         TranscriptHandler(dest_dir=transcript_out_dir / "grader"),
     ]
+
+    # Add verbose display if requested (with proper server wiring)
+    if verbose:
+        handlers.append(RichDisplayHandler(
+            max_lines=10,
+            prefix=verbose_prefix,
+            servers=servers,
+        ))
+
+    # Add other handlers (e.g., cost tracking)
+    handlers.extend(extra_handlers)
     async with Client(comp) as mcp_client:
+        # Mount standard servers (resources, compositor_meta, compositor_admin)
+        await mount_standard_inproc_servers(compositor=comp, gateway_client=mcp_client)
         agent = await MiniCodex.create(
             model="gpt-5",
             mcp_client=mcp_client,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from importlib.resources import files
 from pathlib import Path
 from typing import NewType
 
@@ -11,12 +10,17 @@ PropertyID = NewType("PropertyID", str)
 
 def pkg_dir() -> Path:
     """Root directory of this package resources."""
-    return Path(str(files(__package__)))
+    return Path(__file__).parent
 
 
 def props_definitions_root() -> Path:
     """Directory with property definition Markdown files (.../props)."""
     return pkg_dir() / "props"
+
+
+def specimens_definitions_root() -> Path:
+    """Directory with specimen definitions (issues/*.libsonnet, manifest.yaml, etc.)."""
+    return pkg_dir() / "specimens"
 
 
 def find_property_files(property_ids: list[str]) -> list[Path]:

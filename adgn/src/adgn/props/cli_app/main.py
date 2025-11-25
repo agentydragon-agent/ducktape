@@ -8,14 +8,13 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-import csv
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 import functools
 from importlib import resources
 import json
+import logging
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 import time
@@ -23,8 +22,6 @@ from typing import Any, Literal
 
 import docker
 from fastmcp.client import Client
-import matplotlib
-import matplotlib.pyplot as plt
 from rich.console import Console
 from rich.traceback import install as rich_traceback_install
 import typer
@@ -37,7 +34,7 @@ from adgn.llm.logging_config import configure_logging
 from adgn.llm.rendering.rich_renderers import render_to_rich
 
 # in-proc servers are mounted via Compositor.mount_inproc
-from adgn.mcp._shared.constants import PROMPT_EVAL_SERVER_NAME, SLEEP_FOREVER_CMD
+from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
@@ -50,13 +47,7 @@ from adgn.props.cli_shared import (
     save_prompt_to_tmp,
 )
 from adgn.props.cluster_unknowns import cluster_unknowns
-from adgn.props.critic import (
-    CRITIC_MCP_INSTRUCTIONS,
-    CriticSubmitPayload,
-    CriticSubmitState,
-    ReportedIssue,
-    attach_critic_submit,
-)
+from adgn.props.critic import CriticSubmitPayload, CriticSubmitState, ReportedIssue, attach_critic_submit
 from adgn.props.docker_env import (
     PROPERTIES_DOCKER_IMAGE,
     WORKING_DIR as CRITIC_WORKDIR,
@@ -68,10 +59,11 @@ from adgn.props.docker_env import (
 from adgn.props.eval_harness import run_all_evals
 from adgn.props.grade_runner import _metrics_row, grade_critic_output
 from adgn.props.grader import GradeMetrics, GradeSubmitPayload
-from adgn.props.per_file_eval import run_per_file_eval
 from adgn.props.lint_issue import run_specimen_lint_issue_async
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
-from adgn.props.prompt_eval.server import _run_critic_for_specimen, attach_prompt_eval
+from adgn.props.per_file_eval import run_per_file_eval
+from adgn.props.prompt_eval.server import _run_critic_for_specimen
+from adgn.props.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompts.builder import (
     build_check_prompt,
     build_enforce_prompt,
@@ -84,6 +76,8 @@ from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base,
 
 # Reduce Rich traceback verbosity for CLI errors
 rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="adgn-properties (Typer) — properties tooling", add_completion=False)
 
@@ -343,134 +337,14 @@ def cmd_cluster_unknowns(model: str = OPT_MODEL, out_dir: Path | None = OPT_OUTP
 @app.command("prompt-optimize")
 @async_run
 async def prompt_optimize(
-    max_iters: int = OPT_MAX_ITERS,
+    budget: float = typer.Option(50.0, "--budget", help="$ budget for optimization"),
     out_dir: Path | None = OPT_OUTPUT_DIR,
-    context: str = OPT_CONTEXT,
     model: str = OPT_MODEL,
+    agent_model: str = typer.Option("gpt-5-mini", "--agent-model", help="Model for inner critic agent"),
+    verbose: bool = typer.Option(False, "--verbose", help="Display inner agent (critic/grader) events during evaluations"),
 ) -> None:
-    """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP."""
-    # Build base specs will be done inside attach factory; capture state after attach
-
-    system = (
-        "You are an expert LLM prompt engineer.\n\n"
-        "You can evaluate performance of a given prompt using prompt_eval.test_prompt(prompt: str).\n\n"
-        "You will have a given maximum budget of prompt_eval.test_prompt calls. Wisely trade off exploration and exploitation.\n\n"
-        "Context: The critic uses an MCP server 'critic_submit'. The critic already receives the following tool instructions at runtime (no need to repeat):\n"
-        "<critic mcp instructions>\n"
-        f"{CRITIC_MCP_INSTRUCTIONS}"
-        "</critic mcp instructions>\n\n"
-        "Keep your prompt focused on search/analysis strategy and guardrails; avoid restating tool schemas.\n"
-    )
-
-    # Optional docker MCP with /props mounted
-    props_dir = None
-    if context == "props":
-        wiring = properties_docker_spec(pkg_dir(), mount_properties=True)
-        props_dir = wiring.definitions_container_dir
-
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = out_dir if out_dir is not None else (pkg_dir() / "runs" / "prompt_optimize" / ts)
-    root.mkdir(parents=True, exist_ok=True)
-
-    comp = Compositor("compositor")
-    server, pe_state = await attach_prompt_eval(
-        comp, client=build_client(model), name=PROMPT_EVAL_SERVER_NAME, agent_model=model
-    )
-    if context == "props":
-        await wiring.attach(comp)
-    async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(
-            model=model,
-            mcp_client=mcp_client,
-            system=system,
-            client=build_client(model),
-            handlers=[
-                TranscriptHandler(dest_dir=root / "prompt_optimize"),
-                DisplayEventsHandler(max_lines=10),
-                # Budget gate: stop when successful_calls reaches max_iters
-                GateUntil(lambda: pe_state.successful_calls >= max_iters),
-            ],
-            parallel_tool_calls=True,
-        )
-
-        # Agent user message (kept simple and delegated to the system prompt)
-        user = (
-            f"Your budget is: {max_iters} prompt_eval.test_prompt calls.\n\n"
-            "Iterate to find an optimal prompt for a code reviewer/critic LLM agent. "
-            "Your priorities are: recall first, then precision."
-            "\n\n"
-            "Your prompt will run in a harness that ensures the critic follows the required downstream format. "
-            "Do not prescribe output JSON schemas explicitly."
-        )
-        if props_dir:
-            user += (
-                "\n\nYou also have a docker MCP server 'docker'."
-                f"\n\nRead content at {props_dir} to find some *nonexhaustive* examples of properties of good code critics should enforce. "
-                "Note that these are only some specific formal examples that we captured formally - many issues we want to catch are not covered yet by any of these formal properties."
-                "\n\nThe critic agent will run on the same Docker image as you have available."
-            )
-        res = await agent.run(user)
-        (root / "final.md").write_text(res.text, encoding="utf-8")
-        # Generate summary plots (mean recall and counts) across iterations
-
-        matplotlib.use("Agg")
-
-        # Discover iteration directories (numeric or round_*)
-        iter_dirs = [p for p in root.iterdir() if p.is_dir() and (p.name.isdigit() or p.name.startswith("round_"))]
-        rows: list[MetricsRow] = []
-        for d in iter_dirs:
-            res_path = d / "results.json"
-            if not res_path.exists():
-                continue
-            data = json.loads(res_path.read_text(encoding="utf-8"))
-            m = re.search(r"(\d+)$", d.name)
-            it = int(m.group(1)) if m else 0
-            sum_tp = sum(int(x.get("true_positives", 0) or 0) for x in data)
-            sum_fp = sum(int(x.get("false_positive", 0) or 0) for x in data)
-            sum_fn = sum(int(x.get("false_negatives", 0) or 0) for x in data)
-            sum_unk = sum(int(x.get("unknown", 0) or 0) for x in data)
-            recs = []
-            for x in data:
-                val = x.get("recall")
-                if isinstance(val, int | float):
-                    recs.append(float(val))
-            mean_recall = (sum(recs) / len(recs)) if recs else 0.0
-            rows.append(
-                MetricsRow(
-                    iteration=it, mean_recall=mean_recall, tp=sum_tp, fp=sum_fp, fn=sum_fn, unknown=sum_unk, dir=d.name
-                )
-            )
-        if rows:
-            rows.sort(key=lambda r: r.iteration)
-            # CSV
-            csv_path = root / "recall_and_counts_by_iter.csv"
-            with csv_path.open("w", newline="", encoding="utf-8") as f:
-                w = csv.DictWriter(f, fieldnames=["iteration", "mean_recall", "tp", "fp", "fn", "unknown", "dir"])
-                w.writeheader()
-                for r in rows:
-                    w.writerow(asdict(r))
-            # Plot
-            xs = [r.iteration for r in rows]
-            fig, axes = plt.subplots(2, 3, figsize=(10, 6), constrained_layout=True)
-            (ax_rec, ax_tp, ax_fp), (ax_fn, ax_unk, ax_empty) = axes
-            ax_rec.plot(xs, [r.mean_recall for r in rows], marker="o")
-            ax_rec.set_title("Mean recall")
-            ax_rec.grid(True, alpha=0.3)
-            ax_tp.plot(xs, [r.tp for r in rows], marker="o", color="#2ca02c")
-            ax_tp.set_title("True positives (sum)")
-            ax_tp.grid(True, alpha=0.3)
-            ax_fp.plot(xs, [r.fp for r in rows], marker="o", color="#d62728")
-            ax_fp.set_title("False positives (sum)")
-            ax_fp.grid(True, alpha=0.3)
-            ax_fn.plot(xs, [r.fn for r in rows], marker="o", color="#9467bd")
-            ax_fn.set_title("Positives missed (FN sum)")
-            ax_fn.grid(True, alpha=0.3)
-            ax_unk.plot(xs, [r.unknown for r in rows], marker="o", color="#8c564b")
-            ax_unk.set_title("Unknown (sum)")
-            ax_unk.grid(True, alpha=0.3)
-            ax_empty.axis("off")
-            fig.suptitle("Prompt optimize: recall and counts by iteration", fontsize=12)
-            fig.savefig(root / "recall_and_counts_by_iter.png", dpi=150)
+    """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
+    await run_prompt_optimizer(budget=budget, out_dir=out_dir, model=model, agent_model=agent_model, verbose=verbose)
 
 
 @app.command("prompt-eval")
@@ -677,7 +551,7 @@ async def cmd_per_file_eval(
     console = Console()
     console.print("\n[bold]Per-File Evaluation Results[/bold]")
     console.print(f"Specimen: {result.specimen}")
-    console.print(f"\n[bold cyan]Overall Metrics:[/bold cyan]")
+    console.print("\n[bold cyan]Overall Metrics:[/bold cyan]")
     console.print(f"  Total issues (single-file): {result.metrics.total_issues}")
     console.print(f"  Detected issues: {result.metrics.detected_issues}")
     console.print(f"  Recall: {result.metrics.recall:.2%}")
@@ -689,7 +563,7 @@ async def cmd_per_file_eval(
         console.print(f"  Avg file recall: {result.metrics.avg_file_recall:.2%}")
 
     # Show per-issue breakdown
-    console.print(f"\n[bold cyan]Per-Issue Results:[/bold cyan]")
+    console.print("\n[bold cyan]Per-Issue Results:[/bold cyan]")
     for issue_result in result.per_issue_results:
         status = "[green]✓[/green]" if issue_result.detected else "[red]✗[/red]"
         console.print(f"  {status} {issue_result.issue_id} (in {len(issue_result.files_containing_issue)} file(s))")

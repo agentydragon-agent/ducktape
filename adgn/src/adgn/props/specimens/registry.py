@@ -29,6 +29,24 @@ from ..prop_utils import pkg_dir
 
 logger = logging.getLogger(__name__)
 
+
+def _specimen_extract_filter(member: tarfile.TarInfo, path: str) -> tarfile.TarInfo | None:
+    """Custom tarfile extraction filter for specimens.
+
+    Based on tarfile.data_filter but skips absolute symlinks instead of raising error.
+    Specimens are read-only training data from known commits, so absolute symlinks
+    (while discouraged) don't pose a security risk here.
+    """
+    # Use data_filter as base, but catch AbsoluteLinkError
+    try:
+        return tarfile.data_filter(member, path)
+    except tarfile.AbsoluteLinkError:
+        # Skip absolute symlinks with warning
+        logger.warning(
+            f"Skipping absolute symlink in specimen: {member.name} -> {member.linkname}"
+        )
+        return None
+
 @dataclass(frozen=True)
 class IssueRecord:
     core: IssueCore
@@ -163,7 +181,7 @@ def _xdg_cache_base() -> Path:
 def _extract_tar_gz_to_temp(archive: Path) -> Path:
     tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-extract-"))
     with tarfile.open(archive, "r:gz") as tf:
-        tf.extractall(tmpdir)
+        tf.extractall(tmpdir, filter=_specimen_extract_filter)
     for p in tmpdir.iterdir():
         if p.is_dir():
             return p.resolve()
@@ -533,7 +551,7 @@ class SpecimenRecord:
                             filtered,
                             total,
                         )
-                    tf.extractall(mount_root, members=members, filter="data")
+                    tf.extractall(mount_root, members=members, filter=_specimen_extract_filter)
                     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
                         git_dirs = list((mount_root).rglob(".git"))
                         logger.debug("[specimen] post-extract .git dirs: %d", len(git_dirs))

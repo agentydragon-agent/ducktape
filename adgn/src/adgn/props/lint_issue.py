@@ -142,16 +142,19 @@ def make_nl_tool_call(server_name: str, container_path: Path, call_id: str) -> F
 
 
 def make_container_info_call(wiring: PropertiesDockerWiring) -> FunctionCallItem:
-    """resources.read for resource://container.info on the docker server."""
+    """resources.read for runtime container.info resource."""
+    from adgn.mcp._shared.constants import RUNTIME_CONTAINER_INFO_URI
+    from adgn.mcp.resources.server import ResourcesReadArgs
+
     return make_item_tool_call(
         call_id="bootstrap:res",
         name=build_mcp_function("resources", "read"),
-        arguments={
-            "server": wiring.server_name,
-            "uri": "resource://container.info",
-            "start_offset": 0,
-            "max_bytes": 65536,
-        },
+        arguments=ResourcesReadArgs(
+            server=wiring.server_name,
+            uri=RUNTIME_CONTAINER_INFO_URI,
+            start_offset=0,
+            max_bytes=65536,
+        ).model_dump(),
     )
 
 
@@ -272,18 +275,7 @@ class LinterController(BaseHandler):
             sizes[p] = int(st.st_size)
         self._big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
         # Pre-build synthetic steps
-        self._step1 = [
-            make_item_tool_call(
-                call_id="bootstrap:res",
-                name=build_mcp_function("resources", "read"),
-                arguments={
-                    "server": self._wiring.server_name,
-                    "uri": "resource://container.info",
-                    "start_offset": 0,
-                    "max_bytes": 65536,
-                },
-            )
-        ]
+        self._step1 = [make_container_info_call(self._wiring)]
         if self._dirs:
             self._step2 = [
                 make_item_tool_call(

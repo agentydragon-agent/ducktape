@@ -96,18 +96,26 @@ def properties_docker_spec(
     mount_properties: bool = True,
     extra_volumes: dict[str, dict[str, str]] | None = None,
     ephemeral: bool = True,
+    workspace_mode: str = "ro",
 ) -> PropertiesDockerWiring:
     """Return wiring for the properties critic container.
 
-    Ensures the default critic image exists (raises if missing). Always mounts
-    `workspace_root` read-only at /workspace. Optionally mounts property
-    definitions at /props.
+    Ensures the default critic image exists (raises if missing). Mounts
+    `workspace_root` at /workspace with the specified mode. Optionally mounts
+    property definitions at /props.
+
+    Args:
+        workspace_root: Host directory to mount as /workspace
+        mount_properties: Whether to mount property definitions at /props
+        extra_volumes: Additional volumes to mount (Docker volume dict format)
+        ephemeral: Whether to remove container after execution
+        workspace_mode: Mount mode for workspace ("ro" or "rw")
     """
     # Ensure image exists; let exceptions propagate with helpful message
     ensure_critic_image()
 
     volumes, defs_container = build_critic_volumes(
-        workspace_root, mount_properties=mount_properties, workspace_mode="ro", extra_volumes=extra_volumes
+        workspace_root, mount_properties=mount_properties, workspace_mode=workspace_mode, extra_volumes=extra_volumes
     )
 
     # Provide sane defaults for tool caches and tmp dirs inside the container
