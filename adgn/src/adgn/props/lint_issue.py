@@ -165,6 +165,44 @@ def make_ls_workspace_call(wiring: PropertiesDockerWiring, subpaths: list[str] |
     )
 
 
+class BootstrapInspectHandler(BaseHandler):
+    """Shared bootstrap handler: emits container.info + ls workspace without sampling."""
+
+    def __init__(self, wiring: PropertiesDockerWiring) -> None:
+        self._wiring = wiring
+        self._done: bool = False
+        self._emitted: bool = False
+
+    def on_before_sample(self):
+        from adgn.agent.loop_control import NoLoopDecision
+
+        if self._done:
+            return NoLoopDecision()
+        # First cycle: emit synthetic calls, but do NOT mark done yet
+        if not self._emitted:
+            self._emitted = True
+            calls = [make_container_info_call(self._wiring)]
+            calls.append(make_ls_workspace_call(self._wiring))
+            return Continue(RequireAny(), inserts_input=tuple(calls), skip_sampling=True)
+        # Second cycle: mark done and defer; subsequent cycles will continue normally
+        self._done = True
+        return NoLoopDecision()
+
+
+def extract_canonical_issue_ids(prefixed_ids: list[str]) -> list[str]:
+    """Extract original issue IDs from grader true_positive_ids (strips canon_tp_ prefix).
+
+    Args:
+        prefixed_ids: List of IDs like ["canon_tp_issue-001", "canon_tp_issue-002"]
+
+    Returns:
+        List of unprefixed IDs like ["issue-001", "issue-002"]
+    """
+    from adgn.props.ids import CANON_TP_PREFIX
+
+    return [id.replace(CANON_TP_PREFIX, "", 1) for id in prefixed_ids if id.startswith(CANON_TP_PREFIX)]
+
+
 # TODO(mpokorny): Bridge: accept (IssueCore, Occurrence) now; migrate to IssueDoc
 # (header + occurrences) and select a single occurrence here. Keep emitted JSON
 # header-only (no id) by design for model context hygiene; remove legacy Issue.

@@ -31,6 +31,15 @@ def _metrics_row(grade: GradeSubmitPayload, *, specimen: str | None = None) -> d
     return row
 
 
+def _issue_with_id_prefix(ri: ReportedIssue, prefix: str) -> ReportedIssue:
+    """Add a prefix to an issue ID (shared helper for grading)."""
+    nid = ri.id
+    new_id = ensure_with_prefix(nid, prefix)
+    # Fallback to original id if ensure_with_prefix returns None (should not happen for valid inputs)
+    rid = new_id if isinstance(new_id, str) else nid
+    return ReportedIssue(id=rid, rationale=ri.rationale, occurrences=list(ri.occurrences))
+
+
 async def grade_critic_output(
     specimen: str, critic_obj: CriticSubmitPayload, client: OpenAIModelProto, *, transcript_out_dir: Path
 ):
@@ -51,14 +60,6 @@ async def grade_critic_output(
         ReportedIssue(id=it.core.id, rationale=it.core.rationale, occurrences=list(it.instances))
         for it in rec.false_positives.values()
     ]
-
-    # Prefix IDs for grading context clarity (typed)
-    def _issue_with_id_prefix(ri: ReportedIssue, prefix: str) -> ReportedIssue:
-        nid = ri.id
-        new_id = ensure_with_prefix(nid, prefix)
-        # Fallback to original id if ensure_with_prefix returns None (should not happen for valid inputs)
-        rid = new_id if isinstance(new_id, str) else nid
-        return ReportedIssue(id=rid, rationale=ri.rationale, occurrences=list(ri.occurrences))
 
     canonical_prefixed = [_issue_with_id_prefix(ri, CANON_TP_PREFIX) for ri in canonical_ri]
     known_fp_prefixed = [_issue_with_id_prefix(ri, CANON_FP_PREFIX) for ri in known_fp_ri]

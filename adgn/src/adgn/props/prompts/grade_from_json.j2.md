@@ -3,6 +3,7 @@
 {% set read_only = true %}
 {% set include_reporting = false %}
 {% set include_tools = true %}
+{% set include_properties = false %}
 
 {% block title %}Grade (structured JSON){% endblock %}
 

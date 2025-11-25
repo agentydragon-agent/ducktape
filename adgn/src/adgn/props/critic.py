@@ -125,7 +125,7 @@ class AddOccurrenceInput(BaseModel):
     issue_id: IssueId
     file: Annotated[str, StringConstraints(pattern=r"^[^\n]+$")]
     ranges: Annotated[
-        list[RangeAtom], Field(min_items=1, description="List of single lines (int) or spans [start,end]")
+        list[RangeAtom], Field(min_length=1, description="List of single lines (int) or spans [start,end]")
     ]
 
     model_config = ConfigDict(extra="forbid")

@@ -35,7 +35,7 @@ from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic import CriticSubmitPayload, CriticSubmitState, attach_critic_submit
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grade_runner import _metrics_row, grade_critic_output
-from adgn.props.lint_issue import make_container_info_call, make_ls_workspace_call
+from adgn.props.lint_issue import BootstrapInspectHandler
 from adgn.props.prompts.util import build_scope_text, render_prompt_template
 from adgn.props.prop_utils import pkg_dir
 from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names
@@ -89,26 +89,7 @@ async def _run_critic_for_specimen(
         await wiring.attach(comp)
         await attach_critic_submit(comp, critic_state)
 
-        # Bootstrap handler: emit synthetic function_calls without sampling to inspect mounts
-        class BootstrapInspectHandler(BaseHandler):
-            def __init__(self) -> None:
-                self._done: bool = False
-                self._emitted: bool = False
-
-            def on_before_sample(self):
-                if self._done:
-                    return NoLoopDecision()
-                # First cycle: emit synthetic calls, but do NOT mark done yet
-                if not self._emitted:
-                    self._emitted = True
-                    calls = [make_container_info_call(wiring)]
-                    calls.append(make_ls_workspace_call(wiring))
-                    return Continue(RequireAny(), inserts_input=tuple(calls), skip_sampling=True)
-                # Second cycle: mark done and defer; subsequent cycles will continue normally
-                self._done = True
-                return NoLoopDecision()
-
-        bootstrap = BootstrapInspectHandler()
+        bootstrap = BootstrapInspectHandler(wiring)
 
         def _ready_state() -> bool:
             return (critic_state.result is not None) or (critic_state.error is not None)
@@ -162,7 +143,7 @@ def build_server(
     """Build a prompt_eval server that tracks rounds and writes under a fixed run dir.
 
     Layout (per server instance):
-    adgn_llm/properties/runs/prompt_optimize/<ts>/<round>/<specimen>/{critic,grader}/...
+    adgn/props/runs/prompt_optimize/<ts>/<round>/<specimen>/{critic,grader}/...
     """
     # Freeze base run dir at server construction (tests may inject a tmp dir)
     if run_dir_base is not None:

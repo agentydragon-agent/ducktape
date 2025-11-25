@@ -533,7 +533,7 @@ class SpecimenRecord:
                             filtered,
                             total,
                         )
-                    tf.extractall(mount_root, members=members)
+                    tf.extractall(mount_root, members=members, filter="data")
                     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
                         git_dirs = list((mount_root).rglob(".git"))
                         logger.debug("[specimen] post-extract .git dirs: %d", len(git_dirs))

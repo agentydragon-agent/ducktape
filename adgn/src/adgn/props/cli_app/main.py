@@ -68,6 +68,7 @@ from adgn.props.docker_env import (
 from adgn.props.eval_harness import run_all_evals
 from adgn.props.grade_runner import _metrics_row, grade_critic_output
 from adgn.props.grader import GradeMetrics, GradeSubmitPayload
+from adgn.props.per_file_eval import run_per_file_eval
 from adgn.props.lint_issue import run_specimen_lint_issue_async
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
 from adgn.props.prompt_eval.server import _run_critic_for_specimen, attach_prompt_eval
@@ -600,6 +601,102 @@ async def cmd_lint_issue(
 @async_run
 async def cmd_eval_all() -> None:
     await run_all_evals(model="gpt-5", gitconfig=None, client=build_client("gpt-5"))
+
+
+@app.command("per-file-eval")
+@async_run
+async def cmd_per_file_eval(
+    specimen: str = ARG_SPECIMEN,
+    preset: str | None = typer.Option(None, "--preset", help="Built-in prompt name for critic system prompt"),
+    prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True),  # noqa: B008
+    prompt_text: str | None = typer.Option(None, "--prompt-text", help="Inline critic system prompt"),
+    file: str | None = typer.Option(None, "--file", help="Limit evaluation to specific file (relative path in specimen)"),
+    out_dir: Path | None = OPT_OUTPUT_DIR,
+    gitconfig: Path | None = OPT_GITCONFIG,
+    model: str = OPT_MODEL,
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Display agent events on stdout"),
+) -> None:
+    """Run per-file recall evaluation on a specimen.
+
+    For each file containing single-file issues (or just --file if specified):
+    1. Run critic on that file
+    2. Grade critique against issues in that file
+    3. Aggregate detection results per issue
+
+    File evaluations run in parallel for faster execution.
+
+    Outputs structured JSON results plus summary metrics.
+    """
+    # Validate prompt source (at most one)
+    sources = [x is not None for x in (preset, prompt_file, prompt_text)]
+    if sum(sources) == 0:
+        preset = "max-recall-critic"  # Default for structured critic
+    elif sum(sources) > 1:
+        print("ERROR: Provide at most one of --preset, --prompt-file, or --prompt-text.")
+        raise typer.Exit(2)
+
+    # Resolve prompt content
+    if preset is not None:
+        system_prompt = _load_preset_text(preset)
+    elif prompt_file is not None:
+        system_prompt = prompt_file.read_text(encoding="utf-8")
+    else:
+        system_prompt = prompt_text or ""
+
+    # Compute output directory
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    root = out_dir if out_dir is not None else (pkg_dir() / "runs" / "per_file_eval" / f"{specimen}_{ts}")
+    root.mkdir(parents=True, exist_ok=True)
+
+    # Save prompt for reference
+    (root / "system_prompt.txt").write_text(system_prompt, encoding="utf-8")
+
+    git_path = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
+
+    print(f"[per-file-eval] Running on specimen: {specimen}")
+    if file:
+        print(f"[per-file-eval] Limiting to file: {file}")
+    print(f"[per-file-eval] Output directory: {root}")
+
+    result = await run_per_file_eval(
+        specimen=specimen,
+        system_prompt=system_prompt,
+        client=build_client(model),
+        out_dir=root,
+        gitconfig=git_path,
+        file_filter=file,
+        verbose=verbose,
+    )
+
+    # Persist full results as JSON
+    results_path = root / "results.json"
+    results_path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
+    print(f"[per-file-eval] Results saved to: {results_path}")
+
+    # Print summary metrics
+    console = Console()
+    console.print("\n[bold]Per-File Evaluation Results[/bold]")
+    console.print(f"Specimen: {result.specimen}")
+    console.print(f"\n[bold cyan]Overall Metrics:[/bold cyan]")
+    console.print(f"  Total issues (single-file): {result.metrics.total_issues}")
+    console.print(f"  Detected issues: {result.metrics.detected_issues}")
+    console.print(f"  Recall: {result.metrics.recall:.2%}")
+    console.print(f"  Files reviewed: {result.metrics.total_files_reviewed}")
+
+    if result.metrics.avg_file_precision is not None:
+        console.print(f"  Avg file precision: {result.metrics.avg_file_precision:.2%} [dim](may underestimate)[/dim]")
+    if result.metrics.avg_file_recall is not None:
+        console.print(f"  Avg file recall: {result.metrics.avg_file_recall:.2%}")
+
+    # Show per-issue breakdown
+    console.print(f"\n[bold cyan]Per-Issue Results:[/bold cyan]")
+    for issue_result in result.per_issue_results:
+        status = "[green]✓[/green]" if issue_result.detected else "[red]✗[/red]"
+        console.print(f"  {status} {issue_result.issue_id} (in {len(issue_result.files_containing_issue)} file(s))")
+        if issue_result.detected:
+            console.print(f"      Detected in: {', '.join(issue_result.files_that_detected)}")
+
+    console.print(f"\n[dim]Full results: {results_path}[/dim]")
 
 
 OPT_RUNBOOK_PATH = typer.Option(

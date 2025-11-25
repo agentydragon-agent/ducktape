@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
@@ -42,14 +42,14 @@ class TranscriptHandler(BaseHandler):
             raise FileExistsError(f"Transcript already exists: {self._events_path}")
         # Write a small metadata file once
         (self._root / "metadata.json").write_text(
-            json.dumps({"started": datetime.utcnow().isoformat() + "Z"}, indent=2), encoding="utf-8"
+            json.dumps({"started": datetime.now(timezone.utc).isoformat()}, indent=2), encoding="utf-8"
         )
 
     # ---- Event helpers ----
     def _write_event(self, evt: Any) -> None:
         rec = to_jsonl_record(evt)
         # Timestamped envelope (events.jsonl)
-        out = {"ts": datetime.utcnow().isoformat() + "Z", **rec}
+        out = {"ts": datetime.now(timezone.utc).isoformat(), **rec}
         with self._events_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(out, ensure_ascii=False) + "\n")
         # Compact transcript (transcript.jsonl)

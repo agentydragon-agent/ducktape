@@ -1,11 +1,12 @@
 # {% block title %}{% endblock %}
 
+{% if include_properties|default(true) %}
 ## Properties
 
 We have a set of formal properties that good code should meet, defined in Markdown.
 Identify them by their *filenames*: a property stored in `foo/bar.md` is named `bar`.
 
-Quote only what’s necessary (≤ ~15 lines) to support applicability or non‑applicability of a property.
+Quote only what's necessary (≤ ~15 lines) to support applicability or non‑applicability of a property.
 
 When unclear, prefer to not apply a property to an issue over stretching the definition.
 
@@ -16,21 +17,21 @@ Do not stretch, infer, or generalize beyond what the definition actually says.
 
 #### No domain/scope stretching:
 
-“Never assemble SQL by string concatenation” does not apply to string-building of JavaScript.
+"Never assemble SQL by string concatenation" does not apply to string-building of JavaScript.
 
 #### No location/direction mismatches
 
 Examples:
 - A rule about doing something in pyproject does not apply to analogous issues in module code.
-- “All dependencies must be declared in pyproject” is not “No declared dependencies may be unused.” These are different predicates.
+- "All dependencies must be declared in pyproject" is not "No declared dependencies may be unused." These are different predicates.
 
-#### No “similar-topic” generalization:
+#### No "similar-topic" generalization:
 
 A rule about signed integers for memory sizes does not apply to a general unsigned arithmetic overflow.
 That would require a different property.
 
-A rule saying “Lengths must be in meters” is not violated by a temperature in Fahrenheit.
-A broader wording like “All units must be SI” (or equivalent) would cover that — but only if that’s what the definition *actually says*.
+A rule saying "Lengths must be in meters" is not violated by a temperature in Fahrenheit.
+A broader wording like "All units must be SI" (or equivalent) would cover that — but only if that's what the definition *actually says*.
 
 #### Names vs definitions
 
@@ -43,7 +44,8 @@ Never call eval(api-input-string)
 ```
 
 This property *would not* be violated by `subprocess.call(api_input_string)` - it's *`subprocess.call`*, not `eval`.
-If the definition said “never call `eval` or analogous execution methods on user/api inputs”, then it would be violated.
+If the definition said "never call `eval` or analogous execution methods on user/api inputs", then it would be violated.
+{% endif %}
 
 ## Line anchors
 

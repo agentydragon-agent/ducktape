@@ -10,8 +10,8 @@ PropertyID = NewType("PropertyID", str)
 
 
 def pkg_dir() -> Path:
-    """Root directory of the adgn.llm/properties package resources."""
-    return Path(str(files("adgn.llm").joinpath("properties")))
+    """Root directory of this package resources."""
+    return Path(str(files(__package__)))
 
 
 def props_definitions_root() -> Path:
