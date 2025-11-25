@@ -25,6 +25,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **019**: Duplicate transcript files with nearly identical content (_events_path, _transcript_path)
 - **020**: Deprecated datetime.utcnow() usage (2 occurrences in TranscriptHandler)
 - **021**: Manual isinstance validation instead of Pydantic TypeAdapter (TokenMapping.reload)
+- **022**: Duplicated XDG user data directory path construction (user_data_dir calls in multiple places)
 
 ## Scope
 
