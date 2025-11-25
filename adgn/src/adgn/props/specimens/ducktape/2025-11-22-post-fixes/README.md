@@ -22,6 +22,8 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **016**: Logging configuration in backend function instead of main (generate_commit_message_minicodex)
 - **017**: Redundant "Default: no-op" comments in hook methods (BaseHandler, 6 occurrences)
 - **018**: Unnecessary no-op method overrides in NotificationsHandler (7 methods that just return None)
+- **019**: Duplicate transcript files with nearly identical content (_events_path, _transcript_path)
+- **020**: Deprecated datetime.utcnow() usage (2 occurrences in TranscriptHandler)
 
 ## Scope
 
