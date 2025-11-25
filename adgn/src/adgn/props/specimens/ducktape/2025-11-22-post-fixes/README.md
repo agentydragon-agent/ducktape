@@ -24,6 +24,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **018**: Unnecessary no-op method overrides in NotificationsHandler (7 methods that just return None)
 - **019**: Duplicate transcript files with nearly identical content (_events_path, _transcript_path)
 - **020**: Deprecated datetime.utcnow() usage (2 occurrences in TranscriptHandler)
+- **021**: Manual isinstance validation instead of Pydantic TypeAdapter (TokenMapping.reload)
 
 ## Scope
 
