@@ -15,7 +15,7 @@ I.issueOneOccurrence(
         return ("-a" in passthru) or ("--all" in passthru)
     ```
 
-    **Used in 7 locations:**
+    **Used in 8 locations for -a/--all:**
     - `diffstat()` (line 170)
     - `build_prompt()` (line 190)
     - CLI: `_build_amend_diff()` (line 128) - takes passthru instead of bool
@@ -23,12 +23,17 @@ I.issueOneOccurrence(
     - CLI: `_get_diff_to_commit()` (line 153)
     - CLI: `_stage_all_if_requested()` (line 524)
     - CLI: `prepare_commit_msg()` (line 698)
+    - editor_template: `build_commit_template()` (line 77) - parses -v/--verbose
 
-    **Similar pattern for --amend flag (cli.py, line 672):**
+    **Similar patterns for other flags:**
     ```python
+    # --amend (cli.py, line 672):
     is_amend = "--amend" in passthru
+
+    # -v/--verbose (editor_template.py, line 77):
+    include_verbose = ("-v" in passthru) or ("--verbose" in passthru)
     ```
-    This manual parsing should also be replaced with an explicit CLI argument.
+    All of these should be replaced with explicit CLI arguments.
 
     **Problems:**
 
@@ -82,6 +87,9 @@ I.issueOneOccurrence(
       [524, 524], // _stage_all_if_requested: using passthru
       [672, 672], // is_amend = "--amend" in passthru: inline flag parsing
       [698, 698], // prepare_commit_msg: using passthru
+    ],
+    'adgn/src/adgn/git_commit_ai/editor_template.py': [
+      [77, 77],   // include_verbose = ("-v" in passthru) or ("--verbose" in passthru)
     ],
   },
   gap_note= |||
