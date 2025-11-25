@@ -4,10 +4,11 @@ source:
   ref: refs/tags/specimen-2025-11-20-adgn
 scope:
   include:
-    - "adgn/src/adgn/agent/**/*.py"
+  - adgn/src/adgn/agent/**/*.py
 bundle:
   include:
-    - adgn/
-    - wt/
+  - adgn/
+  - wt/
   exclude:
-    - adgn/src/adgn/agent/web/
+  - adgn/src/adgn/agent/web/
+  - adgn/src/adgn/props/specimens/

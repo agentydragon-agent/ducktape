@@ -4,13 +4,15 @@ source:
   ref: refs/tags/specimen-2025-11-22-repo-2
 scope:
   include:
-    - "**/*.py"
-    - "**/*.md"
-    - "**/*.yaml"
-    - "**/*.yml"
-    - "**/*.ts"
-    - "**/*.tsx"
+  - '**/*.py'
+  - '**/*.md'
+  - '**/*.yaml'
+  - '**/*.yml'
+  - '**/*.ts'
+  - '**/*.tsx'
 bundle:
   include:
-    - adgn/
-    - wt/
+  - adgn/
+  - wt/
+  exclude:
+  - adgn/src/adgn/props/specimens/

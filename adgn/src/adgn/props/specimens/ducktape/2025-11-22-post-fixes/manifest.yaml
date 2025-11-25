@@ -4,7 +4,9 @@ source:
   ref: refs/tags/specimen-2025-11-22-post-fixes
 scope:
   include:
-    - "adgn/**/*.py"
+  - adgn/**/*.py
 bundle:
   include:
-    - adgn/
+  - adgn/
+  exclude:
+  - adgn/src/adgn/props/specimens/
