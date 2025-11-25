@@ -38,6 +38,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **032**: Misleading comment and dead parameters (shim.py dependency-free comment, attach_default_servers unused params, build_handlers unused params)
 - **033**: Leaking environment variable handling into downstream components (infrastructure.py manually reads ADGN_AGENT_PRESETS_DIR, discover_presets should handle it)
 - **034**: LocalAgentRuntime lifecycle confusion and may-be-initialized antipattern (missing type annotations, incomplete close(), nullable fields, not a context manager)
+- **035**: Dead WebSocket code and outdated documentation (registry.py "WebSocket connection manager", fields set after init, ConnectionManager dead methods)
 
 ## Scope
 
