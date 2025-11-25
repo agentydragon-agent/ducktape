@@ -63,31 +63,7 @@ I.issueOneOccurrence(
 
     **What should be done:**
 
-    Replace global approval policy URIs with agent-scoped URIs:
-
-    **Before:**
-    ```python
-    APPROVAL_POLICY_RESOURCE_URI = "resource://approval-policy/policy.py"
-    APPROVAL_POLICY_PROPOSALS_INDEX_URI = "resource://approval-policy/proposals"
-
-    def policy_proposal(proposal_id: str) -> str:
-        return f"resource://approval-policy/proposals/{proposal_id}"
-    ```
-
-    **After:**
-    ```python
-    def approval_policy(agent_id: AgentID) -> str:
-        """Resource URI for active approval policy."""
-        return f"resource://agents/{agent_id}/approval-policy/policy.py"
-
-    def approval_policy_proposals_index(agent_id: AgentID) -> str:
-        """Resource URI for approval policy proposals index."""
-        return f"resource://agents/{agent_id}/approval-policy/proposals"
-
-    def approval_policy_proposal(agent_id: AgentID, proposal_id: str) -> str:
-        """Resource URI for a specific approval policy proposal."""
-        return f"resource://agents/{agent_id}/approval-policy/proposals/{proposal_id}"
-    ```
+    Replace global approval policy URIs with agent-scoped URIs following the pattern `resource://agents/{agent_id}/approval-policy/...` used by other agent resources. Convert constants to functions taking `agent_id`.
 
     **Update sites:**
     - Constants definition in `mcp/_shared/constants.py` (lines 47-48)

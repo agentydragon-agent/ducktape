@@ -4,45 +4,7 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueOneOccurrence(
   rationale=|||
-    The `abort_run` function is a trivial alias for `abort_agent` that adds no value. It should
-    be deleted. The verbose docstring makes the function appear more substantial than it is.
-
-    **Current code (lines 672-689):**
-    ```python
-    @server.tool()
-    async def abort_run(agent_id: AgentID) -> SimpleOk:
-        """Abort a running agent (alias for abort_agent).
-
-        Requests immediate termination of the agent's active loop.
-        This is a semantic alias for abort_agent that returns SimpleOk for consistency.
-
-        Args:
-            agent_id: The target agent ID.
-
-        Returns:
-            SimpleOk indicating successful abort request.
-
-        Raises:
-            ValueError: If agent is not local or has no agent loop.
-        """
-        await abort_agent(agent_id)
-        return SimpleOk(ok=True)
-    ```
-
-    **What abort_agent looks like (lines 642-651):**
-    ```python
-    @server.tool()
-    async def abort_agent(agent_id: AgentID) -> None:
-        """Raises ValueError if agent is not local or has no agent loop."""
-        if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
-            raise ValueError(f"Agent {agent_id} is not a local agent (cannot abort)")
-
-        local_runtime = registry.get_local_runtime(agent_id)
-        if local_runtime is None or local_runtime.agent is None:
-            raise ValueError(f"Agent {agent_id} has no agent loop")
-
-        await local_runtime.agent.abort()
-    ```
+    The `abort_run` function (lines 672-689) is a trivial alias that wraps `abort_agent` (lines 642-651), adding only a `SimpleOk` return value. It should be deleted. The 15-line docstring makes the function appear more substantial than the 2-line implementation.
 
     **Why this is problematic:**
 
@@ -74,24 +36,7 @@ I.issueOneOccurrence(
 
     **Recommended fix:**
 
-    Delete the entire `abort_run` function:
-
-    ```python
-    # DELETE lines 672-689
-    ```
-
-    Callers should use `abort_agent` directly:
-
-    ```python
-    # Before:
-    result = await abort_run(agent_id)
-
-    # After:
-    await abort_agent(agent_id)
-    # Or if SimpleOk is needed:
-    await abort_agent(agent_id)
-    return SimpleOk(ok=True)
-    ```
+    Delete lines 672-689 entirely. Callers should use `abort_agent` directly and wrap in `SimpleOk` at the call site if needed.
 
     **Benefits:**
     - Simpler API with one clear way to abort

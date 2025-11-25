@@ -8,71 +8,12 @@ I.issueOneOccurrence(
     instead of SQLAlchemy ORM, making it inconsistent with the rest of the persistence layer.
 
     **Current state:**
-    The ChatStorePersisted class (lines 171-283) uses raw SQL queries via `self._persistence._open()`:
-
-    **Line 182-189 (last_id_async):**
-    ```python
-    async with (
-        self._persistence._open() as db,
-        db.execute("SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?", (self._agent,)) as cur,
-    ):
-        if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
-            return str(val)
-        return None
-    ```
-
-    **Line 191-200 (get_last_read_async):**
-    ```python
-    async with (
-        self._persistence._open() as db,
-        db.execute(
-            "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
-        ) as cur,
-    ):
-        if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
-            return str(val)
-        return None
-    ```
-
-    **Line 202-213 (append):**
-    ```python
-    async with self._persistence._open() as db:
-        cur = await db.execute(
-            "INSERT INTO chat_messages (agent_id, ts, author, mime, content) VALUES (?, ?, ?, ?, ?)",
-            (self._agent, ts, author.value, mime, content),
-        )
-        await db.commit()
-        new_id = str(cur.lastrowid)
-    ```
-
-    **Line 215-229 (get_message_async):**
-    ```python
-    async with (
-        self._persistence._open() as db,
-        db.execute(
-            "SELECT id, ts, author, mime, content FROM chat_messages WHERE agent_id = ? AND id = ?",
-            (self._agent, seq),
-        ) as cur,
-    ):
-        if not (row := await cur.fetchone()):
-            return None
-        return _row_to_message(row)
-    ```
-
-    **Line 237-283 (read_pending_and_advance):**
-    ```python
-    # Multiple raw SQL queries with manual transaction handling
-    async with (
-        self._persistence._open() as db,
-        db.execute(
-            "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
-        ) as cur,
-    ):
-        r = await cur.fetchone()
-        after_seq = r["last_id"] if r else None
-
-    # ... more raw SQL queries for fetching messages and updating last_read
-    ```
+    The ChatStorePersisted class (lines 171-283) uses raw aiosqlite queries via `self._persistence._open()` instead of SQLAlchemy ORM:
+    - `last_id_async` (lines 182-189): raw SELECT MAX query
+    - `get_last_read_async` (lines 191-200): raw SELECT with agent_id + server_name filter
+    - `append` (lines 202-213): raw INSERT returning lastrowid
+    - `get_message_async` (lines 215-229): raw SELECT by id with manual row conversion
+    - `read_pending_and_advance` (lines 237-283): multiple raw queries with manual transaction handling
 
     **Why this is problematic:**
 
@@ -100,91 +41,11 @@ I.issueOneOccurrence(
 
     **Recommended fix:**
 
-    Refactor ChatStorePersisted to use SQLAlchemy ORM:
-
-    **Example - last_id_async:**
-    ```python
-    async def last_id_async(self) -> str | None:
-        async with self._persistence._session() as session:
-            from sqlalchemy import select, func
-            from adgn.agent.persist.models import ChatMessage
-
-            result = await session.execute(
-                select(func.max(ChatMessage.id)).where(ChatMessage.agent_id == self._agent)
-            )
-            max_id = result.scalar_one_or_none()
-            return str(max_id) if max_id is not None else None
-    ```
-
-    **Example - get_last_read_async:**
-    ```python
-    async def get_last_read_async(self, server_name: str) -> str | None:
-        async with self._persistence._session() as session:
-            from sqlalchemy import select
-            from adgn.agent.persist.models import ChatLastRead
-
-            result = await session.execute(
-                select(ChatLastRead.last_id).where(
-                    ChatLastRead.agent_id == self._agent,
-                    ChatLastRead.server_name == server_name
-                )
-            )
-            last_id = result.scalar_one_or_none()
-            return str(last_id) if last_id is not None else None
-    ```
-
-    **Example - append:**
-    ```python
-    async def append(self, *, author: ChatAuthor, mime: str, content: str) -> str:
-        from adgn.agent.persist.models import ChatMessage
-
-        async with self._persistence._session() as session:
-            msg = ChatMessage(
-                agent_id=self._agent,
-                timestamp=datetime.now(UTC),
-                author=author,
-                mime=mime,
-                content=content
-            )
-            session.add(msg)
-            await session.commit()
-            await session.refresh(msg)
-            new_id = str(msg.id)
-
-        await self._notify_other_head(author=author)
-        return new_id
-    ```
-
-    **Example - get_message_async:**
-    ```python
-    async def get_message_async(self, msg_id: str) -> ChatMessage | None:
-        from adgn.agent.persist.models import ChatMessage as ChatMessageModel
-
-        try:
-            seq = int(msg_id)
-        except (TypeError, ValueError):
-            return None
-
-        async with self._persistence._session() as session:
-            result = await session.execute(
-                select(ChatMessageModel).where(
-                    ChatMessageModel.agent_id == self._agent,
-                    ChatMessageModel.id == seq
-                )
-            )
-            msg_model = result.scalar_one_or_none()
-            if not msg_model:
-                return None
-
-            # Convert ORM model to Pydantic ChatMessage
-            return ChatMessage(
-                id=str(msg_model.id),
-                ts=msg_model.timestamp.isoformat(),
-                author=ChatAuthor(msg_model.author),
-                mime=msg_model.mime,
-                content=msg_model.content
-            )
-    ```
+    Refactor ChatStorePersisted to use SQLAlchemy ORM with `self._persistence._session()`:
+    - Use `select(func.max(ChatMessage.id))` for `last_id_async`
+    - Use `select(ChatLastRead.last_id)` with filters for `get_last_read_async`
+    - Create ORM model instances for `append`, call `session.add()` and `commit()`
+    - Use `select(ChatMessageModel)` for `get_message_async`, then convert ORM object to Pydantic ChatMessage
 
     **Benefits:**
     - Consistent with rest of codebase (follows established patterns)
