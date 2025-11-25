@@ -49,22 +49,41 @@ Each `.libsonnet` file contains:
 
 **Do NOT duplicate this information in README.md or other files.**
 
-### 2. README.md: Brief Overview Only
+### 2. README.md: Cross-Cutting Information Only
 
-README.md should contain:
-- **Purpose**: 1-2 sentence specimen description
-- **Issues**: Bullet list with issue numbers and one-line summaries
-  - Format: `- **NNN**: Brief title (affected symbol/file)`
-  - Example: `- **001**: Normalization function for type that cannot occur (_normalize_call_arguments)`
-- **Scope**: High-level scope description
-- **Reference line**: "See `issues/*.libsonnet` for detailed rationale, properties violated, and file locations."
+**Specimens should NOT have READMEs that restate/summarize issues.**
+
+If a README exists, it should ONLY contain:
+- **Cross-cutting context** not present in individual issue files
+- **Scope/inclusion criteria**: What code was analyzed, what was excluded
+- **Patterns across issues**: High-level themes linking multiple issues
+- **Specimen-specific setup**: Special tags, branches, or analysis methods
+- **Reference line**: "See `issues/*.libsonnet` for issue details."
 
 **Do NOT include**:
-- Full rationale or problem explanations
-- Code snippets or examples
-- Properties violated lists
-- "Correct behavior" sections
-- Detailed analysis
+- Issue list with one-line summaries (redundant with issue files)
+- Full rationale or problem explanations (belongs in libsonnet)
+- Code snippets or examples (belongs in libsonnet)
+- Properties violated lists (belongs in libsonnet)
+- "Correct behavior" sections (belongs in libsonnet)
+- Detailed analysis (belongs in libsonnet)
+
+**When to have NO README:**
+- If specimen has no cross-cutting context, skip README entirely
+- Issue files are the documentation - README adds no value
+
+**Example of useful README content:**
+```markdown
+# Specimen: post-refactor-analysis
+
+Analyzed after refactoring MCP compositor to 2-level architecture.
+Focuses on inconsistencies between new architecture and legacy code.
+
+Scope: `adgn/src/adgn/agent/` and `adgn/src/adgn/mcp/` only.
+Excluded: third-party integrations (not yet migrated).
+
+See `issues/*.libsonnet` for issue details.
+```
 
 ### 3. Jsonnet Issue File Template
 
