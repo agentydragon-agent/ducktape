@@ -36,6 +36,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **030**: Inconsistent policy evaluation API layers and dict middle ground (input_payload: dict, runner.py/container.py split, manual Pydantic→dict conversion)
 - **031**: Redundant variables and manual JSON parsing in runner.py (client rename, inline cmd/env, model_validate_json, splitlines[-1] constraint)
 - **032**: Misleading comment and dead parameters (shim.py dependency-free comment, attach_default_servers unused params, build_handlers unused params)
+- **033**: Leaking environment variable handling into downstream components (infrastructure.py manually reads ADGN_AGENT_PRESETS_DIR, discover_presets should handle it)
 
 ## Scope
 
