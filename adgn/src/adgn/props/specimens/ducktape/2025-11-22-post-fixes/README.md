@@ -28,6 +28,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **022**: Duplicated XDG user data directory path construction (user_data_dir calls in multiple places)
 - **023**: Unmounted resource URIs in resources.py (agent_state, agent_snapshot, agent_mcp_state, 10 unused helpers)
 - **024**: Duplicated agent info construction and thin wrapper methods (list_agents, get_agent_info, get_infrastructure, get_agent_mode, get_local_runtime)
+- **025**: Redundant PolicyErrorCode enum duplicating PolicyErrorStage (READ_ERROR vs READ, PARSE_ERROR vs PARSE)
 
 ## Scope
 
