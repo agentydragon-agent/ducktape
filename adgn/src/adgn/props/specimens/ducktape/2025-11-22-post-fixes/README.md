@@ -46,6 +46,8 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **040**: Empty dedent string creates useless constant (system_message.py _APPROVALS_AND_TOOLS = dedent("").strip())
 - **041**: Swallowed errors in catch blocks without logging or user feedback (agents/stores.ts, channels.ts, prefs.ts, token.ts, markdown.ts, schema.ts)
 - **042**: Repeated type casting to any instead of using typed content models (ToolExec.svelte and ToolJson.svelte use (item.content as any) instead of ExecContent/JsonContent)
+- **043**: applyPresetFrom thin wrapper should inline at call site (ServersPanel.svelte single-use function, should use schema copying from Python)
+- **044**: MessageComposer creates second MCP client instead of using shared client (creates new client per message instead of reusing shared compositor connection)
 
 ## Scope
 
