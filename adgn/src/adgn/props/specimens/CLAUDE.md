@@ -70,6 +70,15 @@ README.md should contain:
 
 **IMPORTANT**: Keep comments MINIMAL. Use only a one-line title comment. All details belong in the structured fields (`rationale`, `properties`, `filesToRanges`).
 
+**IMPORTANT**: Do NOT include long code blocks in rationale. Readers have specimen code open - cite file paths and line ranges, briefly summarize what's there. Long code citations bloat issue files unnecessarily.
+
+**Code citation guidelines:**
+- ✅ Brief summary: "Button styles duplicated across 6 components (AgentsSidebar lines 355-360, GlobalApprovalsList lines 118-146, etc.)"
+- ✅ Short example (3-5 lines) when illustrating pattern: "Pattern: `.btn-primary { background: ...; color: ...; }`"
+- ❌ Long blocks (10+ lines) copied from source
+- ❌ Multiple large code blocks showing variations
+- Assume reader can look up exact code at cited lines
+
 ```jsonnet
 local I = import '../../specimens/lib.libsonnet';
 
@@ -80,8 +89,9 @@ I.issueOneOccurrence(
     Full explanation of the problem.
 
     Why it's wrong and what the correct approach should be.
-    Include specific details, code patterns, and reasoning.
+    Cite file:line ranges, briefly summarize patterns.
 
+    Do NOT paste long code blocks - reader has specimen open.
     All context, properties violated, fix recommendations go HERE,
     not in top-of-file comment blocks.
   |||,
