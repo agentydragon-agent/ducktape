@@ -34,9 +34,9 @@ log-dns-details=yes
 secondary=yes
 secondary-check-signature-freshness=yes
 axfr-fetch-timeout=30
-# Secondary check interval - how often to check SOA records for updates
+# XFR cycle interval - how often secondaries check SOA for updates (default: 60)
 # Combined with cluster's SOA refresh=300s, enables ~5 minute DNS propagation
-secondary-check-interval=60
+xfr-cycle-interval=60
 {% if powerdns_allow_notify_from is defined %}
 # Allow NOTIFY from specified networks
 allow-notify-from={{ powerdns_allow_notify_from }}
