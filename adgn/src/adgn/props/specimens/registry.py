@@ -324,9 +324,19 @@ def ensure_archive_for_specimen_slug(
     manifest_path: Path,
     gitconfig: Path | None,
 ) -> Path:
+    """Ensure a cached archive exists for the specimen.
+
+    The slug is computed from the manifest path as repo/name.
+    Cache is stored at ~/.cache/adgn-llm/specimens/{repo}/{name}.tar.gz
+    """
     gitconfig = gitconfig or _default_gitconfig()
-    slug = manifest_path.parent.name
-    out = _xdg_cache_base() / "by-slug" / f"{slug}.tar.gz"
+    # Extract hierarchical slug from path: specimens/{repo}/{name}/manifest.yaml -> repo/name
+    specimen_dir = manifest_path.parent
+    repo_name = specimen_dir.parent.name
+    specimen_name = specimen_dir.name
+    slug = f"{repo_name}/{specimen_name}"
+    # Cache hierarchically: ~/.cache/adgn-llm/specimens/{repo}/{name}.tar.gz
+    out = _xdg_cache_base() / repo_name / f"{specimen_name}.tar.gz"
     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
         logger.debug("[specimen] ensure_archive_for_specimen_slug slug=%s out=%s", slug, out)
     if out.exists():
@@ -415,9 +425,24 @@ def resolve_source_root(
 
 
 def list_specimen_names(base: Path) -> list[str]:
-    return sorted(
-        p.name for p in base.iterdir() if p.is_dir() and (p / "manifest.yaml").exists()
-    )
+    """List all specimen names in hierarchical format (repo/name).
+
+    Specimens are organized as:
+      specimens/
+        {repo}/
+          {name}/
+            manifest.yaml
+
+    Returns specimen IDs like "ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"
+    """
+    names = []
+    for repo_dir in base.iterdir():
+        if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
+            continue
+        for specimen_dir in repo_dir.iterdir():
+            if specimen_dir.is_dir() and (specimen_dir / "manifest.yaml").exists():
+                names.append(f"{repo_dir.name}/{specimen_dir.name}")
+    return sorted(names)
 
 
 def find_specimens_base() -> Path:
@@ -435,6 +460,15 @@ def find_specimens_base() -> Path:
 
 
 def resolve_manifest_arg(arg: str | None, base: Path | None = None) -> Path | None:
+    """Resolve a specimen identifier or path to its manifest.yaml.
+
+    Args:
+        arg: Specimen ID like "ducktape/2025-11-20-adgn" or filesystem path
+        base: Specimens base directory (defaults to find_specimens_base())
+
+    Returns:
+        Path to manifest.yaml or None if not found
+    """
     if arg is None:
         return None
     path = Path(arg)
@@ -444,12 +478,14 @@ def resolve_manifest_arg(arg: str | None, base: Path | None = None) -> Path | No
             return yaml_cand if yaml_cand.exists() else None
         return path if path.suffix.lower() in {".yaml", ".yml"} else None
     base_dir = base or find_specimens_base()
-    yaml_cand = base_dir / arg / "manifest.yaml"
+    # Try direct hierarchical path (repo/name)
+    yaml_cand = base_dir / arg.replace("/", os.sep) / "manifest.yaml"
     if yaml_cand.exists():
         return yaml_cand
+    # Try prefix matching for convenience
     matches = [n for n in list_specimen_names(base_dir) if n.startswith(arg)]
     if len(matches) == 1:
-        mdir = base_dir / matches[0]
+        mdir = base_dir / matches[0].replace("/", os.sep)
         return (mdir / "manifest.yaml") if (mdir / "manifest.yaml").exists() else None
     return None
 
@@ -547,8 +583,9 @@ class SpecimenRegistry:
         slug: str,
         base: Path | None = None,
     ) -> tuple[SpecimenRecord, list[str]]:
+        """Load a specimen by hierarchical ID (e.g., 'ducktape/2025-11-20-adgn')."""
         base_dir = base or find_specimens_base()
-        manifest_path = (base_dir / slug / "manifest.yaml").resolve()
+        manifest_path = (base_dir / slug.replace("/", os.sep) / "manifest.yaml").resolve()
         raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise SystemExit(f"Manifest must be a mapping: {manifest_path}")

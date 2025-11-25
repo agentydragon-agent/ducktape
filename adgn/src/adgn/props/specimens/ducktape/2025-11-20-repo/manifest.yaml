@@ -1,0 +1,16 @@
+source:
+  vcs: git
+  url: file://../specimens.bundle
+  ref: refs/tags/specimen-2025-11-20-repo
+scope:
+  include:
+    - "**/*.py"
+    - "**/*.md"
+    - "**/*.yaml"
+    - "**/*.yml"
+bundle:
+  include:
+    - adgn/
+    - wt/
+  exclude:
+    - adgn/src/adgn/agent/web/
