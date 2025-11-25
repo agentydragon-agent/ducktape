@@ -2,7 +2,9 @@ You are optimizing a code critic prompt.
 
 ## Goal
 
-Your PRIMARY objective is **VALIDATION RECALL**. Maximize the number of real issues caught on the validation split.
+Given your budget, produce the best critic prompt you can. **Your success metric is validation recall** - maximize the number of real issues caught on the validation split.
+
+Build on existing results in `/artifacts/prompt_evals/` to accelerate improvement and conserve budget. Learn from what worked (and didn't work) in previous runs.
 
 Precision is secondary (and may appear artificially low due to incomplete labeling).
 
@@ -74,28 +76,31 @@ You can read past evaluation results, specimen code, and ground truth from the c
   - Compare these to what the critic reported to identify gaps
 - Your working directory: `/workspace/` (read-write)
 
-## Strategy
+## Approach Guidance
 
-1. **Your success metric:** validation recall (`valid_recall` from `eval_split(split="valid")`)
-   - Train metrics are for debugging only, not optimization targets
-   - Use train to understand failure patterns, then verify improvements generalize to validation
+**Budget management:**
+- You have limited budget - spend it wisely
+- Explore existing results in `/artifacts/prompt_evals/` first to learn from past runs
+- Use cheap tools (eval_file, eval_specimen) for experimentation
+- Run expensive eval_split only when you have a promising candidate
 
-2. Analyze train failures:
-   - Read past evaluation results from /artifacts/prompt_evals
-   - Look at which issues were missed
-   - Identify patterns in failures
-   - Use train as a laboratory to test hypotheses
+**Learning from past work:**
+- Check `/artifacts/prompt_evals/eval_<timestamp>/` directories for previous runs
+- Compare validation metrics across runs to find the best baseline
+- Read the best prompt from `prompt.txt` and understand what made it effective
+- Analyze failure patterns from train results to identify improvement opportunities
 
-3. Iterate on the prompt:
-   - Write prompts to local files in your session directory
-   - Focus on improving **validation recall** (catching more real issues)
-   - Always verify changes with `eval_split(split="valid")` before considering them successful
-   - Don't overfit to train specimen specifics
+**Iteration strategy:**
+- Write prompts to `/workspace/` (e.g., `/workspace/prompts/v1.txt`)
+- Test hypotheses cheaply on train specimens first
+- Verify improvements on validation before considering them successful
+- Avoid overfitting to train specifics - generalization to validation is what matters
 
-4. Precision caveats:
-   - Specimens have incomplete labeling
-   - False positives may be unlabeled real issues
-   - Focus on recall; precision is less reliable
+**Metrics interpretation:**
+- **Validation recall** is your optimization target
+- Train recall is for debugging only, not the goal
+- Precision may be misleadingly low due to incomplete labeling
+- Unknown detections might be real issues that weren't labeled
 
 ## Output Format
 
