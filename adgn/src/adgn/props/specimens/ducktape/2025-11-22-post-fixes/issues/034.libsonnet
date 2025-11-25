@@ -18,12 +18,7 @@ I.issueOneOccurrence(
     def __init__(
         self,
         running: RunningInfrastructure,
-        model: str,
-        client_factory: Callable[[str], OpenAIModelProto],
-        system_override: str | None = None,
-        reasoning_effort: ReasoningEffort | None = None,
-        reasoning_summary: ReasoningSummary | None = None,
-        parallel_tool_calls: bool = True,
+        ...,
         extra_handlers: Iterable[BaseHandler] = (),
         ui_bus=None,                    # ← No type annotation
         connection_manager=None,        # ← No type annotation
@@ -39,14 +34,7 @@ I.issueOneOccurrence(
 
     def __init__(
         self,
-        running: RunningInfrastructure,
-        model: str,
-        client_factory: Callable[[str], OpenAIModelProto],
-        system_override: str | None = None,
-        reasoning_effort: ReasoningEffort | None = None,
-        reasoning_summary: ReasoningSummary | None = None,
-        parallel_tool_calls: bool = True,
-        extra_handlers: Iterable[BaseHandler] = (),
+        ...,
         ui_bus: ServerBus | None = None,
         connection_manager: ConnectionManager | None = None,
     ):

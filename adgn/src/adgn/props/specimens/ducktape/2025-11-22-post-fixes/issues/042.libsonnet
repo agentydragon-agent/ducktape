@@ -16,15 +16,7 @@ I.issueOneOccurrence(
       {#if item.content && (item.content as any).cmd}
         <pre class="term-line">$ {(item.content as any).cmd}</pre>
       {/if}
-      {#if item.content && (item.content as any).stdout}
-        <pre class="term-stdout">{(item.content as any).stdout}</pre>
-      {/if}
-      {#if item.content && (item.content as any).stderr}
-        <pre class="term-stderr">{(item.content as any).stderr}</pre>
-      {/if}
-      {#if item.content && (item.content as any).exit_code !== null && (item.content as any).exit_code !== undefined}
-        <div class="term-exit">[exit {(item.content as any).exit_code}]</div>
-      {/if}
+      ... same if-pattern repeated N times ...
       {#if item.content && (item.content as any).is_error}
         <div class="term-error">[error]</div>
       {/if}
