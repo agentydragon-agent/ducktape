@@ -85,7 +85,59 @@ Excluded: third-party integrations (not yet migrated).
 See `issues/*.libsonnet` for issue details.
 ```
 
-### 3. Jsonnet Issue File Template
+### 3. Issue Organization: Logical Problems, Not Locations
+
+**CRITICAL PRINCIPLE: Group by LOGICAL ISSUE, not by location.**
+
+Each issue file should describe ONE logical problem type, which may occur in multiple locations:
+
+**✅ CORRECT - One logical issue:**
+- "Trivial alias functions that should be inlined" → lists 5 occurrences across different files
+- "Imports not at top of file" → lists 8 occurrences in different components
+- "Dead code that should be removed" → lists all unused functions
+- "Manual JSON parsing without validation" → lists all `JSON.parse()` without schema checks
+
+**❌ WRONG - One location:**
+- "Problems in ServersPanel.svelte" → mixing thin wrappers + manual parsing + duplicate styles
+- "Issues in app.py lines 100-200" → mixing type annotations + dead code + useless comments
+
+**Issue organization rules:**
+1. **One logical problem** = one issue file (may have N occurrences)
+2. **Multiple problems in one location** = separate issue files (one per problem type)
+3. **Same problem across locations** = single issue with multiple occurrences
+4. **Different problems** = separate issues even if in adjacent lines
+
+**Examples of logical problem groupings:**
+- Code duplication (same pattern repeated)
+- Type safety violations (missing annotations, `as any` casts)
+- Dead code (unused imports, unreachable functions)
+- Architectural violations (bypassing abstraction layers)
+- Missing error handling (swallowed exceptions)
+- Useless comments (historical notes, obvious statements)
+- Naming violations (inconsistent, misleading names)
+
+**When splitting issues:**
+- If a location has 3 problems → create 3 separate issues
+- Each issue describes ONE problem type across ALL its occurrences
+- Don't create "ServersPanel issues" - create "thin wrapper issues" that happen to include ServersPanel
+
+### 4. Objectivity in Issue Descriptions
+
+**Avoid subjective phrasing** - describe problems objectively:
+
+**❌ Wrong:**
+- "User mentioned 'pretty mechanism for parsing Pydantic models'"
+- "This is a nice pattern"
+- "Would be better to..."
+
+**✅ Correct:**
+- "Manual `isinstance()` validation instead of Pydantic `TypeAdapter`"
+- "This pattern duplicates validation logic"
+- "Use `TypeAdapter` for automatic validation"
+
+Present facts and technical rationale, not opinions or attributed suggestions.
+
+### 5. Jsonnet Issue File Template
 
 **IMPORTANT**: Keep comments MINIMAL. Use only a one-line title comment. All details belong in the structured fields (`rationale`, `properties`, `filesToRanges`).
 
