@@ -29,6 +29,7 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 - **023**: Unmounted resource URIs in resources.py (agent_state, agent_snapshot, agent_mcp_state, 10 unused helpers)
 - **024**: Duplicated agent info construction and thin wrapper methods (list_agents, get_agent_info, get_infrastructure, get_agent_mode, get_local_runtime)
 - **025**: Redundant PolicyErrorCode enum duplicating PolicyErrorStage (READ_ERROR vs READ, PARSE_ERROR vs PARSE)
+- **026**: Duplicated notification data and redundant data structures (NotificationsBatch stores raw+parsed, NotificationsForModel duplicates NotificationsBatch)
 
 ## Scope
 
