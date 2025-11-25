@@ -154,88 +154,12 @@ I.issueOneOccurrence(
 
     **Workflow for Pydantic → Zod:**
 
-    A type generator script already exists (see commit 7c6cae7ad on branch
-    `claude/review-frontend-http-audit-...`): `adgn/scripts/generate_types.py`
+    The existing `adgn/scripts/generate_types.py` (commit 7c6cae7ad) generates TypeScript
+    interfaces from Pydantic models. To add Zod support, extend it to also generate Zod
+    schemas using `json-schema-to-zod` from the same JSON Schema output.
 
-    This script generates TypeScript interfaces from Pydantic models. To also generate
-    Zod schemas, the script would need extension:
-
-    1. Current: Pydantic → JSON Schema → TypeScript interfaces
-    2. Needed: Pydantic → JSON Schema → TypeScript interfaces + Zod schemas
-
-    Tools for Zod generation:
-    - `json-schema-to-zod` (npm package)
-    - Extend `generate_types.py` to also output Zod schemas
-
-    Usage (after Zod support added):
-    ```typescript
-    import { ToolCallSchema } from '../generated/schemas'
-    const toolCall = ToolCallSchema.parse(data)
-    ```
-
-    **Example: Comprehensive parsing with Zod**
-
-    ```typescript
-    import { z } from 'zod'
-
-    // Generated from backend Pydantic models
-    const ToolCallSchema = z.object({
-      name: z.string(),
-      call_id: z.string(),
-      args_json: z.string().nullable().optional()
-    })
-
-    const ApprovalBlockSchema = z.object({
-      agent_id: z.string(),
-      tool_call: ToolCallSchema,
-      timestamp: z.string().datetime()
-    })
-
-    type ApprovalBlock = z.infer<typeof ApprovalBlockSchema>
-
-    function parseApprovalSafely(text: string): ApprovalBlock | null {
-      try {
-        const json = JSON.parse(text)
-        return ApprovalBlockSchema.parse(json)
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          console.error('Approval validation failed:', {
-            issues: error.issues,
-            data: text
-          })
-        } else if (error instanceof SyntaxError) {
-          console.error('Invalid JSON:', text)
-        } else {
-          console.error('Unexpected error:', error)
-        }
-        return null
-      }
-    }
-
-    // Usage:
-    const approval = parseApprovalSafely(block.text)
-    if (approval) {
-      parsedApprovals.push(approval)
-    } else {
-      // Handle invalid data explicitly
-      metrics.increment('approvals.parse_error')
-    }
-    ```
-
-    **Why manual parsing happened:**
-
-    1. Pydantic models existed in backend
-    2. Frontend types manually created (duplicating structure)
-    3. No automated Pydantic → TypeScript/Zod generation
-    4. Quick fix: manual `JSON.parse()` instead of proper validation
-
-    **Migration steps:**
-
-    1. Set up Pydantic → JSON Schema export
-    2. Generate Zod schemas from JSON Schema
-    3. Replace manual parsing with Zod validation
-    4. Add error handling for validation failures
-    5. Consider metrics/logging for parse errors
+    Then use `ToolCallSchema.parse(data)` instead of manual `JSON.parse()` to get
+    runtime validation with detailed error messages.
   |||,
   properties=['use-platform-primitives', 'schema-validation', 'avoid-manual-parsing', 'type-safe-apis'],
   filesToRanges={

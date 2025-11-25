@@ -32,179 +32,26 @@ I.issueOneOccurrence(
     5. **No autocomplete**: IDE can't suggest available fields
     6. **Types already exist**: `ExecContent` and `JsonContent` are already defined in `types.ts`
 
-    **Types already exist (types.ts):**
-    ```typescript
-    export type ExecContent = {
-      content_kind: 'Exec'
-      cmd?: string | null
-      args?: unknown | null
-      stdout?: string | null
-      stderr?: string | null
-      exit_code?: number | null
-      is_error?: boolean | null
-    }
+    **Types already exist in types.ts:**
 
-    export type JsonContent = {
-      content_kind: 'Json'
-      args?: unknown | null
-      result?: unknown | null
-      is_error?: boolean | null
-    }
-
-    export type ToolContent = ExecContent | JsonContent
-
-    export type ToolItem = {
-      kind: 'Tool'
-      id: string
-      ts: string
-      tool: string
-      call_id: string
-      decision?: ApprovalKind | null
-      content: ToolContent
-    }
-    ```
+    See `types.ts` for `ExecContent`, `JsonContent`, `ToolContent` (discriminated union),
+    and `ToolItem` definitions.
 
     **The correct approach for ToolExec.svelte:**
 
-    Use a discriminated union type guard:
-    ```svelte
-    <script lang="ts">
-      import type { ToolItem } from '../shared/types'
-      import JsonDisclosure from './JsonDisclosure.svelte'
+    Use a Svelte reactive statement with discriminated union type guard:
+    `$: execContent = item.content?.content_kind === 'Exec' ? item.content : null`
 
-      export let item: ToolItem
+    Then access `execContent.cmd`, `execContent.stdout`, etc. without casts. TypeScript
+    knows `execContent` is `ExecContent | null`.
 
-      // Type-safe content access with discriminated union
-      $: execContent = item.content?.content_kind === 'Exec' ? item.content : null
-
-      function copyText(text: string) {
-        if (!text) return
-        if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(text).catch(() => {})
-        } else {
-          const ta = document.createElement('textarea')
-          ta.value = text
-          document.body.appendChild(ta)
-          ta.select()
-          try { document.execCommand('copy') } finally { document.body.removeChild(ta) }
-        }
-      }
-
-      function copyExec() {
-        if (!execContent) return
-        const parts: string[] = []
-        if (execContent.cmd) parts.push(`$ ${execContent.cmd}`)
-        if (execContent.stdout) parts.push(String(execContent.stdout))
-        if (execContent.stderr) parts.push(String(execContent.stderr))
-        copyText(parts.join('\n'))
-      }
-    </script>
-
-    <div class="terminal">
-      <div class="kind">{item.tool} {#if item.decision}<span class="term-approval">[{item.decision}]</span>{/if}
-        <button class="copy" title="Copy output" on:click={copyExec}>Copy</button>
-      </div>
-      {#if typeof item.tool === 'string' && item.tool.endsWith('__sandbox_exec')}
-        <JsonDisclosure label="SBPL Policy" value={execContent?.args?.policy} persistKey={`sbpl:${item.id}`} />
-        <JsonDisclosure label="Raw output (JSON)" value={item.content} persistKey={`execraw:${item.id}`} />
-      {/if}
-      <div class="terminal-body">
-        {#if execContent?.cmd}
-          <pre class="term-line">$ {execContent.cmd}</pre>
-        {/if}
-        {#if execContent?.stdout}
-          <pre class="term-stdout">{execContent.stdout}</pre>
-        {/if}
-        {#if execContent?.stderr}
-          <pre class="term-stderr">{execContent.stderr}</pre>
-        {/if}
-        {#if execContent?.exit_code !== null && execContent?.exit_code !== undefined}
-          <div class="term-exit">[exit {execContent.exit_code}]</div>
-        {/if}
-        {#if execContent?.is_error}
-          <div class="term-error">[error]</div>
-        {/if}
-      </div>
-    </div>
-    ```
-
-    **Benefits:**
-
-    1. **Type safety**: TypeScript knows `execContent` is `ExecContent | null`
-    2. **No duplication**: One cast via reactive statement `$: execContent = ...`
-    3. **Autocomplete**: IDE suggests `cmd`, `stdout`, `stderr`, etc.
-    4. **Typo protection**: Misspelling fields causes compile error
-    5. **Clearer code**: Explicit about content type being checked
-    6. **Single source of truth**: Uses types from `types.ts`
+    Benefits: type safety, no duplication of casts, autocomplete, typo protection.
 
     **Problem in ToolJson.svelte:**
 
-    Similar issue with manual Zod parsing instead of using TypeScript types:
-
-    **Current implementation (ToolJson.svelte, lines 24-42):**
-    ```typescript
-    // Prefer structured_content when present (FastMCP CallToolResult)
-    import { z } from 'zod'
-    const CallToolResultZ = z.object({ structured_content: z.unknown().optional() }).passthrough()
-    const StructuredOutZ = z.object({
-      error: z.string().optional(),
-      ok: z.boolean().optional(),
-      rationale: z.string().optional(),
-    }).passthrough()
-
-    function pickDisplayResult(): unknown {
-      const c = item?.content
-      const res: unknown = (c && (c as any).content_kind === 'Json') ? (c as any).result : undefined
-      if (res && typeof res === 'object') {
-        const parsed = CallToolResultZ.safeParse(res)
-        if (parsed.success && parsed.data.structured_content !== undefined) {
-          return parsed.data.structured_content
-        }
-      }
-      return res
-    }
-    ```
-
-    **Why this is problematic:**
-
-    1. **Type cast to any**: `(c as any).content_kind`, `(c as any).result`
-    2. **Manual Zod parsing**: Duplicates what TypeScript types already provide
-    3. **Lost type checking**: `content_kind === 'Json'` not type-safe
-
-    **The correct approach:**
-
-    Use TypeScript discriminated unions:
-    ```typescript
-    function pickDisplayResult(): unknown {
-      if (item?.content?.content_kind !== 'Json') return undefined
-      // TypeScript now knows content is JsonContent
-      const jsonContent = item.content
-      const res = jsonContent.result
-
-      if (res && typeof res === 'object') {
-        // If CallToolResult has structured_content, use it
-        const parsed = CallToolResultZ.safeParse(res)
-        if (parsed.success && parsed.data.structured_content !== undefined) {
-          return parsed.data.structured_content
-        }
-      }
-      return res
-    }
-    ```
-
-    Or even better, define TypeScript types for CallToolResult:
-    ```typescript
-    type CallToolResult = {
-      structured_content?: unknown
-      // ... other fields
-    }
-
-    function pickDisplayResult(): unknown {
-      if (item?.content?.content_kind !== 'Json') return undefined
-      const result = item.content.result as CallToolResult | undefined
-      return result?.structured_content ?? result
-    }
-    ```
+    Manual Zod parsing with `(c as any).content_kind` and `(c as any).result` instead
+    of using discriminated union type guard. Should check `content_kind === 'Json'`
+    first, then TypeScript narrows the type automatically.
 
     **User mentioned "pretty mechanism for parsing Pydantic models":**
 

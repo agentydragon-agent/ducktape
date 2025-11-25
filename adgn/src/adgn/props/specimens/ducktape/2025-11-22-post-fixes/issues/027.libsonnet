@@ -10,58 +10,10 @@ I.issueOneOccurrence(
     but the code reimplements it by hand.
 
     **Current implementation (events.py, lines 67-100):**
-    ```python
-    TypedPayload = Annotated[
-        UserTextPayload
-        | AssistantTextPayload
-        | ToolCallPayload
-        | FunctionCallOutputPayload
-        | ReasoningPayload
-        | ResponsePayload,
-        Field(discriminator=None),  # ← discriminator is None!
-    ]
-
-    class EventRecord(BaseModel):
-        seq: int
-        ts: datetime
-        type: EventType
-        payload: TypedPayload
-        call_id: str | None = None
-        tool_key: str | None = None
-
-    def parse_event(d: dict[str, Any]) -> EventRecord:
-        raw_type = d.get("type")
-        et = EventType(str(raw_type))
-        seq = int(d.get("seq", 0))
-        ts_raw = d.get("ts")
-        ts = ts_raw if isinstance(ts_raw, datetime) else datetime.fromisoformat(str(ts_raw))
-        call_id = d.get("call_id")
-        tool_key = d.get("tool_key")
-        payload_raw = d.get("payload") or {}
-
-        payload: TypedPayload
-        if et == EventType.USER_TEXT:
-            payload = UserTextPayload(text=str(payload_raw.get("text", "")))
-        elif et == EventType.ASSISTANT_TEXT:
-            payload = AssistantTextPayload(text=str(payload_raw.get("text", "")))
-        elif et == EventType.TOOL_CALL:
-            payload = ToolCallPayload(
-                name=str(payload_raw.get("name", "")),
-                args_json=payload_raw.get("args_json"),
-                call_id=str(payload_raw.get("call_id") or d.get("call_id") or ""),
-            )
-        elif et == EventType.FUNCTION_CALL_OUTPUT:
-            result = TypeAdapter(mcp_types.CallToolResult).validate_python(payload_raw)
-            payload = FunctionCallOutputPayload(call_id=str(d.get("call_id") or ""), result=result)
-        elif et == EventType.REASONING:
-            payload = ReasoningPayload(text=str(payload_raw.get("text", "")))
-        elif et == EventType.RESPONSE:
-            payload = ResponsePayload(content=payload_raw)
-        else:
-            payload = ResponsePayload(content=payload_raw)
-
-        return EventRecord(seq=seq, ts=ts, type=et, payload=payload, call_id=call_id, tool_key=tool_key)
-    ```
+    The code defines `TypedPayload` with `Field(discriminator=None)` and implements
+    a 30+ line `parse_event()` function with manual if-elif dispatching for each
+    event type (USER_TEXT, ASSISTANT_TEXT, TOOL_CALL, etc.), manually extracting
+    fields from dictionaries and constructing payload objects.
 
     **Problems:**
 
@@ -75,157 +27,20 @@ I.issueOneOccurrence(
 
     **The correct approach:**
 
-    Use Pydantic's discriminated union parsing with a proper discriminator:
-
-    ```python
-    from typing import Annotated, Literal
-    from pydantic import BaseModel, Field, Tag
-
-    # Add 'type' literal to each payload class
-    class UserTextPayload(BaseModel):
-        type: Literal["user_text"] = "user_text"
-        text: str
-
-
-    class AssistantTextPayload(BaseModel):
-        type: Literal["assistant_text"] = "assistant_text"
-        text: str
-
-
-    class ToolCallPayload(BaseModel):
-        type: Literal["tool_call"] = "tool_call"
-        name: str
-        args_json: str | None = None
-        call_id: str
-
-
-    class FunctionCallOutputPayload(BaseModel):
-        type: Literal["function_call_output"] = "function_call_output"
-        call_id: str
-        result: mcp_types.CallToolResult
-
-
-    class ReasoningPayload(BaseModel):
-        type: Literal["reasoning"] = "reasoning"
-        text: str
-
-
-    class ResponsePayload(BaseModel):
-        type: Literal["response"] = "response"
-        content: Response | None = None
-
-
-    # Discriminated union with proper discriminator
-    TypedPayload = Annotated[
-        UserTextPayload
-        | AssistantTextPayload
-        | ToolCallPayload
-        | FunctionCallOutputPayload
-        | ReasoningPayload
-        | ResponsePayload,
-        Field(discriminator="type"),  # ← Use 'type' field as discriminator
-    ]
-
-
-    class EventRecord(BaseModel):
-        seq: int
-        ts: datetime
-        # Remove separate 'type' field - it's in the payload now
-        payload: TypedPayload
-        call_id: str | None = None
-        tool_key: str | None = None
-
-        model_config = ConfigDict(extra="forbid")
-
-        @property
-        def type(self) -> EventType:
-            """Derive event type from payload for backwards compatibility."""
-            return EventType(self.payload.type)
-
-
-    # Parse event is now trivial - just let Pydantic do it
-    def parse_event(d: dict[str, Any]) -> EventRecord:
-        # Move 'type' from top level into 'payload' if needed
-        if "type" in d and "payload" in d:
-            d = {**d, "payload": {**d["payload"], "type": d["type"]}}
-        return EventRecord.model_validate(d)
-
-
-    def parse_events(items: list[dict[str, Any]]) -> list[EventRecord]:
-        return [parse_event(d) for d in items]
-    ```
-
-    **Alternative approach (if payload structure varies):**
-
-    If the persisted JSON doesn't have `type` inside `payload`, use a custom validator:
-
-    ```python
-    class EventRecord(BaseModel):
-        seq: int
-        ts: datetime
-        type: EventType  # Keep top-level type for wire format
-        payload: TypedPayload
-        call_id: str | None = None
-        tool_key: str | None = None
-
-        @model_validator(mode='before')
-        @classmethod
-        def inject_type_into_payload(cls, data: Any) -> Any:
-            """Inject top-level 'type' into payload for discriminated union parsing."""
-            if isinstance(data, dict):
-                event_type = data.get("type")
-                payload = data.get("payload")
-                if event_type and isinstance(payload, dict):
-                    # Add 'type' to payload dict for discriminator
-                    data["payload"] = {**payload, "type": event_type}
-            return data
-
-        model_config = ConfigDict(extra="forbid")
-
-
-    def parse_event(d: dict[str, Any]) -> EventRecord:
-        return EventRecord.model_validate(d)
-    ```
+    Use Pydantic's discriminated union parsing: add `Literal["type"]` to each
+    payload class, set `Field(discriminator="type")` on the union, and use
+    `model_validate()`. This reduces the 30+ line manual parser to a 3-line
+    function that injects the type field into the payload dict before validation.
 
     **Benefits:**
 
     1. **Automatic dispatch**: Pydantic handles type-based routing
     2. **Full validation**: All fields validated according to payload schema
-    3. **Type safety**: MyPy/Pyright understand the discriminated union
+    3. **Type safety**: Type checkers understand the discriminated union
     4. **Concise**: 3 lines instead of 30+ lines of if-elif
-    5. **Better errors**: ValidationError shows exactly what's wrong and where
+    5. **Better errors**: ValidationError shows exactly what's wrong
     6. **Easy to extend**: Add new event type = add new payload class to union
     7. **Declarative**: Schema describes what's valid, not how to parse
-
-    **Pydantic discriminated union features used:**
-
-    - `Literal["event_type"]` on each variant for the discriminator value
-    - `Field(discriminator="type")` on the union to tell Pydantic which field to inspect
-    - `model_validate()` to parse and validate in one step
-    - Optional `@model_validator(mode='before')` to massage data shape if needed
-
-    **Testing discriminated unions:**
-
-    ```python
-    # Good payloads parse correctly
-    event = EventRecord.model_validate({
-        "seq": 1,
-        "ts": "2024-01-15T10:30:00Z",
-        "type": "user_text",
-        "payload": {"text": "hello"},
-    })
-    assert isinstance(event.payload, UserTextPayload)
-
-    # Bad payloads fail with clear errors
-    with pytest.raises(ValidationError) as exc:
-        EventRecord.model_validate({
-            "seq": 1,
-            "ts": "2024-01-15T10:30:00Z",
-            "type": "unknown_type",  # Not in union
-            "payload": {},
-        })
-    # Error message shows: "Input tag 'unknown_type' not recognized"
-    ```
   |||,
   properties=['use-platform-primitives', 'declarative-validation'],
   filesToRanges={

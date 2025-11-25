@@ -55,147 +55,26 @@ I.issueOneOccurrence(
 
     **The correct approach:**
 
-    Option 1: Take Pydantic model, do serialization inside:
-    ```python
-    def run_policy_source(
-        *,
-        docker_client: DockerClient,
-        source: str,
-        input_payload: PolicyRequest,  # ← Type-safe Pydantic model
-        image: str | None = None,
-        timeout_secs: float | None = None,
-    ) -> PolicyResponse:
-        # Serialize inside the function
-        ctx_json = input_payload.model_dump_json()
-        ...
-    ```
-
-    Option 2: Take raw string/bytes for true low-level use:
-    ```python
-    def run_policy_source(
-        *,
-        docker_client: DockerClient,
-        source: str,
-        input_json: str,  # ← Raw JSON string
-        image: str | None = None,
-        timeout_secs: float | None = None,
-    ) -> PolicyResponse:
-        # Use directly, no conversion
-        env = {"POLICY_SRC": source, "POLICY_INPUT": input_json}
-        ...
-    ```
-
-    **Option 1 is better** because:
-    - Type-safe at call sites
-    - Validation happens in one place
-    - Callers work with domain types, not dicts
-    - Easier to test (construct PolicyRequest, not dicts)
+    Take a Pydantic `PolicyRequest` model instead of `dict`, and serialize it
+    inside the function. This makes call sites type-safe, validates in one place,
+    and callers work with domain types rather than dicts.
 
     **Problem 2: Questionable split between runner.py and container.py**
 
-    `ContainerPolicyEvaluator` is a 40-line class that just wraps `run_policy_source()`
-    with some config storage. This creates two entrypoints for the same operation,
-    causing confusion about which to use.
-
-    **Current structure:**
-    ```
-    runner.py:
-      - run_policy_source(dict) -> PolicyResponse  # Low-level function
-
-    container.py:
-      - ContainerPolicyEvaluator                   # Thin wrapper class
-          - __init__(agent_id, docker, engine, ...)
-          - decide(PolicyRequest) -> PolicyResponse
-              - Calls run_policy_source(dict)
-    ```
-
-    **Call sites:**
-    - `approvals.py:310`: Calls `run_policy_source()` directly (self-check/validation)
-    - `server.py:178`: Creates `ContainerPolicyEvaluator` for per-agent evaluation
-
-    **The smell:**
-
-    Both the outer wrapper (`ContainerPolicyEvaluator`) and the direct caller
-    (`approvals.py`) do Pydantic→dict conversion, suggesting the abstraction layers
-    are wrong. Why have two entrypoints to the same operation?
+    `ContainerPolicyEvaluator` is a 40-line wrapper around `run_policy_source()`,
+    creating two entrypoints for the same operation. Both the wrapper class and
+    direct callers do Pydantic→dict conversion, suggesting wrong abstraction layers.
 
     **The correct approach:**
 
-    Merge into one module with clear responsibilities:
+    Merge into one module with a single `ContainerPolicyEvaluator` class that has:
+    - `decide(request: PolicyRequest)` - evaluate with active policy
+    - `self_check(source: str)` - validate policy source
+    - `_run_policy(source, request)` - private Docker execution helper
 
-    ```python
-    # policy_eval/evaluator.py (or just policy_eval.py)
-
-    @dataclass
-    class ContainerPolicyEvaluator:
-        """Evaluate policy decisions inside one-off Docker containers."""
-
-        agent_id: AgentID
-        docker_client: DockerClient
-        engine: ApprovalPolicyEngine
-        image: str = field(default_factory=resolve_runtime_image)
-        timeout_secs: float = field(
-            default_factory=lambda: float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
-        )
-
-        async def decide(self, request: PolicyRequest) -> PolicyResponse:
-            """Evaluate a policy decision using the current active policy."""
-            policy_src, _ver = self.engine.get_policy()
-            return self._run_policy(source=policy_src, request=request)
-
-        def self_check(self, source: str) -> None:
-            """Validate policy source by running a dummy request."""
-            dummy = PolicyRequest(
-                name=build_mcp_function(UI_SERVER_NAME, "send_message"),
-                arguments={}
-            )
-            self._run_policy(source=source, request=dummy)
-
-        def _run_policy(
-            self, *, source: str, request: PolicyRequest
-        ) -> PolicyResponse:
-            """Run policy source with a request (internal helper)."""
-            # All the Docker container logic here (from current run_policy_source)
-            ctx_json = request.model_dump_json()
-            cmd = ["python", "-m", "adgn.agent.policy_eval.shim"]
-            env = {"POLICY_SRC": source, "POLICY_INPUT": ctx_json, ...}
-            # ... container creation, execution, result parsing ...
-            return PolicyResponse.model_validate(data)
-    ```
-
-    **Why this is better:**
-
-    1. **Single entrypoint**: Only `ContainerPolicyEvaluator` exists
-    2. **Type-safe API**: All methods take Pydantic models, not dicts
-    3. **Clear responsibilities**:
-       - `decide()` - evaluate with active policy
-       - `self_check()` - validate policy source
-       - `_run_policy()` - internal Docker execution
-    4. **No duplication**: Serialization happens in one place (`_run_policy`)
-    5. **Better discoverability**: All policy eval in one module
-    6. **Easier to test**: Mock the evaluator, not free functions
-
-    **Migration:**
-
-    - Merge `runner.py` into `container.py` (or rename to `evaluator.py`)
-    - Make `_run_policy()` private (internal helper)
-    - Add `self_check()` method to evaluator
-    - Update call sites:
-      - `approvals.py`: Call `evaluator.self_check(source)`
-      - `server.py`: Already uses `ContainerPolicyEvaluator`
-
-    **When the split WOULD make sense:**
-
-    - If `run_policy_source()` was used by multiple different evaluator types
-    - If there was a synchronous and async version sharing the core logic
-    - If the low-level function was tested independently in many scenarios
-
-    But currently:
-    - Only one evaluator type (container-based)
-    - Only one usage pattern (evaluate policy)
-    - `run_policy_source()` isn't tested separately
-
-    Therefore: the split adds complexity without benefit.
+    This provides a single type-safe entrypoint, eliminates duplication, and keeps
+    serialization in one place. The current split only makes sense if there were
+    multiple evaluator types or usage patterns, which there aren't.
   |||,
   properties=['consistent-abstraction-layers', 'avoid-unnecessary-indirection', 'type-safe-apis'],
   filesToRanges={

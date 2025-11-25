@@ -8,15 +8,7 @@ I.issueOneOccurrence(
     to detect if `-m`/`--message` was passed, instead of having an explicit argument
     that the CLI framework parses.
 
-    **Current implementation (cli.py, lines 513-520):**
-    ```python
-    def _validate_no_message_flag(passthru: list[str]) -> None:
-        if any(a in {"-m", "--message"} or a.startswith("--message=") for a in passthru):
-            print("Error: ...", file=sys.stderr)
-            raise ExitWithCode(2)
-    ```
-
-    This is part of a larger pattern where multiple functions parse passthru:
+    This is part of a larger pattern where multiple functions parse passthru strings:
     - `include_all_from_passthru()` - checks for `-a`/`--all`
     - `filter_commit_passthru()` - removes `-a`/`--all` from passthru
     - `_validate_no_message_flag()` - checks for `-m`/`--message`
@@ -34,27 +26,9 @@ I.issueOneOccurrence(
 
     **The correct approach:**
 
-    Use a CLI framework (argparse or similar) to parse flags explicitly:
-
-    ```python
-    # In CLI argument parser setup
-    parser.add_argument('-a', '--all', dest='include_all', action='store_true')
-    parser.add_argument('-m', '--message', dest='message',
-                       help=argparse.SUPPRESS)  # Hidden, will reject if used
-
-    # In validation
-    def validate_args(args):
-        if args.message is not None:
-            print("Error: -m/--message is not supported; this tool supplies the "
-                  "commit message.", file=sys.stderr)
-            raise ExitWithCode(2)
-
-    # Pass parsed values explicitly
-    def some_function(include_all: bool) -> None:
-        # Use the boolean directly
-        if include_all:
-            # ...
-    ```
+    Use argparse to parse flags explicitly with typed parser arguments (`-a`/`--all`
+    as `action='store_true'`, `-m`/`--message` as a suppressed argument that validates
+    to None). Pass parsed booleans/values to functions instead of raw string lists.
 
     **Benefits:**
 
@@ -63,15 +37,9 @@ I.issueOneOccurrence(
     3. **Type safety**: Boolean/typed parameters are self-documenting
     4. **Separation of concerns**: Core logic doesn't know about flag syntax
     5. **Consistent patterns**: All flags handled the same way
-    6. **Better error messages**: Framework provides standard help text
 
-    **Related functions that should be refactored together:**
-
-    - `include_all_from_passthru()` (core.py:61-63) - part of issue 003
-    - `filter_commit_passthru()` (cli.py:508-510) - filters `-a`/`--all`
-    - `_validate_no_message_flag()` (cli.py:513-520) - this issue
-
-    All three should be replaced with proper CLI argument parsing.
+    **Related functions (cli.py:508-520, core.py:61-63):**
+    All three passthru-parsing functions should be replaced with proper CLI argument parsing.
   |||,
   properties=['explicit-over-implicit', 'separation-of-concerns', 'robust-parsing'],
   filesToRanges={

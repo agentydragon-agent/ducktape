@@ -111,143 +111,18 @@ I.issueOneOccurrence(
 
     **The correct approach: Make it a proper async context manager**
 
-    ```python
-    from typing import Self
+    Implement `__aenter__`/`__aexit__` to move initialization logic from `start()` into
+    the context manager protocol. Store `session` and `agent` as non-nullable fields
+    (set in `__aenter__`), eliminating the `if self.agent is None` check in `run()`.
 
-    class LocalAgentRuntime:
-        """Async context manager for running a MiniCodex agent locally."""
+    Benefits: clear lifecycle, type-safe (no nullable fields), idiomatic Python,
+    exception-safe cleanup.
 
-        def __init__(
-            self,
-            running: RunningInfrastructure,
-            model: str,
-            client_factory: Callable[[str], OpenAIModelProto],
-            system_override: str | None = None,
-            reasoning_effort: ReasoningEffort | None = None,
-            reasoning_summary: ReasoningSummary | None = None,
-            parallel_tool_calls: bool = True,
-            extra_handlers: Iterable[BaseHandler] = (),
-            ui_bus: ServerBus | None = None,
-            connection_manager: ConnectionManager | None = None,
-        ):
-            self.running = running
-            self.model = model
-            self._client_factory = client_factory
-            self._system_override = system_override
-            self._reasoning_effort = reasoning_effort
-            self._reasoning_summary = reasoning_summary
-            self._parallel_tool_calls = parallel_tool_calls
-            self._extra_handlers = list(extra_handlers)
-            self._ui_bus = ui_bus
-            self._connection_manager = connection_manager
+    **Alternative: Factory pattern for long-lived objects**
 
-            # These are set by __aenter__, not None
-            self.session: AgentSession
-            self.agent: MiniCodex
-
-        async def __aenter__(self) -> Self:
-            """Initialize session and agent."""
-            # All the setup logic from current start()
-            sess = AgentSession(...)
-            client = self._client_factory(self.model)
-            # ... build handlers, create agent ...
-            agent = await MiniCodex.create(...)
-            sess.attach_agent(agent, model=self.model, system=base_system)
-
-            # Store references (no longer nullable)
-            self.session = sess
-            self.agent = agent
-            return self
-
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
-            """Clean up session and agent."""
-            await self.session.cancel_active_run()
-            # Could also clean up other resources here
-            # Don't close running (caller owns it)
-            return False  # Don't suppress exceptions
-
-        async def run(self, user_text: str) -> AgentResult:
-            """No check needed - session/agent always set in context."""
-            return await self.agent.run(user_text)
-
-
-    # Usage:
-    async with LocalAgentRuntime(
-        running=running,
-        model="o4-mini",
-        client_factory=build_client,
-    ) as runtime:
-        result = await runtime.run("Hello!")
-        # Automatically cleaned up on exit
-    ```
-
-    **Benefits of context manager approach:**
-
-    1. **Clear lifecycle**: Enter context → initialized, exit context → cleaned up
-    2. **No may-be-initialized**: Fields are always set inside context
-    3. **Type-safe**: `self.agent` is `MiniCodex`, not `MiniCodex | None`
-    4. **No manual cleanup**: `async with` guarantees cleanup
-    5. **Idiomatic Python**: Everyone understands context managers
-    6. **Exception-safe**: Cleanup happens even on exceptions
-
-    **Alternative: Factory function if context manager doesn't fit**
-
-    If you need the object outside a context (e.g., long-lived runtime):
-
-    ```python
-    class LocalAgentRuntime:
-        """Runtime for a MiniCodex agent (use create() to construct)."""
-
-        def __init__(
-            self,
-            running: RunningInfrastructure,
-            session: AgentSession,
-            agent: MiniCodex,
-            model: str,
-        ):
-            self.running = running
-            self.session = session  # Non-nullable
-            self.agent = agent      # Non-nullable
-            self.model = model
-
-        @classmethod
-        async def create(
-            cls,
-            running: RunningInfrastructure,
-            model: str,
-            client_factory: Callable[[str], OpenAIModelProto],
-            system_override: str | None = None,
-            # ... other params
-        ) -> LocalAgentRuntime:
-            """Create and initialize a runtime."""
-            # All initialization logic here
-            sess = AgentSession(...)
-            agent = await MiniCodex.create(...)
-            sess.attach_agent(agent, ...)
-            return cls(running=running, session=sess, agent=agent, model=model)
-
-        async def run(self, user_text: str) -> AgentResult:
-            """No check needed - always initialized."""
-            return await self.agent.run(user_text)
-
-        async def close(self) -> None:
-            """Clean up session."""
-            await self.session.cancel_active_run()
-            # Mark as closed to prevent further use
-            # (could set fields to raise on access)
-
-
-    # Usage:
-    runtime = await LocalAgentRuntime.create(
-        running=running,
-        model="o4-mini",
-        client_factory=build_client,
-    )
-    try:
-        result = await runtime.run("Hello!")
-    finally:
-        await runtime.close()
-    ```
+    If context manager doesn't fit, use a classmethod factory like `create()` that
+    performs async initialization and returns a fully-initialized instance with
+    non-nullable fields. Still cleaner than two-step `__init__` + `start()`.
 
     **Comparison of approaches:**
 

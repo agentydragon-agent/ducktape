@@ -12,169 +12,41 @@ I.issueOneOccurrence(
     of SQLAlchemy's `comment=` parameter, which would make these descriptions visible
     in the database schema and help DBAs/database tools.
 
-    **Current implementation (models.py, lines 68-69, 92, 122, 125-126, etc.):**
-    ```python
-    mcp_config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)  # MCPConfig as JSON
-    preset: Mapped[str] = mapped_column(String, nullable=False)  # Agent preset name
-    id: Mapped[UUID] = mapped_column(String, primary_key=True)  # UUID stored as string
-    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # Sequence number within run
-    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)  # Typed payload per EventType
-    call_id: Mapped[str | None] = mapped_column(String, nullable=True)  # For tool call correlation
-    ```
-
     **The correct approach:**
 
-    Use SQLAlchemy's `comment=` parameter:
-    ```python
-    mcp_config: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, comment="MCPConfig as JSON"
-    )
-    preset: Mapped[str] = mapped_column(
-        String, nullable=False, comment="Agent preset name"
-    )
-    id: Mapped[UUID] = mapped_column(
-        String, primary_key=True, comment="UUID stored as string"
-    )
-    seq: Mapped[int] = mapped_column(
-        Integer, nullable=False, comment="Sequence number within run"
-    )
-    payload: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, comment="Typed payload per EventType"
-    )
-    call_id: Mapped[str | None] = mapped_column(
-        String, nullable=True, comment="For tool call correlation"
-    )
-    ```
-
-    **Benefits:**
-    - Comments visible in `PRAGMA table_info` (SQLite) or `\d` (PostgreSQL)
-    - Database tools/IDEs show column descriptions
-    - DBAs can understand schema without reading Python code
-    - Migrations preserve documentation
+    Use SQLAlchemy's `comment=` parameter on `mapped_column()` so comments appear
+    in database schema (`PRAGMA table_info`, `\d`), database tools show descriptions,
+    and migrations preserve documentation.
 
     **Problem 2: Raw SQL instead of ORM for last_activity query**
 
     The `list_agents_last_activity()` method uses raw SQL with `text()` instead of
     SQLAlchemy ORM constructs, making it harder to maintain and less portable.
 
-    **Current implementation (sqlite.py, lines 145-165):**
-    ```python
-    async def list_agents_last_activity(self) -> dict[AgentID, datetime | None]:
-        async with self._session() as session:
-            # This is complex to do purely in ORM, so we'll use raw SQL
-            result = await session.execute(
-                text("""
-    SELECT a.id as agent_id,
-           MAX(
-             COALESCE(e.event_at, r.finished_at, r.started_at, a.created_at)
-           ) as last_ts
-    FROM agents a
-    LEFT JOIN runs r ON r.agent_id = a.id
-    LEFT JOIN events e ON e.run_id = r.id
-    GROUP BY a.id
-                    """)
-            )
-            return {AgentID(row.agent_id): row.last_ts for row in result}
-    ```
-
     **The correct approach:**
 
-    Use SQLAlchemy ORM with `func.max()` and `func.coalesce()`:
-    ```python
-    async def list_agents_last_activity(self) -> dict[AgentID, datetime | None]:
-        async with self._session() as session:
-            # Use ORM constructs for type safety and portability
-            last_activity = func.max(
-                func.coalesce(
-                    Event.event_at,
-                    Run.finished_at,
-                    Run.started_at,
-                    Agent.created_at
-                )
-            ).label("last_ts")
-
-            result = await session.execute(
-                select(Agent.id.label("agent_id"), last_activity)
-                .outerjoin(Run, Run.agent_id == Agent.id)
-                .outerjoin(Event, Event.run_id == Run.id)
-                .group_by(Agent.id)
-            )
-            return {AgentID(row.agent_id): row.last_ts for row in result}
-    ```
-
-    **Benefits:**
-    - Type-safe: SQLAlchemy validates column references
-    - Portable: Works across different database backends
-    - Easier to test: Can use ORM test fixtures
-    - Better error messages: SQLAlchemy shows what's wrong
-    - Refactor-friendly: IDE can track column renames
+    Use ORM methods: `func.max()`, `func.coalesce()`, and `.outerjoin()` for type-safe,
+    portable queries. ORM validates column references, works across database backends,
+    provides better error messages, and IDE can track column renames.
 
     **Problem 3: Redundant walrus operator opportunities**
 
     Multiple places call `.scalar_one_or_none()` and then check `if not result:`,
     when the check could be combined with assignment using the walrus operator.
 
-    **Current implementation (sqlite.py, lines 263-264, 401-402):**
-    ```python
-    # Line 263-264
-    policy = result.scalar_one_or_none()
-    if not policy:
-        return None
-
-    # Line 401-402
-    run = result.scalar_one_or_none()
-    if not run:
-        return None
-    ```
-
     **The correct approach:**
 
-    Use walrus operator to combine assignment and check:
-    ```python
-    # Concise version
-    if not (policy := result.scalar_one_or_none()):
-        return None
-
-    # Or even shorter for simple returns
-    if not (run := result.scalar_one_or_none()):
-        return None
-    ```
+    Use `if not (var := result.scalar_one_or_none()): return None` to combine
+    assignment and check on one line.
 
     **Problem 4: Unnecessary variable for immediate use**
 
     Line 246 assigns `policies = result.scalars().all()` but the variable is only
-    used once in the immediately following list comprehension. Should inline.
-
-    **Current implementation (sqlite.py, lines 246-255):**
-    ```python
-    policies = result.scalars().all()
-    return [
-        PolicyProposal(
-            id=str(policy.id),
-            status=policy.status,
-            created_at=policy.created_at,
-            decided_at=policy.decided_at,
-            content="",
-        )
-        for policy in policies
-    ]
-    ```
+    used once in the immediately following list comprehension.
 
     **The correct approach:**
 
-    Inline the variable:
-    ```python
-    return [
-        PolicyProposal(
-            id=str(policy.id),
-            status=policy.status,
-            created_at=policy.created_at,
-            decided_at=policy.decided_at,
-            content="",
-        )
-        for policy in result.scalars().all()
-    ]
-    ```
+    Inline to `for policy in result.scalars().all()` in the comprehension.
 
     **Problem 5: Useless comments documenting removed code**
 

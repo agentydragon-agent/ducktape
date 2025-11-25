@@ -8,69 +8,29 @@ I.issueOneOccurrence(
     flags to determine if `-a` or `--all` was passed, instead of having an explicit
     boolean argument.
 
-    **Current implementation (core.py, lines 61-63):**
-    ```python
-    def include_all_from_passthru(passthru: list[str]) -> bool:
-        """Return True if '-a' or '--all' flags are present."""
-        return ("-a" in passthru) or ("--all" in passthru)
-    ```
-
-    **Used in 8 locations for -a/--all:**
-    - `diffstat()` (line 170)
-    - `build_prompt()` (line 190)
-    - CLI: `_build_amend_diff()` (line 128) - takes passthru instead of bool
-    - CLI: `_format_amend_comparison()` (line 145)
-    - CLI: `_get_diff_to_commit()` (line 153)
-    - CLI: `_stage_all_if_requested()` (line 524)
-    - CLI: `prepare_commit_msg()` (line 698)
-    - editor_template: `build_commit_template()` (line 77) - parses -v/--verbose
-
-    **Similar patterns for other flags:**
-    ```python
-    # --amend (cli.py, line 672):
-    is_amend = "--amend" in passthru
-
-    # -v/--verbose (editor_template.py, line 77):
-    include_verbose = ("-v" in passthru) or ("--verbose" in passthru)
-    ```
-    All of these should be replaced with explicit CLI arguments.
+    **Current implementation:**
+    `include_all_from_passthru(passthru)` checks if `-a` or `--all` are in the list.
+    Used in 8 locations; similar patterns exist for `--amend` and `-v/--verbose`.
 
     **Problems:**
-
     1. **Fragile parsing**: String-in-list checking doesn't handle edge cases like
        `--all=false`, `-aV`, or other flag combinations correctly
-    2. **Unclear interface**: Functions accept a generic `passthru: list[str]` but
+    2. **Unclear interface**: Functions accept generic `passthru: list[str]` but
        only care about specific flags
     3. **Coupling**: Core logic couples to CLI argument parsing conventions
     4. **Type safety**: Can't type-check or document that "passthru should contain -a/--all"
-    5. **Inconsistency**: Different flags handled with different patterns (some parsed
-       inline like `--amend`, some via helper functions like `-a`)
+    5. **Inconsistency**: Different flags handled with different patterns
 
-    **The correct approach:**
-
-    Accept an explicit `include_all: bool` parameter:
-
-    ```python
-    def diffstat(repo: pygit2.Repository, include_all: bool) -> str:
-        diff = _diff(repo, include_all)
-        # ... rest of implementation
-    ```
-
-    Let the CLI layer handle parsing:
-    ```python
-    # In CLI code
-    parser.add_argument('-a', '--all', dest='include_all', action='store_true')
-    # ...
-    result = diffstat(repo, args.include_all)
-    ```
+    **Correct approach:**
+    Accept explicit typed parameters (e.g., `include_all: bool`). Let the CLI layer
+    parse flags into typed values using argparse/click, then pass those to core functions.
 
     **Benefits:**
-
-    1. **Clear interface**: Functions declare exactly what they need
-    2. **Type safety**: Boolean parameter is self-documenting and type-checkable
-    3. **Separation of concerns**: Core logic doesn't know about CLI flags
-    4. **Testability**: Easy to test with `include_all=True/False` directly
-    5. **Robust**: No string parsing edge cases
+    1. Clear interface: Functions declare exactly what they need
+    2. Type safety: Boolean parameters are self-documenting and type-checkable
+    3. Separation of concerns: Core logic doesn't know about CLI flags
+    4. Testability: Easy to test with direct boolean values
+    5. Robust: No string parsing edge cases
   |||,
   properties=['explicit-over-implicit', 'separation-of-concerns'],
   filesToRanges={

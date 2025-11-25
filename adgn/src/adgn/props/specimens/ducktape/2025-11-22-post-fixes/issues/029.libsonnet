@@ -12,78 +12,11 @@ I.issueOneOccurrence(
     perfect candidate for `@dataclass`. Using a manual `__init__` is verbose and
     adds no value.
 
-    **Current implementation (container.py, lines 17-46):**
-    ```python
-    class ContainerPolicyEvaluator:
-        """Evaluate policy decisions inside a one-off Docker container (isolated)."""
-
-        def __init__(
-            self,
-            *,
-            agent_id: AgentID,
-            docker_client: DockerClient,
-            engine: ApprovalPolicyEngine,
-            image: str | None = None,
-            timeout_secs: float | None = None,
-        ) -> None:
-            if not agent_id:
-                raise ValueError("ContainerPolicyEvaluator requires agent_id")
-            self.agent_id = agent_id
-            self.image: str = image or resolve_runtime_image()
-            self.timeout_secs = (
-                timeout_secs if timeout_secs is not None else float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
-            )
-            self._docker = docker_client
-            self._engine = engine
-    ```
-
     **The correct approach:**
 
-    Use `@dataclass` with `__post_init__` for defaulting logic:
-
-    ```python
-    from dataclasses import dataclass, field
-
-    @dataclass
-    class ContainerPolicyEvaluator:
-        """Evaluate policy decisions inside a one-off Docker container (isolated)."""
-
-        agent_id: AgentID
-        docker_client: DockerClient
-        engine: ApprovalPolicyEngine
-        image: str | None = None
-        timeout_secs: float | None = None
-
-        # Private fields use field(init=False) or field(default=...)
-        _docker: DockerClient = field(init=False, repr=False)
-        _engine: ApprovalPolicyEngine = field(init=False, repr=False)
-
-        def __post_init__(self) -> None:
-            # Resolve defaults after init
-            if self.image is None:
-                self.image = resolve_runtime_image()
-            if self.timeout_secs is None:
-                self.timeout_secs = float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
-            # Initialize private fields from public params
-            self._docker = self.docker_client
-            self._engine = self.engine
-    ```
-
-    Or even simpler - use `field(default_factory=...)`:
-
-    ```python
-    @dataclass
-    class ContainerPolicyEvaluator:
-        """Evaluate policy decisions inside a one-off Docker container (isolated)."""
-
-        agent_id: AgentID
-        docker_client: DockerClient
-        engine: ApprovalPolicyEngine
-        image: str = field(default_factory=resolve_runtime_image)
-        timeout_secs: float = field(
-            default_factory=lambda: float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
-        )
-    ```
+    Use `@dataclass` with `field(default_factory=...)` for dynamic defaults, or
+    `__post_init__` for more complex initialization. Gets free `__repr__`, `__eq__`,
+    and reduces boilerplate.
 
     **Problem 2: Redundant type check for agent_id**
 
@@ -112,69 +45,17 @@ I.issueOneOccurrence(
             return super().__new__(cls, value)
     ```
 
-    **Problem 3: Unnecessary payload variable**
+    **Problem 3: Unnecessary payload variable + manual dict construction**
 
-    Line 52 creates a `payload` dict that's used only once in the next line. Should
-    inline it in the function call.
-
-    **Current implementation (container.py, lines 48-56):**
-    ```python
-    async def decide(self, policy_input: PolicyRequest) -> PolicyResponse:
-        """Evaluate using the current policy source via run_policy_source."""
-        payload = {"name": policy_input.name, "arguments": policy_input.arguments}
-        policy_src, _ver = self._engine.get_policy()
-        return run_policy_source(
-            docker_client=self._docker,
-            source=policy_src,
-            input_payload=payload,
-            image=self.image,
-            timeout_secs=self.timeout_secs,
-        )
-    ```
+    Line 52 creates a `payload` dict that's used only once, and manually constructs
+    it from a Pydantic model instead of using `model_dump()`.
 
     **The correct approach:**
 
-    Inline the dict construction:
-    ```python
-    async def decide(self, policy_input: PolicyRequest) -> PolicyResponse:
-        """Evaluate using the current policy source via run_policy_source."""
-        policy_src, _ver = self._engine.get_policy()
-        return run_policy_source(
-            docker_client=self._docker,
-            source=policy_src,
-            input_payload={"name": policy_input.name, "arguments": policy_input.arguments},
-            image=self.image,
-            timeout_secs=self.timeout_secs,
-        )
-    ```
+    Inline and use `policy_input.model_dump(include={"name", "arguments"})` to
+    serialize the Pydantic model properly.
 
-    **Problem 4: Manual dict construction instead of model_dump()**
-
-    Line 52 manually constructs `{"name": ..., "arguments": ...}` from a Pydantic
-    model. Should use `policy_input.model_dump()` or `policy_input.model_dump(include=...)`.
-
-    **The correct approach:**
-
-    Use Pydantic's serialization:
-    ```python
-    async def decide(self, policy_input: PolicyRequest) -> PolicyResponse:
-        """Evaluate using the current policy source via run_policy_source."""
-        policy_src, _ver = self._engine.get_policy()
-        return run_policy_source(
-            docker_client=self._docker,
-            source=policy_src,
-            input_payload=policy_input.model_dump(include={"name", "arguments"}),
-            image=self.image,
-            timeout_secs=self.timeout_secs,
-        )
-    ```
-
-    Or if `PolicyRequest` only has `name` and `arguments` fields:
-    ```python
-    input_payload=policy_input.model_dump(),
-    ```
-
-    **Problem 5: Useless comment about moved code**
+    **Problem 4: Useless comment about moved code**
 
     Line 58 has a comment "## run_policy_source moved to adgn.agent.policy_eval.runner"
     documenting a past refactoring. This is noise - git history tracks moves.
@@ -188,13 +69,12 @@ I.issueOneOccurrence(
 
     Delete the comment entirely.
 
-    **Benefits:**
+    **Summary:**
 
-    1. **Dataclass**: Less boilerplate, free __repr__, __eq__, type hints
-    2. **No redundant checks**: Trust the type system, don't validate non-None at every usage
-    3. **Concise code**: Inline single-use variables
-    4. **Use platform primitives**: model_dump() instead of manual dict construction
-    5. **Less noise**: No comments about past refactorings
+    1. Use `@dataclass` for simple initialization (lines 17-46)
+    2. Remove redundant `if not agent_id` check (lines 34-35)
+    3. Inline payload and use `model_dump(include=...)` (line 52)
+    4. Delete comment about moved function (line 58)
   |||,
   properties=['use-dataclasses', 'trust-type-system', 'prefer-concise-code', 'use-platform-primitives', 'remove-noise'],
   filesToRanges={

@@ -97,61 +97,11 @@ I.issueWithOccurrences(
 
     **The correct approach: Centralized design system**
 
-    **Option 1: Dedicated CSS file with utility classes**
+    **Option 1: Dedicated CSS file** — Create `styles/components.css` with shared button/error/badge/modal/typography styles; import in `App.svelte`; use utility classes.
 
-    - Create `src/adgn/agent/web/src/styles/components.css`
-    - Implement shared styles for buttons, errors, badges, modals, typography
-    - Import in `App.svelte`
+    **Option 2: CSS framework** — Adopt Tailwind CSS, DaisyUI, Skeleton UI, or Open Props for utility-first design system.
 
-    Then use classes directly:
-    ```svelte
-    <button class="btn btn-primary btn-small">Create</button>
-    <div class="error">Something went wrong</div>
-    <span class="badge">mode</span>
-    ```
-
-    **Option 2: Use a Svelte-compatible CSS framework**
-
-    Adopt a minimal framework that provides these patterns:
-    - **Tailwind CSS**: Utility-first, highly customizable
-    - **DaisyUI**: Component classes built on Tailwind
-    - **Skeleton UI**: Svelte-native design system
-    - **Open Props**: CSS custom properties for design tokens
-
-    Example with Tailwind + DaisyUI:
-    ```svelte
-    <button class="btn btn-primary btn-sm">Create</button>
-    <div class="alert alert-error">Something went wrong</div>
-    <span class="badge badge-primary">mode</span>
-    ```
-
-    **Option 3: CSS custom properties + minimal utility classes**
-
-    Define design tokens once:
-    ```css
-    :root {
-      /* Colors */
-      --color-primary: #007bff;
-      --color-success: #28a745;
-      --color-danger: #dc3545;
-      --color-error: #b00020;
-
-      /* Spacing */
-      --spacing-xs: 0.2rem;
-      --spacing-sm: 0.5rem;
-      --spacing-md: 0.75rem;
-      --spacing-lg: 1rem;
-
-      /* Typography */
-      --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-      --font-size-sm: 0.75rem;
-      --font-size-md: 0.9rem;
-
-      /* Border */
-      --radius-sm: 4px;
-      --radius-md: 6px;
-    }
-    ```
+    **Option 3: CSS custom properties** — Define design tokens in `:root` (colors, spacing, typography, borders); use variables throughout components.
 
     **Recommended action:**
 
@@ -291,24 +241,9 @@ I.issueWithOccurrences(
 
     Solutions by scale:
 
-    **Small project (this one): Shared CSS file**
-    ```
-    src/styles/
-      ├── tokens.css       # Design tokens (colors, spacing)
-      ├── components.css   # Component classes (btn, modal, error)
-      └── utilities.css    # Utility classes (text-muted, font-mono)
-    ```
-
-    **Medium project: Utility-first framework**
-    - Tailwind CSS: `class="btn btn-primary btn-sm"`
-    - DaisyUI: Component classes on top of Tailwind
-    - Open Props: CSS custom properties system
-
-    **Large project: Full design system**
-    - Component library (Storybook)
-    - Documentation site
-    - Automated visual regression testing
-    - Figma/design tool integration
+    - **Small project**: Shared CSS file structure (tokens.css, components.css, utilities.css)
+    - **Medium project**: Utility-first framework (Tailwind, DaisyUI, Open Props)
+    - **Large project**: Full design system with component library, Storybook, visual regression testing, Figma integration
 
     Red flags:
     - Same class name defined in multiple `<style>` blocks

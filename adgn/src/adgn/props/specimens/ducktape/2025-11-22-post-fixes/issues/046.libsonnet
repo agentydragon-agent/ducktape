@@ -50,13 +50,7 @@ I.issueOneOccurrence(
     }
     ```
 
-    **Backend status (app.py):**
-    ```python
-    ## WebSocket message models moved to ws.py
-    # TODO: Register websocket routes (placeholder)
-    ```
-
-    The WebSocket routes are not registered. The `/ws/approvals` endpoint doesn't exist.
+    **Backend status:** WebSocket routes are not registered. The `/ws/approvals` endpoint doesn't exist (app.py has TODO placeholder).
 
     **Why this is problematic:**
 
@@ -68,128 +62,15 @@ I.issueOneOccurrence(
 
     **The correct approach depends on intent:**
 
-    **Option 1: Implement the backend (if feature is needed)**
+    **Option 1: Implement the backend** — Add WebSocket endpoint with event subscription (send initial snapshot, then stream approval decisions with call_id/tool/outcome/reason/timestamp).
 
-    Add WebSocket endpoint for approval timeline updates:
+    **Option 2: Remove WebSocket code** — Replace subscribeToUpdates() with polling (setInterval every 5s).
 
-    ```python
-    # In app.py or ws.py:
-    from fastapi import WebSocket
+    **Option 3: Use MCP subscriptions** — Subscribe to approval timeline resource via MCP client instead of custom WebSocket (fits 2-level compositor architecture better).
 
-    @app.websocket("/ws/approvals")
-    async def approvals_websocket(websocket: WebSocket, agent_id: str):
-        await websocket.accept()
+    **Current silent failure behavior:** Lines 92-98 handle WebSocket errors with console.warn/log only — users have no indication that live updates aren't working.
 
-        try:
-            # Send initial snapshot
-            timeline = await get_approval_timeline(agent_id)
-            await websocket.send_json({
-                "type": "approvals_snapshot",
-                "timeline": [entry.model_dump() for entry in timeline]
-            })
-
-            # Subscribe to approval events
-            async for event in approval_events(agent_id):
-                if event.type == "approval_decision":
-                    await websocket.send_json({
-                        "type": "approval_decision",
-                        "call_id": event.call_id,
-                        "tool": event.tool_name,
-                        "outcome": event.outcome,
-                        "reason": event.reason,
-                        "timestamp": event.timestamp.isoformat()
-                    })
-
-        except WebSocketDisconnect:
-            pass
-        finally:
-            # Cleanup subscription
-            pass
-    ```
-
-    **Option 2: Remove WebSocket code (if not implementing)**
-
-    If WebSocket endpoint won't be implemented soon, remove the dead code:
-
-    ```typescript
-    // Remove subscribeToUpdates() and WebSocket code
-    // Use polling instead:
-
-    let refreshInterval: number | null = null
-
-    onMount(() => {
-      fetchTimeline()  // Initial fetch
-      refreshInterval = window.setInterval(fetchTimeline, 5000)  // Poll every 5s
-    })
-
-    onDestroy(() => {
-      if (refreshInterval) {
-        window.clearInterval(refreshInterval)
-      }
-    })
-    ```
-
-    **Option 3: Use MCP subscriptions (architectural fit)**
-
-    Instead of custom WebSocket endpoint, use MCP resource subscriptions:
-
-    ```typescript
-    import { mcpClient } from '../stores/mcp-client'
-    import { subscribeToResource } from '../features/mcp/client'
-
-    async function subscribeToTimeline() {
-      const client = get(mcpClient)
-      if (!client) return
-
-      // Subscribe to approval timeline resource
-      await subscribeToResource(client, `resources://approvals/${agentId}/timeline`)
-
-      // Resource updates will trigger refresh
-      // (Handled by MCP client store)
-    }
-
-    onMount(() => {
-      subscribeToTimeline()
-    })
-    ```
-
-    This fits the 2-level compositor architecture better than custom WebSocket.
-
-    **Current silent failure behavior:**
-
-    The component handles WebSocket errors but doesn't inform the user:
-
-    **Lines 92-98:**
-    ```typescript
-    ws.onerror = () => {
-      console.warn('WebSocket error for approval timeline')  // Silent
-    }
-
-    ws.onclose = () => {
-      console.log('WebSocket closed for approval timeline')  // Silent
-    }
-    ```
-
-    Users have no indication that live updates aren't working.
-
-    **Better error handling if keeping WebSocket:**
-
-    ```typescript
-    ws.onerror = () => {
-      console.error('WebSocket connection failed')
-      // Show user feedback
-      error = 'Live updates unavailable. Timeline will not auto-refresh.'
-      // Or fall back to polling
-      startPolling()
-    }
-
-    ws.onclose = (event) => {
-      if (!event.wasClean) {
-        console.warn('WebSocket closed unexpectedly')
-        // Attempt reconnect or show error
-      }
-    }
-    ```
+    **Better error handling if keeping WebSocket:** Show user feedback ("Live updates unavailable") or fall back to polling automatically on connection failure.
 
     **User's instruction: "ApprovalTimeline subscribes to a websockets. check if
     it's implemented. if it isn't, upsert issue."**
@@ -268,48 +149,10 @@ I.issueOneOccurrence(
 
     Correct patterns:
 
-    **Feature flags:**
-    ```typescript
-    const WEBSOCKET_ENABLED = false  // Set when backend ready
-
-    if (WEBSOCKET_ENABLED) {
-      subscribeToWebSocket()
-    } else {
-      startPolling()
-    }
-    ```
-
-    **Graceful degradation with user feedback:**
-    ```typescript
-    try {
-      await subscribeToWebSocket()
-      updateStatus('Live updates enabled')
-    } catch (e) {
-      console.error('WebSocket unavailable:', e)
-      updateStatus('Using polling (live updates unavailable)')
-      startPolling()
-    }
-    ```
-
-    **Backend capability detection:**
-    ```typescript
-    const capabilities = await fetchCapabilities()
-    if (capabilities.websockets) {
-      subscribeToWebSocket()
-    } else {
-      startPolling()
-    }
-    ```
-
-    **Complete removal:**
-    ```typescript
-    // Remove all WebSocket code
-    // Use polling until WebSocket implemented
-    onMount(() => {
-      fetchData()
-      setInterval(fetchData, 5000)
-    })
-    ```
+    - **Feature flags**: Use `WEBSOCKET_ENABLED` flag; subscribe if true, poll if false
+    - **Graceful degradation**: Try WebSocket, catch failure, show status message, fall back to polling
+    - **Capability detection**: Fetch backend capabilities, check `websockets` field
+    - **Complete removal**: Delete WebSocket code, use polling until backend ready
 
     When to keep incomplete features:
     - Clearly marked as experimental

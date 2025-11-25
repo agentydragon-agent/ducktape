@@ -10,92 +10,20 @@ I.issueOneOccurrence(
 
     **Problem: Thin wrapper function with single caller**
 
-    **Current implementation (ServersPanel.svelte, lines 185-197):**
-    ```typescript
-    function applyPresetFrom(id: string) {
-      const p = MCP_PRESETS.find((it) => it.id === id)
-      if (!p) return
-      transport = p.transport
-      if (p.defaultName && !newName) newName = p.defaultName
-      if (p.transport === 'stdio' && p.defaults.stdio) {
-        stdioCommand = p.defaults.stdio.command
-        stdioArgs = JSON.stringify(p.defaults.stdio.args ?? [], null, 2)
-        stdioEnv = JSON.stringify(p.defaults.stdio.env ?? {}, null, 2)
-      } else if (p.transport === 'inproc' && p.defaults.inproc) {
-        inprocFactory = p.defaults.inproc.factory
-        // ... more field assignments
-      }
-    }
-    ```
-
-    **Single call site (ServersPanel.svelte, line 257):**
-    ```svelte
-    <select id="preset-select" bind:value={preset} on:change={(e) => applyPresetFrom((e.target as HTMLSelectElement).value)}>
-    ```
+    The `applyPresetFrom` function (lines 185-197) finds a preset by ID and copies its
+    fields to component state. It's called only once (line 257).
 
     **Why this is a thin wrapper:**
 
-    1. **Single caller**: Only used once in the entire component
-    2. **Simple logic**: Just finds preset and copies fields
-    3. **No reuse**: Not called from multiple places
-    4. **Direct mapping**: Preset fields → component state, no transformation
-    5. **Unnecessary abstraction**: Adds function call overhead for no benefit
+    Single caller, simple logic (find + assign), no transformation. Unnecessary
+    abstraction for one use.
 
     **The correct approach:**
 
-    Inline the logic at the call site:
-    ```svelte
-    <select
-      id="preset-select"
-      bind:value={preset}
-      on:change={(e) => {
-        const id = (e.target as HTMLSelectElement).value
-        const p = MCP_PRESETS.find((it) => it.id === id)
-        if (!p) return
-        transport = p.transport
-        if (p.defaultName && !newName) newName = p.defaultName
-        if (p.transport === 'stdio' && p.defaults.stdio) {
-          stdioCommand = p.defaults.stdio.command
-          stdioArgs = JSON.stringify(p.defaults.stdio.args ?? [], null, 2)
-          stdioEnv = JSON.stringify(p.defaults.stdio.env ?? {}, null, 2)
-        } else if (p.transport === 'inproc' && p.defaults.inproc) {
-          inprocFactory = p.defaults.inproc.factory
-          // ... more field assignments
-        }
-      }}
-    >
-    ```
+    Inline the logic in the event handler, or use a Svelte reactive statement
+    (`$: if (preset) { ... }`) to automatically apply when `preset` changes.
 
-    **Or use a reactive statement if the logic is complex:**
-    ```svelte
-    <script>
-      let preset = ''
-
-      // Reactive: apply preset whenever it changes
-      $: if (preset) {
-        const p = MCP_PRESETS.find((it) => it.id === preset)
-        if (p) {
-          transport = p.transport
-          if (p.defaultName && !newName) newName = p.defaultName
-          // ... field assignments
-        }
-      }
-    </script>
-
-    <select id="preset-select" bind:value={preset}>
-      <option value="">Custom</option>
-      {#each MCP_PRESETS as p}
-        <option value={p.id}>{p.label}</option>
-      {/each}
-    </select>
-    ```
-
-    **Benefits:**
-
-    1. **Less indirection**: No function call, logic is visible at use site
-    2. **Clearer flow**: Reader sees what happens on change without jumping to function
-    3. **Fewer lines**: Remove function definition, inline at use
-    4. **Better for single use**: No false generalization
+    Benefits: less indirection, clearer flow, no false generalization.
 
     **User also mentioned: "should use schema copying from Python"**
 
@@ -103,55 +31,15 @@ I.issueOneOccurrence(
     component state, the component should use types generated from Python Pydantic
     models (similar to issue 042).
 
-    **Current manual field copying:**
-    ```typescript
-    // Manual extraction of preset fields
-    stdioCommand = p.defaults.stdio.command
-    stdioArgs = JSON.stringify(p.defaults.stdio.args ?? [], null, 2)
-    stdioEnv = JSON.stringify(p.defaults.stdio.env ?? {}, null, 2)
-    ```
+    **Related: Manual field copying should use generated types**
 
-    **Better with generated types:**
+    The component manually copies fields from `McpPreset` to state (lines showing
+    `stdioCommand = p.defaults.stdio.command`, etc.). This duplicates backend Pydantic
+    structure.
 
-    If `McpPreset` TypeScript type was auto-generated from Python `ServerSpec` Pydantic
-    model, the structure would match exactly and field copying would be type-safe:
-
-    ```typescript
-    // Import generated types from Pydantic models
-    import type { ServerSpec } from '../shared/generated-types'
-
-    // Type-safe assignment
-    const spec: ServerSpec = {
-      transport: p.transport,
-      stdio: p.defaults.stdio,
-      // TypeScript ensures all required fields present
-    }
-    ```
-
-    **Why manual field copying is problematic:**
-
-    1. **Duplication**: Backend has `ServerSpec` Pydantic model, frontend has `McpPreset`
-    2. **Drift risk**: Backend changes fields, frontend not updated
-    3. **Type mismatch**: No guarantee frontend types match backend
-    4. **Manual JSON.stringify**: Should be automatic serialization
-
-    **Recommended approach:**
-
-    A type generator script already exists (see commit 7c6cae7ad on branch
-    `claude/review-frontend-http-audit-...`): `adgn/scripts/generate_types.py`
-
-    This script:
-    1. Extracts Pydantic models from agent package
-    2. Exports them to JSON Schema using `TypeAdapter.json_schema()`
-    3. Generates TypeScript interfaces using `json-schema-to-typescript`
-    4. Writes to `adgn/src/adgn/agent/web/src/generated/types.ts`
-
-    Usage:
-    ```bash
-    python adgn/scripts/generate_types.py
-    ```
-
-    This approach ensures frontend and backend share exact same type structure.
+    Better: Use TypeScript types auto-generated from backend `ServerSpec` Pydantic model
+    via the existing `adgn/scripts/generate_types.py` script (commit 7c6cae7ad). This
+    ensures frontend and backend types match exactly and prevents drift.
 
     **When thin wrappers are OK:**
 

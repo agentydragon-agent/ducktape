@@ -67,118 +67,17 @@ I.issueOneOccurrence(
 
     **The correct approach: Create factories and helpers**
 
-    **For MCP client creation:**
-    ```typescript
-    // In features/mcp/client-factory.ts
-    export function createApprovalsClient(options?: {
-      name?: string
-      url?: string
-      token?: string
-    }) {
-      return createMCPClient({
-        name: options?.name ?? 'approvals-client',
-        url: options?.url ?? `${window.location.origin}/api/mcp`,
-        token: options?.token ?? getOrExtractToken()
-      })
-    }
+    Extract repeated patterns into helper functions with defaults:
 
-    // In component:
-    mcpClient = await createApprovalsClient()
-    ```
+    1. **MCP client creation**: Factory like `createApprovalsClient(options?)` with
+       default name/url/token
+    2. **Approval operations**: Helpers like `fetchPendingApprovals(client)`,
+       `approveToolCall(client, agentId, callId)`, etc.
+    3. **Approval parsing**: `parseApprovalContents(contents)` with a
+       `createApproval(data)` helper providing default timestamp
 
-    **For approval operations:**
-    ```typescript
-    // In features/approvals/api.ts
-    export async function fetchPendingApprovals(client: Client) {
-      const contents = await readResource(client, MCPUris.approvalsPendingUri)
-      return parseApprovalContents(contents)
-    }
-
-    export async function approveToolCall(
-      client: Client,
-      agentId: string,
-      callId: string
-    ) {
-      return callTool(client, 'approve_tool_call', { agent_id: agentId, call_id: callId })
-    }
-
-    export async function rejectToolCall(
-      client: Client,
-      agentId: string,
-      callId: string,
-      reason: string
-    ) {
-      return callTool(client, 'reject_tool_call', {
-        agent_id: agentId,
-        call_id: callId,
-        reason
-      })
-    }
-
-    // In component:
-    const approvals = await fetchPendingApprovals(mcpClient)
-    await approveToolCall(mcpClient, agentId, callId)
-    await rejectToolCall(mcpClient, agentId, callId, reason)
-    ```
-
-    **For approval parsing:**
-    ```typescript
-    // In features/approvals/parsing.ts
-    export function parseApprovalContents(
-      contents: Array<TextResourceContents>
-    ): Array<PendingApproval & { agent_id: string }> {
-      return contents
-        .filter(block => 'text' in block && block.mimeType === 'application/json')
-        .map(block => {
-          try {
-            const data = JSON.parse(block.text)
-            return createApproval(data)
-          } catch (e) {
-            console.error('Failed to parse approval block:', e, block)
-            return null
-          }
-        })
-        .filter((a): a is NonNullable<typeof a> => a !== null)
-    }
-
-    function createApproval(data: any): PendingApproval & { agent_id: string } {
-      return {
-        agent_id: data.agent_id,
-        tool_call: data.tool_call,
-        timestamp: data.timestamp ?? new Date().toISOString()
-      }
-    }
-
-    // In component:
-    const approvals = parseApprovalContents(contents)
-    ```
-
-    **Benefits of factories/helpers:**
-
-    1. **Default values**: Reasonable defaults for common cases
-    2. **Centralized logic**: Parsing, validation in one place
-    3. **Easier testing**: Mock helper functions, not raw MCP calls
-    4. **Type safety**: Helpers enforce correct types
-    5. **Less duplication**: Reuse helpers across components
-    6. **Easier refactoring**: Change helper implementation, not every call site
-
-    **Test example with factories:**
-
-    ```typescript
-    // Before (explicit):
-    test('approves tool call', async () => {
-      const client = await createMCPClient({ name: 'test', url: 'http://test', token: 'tok' })
-      await callTool(client, 'approve_tool_call', { agent_id: 'a1', call_id: 'c1' })
-      // verify...
-    })
-
-    // After (with factory):
-    test('approves tool call', async () => {
-      const client = await createTestClient()  // Uses test defaults
-      await approveToolCall(client, 'a1', 'c1')  // Clear intent
-      // verify...
-    })
-    ```
+    Benefits: default values, centralized logic, easier testing (mock helpers instead
+    of raw MCP calls), type safety, less duplication, easier refactoring.
 
     **When to create factories/helpers:**
 
@@ -197,25 +96,8 @@ I.issueOneOccurrence(
 
     **Related patterns:**
 
-    **Builder pattern (for complex construction):**
-    ```typescript
-    const client = new McpClientBuilder()
-      .withName('approvals')
-      .withAuth(token)
-      .withTimeout(5000)
-      .build()
-    ```
-
-    **Factory with options (flexible defaults):**
-    ```typescript
-    function createApproval(options: Partial<Approval> & Required<Pick<Approval, 'agent_id'>>) {
-      return {
-        tool_call: { name: 'unknown', call_id: uuid(), args_json: null },
-        timestamp: new Date().toISOString(),
-        ...options
-      }
-    }
-    ```
+    - **Builder pattern**: For complex construction with many optional fields
+    - **Factory with options**: `Partial<T> & Required<Pick<T, 'key'>>` for flexible defaults
 
     **User's note: "lots of explicit tool and resource constructions, those should
     use some factories / helpers with reasonable/helpful default values."**

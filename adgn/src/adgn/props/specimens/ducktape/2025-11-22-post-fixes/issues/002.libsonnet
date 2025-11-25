@@ -8,81 +8,29 @@ I.issueOneOccurrence(
     (A/M/D/R/T) in two places, but pygit2 provides a built-in method for this:
     `DiffDelta.status_char()`.
 
-    **Current implementation (_format_name_status, lines 36-54):**
-    ```python
-    for d in diff.deltas:
-        st = d.status
-        if st == pygit2.GIT_DELTA_ADDED:
-            lines.append(f"A\t{d.new_file.path}")
-        elif st == pygit2.GIT_DELTA_DELETED:
-            lines.append(f"D\t{d.old_file.path}")
-        elif st == pygit2.GIT_DELTA_MODIFIED:
-            lines.append(f"M\t{d.new_file.path}")
-        elif st == pygit2.GIT_DELTA_RENAMED:
-            lines.append(f"R\t{d.old_file.path}\t{d.new_file.path}")
-        elif st == pygit2.GIT_DELTA_TYPECHANGE:
-            lines.append(f"T\t{d.new_file.path}")
-        else:
-            continue
-    ```
-
-    **Current implementation (diffstat, lines 169-186):**
-    ```python
-    for d in diff.deltas:
-        st = d.status
-        if st == pygit2.GIT_DELTA_ADDED:
-            lines.append(f"{d.new_file.path} | A")
-        elif st == pygit2.GIT_DELTA_DELETED:
-            lines.append(f"{d.old_file.path} | D")
-        # ... similar pattern for M/R/T
-    ```
+    **Current implementation:**
+    Manual if/elif chains mapping pygit2.GIT_DELTA_* constants to single letters (A/M/D/R/T)
+    appear in both `_format_name_status` (lines 36-54) and `diffstat` (lines 169-186).
 
     **Problems:**
-
     1. **Code duplication**: The same status→letter mapping logic appears twice
     2. **Maintenance burden**: Adding support for new status codes (e.g., COPIED='C')
        requires updating multiple locations
     3. **Ignores available library utility**: pygit2 provides `DiffDelta.status_char()`
        which wraps libgit2's `git_diff_status_char()` - the canonical implementation
-       used by git itself
 
-    **The correct approach:**
-
-    Use `delta.status_char()` to get the single-character abbreviation:
-
-    ```python
-    def _format_name_status(repo: pygit2.Repository, include_all: bool) -> str:
-        diff = _diff(repo, include_all)
-        lines: list[str] = []
-        for d in diff.deltas:
-            status_letter = d.status_char()
-
-            # Skip statuses we don't want (e.g., untracked shows as space)
-            if status_letter == ' ':
-                continue
-
-            if d.status == pygit2.GIT_DELTA_RENAMED:
-                lines.append(f"{status_letter}\t{d.old_file.path}\t{d.new_file.path}")
-            else:
-                lines.append(f"{status_letter}\t{d.new_file.path}")
-        return "\n".join(lines)
-    ```
-
-    Similarly for `diffstat()`.
+    **Correct approach:**
+    Use `delta.status_char()` to get single-character abbreviations directly. Handle
+    renames by checking `d.status == pygit2.GIT_DELTA_RENAMED` for the two-path format.
 
     **Benefits:**
+    1. Single source of truth via libgit2's canonical implementation
+    2. Future-proof: New status codes work automatically
+    3. Less code: No manual if/elif chains needed
+    4. Correct edge cases: Handles UNTRACKED→space automatically
 
-    1. **Single source of truth**: libgit2's canonical implementation handles all cases
-    2. **Future-proof**: New status codes added to libgit2 work automatically
-    3. **Less code**: No manual if/elif chains needed
-    4. **Correct edge cases**: Handles special cases like UNTRACKED→space automatically
-
-    **Note on STATUS_LETTER_TO_TEXT mapping:**
-
-    The `STATUS_LETTER_TO_TEXT` dict (lines 67-73) can remain as-is since it maps
-    to human-readable text ("new file:", "modified:") which is display-specific,
-    not a library concern. However, the status→letter mapping should use the
-    library method.
+    **Note:** The `STATUS_LETTER_TO_TEXT` dict (lines 67-73) can remain as-is since
+    it maps to display text ("new file:", "modified:"), which is presentation-specific.
   |||,
   properties=['avoid-duplication', 'use-platform-primitives'],
   filesToRanges={
