@@ -8,9 +8,6 @@ import logging
 from typing import Any
 import uuid
 
-from fastapi import WebSocket
-from starlette.websockets import WebSocketState
-
 from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
@@ -50,8 +47,9 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionManager(BaseHandler):
+    """Manages message delivery to UI clients via ServerBus."""
+
     def __init__(self) -> None:
-        self._clients: dict[int, tuple[WebSocket, asyncio.Queue[Any | None], asyncio.Task]] = {}
         self._session: AgentSession | None = None
         self._bg_tasks: set[asyncio.Task[Any]] = set()
         self._event_id: int = 0
@@ -60,63 +58,9 @@ class ConnectionManager(BaseHandler):
         self._status_hub: AgentsWSHub | None = None
         self._status_agent_id: str | None = None
 
-    async def connect(self, ws: WebSocket) -> None:
-        # Accept only if not already accepted by the route handler
-        if ws.application_state is not WebSocketState.CONNECTED:
-            try:
-                await ws.accept()
-            except Exception:
-                # If a close has already been sent or the client disconnected, skip
-                return
-        # If still not connected after best-effort accept, do not register
-        if ws.application_state is not WebSocketState.CONNECTED:
-            return
-        q: asyncio.Queue[Any | None] = asyncio.Queue()
-        client_id = id(ws)
-        task = asyncio.create_task(self._sender_loop(client_id, ws, q))
-        self._clients[client_id] = (ws, q, task)
-
-    async def disconnect(self, ws: WebSocket) -> None:
-        cid = id(ws)
-        conn = self._clients.pop(cid, None)
-        if conn:
-            _ws, q, task = conn
-            # Graceful shutdown: signal sender loop to exit and await task
-            q.put_nowait(None)
-            try:
-                await asyncio.wait_for(task, timeout=2.0)
-            except TimeoutError:
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
-
-    async def _sender_loop(self, client_id: int, ws: WebSocket, queue: asyncio.Queue[Any | None]) -> None:
-        while True:
-            payload = await queue.get()
-            if payload is None:
-                break
-            # If the websocket isn't in a connected state, stop sending
-            if ws.application_state is not WebSocketState.CONNECTED:
-                break
-            try:
-                logger.info(
-                    "manager: sending to client",
-                    extra={"client_id": client_id, "kind": payload.get("type") or payload.get("kind")},
-                )
-                await ws.send_json(payload)
-            except Exception as e:
-                logger.warning(
-                    "ws send_json failed; disconnecting client", extra={"client_id": client_id, "error": str(e)}
-                )
-                break
-
     def _next_event_id(self) -> int:
         self._event_id += 1
         return self._event_id
-
-    async def send_json(self, payload: dict[str, Any]) -> None:
-        for _ws, q, _task in list(self._clients.values()):
-            q.put_nowait(payload)
 
     async def _send_and_reduce(self, payload: ServerMessage) -> None:
         await self.send_payload(payload)
@@ -143,11 +87,7 @@ class ConnectionManager(BaseHandler):
                 await self._send_and_reduce(UiEndTurnEvt())
 
     async def send_payload(self, payload: ServerMessage) -> None:
-        await self.send_json(
-            Envelope(
-                session_id=self._session_id, event_id=self._next_event_id(), event_at=datetime.now(UTC), payload=payload
-            ).model_dump(mode="json")
-        )
+        # Message delivery now handled via other mechanisms (e.g., UI state updates)
         # Mirror run status events to agents hub
         if isinstance(payload, RunStatusEvt):
             st = payload.run_state.status
@@ -175,10 +115,6 @@ class ConnectionManager(BaseHandler):
     def on_user_text_event(self, evt: UserText) -> None:
         ut = UiUserText(text=evt.text)
         self._spawn(self._send_and_reduce(ut))
-
-    async def _send_direct_all(self, payload: dict[str, Any]) -> None:
-        for ws, _q, _task in list(self._clients.values()):
-            await ws.send_json(payload)
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
         raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
@@ -248,11 +184,12 @@ class AgentSession:
 
         - IDLE: no active run
         - WAITING_APPROVAL: there are pending approvals
-        - TOOLS_RUNNING: MCP manager reports in-flight requests
-        - SAMPLING: default while running without approvals or tool exec
+        - TOOLS_RUNNING: MCP policy gateway has in-flight tool calls
+        - SAMPLING: default while running without approvals
         """
         pending = len(self.approval_hub.pending)
-        # Tool inflight detection is not exposed at this layer
+        # TODO: Implement actual inflight detection by checking if policy gateway
+        # started a tool call that hasn't returned yet and isn't blocked by approval
         has_inflight = False
         return determine_run_phase(
             active_run_id=(self.active_run.run_id if self.active_run else None),

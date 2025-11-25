@@ -43,19 +43,16 @@ import struct
 import subprocess
 import sys
 import termios
+import textwrap
 import time
 
 import pygit2
 
 from adgn.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
 
-from .core import _diff, _format_status_porcelain, include_all_from_passthru
+from .core import _diff, _format_status_porcelain
 from .editor_template import SCISSORS_MARK, build_commit_template
 
-# ---------------------------------------------------------------------
-
-
-# ---------- constants -------------------------------------------------
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
 # Global cap on total diff size sent to AI (characters)
 MAX_TOTAL_DIFF_CHARS = 120_000
@@ -87,7 +84,7 @@ class AppConfig:
 
         # Backward-compat: allow optional "minicodex:" prefix; ignore any other
         if ":" in model_str:
-            prefix, model_name = model_str.split(":", 1)
+            _prefix, model_name = model_str.split(":", 1)
             model_name = model_name.strip()
         else:
             model_name = model_str.strip()
@@ -125,7 +122,7 @@ def _truncate_hunks(raw: str) -> str:
     return result
 
 
-def _build_amend_diff(repo: pygit2.Repository, passthru: list[str]) -> str:
+def _build_amend_diff(repo: pygit2.Repository, include_all: bool) -> str:
     """Build amend-mode diff: original commit diff plus new changes."""
     parts: list[str] = []
     # Original commit
@@ -142,21 +139,19 @@ def _build_amend_diff(repo: pygit2.Repository, passthru: list[str]) -> str:
         parts.append(repo.diff(empty_tree_oid, head.id).patch or "")
     # New changes
     parts.append("\n=== New changes being added ===")
-    include_all = include_all_from_passthru(passthru)
     parts.append(_diff(repo, include_all).patch or "")
     return "\n".join(parts)
 
 
-def get_commit_diff(repo: pygit2.Repository, passthru: list[str], previous_message: str | None = None) -> str:
+def get_commit_diff(repo: pygit2.Repository, include_all: bool, previous_message: str | None = None) -> str:
     """Get the diff that would be committed with the given flags."""
     # Determine if there is anything to commit using pygit2 status/diff
-    include_all = include_all_from_passthru(passthru)
     diff = _diff(repo, include_all)
     if not (diff.patch or "").strip():
         return ""
 
     # Compute raw diff then apply per-file truncation
-    raw = _build_amend_diff(repo, passthru) if previous_message else diff.patch or ""
+    raw = _build_amend_diff(repo, include_all) if previous_message else diff.patch or ""
 
     return _truncate_hunks(raw)
 
@@ -316,18 +311,20 @@ class ParallelTaskRunner:
                 return False  # Error reading
 
         try:
-            while not self.precommit_state.task.done():
-                readable, _, _ = select.select([master_fd], [], [], 0.01)
-                if readable and not _read_chunk():
-                    return  # EOF or error
-                await asyncio.sleep(0)  # Yield to other tasks
-
-            # Drain any remaining data
+            # Read while task is running and drain remaining data after completion
             while True:
                 readable, _, _ = select.select([master_fd], [], [], 0.01)
-                if not readable or not _read_chunk():
-                    return  # No more data to read
-                await asyncio.sleep(0)  # Yield to other tasks
+                if not readable:
+                    # No data available
+                    if self.precommit_state.task.done():
+                        return  # Task complete and no more data
+                    # Task still running, yield and continue
+                    await asyncio.sleep(0)
+                    continue
+                # Data available, try to read
+                if not _read_chunk():
+                    return  # EOF or error
+                await asyncio.sleep(0)
         finally:
             os.close(master_fd)
 
@@ -339,6 +336,7 @@ class ParallelTaskRunner:
         precommit_path = Path(repo.path) / "hooks" / "pre-commit"
         output_task = None
 
+        # Determine whether to run pre-commit and set up master_fd accordingly
         if run_precommit:
             master_fd, slave_fd = create_pty_with_terminal_size()
 
@@ -358,14 +356,19 @@ class ParallelTaskRunner:
                     os.close(slave_fd)
 
             precommit_task = asyncio.create_task(run_precommit_wrapper())
-            runner = cls(TaskState(ai_task), TaskState(precommit_task), master_fd)
-            update_task = asyncio.create_task(runner._update_loop())
-            output_task = asyncio.create_task(runner._stream_output(master_fd))
+            master_fd_for_runner = master_fd
         else:
             # Skip running pre-commit (e.g., --no-verify was passed)
             precommit_task = asyncio.create_task(asyncio.sleep(0))
-            runner = cls(TaskState(ai_task), TaskState(precommit_task), None)
-            update_task = asyncio.create_task(runner._update_loop())
+            master_fd_for_runner = None
+
+        # Common runner setup
+        runner = cls(TaskState(ai_task), TaskState(precommit_task), master_fd_for_runner)
+        update_task = asyncio.create_task(runner._update_loop())
+
+        # Only create output_task if we have a master_fd
+        if master_fd_for_runner is not None:
+            output_task = asyncio.create_task(runner._stream_output(master_fd_for_runner))
         try:
             # Both tasks will raise exceptions on failure
             msg, _ = await asyncio.gather(ai_task, precommit_task)
@@ -478,6 +481,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--accept-ai", action="store_true", help="Commit immediately with the AI-drafted message (skip editor)"
     )
+    # Capture -a/--all (staging flag) to remove from passthru and expose as typed argument
+    parser.add_argument("-a", "--all", action="store_true", dest="stage_all",
+                       help="Stage all tracked changes (like git commit -a)")
+    # Capture -m/--message to reject it explicitly (we supply the commit message)
+    parser.add_argument("-m", "--message", dest="message",
+                       help=argparse.SUPPRESS)  # Hidden; validated to be None
     return parser
 
 
@@ -502,26 +511,26 @@ def _init_logging(repo: pygit2.Repository, debug: bool) -> logging.Logger:
         console_handler.setLevel(logging.DEBUG)
         console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
         logger.addHandler(console_handler)
+
+    # Silence noisy libraries
+    for name in ("mini_codex", "MiniCodex", "adgn_llm.mini_codex", "mcp", "openai"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
     return logger
 
 
 def filter_commit_passthru(passthru: list[str]) -> list[str]:
-    """Return passthru args excluding staging flags that should not be forwarded to final commit."""
-    return [arg for arg in passthru if arg not in ("-a", "--all")]
+    """Return passthru args as-is.
+
+    Note: Staging flags (-a/--all) and message flags (-m/--message) are now
+    parsed by argparse and automatically removed from passthru, so no filtering
+    is needed here. This function is kept for now but may be removed in future.
+    """
+    return passthru
 
 
-def _validate_no_message_flag(passthru: list[str]) -> None:
-    if any(a in {"-m", "--message"} or a.startswith("--message=") for a in passthru):
-        print(
-            "Error: -m/--message is not supported; this tool supplies the commit message. "
-            "Remove -m/--message and try again.",
-            file=sys.stderr,
-        )
-        raise ExitWithCode(2)
-
-
-def _stage_all_if_requested(repo: pygit2.Repository, passthru: list[str]) -> None:
-    if include_all_from_passthru(passthru):
+def _stage_all_if_requested(repo: pygit2.Repository, include_all: bool) -> None:
+    if include_all:
         # Stage tracked changes (approximate 'git add -u')
         repo.index.add_all()
         repo.index.write()
@@ -549,70 +558,93 @@ def _make_stats_comment(cached: bool, diff: str, msg: str, elapsed_s: float) -> 
 
 
 class ExitWithCode(Exception):  # noqa: N818
-    # TODO: Reconsider whether signalling exit codes via exceptions is the best approach
+    """Exception for signaling exit codes.
+
+    All error paths raise this exception with the desired exit code.
+    Success paths return normally (implicit exit 0).
+    """
     def __init__(self, code: int):
         super().__init__(str(code))
         self.code = code
 
 
-async def _commit_immediately(msg: str, passthru: list[str]) -> int:
+async def _execute_git_commit(message_args: list[str], passthru: list[str]) -> None:
+    """Execute git commit with the given message arguments and passthru flags.
+
+    Args:
+        message_args: Message-specific flags (e.g., ["-m", msg] or ["-F", path, "--cleanup=strip"])
+        passthru: Additional git commit flags to forward
+    """
+    commit_passthru = filter_commit_passthru(passthru)
+    commit_proc = await asyncio.create_subprocess_exec(
+        "git", "commit", *message_args, "--no-verify", *commit_passthru
+    )
+    code = await commit_proc.wait()
+    if code != 0:
+        raise ExitWithCode(code)
+
+
+async def _commit_immediately(msg: str, passthru: list[str]) -> None:
     if not msg.strip():
         print("Aborting commit due to empty AI commit message.", file=sys.stderr)
         raise ExitWithCode(1)
-    commit_passthru = filter_commit_passthru(passthru)
-    commit_proc = await asyncio.create_subprocess_exec("git", "commit", "-m", msg, "--no-verify", *commit_passthru)
-    return await commit_proc.wait()
+    await _execute_git_commit(["-m", msg], passthru)
+
+
+def _extract_commit_content(text: str) -> str:
+    """Extract commit content, stopping at scissors mark and removing comments.
+
+    Returns the cleaned commit message (non-comment, non-scissors lines joined).
+    """
+    content_lines: list[str] = []
+    for line in text.splitlines():
+        if line.startswith(SCISSORS_MARK):
+            break
+        if line.strip() and not line.strip().startswith("#"):
+            content_lines.append(line)
+    return "\n".join(content_lines)
 
 
 async def _run_editor_flow(
     repo: pygit2.Repository, msg: str, previous_message: str | None, stats_comment: str, passthru: list[str]
-) -> int:
-    final_text = msg
+) -> None:
+    # Build initial editor content
+    editor_content = msg
     if previous_message:
-        final_text += "\n\n# Previous commit message (being amended):\n"
-        for line in previous_message.splitlines():
-            final_text += f"# {line}\n"
-    final_text += stats_comment + build_commit_template(repo, passthru)
+        editor_content += "\n\n# Previous commit message (being amended):\n"
+        editor_content += textwrap.indent(previous_message, "# ", lambda line: True)
+    editor_content += stats_comment + build_commit_template(repo, passthru)
 
+    # Write content to COMMIT_EDITMSG and open editor
     commit_msg_path = Path(repo.path) / "COMMIT_EDITMSG"
-    commit_msg_path.write_text(final_text)
-
+    commit_msg_path.write_text(editor_content)
     mtime_before = commit_msg_path.stat().st_mtime
-    content_before = final_text
 
-    editor = await _get_editor()
+    editor = _get_editor(repo)
     editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
     if (rc := await editor_proc.wait()) != 0:
         print(f"Aborting commit: editor exited with code {rc} (e.g., :cq)", file=sys.stderr)
         raise ExitWithCode(1)
 
+    # Validate that user saved changes
     try:
         final_content = commit_msg_path.read_text()
         mtime_after = commit_msg_path.stat().st_mtime
-        saved = mtime_after != mtime_before
-        changed = final_content.rstrip("\n") != content_before
-        if not saved and not changed:
+        changed = final_content.rstrip("\n") != editor_content
+        if mtime_after == mtime_before and not changed:
             print("Aborting commit: editor closed without saving (unchanged commit message).", file=sys.stderr)
             raise ExitWithCode(1)
     except FileNotFoundError:
         print("Aborting commit.", file=sys.stderr)
         raise ExitWithCode(1)
 
-    content_lines: list[str] = []
-    for line in final_content.splitlines():
-        if line.startswith(SCISSORS_MARK):
-            break
-        if line.strip() and not line.strip().startswith("#"):
-            content_lines.append(line)
-    if not content_lines:
+    # Extract commit content (remove scissors and comments)
+    commit_message = _extract_commit_content(final_content)
+    if not commit_message:
         print("Aborting commit due to empty commit message.", file=sys.stderr)
         raise ExitWithCode(1)
 
-    commit_passthru = filter_commit_passthru(passthru)
-    commit_proc = await asyncio.create_subprocess_exec(
-        "git", "commit", "-F", commit_msg_path, "--cleanup=strip", "--no-verify", *commit_passthru
-    )
-    return await commit_proc.wait()
+    await _execute_git_commit(["-F", str(commit_msg_path), "--cleanup=strip"], passthru)
 
 
 @dataclass
@@ -646,96 +678,110 @@ async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
 # ---------- main ------------------------------------------------------
 
 
-async def _get_editor() -> str:
-    # Get git's editor
-    proc = await asyncio.create_subprocess_exec(
-        "git", "var", "GIT_EDITOR", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    stdout, _stderr = await proc.communicate()
-    result_stdout = stdout.decode() if stdout else ""
-    return result_stdout.strip() if proc.returncode == 0 else os.environ.get("EDITOR", "vi")
+def _get_editor(repo: pygit2.Repository) -> str:
+    """Get the editor to use for commit messages.
+
+    Follows git's precedence: GIT_EDITOR env > core.editor config >
+    VISUAL env > EDITOR env > 'vi'
+    """
+    if editor := os.environ.get("GIT_EDITOR"):
+        return editor
+    if editor := repo.config.get("core.editor"):
+        return editor
+    if editor := os.environ.get("VISUAL"):
+        return editor
+    if editor := os.environ.get("EDITOR"):
+        return editor
+    return "vi"
 
 
 async def async_main(argv: list[str] | None = None):
-    try:
-        start_monotonic_s = time.monotonic()
-        gitdir = pygit2.discover_repository(str(Path.cwd()))
-        if not gitdir:
-            print("fatal: not a git repository (or any of the parent directories)", file=sys.stderr)
-            raise ExitWithCode(128)
-        repo = pygit2.Repository(gitdir)
+    start_monotonic_s = time.monotonic()
+    gitdir = pygit2.discover_repository(Path.cwd())
+    if not gitdir:
+        print("fatal: not a git repository (or any of the parent directories)", file=sys.stderr)
+        raise ExitWithCode(128)
+    repo = pygit2.Repository(gitdir)
 
-        args, passthru = _parse_args_and_passthru(argv)
-        _validate_no_message_flag(passthru)
+    args, passthru = _parse_args_and_passthru(argv)
 
-        # Detect --amend flag
-        is_amend = "--amend" in passthru
-
-        # Logging and config
-        _init_logging(repo, args.debug)
-        config = AppConfig.resolve(args)
-        if args.debug:
-            print(f"# Resolved model={config.model_str}, timeout={config.timeout}", file=sys.stderr)
-
-        # Stage if requested (-a/--all)
-        _stage_all_if_requested(repo, passthru)
-
-        # Get previous commit message if amending
-        previous_message = _get_previous_message_if_amend(repo, is_amend)
-
-        if not (diff := get_commit_diff(repo, passthru, previous_message)).strip():
-            # Check if there's truly nothing to commit
-            status = _format_status_porcelain(repo)
-            if not status:
-                print("nothing to commit, working tree clean", file=sys.stderr)
-            else:
-                # There are changes but -a wasn't passed
-                print('no changes added to commit (use "git add" and/or "git commit -a")', file=sys.stderr)
-            raise ExitWithCode(1)
-
-        # Model parsing handled by AppConfig.resolve
-        model_name = config.model_name
-        include_all = include_all_from_passthru(passthru)
-
-        # Clean old cache entries
-        cache = Cache(repo_cache_dir(repo))
-        cache.prune()
-
-        # Cache key by model, scope, HEAD, diff, and amend status
-        commitish = get_short_commitish(repo)
-        key = build_cache_key(
-            model_name, include_all=include_all, previous_message=previous_message, commitish=commitish, diff=diff
+    # Validate that -m/--message was not passed (we supply the commit message)
+    if args.message is not None:
+        print(
+            "Error: -m/--message is not supported; this tool supplies the commit message. "
+            "Remove -m/--message and try again.",
+            file=sys.stderr,
         )
+        raise ExitWithCode(2)
 
-        msg, cached = await _produce_message(
-            ProduceMessageInput(
-                repo=repo,
-                model_name=model_name,
-                debug=args.debug,
-                deadline=config.timeout,
-                passthru=passthru,
-                diff=diff,
-                previous_message=previous_message,
-                cache=cache,
-                key=key,
-            )
+    # Parse flags from passthru (those not handled by argparse)
+    is_amend = "--amend" in passthru
+    include_all = args.stage_all
+
+    # Logging and config
+    _init_logging(repo, args.debug)
+    config = AppConfig.resolve(args)
+    if args.debug:
+        print(f"# Resolved model={config.model_str}, timeout={config.timeout}", file=sys.stderr)
+
+    # Stage if requested (-a/--all)
+    _stage_all_if_requested(repo, include_all)
+
+    # Get previous commit message if amending
+    previous_message = _get_previous_message_if_amend(repo, is_amend)
+
+    if not (diff := get_commit_diff(repo, include_all, previous_message)).strip():
+        # Check if there's truly nothing to commit
+        status = _format_status_porcelain(repo)
+        if not status:
+            print("nothing to commit, working tree clean", file=sys.stderr)
+        else:
+            # There are changes but -a wasn't passed
+            print('no changes added to commit (use "git add" and/or "git commit -a")', file=sys.stderr)
+        raise ExitWithCode(1)
+
+    # Model parsing handled by AppConfig.resolve
+    model_name = config.model_name
+
+    # Clean old cache entries
+    cache = Cache(repo_cache_dir(repo))
+    cache.prune()
+
+    # Cache key by model, scope, HEAD, diff, and amend status
+    commitish = get_short_commitish(repo)
+    key = build_cache_key(
+        model_name, include_all=include_all, previous_message=previous_message, commitish=commitish, diff=diff
+    )
+
+    msg, cached = await _produce_message(
+        ProduceMessageInput(
+            repo=repo,
+            model_name=model_name,
+            debug=args.debug,
+            deadline=config.timeout,
+            passthru=passthru,
+            diff=diff,
+            previous_message=previous_message,
+            cache=cache,
+            key=key,
         )
+    )
 
-        elapsed_s = time.monotonic() - start_monotonic_s
-        stats_comment = _make_stats_comment(cached, diff, msg, elapsed_s)
+    elapsed_s = time.monotonic() - start_monotonic_s
+    stats_comment = _make_stats_comment(cached, diff, msg, elapsed_s)
 
-        if args.accept_ai:
-            code = await _commit_immediately(msg, passthru)
-            sys.exit(code)
-
-        code = await _run_editor_flow(repo, msg, previous_message, stats_comment, passthru)
-        sys.exit(code)
-    except ExitWithCode as e:
-        sys.exit(e.code)
+    if args.accept_ai:
+        await _commit_immediately(msg, passthru)
+    else:
+        await _run_editor_flow(repo, msg, previous_message, stats_comment, passthru)
+    # Success - exit 0
 
 
 def main():
-    asyncio.run(async_main())
+    try:
+        asyncio.run(async_main())
+    except ExitWithCode as e:
+        sys.exit(e.code)
 
 
 if __name__ == "__main__":

@@ -21,8 +21,9 @@ export function startAgentsPolling(intervalMs = 2500) {
     try {
       const body = await listAgents()
       agents.set(body.agents || [])
-    } catch {
-      // Ignore errors; next tick will refresh
+    } catch (err) {
+      console.error('Failed to fetch agents list:', err)
+      // Keep prior list on fetch failure
     }
   }
   tick()

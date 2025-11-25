@@ -130,8 +130,8 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
 
         tool_name: str | None = None
         for it in reversed(state.items):
-            if isinstance(it, ToolItem) and it.call_id == evt.call_id:
-                tool_name = it.tool
+            if isinstance(it, ToolItem) and it.tool_call.call_id == evt.call_id:
+                tool_name = it.tool_call.name
                 break
         if tool_name in (
             build_mcp_function(UI_SERVER_NAME, WellKnownTools.SEND_MESSAGE),

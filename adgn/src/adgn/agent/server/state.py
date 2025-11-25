@@ -7,6 +7,8 @@ import uuid
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.agent.handler import ToolCall
+
 # ---- Display items (normalized, UI-friendly) ----
 
 
@@ -66,8 +68,7 @@ class ToolItem(BaseModel):
     kind: Literal["Tool"] = "Tool"
     id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    tool: str
-    call_id: str
+    tool_call: ToolCall
     decision: ApprovalKind | None = None
     content: ToolContent
     model_config = ConfigDict(extra="forbid")
@@ -102,13 +103,14 @@ def append_item(state: UiState, item: DisplayItem) -> UiState:
 
 def start_tool(state: UiState, *, tool: str, call_id: str, cmd: str | None, args: Any | None) -> UiState:
     content: ToolContent = ExecContent(cmd=cmd, args=args) if cmd is not None else JsonContent(args=args)
-    return append_item(state, ToolItem(tool=tool, call_id=call_id, content=content))
+    tool_call = ToolCall(name=tool, call_id=call_id, args_json=None)
+    return append_item(state, ToolItem(tool_call=tool_call, content=content))
 
 
 def _find_last_tool_index(state: UiState, call_id: str) -> int | None:
     for idx in range(len(state.items) - 1, -1, -1):
         it = state.items[idx]
-        if isinstance(it, ToolItem) and it.call_id == call_id:
+        if isinstance(it, ToolItem) and it.tool_call.call_id == call_id:
             return idx
     return None
 

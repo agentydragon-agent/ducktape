@@ -42,7 +42,7 @@ def determine_run_phase(*, active_run_id: UUID | None, pending_approvals: int, m
 
     - IDLE: no active run
     - WAITING_APPROVAL: approvals pending
-    - TOOLS_RUNNING: MCP manager has in-flight requests
+    - TOOLS_RUNNING: MCP policy gateway has in-flight requests
     - SAMPLING: otherwise
     """
     if active_run_id is None:
@@ -63,18 +63,8 @@ class AgentLifecycle(StrEnum):
 """Status models and builder (no host volumes reported)."""
 
 
-class PolicyState(BaseModel):
-    version: int | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
 class UiStateLite(BaseModel):
     ready: bool
-    model_config = ConfigDict(extra="forbid")
-
-
-class McpState(BaseModel):
-    entries: dict[str, ServerEntry]
     model_config = ConfigDict(extra="forbid")
 
 
@@ -91,11 +81,8 @@ class AgentStatusCore(BaseModel):
     active_run_id: UUID | None
     lifecycle: AgentLifecycle
     run_phase: RunPhase
-    policy: PolicyState
     ui: UiStateLite
-    mcp: McpState
     container: ContainerState
-    pending_approvals: int
     last_event_at: datetime | None = None
     model_config = ConfigDict(extra="forbid")
 
@@ -112,7 +99,7 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     c = registry.get(agent_id)
     present = c is not None
 
-    # UI + approvals + active run
+    # UI + active run
     ui_ready = bool(c and c.ui is not None)
     pending = 0
     active_run: UUID | None = None
@@ -121,18 +108,10 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
             active_run = c.session.active_run.run_id
         pending = len(c.session.approval_hub.pending)
 
-    # Policy state from live engine only (single source of truth). If agent is not live, report absent.
-    version_val: int | None = None
-    if c and c.session is not None and c.session.approval_engine is not None:
-        _content, ver = c.session.approval_engine.get_policy()
-        version_val = ver
-    policy = PolicyState(version=version_val)
-
     # MCP server entries — read via compositor_meta resources through container
     entries: dict[str, ServerEntry] = {}
     if c:
         entries = await c.list_mcp_entries()
-    mcp_state = McpState(entries=entries)
 
     # Lifecycle
     if not present:
@@ -155,7 +134,7 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     container = ContainerState(present=present, id=container_id, ephemeral=(c.runtime_ephemeral if c else False))
 
     # Run phase from live signals; no exceptions expected in this path
-    # Tool inflight detection is not exposed here; default to False
+    # TODO: Implement inflight detection - check if policy gateway has active tool calls
     has_inflight = False
     run_phase = determine_run_phase(active_run_id=active_run, pending_approvals=pending, mcp_has_inflight=has_inflight)
 
@@ -165,10 +144,7 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
         active_run_id=active_run,
         lifecycle=lifecycle,
         run_phase=run_phase,
-        policy=policy,
         ui=UiStateLite(ready=ui_ready),
-        mcp=mcp_state,
         container=container,
-        pending_approvals=pending,
         last_event_at=last_at,
     )

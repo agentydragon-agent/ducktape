@@ -36,9 +36,7 @@ def filter_persistable_servers(cfg: MCPConfig) -> MCPConfig:
     return MCPConfig(mcpServers={k: v for k, v in (cfg.mcpServers or {}).items() if k not in DEFAULT_AUTO_SERVER_NAMES})
 
 
-async def attach_default_servers(
-    comp: Compositor, *, agent_id: str, persistence, docker_client, ui_bus, approval_engine
-) -> None:
+async def attach_default_servers(comp: Compositor, *, ui_bus, approval_engine) -> None:
     """Attach the standard UI + approval policy + runtime exec servers.
 
     Inlines UI + policy wiring locally.

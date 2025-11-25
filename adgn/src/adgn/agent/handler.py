@@ -130,10 +130,7 @@ class BaseHandler:
         raise exc
 
     def on_response(self, evt: Response) -> None:
-        """Called after receiving a complete model response with usage stats.
-
-        Default: no-op.
-        """
+        """Called after receiving a complete model response with usage stats."""
         return
 
     def on_before_sample(self) -> LoopDecision:
@@ -147,36 +144,21 @@ class BaseHandler:
         return NoLoopDecision()
 
     def on_user_text_event(self, evt: UserText) -> None:
-        """Called when user text is added to the conversation.
-
-        Default: no-op.
-        """
+        """Called when user text is added to the conversation."""
         return
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        """Called when assistant generates text.
-
-        Default: no-op.
-        """
+        """Called when assistant generates text."""
         return
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
-        """Called when the model requests a tool call.
-
-        Default: no-op.
-        """
+        """Called when the model requests a tool call."""
         return
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        """Called when a tool call completes and returns a result.
-
-        Default: no-op.
-        """
+        """Called when a tool call completes and returns a result."""
         return
 
     def on_reasoning(self, item: ReasoningItem) -> None:
-        """Called when the model emits reasoning tokens (extended thinking mode).
-
-        Default: no-op.
-        """
+        """Called when the model emits reasoning tokens (extended thinking mode)."""
         return

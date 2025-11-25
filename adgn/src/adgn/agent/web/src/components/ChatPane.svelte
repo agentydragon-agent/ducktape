@@ -238,6 +238,7 @@
 </section>
 
 <style>
+  /* TODO: Extract duplicate styles (buttons, errors) to shared stylesheet - see issue 047/051 */
   /* Column flex: scrollable messages + fixed composer */
   .chat {
     display: flex;

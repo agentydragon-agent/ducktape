@@ -12,8 +12,6 @@ from adgn.agent.server.status_shared import (
     AgentLifecycle,
     AgentStatusCore,
     ContainerState,
-    McpState,
-    PolicyState,
     RunPhase,
     UiStateLite,
     build_agent_status_core,
@@ -70,12 +68,8 @@ class AgentStatusData(BaseModel):
     active_run_id: UUID | None = None
     lifecycle: AgentLifecycle
     run_phase: RunPhase
-    # volumes removed
-    policy: PolicyState
     ui: UiStateLite
-    mcp: McpState
     container: ContainerState
-    pending_approvals: int
     last_event_at: str | None = None
     model_config = ConfigDict(extra="forbid")
 
@@ -93,11 +87,8 @@ class AgentStatusData(BaseModel):
             active_run_id=core.active_run_id,
             lifecycle=core.lifecycle,
             run_phase=core.run_phase,
-            policy=core.policy,
             ui=core.ui,
-            mcp=core.mcp,
             container=core.container,
-            pending_approvals=core.pending_approvals,
             last_event_at=last,
         )
 

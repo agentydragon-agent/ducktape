@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import logging
 import os
 
@@ -13,6 +14,7 @@ from adgn.agent.runtime.images import resolve_runtime_image
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class ContainerPolicyEvaluator:
     """Evaluate policy decisions inside a one-off Docker container (isolated).
 
@@ -22,36 +24,21 @@ class ContainerPolicyEvaluator:
     mounts; no container reuse.
     """
 
-    def __init__(
-        self,
-        *,
-        agent_id: str,
-        docker_client: DockerClient,
-        engine: ApprovalPolicyEngine,
-        image: str | None = None,
-        timeout_secs: float | None = None,
-    ) -> None:
-        if not agent_id:
-            raise ValueError("ContainerPolicyEvaluator requires agent_id")
-        self.agent_id = agent_id
-        self.image: str = image or resolve_runtime_image()
-        self.timeout_secs = (
-            timeout_secs if timeout_secs is not None else float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
-        )
-        self._docker = docker_client
-        self._engine = engine
+    agent_id: str
+    docker_client: DockerClient
+    engine: ApprovalPolicyEngine
+    image: str = field(default_factory=resolve_runtime_image)
+    timeout_secs: float = field(
+        default_factory=lambda: float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
+    )
 
     async def decide(self, policy_input: PolicyRequest) -> PolicyResponse:
         """Evaluate using the current policy source via run_policy_source."""
-        payload = {"name": policy_input.name, "arguments": policy_input.arguments}
-        policy_src, _ver = self._engine.get_policy()
+        policy_src, _ver = self.engine.get_policy()
         return run_policy_source(
-            docker_client=self._docker,
+            docker_client=self.docker_client,
             source=policy_src,
-            input_payload=payload,
+            input_payload=policy_input,
             image=self.image,
             timeout_secs=self.timeout_secs,
         )
-
-
-## run_policy_source moved to adgn.agent.policy_eval.runner
