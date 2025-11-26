@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../styles/shared.css'
   import ApprovalsPanel from './ApprovalsPanel.svelte'
   import ServersPanel from './ServersPanel.svelte'
   import SettingsPanel from './SettingsPanel.svelte'
@@ -168,19 +169,6 @@
     align-items: center;
     gap: 0.5rem;
   }
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #bbb;
-    display: inline-block;
-  }
-  .dot.on {
-    background: #2ecc71;
-  }
-  .dot.off {
-    background: #bbb;
-  }
   .status {
     color: var(--text);
   }
@@ -195,11 +183,6 @@
     border-radius: 0.75rem;
     padding: 0 0.4rem;
     font-size: 0.7rem;
-  }
-  .row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
   }
   .mounts {
     display: flex;

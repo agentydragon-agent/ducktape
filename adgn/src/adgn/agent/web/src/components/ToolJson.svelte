@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../styles/shared.css'
   import { z } from 'zod'
 
   import JsonDisclosure from './JsonDisclosure.svelte'
@@ -113,11 +114,6 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-  }
-  .copy {
-    margin-left: 0.5rem;
-    font-size: 0.7rem;
-    padding: 0.1rem 0.4rem;
   }
   .term-error {
     color: #c62828;

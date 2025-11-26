@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../styles/shared.css'
   import hljs from 'highlight.js/lib/common'
 
   import ProposalCard from './ProposalCard.svelte'
@@ -137,14 +138,6 @@
     border: 1px solid var(--border);
     padding: 0.5rem;
     margin: 0.25rem 0;
-  }
-  .row {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-  .empty {
-    color: var(--muted);
   }
   /* Removed unused diff styles */
 </style>

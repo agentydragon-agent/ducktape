@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../styles/shared.css'
   import JsonDisclosure from './JsonDisclosure.svelte'
 
   import type { ToolItem } from '../shared/types'
@@ -52,13 +53,13 @@
   {/if}
   <div class="terminal-body">
     {#if item.content && (item.content as any).cmd}
-      <pre class="term-line">$ {(item.content as any).cmd}</pre>
+      <pre class="term-line mono">$ {(item.content as any).cmd}</pre>
     {/if}
     {#if item.content && (item.content as any).stdout}
-      <pre class="term-stdout">{(item.content as any).stdout}</pre>
+      <pre class="term-stdout mono">{(item.content as any).stdout}</pre>
     {/if}
     {#if item.content && (item.content as any).stderr}
-      <pre class="term-stderr">{(item.content as any).stderr}</pre>
+      <pre class="term-stderr mono">{(item.content as any).stderr}</pre>
     {/if}
     {#if item.content && (item.content as any).exit_code !== null && (item.content as any).exit_code !== undefined}
       <div class="term-exit">[exit {(item.content as any).exit_code}]</div>
@@ -82,7 +83,6 @@
     margin: 0.25rem 0;
     white-space: pre-wrap;
     word-break: break-word;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
     font-size: 0.85rem;
     line-height: 1.35;
   }
@@ -109,10 +109,5 @@
     color: #ffd54f;
     font-size: 0.8rem;
     margin: 0.1rem 0;
-  }
-  .copy {
-    margin-left: 0.5rem;
-    font-size: 0.7rem;
-    padding: 0.1rem 0.4rem;
   }
 </style>
