@@ -246,16 +246,16 @@ export async function reconfigureMcp(attach?: Record<string, any>, detach?: stri
 }
 
 function handleSnapshot(p: SnapshotPayload) {
-  const sampling: SamplingSnapshot | undefined = p.details?.sampling as any
+  const sampling: SamplingSnapshot | undefined = p.sampling as any
   if (sampling) {
     mcpServerEntries.set(sampling.servers || [])
   }
-  const st = p.details?.run_state.status
+  const st = p.run_state?.status
   if (st) runStatus.set(st)
   else runStatus.set('idle')
-  if (Array.isArray(p.details?.run_state?.pending_approvals)) {
+  if (Array.isArray(p.run_state?.pending_approvals)) {
     const map = new Map<string, Pending>()
-    for (const a of p.details!.run_state!.pending_approvals!) {
+    for (const a of p.run_state!.pending_approvals!) {
       map.set(a.call_id, {
         call_id: a.call_id,
         tool_key: a.tool_key,
@@ -264,7 +264,7 @@ function handleSnapshot(p: SnapshotPayload) {
     }
     pendingApprovals.set(map)
   }
-  if (p.details?.approval_policy) approvalPolicy.set(p.details.approval_policy)
+  if (p.approval_policy) approvalPolicy.set(p.approval_policy)
 }
 
 function handleUiStateSnapshot(agentId: string, p: UiStateSnapshotPayload) {
@@ -304,7 +304,7 @@ function handlePayload(agentId: string, p: IncomingPayload) {
   if (p.type === 'run_status') {
     console.log('[WS] RUN_STATUS', (p as any).run_state?.status)
   } else if (p.type === 'snapshot') {
-    console.log('[WS] SNAPSHOT', (p as any).details?.run_state?.status)
+    console.log('[WS] SNAPSHOT', (p as any).run_state?.status)
   }
   switch (p.type) {
     case 'snapshot':

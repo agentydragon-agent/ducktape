@@ -11,7 +11,6 @@ import uuid
 from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
-from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import RunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.agents_ws import AgentsWSHub
@@ -19,7 +18,6 @@ from adgn.agent.server.bus import UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
     ApprovalBrief,
     ApprovalPolicyInfo,
-    Envelope,
     ErrorCode,
     ErrorEvt,
     FunctionCallOutput,
@@ -30,7 +28,6 @@ from adgn.agent.server.protocol import (
     ServerMessage,
     SessionState,
     Snapshot,
-    SnapshotDetails,
     ToolCall as UiToolCall,
     UiEndTurnEvt,
     UiMessageEvt,
@@ -216,18 +213,15 @@ class AgentSession:
 
         content, version = self.approval_engine.get_policy()
         # Load proposals from persistence policy store
-        proposals = [
-            ProposalInfo(id=r.id, status=ProposalStatus(r.status))
-            for r in await self._persistence.list_policy_proposals(self.agent_id)
-        ] if self._persistence is not None and self.agent_id else []
-        approval_policy = ApprovalPolicyInfo(content=content, version=version, proposals=proposals)
-
-        # Build preferred details bundle when all components are present
-        details = (
-            SnapshotDetails(run_state=self.active_run, sampling=sampling, approval_policy=approval_policy)
-            if self.active_run and sampling and approval_policy
-            else None
+        proposals = (
+            [
+                ProposalInfo(id=r.id, status=r.status)
+                for r in await self._persistence.list_policy_proposals(self.agent_id)
+            ]
+            if self._persistence is not None and self.agent_id
+            else []
         )
+        approval_policy = ApprovalPolicyInfo(content=content, version=version, proposals=proposals)
 
         return Snapshot(
             v="1.0.0",
@@ -240,7 +234,8 @@ class AgentSession:
                 run_counter=self._run_counter,
             ),
             approval_policy=approval_policy,
-            details=details,
+            run_state=self.active_run,
+            sampling=sampling,
         )
 
     def attach_agent(self, agent: MiniCodex, *, model: str | None = None, system: str | None = None) -> None:

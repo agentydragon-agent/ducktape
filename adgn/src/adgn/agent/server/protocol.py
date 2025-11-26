@@ -176,27 +176,13 @@ class Welcome(Envelope):
     session_state: SessionState
 
 
-class SnapshotDetails(BaseModel):
-    """Non-nullable bundle of snapshot details.
-
-    Group formerly individually-optional fields into a single optional bundle.
-    This reduces surprising nullability at the protocol boundary.
-    """
-
-    run_state: RunState
-    sampling: SamplingSnapshot
-    approval_policy: ApprovalPolicyInfo
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class Snapshot(BaseModel):
     type: Literal["snapshot"] = "snapshot"
     v: str
     session_state: SessionState
     approval_policy: ApprovalPolicyInfo | None = None
-    # Preferred: a single optional bundle; each item inside is non-nullable
-    details: SnapshotDetails | None = None
+    run_state: RunState | None = None
+    sampling: SamplingSnapshot | None = None
     model_config = ConfigDict(extra="forbid")
 
 
