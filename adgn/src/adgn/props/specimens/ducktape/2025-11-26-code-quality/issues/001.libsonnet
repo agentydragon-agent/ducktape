@@ -4,33 +4,19 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueOneOccurrence(
   rationale= |||
-    The `_policy_gateway` field in AgentRuntimeContainer is typed as `Any | None` with a
-    comment indicating it should be `PolicyGatewayMiddleware`, but the proper type is not
-    used.
-
-    **Current implementation (container.py:197):**
-    ```python
-    _policy_gateway: Any | None = field(default=None, init=False)  # PolicyGatewayMiddleware
-    ```
+    Line 197 in container.py types `_policy_gateway` as `Any | None` with a comment
+    indicating it should be `PolicyGatewayMiddleware`, but doesn't use the proper type.
 
     **Problems:**
-    1. **Loss of type safety**: `Any` defeats the purpose of type checking
-    2. **Misleading comment**: If we know the type, we should use it
-    3. **IDE limitations**: No autocomplete or type hints when using this field
-    4. **Maintenance burden**: Comment can drift from reality
+    1. Loss of type safety - `Any` defeats type checking
+    2. Misleading comment - if we know the type, use it in the annotation
+    3. IDE limitations - no autocomplete or type hints when using this field
+    4. Maintenance burden - comment can drift from reality
 
-    **Correct approach:**
-    ```python
-    from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
+    **Fix:** Import `PolicyGatewayMiddleware` from `adgn.mcp.policy_gateway.middleware`
+    and change the type annotation to `PolicyGatewayMiddleware | None`. Remove the comment.
 
-    _policy_gateway: PolicyGatewayMiddleware | None = field(default=None, init=False)
-    ```
-
-    **Benefits:**
-    1. Proper type checking catches errors at development time
-    2. IDE autocomplete and navigation work correctly
-    3. Self-documenting - no need for comment
-    4. Safer refactoring - type checker catches breaking changes
+    This enables proper type checking, IDE support, and makes the code self-documenting.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/runtime/container.py': [

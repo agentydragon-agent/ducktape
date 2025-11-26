@@ -1,38 +1,30 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-052: Check if handlers.insert(0, ...) actually needs to be first
+// iss-052: Use handlers.append() instead of handlers.insert(0, ...)
 
 I.issueOneOccurrence(
   rationale=|||
-    Two locations insert handlers at position 0 (front of list). Check if these
-    actually need to be first or if order doesn't matter.
+    Two locations use `handlers.insert(0, DisplayEventsHandler(...))` to prepend the
+    handler, but this is unnecessary because DisplayEventsHandler is a pure observer
+    with no ordering requirements.
 
-    **Occurrences:**
-    1. `minicodex_backend.py:190` - DisplayEventsHandler inserted at start if debug
-    2. `per_file_eval.py:225` - DisplayEventsHandler inserted at start
+    **Analysis:**
+    `DisplayEventsHandler` (adgn/src/adgn/agent/event_renderer.py:19) only prints events
+    and doesn't modify state or make decisions. It has no side effects that other handlers
+    depend on, so order doesn't matter.
 
-    **Question:** Do these handlers need to be first, or is the order arbitrary?
+    **Current pattern:**
+    - `minicodex_backend.py:190` - inserts DisplayEventsHandler at position 0 if debug
+    - `per_file_eval.py:225` - inserts DisplayEventsHandler at position 0
 
-    **Verified:**
-    `DisplayEventsHandler` (adgn/src/adgn/agent/event_renderer.py:19) is a pure observer -
-    only prints events, doesn't modify state or make decisions. It has no side effects that
-    other handlers depend on, so order doesn't matter.
-
-    Line 187 context: `handlers = [CommitController(...)]` then optionally inserts
-    DisplayEventsHandler at position 0 if debug enabled. CommitController handles actual
-    logic; DisplayEventsHandler just logs.
+    In minicodex_backend.py line 187 context: `handlers = [CommitController(...)]` then
+    optionally inserts DisplayEventsHandler at start if debug enabled. CommitController
+    handles actual logic; DisplayEventsHandler just logs.
 
     **Correct approach:**
-    ```python
-    # Instead of:
-    handlers.insert(0, DisplayEventsHandler(...))
-
-    # Use:
-    handlers.append(DisplayEventsHandler(...))
-    ```
-
-    Unless there's a specific reason for front-of-list insertion, append() is clearer
-    (handlers are processed in order added).
+    Replace `handlers.insert(0, DisplayEventsHandler(...))` with
+    `handlers.append(DisplayEventsHandler(...))` since order doesn't matter and append
+    is clearer (handlers are processed in order added).
   |||,
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/minicodex_backend.py': [

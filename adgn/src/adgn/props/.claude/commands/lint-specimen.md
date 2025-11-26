@@ -34,8 +34,14 @@ A textual report of all violations with:
 4) **Use `adgn-properties2 specimen-exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper isolation and correct specimen hydration
 5) **Check EVERY issue file in `issues/*.libsonnet`** (not just a sample):
    - Evaluate Jsonnet to JSON
-   - Verify ONE logical issue per file
-   - Check if same issue appears in multiple files (should be consolidated)
+   - **Verify ONE logical problem per file** (Authoring Guide §3):
+     - Each file should describe ONE logical problem type (e.g., "missing type annotations", "dead code")
+     - If an issue describes multiple INDEPENDENT problems at one location, it should be split
+     - Example violation: Issue combining "use ternary" (style) AND "architectural bundling problem" (design)
+   - **Check if same logical problem appears in multiple files** (should be consolidated):
+     - Same problem type across different locations = ONE issue with multiple occurrences
+     - Example: "Unnecessary intermediate variables" appearing in issues 003, 009, 023, 028, 045 should be ONE issue
+     - Example: "Useless comments" in Python appearing in issues 031, 040, 041 should be ONE issue
    - Validate against schema
    - Check for unnecessary code blocks (use verbal descriptions when sufficient)
    - Verify external references are verifiable (docs URLs, GitHub permalinks with SHAs, package versions)

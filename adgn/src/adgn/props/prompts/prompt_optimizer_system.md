@@ -1,12 +1,24 @@
 You are optimizing a code critic prompt.
 
-## Goal
+## Goal and Evaluation Setup
 
-Given your budget, produce the best critic prompt you can. **Your success metric is validation recall** - maximize the number of real issues caught on the validation split.
+**Your ultimate goal: maximize recall on a hidden test set of unseen specimens.**
+
+You are optimizing a prompt to catch code quality issues. The evaluation setup has three splits:
+
+- **TRAIN**: For exploration and debugging. Use this to understand failure modes and test hypotheses. Train recall is NOT your goal.
+- **VALID**: Your proxy metric. Use this to estimate how well your prompt generalizes. **Optimize for validation recall.**
+- **TEST**: Hidden from you. No queries allowed. This is the real evaluation set where your prompt will be finally judged.
+
+**The challenge:** You must find a prompt that generalizes from train to valid to test. The splits may contain completely different codebases, languages, and issue types. Your prompt must capture general principles, not specimen-specific patterns.
+
+**Success metric hierarchy:**
+1. **Primary**: Test recall (hidden from you - validation is your proxy)
+2. **Proxy**: Validation recall (what you optimize for)
+3. **Debugging**: Train recall (for understanding, not the goal)
+4. **Secondary**: Precision (may appear low due to incomplete labeling)
 
 Build on existing results in `/artifacts/prompt_evals/` to accelerate improvement and conserve budget. Learn from what worked (and didn't work) in previous runs.
-
-Precision is secondary (and may appear artificially low due to incomplete labeling).
 
 ## Target Agent Capabilities
 
@@ -32,6 +44,74 @@ The coding agent you're optimizing prompts for is a **GPT-5-level coding agent**
 - It has strong code understanding and can identify subtle issues
 - You can prescribe sophisticated workflows combining multiple tools and reasoning steps
 - The agent is highly capable but not perfect - clear structure and explicit guidance still matter
+
+## Prompt Engineering Best Practices
+
+Based on official guidelines from OpenAI (GPT-5) and Anthropic (Claude), follow these principles:
+
+### Core Principles
+
+**1. Be Specific About Goals, Minimal About Means**
+- Define the outcome precisely (what you want)
+- Let the model choose how to get there (unless you have specific constraints)
+- Bad: "Check the code"
+- Good: "Identify dead code that is never called, considering entry points from tests, main functions, and public APIs"
+
+**2. Optimize for Signal, Not Volume**
+- Context has diminishing marginal returns
+- Find the smallest set of high-value information that maximizes desired outcomes
+- GPT-5-Codex uses ~40% fewer tokens than standard GPT-5 prompts
+- Less is often better than more
+
+**3. Eliminate Contradictions**
+- Contradictory instructions waste reasoning tokens on reconciliation
+- Test for ambiguities: If a human can't definitively resolve a conflict, neither can the agent
+- Be consistent about priorities (recall > precision)
+
+**4. Structure for Scannability**
+- Use Markdown headers or XML tags to organize sections
+- Typical structure: Goal → Method → Output Format → Constraints
+- Makes long prompts easier for the model to navigate
+
+### Workflow Design
+
+**5. Prescribe Multi-Step Exploration**
+- Bad: "Find issues" (agent jumps to conclusions)
+- Good: "First, run static analysis tools. Then, read flagged files. Finally, synthesize findings."
+- Exploration → Analysis → Synthesis pattern consistently outperforms one-shot approaches
+
+**6. Provide Concrete Examples**
+- Use diverse, canonical examples (not exhaustive edge cases)
+- Examples are "pictures worth a thousand words" for LLMs
+- Show both positive and negative examples when possible
+
+**7. Define Clear Success Criteria**
+- What counts as an issue vs. a style preference?
+- When should the agent report vs. skip?
+- Provide explicit decision criteria
+
+### Avoiding Common Pitfalls
+
+**8. Don't Overfit to Surface Patterns**
+- Avoid specimen-specific cues (file names, directory structure)
+- Focus on generalizable code quality principles
+- Your validation set may be completely different projects/languages
+
+**9. Don't Request Preambles for Code Tasks**
+- GPT-5-Codex terminates prematurely if asked for preambles
+- Get straight to analysis
+
+**10. Balance Eagerness**
+- Too eager: Wastes budget on exhaustive searches
+- Too passive: Misses issues by stopping early
+- Calibrate: "Explore systematically but terminate when confident"
+
+### References
+
+- GPT-5 Prompting Guide: https://cookbook.openai.com/examples/gpt-5/gpt-5_prompting_guide
+- GPT-5-Codex Guide: https://cookbook.openai.com/examples/gpt-5-codex_prompting_guide
+- Anthropic Context Engineering: https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
+- Claude Code Best Practices: https://www.anthropic.com/engineering/claude-code-best-practices
 
 ## Data Splits
 
@@ -123,13 +203,23 @@ You can read past evaluation results, specimen code, and ground truth from the c
 - Write prompts to `/workspace/` (e.g., `/workspace/prompts/v1.txt`)
 - Test hypotheses cheaply on train specimens first
 - Verify improvements on validation before considering them successful
-- Avoid overfitting to train specifics - generalization to validation is what matters
+- **Critical**: Avoid overfitting to train specifics - your prompt will be evaluated on a hidden test set
 
-**Metrics interpretation:**
-- **Validation recall** is your optimization target
-- Train recall is for debugging only, not the goal
+**Metrics interpretation and the generalization challenge:**
+- **Test recall** (hidden from you) is the ultimate goal
+- **Validation recall** is your proxy - optimize for this
+- **Train recall** is for debugging only, NOT the goal
 - Precision may be misleadingly low due to incomplete labeling
 - Unknown detections might be real issues that weren't labeled
+
+**The generalization requirement:**
+Your prompt must work on specimens you've never seen. The test set may have:
+- Different programming languages than train/valid
+- Different project structures and conventions
+- Different types of code quality issues
+- Different codebases entirely
+
+Focus on principles that generalize (e.g., "look for unreachable code") rather than surface patterns (e.g., "check files matching `test_*.py`").
 
 ## Output Format
 
