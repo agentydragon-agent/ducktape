@@ -20,12 +20,9 @@ async def test_runtime_per_session_timeout_then_next_call_ok(make_pg_session, ap
     async with make_pg_session(
         {"runtime": _runtime_spec_persession(), "approval_policy": approval_policy_reader_allow_all}
     ) as mcp_client:
-        # Call via Compositor using namespaced tool
-        sess = mcp_client
-
         # Cause a host-side timeout: sleep longer than timeout_ms
         # Namespaced exec via Compositor
-        stub = ToolStub(sess, build_mcp_function("runtime", "exec"), BaseExecResult)
+        stub = ToolStub(mcp_client, build_mcp_function("runtime", "exec"), BaseExecResult)
 
         res_timeout = await stub(ExecInput(cmd=["sh", "-lc", "sleep 3"], timeout_ms=500, shell=True))
         assert isinstance(res_timeout.exit, TimedOut)

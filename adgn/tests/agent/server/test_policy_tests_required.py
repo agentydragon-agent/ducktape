@@ -5,9 +5,8 @@ from tests.llm.support.openai_mock import make_mock
 
 
 def test_set_policy_rejects_when_tests_missing(agent_test_client, create_live_agent, agent_ws_box):
-    c = agent_test_client
     # Create a default agent
-    _ = create_live_agent(c, specs={})
+    _ = create_live_agent(agent_test_client, specs={})
 
     # Connect WS and wait accepted
     # Use agent_ws_box for a unified interface
@@ -20,8 +19,7 @@ def test_set_policy_rejects_when_tests_missing(agent_test_client, create_live_ag
 
 
 def test_set_policy_rejects_when_test_fails(agent_test_client, create_live_agent, agent_ws_box):
-    c = agent_test_client
-    _ = create_live_agent(c, specs={})
+    _ = create_live_agent(agent_test_client, specs={})
 
     dummy_client = make_mock(lambda req: None)
     with agent_ws_box(dummy_client, specs={}) as box:

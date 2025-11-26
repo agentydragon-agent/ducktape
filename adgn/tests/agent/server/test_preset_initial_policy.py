@@ -27,15 +27,14 @@ def test_preset_initial_policy_loaded_into_engine(
     )
     monkeypatch.setenv("ADGN_AGENT_PRESETS_DIR", str(d))
 
-    c = agent_test_client
     model_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
     patch_agent_build_client(model_client)
     # Create agent from preset
-    r = c.post("/api/agents", json={"preset": "policytest"})
+    r = agent_test_client.post("/api/agents", json={"preset": "policytest"})
     assert r.status_code == 200, r.text
     agent_id = r.json()["id"]
     # Open WS and request snapshot; verify approval_policy content matches
-    with c.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
+    with agent_test_client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
         # accepted
         wait_for_accepted(ws)
         # The server pushes a Snapshot on connect; read until we see it
@@ -72,15 +71,14 @@ def test_preset_policy_with_failing_tests_falls_back(
     )
     monkeypatch.setenv("ADGN_AGENT_PRESETS_DIR", str(d))
 
-    c = agent_test_client
     model_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
     patch_agent_build_client(model_client)
     # Create agent from preset
-    r = c.post("/api/agents", json={"preset": "policyfail"})
+    r = agent_test_client.post("/api/agents", json={"preset": "policyfail"})
     assert r.status_code == 200, r.text
     agent_id = r.json()["id"]
     # Open WS and request snapshot; verify we do NOT see the marker from failing policy
-    with c.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
+    with agent_test_client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
         wait_for_accepted(ws)
         for _ in range(20):
             env = ws.receive_json()

@@ -376,10 +376,9 @@ def ws_session(agent_test_client, create_live_agent, patch_agent_build_client):
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):
-        client = agent_test_client
         patch_agent_build_client(model_client)
-        agent_id = create_live_agent(client, specs=specs or {})
-        with client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
+        agent_id = create_live_agent(agent_test_client, specs=specs or {})
+        with agent_test_client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
             if wait_accepted:
                 wait_for_accepted(ws)
 
@@ -388,7 +387,7 @@ def ws_session(agent_test_client, create_live_agent, patch_agent_build_client):
                     return collect_payloads_until_finished_auto_approve(ws, limit=limit)
                 return collect_payloads_until_finished(ws, limit=limit)
 
-            yield client, ws, _collect, agent_id
+            yield agent_test_client, ws, _collect, agent_id
 
     return _open
 
