@@ -22,6 +22,7 @@ from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
+from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.mcp.policy_gateway.middleware import install_policy_gateway
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp
@@ -282,8 +283,6 @@ def make_buffered_client():
     async def _open(servers: McpServerSpecs):
         comp = Compositor("comp")
         await _mount_servers(comp, servers)
-        from adgn.mcp.notifications.buffer import NotificationsBuffer
-
         buf = NotificationsBuffer(compositor=comp)
         async with Client(comp, message_handler=buf.handler) as sess:
             yield sess, comp, buf
@@ -295,8 +294,6 @@ def make_buffered_client():
 def docker_exec_server_alpine():
     opts = make_container_opts("alpine:3.19")
     # Expose the tool under name expected by docker exec tests
-    from adgn.mcp.exec.docker.server import make_container_exec_server
-
     return make_container_exec_server(opts, tool_exec_name="docker_exec")
 
 
@@ -335,8 +332,6 @@ def live_openai(request):
 def docker_inproc_spec_py312():
     """Alias expected by some tests: in-proc spec backed by Python 3.12 image."""
     opts = make_container_opts("python:3.12-alpine")
-    from adgn.mcp.exec.docker.server import make_container_exec_server
-
     return make_container_exec_server(opts)
 
 

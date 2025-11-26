@@ -1,27 +1,33 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import docker
 from fastapi.testclient import TestClient
+from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
 from starlette.testclient import WebSocketTestSession
 
+from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
+from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt, ServerMessage
 from adgn.mcp.editor_server import make_editor_server
+from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.agent.ws_helpers import (
@@ -186,6 +192,38 @@ def make_fake_openai() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]
     return _make
 
 
+@pytest.fixture
+def make_test_agent(responses_factory):
+    """Factory to create MiniCodex backed by FakeOpenAIModel with canned responses.
+
+    Returns (agent, fake_client) tuple so tests can inspect the client after run.
+
+    Usage:
+        agent, client = await make_test_agent(
+            mcp_client,
+            [responses_factory.make_assistant_message("done")],
+        )
+        result = await agent.run("hi")
+        assert client.calls == 1
+    """
+
+    async def _make(mcp_client, responses, *, handlers=None, system="test", **kwargs):
+        client = FakeOpenAIModel(list(responses))
+        if handlers is None:
+            handlers = [AutoHandler()]
+        agent = await MiniCodex.create(
+            model=responses_factory.model,
+            mcp_client=mcp_client,
+            system=system,
+            client=client,
+            handlers=handlers,
+            **kwargs,
+        )
+        return agent, client
+
+    return _make
+
+
 # No extra param fixtures here; reuse existing LIVE sentinel infra from tests/llm.
 
 
@@ -196,9 +234,6 @@ def make_fake_openai() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]
 @pytest.fixture
 def typed_editor_factory(tmp_path: Path):
     """Factory that yields (EditorServerStub, target_path) for an in-proc editor server."""
-    from fastmcp.client import Client
-
-    from adgn.mcp.testing.editor_stubs import EditorServerStub
 
     @asynccontextmanager
     async def _open(initial_text: str = "x = 1\n") -> AsyncIterator[tuple[EditorServerStub, Path]]:
@@ -393,8 +428,6 @@ def agent_ws_box(ws_session, make_agent_http):
             box.agent_id
     """
 
-    from dataclasses import dataclass
-
     @dataclass
     class Box:
         client: TestClient
@@ -457,8 +490,6 @@ def recording_handler() -> RecordingHandler:
 @pytest.fixture
 def validation_server() -> FastMCP:
     """FastMCP server with a tool that validates input strictly."""
-    from typing import Literal
-
     mcp = FastMCP("validator")
 
     @mcp.tool()
@@ -483,8 +514,6 @@ def failing_server() -> FastMCP:
 @pytest.fixture
 def slow_server() -> FastMCP:
     """FastMCP server with two slow async tools for parallel call testing."""
-    import asyncio
-
     mcp = FastMCP("dummy")
 
     @mcp.tool()

@@ -12,23 +12,11 @@ from adgn.mcp._shared.constants import (
     POLICY_DENIED_CONTINUE_MSG,
 )
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.approval_policy.server import ApprovalPolicyServer
-
-
-def _policy_source(decision: ApprovalDecision) -> str:
-    # Minimal policy program that avoids importing adgn.* inside the container image.
-    # Reads a JSON object from stdin and prints a PolicyResponse-shaped JSON.
-    d = str(decision.value)
-    return (
-        f"import sys, json\n_ = json.load(sys.stdin)\nprint(json.dumps({{'decision': '{d}', 'rationale': 'test'}}))\n"
-    )
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_allow(make_pg_session, make_policy_engine, backend_server):
-    eng = make_policy_engine(_policy_source(ApprovalDecision.ALLOW))
-    reader = ApprovalPolicyServer(eng)
-    async with make_pg_session({"backend": backend_server, "approval_policy": reader}) as sess:
+async def test_pg_middleware_allow(make_pg_session_with_decision):
+    async with make_pg_session_with_decision(ApprovalDecision.ALLOW) as sess:
         res = await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "7"})
         # fastmcp Client returns a wrapper with is_error
         assert not getattr(res, "is_error", False)
@@ -36,20 +24,16 @@ async def test_pg_middleware_allow(make_pg_session, make_policy_engine, backend_
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_deny_abort(make_pg_session, make_policy_engine, backend_server):
-    eng = make_policy_engine(_policy_source(ApprovalDecision.DENY_ABORT))
-    reader = ApprovalPolicyServer(eng)
-    async with make_pg_session({"backend": backend_server, "approval_policy": reader}) as sess:
+async def test_pg_middleware_deny_abort(make_pg_session_with_decision):
+    async with make_pg_session_with_decision(ApprovalDecision.DENY_ABORT) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
         assert POLICY_DENIED_ABORT_MSG in str(ei.value)
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_deny_continue(make_pg_session, make_policy_engine, backend_server):
-    eng = make_policy_engine(_policy_source(ApprovalDecision.DENY_CONTINUE))
-    reader = ApprovalPolicyServer(eng)
-    async with make_pg_session({"backend": backend_server, "approval_policy": reader}) as sess:
+async def test_pg_middleware_deny_continue(make_pg_session_with_decision):
+    async with make_pg_session_with_decision(ApprovalDecision.DENY_CONTINUE) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
         assert POLICY_DENIED_CONTINUE_MSG in str(ei.value)
@@ -99,20 +83,16 @@ async def test_pg_middleware_backend_stamp_misuse_via_proxy(
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_ask_then_allow(make_pg_session, approval_hub, make_policy_engine, backend_server):
-    eng = make_policy_engine(_policy_source(ApprovalDecision.ASK))
-    reader = ApprovalPolicyServer(eng)
-
+async def test_pg_middleware_ask_then_allow(make_pg_session_with_decision, approval_hub):
     # Capture the call_id from the notifier and approve it
     call_ids: list[str] = []
 
     async def notifier(call_id: str, _tool_key: str, _args_json: str | None):
         call_ids.append(call_id)
         # Approve immediately after notifier returns to avoid reentrancy
-
         asyncio.get_running_loop().call_soon(approval_hub.resolve, call_id, ContinueDecision())
 
-    async with make_pg_session({"backend": backend_server, "approval_policy": reader}, notifier=notifier) as sess:
+    async with make_pg_session_with_decision(ApprovalDecision.ASK, notifier=notifier) as sess:
         res = await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "3"})
         assert not res.is_error
         assert call_ids, "pending notifier should have been called"

@@ -2,31 +2,23 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 async def test_agent_mcp_echo_tool_use(
-    monkeypatch: pytest.MonkeyPatch, responses_factory, pg_session_echo, recording_handler
+    monkeypatch: pytest.MonkeyPatch, responses_factory, pg_session_echo, recording_handler, make_test_agent
 ) -> None:
-    # Provide a two-step sequence via our shared Pydantic fake client
-    client = FakeOpenAIModel(
+    agent, client = await make_test_agent(
+        pg_session_echo,
         [
             responses_factory.make_tool_call(build_mcp_function("echo", "echo"), {"text": "hello"}),
             responses_factory.make_assistant_message("done"),
-        ]
-    )
-
-    agent = await MiniCodex.create(
-        model="test-model",
-        mcp_client=pg_session_echo,
-        system="You are a test agent.",
-        client=client,
+        ],
         handlers=[AutoHandler(), recording_handler],
         parallel_tool_calls=False,
     )
+
     async with agent:
         res = await agent.run(user_text="use echo")
 
