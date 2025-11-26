@@ -13,7 +13,7 @@ from adgn.mcp.stubs.typed_stubs import ToolStub
 # FastMCP stdio client (hard import)
 
 
-async def test_stdio_server_list_tools(make_compositor) -> None:
+async def test_stdio_server_list_tools(make_session) -> None:
     """Smoke test: connect to server-everything (stdio) and list tools.
 
     Skips if npx or FastMCP stdio client are unavailable.
@@ -40,17 +40,17 @@ async def test_stdio_server_list_tools(make_compositor) -> None:
 
     spec = StdioMCPServer(command="npx", args=["@modelcontextprotocol/server-everything", "stdio"])
 
-    async with make_compositor({"everything": spec}) as (sess, comp):
+    async with make_session({"everything": spec}) as sess:
         tools = await sess.list_tools()
         assert isinstance(tools, list)
         assert any(t.name.startswith("everything_") for t in tools)
 
 
-async def test_direct_inprocess_server(make_compositor) -> None:
+async def test_direct_inprocess_server(make_session) -> None:
     """Direct (unsandboxed) in-process FastMCP exec tool mounted in a Compositor."""
 
     srv = make_direct_exec_server("local")
-    async with make_compositor({"local": srv}) as (sess, comp):
+    async with make_session({"local": srv}) as sess:
         tools = await sess.list_tools()
         # Tools are composed under the compositor with namespaced tool names
         tool_name = build_mcp_function("local", "exec")

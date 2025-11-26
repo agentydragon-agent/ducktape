@@ -64,11 +64,17 @@ def repo_git_ro(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def typed_git_ro(repo_git_ro: Path, make_typed_mcp):
+    """Async context manager fixture yielding a TypedClient for git-ro server.
+
+    Usage:
+        async with typed_git_ro() as client:
+            result = await client.git_diff(...)
+    """
     server = make_git_ro_server(repo_git_ro)
 
     @asynccontextmanager
     async def _open():
-        async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as pair:
-            yield pair
+        async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as (client, _session):
+            yield client
 
     return _open

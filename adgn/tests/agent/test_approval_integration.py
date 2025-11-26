@@ -1,7 +1,6 @@
 """Integration test to verify approval system is wired correctly."""
 
 import asyncio
-from collections.abc import Callable
 
 import pytest
 
@@ -10,23 +9,20 @@ from adgn.agent.approvals import ApprovalHub
 from adgn.agent.handler import ContinueDecision
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.approval_policy.server import ApprovalPolicyServer
+from tests.agent.testdata.approval_policy import make_policy
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.requires_docker
 async def test_approval_system_wired_and_blocks_on_ask(
-    responses_factory,
-    make_echo_spec,
-    policy_make: Callable[..., str],
-    make_pg_compositor,
-    approval_hub: ApprovalHub,
-    make_policy_engine,
+    responses_factory, make_echo_spec, make_pg_session, approval_hub: ApprovalHub, make_policy_engine
 ) -> None:
     """Test that the approval system is properly wired and blocks tool calls via middleware."""
 
     # Prepare approval engine with an ASK policy for echo.echo using shared factory
     engine = make_policy_engine(
-        policy_make(decision_expr="PolicyDecision.ASK", server="echo", tool="echo", default="ask")
+        make_policy(decision_expr="PolicyDecision.ASK", server="echo", tool="echo", default="ask")
     )
 
     # Model tries to call the tool then returns text
@@ -37,12 +33,10 @@ async def test_approval_system_wired_and_blocks_on_ask(
     client = FakeOpenAIModel(seq)
 
     # Approval reader server for middleware evaluation
-    from adgn.mcp.approval_policy.server import ApprovalPolicyServer
-
     reader = ApprovalPolicyServer(engine)
     servers = dict(make_echo_spec())
     servers["approval_policy"] = reader
-    async with make_pg_compositor(servers, notifier=None) as (mcp_client, _comp):
+    async with make_pg_session(servers, notifier=None) as mcp_client:
         agent = await MiniCodex.create(
             model=responses_factory.model, mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
         )

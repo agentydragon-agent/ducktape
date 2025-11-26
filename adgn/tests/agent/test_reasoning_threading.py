@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from adgn.agent.agent import MiniCodex
-from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ReasoningItem
-from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 async def test_reasoning_threading_filters_reasoning_from_next_input(
-    reasoning_model: str, responses_factory, make_pg_compositor_echo
+    responses_factory, pg_session_echo, make_test_agent
 ) -> None:
     """Test that reasoning items are properly threaded with their function calls across turns."""
 
@@ -40,14 +37,10 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
         # Turn 3: final message
         responses_factory.make_assistant_message("done"),
     ]
-    client = FakeOpenAIModel(seq)
 
-    async with make_pg_compositor_echo() as (mcp_client, _comp):
-        agent = await MiniCodex.create(
-            model=responses_factory.model, mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
-        )
+    agent, client = await make_test_agent(pg_session_echo, seq)
 
-        res = await agent.run("say hi")
+    res = await agent.run("say hi")
 
     # Assertions
     assert res.text.strip() == "done"

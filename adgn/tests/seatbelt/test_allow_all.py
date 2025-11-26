@@ -1,23 +1,10 @@
-import pytest
-
-from adgn.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
+from adgn.seatbelt.model import SBPLPolicy
 from adgn.seatbelt.runner import run_sandboxed_async
 from tests._markers import REQUIRES_SANDBOX_EXEC
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
-
-@pytest.fixture
-def allow_all_policy() -> SBPLPolicy:
-    return SBPLPolicy(
-        default_behavior=DefaultBehavior.ALLOW,
-        process=ProcessRule(allow_process_star=True, allow_signal_self=True),
-        files=[
-            FileRule(op=FileOp.FILE_MAP_EXECUTABLE, filters=[]),
-            FileRule(op=FileOp.FILE_READ_STAR, filters=[Subpath(subpath="/")]),
-            FileRule(op=FileOp.FILE_WRITE_STAR, filters=[Subpath(subpath="/")]),
-        ],
-    )
+# allow_all_policy fixture is provided by conftest.py
 
 
 async def test_exec_allow_all_runs_echo(allow_all_policy: SBPLPolicy):

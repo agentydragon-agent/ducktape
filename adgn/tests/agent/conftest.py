@@ -1,26 +1,32 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-import docker
 from fastapi.testclient import TestClient
+from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
 from starlette.testclient import WebSocketTestSession
 
+from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import ApprovalPolicyEngine
+from adgn.agent.loggers import RecordingHandler
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
+from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt, ServerMessage
 from adgn.mcp.editor_server import make_editor_server
+from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.agent.ws_helpers import (
@@ -86,22 +92,22 @@ class _AgentHttp:
 
 
 @pytest.fixture
-def policy_evaluator(approval_engine: ApprovalPolicyEngine) -> ContainerPolicyEvaluator:
+def policy_evaluator(docker_client, approval_engine: ApprovalPolicyEngine) -> ContainerPolicyEvaluator:
     """Container-backed policy evaluator using the default policy engine.
 
     Deduplicates setup across tests that need to call policy.decide(...).
     Requires Docker (tests should mark with @pytest.mark.requires_docker).
     """
-    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker.from_env(), engine=approval_engine)
+    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker_client, engine=approval_engine)
 
 
 @pytest.fixture
-def make_policy_evaluator(make_policy_engine):
+def make_policy_evaluator(docker_client, make_policy_engine):
     """Factory that builds a ContainerPolicyEvaluator for a given policy source."""
 
     def _make(policy_source: str, *, agent_id: str = "tests") -> ContainerPolicyEvaluator:
         engine = make_policy_engine(policy_source, agent_id=agent_id)
-        return ContainerPolicyEvaluator(agent_id=agent_id, docker_client=docker.from_env(), engine=engine)
+        return ContainerPolicyEvaluator(agent_id=agent_id, docker_client=docker_client, engine=engine)
 
     return _make
 
@@ -163,15 +169,8 @@ def policy_const() -> str:
     return str(fetch_policy("const"))
 
 
-# ---- Policy factory fixtures removed - use fetch_policy and make_policy directly ----
-
-
-# Shared model fixture for live tests that need a reasoning-capable model
-@pytest.fixture(scope="session")
-def reasoning_model() -> str:
-    # Default to gpt-5-nano for fast, reasoning-capable behavior; allow override via env
-    return os.environ.get("RESPONSES_TEST_MODEL", "gpt-5-nano")
-
+# reasoning_model fixture is provided globally in tests/fixtures/responses.py
+# (registered via pytest_plugins in tests/conftest.py)
 
 # assistant_response_factory, tool_call_response_factory, responses_factory
 # come from tests.fixtures.responses (registered globally in tests/conftest.py).
@@ -179,9 +178,47 @@ def reasoning_model() -> str:
 
 # Local factory: construct our Pydantic-only fake client from a sequence of ResponsesResult
 @pytest.fixture
-def fake_openai_client_factory() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]:
+def make_fake_openai() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]:
+    """Factory to create FakeOpenAIModel instances from response sequences.
+
+    Usage:
+        client = make_fake_openai([responses_factory.make_assistant_message("ok")])
+    """
+
     def _make(outputs: Iterable[ResponsesResult]) -> FakeOpenAIModel:
         return FakeOpenAIModel(list(outputs))
+
+    return _make
+
+
+@pytest.fixture
+def make_test_agent(responses_factory):
+    """Factory to create MiniCodex backed by FakeOpenAIModel with canned responses.
+
+    Returns (agent, fake_client) tuple so tests can inspect the client after run.
+
+    Usage:
+        agent, client = await make_test_agent(
+            mcp_client,
+            [responses_factory.make_assistant_message("done")],
+        )
+        result = await agent.run("hi")
+        assert client.calls == 1
+    """
+
+    async def _make(mcp_client, responses, *, handlers=None, system="test", **kwargs):
+        client = FakeOpenAIModel(list(responses))
+        if handlers is None:
+            handlers = [AutoHandler()]
+        agent = await MiniCodex.create(
+            model=responses_factory.model,
+            mcp_client=mcp_client,
+            system=system,
+            client=client,
+            handlers=handlers,
+            **kwargs,
+        )
+        return agent, client
 
     return _make
 
@@ -196,9 +233,6 @@ def fake_openai_client_factory() -> Callable[[Iterable[ResponsesResult]], FakeOp
 @pytest.fixture
 def typed_editor_factory(tmp_path: Path):
     """Factory that yields (EditorServerStub, target_path) for an in-proc editor server."""
-    from fastmcp.client import Client
-
-    from adgn.mcp.testing.editor_stubs import EditorServerStub
 
     @asynccontextmanager
     async def _open(initial_text: str = "x = 1\n") -> AsyncIterator[tuple[EditorServerStub, Path]]:
@@ -290,12 +324,13 @@ def agent_app_client():
 
 
 @pytest.fixture
-def ws_hub(agent_app_client, patch_agent_build_client, responses_factory):
-    """Yield (client, hub_ws) connected to /ws/agents, closes automatically."""
-    app, client = agent_app_client
-    patch_agent_build_client(FakeOpenAIModel([responses_factory.make_assistant_message("ok")]))
-    with client.websocket_connect("/ws/agents") as ws:
-        yield client, ws
+def agent_test_client(agent_app_client):
+    """Return just the TestClient for agent server tests.
+
+    Use this when you only need the client and not the app.
+    """
+    _app, client = agent_app_client
+    return client
 
 
 @pytest.fixture
@@ -318,7 +353,7 @@ def make_spy_spec() -> Callable[[list[str]], McpServerSpecs]:
 
 # Unified WS session fixture
 @pytest.fixture
-def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
+def ws_session(agent_test_client, create_live_agent, patch_agent_build_client):
     """Factory to open a websocket session for a newly created agent.
 
     Usage:
@@ -341,10 +376,9 @@ def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
         wait_accepted: bool = True,
         auto_approve: bool = False,
     ):
-        app, client = agent_app_client
         patch_agent_build_client(model_client)
-        agent_id = create_live_agent(client, specs=specs or {})
-        with client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
+        agent_id = create_live_agent(agent_test_client, specs=specs or {})
+        with agent_test_client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
             if wait_accepted:
                 wait_for_accepted(ws)
 
@@ -353,7 +387,7 @@ def ws_session(agent_app_client, create_live_agent, patch_agent_build_client):
                     return collect_payloads_until_finished_auto_approve(ws, limit=limit)
                 return collect_payloads_until_finished(ws, limit=limit)
 
-            yield client, ws, _collect, agent_id
+            yield agent_test_client, ws, _collect, agent_id
 
     return _open
 
@@ -392,8 +426,6 @@ def agent_ws_box(ws_session, make_agent_http):
             box.ws  # underlying WS
             box.agent_id
     """
-
-    from dataclasses import dataclass
 
     @dataclass
     class Box:
@@ -440,3 +472,57 @@ def agent_ws_box(ws_session, make_agent_http):
             yield Box(client=client, ws=ws, collect=_collect, agent_id=agent_id, http=http)
 
     return _open
+
+
+# ---- Recording handler fixture -----------------------------------------------
+
+
+@pytest.fixture
+def recording_handler() -> RecordingHandler:
+    """Fresh RecordingHandler for capturing agent events during tests."""
+    return RecordingHandler()
+
+
+# ---- Server fixtures for tool error and parallel tests ------------------------
+
+
+@pytest.fixture
+def validation_server() -> FastMCP:
+    """FastMCP server with a tool that validates input strictly."""
+    mcp = FastMCP("validator")
+
+    @mcp.tool()
+    def send_message(mime: Literal["text/markdown"], content: str) -> dict[str, Any]:
+        return {"ok": True, "message": content}
+
+    return mcp
+
+
+@pytest.fixture
+def failing_server() -> FastMCP:
+    """FastMCP server with a tool that returns an error."""
+    mcp = FastMCP("editor")
+
+    @mcp.tool()
+    def fail(x: int) -> dict[str, Any]:
+        return {"ok": False, "error": "boom"}
+
+    return mcp
+
+
+@pytest.fixture
+def slow_server() -> FastMCP:
+    """FastMCP server with two slow async tools for parallel call testing."""
+    mcp = FastMCP("dummy")
+
+    @mcp.tool()
+    async def slow() -> dict[str, Any]:
+        await asyncio.sleep(0.30)
+        return {"ok": True, "tool": "slow", "args": {}}
+
+    @mcp.tool()
+    async def slow2() -> dict[str, Any]:
+        await asyncio.sleep(0.30)
+        return {"ok": True, "tool": "slow2", "args": {}}
+
+    return mcp

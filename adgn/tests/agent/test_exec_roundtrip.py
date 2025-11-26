@@ -28,32 +28,29 @@ async def _assert_exec_echo(sess) -> None:
 
 
 @pytest.mark.requires_docker
-async def test_exec_roundtrip_echo(make_pg_compositor_box) -> None:
+async def test_exec_roundtrip_echo(pg_session_box) -> None:
     """Spin up real Docker container and roundtrip an echo via exec."""
-    async with make_pg_compositor_box() as (mcp_client, _comp):
-        await _assert_exec_echo(mcp_client)
+    await _assert_exec_echo(pg_session_box)
 
 
 @pytest.mark.live_llm
 @pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Requires OpenAI API key")
-async def test_live_llm_exec_echo(make_pg_compositor_box) -> None:
+async def test_live_llm_exec_echo(pg_session_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
-
-    async with make_pg_compositor_box() as (mcp_client, _comp):
-        model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
-        client = build_client(model_name)
-        agent = await MiniCodex.create(
-            model=model_name,
-            mcp_client=mcp_client,
-            system=(
-                "You are testing an MCP exec tool.\n"
-                "Call the tool "
-                f"{build_mcp_function(SERVER_NAME, 'exec')} "
-                f"with cmd={ECHO_CMD!r} and return exactly the stdout."
-            ),
-            client=client,
-            handlers=[AutoHandler()],
-        )
-        res: AgentResult = await agent.run("Run the command now and output exactly the stdout value.")
-        text = (res.text or "").strip()
-        assert text == "hello"
+    model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
+    client = build_client(model_name)
+    agent = await MiniCodex.create(
+        model=model_name,
+        mcp_client=pg_session_box,
+        system=(
+            "You are testing an MCP exec tool.\n"
+            "Call the tool "
+            f"{build_mcp_function(SERVER_NAME, 'exec')} "
+            f"with cmd={ECHO_CMD!r} and return exactly the stdout."
+        ),
+        client=client,
+        handlers=[AutoHandler()],
+    )
+    res: AgentResult = await agent.run("Run the command now and output exactly the stdout value.")
+    text = (res.text or "").strip()
+    assert text == "hello"

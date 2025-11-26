@@ -4,7 +4,6 @@ from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, empty, has_item, has_properties
 
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
@@ -42,15 +41,14 @@ def _make_origin() -> tuple[FastMCP, SubscriptionRecorder]:
     return m, recorder
 
 
-async def test_subscriptions_index_updates_on_unmount():
+async def test_subscriptions_index_updates_on_unmount(compositor):
     # Compositor with one origin server mounted
-    comp = Compositor("comp")
     origin, hooks = _make_origin()
-    await comp.mount_inproc("origin", origin)
+    await compositor.mount_inproc("origin", origin)
 
     # Resources server with a real gateway client
-    async with Client(comp) as gw:
-        res_server = make_resources_server(name="resources", gateway_client=gw, compositor=comp)
+    async with Client(compositor) as gw:
+        res_server = make_resources_server(name="resources", gateway_client=gw, compositor=compositor)
         async with Client(res_server) as client:
             # Subscribe to an origin resource via the resources server tool
             rc = ResourcesClient(client)
@@ -61,7 +59,7 @@ async def test_subscriptions_index_updates_on_unmount():
             assert_that(idx.subscriptions, has_item(has_properties(server="origin", uri="resource://foo/bar")))
 
             # Unmount the origin server; subscription should be dropped from index
-            await comp.unmount_server("origin")
+            await compositor.unmount_server("origin")
             assert not hooks.unsubscribed, "unexpected origin unsubscribe on unmount"
             idx2 = await rc.list_subscriptions()
             assert_that(idx2.subscriptions, empty())

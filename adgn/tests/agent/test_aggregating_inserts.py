@@ -54,14 +54,14 @@ class _InvalidFunctionCallInjectHandler(BaseHandler):
         return Continue(Auto(), inserts_input=(fc,))  # Missing skip_sampling=True
 
 
-async def test_function_call_inject_without_skip_sampling_raises(fake_openai_client_factory, make_compositor):
+async def test_function_call_inject_without_skip_sampling_raises(make_fake_openai, make_session):
     """Verify runtime check prevents FunctionCallItem injection without skip_sampling=True."""
-    async with make_compositor({}) as (mcp_client, _comp):
+    async with make_session({}) as mcp_client:
         agent = await MiniCodex.create(
             model="test",
             system="test",
             mcp_client=mcp_client,
-            client=fake_openai_client_factory([]),
+            client=make_fake_openai([]),
             handlers=[_InvalidFunctionCallInjectHandler()],
         )
         with pytest.raises(TypeError, match="FunctionCallItem requires skip_sampling=True"):

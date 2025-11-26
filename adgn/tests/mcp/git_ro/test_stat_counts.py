@@ -26,7 +26,7 @@ async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
 
     server = make_git_ro_server(repo_dir)
 
-    async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as (client, session):
+    async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as (client, _):
         # Call the git_diff tool with format=stat and staged=True
         result = await client.git_diff(
             DiffInput(format=DiffFormat.STAT, staged=True, find_renames=True, list_slice=ListSlice(offset=0, limit=100))

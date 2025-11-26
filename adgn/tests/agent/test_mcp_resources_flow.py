@@ -4,7 +4,6 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loggers import RecordingHandler
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.resources.server import ResourcesReadArgs
@@ -14,11 +13,16 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 @pytest.mark.requires_docker
 async def test_model_reads_container_info_with_stubbed_openai(
-    reasoning_model, responses_factory, docker_inproc_spec_alpine, make_pg_compositor, approval_policy_reader_allow_all
+    reasoning_model,
+    responses_factory,
+    docker_inproc_spec_alpine,
+    make_pg_session,
+    approval_policy_reader_allow_all,
+    recording_handler,
 ) -> None:
-    async with make_pg_compositor(
+    async with make_pg_session(
         {"runtime": docker_inproc_spec_alpine, "approval_policy": approval_policy_reader_allow_all}
-    ) as (mcp_client, _comp):
+    ) as mcp_client:
         # Prepare a deterministic two-step sequence: function_call then final text
         ResourcesReadArgs(server="docker", uri="resource://container.info", max_bytes=1024)
         seq = [
@@ -29,17 +33,16 @@ async def test_model_reads_container_info_with_stubbed_openai(
             responses_factory.make_assistant_message("ok"),
         ]
         client = FakeOpenAIModel(seq)
-        rec = RecordingHandler()  # from adgn.agent.loggers
         agent = await MiniCodex.create(
             model=reasoning_model,
             mcp_client=mcp_client,
             client=client,
             system="test",
-            handlers=[AutoHandler(), DisplayEventsHandler(), rec],
+            handlers=[AutoHandler(), DisplayEventsHandler(), recording_handler],
         )
 
         await agent.run("read container info")
-        kinds = [e.get("kind") for e in rec.records]
+        kinds = [e.get("kind") for e in recording_handler.records]
         assert "tool_call" in kinds
         assert "function_call_output" in kinds
         assert client.calls == 2

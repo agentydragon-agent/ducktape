@@ -34,7 +34,7 @@ def _make_ui_behavior(rf: ResponsesFactory):
 
 
 async def test_ui_server_with_mock_agent_produces_ui_state_updates(
-    responses_factory: ResponsesFactory, make_pg_compositor, stub_approval_policy_engine, approval_policy_reader_stub
+    responses_factory: ResponsesFactory, make_pg_session, stub_approval_policy_engine, approval_policy_reader_stub
 ):
     # Per-agent bus and UI MCP server
     bus = ServerBus()
@@ -75,10 +75,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
 
     mgr.send_json = _capture  # type: ignore[assignment]  # Test fixture: replace method for capturing
 
-    async with make_pg_compositor({"ui": ui_server, "approval_policy": approval_policy_reader_stub}) as (
-        mcp_client,
-        _comp,
-    ):
+    async with make_pg_session({"ui": ui_server, "approval_policy": approval_policy_reader_stub}) as mcp_client:
         handlers = [ServerModeHandler(bus=bus, poll_notifications=lambda: NotificationsBatch())]
         agent = await MiniCodex.create(
             model="test-model",

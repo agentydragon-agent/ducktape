@@ -7,9 +7,9 @@ from adgn.mcp._shared.constants import COMPOSITOR_META_SERVER_NAME
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 
 
-async def test_admin_cannot_detach_pinned_server(make_pg_compositor, approval_policy_reader_stub):
-    # make_pg_compositor mounts compositor_meta and compositor_admin pinned by default
-    async with make_pg_compositor({"approval_policy": approval_policy_reader_stub}) as (sess, _comp):
+async def test_admin_cannot_detach_pinned_server(make_pg_session, approval_policy_reader_stub):
+    # make_pg_session mounts compositor_meta and compositor_admin pinned by default
+    async with make_pg_session({"approval_policy": approval_policy_reader_stub}) as sess:
         admin = CompositorAdminClient(sess)
         meta = CompositorMetaClient(sess)
 

@@ -20,20 +20,18 @@ class SyntheticOnceHandler(BaseHandler):
 
 
 async def test_mini_codex_handles_synthetic_action_without_api_calls(
-    fake_openai_client_factory, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
+    make_fake_openai, responses_factory, pg_session_policy_only
 ) -> None:
-    client = fake_openai_client_factory([responses_factory.make_assistant_message("should_not_be_used")])
-    # Build a compositor with no extra servers (just policy gateway)
-    async with make_pg_compositor({"approval_policy": approval_policy_reader_allow_all}) as (mcp_client, _comp):
-        resp = responses_factory.make_assistant_message("hello")
-        agent = await MiniCodex.create(
-            model=responses_factory.model,
-            mcp_client=mcp_client,
-            system="You are a code agent.",
-            client=client,
-            handlers=[SyntheticOnceHandler(resp.output)],
-        )
-        res = await agent.run("hi")
-        assert res.text.strip() == "hello"
-        # MiniCodex uses the protocol method `.responses_create` — ensure we made no API calls.
-        assert getattr(client, "calls", 0) == 0
+    client = make_fake_openai([responses_factory.make_assistant_message("should_not_be_used")])
+    resp = responses_factory.make_assistant_message("hello")
+    agent = await MiniCodex.create(
+        model=responses_factory.model,
+        mcp_client=pg_session_policy_only,
+        system="You are a code agent.",
+        client=client,
+        handlers=[SyntheticOnceHandler(resp.output)],
+    )
+    res = await agent.run("hi")
+    assert res.text.strip() == "hello"
+    # MiniCodex uses the protocol method `.responses_create` — ensure we made no API calls.
+    assert getattr(client, "calls", 0) == 0

@@ -6,34 +6,20 @@ the agent continues with the next phase instead of aborting the entire turn.
 
 from __future__ import annotations
 
-from typing import Any, Literal
-
-from fastmcp.server import FastMCP
 from hamcrest import assert_that, contains_string
-import pytest
 
-from adgn.agent.agent import MiniCodex
-from adgn.agent.loggers import RecordingHandler
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ws_helpers import assert_function_call_output_structured
-from tests.llm.support.openai_mock import FakeOpenAIModel
-
-
-def _make_validation_server() -> FastMCP:
-    """Create a server with a tool that validates input strictly."""
-    mcp = FastMCP("validator")
-
-    @mcp.tool()
-    def send_message(mime: Literal["text/markdown"], content: str) -> dict[str, Any]:
-        # FastMCP will automatically validate the mime parameter
-        return {"ok": True, "message": content}
-
-    return mcp
 
 
 async def test_tool_error_continues_turn(
-    monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
+    responses_factory,
+    make_pg_session,
+    approval_policy_reader_allow_all,
+    validation_server,
+    recording_handler,
+    make_test_agent,
 ) -> None:
     """Test that a tool validation error doesn't abort the turn.
 
@@ -44,42 +30,35 @@ async def test_tool_error_continues_turn(
     4. Retry with correct mime type (text/markdown)
     5. Successfully complete
     """
-    server = _make_validation_server()
-    async with make_pg_compositor({"validator": server, "approval_policy": approval_policy_reader_allow_all}) as (
-        mcp_client,
-        _comp,
-    ):
-        rec = RecordingHandler()
-
+    async with make_pg_session(
+        {"validator": validation_server, "approval_policy": approval_policy_reader_allow_all}
+    ) as mcp_client:
         # Simulate the agent trying with wrong mime, then correcting itself
-        client = FakeOpenAIModel(
-            [
-                # First attempt with wrong mime type
-                responses_factory.make_tool_call(
-                    build_mcp_function("validator", "send_message"), {"mime": "text/plain", "content": "Hello"}
-                ),
-                # After error, agent retries with correct mime type
-                responses_factory.make_tool_call(
-                    build_mcp_function("validator", "send_message"), {"mime": "text/markdown", "content": "Hello"}
-                ),
-                # Final message
-                responses_factory.make_assistant_message("Successfully sent message"),
-            ]
-        )
+        seq = [
+            # First attempt with wrong mime type
+            responses_factory.make_tool_call(
+                build_mcp_function("validator", "send_message"), {"mime": "text/plain", "content": "Hello"}
+            ),
+            # After error, agent retries with correct mime type
+            responses_factory.make_tool_call(
+                build_mcp_function("validator", "send_message"), {"mime": "text/markdown", "content": "Hello"}
+            ),
+            # Final message
+            responses_factory.make_assistant_message("Successfully sent message"),
+        ]
 
-        agent = await MiniCodex.create(
-            model=responses_factory.model,
-            mcp_client=mcp_client,
+        agent, _ = await make_test_agent(
+            mcp_client,
+            seq,
+            handlers=[AutoHandler(), recording_handler],
             system="You are a helpful assistant. Use the validator tools.",
-            client=client,
-            handlers=[AutoHandler(), rec],
         )
 
         result = await agent.run("Send a greeting")
 
     # Verify the sequence of events
-    tool_calls = [evt for evt in rec.records if evt.get("kind") == "tool_call"]
-    outputs = [evt for evt in rec.records if evt.get("kind") == "function_call_output"]
+    tool_calls = [evt for evt in recording_handler.records if evt.get("kind") == "tool_call"]
+    outputs = [evt for evt in recording_handler.records if evt.get("kind") == "function_call_output"]
 
     # Should have 2 tool calls
     assert len(tool_calls) == 2, f"Expected 2 tool calls, got {len(tool_calls)}"

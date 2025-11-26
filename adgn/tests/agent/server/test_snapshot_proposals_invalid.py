@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import docker
 from fastmcp.mcp_config import MCPConfig
 from hamcrest import assert_that, equal_to, has_length, not_none
 
@@ -10,7 +9,7 @@ from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 
 
-async def test_snapshot_surfaces_invalid_proposal(sqlite_persistence) -> None:
+async def test_snapshot_surfaces_invalid_proposal(docker_client, sqlite_persistence) -> None:
     # Arrange: create persistence and persist an invalid proposal
     agent_id = await sqlite_persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="tests"))
     await sqlite_persistence.create_policy_proposal(agent_id, proposal_id="bad1", content="this is not python\n")
@@ -20,7 +19,7 @@ async def test_snapshot_surfaces_invalid_proposal(sqlite_persistence) -> None:
     sess = AgentSession(cm, persistence=sqlite_persistence)
     sess.agent_id = agent_id
     sess.approval_engine = ApprovalPolicyEngine(
-        docker_client=docker.from_env(),
+        docker_client=docker_client,
         agent_id=agent_id,
         persistence=sqlite_persistence,
         policy_source=load_default_policy_source(),
