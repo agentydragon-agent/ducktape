@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-import docker
 from fastapi.testclient import TestClient
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes

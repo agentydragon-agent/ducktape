@@ -9,6 +9,7 @@ from adgn.agent.approvals import ApprovalHub
 from adgn.agent.handler import ContinueDecision
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from tests.agent.testdata.approval_policy import make_policy
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
@@ -36,8 +37,6 @@ async def test_approval_system_wired_and_blocks_on_ask(
     client = FakeOpenAIModel(seq)
 
     # Approval reader server for middleware evaluation
-    from adgn.mcp.approval_policy.server import ApprovalPolicyServer
-
     reader = ApprovalPolicyServer(engine)
     servers = dict(make_echo_spec())
     servers["approval_policy"] = reader

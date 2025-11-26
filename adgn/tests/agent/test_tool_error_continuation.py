@@ -9,20 +9,18 @@ from __future__ import annotations
 from hamcrest import assert_that, contains_string
 import pytest
 
-from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ws_helpers import assert_function_call_output_structured
-from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 async def test_tool_error_continues_turn(
-    monkeypatch: pytest.MonkeyPatch,
     responses_factory,
     make_pg_session,
     approval_policy_reader_allow_all,
     validation_server,
     recording_handler,
+    make_test_agent,
 ) -> None:
     """Test that a tool validation error doesn't abort the turn.
 
@@ -37,27 +35,24 @@ async def test_tool_error_continues_turn(
         {"validator": validation_server, "approval_policy": approval_policy_reader_allow_all}
     ) as mcp_client:
         # Simulate the agent trying with wrong mime, then correcting itself
-        client = FakeOpenAIModel(
-            [
-                # First attempt with wrong mime type
-                responses_factory.make_tool_call(
-                    build_mcp_function("validator", "send_message"), {"mime": "text/plain", "content": "Hello"}
-                ),
-                # After error, agent retries with correct mime type
-                responses_factory.make_tool_call(
-                    build_mcp_function("validator", "send_message"), {"mime": "text/markdown", "content": "Hello"}
-                ),
-                # Final message
-                responses_factory.make_assistant_message("Successfully sent message"),
-            ]
-        )
+        seq = [
+            # First attempt with wrong mime type
+            responses_factory.make_tool_call(
+                build_mcp_function("validator", "send_message"), {"mime": "text/plain", "content": "Hello"}
+            ),
+            # After error, agent retries with correct mime type
+            responses_factory.make_tool_call(
+                build_mcp_function("validator", "send_message"), {"mime": "text/markdown", "content": "Hello"}
+            ),
+            # Final message
+            responses_factory.make_assistant_message("Successfully sent message"),
+        ]
 
-        agent = await MiniCodex.create(
-            model=responses_factory.model,
-            mcp_client=mcp_client,
-            system="You are a helpful assistant. Use the validator tools.",
-            client=client,
+        agent, _ = await make_test_agent(
+            mcp_client,
+            seq,
             handlers=[AutoHandler(), recording_handler],
+            system="You are a helpful assistant. Use the validator tools.",
         )
 
         result = await agent.run("Send a greeting")
