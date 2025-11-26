@@ -76,15 +76,15 @@ export class AgentMcpClient {
    * Read an MCP resource.
    *
    * Resource URIs are automatically prefixed with agent ID if configured.
-   * FastMCP uses add_resource_prefix() with compositor.resource_prefix_format.
-   * TODO: Verify correct resource prefix format from FastMCP defaults.
+   * FastMCP default resource_prefix_format is "path", which transforms:
+   *   approvals://pending → approvals://agent123/pending
    *
    * @param uri - Resource URI (without agent prefix)
    * @returns Resource contents (parsed from first content item)
    */
   async readResource<T = unknown>(uri: string): Promise<T> {
-    // TODO: This prefix format may be wrong - need to check FastMCP's resource_prefix_format
-    const resourceUri = this.agentId ? `compositor://${this.agentId}/${uri}` : uri
+    // FastMCP "path" format: protocol://prefix/path
+    const resourceUri = this.agentId ? this.prefixResourceUri(uri, this.agentId) : uri
     const result = await this.client.readResource({ uri: resourceUri })
     if (result.contents && result.contents.length > 0) {
       const first = result.contents[0]
@@ -100,7 +100,8 @@ export class AgentMcpClient {
    * Subscribe to an MCP resource and poll for updates.
    *
    * Resource URIs are automatically prefixed with agent ID if configured.
-   * TODO: Verify correct resource prefix format from FastMCP defaults.
+   * FastMCP default resource_prefix_format is "path", which transforms:
+   *   approvals://pending → approvals://agent123/pending
    *
    * Note: This implementation uses polling since MCP notifications aren't reliably
    * delivered in all transport modes. The callback will be invoked whenever the
@@ -116,8 +117,8 @@ export class AgentMcpClient {
     callback: (data: T) => void,
     pollIntervalMs: number = 1000
   ): Promise<() => void> {
-    // TODO: This prefix format may be wrong - need to check FastMCP's resource_prefix_format
-    const resourceUri = this.agentId ? `compositor://${this.agentId}/${uri}` : uri
+    // FastMCP "path" format: protocol://prefix/path
+    const resourceUri = this.agentId ? this.prefixResourceUri(uri, this.agentId) : uri
     await this.client.subscribeResource({ uri: resourceUri })
 
     let active = true
@@ -149,12 +150,28 @@ export class AgentMcpClient {
     poll()
     return () => {
       active = false
-      // Unsubscribe from resource
-      const resourceUri = this.agentId ? `compositor://${this.agentId}/${uri}` : uri
+      // Unsubscribe from resource (use same prefixed URI)
       this.client.unsubscribeResource({ uri: resourceUri }).catch(e => {
         console.warn(`Failed to unsubscribe from ${resourceUri}:`, e)
       })
     }
+  }
+
+  /**
+   * Apply FastMCP "path" format resource prefix.
+   * Transforms: protocol://path → protocol://prefix/path
+   *
+   * @param uri - Original resource URI
+   * @param prefix - Prefix to add (agent ID)
+   * @returns Prefixed resource URI
+   */
+  private prefixResourceUri(uri: string, prefix: string): string {
+    const match = uri.match(/^([^:]+:\/\/)(.*)$/)
+    if (!match) {
+      throw new Error(`Invalid resource URI format: ${uri}`)
+    }
+    const [, protocol, path] = match
+    return `${protocol}${prefix}/${path}`
   }
 
   /**
