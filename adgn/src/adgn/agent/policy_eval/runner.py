@@ -36,7 +36,7 @@ def run_policy_source(
     # Avoid attach_socket/stdin I/O (flaky on some Docker backends e.g., Colima).
     # Inject the request JSON and the policy source via environment variables,
     # and run a tiny shim that feeds POLICY_INPUT to sys.stdin before exec'ing the policy source.
-    ctx_json = input_payload.model_dump_json(include={"name", "arguments"})
+    ctx_json = input_payload.model_dump_json()
     # Execute the packaged shim module that reads POLICY_INPUT/POLICY_SRC
     container = docker_client.containers.create(
         image=img,

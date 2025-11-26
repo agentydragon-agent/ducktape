@@ -59,7 +59,6 @@ TypedPayload = Annotated[
 class EventRecord(BaseModel):
     seq: int
     ts: datetime
-    type: EventType
     payload: TypedPayload
     call_id: str | None = None
     tool_key: str | None = None
@@ -68,21 +67,7 @@ class EventRecord(BaseModel):
 
 
 def parse_event(d: dict[str, Any]) -> EventRecord:
-    raw_type = d.get("type")
-    et = EventType(str(raw_type))
-    seq = int(d.get("seq", 0))
-    ts_raw = d.get("ts")
-    ts = ts_raw if isinstance(ts_raw, datetime) else datetime.fromisoformat(str(ts_raw))
-    call_id = d.get("call_id")
-    tool_key = d.get("tool_key")
-    payload_raw = d.get("payload") or {}
-
-    # Inject type field into payload for discriminated union parsing
-    payload_dict = dict(payload_raw)
-    payload_dict["type"] = et.value
-    payload = TypeAdapter(TypedPayload).validate_python(payload_dict)
-
-    return EventRecord(seq=seq, ts=ts, type=et, payload=payload, call_id=call_id, tool_key=tool_key)
+    return EventRecord.model_validate(d)
 
 
 def parse_events(items: list[dict[str, Any]]) -> list[EventRecord]:

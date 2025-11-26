@@ -109,7 +109,6 @@ class Persistence(Protocol):
         run_id: UUID,
         seq: int,
         ts: datetime,
-        type: EventType,
         payload: dict[str, JsonValue],
         call_id: str | None = None,
         tool_key: str | None = None,
