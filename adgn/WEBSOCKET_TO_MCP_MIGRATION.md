@@ -4,88 +4,76 @@ This document outlines the migration from WebSocket-based communication to MCP (
 
 ## Overview
 
-**Current Architecture**: Frontend ↔ WebSocket (`/ws`, `/ws/agents`) ↔ Backend
+**Current Architecture**: Frontend ↔ WebSocket (DELETED) + HTTP REST (broken) ↔ Backend
 
-**Target Architecture**: Frontend ↔ MCP HTTP (`/mcp`) ↔ 2-Level MCP Compositor ↔ Backend
+**Target Architecture**: Frontend ↔ MCP HTTP (`/mcp`) ↔ 2-Level MCP Compositor ↔ FastMCP Servers
+
+## 2-Level MCP Compositor Architecture
+
+### Level 1: Global Compositor
+**Endpoint**: `/mcp` (streamable HTTP transport)
+- Mounts per-agent sub-compositors
+- **Status**: Implementation unclear - imports missing `mcp_bridge.compositor_factory`
+
+### Level 2: Per-Agent Sub-Compositors
+Each `AgentContainer` has a `_compositor: Compositor` that mounts small FastMCP servers:
+
+#### ✅ Existing Standard Servers (mounted via `mount_standard_inproc_servers`):
+1. **resources** - `make_resources_server()` - Aggregates resources from all servers
+   - Tools: `resources_list`, `resources_read` (with windowing)
+2. **compositor_meta** - `make_compositor_meta_server()` - Compositor state/metadata
+3. **compositor_admin** - `make_compositor_admin_server()` - Mount lifecycle
+   - Tools: `attach_server`, `detach_server`
+
+#### ✅ Existing Agent-Specific Servers:
+4. **chat.human** & **chat.assistant** - `make_chat_server()` - Chat message stores
+   - Tools: `post(mime, content)`, `read_pending_messages(limit?)`
+   - Resources: `chat://head`, `chat://last-read`, `chat://messages/{id}`
+5. **ui** - `make_ui_server()` - UI message display
+   - Tools: `send_message(mime, content)`, `end_turn()`
+6. **loop** - `make_loop_server()` - Loop control
+   - Tools: `yield_turn()`
+7. **approval_policy** (3 variants) - Policy & proposal management
+   - Reader: Resources for `resource://approval-policy/policy.py`, `proposals/{id}`
+   - Proposer: Tools: `create_proposal`, `withdraw_proposal`
+   - Admin: Tools: `approve_proposal`, `reject_proposal`, `set_policy`
+8. **runtime** - `make_runtime_server()` - Container exec
+9. **seatbelt** - `attach_seatbelt_exec()` - Sandboxed exec (optional)
+
+#### ⚠️ CREATED BUT NOT WIRED:
+10. **approvals** - `/mcp/approvals/server.py` - Approval actions (JUST CREATED)
+    - Tools: `approve_call`, `deny_abort`, `deny_continue`
+    - Resource: `approvals://pending`
+    - **TODO**: Wire to agent compositors, add ApprovalHub notification
+
+#### ❌ MISSING:
+11. **Agent control tools** - `send_prompt`, `abort_run` (need to create server)
+12. **Global agents management** - `create_agent`, `delete_agent`, `list_agents`, `boot_agent` (need to find or create)
 
 ## Background
 
-The commit `e00f4c8e` ("refactor: remove WebSocket endpoints, migrate to MCP-only communication") removed WebSocket endpoints from the backend and established MCP as the sole communication protocol. However, the frontend still contains WebSocket client code and references that need to be migrated.
+WebSocket files were deleted in Phase 1. Frontend HTTP REST endpoints (`/api/agents/{id}/approve`, etc.) don't exist on backend - they should be replaced with MCP tool calls.
 
-## Phase 1: Backend Cleanup
+## Phase 1: Backend Cleanup ✅ COMPLETED
 
-### Task 1.1: Delete Dead WebSocket Files
-**Priority**: High
-**Estimate**: 15 minutes
-
-**Files to delete**:
-- `adgn/src/adgn/agent/server/ws.py` (entire file)
+### Task 1.1: Delete Dead WebSocket Files ✅ DONE
+Deleted files:
+- `adgn/src/adgn/agent/server/ws.py` (415 lines)
 - `adgn/src/adgn/agent/server/agents_ws.py` (entire file)
+- `adgn/src/adgn/agent/web/src/features/chat/ws.ts` (64 lines)
 
-**Verification**:
-```bash
-git rm adgn/src/adgn/agent/server/ws.py
-git rm adgn/src/adgn/agent/server/agents_ws.py
-```
+Committed in: `fb481138 refactor(adgn): remove dead WebSocket infrastructure`
 
-### Task 1.2: Remove WebSocket Code from ConnectionManager
-**Priority**: High
-**Estimate**: 30 minutes
+### Task 1.2: Remove WebSocket Code from ConnectionManager ✅ DONE
 **File**: `adgn/src/adgn/agent/server/runtime.py`
 
-**Changes**:
-1. Remove WebSocket imports (lines ~11-12):
-   ```python
-   # DELETE:
-   from fastapi import WebSocket
-   from starlette.websockets import WebSocketState
-   ```
+Removed:
+- `from adgn.agent.server.agents_ws import AgentsWSHub` import
+- `_status_hub` and `_status_agent_id` fields from ConnectionManager
+- `configure_status_hub()` and `broadcast_status()` methods
+- All calls to `broadcast_status()` throughout the file
 
-2. Remove `_clients` field from ConnectionManager (line ~54):
-   ```python
-   # DELETE:
-   self._clients: dict[int, tuple[WebSocket, asyncio.Queue[Any | None], asyncio.Task]] = {}
-   ```
-
-3. Remove WebSocket methods (lines ~62-109):
-   - `async def connect(self, ws: WebSocket) -> None`
-   - `async def disconnect(self, ws: WebSocket) -> None`
-   - `async def _sender_loop(...) -> None`
-
-**Note**: Keep the `send_payload()` method - it's used for MCP resource updates via ServerBus.
-
-### Task 1.3: Fix AgentRuntime Documentation
-**Priority**: Medium
-**Estimate**: 10 minutes
-**File**: `adgn/src/adgn/agent/server/registry.py`
-
-**Changes**:
-1. Update `AgentRuntime` docstring (line ~25):
-   ```python
-   # CHANGE FROM:
-   - _ui_manager: WebSocket connection manager (optional)
-
-   # CHANGE TO:
-   - _ui_manager: Connection manager for UI message delivery (optional)
-   ```
-
-2. Pass UI fields to constructor instead of setting after (lines ~80-83):
-   ```python
-   # CHANGE FROM:
-   agent_runtime = AgentRuntime(agent_id=agent_id, running=running, runtime=runtime)
-   # Set UI components for backward compatibility
-   agent_runtime._ui_manager = conn_mgr_out
-   agent_runtime._ui_bus = ui_bus_out
-
-   # CHANGE TO:
-   agent_runtime = AgentRuntime(
-       agent_id=agent_id,
-       running=running,
-       runtime=runtime,
-       _ui_manager=conn_mgr_out,
-       _ui_bus=ui_bus_out,
-   )
-   ```
+Committed in: `fb481138 refactor(adgn): remove dead WebSocket infrastructure`
 
 ## Phase 2: Frontend MCP Client Infrastructure
 
