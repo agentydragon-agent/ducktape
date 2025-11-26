@@ -177,8 +177,8 @@ rationale=|||
 - ✅ Test suggested fixes if uncertain about correctness
 - ✅ Remove issues that turn out to be invalid after research
 
-**Example from specimen 2025-11-26-code-quality:**
-Issue 039 asks "Check if auto-discovery works" and includes "If auto-discovery doesn't work: Close this issue as invalid." This research should have been completed first - either document that auto-discovery works (with evidence), or don't create the issue.
+**Example of what NOT to do:**
+An issue asks "Check if auto-discovery works" and includes "If auto-discovery doesn't work: Close this issue as invalid." This research should have been completed first - either document that auto-discovery works (with evidence), or don't create the issue.
 
 ### 6. Verifiable External References
 

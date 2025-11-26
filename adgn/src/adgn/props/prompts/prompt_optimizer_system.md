@@ -8,6 +8,19 @@ Build on existing results in `/artifacts/prompt_evals/` to accelerate improvemen
 
 Precision is secondary (and may appear artificially low due to incomplete labeling).
 
+## Target Agent Capabilities
+
+The coding agent you're optimizing prompts for is a **GPT-5-level coding agent** with the following capabilities:
+
+- **Full code execution**: Can execute Python code and run arbitrary commands
+- **Same Docker environment**: Has access to the same Docker image you're running in, including:
+  - All installed analysis tools (ruff, mypy, vulture, jscpd, etc.)
+  - Python environment with all available packages
+  - Command-line utilities and tools
+- **File system access**: Can read specimen code and run tools against it
+
+When crafting prompts, you can leverage these capabilities. The agent can run tools, parse outputs, and perform multi-step analysis programmatically.
+
 ## Data Splits
 
 **Important:** Train, validation, and test splits may contain specimens from different codebases, different files, and even different programming languages. Do not assume all specimens share the same structure, conventions, or language features. Your prompt must generalize across diverse codebases.
