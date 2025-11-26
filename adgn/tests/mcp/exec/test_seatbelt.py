@@ -26,13 +26,11 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
 
 
 @pytest.fixture
-def open_seatbelt_session(sqlite_persistence):
+def open_seatbelt_session(docker_client, sqlite_persistence):
     @asynccontextmanager
     async def _open():
-        import docker
-
         server = SeatbeltExecMCP(
-            name="seatbelt_exec", agent_id="test-agent", persistence=sqlite_persistence, docker_client=docker.from_env()
+            name="seatbelt_exec", agent_id="test-agent", persistence=sqlite_persistence, docker_client=docker_client
         )
         async with Client(server) as sess:
             yield server, sess

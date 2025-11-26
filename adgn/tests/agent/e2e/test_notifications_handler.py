@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 
-import docker
 from fastmcp.mcp_config import MCPConfig
 import pytest
 
@@ -15,7 +14,7 @@ from tests.llm.support.openai_mock import make_mock
 
 @pytest.mark.requires_docker
 async def test_notifications_handler_in_container_inserts_system_message(
-    sqlite_persistence, monkeypatch: pytest.MonkeyPatch, policy_allow_all: str
+    docker_client, sqlite_persistence, monkeypatch: pytest.MonkeyPatch, policy_allow_all: str
 ) -> None:
     # Persistence and container
     # Capture OpenAI requests
@@ -36,7 +35,7 @@ async def test_notifications_handler_in_container_inserts_system_message(
         model="test-model",
         client_factory=lambda _model: client,
         with_ui=False,
-        docker_client=docker.from_env(),
+        docker_client=docker_client,
         initial_policy=policy_allow_all,
     )
 

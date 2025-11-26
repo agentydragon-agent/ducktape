@@ -98,14 +98,27 @@ async def sqlite_persistence(tmp_path):
 
 
 @pytest.fixture
-def make_policy_engine(sqlite_persistence, request: pytest.FixtureRequest):
+def docker_client():
+    """Shared Docker client for tests requiring Docker.
+
+    Centralizes docker.from_env() calls to avoid repeated client creation
+    and ensure consistent cleanup.
+    """
+    client = docker.from_env()
+    yield client
+    with suppress(Exception):
+        client.close()
+
+
+@pytest.fixture
+def make_policy_engine(docker_client, sqlite_persistence, request: pytest.FixtureRequest):
     """Factory producing ApprovalPolicyEngine instances with per-test defaults."""
 
     def _make(policy_source: str, *, agent_id: str | None = None) -> ApprovalPolicyEngine:
         default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
         effective_id = agent_id or default_id
         return ApprovalPolicyEngine(
-            docker_client=docker.from_env(),
+            docker_client=docker_client,
             agent_id=effective_id,
             persistence=sqlite_persistence,
             policy_source=policy_source,
@@ -115,9 +128,9 @@ def make_policy_engine(sqlite_persistence, request: pytest.FixtureRequest):
 
 
 @pytest.fixture
-async def approval_engine(sqlite_persistence) -> ApprovalPolicyEngine:
+async def approval_engine(docker_client, sqlite_persistence) -> ApprovalPolicyEngine:
     return ApprovalPolicyEngine(
-        docker_client=docker.from_env(),
+        docker_client=docker_client,
         agent_id="tests",
         persistence=sqlite_persistence,
         policy_source=load_default_policy_source(),
@@ -356,14 +369,14 @@ def docker_inproc_spec_py312():
 
 
 @pytest.fixture
-async def approval_policy_reader_allow_all(sqlite_persistence) -> FastMCP:
+async def approval_policy_reader_allow_all(docker_client, sqlite_persistence) -> FastMCP:
     """Approval policy reader server with an approve-all policy program.
 
     Uses the packaged approve_all.py source and evaluates via Docker.
     """
     policy_text = resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
     eng = ApprovalPolicyEngine(
-        docker_client=docker.from_env(), agent_id="tests", persistence=sqlite_persistence, policy_source=policy_text
+        docker_client=docker_client, agent_id="tests", persistence=sqlite_persistence, policy_source=policy_text
     )
     return ApprovalPolicyServer(eng)
 

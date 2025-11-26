@@ -86,22 +86,22 @@ class _AgentHttp:
 
 
 @pytest.fixture
-def policy_evaluator(approval_engine: ApprovalPolicyEngine) -> ContainerPolicyEvaluator:
+def policy_evaluator(docker_client, approval_engine: ApprovalPolicyEngine) -> ContainerPolicyEvaluator:
     """Container-backed policy evaluator using the default policy engine.
 
     Deduplicates setup across tests that need to call policy.decide(...).
     Requires Docker (tests should mark with @pytest.mark.requires_docker).
     """
-    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker.from_env(), engine=approval_engine)
+    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker_client, engine=approval_engine)
 
 
 @pytest.fixture
-def make_policy_evaluator(make_policy_engine):
+def make_policy_evaluator(docker_client, make_policy_engine):
     """Factory that builds a ContainerPolicyEvaluator for a given policy source."""
 
     def _make(policy_source: str, *, agent_id: str = "tests") -> ContainerPolicyEvaluator:
         engine = make_policy_engine(policy_source, agent_id=agent_id)
-        return ContainerPolicyEvaluator(agent_id=agent_id, docker_client=docker.from_env(), engine=engine)
+        return ContainerPolicyEvaluator(agent_id=agent_id, docker_client=docker_client, engine=engine)
 
     return _make
 
@@ -163,15 +163,31 @@ def policy_const() -> str:
     return str(fetch_policy("const"))
 
 
-# ---- Policy factory fixtures removed - use fetch_policy and make_policy directly ----
+# ---- Policy factory fixtures ----
 
 
-# Shared model fixture for live tests that need a reasoning-capable model
-@pytest.fixture(scope="session")
-def reasoning_model() -> str:
-    # Default to gpt-5-nano for fast, reasoning-capable behavior; allow override via env
-    return os.environ.get("RESPONSES_TEST_MODEL", "gpt-5-nano")
+@pytest.fixture
+def policy_make() -> Callable[..., str]:
+    """Factory fixture for creating policy text from templates.
 
+    Usage:
+        policy_source = policy_make(decision_expr="PolicyDecision.ASK", server="echo", tool="echo")
+    """
+    return make_policy
+
+
+@pytest.fixture
+def policy_fetch() -> Callable[[str], str]:
+    """Fixture for fetching policy text from test data files.
+
+    Usage:
+        policy_source = policy_fetch("failing_tests")
+    """
+    return fetch_policy
+
+
+# reasoning_model fixture is provided globally in tests/fixtures/responses.py
+# (registered via pytest_plugins in tests/conftest.py)
 
 # assistant_response_factory, tool_call_response_factory, responses_factory
 # come from tests.fixtures.responses (registered globally in tests/conftest.py).
@@ -179,7 +195,13 @@ def reasoning_model() -> str:
 
 # Local factory: construct our Pydantic-only fake client from a sequence of ResponsesResult
 @pytest.fixture
-def fake_openai_client_factory() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]:
+def make_fake_openai() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]:
+    """Factory to create FakeOpenAIModel instances from response sequences.
+
+    Usage:
+        client = make_fake_openai([responses_factory.make_assistant_message("ok")])
+    """
+
     def _make(outputs: Iterable[ResponsesResult]) -> FakeOpenAIModel:
         return FakeOpenAIModel(list(outputs))
 

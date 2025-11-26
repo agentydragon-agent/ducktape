@@ -20,9 +20,9 @@ class SyntheticOnceHandler(BaseHandler):
 
 
 async def test_mini_codex_handles_synthetic_action_without_api_calls(
-    fake_openai_client_factory, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
+    make_fake_openai, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
 ) -> None:
-    client = fake_openai_client_factory([responses_factory.make_assistant_message("should_not_be_used")])
+    client = make_fake_openai([responses_factory.make_assistant_message("should_not_be_used")])
     # Build a compositor with no extra servers (just policy gateway)
     async with make_pg_compositor({"approval_policy": approval_policy_reader_allow_all}) as (mcp_client, _comp):
         resp = responses_factory.make_assistant_message("hello")
