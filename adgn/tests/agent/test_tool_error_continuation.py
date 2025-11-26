@@ -33,7 +33,7 @@ def _make_validation_server() -> FastMCP:
 
 
 async def test_tool_error_continues_turn(
-    monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
+    monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_session, approval_policy_reader_allow_all
 ) -> None:
     """Test that a tool validation error doesn't abort the turn.
 
@@ -45,10 +45,7 @@ async def test_tool_error_continues_turn(
     5. Successfully complete
     """
     server = _make_validation_server()
-    async with make_pg_compositor({"validator": server, "approval_policy": approval_policy_reader_allow_all}) as (
-        mcp_client,
-        _comp,
-    ):
+    async with make_pg_session({"validator": server, "approval_policy": approval_policy_reader_allow_all}) as mcp_client:
         rec = RecordingHandler()
 
         # Simulate the agent trying with wrong mime, then correcting itself

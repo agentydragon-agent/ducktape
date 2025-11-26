@@ -169,6 +169,12 @@ def approval_hub() -> ApprovalHub:
     return ApprovalHub()
 
 
+@pytest.fixture
+def compositor() -> Compositor:
+    """Basic Compositor instance for tests that need direct compositor access."""
+    return Compositor("comp")
+
+
 async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
     """Mount all servers from McpServerSpecs dict onto a compositor.
 
@@ -188,11 +194,11 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
 
 
 @pytest.fixture
-def make_pg_compositor(approval_hub: ApprovalHub):
-    """Async helper to open a Compositor with policy gateway middleware.
+def make_pg_session(approval_hub: ApprovalHub):
+    """Async helper to open a session with policy gateway middleware.
 
     Usage:
-        async with make_pg_compositor(backend, evaluator, hub=..., notifier=...) as (sess, comp):
+        async with make_pg_session({"backend": server, "approval_policy": reader}) as client:
             ...
     """
 
@@ -213,22 +219,19 @@ def make_pg_compositor(approval_hub: ApprovalHub):
             # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
             await mount_standard_inproc_servers(compositor=comp, gateway_client=None)
             async with Client(comp) as sess:
-                yield sess, comp
+                yield sess
         finally:
             await stack.aclose()
 
     return _open
 
 
-# Note: legacy open_mcp_with_slots fixture has been removed. Use make_pg_compositor instead.
-
-
 @pytest.fixture
-def make_compositor():
-    """Async helper to open a Compositor and yield (Client, Compositor).
+def make_session():
+    """Async helper to open a session connected to a Compositor.
 
     Usage:
-        async with make_compositor({"name": server, ...}) as (client, comp):
+        async with make_session({"name": server, ...}) as client:
             ...
     """
 
@@ -237,58 +240,54 @@ def make_compositor():
         comp = Compositor("comp")
         await _mount_servers(comp, servers)
         async with Client(comp) as sess:
-            yield sess, comp
+            yield sess
 
     return _open
 
 
 @pytest.fixture
-def make_pg_compositor_box(approval_policy_reader_allow_all, make_pg_compositor):
-    """Helper to open a Compositor with a boxed Docker exec server and policy.
+def make_pg_session_box(approval_policy_reader_allow_all, make_pg_session):
+    """Helper to open a session with a boxed Docker exec server and policy.
 
     Mounts a per-session container exec server under name "box" and mounts the
-    approval_policy reader. Yields (client, compositor).
+    approval_policy reader. Yields the MCP client session.
     """
-
-    from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def _open():
         server = make_container_exec_server(make_container_opts("python:3.12-slim"), name="box")
-        async with make_pg_compositor({"box": server, "approval_policy": approval_policy_reader_allow_all}) as pair:
-            yield pair
+        async with make_pg_session({"box": server, "approval_policy": approval_policy_reader_allow_all}) as client:
+            yield client
 
     return _open
 
 
 @pytest.fixture
-def make_pg_compositor_echo(make_echo_spec, approval_policy_reader_allow_all, make_pg_compositor):
-    """Helper to open a Compositor with the echo server and policy mounted.
+def make_pg_session_echo(make_echo_spec, approval_policy_reader_allow_all, make_pg_session):
+    """Helper to open a session with the echo server and policy mounted.
 
-    Yields (client, compositor).
+    Yields the MCP client session.
     """
-
-    from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def _open():
         spec_factory = make_echo_spec
         servers = {**spec_factory(), "approval_policy": approval_policy_reader_allow_all}
-        async with make_pg_compositor(servers) as pair:
-            yield pair
+        async with make_pg_session(servers) as client:
+            yield client
 
     return _open
 
 
 @pytest.fixture
-async def pg_compositor_echo(make_pg_compositor_echo):
-    """Async fixture yielding (client, compositor) with echo + approval mounted.
+async def pg_session_echo(make_pg_session_echo):
+    """Async fixture yielding a session with echo + approval mounted.
 
-    Convenience wrapper around make_pg_compositor_echo() so tests can depend on a
+    Convenience wrapper around make_pg_session_echo() so tests can depend on a
     ready session without using an explicit async with.
     """
-    async with make_pg_compositor_echo() as pair:
-        yield pair
+    async with make_pg_session_echo() as client:
+        yield client
 
 
 @pytest.fixture

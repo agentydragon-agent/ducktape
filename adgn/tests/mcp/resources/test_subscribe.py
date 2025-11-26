@@ -5,7 +5,7 @@ from adgn.mcp.resources.server import make_resources_server
 from tests.util.notifications import enable_resources_caps, install_subscription_recorder
 
 
-async def test_client_resource_subscribe_and_unsubscribe(make_pg_compositor):
+async def test_client_resource_subscribe_and_unsubscribe():
     """Subscribe/unsubscribe to a server resource via the Compositor client.
 
     Uses an origin that exposes a dummy resource and advertises subscribe capability.

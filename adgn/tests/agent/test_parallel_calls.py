@@ -63,7 +63,7 @@ def _make_slow_server(per_call_secs: float = 0.30) -> FastMCP:
     return mcp
 
 
-async def test_parallel_tool_calls_reduce_wall_time(make_compositor):
+async def test_parallel_tool_calls_reduce_wall_time(make_session):
     # Build a real inproc FastMCP server with two slow tools
 
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
@@ -74,7 +74,7 @@ async def test_parallel_tool_calls_reduce_wall_time(make_compositor):
 
     rec = RecordingHandler()
 
-    async with make_compositor({"dummy": _make_slow_server()}) as (mcp_client, _comp):
+    async with make_session({"dummy": _make_slow_server()}) as mcp_client:
         agent = await MiniCodex.create(
             model="noop",
             system="test",

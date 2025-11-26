@@ -24,14 +24,11 @@ def _make_failing_server() -> FastMCP:
 
 
 async def test_tool_error_is_surfaced_in_sequence(
-    monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
+    monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_session, approval_policy_reader_allow_all
 ) -> None:
     # Build in-proc failing server spec using FastMCP
     server = _make_failing_server()
-    async with make_pg_compositor({"editor": server, "approval_policy": approval_policy_reader_allow_all}) as (
-        mcp_client,
-        _comp,
-    ):
+    async with make_pg_session({"editor": server, "approval_policy": approval_policy_reader_allow_all}) as mcp_client:
         # Create agent and run one turn
         rec = RecordingHandler()
 

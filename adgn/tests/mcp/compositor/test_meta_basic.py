@@ -10,12 +10,9 @@ from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 @pytest.mark.requires_docker
 async def test_compositor_meta_resources_available(
-    make_pg_compositor, approval_policy_reader_allow_all, backend_server
+    make_pg_session, approval_policy_reader_allow_all, backend_server
 ):
-    async with make_pg_compositor({"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}) as (
-        sess,
-        _comp,
-    ):
+    async with make_pg_session({"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}) as sess:
         # Read per-mount state from the compositor_meta server
         # Expect running or initializing depending on initialization timing
         rr = await sess.session.read_resource(COMPOSITOR_META_STATE_URI_FMT.format(server="backend"))

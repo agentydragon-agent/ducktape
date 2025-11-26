@@ -11,7 +11,7 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 @pytest.mark.requires_docker
 async def test_approval_policy_server_is_available(
-    responses_factory, make_echo_spec, make_pg_compositor, approval_engine
+    responses_factory, make_echo_spec, make_pg_session, approval_engine
 ):
     """Test that the approval policy MCP server is available to the agent and lists tools."""
 
@@ -23,7 +23,7 @@ async def test_approval_policy_server_is_available(
     servers = dict(make_echo_spec())
     servers["approval_policy"] = reader
     servers["approval_policy.proposer"] = proposer
-    async with make_pg_compositor(servers) as (mcp_client, _comp):
+    async with make_pg_session(servers) as mcp_client:
         # Create a sequence where agent lists available tools
         seq = [responses_factory.make_assistant_message("I can see the approval tools")]
         client = FakeOpenAIModel(seq)

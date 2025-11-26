@@ -17,11 +17,11 @@ def _runtime_spec_persession(image: str = "alpine:3.19"):
 
 @pytest.mark.requires_docker
 async def test_runtime_per_session_timeout_then_next_call_ok(
-    make_pg_compositor, approval_policy_reader_allow_all
+    make_pg_session, approval_policy_reader_allow_all
 ) -> None:
-    async with make_pg_compositor(
+    async with make_pg_session(
         {"runtime": _runtime_spec_persession(), "approval_policy": approval_policy_reader_allow_all}
-    ) as (mcp_client, _comp):
+    ) as mcp_client:
         # Call via Compositor using namespaced tool
         sess = mcp_client
 

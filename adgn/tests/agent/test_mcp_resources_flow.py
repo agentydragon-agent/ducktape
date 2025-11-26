@@ -14,11 +14,11 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 @pytest.mark.requires_docker
 async def test_model_reads_container_info_with_stubbed_openai(
-    reasoning_model, responses_factory, docker_inproc_spec_alpine, make_pg_compositor, approval_policy_reader_allow_all
+    reasoning_model, responses_factory, docker_inproc_spec_alpine, make_pg_session, approval_policy_reader_allow_all
 ) -> None:
-    async with make_pg_compositor(
+    async with make_pg_session(
         {"runtime": docker_inproc_spec_alpine, "approval_policy": approval_policy_reader_allow_all}
-    ) as (mcp_client, _comp):
+    ) as mcp_client:
         # Prepare a deterministic two-step sequence: function_call then final text
         ResourcesReadArgs(server="docker", uri="resource://container.info", max_bytes=1024)
         seq = [

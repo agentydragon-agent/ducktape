@@ -19,12 +19,9 @@ def _make_backend(name: str = "backend") -> FastMCP:
     return m
 
 
-async def test_meta_presents_inproc_mounts(make_pg_compositor, approval_policy_reader_allow_all):
+async def test_meta_presents_inproc_mounts(make_pg_session, approval_policy_reader_allow_all):
     backend = _make_backend()
-    async with make_pg_compositor({"backend": backend, "approval_policy": approval_policy_reader_allow_all}) as (
-        sess,
-        _comp,
-    ):
+    async with make_pg_session({"backend": backend, "approval_policy": approval_policy_reader_allow_all}) as sess:
         # List resources and find compositor_meta state entry for this mount
         resources = await sess.list_resources()
         uris = {str(r.uri) for r in resources}

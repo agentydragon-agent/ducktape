@@ -20,13 +20,14 @@ def stdio_echo_spec() -> StdioMCPServer:
 
 
 @pytest.fixture
-async def admin_env(make_compositor):
+async def admin_env():
     """Compositor with standard admin/meta servers and an admin client.
 
     Yields a tuple (admin_client, compositor).
     """
-    async with make_compositor({}) as (client, comp):
-        await mount_standard_inproc_servers(compositor=comp, gateway_client=None)
+    comp = Compositor("comp")
+    await mount_standard_inproc_servers(compositor=comp, gateway_client=None)
+    async with Client(comp) as client:
         admin = CompositorAdminClient(client)
         yield admin, comp
 

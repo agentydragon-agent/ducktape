@@ -10,7 +10,7 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 async def test_agent_mcp_echo_tool_use(
-    monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_compositor_echo
+    monkeypatch: pytest.MonkeyPatch, responses_factory, pg_session_echo
 ) -> None:
     # Provide a two-step sequence via our shared Pydantic fake client
     client = FakeOpenAIModel(
@@ -22,17 +22,16 @@ async def test_agent_mcp_echo_tool_use(
 
     rec = RecordingHandler()
 
-    async with make_pg_compositor_echo() as (mcp_client, _comp):
-        agent = await MiniCodex.create(
-            model="test-model",
-            mcp_client=mcp_client,
-            system="You are a test agent.",
-            client=client,
-            handlers=[AutoHandler(), rec],
-            parallel_tool_calls=False,
-        )
-        async with agent:
-            res = await agent.run(user_text="use echo")
+    agent = await MiniCodex.create(
+        model="test-model",
+        mcp_client=pg_session_echo,
+        system="You are a test agent.",
+        client=client,
+        handlers=[AutoHandler(), rec],
+        parallel_tool_calls=False,
+    )
+    async with agent:
+        res = await agent.run(user_text="use echo")
 
     # The tool output should be emitted (ToolCallOutput) and assistant text should follow
     outputs = [r for r in rec.records if r.get("kind") == "function_call_output"]

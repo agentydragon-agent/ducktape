@@ -15,12 +15,9 @@ def _make_backend(name: str = "backend") -> FastMCP:
     return m
 
 
-async def test_admin_client_list_and_detach(make_pg_compositor, approval_policy_reader_allow_all):
+async def test_admin_client_list_and_detach(make_pg_session, approval_policy_reader_allow_all):
     backend = _make_backend()
-    async with make_pg_compositor({"backend": backend, "approval_policy": approval_policy_reader_allow_all}) as (
-        sess,
-        comp,
-    ):
+    async with make_pg_session({"backend": backend, "approval_policy": approval_policy_reader_allow_all}) as sess:
         admin = CompositorAdminClient(sess)
         meta = CompositorMetaClient(sess)
         states = await meta.list_states()
@@ -29,5 +26,3 @@ async def test_admin_client_list_and_detach(make_pg_compositor, approval_policy_
         await admin.detach_server(name="backend")
         states_after = await meta.list_states()
         assert "backend" not in states_after
-        # Re-attach in-proc directly to leave compositor in a sane state for any following assertions
-        await comp.mount_inproc("backend", backend)

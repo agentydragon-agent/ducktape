@@ -50,7 +50,7 @@ def content_root() -> Generator[Path, None, None]:
 
 @pytest.mark.requires_docker
 async def test_lint_issue_bootstrap_small_files(
-    content_root: Path, make_pg_compositor, approval_policy_reader_allow_all
+    content_root: Path, make_pg_session, approval_policy_reader_allow_all
 ):
     # Arrange: create a tiny workspace with two small files
     # Colima note: bind mounts from /tmp are blocked; place workspace under XDG cache dir.
@@ -81,10 +81,7 @@ async def test_lint_issue_bootstrap_small_files(
     )
     ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root, docker_wiring=wiring)
 
-    async with make_pg_compositor({"runtime": runtime_server, "approval_policy": approval_policy_reader_allow_all}) as (
-        mcp_client,
-        _comp,
-    ):
+    async with make_pg_session({"runtime": runtime_server, "approval_policy": approval_policy_reader_allow_all}) as mcp_client:
         agent = await MiniCodex.create(
             model="gpt-5", mcp_client=mcp_client, system="test", client=client, handlers=[ctrl, DisplayEventsHandler()]
         )

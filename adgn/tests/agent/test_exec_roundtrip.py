@@ -28,18 +28,18 @@ async def _assert_exec_echo(sess) -> None:
 
 
 @pytest.mark.requires_docker
-async def test_exec_roundtrip_echo(make_pg_compositor_box) -> None:
+async def test_exec_roundtrip_echo(make_pg_session_box) -> None:
     """Spin up real Docker container and roundtrip an echo via exec."""
-    async with make_pg_compositor_box() as (mcp_client, _comp):
+    async with make_pg_session_box() as mcp_client:
         await _assert_exec_echo(mcp_client)
 
 
 @pytest.mark.live_llm
 @pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Requires OpenAI API key")
-async def test_live_llm_exec_echo(make_pg_compositor_box) -> None:
+async def test_live_llm_exec_echo(make_pg_session_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
 
-    async with make_pg_compositor_box() as (mcp_client, _comp):
+    async with make_pg_session_box() as mcp_client:
         model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
         client = build_client(model_name)
         agent = await MiniCodex.create(

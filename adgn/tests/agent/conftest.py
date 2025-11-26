@@ -163,29 +163,6 @@ def policy_const() -> str:
     return str(fetch_policy("const"))
 
 
-# ---- Policy factory fixtures ----
-
-
-@pytest.fixture
-def policy_make() -> Callable[..., str]:
-    """Factory fixture for creating policy text from templates.
-
-    Usage:
-        policy_source = policy_make(decision_expr="PolicyDecision.ASK", server="echo", tool="echo")
-    """
-    return make_policy
-
-
-@pytest.fixture
-def policy_fetch() -> Callable[[str], str]:
-    """Fixture for fetching policy text from test data files.
-
-    Usage:
-        policy_source = policy_fetch("failing_tests")
-    """
-    return fetch_policy
-
-
 # reasoning_model fixture is provided globally in tests/fixtures/responses.py
 # (registered via pytest_plugins in tests/conftest.py)
 

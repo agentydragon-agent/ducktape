@@ -8,7 +8,7 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 async def test_reasoning_threading_filters_reasoning_from_next_input(
-    reasoning_model: str, responses_factory, make_pg_compositor_echo
+    reasoning_model: str, responses_factory, pg_session_echo
 ) -> None:
     """Test that reasoning items are properly threaded with their function calls across turns."""
 
@@ -42,12 +42,11 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     ]
     client = FakeOpenAIModel(seq)
 
-    async with make_pg_compositor_echo() as (mcp_client, _comp):
-        agent = await MiniCodex.create(
-            model=responses_factory.model, mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]
-        )
+    agent = await MiniCodex.create(
+        model=responses_factory.model, mcp_client=pg_session_echo, system="test", client=client, handlers=[AutoHandler()]
+    )
 
-        res = await agent.run("say hi")
+    res = await agent.run("say hi")
 
     # Assertions
     assert res.text.strip() == "done"
