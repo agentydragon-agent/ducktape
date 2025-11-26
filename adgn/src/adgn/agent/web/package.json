@@ -13,7 +13,9 @@
     "lint": "eslint src --ext .ts,.svelte",
     "lint:fix": "eslint src --ext .ts,.svelte --fix",
     "format": "prettier --write 'src/**/*.{ts,svelte,css}'",
-    "format:check": "prettier --check 'src/**/*.{ts,svelte,css}'"
+    "format:check": "prettier --check 'src/**/*.{ts,svelte,css}'",
+    "codegen": "adgn-generate-frontend-code",
+    "prebuild": "npm run codegen"
   },
   "dependencies": {
     "diff": "^5.2.0",
@@ -43,6 +45,7 @@
     "svelte-eslint-parser": "^1.4.0",
     "typescript": "~5.8.3",
     "vite": "^7.1.2",
-    "vitest": "^2.1.1"
+    "vitest": "^2.1.1",
+    "json-schema-to-typescript": "^15.0.4"
   }
 }
