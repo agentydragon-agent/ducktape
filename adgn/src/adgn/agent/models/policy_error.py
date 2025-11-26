@@ -13,8 +13,8 @@ class PolicyErrorStage(StrEnum):
 
 class PolicyError(BaseModel):
     stage: PolicyErrorStage = Field(description="Processing stage where error occurred")
-    index: int | None = Field(None, description="Character/token index where error occurred")
-    length: int | None = Field(None, description="Length of error span in characters/tokens")
+    index: int | None = Field(None, description="Character index where error occurred in source text")
+    length: int | None = Field(None, description="Length of error span in characters")
     message: str | None = Field(None, description="Human-readable error message")
 
     model_config = ConfigDict(extra="forbid")
