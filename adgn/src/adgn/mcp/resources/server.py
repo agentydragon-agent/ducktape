@@ -202,12 +202,18 @@ def _build_window_payload(
 
 
 def make_resources_server(
-    name: str = "resources", *, gateway_client: Client, compositor: Compositor
+    name: str = "resources", *, compositor: Compositor
 ) -> NotifyingFastMCP:
     """Create a MCP server that aggregates resources across servers.
 
     - Synthetic server injected by the runtime; reserved name is ``resources``.
     - Provides a uniform API to discover and read resources exposed by other servers.
+
+    **Policy enforcement architecture:**
+    - LLM tool calls to this server go through the policy gateway (tool-level enforcement)
+    - This server's internal calls to the compositor BYPASS the policy gateway
+    - This prevents double policy enforcement and keeps the resources server as a pure facade
+    - The compositor client created here does NOT have policy middleware installed
 
     Tools
     - ``list(server?: string, uri_prefix?: string) -> { resources: [...] }``
@@ -228,6 +234,11 @@ def make_resources_server(
     mcp = NotifyingFastMCP(
         name, instructions=("Resources aggregator for listing/reading resources across mounted servers.")
     )
+
+    # Direct client to compositor (bypasses policy gateway to prevent double enforcement)
+    # This client is created without middleware since tools calling this server already
+    # went through the policy gateway
+    compositor_client = Client(compositor)
 
     # ---- Subscriptions index (single resource) -----------------------------
     # Internal store for subscriptions made via this server's subscribe tool.
@@ -335,7 +346,7 @@ def make_resources_server(
     @mcp.flat_model()
     async def list_resources_tool(input: ResourcesListArgs) -> ResourcesListResult:
         """List resources via aggregator; derive origin using FastMCP prefix logic."""
-        mcp_list = await gateway_client.list_resources()
+        mcp_list = await compositor_client.list_resources()
         specs = await compositor.mount_specs()
         mount_names = sorted(specs.keys())
         out: list[ResourceEntry] = []
@@ -370,7 +381,7 @@ def make_resources_server(
         """
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
         uri_value = ANY_URL.validate_python(prefixed)
-        res = await gateway_client.read_resource_mcp(uri_value)
+        res = await compositor_client.read_resource_mcp(uri_value)
         contents = list(res.contents)
         return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
 

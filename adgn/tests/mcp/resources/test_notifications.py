@@ -32,7 +32,7 @@ async def test_resources_list_changed_notification():
         from adgn.mcp.compositor.server import Compositor
 
         comp = Compositor("comp")
-        server = make_resources_server(name="resources", gateway_client=gw, compositor=comp)
+        server = make_resources_server(name="resources", compositor=comp)
         catcher = _NotifyCatcher()
         async with Client(server, message_handler=catcher) as client:
             # Trigger session capture by invoking list

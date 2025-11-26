@@ -50,7 +50,7 @@ async def test_subscriptions_index_updates_on_unmount():
 
     # Resources server with a real gateway client
     async with Client(comp) as gw:
-        res_server = make_resources_server(name="resources", gateway_client=gw, compositor=comp)
+        res_server = make_resources_server(name="resources", compositor=comp)
         async with Client(res_server) as client:
             # Subscribe to an origin resource via the resources server tool
             rc = ResourcesClient(client)

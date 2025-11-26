@@ -49,7 +49,7 @@ async def test_subscriptions_index_updates_on_unmount():
 
     # Resources server with a stub gateway client (subscribe logic uses child session)
     gw = _StubGatewayClient()
-    res_server = make_resources_server(name="resources", gateway_client=gw, compositor=comp)
+    res_server = make_resources_server(name="resources", compositor=comp)
 
     async with Client(res_server) as client:
         # Subscribe to an origin resource via the resources server tool

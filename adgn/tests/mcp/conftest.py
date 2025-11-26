@@ -40,6 +40,6 @@ async def resources_env():
     """
     comp = Compositor("comp")
     async with Client(comp) as gw:
-        res_server = make_resources_server(gateway_client=gw, compositor=comp)
+        res_server = make_resources_server(compositor=comp)
         async with Client(res_server) as res_client:
             yield ResourcesClient(res_client), comp

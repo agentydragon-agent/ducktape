@@ -28,7 +28,7 @@ async def test_list_changes_subscriptions_visible_and_cleared_on_unmount():
     await comp.mount_inproc("origin", origin)
 
     gw = _StubGatewayClient()
-    res_server = make_resources_server(name="resources", gateway_client=gw, compositor=comp)
+    res_server = make_resources_server(name="resources", compositor=comp)
 
     async with Client(res_server) as client:
         # Subscribe to list changes for the origin server
@@ -51,7 +51,7 @@ async def test_list_changes_multiple_subscriptions_and_unsubscribe():
     await comp.mount_inproc("b", b)
 
     gw = _StubGatewayClient()
-    res_server = make_resources_server(name="resources", gateway_client=gw, compositor=comp)
+    res_server = make_resources_server(name="resources", compositor=comp)
 
     async with Client(res_server) as client:
         rc = ResourcesClient(client)

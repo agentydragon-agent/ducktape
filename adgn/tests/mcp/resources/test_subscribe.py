@@ -30,7 +30,7 @@ async def test_client_resource_subscribe_and_unsubscribe(make_pg_compositor):
     async with (
         Client(comp) as gw,
         # Resources server mounted standalone using the compositor gateway client
-        Client(make_resources_server(gateway_client=gw, compositor=comp)) as res,
+        Client(make_resources_server(compositor=comp)) as res,
     ):
         rc = ResourcesClient(res)
         # Subscribe to the resource and then unsubscribe

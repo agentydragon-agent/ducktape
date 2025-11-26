@@ -26,7 +26,9 @@ async def mount_standard_inproc_servers(*, compositor: Compositor, gateway_clien
     - Mounts resources (pinned) only when a gateway client is provided
     """
     if gateway_client is not None:
-        res_server = make_resources_server(name="resources", gateway_client=gateway_client, compositor=compositor)
+        # Note: gateway_client parameter is no longer used by make_resources_server
+        # Resources server creates its own direct client to bypass policy gateway
+        res_server = make_resources_server(name="resources", compositor=compositor)
         await compositor.mount_inproc("resources", res_server, pinned=True)
 
     compmeta_server = make_compositor_meta_server(compositor=compositor, name=COMPOSITOR_META_SERVER_NAME)
