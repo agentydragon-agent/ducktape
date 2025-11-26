@@ -1,27 +1,33 @@
 from __future__ import annotations
 
+import pytest
+
 from adgn.agent.reducer import format_notifications_message
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from tests.util.notifications import parse_system_notification_payload
 
 
-def _make_notifier(name: str = "child") -> NotifyingFastMCP:
-    m = NotifyingFastMCP(name)
+@pytest.fixture
+def make_notifier():
+    """Factory fixture for creating NotifyingFastMCP servers."""
+    def _make(name: str = "child") -> NotifyingFastMCP:
+        m = NotifyingFastMCP(name)
 
-    # Define a simple tool that emits list_changed and a dummy updated
-    @m.tool(name="emit")
-    async def emit():
-        # Emit a list_changed and one updated for a fixed URI
-        await m.broadcast_resource_list_changed()
-        await m.broadcast_resource_updated("resource://dummy")
-        return True
+        # Define a simple tool that emits list_changed and a dummy updated
+        @m.tool(name="emit")
+        async def emit():
+            # Emit a list_changed and one updated for a fixed URI
+            await m.broadcast_resource_list_changed()
+            await m.broadcast_resource_updated("resource://dummy")
+            return True
 
-    return m
+        return m
+    return _make
 
 
-async def test_notifications_envelope_with_real_mcp(make_buffered_client):
-    child = _make_notifier("child")
+async def test_notifications_envelope_with_real_mcp(make_buffered_client, make_notifier):
+    child = make_notifier("child")
     async with make_buffered_client({"child": child}) as (sess, _comp, buf):
         await sess.call_tool(name=build_mcp_function("child", "emit"), arguments={})
         batch = buf.poll()
@@ -39,15 +45,15 @@ async def test_notifications_envelope_with_real_mcp(make_buffered_client):
         assert child_obj.get("list_changed") is True
 
 
-async def test_notifications_envelope_after_remount(make_buffered_client):
-    child = _make_notifier("child")
+async def test_notifications_envelope_after_remount(make_buffered_client, make_notifier):
+    child = make_notifier("child")
     async with make_buffered_client({"child": child}) as (sess, comp, buf):
         await sess.call_tool(name=build_mcp_function("child", "emit"), arguments={})
         _ = buf.poll()
 
         # Unmount and re-mount a fresh notifier to simulate reconnect/new client path
         await comp.unmount_server("child")
-        await comp.mount_inproc("child", _make_notifier("child"))
+        await comp.mount_inproc("child", make_notifier("child"))
 
         await sess.call_tool(name=build_mcp_function("child", "emit"), arguments={})
         batch = buf.poll()

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -189,7 +189,7 @@ def _iter_window_parts(
 
 
 def _build_window_payload(
-    contents: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents],
+    contents: Sequence[mcp_types.TextResourceContents | mcp_types.BlobResourceContents],
     start_offset: int,
     max_bytes: int | None,
 ) -> ResourceReadResult:
@@ -382,8 +382,7 @@ def make_resources_server(
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
         uri_value = ANY_URL.validate_python(prefixed)
         res = await compositor_client.read_resource_mcp(uri_value)
-        contents = list(res.contents)
-        return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
+        return _build_window_payload(res.contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
 
     @mcp.flat_model()
     async def subscribe(input: ResourcesReadArgs) -> SimpleOk:

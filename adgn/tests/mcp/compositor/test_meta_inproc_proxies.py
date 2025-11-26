@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from fastmcp.server import FastMCP
 from pydantic import TypeAdapter
 
 from adgn.mcp._shared.constants import COMPOSITOR_META_STATE_URI_FMT
@@ -8,19 +7,8 @@ from adgn.mcp._shared.resources import extract_single_text_content
 from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 
-def _make_backend(name: str = "backend") -> FastMCP:
-    m = FastMCP(name)
-
-    @m.tool(name="ping")
-    def ping() -> str:
-        return "pong"
-
-    # No resources declared; meta should still expose state/instructions/capabilities
-    return m
-
-
-async def test_meta_presents_inproc_mounts(make_pg_compositor, approval_policy_reader_allow_all):
-    backend = _make_backend()
+async def test_meta_presents_inproc_mounts(make_pg_compositor, approval_policy_reader_allow_all, backend_server):
+    backend = backend_server
     async with make_pg_compositor({"backend": backend, "approval_policy": approval_policy_reader_allow_all}) as (
         sess,
         _comp,

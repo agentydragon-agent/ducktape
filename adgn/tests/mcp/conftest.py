@@ -4,13 +4,16 @@ import sys
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
+from fastmcp.server import FastMCP
 import pytest
 
 from adgn.mcp.compositor.clients import CompositorAdminClient
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
+from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
 
 @pytest.fixture
@@ -74,3 +77,31 @@ async def resources_env(compositor, compositor_client, resources_server, resourc
     typed resources client to subscribe/unsubscribe and read the index.
     """
     yield ResourcesClient(resources_client), compositor
+
+
+@pytest.fixture
+def origin_with_recorder() -> tuple[FastMCP, SubscriptionRecorder]:
+    """Origin server with subscription recorder attached."""
+    m = NotifyingFastMCP("origin")
+    recorder = install_subscription_recorder(m)
+
+    @m.resource("resource://foo/bar", name="dummy", mime_type="text/plain", description="dummy")
+    async def foo_bar() -> str:
+        return "ok"
+
+    # Ensure this origin advertises resources.subscribe for gating and
+    # registers explicit handlers so subscribe/unsubscribe calls succeed.
+    enable_resources_caps(m, subscribe=True)
+    return m, recorder
+
+
+@pytest.fixture
+def backend_server() -> FastMCP:
+    """Simple backend server with a ping tool."""
+    m = FastMCP("backend")
+
+    @m.tool(name="ping")
+    def ping() -> str:
+        return "pong"
+
+    return m

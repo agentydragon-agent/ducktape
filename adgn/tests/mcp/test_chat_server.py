@@ -1,6 +1,7 @@
 import asyncio
 from typing import Any, cast
 
+import pytest
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from hamcrest import anything, assert_that, contains, empty, has_properties, is_not, none
@@ -20,7 +21,8 @@ from adgn.mcp.stubs.chat_stubs import ChatServerStub
 from adgn.mcp.stubs.typed_stubs import TypedClient
 
 
-def create_chat_servers() -> tuple[ChatStore, Any, Any]:
+@pytest.fixture
+def chat_servers() -> tuple[ChatStore, Any, Any]:
     """Create and wire up chat servers with shared store."""
     store = ChatStore()
     human = make_chat_server(name="chat.human", author=ChatAuthor.USER, store=store)
@@ -49,8 +51,8 @@ def assistant_markdown_message(content: str, *, id: Matcher[str] | None = None) 
     )
 
 
-async def test_chat_flow_user_to_agent_then_agent_to_user() -> None:
-    store, human, assistant = create_chat_servers()
+async def test_chat_flow_user_to_agent_then_agent_to_user(chat_servers) -> None:
+    store, human, assistant = chat_servers
 
     async with Client(human) as human_sess, Client(assistant) as assistant_sess:
         h = ChatServerStub.from_server(human, human_sess)
@@ -89,8 +91,8 @@ class _Capture(MessageHandler):
         self.updated.append(str(message.params.uri))
 
 
-async def test_chat_head_notifications_other_participant() -> None:
-    store, human, assistant = create_chat_servers()
+async def test_chat_head_notifications_other_participant(chat_servers) -> None:
+    store, human, assistant = chat_servers
 
     # Assistant notifications on human posts
     cap_assist = _Capture()
@@ -109,8 +111,8 @@ async def test_chat_head_notifications_other_participant() -> None:
         assert any(uri.endswith("chat://head") for uri in cap_human.updated), cap_human.updated
 
 
-async def test_chat_last_read_updates_with_read_pending() -> None:
-    store, human, assistant = create_chat_servers()
+async def test_chat_last_read_updates_with_read_pending(chat_servers) -> None:
+    store, human, assistant = chat_servers
 
     # Attach a capture handler to the assistant server where read_pending is called
     cap_assist = _Capture()
