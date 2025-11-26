@@ -7,28 +7,32 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 
 export interface McpClientOptions {
+  /** Agent ID for scoping tool calls (used as prefix in compositor hierarchy) */
   agentId?: string
 }
 
 export class AgentMcpClient {
   private client: Client
   private transport: SSEClientTransport
+  private agentId?: string
 
-  private constructor(client: Client, transport: SSEClientTransport) {
+  private constructor(client: Client, transport: SSEClientTransport, agentId?: string) {
     this.client = client
     this.transport = transport
+    this.agentId = agentId
   }
 
   /**
-   * Connect to the MCP compositor endpoint.
+   * Connect to the global MCP compositor endpoint.
    *
-   * @param options - Optional agent ID to connect to a specific agent's compositor
+   * The compositor exposes tools from all agents via nested sub-compositors.
+   * Use agentId option to automatically prefix tool calls for a specific agent.
+   *
+   * @param options - Optional agent ID for automatic tool name prefixing
    * @returns Connected MCP client instance
    */
   static async connect(options: McpClientOptions = {}): Promise<AgentMcpClient> {
-    const url = options.agentId
-      ? `${window.location.origin}/mcp?agent_id=${options.agentId}`
-      : `${window.location.origin}/mcp`
+    const url = `${window.location.origin}/mcp`
 
     const transport = new SSEClientTransport(new URL(url))
     const client = new Client(
@@ -37,18 +41,22 @@ export class AgentMcpClient {
     )
 
     await client.connect(transport)
-    return new AgentMcpClient(client, transport)
+    return new AgentMcpClient(client, transport, options.agentId)
   }
 
   /**
    * Call an MCP tool.
    *
-   * @param name - Tool name (e.g., 'approvals_approve_call')
+   * Tool names are automatically prefixed with agent ID if configured.
+   * Example: 'approve_call' becomes '{agentId}.approve_call'
+   *
+   * @param name - Tool name (without agent prefix)
    * @param args - Tool arguments
    * @returns Tool result (parsed from first content item)
    */
   async callTool<T = unknown>(name: string, args: Record<string, unknown> = {}): Promise<T> {
-    const result = await this.client.callTool({ name, arguments: args })
+    const toolName = this.agentId ? `${this.agentId}.${name}` : name
+    const result = await this.client.callTool({ name: toolName, arguments: args })
     if (result.content && result.content.length > 0) {
       const first = result.content[0]
       if (first.type === 'text') {
@@ -65,11 +73,15 @@ export class AgentMcpClient {
   /**
    * Read an MCP resource.
    *
-   * @param uri - Resource URI (e.g., 'approvals://pending')
+   * Resource URIs are automatically prefixed with agent ID if configured.
+   * Example: 'approvals://pending' becomes '{agentId}:approvals://pending'
+   *
+   * @param uri - Resource URI (without agent prefix)
    * @returns Resource contents (parsed from first content item)
    */
   async readResource<T = unknown>(uri: string): Promise<T> {
-    const result = await this.client.readResource({ uri })
+    const resourceUri = this.agentId ? `${this.agentId}:${uri}` : uri
+    const result = await this.client.readResource({ uri: resourceUri })
     if (result.contents && result.contents.length > 0) {
       const first = result.contents[0]
       if (first.mimeType === 'application/json' || first.uri.startsWith('approvals://')) {
@@ -83,11 +95,13 @@ export class AgentMcpClient {
   /**
    * Subscribe to an MCP resource and poll for updates.
    *
+   * Resource URIs are automatically prefixed with agent ID if configured.
+   *
    * Note: This implementation uses polling since MCP notifications aren't reliably
    * delivered in all transport modes. The callback will be invoked whenever the
    * resource content changes.
    *
-   * @param uri - Resource URI to subscribe to
+   * @param uri - Resource URI to subscribe to (without agent prefix)
    * @param callback - Called with resource data on updates
    * @param pollIntervalMs - Polling interval (default: 1000ms)
    * @returns Unsubscribe function
@@ -97,7 +111,8 @@ export class AgentMcpClient {
     callback: (data: T) => void,
     pollIntervalMs: number = 1000
   ): Promise<() => void> {
-    await this.client.subscribeResource({ uri })
+    const resourceUri = this.agentId ? `${this.agentId}:${uri}` : uri
+    await this.client.subscribeResource({ uri: resourceUri })
 
     let active = true
     let lastContent: string | null = null
@@ -105,7 +120,7 @@ export class AgentMcpClient {
     const poll = async () => {
       while (active) {
         try {
-          const result = await this.client.readResource({ uri })
+          const result = await this.client.readResource({ uri: resourceUri })
           if (result.contents && result.contents.length > 0) {
             const first = result.contents[0]
             const content = first.text
@@ -129,8 +144,9 @@ export class AgentMcpClient {
     return () => {
       active = false
       // Unsubscribe from resource
-      this.client.unsubscribeResource({ uri }).catch(e => {
-        console.warn(`Failed to unsubscribe from ${uri}:`, e)
+      const resourceUri = this.agentId ? `${this.agentId}:${uri}` : uri
+      this.client.unsubscribeResource({ uri: resourceUri }).catch(e => {
+        console.warn(`Failed to unsubscribe from ${resourceUri}:`, e)
       })
     }
   }
