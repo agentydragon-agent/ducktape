@@ -5,13 +5,28 @@ import logging
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
-from fastmcp.server.server import has_resource_prefix
 from mcp import types as mcp_types
 
 from adgn.agent.notifications.types import NotificationsBatch, ResourcesServerNotice
+from adgn.mcp._shared.resources import derive_origin_server
 from adgn.mcp.compositor.server import Compositor
 
 logger = logging.getLogger(__name__)
+
+
+class _ServerNoticeAccumulator:
+    """Mutable accumulator for per-server notifications."""
+
+    def __init__(self) -> None:
+        self.updated: set[str] = set()
+        self.list_changed: bool = False
+
+    def to_frozen(self) -> ResourcesServerNotice:
+        """Convert to immutable ResourcesServerNotice."""
+        return ResourcesServerNotice(
+            updated=frozenset(self.updated),
+            list_changed=self.list_changed
+        )
 
 
 class _ResourceNotificationHandler(MessageHandler):
@@ -40,9 +55,8 @@ class NotificationsBuffer:
     def __init__(self, *, client: Client | None = None, compositor: Compositor) -> None:
         self._client = client
         self._compositor = compositor
-        # Per-server updates (mutable sets during accumulation, converted to frozenset on poll/peek)
-        self._updates: dict[str, set[str]] = {}
-        self._list_changed: set[str] = set()
+        # Per-server accumulator (mutable during accumulation, converted to NotificationsBatch on poll/peek)
+        self._servers: dict[str, _ServerNoticeAccumulator] = {}
         self._hooks: list[Callable[[], Awaitable[None]]] = []
         self.handler: MessageHandler = _ResourceNotificationHandler(self)
         # Subscribe to compositor-level notifications when available so we don't
@@ -51,7 +65,8 @@ class NotificationsBuffer:
         self._compositor.add_resource_updated_listener(self._on_resource_listener)
         self._compositor.add_list_changed_listener(self._on_list_listener)
         # Capture any pending list-changed signals emitted before the buffer attached
-        self._list_changed.update(self._compositor.pop_recent_list_changed())
+        for server in self._compositor.pop_recent_list_changed():
+            self._servers.setdefault(server, _ServerNoticeAccumulator()).list_changed = True
 
     def add_hook(self, hook: Callable[[], Awaitable[None]]) -> None:
         self._hooks.append(hook)
@@ -61,66 +76,44 @@ class NotificationsBuffer:
 
     def peek(self) -> NotificationsBatch:
         """Peek at buffered notifications without clearing them."""
-        # Build the grouped resources structure from current buffer state
-        resources: dict[str, ResourcesServerNotice] = {}
-        # Add servers with updated resources
-        for server, uris in self._updates.items():
-            resources[server] = ResourcesServerNotice(
-                updated=frozenset(uris),
-                list_changed=server in self._list_changed
-            )
-        # Add servers that only have list_changed (no updated URIs)
-        for server in self._list_changed:
-            if server not in resources:
-                resources[server] = ResourcesServerNotice(
-                    updated=frozenset(),
-                    list_changed=True
-                )
+        resources = {
+            server: acc.to_frozen()
+            for server, acc in self._servers.items()
+        }
         return NotificationsBatch(resources=resources)
 
     def poll(self) -> NotificationsBatch:
         """Poll and clear buffered notifications, returning grouped batch."""
         batch = self.peek()
-        self._updates.clear()
-        self._list_changed.clear()
+        self._servers.clear()
         return batch
 
     async def _on_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
         # Add URI to the server's update set
         uri_str = str(message.params.uri)
         server = await self._derive_server(uri_str)
-        self._updates.setdefault(server, set()).add(uri_str)
+        self._servers.setdefault(server, _ServerNoticeAccumulator()).updated.add(uri_str)
         await self._run_hooks()
 
     async def _on_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
         # Attribute origin using compositor-captured child notifications when available
         names = list(self._compositor.pop_recent_list_changed())
-        self._list_changed.update(names)
+        for name in names:
+            self._servers.setdefault(name, _ServerNoticeAccumulator()).list_changed = True
         await self._run_hooks()
 
     async def _derive_server(self, uri: str) -> str:
-        # Do not guess on format. Require compositor to provide the resource prefix format;
-        # if not available, fail loudly. TODO: consider exposing a dedicated MCP method on
-        # the compositor to translate URIs → origin server deterministically.
+        """Derive origin server from resource URI using compositor mount specs."""
         specs = await self._compositor.mount_specs()
         fmt = self._compositor.resource_prefix_format
-        for name in sorted(specs.keys()):
-            name_str = str(name)
-            if has_resource_prefix(uri, name_str, fmt):
-                return name_str
-
-        # No server found - fail loudly
-        raise ValueError(
-            f"Could not derive server for URI {uri!r}. "
-            f"Available servers: {sorted(specs.keys())}"
-        )
+        return derive_origin_server(uri, specs.keys(), fmt)
 
     async def _on_resource_listener(self, name: str, uri: str) -> None:
-        self._updates.setdefault(name, set()).add(uri)
+        self._servers.setdefault(name, _ServerNoticeAccumulator()).updated.add(uri)
         await self._run_hooks()
 
     async def _on_list_listener(self, name: str) -> None:
-        self._list_changed.add(name)
+        self._servers.setdefault(name, _ServerNoticeAccumulator()).list_changed = True
         await self._run_hooks()
 
     async def _run_hooks(self) -> None:

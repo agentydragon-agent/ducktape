@@ -5,12 +5,13 @@ from typing import Annotated, Literal
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.server.server import add_resource_prefix, has_resource_prefix, remove_resource_prefix
+from fastmcp.server.server import add_resource_prefix, remove_resource_prefix
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.mcp._shared.constants import RESOURCES_SUBSCRIPTIONS_INDEX_URI
+from adgn.mcp._shared.resources import derive_origin_server
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
 from adgn.mcp.compositor.server import Compositor, MountEvent
@@ -349,24 +350,22 @@ def make_resources_server(
         """List resources via aggregator; derive origin using FastMCP prefix logic."""
         mcp_list = await compositor_client.list_resources()
         specs = await compositor.mount_specs()
-        mount_names = sorted(specs.keys())
+        mount_names = list(specs.keys())
         out: list[ResourceEntry] = []
         for r in mcp_list:
             uri_str = str(r.uri)
-            origin: str | None = None
-            for mn in mount_names:
-                if has_resource_prefix(uri_str, mn, compositor.resource_prefix_format):
-                    origin = mn
-                    break
+            try:
+                origin = derive_origin_server(uri_str, mount_names, compositor.resource_prefix_format)
+            except ValueError:
+                # Skip resources that don't match any known server
+                continue
             if input.server and origin != input.server:
                 continue
             # If a uri_prefix filter is provided, match against the raw (de-prefixed) URI
-            if input.uri_prefix and origin:
+            if input.uri_prefix:
                 raw_uri = remove_resource_prefix(uri_str, origin, compositor.resource_prefix_format)
                 if not raw_uri.startswith(input.uri_prefix):
                     continue
-            if origin is None:
-                continue
             out.append(ResourceEntry(server=origin, resource=r))
         return ResourcesListResult(resources=out)
 
