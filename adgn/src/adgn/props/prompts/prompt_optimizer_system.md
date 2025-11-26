@@ -186,12 +186,23 @@ Tool will raise error if budget exceeded before starting work.
     - **Note:** detailed_metrics and specimens are intentionally null for valid (prevents overfitting)
   - split="test": raises error (hidden from you)
 
-**Iteration strategy:**
-1. **Start with file-level** for fast iteration: `eval_file()` on train files where best prompt failed
-2. **Test fixes specimen-level**: `eval_specimen()` on 2-3 train specimens to confirm improvement
-3. **Deep analysis**: `eval_split(split="train")` for detailed per-specimen metrics
-4. **Validate generalization**: `eval_split(split="valid")` to check proxy metric (your optimization target)
-5. Monitor `budget_remaining` to plan remaining iterations
+**Iteration strategy (cheap → expensive):**
+1. **Start small on train**: Test hypotheses cheaply before committing budget
+   - File-level: `eval_file()` on 2-3 train files where best prompt failed (fastest)
+   - Specimen-level: `eval_specimen()` on 2-3 train specimens (faster than full split)
+   - Iterate quickly to debug specific patterns
+2. **Expand to full train split**: `eval_split(split="train")` for comprehensive train analysis
+   - Only run when you have a promising candidate
+   - Use detailed metrics to identify remaining failure patterns
+3. **Validate generalization**: `eval_split(split="valid")` to check your optimization target
+   - This is expensive - only run when confident in improvements
+   - Validation recall is your proxy for test performance
+4. **Monitor budget**: Check `budget_remaining` after each call to plan remaining iterations
+
+**Budget management:**
+- Don't run full splits early - you'll waste budget on unpromising prompts
+- Use file/specimen evals on small N for rapid iteration
+- Reserve most budget for validation checks of your best candidates
 
 ## Available Data
 
