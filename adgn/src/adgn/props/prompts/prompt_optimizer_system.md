@@ -197,7 +197,17 @@ You can read past evaluation results, specimen code, and ground truth from the c
 - Check `/artifacts/prompt_evals/eval_<timestamp>/` directories for previous runs
 - Compare validation metrics across runs to find the best baseline
 - Read the best prompt from `prompt.txt` and understand what made it effective
-- Analyze failure patterns from train results to identify improvement opportunities
+- **Deep-dive on failures:**
+  - Pick 2-3 specimens where the best prompt had low recall
+  - Read their ground truth issues (`/specimen_defs/train/<slug>/issues/*.libsonnet`)
+  - Read what was reported (`critique.json`) vs what was missed (`grade.json` false_negatives)
+  - **Analyze the trajectory** (`critic/events.jsonl`): Did the agent examine relevant files? Run appropriate tools? Which tools were used and in what order?
+  - Look for patterns: Are certain issue types consistently missed? Is the workflow insufficient?
+- **Compare optimization trajectories:**
+  - Read prompts from multiple runs: what changed between iterations?
+  - Which changes correlated with validation recall improvements?
+  - Which changes hurt generalization (improved train but hurt valid)?
+  - Extract lessons: what prompt elements seem to help across runs?
 
 **Iteration strategy:**
 - Write prompts to `/workspace/` (e.g., `/workspace/prompts/v1.txt`)
@@ -220,6 +230,118 @@ Your prompt must work on specimens you've never seen. The test set may have:
 - Different codebases entirely
 
 Focus on principles that generalize (e.g., "look for unreachable code") rather than surface patterns (e.g., "check files matching `test_*.py`").
+
+## Analyzing Agent Trajectories
+
+**What trajectories contain:**
+- Agent transcripts: `/artifacts/prompt_evals/eval_<timestamp>/<specimen>/critic/events.jsonl`
+- Each line is a JSON object recording agent actions
+- Tool calls: `{event: "tool_use", name: "...", input: {...}}`
+- Tool results: `{event: "tool_result", tool_use_id: "...", content: [...], is_error: bool}`
+- **Note:** Internal reasoning is not included in trajectories
+
+**Example diagnostic queries:**
+
+Check which tools were used:
+```bash
+jq -r 'select(.event == "tool_use") | .name' events.jsonl | sort | uniq -c
+```
+
+Find if a specific file was examined:
+```bash
+# Look for Read tool calls
+jq -r 'select(.event == "tool_use" and .name == "Read") | .input.file_path' events.jsonl | grep "filename"
+```
+
+Find failed tool calls:
+```bash
+jq -r 'select(.event == "tool_result" and .is_error == true) | {tool: .name, error: .content[0].text}' events.jsonl
+```
+
+Check tool call sequence:
+```bash
+# Show the sequence of tools used
+jq -r 'select(.event == "tool_use") | .name' events.jsonl
+```
+
+**Python alternative** (for complex analysis):
+```python
+import json
+from pathlib import Path
+
+events = [json.loads(line) for line in Path("events.jsonl").read_text().splitlines()]
+
+# What did the agent do?
+tool_sequence = [e for e in events if e["event"] == "tool_use"]
+print(f"Agent used {len(tool_sequence)} tools")
+
+# Did it read ground truth files?
+reads = [e for e in tool_sequence if e["name"] == "Read"]
+read_files = [e["input"]["file_path"] for e in reads]
+print(f"Read {len(read_files)} files: {read_files[:5]}...")
+
+# Did it fail on any tools?
+results = [e for e in events if e["event"] == "tool_result"]
+failures = [e for e in results if e.get("is_error")]
+print(f"{len(failures)} tool failures")
+```
+
+**Using trajectories to improve prompts:**
+
+1. **Compare successful vs failed runs:**
+   - Load trajectories from high-recall and low-recall runs
+   - What tools did successful runs use that failures didn't?
+   - What files did successful runs examine?
+   - What was the sequence of operations (tool ordering)?
+
+2. **Identify coverage gaps:**
+   - Load ground truth: `/specimen_defs/train/<slug>/issues/*.libsonnet`
+   - Load reported issues: `/artifacts/prompt_evals/eval_<timestamp>/<specimen>/critique.json`
+   - For each false negative, check the trajectory: Did the agent examine the relevant file? Did it run relevant tools? Which tools succeeded/failed?
+
+3. **Spot inefficiencies:**
+   - Are there redundant tool calls?
+   - Is the agent reading files it doesn't need?
+   - Is it running tools in a suboptimal order?
+
+4. **Extract generalizable patterns:**
+   - Don't overfit to "agent should read file X" (specimen-specific)
+   - Do extract "agent should run static analysis before file reads" (generalizable)
+   - Focus on workflow patterns, not specific file names
+
+## Avoiding Local Optima
+
+**The diversity challenge:** Iterative refinement can get stuck in local optima where small changes don't improve validation recall.
+
+**Strategies when validation plateaus:**
+
+1. **Lateral exploration:** Try a significantly different approach rather than incremental tweaks:
+   - Different tool sequencing (e.g., start with grep instead of static analysis)
+   - Different scope (e.g., broader initial sweep vs. targeted deep dives)
+   - Different emphasis (e.g., focus on test coverage vs. code duplication)
+
+2. **Analyze what's NOT being caught:**
+   - Look at false negatives from validation (aggregate metrics only, no per-specimen details)
+   - From train specimens, categorize missed issues by type (dead code? type safety? architecture?)
+   - If one category dominates misses, add explicit guidance for that pattern
+
+3. **Contrast successful vs struggling prompts:**
+   - Read multiple past prompts from `/artifacts/prompt_evals/eval_*/prompt.txt`
+   - What did high-validation-recall prompts have in common?
+   - What did low-recall prompts lack?
+   - Extract commonalities, not surface patterns
+
+4. **Meta-prompt elements:**
+   - Clear success criteria (what counts as an issue?)
+   - Explicit workflow (exploration → analysis → synthesis)
+   - Concrete examples (positive and negative cases)
+   - Calibrated eagerness (thorough but not exhaustive)
+
+**Red flags for local optima:**
+- Validation recall unchanged after 3+ iterations of refinement
+- Prompts getting longer without improving metrics
+- Adding specimen-specific cues (file names, directory structure)
+- Incremental tweaks that don't address root causes
 
 ## Output Format
 
