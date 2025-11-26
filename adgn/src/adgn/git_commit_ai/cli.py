@@ -84,10 +84,8 @@ class AppConfig:
 
         # Backward-compat: allow optional "minicodex:" prefix; ignore any other
         if ":" in model_str:
-            _prefix, model_name = model_str.split(":", 1)
-            model_name = model_name.strip()
-        else:
-            model_name = model_str.strip()
+            _prefix, model_str = model_str.split(":", 1)
+        model_name = model_str.strip()
 
         return AppConfig(model_name=model_name, model_str=model_str, timeout=timeout)
 
@@ -129,14 +127,13 @@ def _build_amend_diff(repo: pygit2.Repository, include_all: bool) -> str:
     head = repo.head.peel(pygit2.Commit)
     if head.parents:
         parent = head.parents[0]
+        base = parent.id
         parts.append("=== Original commit diff (HEAD^ to HEAD) ===")
-        parts.append(repo.diff(parent.id, head.id).patch or "")
     else:
         # First commit: diff from empty tree
-        tb = repo.TreeBuilder()
-        empty_tree_oid = tb.write()
+        base = repo.TreeBuilder().write()
         parts.append("=== Original commit content ===")
-        parts.append(repo.diff(empty_tree_oid, head.id).patch or "")
+    parts.append(repo.diff(base, head.id).patch or "")
     # New changes
     parts.append("\n=== New changes being added ===")
     parts.append(_diff(repo, include_all).patch or "")
@@ -151,14 +148,9 @@ def get_commit_diff(repo: pygit2.Repository, include_all: bool, previous_message
         return ""
 
     # Compute raw diff then apply per-file truncation
-    raw = _build_amend_diff(repo, include_all) if previous_message else diff.patch or ""
-
-    return _truncate_hunks(raw)
-
-
-def get_short_commitish(repo: pygit2.Repository) -> str:
-    """Get the short commit hash of HEAD (7-char prefix)."""
-    return str(repo.head.peel(pygit2.Commit).id)[:7]
+    return _truncate_hunks(
+        _build_amend_diff(repo, include_all) if previous_message else diff.patch or ""
+    )
 
 
 def repo_cache_dir(repo: pygit2.Repository) -> Path:
@@ -318,11 +310,7 @@ class ParallelTaskRunner:
                     # No data available
                     if self.precommit_state.task.done():
                         return  # Task complete and no more data
-                    # Task still running, yield and continue
-                    await asyncio.sleep(0)
-                    continue
-                # Data available, try to read
-                if not _read_chunk():
+                elif not _read_chunk():
                     return  # EOF or error
                 await asyncio.sleep(0)
         finally:
@@ -356,28 +344,24 @@ class ParallelTaskRunner:
                     os.close(slave_fd)
 
             precommit_task = asyncio.create_task(run_precommit_wrapper())
-            master_fd_for_runner = master_fd
+            runner = cls(TaskState(ai_task), TaskState(precommit_task), master_fd)
+            output_task = asyncio.create_task(runner._stream_output(master_fd))
         else:
             # Skip running pre-commit (e.g., --no-verify was passed)
-            precommit_task = asyncio.create_task(asyncio.sleep(0))
-            master_fd_for_runner = None
+            precommit_task = output_task = asyncio.create_task(asyncio.sleep(0))
+            runner = cls(TaskState(ai_task), TaskState(precommit_task), None)
 
-        # Common runner setup
-        runner = cls(TaskState(ai_task), TaskState(precommit_task), master_fd_for_runner)
+        # Common update task setup
         update_task = asyncio.create_task(runner._update_loop())
-
-        # Only create output_task if we have a master_fd
-        if master_fd_for_runner is not None:
-            output_task = asyncio.create_task(runner._stream_output(master_fd_for_runner))
         try:
             # Both tasks will raise exceptions on failure
             msg, _ = await asyncio.gather(ai_task, precommit_task)
         except subprocess.CalledProcessError as e:
             # Pre-commit hook failed - surface as exit code for top-level handler
-            raise ExitWithCode(e.returncode)
+            raise SystemExit(e.returncode)
         except TimeoutError:
             # Provider timed out; exit with a standard timeout code
-            raise ExitWithCode(124)
+            raise SystemExit(124)
         except Exception:
             # One of the tasks failed - wait for both to complete before re-raising
             await asyncio.gather(ai_task, precommit_task, return_exceptions=True)
@@ -481,7 +465,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--accept-ai", action="store_true", help="Commit immediately with the AI-drafted message (skip editor)"
     )
-    # Capture -a/--all (staging flag) to remove from passthru and expose as typed argument
     parser.add_argument("-a", "--all", action="store_true", dest="stage_all",
                        help="Stage all tracked changes (like git commit -a)")
     # Capture -m/--message to reject it explicitly (we supply the commit message)
@@ -519,32 +502,14 @@ def _init_logging(repo: pygit2.Repository, debug: bool) -> logging.Logger:
     return logger
 
 
-def filter_commit_passthru(passthru: list[str]) -> list[str]:
-    """Return passthru args as-is.
-
-    Note: Staging flags (-a/--all) and message flags (-m/--message) are now
-    parsed by argparse and automatically removed from passthru, so no filtering
-    is needed here. This function is kept for now but may be removed in future.
-    """
-    return passthru
-
-
-def _stage_all_if_requested(repo: pygit2.Repository, include_all: bool) -> None:
-    if include_all:
-        # Stage tracked changes (approximate 'git add -u')
-        repo.index.add_all()
-        repo.index.write()
-
-
-def _get_previous_message_if_amend(repo: pygit2.Repository, is_amend: bool) -> str | None:
-    if not is_amend:
-        return None
+def _get_previous_commit_message(repo: pygit2.Repository) -> str:
+    """Get the message from HEAD commit (for amend)."""
     try:
         commit = repo.head.peel(pygit2.Commit)
         return (commit.message or "").strip()
     except (KeyError, pygit2.GitError) as e:
         print(f"Error: Cannot amend - failed to retrieve previous commit message: {e}", file=sys.stderr)
-        raise ExitWithCode(1)
+        raise SystemExit(1)
 
 
 # ---------- commit/editor helpers ------------------------------------
@@ -557,38 +522,23 @@ def _make_stats_comment(cached: bool, diff: str, msg: str, elapsed_s: float) -> 
     )
 
 
-class ExitWithCode(Exception):  # noqa: N818
-    """Exception for signaling exit codes.
-
-    All error paths raise this exception with the desired exit code.
-    Success paths return normally (implicit exit 0).
-    """
-    def __init__(self, code: int):
-        super().__init__(str(code))
-        self.code = code
-
-
-async def _execute_git_commit(message_args: list[str], passthru: list[str]) -> None:
-    """Execute git commit with the given message arguments and passthru flags.
+async def _execute_git_commit(message: str, passthru: list[str]) -> None:
+    """Execute git commit with the given message and passthru flags.
 
     Args:
-        message_args: Message-specific flags (e.g., ["-m", msg] or ["-F", path, "--cleanup=strip"])
+        message: Commit message
         passthru: Additional git commit flags to forward
     """
-    commit_passthru = filter_commit_passthru(passthru)
     commit_proc = await asyncio.create_subprocess_exec(
-        "git", "commit", *message_args, "--no-verify", *commit_passthru
+        "git", "commit", "-m", message, "--no-verify", *passthru
     )
     code = await commit_proc.wait()
     if code != 0:
-        raise ExitWithCode(code)
+        raise SystemExit(code)
 
 
 async def _commit_immediately(msg: str, passthru: list[str]) -> None:
-    if not msg.strip():
-        print("Aborting commit due to empty AI commit message.", file=sys.stderr)
-        raise ExitWithCode(1)
-    await _execute_git_commit(["-m", msg], passthru)
+    await _execute_git_commit(msg, passthru)
 
 
 def _extract_commit_content(text: str) -> str:
@@ -624,7 +574,7 @@ async def _run_editor_flow(
     editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
     if (rc := await editor_proc.wait()) != 0:
         print(f"Aborting commit: editor exited with code {rc} (e.g., :cq)", file=sys.stderr)
-        raise ExitWithCode(1)
+        raise SystemExit(1)
 
     # Validate that user saved changes
     try:
@@ -633,18 +583,15 @@ async def _run_editor_flow(
         changed = final_content.rstrip("\n") != editor_content
         if mtime_after == mtime_before and not changed:
             print("Aborting commit: editor closed without saving (unchanged commit message).", file=sys.stderr)
-            raise ExitWithCode(1)
+            raise SystemExit(1)
     except FileNotFoundError:
         print("Aborting commit.", file=sys.stderr)
-        raise ExitWithCode(1)
+        raise SystemExit(1)
 
     # Extract commit content (remove scissors and comments)
     commit_message = _extract_commit_content(final_content)
-    if not commit_message:
-        print("Aborting commit due to empty commit message.", file=sys.stderr)
-        raise ExitWithCode(1)
 
-    await _execute_git_commit(["-F", str(commit_msg_path), "--cleanup=strip"], passthru)
+    await _execute_git_commit(commit_message, passthru)
 
 
 @dataclass
@@ -666,7 +613,9 @@ async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
         return msg, True
 
     ai_task: asyncio.Task[str] = asyncio.create_task(
-        generate_commit_message_minicodex(model=inp.model_name, debug=inp.debug)
+        generate_commit_message_minicodex(
+            inp.repo, model=inp.model_name, debug=inp.debug, amend=inp.previous_message is not None
+        )
     )
 
     run_precommit = "--no-verify" not in inp.passthru
@@ -684,24 +633,24 @@ def _get_editor(repo: pygit2.Repository) -> str:
     Follows git's precedence: GIT_EDITOR env > core.editor config >
     VISUAL env > EDITOR env > 'vi'
     """
-    if editor := os.environ.get("GIT_EDITOR"):
-        return editor
-    if editor := repo.config.get("core.editor"):
-        return editor
-    if editor := os.environ.get("VISUAL"):
-        return editor
-    if editor := os.environ.get("EDITOR"):
-        return editor
-    return "vi"
+    for candidate in (
+        os.environ.get("GIT_EDITOR"),
+        repo.config.get("core.editor"),
+        os.environ.get("VISUAL"),
+        os.environ.get("EDITOR"),
+        "vi",
+    ):
+        if candidate:
+            return candidate
 
 
 async def async_main(argv: list[str] | None = None):
     start_monotonic_s = time.monotonic()
-    gitdir = pygit2.discover_repository(Path.cwd())
-    if not gitdir:
+    try:
+        repo = pygit2.Repository(Path.cwd())
+    except pygit2.GitError:
         print("fatal: not a git repository (or any of the parent directories)", file=sys.stderr)
-        raise ExitWithCode(128)
-    repo = pygit2.Repository(gitdir)
+        raise SystemExit(128)
 
     args, passthru = _parse_args_and_passthru(argv)
 
@@ -712,51 +661,43 @@ async def async_main(argv: list[str] | None = None):
             "Remove -m/--message and try again.",
             file=sys.stderr,
         )
-        raise ExitWithCode(2)
+        raise SystemExit(2)
 
-    # Parse flags from passthru (those not handled by argparse)
     is_amend = "--amend" in passthru
-    include_all = args.stage_all
 
-    # Logging and config
     _init_logging(repo, args.debug)
     config = AppConfig.resolve(args)
     if args.debug:
         print(f"# Resolved model={config.model_str}, timeout={config.timeout}", file=sys.stderr)
 
-    # Stage if requested (-a/--all)
-    _stage_all_if_requested(repo, include_all)
+    if args.stage_all:
+        repo.index.add_all()
+        repo.index.write()
 
-    # Get previous commit message if amending
-    previous_message = _get_previous_message_if_amend(repo, is_amend)
+    previous_message = _get_previous_commit_message(repo) if is_amend else None
 
-    if not (diff := get_commit_diff(repo, include_all, previous_message)).strip():
-        # Check if there's truly nothing to commit
-        status = _format_status_porcelain(repo)
-        if not status:
+    if not (diff := get_commit_diff(repo, args.stage_all, previous_message)).strip():
+        if not has_uncommitted_changes(repo):
             print("nothing to commit, working tree clean", file=sys.stderr)
         else:
-            # There are changes but -a wasn't passed
             print('no changes added to commit (use "git add" and/or "git commit -a")', file=sys.stderr)
-        raise ExitWithCode(1)
+        raise SystemExit(1)
 
-    # Model parsing handled by AppConfig.resolve
-    model_name = config.model_name
-
-    # Clean old cache entries
     cache = Cache(repo_cache_dir(repo))
     cache.prune()
 
-    # Cache key by model, scope, HEAD, diff, and amend status
-    commitish = get_short_commitish(repo)
     key = build_cache_key(
-        model_name, include_all=include_all, previous_message=previous_message, commitish=commitish, diff=diff
+        config.model_name,
+        include_all=args.stage_all,
+        previous_message=previous_message,
+        commitish=str(repo.head.peel(pygit2.Commit).id),
+        diff=diff,
     )
 
     msg, cached = await _produce_message(
         ProduceMessageInput(
             repo=repo,
-            model_name=model_name,
+            model_name=config.model_name,
             debug=args.debug,
             deadline=config.timeout,
             passthru=passthru,
@@ -778,10 +719,7 @@ async def async_main(argv: list[str] | None = None):
 
 
 def main():
-    try:
-        asyncio.run(async_main())
-    except ExitWithCode as e:
-        sys.exit(e.code)
+    asyncio.run(async_main())
 
 
 if __name__ == "__main__":
