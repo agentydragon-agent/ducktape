@@ -13,7 +13,6 @@ from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
 from adgn.agent.persist import RunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
-from adgn.agent.server.agents_ws import AgentsWSHub
 from adgn.agent.server.bus import UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
     ApprovalBrief,
@@ -52,9 +51,6 @@ class ConnectionManager(BaseHandler):
         self._bg_tasks: set[asyncio.Task[Any]] = set()
         self._event_id: int = 0
         self._session_id: str = str(uuid.uuid4())
-        # Hub binding for status broadcasts (configured by WS layer)
-        self._status_hub: AgentsWSHub | None = None
-        self._status_agent_id: str | None = None
 
     def _next_event_id(self) -> int:
         self._event_id += 1
@@ -64,12 +60,6 @@ class ConnectionManager(BaseHandler):
         await self.send_payload(payload)
         assert self._session is not None
         await self._session._apply_ui_event(payload)
-        # Mirror run status changes to agents hub
-        if isinstance(payload, RunStatusEvt):
-            st = payload.run_state.status
-            run_id = payload.run_state.run_id
-            active = run_id if st != UiRunStatus.FINISHED else None
-            await self.broadcast_status(True, active)
 
     async def _emit_ui_bus_messages(self) -> None:
         assert self._session is not None
@@ -86,12 +76,7 @@ class ConnectionManager(BaseHandler):
 
     async def send_payload(self, payload: ServerMessage) -> None:
         # Message delivery now handled via other mechanisms (e.g., UI state updates)
-        # Mirror run status events to agents hub
-        if isinstance(payload, RunStatusEvt):
-            st = payload.run_state.status
-            run_id = payload.run_state.run_id
-            active = run_id if st != UiRunStatus.FINISHED else None
-            await self.broadcast_status(True, active)
+        pass
 
     def set_session(self, session: AgentSession) -> None:
         self._session = session
@@ -128,26 +113,6 @@ class ConnectionManager(BaseHandler):
         fco = FunctionCallOutput(call_id=evt.call_id, result=to_pydantic(evt.result))
         self._spawn(self._send_and_reduce(fco))
         self._spawn(self._emit_ui_bus_messages())
-
-    def configure_status_hub(self, hub: AgentsWSHub, agent_id: str) -> None:
-        self._status_hub = hub
-        self._status_agent_id = agent_id
-
-    async def broadcast_status(self, live: bool, active_run_id) -> None:
-        # No-op when not configured (unit tests may use manager without a WS hub)
-        if self._status_hub is None or self._status_agent_id is None:
-            return
-        logger.info(
-            "manager: broadcast_status",
-            extra={
-                "agent_id": self._status_agent_id,
-                "live": live,
-                "active_run_id": str(active_run_id) if active_run_id else None,
-            },
-        )
-        await self._status_hub.broadcast_agent_status(
-            agent_id=self._status_agent_id, live=live, active_run_id=active_run_id
-        )
 
 
 class AgentSession:
@@ -307,8 +272,6 @@ class AgentSession:
                     )
                 )
             )
-            # Mirror live status immediately to agents hub if configured
-            await self._manager.broadcast_status(True, run_id)
             # Also push a fresh Snapshot so UIs that rely on snapshot-only
             # state (not incremental run_status) update immediately.
             # This helps early UI elements like the Abort button appear
@@ -353,7 +316,6 @@ class AgentSession:
                 )
                 # Keep snapshot run_state in sync with finished status
                 await self._manager.send_payload(await self.build_snapshot())
-                await self._manager.broadcast_status(True, None)
             return
         await self._manager.send_payload(ErrorEvt(code=ErrorCode.NO_AGENT, message="no_agent_attached"))
         return
