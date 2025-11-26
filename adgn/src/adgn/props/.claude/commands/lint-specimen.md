@@ -5,6 +5,9 @@
 ## What this command does
 
 Lint a specimen directory (and its files) against the authoring rules defined in @../../specimens/CLAUDE.md (which transcludes @../../docs/authoring.md).
+
+**CRITICAL: Examine ALL issues in the specimen, not just a sample.** Unless explicitly instructed to examine only specific issues, the linter must check every `issues/*.libsonnet` file in the specimen.
+
 Report only lints/errors and offer concrete fix suggestions. Do not modify files without explicit user approval.
 
 ## Single source of truth
@@ -65,7 +68,7 @@ A textual report of all violations with:
 2) Identify target specimen directory
 3) Validate structure and files
 4) **Use `adgn-properties2 specimen-exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper isolation and correct specimen hydration
-5) Check each issue file:
+5) **Check EVERY issue file in `issues/*.libsonnet`** (not just a sample):
    - Evaluate Jsonnet to JSON
    - Verify ONE logical issue per file
    - Check if same issue appears in multiple files (should be consolidated)
@@ -76,6 +79,8 @@ A textual report of all violations with:
 6) Check README (if present) for minimal content
 7) Emit violations with references and suggested fixes
 8) Ask user to confirm which fixes to apply
+
+**Note:** Unless the user explicitly asks to examine only specific issues (e.g., "lint issues 001-005"), you must check all issue files in the specimen.
 
 ## Interaction with Specimens
 
