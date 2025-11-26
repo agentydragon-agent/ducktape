@@ -120,6 +120,9 @@ local rootV2(source, scope, items) = {
   items: items,
 };
 
+// Note: Batch loading requires Python to compose explicit import statements
+// (Jsonnet does not support computed import paths)
+
 {
   // exported symbols
   issueOneOccurrence: issueOneOccurrence,

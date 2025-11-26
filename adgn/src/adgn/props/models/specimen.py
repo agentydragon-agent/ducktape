@@ -9,7 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class GitSource(BaseModel):
     vcs: Literal["git"]
     url: str
-    ref: str
+    commit: str  # Full commit SHA for cache validation
+    ref: str | None = None  # Optional tag/branch name for convenience
 
 
 class GitHubSource(BaseModel):

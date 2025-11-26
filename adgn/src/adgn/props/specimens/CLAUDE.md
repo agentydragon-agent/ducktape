@@ -134,7 +134,54 @@ Each issue file should describe ONE logical problem type, which may occur in mul
 
 Present facts and technical rationale, not opinions or attributed suggestions.
 
-### 5. Jsonnet Issue File Template
+### 5. Research First: No Open Questions
+
+**Specimens must not leave open research questions.** All investigation should be completed before authoring the issue.
+
+**❌ WRONG - Leaving research questions open:**
+```jsonnet
+rationale=|||
+  Lines 700-704 manually discover the git directory. Check if `pygit2.Repository()`
+  can discover automatically.
+
+  **Investigation needed:** Check if either of these works:
+  - `pygit2.Repository(Path.cwd())` (auto-discovers from current dir)
+  - `pygit2.Repository()` (auto-discovers from current dir)
+
+  **If auto-discovery works:** [suggested fix]
+  **If auto-discovery doesn't work:** Close this issue as invalid.
+|||
+```
+
+**✅ CORRECT - Research completed, findings documented:**
+```jsonnet
+rationale=|||
+  Lines 700-704 manually discover the git directory using `pygit2.discover_repository()`.
+  Per pygit2 docs, `Repository()` accepts a path and auto-discovers the .git directory,
+  making manual discovery unnecessary.
+
+  Replace:
+    gitdir = pygit2.discover_repository(Path.cwd())
+    if not gitdir: [error handling]
+    repo = pygit2.Repository(gitdir)
+
+  With:
+    try:
+      repo = pygit2.Repository(Path.cwd())
+    except pygit2.GitError: [error handling]
+|||
+```
+
+**Research checklist before authoring:**
+- ✅ Check library documentation for existing solutions
+- ✅ Verify claims about "better approaches" with concrete evidence
+- ✅ Test suggested fixes if uncertain about correctness
+- ✅ Remove issues that turn out to be invalid after research
+
+**Example from specimen 2025-11-26-code-quality:**
+Issue 039 asks "Check if auto-discovery works" and includes "If auto-discovery doesn't work: Close this issue as invalid." This research should have been completed first - either document that auto-discovery works (with evidence), or don't create the issue.
+
+### 6. Jsonnet Issue File Template
 
 **IMPORTANT**: Do NOT include long code blocks in rationale. Readers have specimen code open - cite file paths and line ranges, briefly summarize what's there. Long code citations bloat issue files unnecessarily.
 
@@ -170,7 +217,7 @@ I.issueOneOccurrence(
 )
 ```
 
-### 6. Comments: Use Sparingly
+### 7. Comments: Use Sparingly
 
 **Ideal: Zero comments.** All information should go in structured fields (`rationale`, `filesToRanges`).
 

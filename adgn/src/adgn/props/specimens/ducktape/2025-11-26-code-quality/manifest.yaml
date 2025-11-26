@@ -1,0 +1,15 @@
+source:
+  vcs: git
+  url: file://../specimens.bundle
+  ref: refs/tags/specimen-2025-11-26-code-quality
+  commit: 593813ea3db62bc9f9004e05dae236ae43f9ce2f
+scope:
+  include:
+    - "adgn/**"
+  exclude:
+    - "adgn/props/**"
+bundle:
+  include:
+    - adgn/
+  exclude:
+    - adgn/src/adgn/props/

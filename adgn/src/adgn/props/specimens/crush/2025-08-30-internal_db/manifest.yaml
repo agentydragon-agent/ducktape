@@ -1,7 +1,7 @@
 source:
   vcs: git
   url: https://github.com/agentydragon/crush.git
-  ref: a2a1ffa00943aa373f688ac05b667083ac3230b1
+  commit: a2a1ffa00943aa373f688ac05b667083ac3230b1
 scope:
   include:
     - internal/**

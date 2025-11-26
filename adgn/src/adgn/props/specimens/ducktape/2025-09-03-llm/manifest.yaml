@@ -9,3 +9,9 @@ scope:
     - "llm/adgn_llm/src/adgn_llm/mini_codex/**/*.py"
     - "llm/adgn_llm/src/adgn_llm/mcp/docker_exec/**/*.py"
     - "llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/**/*.py"
+# TODO: When migrating from GitHub source to bundle, add:
+# bundle:
+#   include:
+#     - llm/
+#   exclude:
+#     - adgn/src/adgn/props/specimens/  # Exclude specimen metadata

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from filelock import FileLock
 from importlib import resources
 import json
 import os
@@ -16,6 +17,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 from urllib.parse import urlunparse
+import uuid
 
 import _jsonnet
 from platformdirs import user_cache_dir
@@ -28,6 +30,11 @@ from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
 from ..prop_utils import pkg_dir
 
 logger = logging.getLogger(__name__)
+
+
+def _make_unique_temp_path(parent: Path, suffix: str = ".tar.gz") -> Path:
+    """Create a unique temporary file path to avoid conflicts in parallel execution."""
+    return parent / f".tmp-{uuid.uuid4().hex}{suffix}"
 
 
 def _specimen_extract_filter(member: tarfile.TarInfo, path: str) -> tarfile.TarInfo | None:
@@ -92,50 +99,58 @@ def _jsonnet_load_dir(
             [f"No {subdir}/ directory found under: {spec_dir}"],
         )
 
-    for p in sorted(dir_path.glob("*.libsonnet")):
-        stem = p.stem
+    # Discover all libsonnet files
+    issue_files = sorted(dir_path.glob("*.libsonnet"))
+    if not issue_files:
+        return IssuesLoadResult(items=items, errors=errors)
+
+    # Optimization: batch-load all issues in single Jsonnet evaluation
+    # Jsonnet requires static import paths, so we compose the aggregator in Python
+    # Each import is merged with {id, should_flag} to produce complete issue objects
+    # Use absolute paths since evaluate_snippet has no base file for relative imports
+    imports = []
+    for p in issue_files:
+        name = p.stem
+        abs_path = str(p.resolve())
+        imports.append(f"  {json.dumps(name)}: (import {json.dumps(abs_path)}) + {{id: {json.dumps(name)}, should_flag: {json.dumps(should_flag)}}}")
+
+    snippet = "{\n" + ",\n".join(imports) + "\n}"
+
+    eval_snippet = cast(Callable[..., Any], _jsonnet.evaluate_snippet)
+    raw_obj = eval_snippet(
+        f"<batch:{subdir}>",
+        snippet,
+        jpathdir=[str(JSONNET_LIBDIR)],
+        import_callback=_jsonnet_importer,
+    )
+    if not isinstance(raw_obj, str):
+        raise SpecimenIssuesLoadError([f"{subdir}: Jsonnet returned non-string"])
+
+    all_issues = json.loads(raw_obj)
+    if not isinstance(all_issues, dict):
+        raise SpecimenIssuesLoadError([f"{subdir}: Expected dict, got {type(all_issues)}"])
+
+    # Process batch result: validate each issue directly (id/should_flag already injected)
+    for p in issue_files:
+        name = p.stem
+        issue_dict = all_issues.get(name)
+        if issue_dict is None:
+            errors.append(f"{subdir}/{name}.libsonnet: Missing from batch result")
+            continue
+        if not isinstance(issue_dict, dict):
+            errors.append(f"{subdir}/{name}.libsonnet: Not a dict (got {type(issue_dict)})")
+            continue
+
         try:
-            # NOTE: _jsonnet type stubs omit jpathdir/import_callback; runtime supports them.
-            eval_file = cast(Callable[..., Any], _jsonnet.evaluate_file)
-            raw_obj = eval_file(
-                str(p),
-                jpathdir=[str(JSONNET_LIBDIR)],
-                import_callback=_jsonnet_importer,
-            )
-        except Exception as e:  # pragma: no cover
-            errors.append(f"{p}: Jsonnet evaluation error: {e}")
-            continue
-        if not isinstance(raw_obj, str):
-            errors.append(
-                f"{p}: Jsonnet evaluator returned non-string (expected JSON text)",
-            )
-            continue
-        raw = raw_obj
-        try:
-            obj = json.loads(raw)
-        except Exception as e:
-            errors.append(f"{p}: Failed to parse Jsonnet output as JSON: {e}")
-            continue
-        if not isinstance(obj, dict):
-            errors.append(f"{p}: Jsonnet did not produce an object (got {type(obj)})")
-            continue
-        if "id" in obj:
-            errors.append(
-                f"{p}: Embedded IDs no longer accepted, IDs are always derived from path - remove 'id' from jsonnet",
-            )
-            continue
-        try:
-            core_input = {k: obj.get(k) for k in ("rationale",)}
-            core_input["id"] = stem
-            core_input["should_flag"] = should_flag
-            core = IssueCore.model_validate(core_input)
-            inst_raw = obj.get("instances")
-            if inst_raw is None:
-                inst_raw = []
+            # IssueCore validation (copy dict, drop instances field)
+            # This ensures we fail if Jsonnet adds unexpected extra fields
+            core_fields = {k: v for k, v in issue_dict.items() if k != "instances"}
+            core = IssueCore.model_validate(core_fields)
+            inst_raw = issue_dict.get("instances", [])
             instances = [Occurrence.model_validate(inst) for inst in inst_raw]
             items.append(IssueRecord(core=core, instances=instances))
         except Exception as e:
-            errors.append(f"{p}: validation error: {e}")
+            errors.append(f"{subdir}/{name}.libsonnet: {e}")
             continue
 
     if errors and strict:
@@ -190,7 +205,6 @@ def _extract_tar_gz_to_temp(archive: Path) -> Path:
 
 def _repack_dir_with_mtime(src_dir: Path, out_archive: Path, mtime: int = 0) -> None:
     out_archive.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out_archive.with_suffix(".tmp")
 
     def _filter(ti: tarfile.TarInfo) -> tarfile.TarInfo | None:
         # Exclude VCS internals from archives to avoid permission issues and reduce size
@@ -202,16 +216,19 @@ def _repack_dir_with_mtime(src_dir: Path, out_archive: Path, mtime: int = 0) -> 
         # Preserve uid/gid; determinism here only requires pinned mtime
         return ti
 
-    with tarfile.open(tmp, "w:gz", format=tarfile.PAX_FORMAT) as tf:
-        if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
-            logger.debug(
-                "[specimen] repacking %s -> %s (filter .git, mtime=%s)",
-                src_dir,
-                out_archive,
-                mtime,
-            )
-        tf.add(src_dir, arcname=Path(src_dir).name, filter=_filter)
-    tmp.replace(out_archive)
+    tmp = _make_unique_temp_path(out_archive.parent)
+    logger.debug("repacking %s -> %s (via %s, filter .git, mtime=%s)", src_dir, out_archive, tmp.name, mtime)
+
+    try:
+        with tarfile.open(tmp, "w:gz", format=tarfile.PAX_FORMAT) as tf:
+            tf.add(src_dir, arcname=Path(src_dir).name, filter=_filter)
+        logger.debug("repack complete, renaming %s -> %s", tmp.name, out_archive.name)
+        tmp.replace(out_archive)
+    except Exception:
+        logger.debug("repack failed, cleaning up %s", tmp.name)
+        if tmp.exists():
+            tmp.unlink()
+        raise
 
 
 def _repack_tar_with_mtime(archive: Path, mtime: int = 0) -> Path:
@@ -229,13 +246,17 @@ def _default_gitconfig() -> Path | None:
 def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     url = urlunparse(("https", "codeload.github.com", f"/{owner}/{repo}/tar.gz/{ref}", "", "", ""))
-    tmp = dest.with_suffix(".tmp")
+    tmp = _make_unique_temp_path(dest.parent)
+    logger.debug("downloading %s -> %s (via %s)", url, dest, tmp.name)
+
     try:
         with urlopen(url) as resp:
             tmp.write_bytes(resp.read())
+        logger.debug("download complete, renaming %s -> %s", tmp.name, dest.name)
         tmp.replace(dest)
         return True
-    except (URLError, HTTPError):
+    except (URLError, HTTPError) as e:
+        logger.debug("download failed (%s), cleaning up %s", e, tmp.name)
         if tmp.exists():
             tmp.unlink()
         return False
@@ -345,7 +366,10 @@ def ensure_archive_for_specimen_slug(
     """Ensure a cached archive exists for the specimen.
 
     The slug is computed from the manifest path as repo/name.
-    Cache is stored at ~/.cache/adgn-llm/specimens/{repo}/{name}.tar.gz
+    For GitSource with commit SHA: ~/.cache/adgn-llm/specimens/{repo}/{name}-{commit}.tar.gz
+    Otherwise: ~/.cache/adgn-llm/specimens/{repo}/{name}.tar.gz
+
+    Uses a lock file to prevent concurrent cache creation from multiple processes.
     """
     gitconfig = gitconfig or _default_gitconfig()
     # Extract hierarchical slug from path: specimens/{repo}/{name}/manifest.yaml -> repo/name
@@ -353,74 +377,110 @@ def ensure_archive_for_specimen_slug(
     repo_name = specimen_dir.parent.name
     specimen_name = specimen_dir.name
     slug = f"{repo_name}/{specimen_name}"
-    # Cache hierarchically: ~/.cache/adgn-llm/specimens/{repo}/{name}.tar.gz
-    out = _xdg_cache_base() / repo_name / f"{specimen_name}.tar.gz"
-    if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
-        logger.debug("[specimen] ensure_archive_for_specimen_slug slug=%s out=%s", slug, out)
+
+    # Include commit SHA in cache key for GitSource to avoid staleness
+    cache_filename = specimen_name
+    if isinstance(man.source, GitSource) and man.source.commit:
+        cache_filename = f"{specimen_name}-{man.source.commit}"
+
+    # Cache hierarchically
+    out = _xdg_cache_base() / repo_name / f"{cache_filename}.tar.gz"
+    lock_file = out.with_suffix(".lock")
+
+    logger.debug("ensure_archive slug=%s out=%s", slug, out.name)
+
+    # Fast path: if archive already exists, return it without acquiring lock
     if out.exists():
+        logger.debug("archive exists (fast path), returning %s", out.name)
         return out
-    out.parent.mkdir(parents=True, exist_ok=True)
-    if isinstance(man.source, GitHubSource):
-        if _download_github_to(man.source.org, man.source.repo, man.source.ref, out):
-            _repack_tar_with_mtime(out, mtime=0)
+
+    logger.debug("archive missing, acquiring lock %s", lock_file.name)
+    # Acquire lock to prevent concurrent cache creation
+    with FileLock(lock_file):
+        logger.debug("lock acquired, checking if archive was created while waiting")
+        # Check again after acquiring lock (another process may have created it)
+        if out.exists():
+            logger.debug("archive exists (created while waiting), returning %s", out.name)
             return out
-        if (
-            _create_archive_from_git(
-                urlunparse(
-                    (
-                        "https",
-                        "github.com",
-                        f"/{man.source.org}/{man.source.repo}.git",
-                        "",
-                        "",
-                        "",
-                    )
-                ),
-                man.source.ref,
-                out,
-                gitconfig,
-            )
-            and out.exists()
-        ):
-            return out
-    elif isinstance(man.source, GitSource):
-        if man.source.url.startswith("https://github.com/"):
-            parts = (
-                man.source.url.removeprefix("https://github.com/")
-                .rstrip("/")
-                .removesuffix(".git")
-                .split("/")
-            )
-            if len(parts) >= 2 and _download_github_to(
-                parts[0],
-                parts[1],
-                man.source.ref,
-                out,
-            ):
+
+        logger.debug("archive still missing, creating it")
+
+        if isinstance(man.source, GitHubSource):
+            if _download_github_to(man.source.org, man.source.repo, man.source.ref, out):
                 _repack_tar_with_mtime(out, mtime=0)
                 return out
-        # Resolve relative file:// URLs relative to the manifest directory
-        url = man.source.url
-        if url.startswith("file://"):
-            # Remove the file:// prefix
-            file_path = url.removeprefix("file://")
-            # If it's a relative path, resolve it relative to manifest directory
-            if not file_path.startswith("/"):
-                resolved_path = (manifest_path.parent / file_path).resolve()
-                url = f"file://{resolved_path}"
+            if (
+                _create_archive_from_git(
+                    urlunparse(
+                        (
+                            "https",
+                            "github.com",
+                            f"/{man.source.org}/{man.source.repo}.git",
+                            "",
+                            "",
+                            "",
+                        )
+                    ),
+                    man.source.ref,
+                    out,
+                    gitconfig,
+                )
+                and out.exists()
+            ):
+                return out
+        elif isinstance(man.source, GitSource):
+            # Prefer commit SHA for exact fetching; ref is optional and may have moved
+            git_ref = man.source.commit
 
-        if (
-            _create_archive_from_git(url, man.source.ref, out, gitconfig)
-            and out.exists()
-        ):
+            if man.source.url.startswith("https://github.com/"):
+                parts = (
+                    man.source.url.removeprefix("https://github.com/")
+                    .rstrip("/")
+                    .removesuffix(".git")
+                    .split("/")
+                )
+                if len(parts) >= 2 and _download_github_to(
+                    parts[0],
+                    parts[1],
+                    git_ref,
+                    out,
+                ):
+                    _repack_tar_with_mtime(out, mtime=0)
+                    return out
+            # Resolve relative file:// URLs relative to the manifest directory
+            url = resolve_bundle_url(manifest_path, man.source.url)
+
+            if (
+                _create_archive_from_git(url, git_ref, out, gitconfig)
+                and out.exists()
+            ):
+                return out
+        elif isinstance(man.source, LocalSource):
+            src = (manifest_path.parent / man.source.root).resolve()
+            _repack_dir_with_mtime(src, out, mtime=0)
             return out
-    elif isinstance(man.source, LocalSource):
-        src = (manifest_path.parent / man.source.root).resolve()
-        _repack_dir_with_mtime(src, out, mtime=0)
-        return out
-    raise SystemExit(
-        f"Can't archive specimen cache for '{slug}' (source={type(man.source).__name__}); ",
-    )
+        raise SystemExit(
+            f"Can't archive specimen cache for '{slug}' (source={type(man.source).__name__}); ",
+        )
+
+
+def resolve_bundle_url(manifest_path: Path, source_url: str) -> str:
+    """Resolve bundle URL, handling relative file:// paths.
+
+    Args:
+        manifest_path: Path to manifest.yaml file
+        source_url: Source URL from manifest (may be relative file://)
+
+    Returns:
+        Absolute URL (file:// URLs are resolved relative to manifest directory)
+    """
+    url = source_url
+    if url.startswith("file://"):
+        file_path = url.removeprefix("file://")
+        if not file_path.startswith("/"):
+            resolved_path = (manifest_path.parent / file_path).resolve()
+            url = f"file://{resolved_path}"
+    return url
 
 
 def resolve_source_root(
@@ -594,6 +654,26 @@ class SpecimenRegistry:
         if errors:
             raise SpecimenIssuesLoadError(errors)
         return rec
+
+    @classmethod
+    def load_manifest_only(
+        cls,
+        slug: str,
+        base: Path | None = None,
+    ) -> tuple[Path, SpecimenDoc]:
+        """Load only the manifest (no Jsonnet issues) for fast collection.
+
+        Returns: (manifest_path, manifest_doc)
+        Raises: SystemExit on manifest errors
+        """
+        base_dir = base or find_specimens_base()
+        manifest_path = (base_dir / slug.replace("/", os.sep) / "manifest.yaml").resolve()
+        raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(raw, dict):
+            raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
+
+        manifest = SpecimenDoc.model_validate(raw)
+        return (manifest_path, manifest)
 
     @classmethod
     def load_lenient(
