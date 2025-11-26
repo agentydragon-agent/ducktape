@@ -57,12 +57,7 @@ class RationaleImprovement(BaseModel):
 
 
 IssueLintFinding = Annotated[
-    AnchorIncorrect
-    | FalsePositive
-    | TruePositive
-    | OtherError
-    | RationaleError
-    | RationaleImprovement,
+    AnchorIncorrect | FalsePositive | TruePositive | OtherError | RationaleError | RationaleImprovement,
     Field(discriminator="kind"),
 ]
 

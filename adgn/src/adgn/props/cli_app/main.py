@@ -341,7 +341,9 @@ async def prompt_optimize(
     out_dir: Path | None = OPT_OUTPUT_DIR,
     model: str = OPT_MODEL,
     agent_model: str = typer.Option("gpt-5-mini", "--agent-model", help="Model for inner critic agent"),
-    verbose: bool = typer.Option(False, "--verbose", help="Display inner agent (critic/grader) events during evaluations"),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Display inner agent (critic/grader) events during evaluations"
+    ),
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     await run_prompt_optimizer(budget=budget, out_dir=out_dir, model=model, agent_model=agent_model, verbose=verbose)
@@ -484,7 +486,9 @@ async def cmd_per_file_eval(
     preset: str | None = typer.Option(None, "--preset", help="Built-in prompt name for critic system prompt"),
     prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True),  # noqa: B008
     prompt_text: str | None = typer.Option(None, "--prompt-text", help="Inline critic system prompt"),
-    file: str | None = typer.Option(None, "--file", help="Limit evaluation to specific file (relative path in specimen)"),
+    file: str | None = typer.Option(
+        None, "--file", help="Limit evaluation to specific file (relative path in specimen)"
+    ),
     out_dir: Path | None = OPT_OUTPUT_DIR,
     gitconfig: Path | None = OPT_GITCONFIG,
     model: str = OPT_MODEL,

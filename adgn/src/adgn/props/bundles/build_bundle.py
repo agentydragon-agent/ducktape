@@ -231,18 +231,20 @@ def main():
     # Configuration
     specimens_dir = Path(__file__).parent.parent / "specimens"
     source_repo_path = Path("/code/gitlab.com/agentydragon/ducktape")
-    output_bundle = Path("/tmp/specimens-2025-11-20-22-clean.bundle")
+    output_bundle = specimens_dir / "ducktape" / "specimens.bundle"
 
     # Open source repository
     source_repo = pygit2.Repository(str(source_repo_path))
 
-    # Specimens to include
+    # Specimens to include (determined from git tags in source repo)
+    # spec_id is relative to specimens_dir (e.g., "ducktape/2025-11-20-adgn")
     specimen_configs = [
-        ("2025-11-20-ducktape-adgn", "b729b362de957d127d1e8ac17d8811665ce805fe"),
-        ("2025-11-20-ducktape-repo", "c18279d2c1716008afc17a12350aaee89248c1ca"),
-        ("2025-11-21-ducktape-repo", "167e39012aca16381442c53bf10d5fc980d0f26a"),
-        ("2025-11-22-ducktape-repo", "c263d6808e04d509d1a48b17fa6016733bb1fce6"),
-        ("2025-11-22-ducktape-repo-2", "a81550a1af11e03e397ff8344b1aa818658113db"),
+        ("ducktape/2025-11-20-adgn", "b729b362de957d127d1e8ac17d8811665ce805fe"),
+        ("ducktape/2025-11-20-repo", "c18279d2c1716008afc17a12350aaee89248c1ca"),
+        ("ducktape/2025-11-21-repo", "167e39012aca16381442c53bf10d5fc980d0f26a"),
+        ("ducktape/2025-11-22-post-fixes", "9395ba65dcef5057176c890981fa0e973d9798eb"),
+        ("ducktape/2025-11-22-repo", "c263d6808e04d509d1a48b17fa6016733bb1fce6"),
+        ("ducktape/2025-11-22-repo-2", "a81550a1af11e03e397ff8344b1aa818658113db"),
     ]
 
     print("=== Building specimen bundle ===")

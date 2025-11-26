@@ -183,12 +183,8 @@ async def _run_critic_for_specimen(
     critic_state = CriticSubmitState()
 
     # Render user prompt with explicit scope (no property definitions mounted)
-    scope_text = build_scope_text(
-        rec.manifest.scope.include, rec.manifest.scope.exclude
-    )
-    user_prompt = render_prompt_template(
-        "critic_user_prompt.j2.md", scope_text=scope_text
-    )
+    scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
+    user_prompt = render_prompt_template("critic_user_prompt.j2.md", scope_text=scope_text)
 
     async with rec.hydrated_copy(gitconfig=None) as content_root:
         wiring = properties_docker_spec(content_root, mount_properties=False)
@@ -197,10 +193,7 @@ async def _run_critic_for_specimen(
         critic_submit_server = await attach_critic_submit(comp, critic_state)
 
         # Collect servers for schema extraction
-        servers = {
-            wiring.server_name: runtime_server,
-            "critic_submit": critic_submit_server,
-        }
+        servers = {wiring.server_name: runtime_server, "critic_submit": critic_submit_server}
 
         bootstrap = BootstrapInspectHandler(wiring)
 
@@ -220,11 +213,7 @@ async def _run_critic_for_specimen(
 
         # Add verbose display if requested (with proper server wiring)
         if verbose:
-            handlers.append(RichDisplayHandler(
-                max_lines=10,
-                prefix=verbose_prefix,
-                servers=servers,
-            ))
+            handlers.append(RichDisplayHandler(max_lines=10, prefix=verbose_prefix, servers=servers))
 
         # Add other handlers (e.g., cost tracking)
         handlers.extend(extra_handlers)
@@ -242,23 +231,19 @@ async def _run_critic_for_specimen(
                 parallel_tool_calls=True,
             )
             await agent.run(user_prompt)
-    assert (critic_state.result is not None) or (
-        critic_state.error is not None
-    ), "critic_submit.submit_result or submit_error was not called"
+    assert (critic_state.result is not None) or (critic_state.error is not None), (
+        "critic_submit.submit_result or submit_error was not called"
+    )
     # Persist
     out_dir = run_dir / specimen
     out_dir.mkdir(parents=True, exist_ok=True)
     if critic_state.error is not None:
-        (out_dir / "critic_error.json").write_text(
-            critic_state.error.model_dump_json(indent=2), encoding="utf-8"
-        )
+        (out_dir / "critic_error.json").write_text(critic_state.error.model_dump_json(indent=2), encoding="utf-8")
         raise RuntimeError(
             f"critic error: {critic_state.error.message}"
         )  # surfaced to caller; per-round errors.json aggregates
     assert critic_state.result is not None
-    (out_dir / "critic.json").write_text(
-        critic_state.result.model_dump_json(indent=2), encoding="utf-8"
-    )
+    (out_dir / "critic.json").write_text(critic_state.result.model_dump_json(indent=2), encoding="utf-8")
     return critic_state.result
 
 
@@ -308,11 +293,7 @@ def build_server(
           grader/events.jsonl
     """
     # Shared evaluation directory (tests may inject a tmp dir)
-    evals_dir = (
-        evals_base_dir
-        if evals_base_dir is not None
-        else pkg_dir() / "runs" / "prompt_evals"
-    )
+    evals_dir = evals_base_dir if evals_base_dir is not None else pkg_dir() / "runs" / "prompt_evals"
     evals_dir.mkdir(parents=True, exist_ok=True)
 
     state = PromptEvalState()
@@ -324,20 +305,14 @@ def build_server(
             ToolError: If path cannot be translated
         """
         if workspace_host_path is None:
-            raise ToolError(
-                "Path translation not configured. "
-                "This server requires workspace_host_path to be set."
-            )
+            raise ToolError("Path translation not configured. This server requires workspace_host_path to be set.")
 
         if container_path.startswith("/workspace/"):
             relative = container_path.removeprefix("/workspace/")
             return workspace_host_path / relative
 
         # Path is not in /workspace - cannot translate
-        raise ToolError(
-            f"Cannot translate path: {container_path}. "
-            f"Only /workspace/* paths are supported."
-        )
+        raise ToolError(f"Cannot translate path: {container_path}. Only /workspace/* paths are supported.")
 
     def _translate_host_path(host_path: Path) -> str:
         """Translate host path to container path for error messages.
@@ -368,8 +343,7 @@ def build_server(
         return host_path.read_text(encoding="utf-8")
 
     mcp = NotifyingFastMCP(
-        name,
-        instructions="Prompt Evaluation server — evaluate candidate critic prompts with budget tracking",
+        name, instructions="Prompt Evaluation server — evaluate candidate critic prompts with budget tracking"
     )
     # FastMCP wraps tool Exceptions into ToolError; failures propagate as tool errors
 
@@ -393,9 +367,7 @@ def build_server(
         elif payload.split == "valid":
             specimens = get_valid_specimens()
         else:
-            raise ToolError(
-                f"Unknown split: {payload.split}. Must be 'train', 'valid', or 'test'."
-            )
+            raise ToolError(f"Unknown split: {payload.split}. Must be 'train', 'valid', or 'test'.")
 
         # Budget check before starting work
         state.check_budget_before_work()
@@ -445,56 +417,37 @@ def build_server(
             )
             grader_cost = cost_tracker.total_cost
 
-            (out_dir / "grade.json").write_text(
-                grade_obj.model_dump_json(indent=2), encoding="utf-8"
-            )
+            (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
 
             # Construct MetricsRow with nested GradeMetrics
             total_specimen_cost = critic_cost + grader_cost
-            return MetricsRow(
-                specimen=specimen,
-                metrics=grade_obj.metrics,
-                cost=total_specimen_cost,
-            )
+            return MetricsRow(specimen=specimen, metrics=grade_obj.metrics, cost=total_specimen_cost)
 
         # Run all specimens in parallel (each processed exactly once)
-        results = await asyncio.gather(
-            *[process_one(s) for s in specimens], return_exceptions=True
-        )
+        results = await asyncio.gather(*[process_one(s) for s in specimens], return_exceptions=True)
 
         # Separate successes from failures
-        metrics: list[MetricsRow] = [
-            r for r in results if not isinstance(r, BaseException)
-        ]
-        failures: list[BaseException] = [
-            r for r in results if isinstance(r, BaseException)
-        ]
+        metrics: list[MetricsRow] = [r for r in results if not isinstance(r, BaseException)]
+        failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
 
         if failures:
             total_specimens = len(metrics) + len(failures)
-            logger.error(
-                f"{len(failures)}/{total_specimens} specimens failed in {payload.split} split"
-            )
+            logger.error(f"{len(failures)}/{total_specimens} specimens failed in {payload.split} split")
             # Persist error summary
             errors = [{"type": type(e).__name__, "message": str(e)} for e in failures]
             errors_file = eval_dir / "errors.json"
-            errors_file.write_text(
-                json.dumps(errors, indent=2), encoding="utf-8"
-            )
+            errors_file.write_text(json.dumps(errors, indent=2), encoding="utf-8")
             # Translate host path to container path for error message
             container_errors_path = _translate_host_path(errors_file)
             raise RuntimeError(
-                f"{len(failures)}/{len(results)} specimens failed. "
-                f"See {container_errors_path} for details."
+                f"{len(failures)}/{len(results)} specimens failed. See {container_errors_path} for details."
             )
 
         # Calculate total cost from MetricsRow.cost
         cost = sum(m.cost for m in metrics)
         state.total_cost += cost
 
-        budget_remaining = (
-            state.budget_limit - state.total_cost if state.budget_limit else None
-        )
+        budget_remaining = state.budget_limit - state.total_cost if state.budget_limit else None
 
         # Build output based on split
         if payload.split == "train":
@@ -513,16 +466,12 @@ def build_server(
                 budget_remaining=budget_remaining,
                 eval_dir=_translate_host_path(eval_dir),
             )
-            (eval_dir / "train_results.json").write_text(
-                result.model_dump_json(indent=2), encoding="utf-8"
-            )
+            (eval_dir / "train_results.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
             return result
         # valid
         # Valid: aggregates only
         agg_recall = sum(m.metrics.recall for m in metrics) / len(metrics) if metrics else 0.0
-        agg_precision = (
-            sum(m.metrics.precision for m in metrics) / len(metrics) if metrics else 0.0
-        )
+        agg_precision = sum(m.metrics.precision for m in metrics) / len(metrics) if metrics else 0.0
 
         result = EvalSplitOutput(
             split=payload.split,
@@ -537,9 +486,7 @@ def build_server(
             budget_remaining=budget_remaining,
             eval_dir=_translate_host_path(eval_dir),
         )
-        (eval_dir / "valid_summary.json").write_text(
-            result.model_dump_json(indent=2), encoding="utf-8"
-        )
+        (eval_dir / "valid_summary.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
         return result
 
     @mcp.tool(flat=True)
@@ -594,9 +541,7 @@ def build_server(
         )
         grader_cost = cost_tracker.total_cost
 
-        (out_dir / "grade.json").write_text(
-            grade_obj.model_dump_json(indent=2), encoding="utf-8"
-        )
+        (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
 
         # Calculate cost
         cost = critic_cost + grader_cost
@@ -604,10 +549,7 @@ def build_server(
 
         # Construct output with nested GradeMetrics
         return EvalSpecimenOutput(
-            specimen=payload.specimen,
-            metrics=grade_obj.metrics,
-            cost=cost,
-            eval_dir=_translate_host_path(eval_dir),
+            specimen=payload.specimen, metrics=grade_obj.metrics, cost=cost, eval_dir=_translate_host_path(eval_dir)
         )
 
     @mcp.tool(flat=True)
@@ -624,9 +566,7 @@ def build_server(
         eval_dir = evals_dir / f"eval_{ts}"
         eval_dir.mkdir(parents=True, exist_ok=True)
         (eval_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
-        logger.info(
-            "eval_file %s:%s: %s", payload.specimen, payload.file_path, eval_dir
-        )
+        logger.info("eval_file %s:%s: %s", payload.specimen, payload.file_path, eval_dir)
 
         # Run per-file eval with file filter (cost tracked internally)
         result = await run_per_file_eval(
@@ -655,11 +595,7 @@ def build_server(
             file_path=payload.file_path,
             issues_in_file=file_result.issues_in_file,
             detected_issues=detected_ids,
-            detection_rate=(
-                len(detected_ids) / len(file_result.issues_in_file)
-                if file_result.issues_in_file
-                else 0.0
-            ),
+            detection_rate=(len(detected_ids) / len(file_result.issues_in_file) if file_result.issues_in_file else 0.0),
             cost=cost,
             eval_dir=_translate_host_path(eval_dir),
         )
