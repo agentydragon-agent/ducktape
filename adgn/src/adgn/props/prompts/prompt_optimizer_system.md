@@ -142,30 +142,55 @@ All tools accept `prompt_path` (local file path), not inline text.
 
 Tool will raise error if budget exceeded before starting work.
 
+### Two Evaluation Modes: File-Level vs Specimen-Level
+
+**File-level evaluation** (`eval_file`):
+- Agent reviews **one file** known to have issues
+- Faster feedback loop (~$0.10-0.50 per file, ~30-60 seconds)
+- Clearer signal: file is known to contain specific issues
+- **Best for iteration:** When debugging why agent misses specific issues
+- **Limitations:** Only train split (prevents leakage), only files with >0 issues
+
+**Specimen-level evaluation** (`eval_specimen`, `eval_split`):
+- Agent reviews **whole codebase**, searches for all issues
+- More realistic but slower (~$1-5 per specimen, ~5-10 minutes)
+- Signal may be noisy: specimens are often **sparsely labeled**
+  - Ground truth may only include 10% of real issues (what bothered a human)
+  - Agent may find unlabeled real issues (counted as false positives)
+  - Precision may appear artificially low due to incomplete labeling
+- **Best for validation:** Confirming prompt generalizes across diverse code
+
+**When to use each:**
+- Iterating on specific patterns? → `eval_file` on train files where agent failed
+- Testing overall prompt? → `eval_specimen` on a few train specimens
+- Measuring generalization? → `eval_split` on train (detailed) or valid (aggregate)
+
 ### eval_file(prompt_path, specimen, file_path)
 - **Purpose:** Fast iteration on one file
-- **Cost:** Low (single file review)
+- **Cost:** Low (~$0.10-0.50, ~30-60 seconds)
+- **Constraints:** Train split only, file must have >0 issues
 - **Returns:** detection_rate, detected_issues, issues_in_file
 
 ### eval_specimen(prompt_path, specimen)
 - **Purpose:** Test on full specimen
-- **Cost:** Medium (full specimen review)
+- **Cost:** Medium (~$1-5, ~5-10 minutes)
 - **Returns:** expected, reported, true_positives, false_positive, unknown, false_negatives, precision, recall
+- **Caveat:** Precision may be low due to sparse labeling (only issues that bothered annotator)
 
 ### eval_split(prompt_path, split: "train"|"valid")
 - **Purpose:** Evaluate on full split
-- **Cost:** High (many specimens)
+- **Cost:** High (many specimens, $20-100+)
 - **Returns:**
   - split="train": detailed_metrics (per-specimen list), specimens list
   - split="valid": aggregate_recall, aggregate_precision, specimen_count, issue_count
   - split="test": raises error (hidden from you)
 
-**Strategy:**
-1. Start with eval_file() on specific failures
-2. Use eval_specimen() to validate fixes
-3. Run eval_split(split="train") for detailed analysis
-4. Check eval_split(split="valid") to confirm generalization
-5. Monitor budget_remaining to plan remaining iterations
+**Iteration strategy:**
+1. **Start with file-level** for fast iteration: `eval_file()` on train files where best prompt failed
+2. **Test fixes specimen-level**: `eval_specimen()` on 2-3 train specimens to confirm improvement
+3. **Deep analysis**: `eval_split(split="train")` for detailed per-specimen metrics
+4. **Validate generalization**: `eval_split(split="valid")` to check proxy metric (your optimization target)
+5. Monitor `budget_remaining` to plan remaining iterations
 
 ## Available Data
 

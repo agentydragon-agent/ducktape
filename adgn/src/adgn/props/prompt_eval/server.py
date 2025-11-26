@@ -554,7 +554,20 @@ def build_server(
 
     @mcp.tool(flat=True)
     async def eval_file(payload: EvalFileInput) -> EvalFileOutput:
-        """Evaluate a prompt on one file (fast iteration, low cost ~$0.10-0.50)."""
+        """Evaluate a prompt on one file (fast iteration, low cost ~$0.10-0.50).
+
+        Constraints:
+        - Only works on train split (prevents leakage to valid/test)
+        - Only works on files with >0 issues (validates before running)
+        """
+        # Validate specimen is in train split
+        train_specimens = get_train_specimens()
+        if payload.specimen not in train_specimens:
+            raise ToolError(
+                f"eval_file only works on train split to prevent leakage. "
+                f"Specimen '{payload.specimen}' is not in train split."
+            )
+
         # Read prompt from file (translate container path to host path)
         prompt_text = _read_prompt_file(payload.prompt_path)
 
