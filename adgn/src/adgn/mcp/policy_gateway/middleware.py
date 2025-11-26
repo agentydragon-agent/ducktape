@@ -126,6 +126,16 @@ class PolicyGatewayMiddleware(Middleware):
         self._notify = pending_notifier
         self._record = record_outcome
         self._policy_reader = policy_reader
+        # Track in-flight tool calls (call_id -> tool_key)
+        self._inflight: dict[str, str] = {}
+
+    def has_inflight_calls(self) -> bool:
+        """Check if there are any tool calls currently in flight (not blocked by approval)."""
+        return len(self._inflight) > 0
+
+    def inflight_count(self) -> int:
+        """Return the number of tool calls currently in flight."""
+        return len(self._inflight)
 
     async def on_call_tool(self, context: MiddlewareContext[Any], call_next: CallNext[Any, ToolResult]) -> ToolResult:
         name = context.message.name
@@ -152,6 +162,10 @@ class PolicyGatewayMiddleware(Middleware):
         if decision is ApprovalDecision.ALLOW:
             if self._record is not None:
                 await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_ALLOW)
+
+            # Track in-flight tool call
+            call_id = uuid.uuid4().hex
+            self._inflight[call_id] = tool_key
             try:
                 call_result = await call_next(context)
                 # If downstream returned an error ToolResult instead of raising,
@@ -206,6 +220,9 @@ class PolicyGatewayMiddleware(Middleware):
                         )
                     )
                 raise
+            finally:
+                # Remove from in-flight tracking when call completes (success or error)
+                self._inflight.pop(call_id, None)
 
         if decision is ApprovalDecision.DENY_ABORT:
             if self._record is not None:
@@ -266,14 +283,16 @@ def install_policy_gateway(
     policy_reader: PolicyReaderStub,
     pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
     record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
-) -> None:
+) -> PolicyGatewayMiddleware:
     """Install PolicyGatewayMiddleware on a FastMCP-like server.
 
     This mirrors production wiring in the container; tests should reuse this
     helper to avoid drift in middleware configuration.
+
+    Returns the installed middleware instance for tracking in-flight calls.
     """
-    comp.add_middleware(
-        PolicyGatewayMiddleware(
-            hub=hub, pending_notifier=pending_notifier, record_outcome=record_outcome, policy_reader=policy_reader
-        )
+    middleware = PolicyGatewayMiddleware(
+        hub=hub, pending_notifier=pending_notifier, record_outcome=record_outcome, policy_reader=policy_reader
     )
+    comp.add_middleware(middleware)
+    return middleware

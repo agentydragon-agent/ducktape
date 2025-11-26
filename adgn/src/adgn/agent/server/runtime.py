@@ -162,6 +162,7 @@ class AgentSession:
         agent_id: str | None = None,
         ui_bus: Any | None = None,
         approval_engine: ApprovalPolicyEngine | None = None,
+        policy_gateway: Any | None = None,  # PolicyGatewayMiddleware for tracking in-flight calls
     ) -> None:
         self._task: asyncio.Task | None = None
         self.approval_hub = approval_hub or ApprovalHub()
@@ -178,6 +179,7 @@ class AgentSession:
         # Optional: agent identifier to associate runs with a specific hosted agent
         self.agent_id: str | None = agent_id
         # No Docker client on session; runtime server handles any containerization
+        self._policy_gateway = policy_gateway
 
     def current_run_phase(self) -> RunPhase:
         """Compute the current run phase from live signals (no stored state).
@@ -188,9 +190,8 @@ class AgentSession:
         - SAMPLING: default while running without approvals
         """
         pending = len(self.approval_hub.pending)
-        # TODO: Implement actual inflight detection by checking if policy gateway
-        # started a tool call that hasn't returned yet and isn't blocked by approval
-        has_inflight = False
+        # Check policy gateway for in-flight tool calls (if available)
+        has_inflight = bool(self._policy_gateway and self._policy_gateway.has_inflight_calls())
         return determine_run_phase(
             active_run_id=(self.active_run.run_id if self.active_run else None),
             pending_approvals=pending,

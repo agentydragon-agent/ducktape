@@ -134,8 +134,8 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     container = ContainerState(present=present, id=container_id, ephemeral=(c.runtime_ephemeral if c else False))
 
     # Run phase from live signals; no exceptions expected in this path
-    # TODO: Implement inflight detection - check if policy gateway has active tool calls
-    has_inflight = False
+    # Check policy gateway for in-flight tool calls (if container and gateway exist)
+    has_inflight = bool(c and c._policy_gateway and c._policy_gateway.has_inflight_calls())
     run_phase = determine_run_phase(active_run_id=active_run, pending_approvals=pending, mcp_has_inflight=has_inflight)
 
     return AgentStatusCore(

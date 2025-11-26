@@ -193,6 +193,8 @@ class AgentContainer:
     # Policy clients (managed via AsyncExitStack)
     _policy_reader: PolicyReaderStub | None = field(default=None, init=False)
     _policy_approver: PolicyApproverStub | None = field(default=None, init=False)
+    # Policy gateway middleware (for tracking in-flight tool calls)
+    _policy_gateway: Any | None = field(default=None, init=False)  # PolicyGatewayMiddleware
 
     @property
     def policy_approver(self) -> PolicyApproverStub:
@@ -318,7 +320,7 @@ class AgentContainer:
             if self._cm is not None and self.session is not None:
                 await self._cm.send_payload(ApprovalPendingEvt(call_id=call_id, tool_key=tool_key, args_json=args_json))
 
-        install_policy_gateway(
+        policy_gateway = install_policy_gateway(
             comp,
             hub=approval_hub,
             pending_notifier=_pending_notifier,
@@ -327,6 +329,7 @@ class AgentContainer:
             ),
             policy_reader=self._policy_reader,
         )
+        self._policy_gateway = policy_gateway
 
         # Mount standard in-proc servers (resources, compositor_meta, compositor_admin)
         await mount_standard_inproc_servers(compositor=comp, gateway_client=mcp_client)
@@ -366,6 +369,7 @@ class AgentContainer:
             agent_id=self.agent_id,
             ui_bus=self._ui_bus if self.with_ui else None,
             approval_engine=approval_engine,
+            policy_gateway=self._policy_gateway,
         )
 
         # LLM client
