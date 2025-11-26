@@ -43,3 +43,13 @@ class NotificationsBatch(BaseModel):
             for server, notice in self.resources.items()
             if notice.list_changed
         }
+
+    def count_notifications(self) -> int:
+        """Count total notifications (updated URIs + list changes)."""
+        return sum(len(notice.updated) for notice in self.resources.values()) + sum(
+            1 for notice in self.resources.values() if notice.list_changed
+        )
+
+    def has_notifications(self) -> bool:
+        """Check if batch has any notifications worth delivering."""
+        return any(notice.updated or notice.list_changed for notice in self.resources.values())

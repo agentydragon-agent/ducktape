@@ -32,11 +32,10 @@ class ServerModeHandler(BaseModel, BaseHandler):
 
         # Check for and deliver notifications using shared logic
         batch = self.poll_notifications()
-        msg = format_notifications_message(batch)
 
-        if msg is not None:
+        if batch.has_notifications():
             # Return Continue with RequireAny policy AND the notification message
-            return Continue(RequireAny(), inserts_input=(msg,))
+            return Continue(RequireAny(), inserts_input=(format_notifications_message(batch),))
 
         # No notifications - just require tool use
         return Continue(RequireAny())

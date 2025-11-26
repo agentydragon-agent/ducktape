@@ -177,17 +177,15 @@ class SystemMessage(BaseModel):
     content: str
 
 
-def format_notifications_message(batch: NotificationsBatch) -> UserMessage | None:
-    """Format MCP notifications as a system message.
+def format_notifications_message(batch: NotificationsBatch) -> UserMessage:
+    """Format MCP notifications as a user message.
 
-    Returns None if no notifications to format.
+    Caller must ensure batch has at least one notification.
     """
     # Filter to only include servers with actual updates or list changes
     resources_filtered: dict[str, ResourcesServerNotice] = {
         name: entry for name, entry in batch.resources.items() if entry.updated or entry.list_changed
     }
-    if not resources_filtered:
-        return None
 
     payload = NotificationsBatch(resources=resources_filtered).model_dump_json(
         exclude_defaults=True, exclude_none=True
@@ -211,16 +209,14 @@ class NotificationsHandler(BaseHandler):
 
     def on_before_sample(self):
         batch = self._poll()
-        msg = format_notifications_message(batch)
+        notification_count = batch.count_notifications()
 
-        if msg is None:
+        if notification_count == 0:
             logger.debug("NotificationsHandler: no updates")
             return NoLoopDecision()
 
         self._msg_counter += 1
-        # Count total updated URIs across all servers
-        total_updates = sum(len(notice.updated) for notice in batch.resources.values())
         logger.info(
-            "NotificationsHandler: delivering %d updates (msg #%d)", total_updates, self._msg_counter
+            "NotificationsHandler: delivering %d notifications (msg #%d)", notification_count, self._msg_counter
         )
-        return Continue(Auto(), inserts_input=(msg,))
+        return Continue(Auto(), inserts_input=(format_notifications_message(batch),))
