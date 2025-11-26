@@ -45,7 +45,7 @@ from adgn.props.per_file_eval import run_per_file_eval
 from adgn.props.prompts.util import build_scope_text, render_prompt_template
 from adgn.props.prop_utils import pkg_dir
 from adgn.props.specimens.registry import SpecimenRegistry
-from adgn.props.splits import Split, get_train_specimens, get_valid_specimens
+from adgn.props.splits import get_train_specimens, get_valid_specimens
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +77,9 @@ class EvalSpecimenInput(BaseModel):
 
 
 class EvalSplitInput(BaseModel):
-    """Input for eval_split: evaluate prompt on train/valid/test split."""
+    """Input for eval_train_split and eval_valid_split."""
 
     prompt_path: str = Field(description="Container path to prompt file (e.g., /workspace/prompts/v1.txt)")
-    split: Split = Field(description="Which split to evaluate (train, valid, or test)")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -111,26 +110,36 @@ class EvalSpecimenOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class EvalSplitOutput(BaseModel):
-    """Output from eval_split.
+class EvalTrainSplitOutput(BaseModel):
+    """Output from eval_train_split: detailed per-specimen metrics for analysis."""
 
-    Structure is uniform regardless of split; fields populated based on split type:
-    - train: detailed_metrics + specimens populated
-    - valid: aggregate metrics only
-    - test: not returned (raises ToolError)
+    detailed_metrics: list[dict[str, Any]] = Field(
+        description="Per-specimen metrics (specimen, metrics, cost) for detailed analysis"
+    )
+    specimens: list[str] = Field(description="List of specimen slugs evaluated")
+
+    cost: float
+    total_cost_so_far: float
+    budget_remaining: float | None
+    eval_dir: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EvalValidSplitOutput(BaseModel):
+    """Output from eval_valid_split: aggregate metrics only (prevents overfitting).
+
+    Validation provides minimal information by design:
+    - Only aggregate recall/precision (your optimization target)
+    - No per-specimen details (prevents overfitting to validation specimens)
     """
 
-    split: str  # which split was evaluated
-
-    # Detailed metrics (train only)
-    detailed_metrics: list[dict[str, Any]] | None = None
-    specimens: list[str] | None = None
-
-    # Aggregate metrics (valid only)
-    aggregate_recall: float | None = None
-    aggregate_precision: float | None = None
-    specimen_count: int | None = None
-    issue_count: int | None = None
+    aggregate_recall: float = Field(description="Average recall across validation specimens (YOUR TARGET METRIC)")
+    aggregate_precision: float = Field(
+        description="Average precision (may be low due to sparse labeling - focus on recall)"
+    )
+    specimen_count: int = Field(description="Number of validation specimens evaluated")
+    issue_count: int = Field(description="Total issues across all validation specimens")
 
     cost: float
     total_cost_so_far: float
@@ -348,26 +357,18 @@ def build_server(
     # FastMCP wraps tool Exceptions into ToolError; failures propagate as tool errors
 
     @mcp.tool(flat=True)
-    async def eval_split(payload: EvalSplitInput) -> EvalSplitOutput:
-        """Evaluate a prompt on train/valid/test split.
+    async def eval_train_split(payload: EvalSplitInput) -> EvalTrainSplitOutput:
+        """Analyze train split with detailed per-specimen metrics.
 
-        Returns:
-        - train: detailed per-specimen metrics
-        - valid: aggregate metrics only
-        - test: raises ToolError (hidden from agent)
+        Use this for:
+        - Understanding which specimens your prompt struggles with
+        - Identifying patterns in failures across multiple specimens
+        - Getting detailed metrics to guide prompt improvements
+
+        Returns detailed metrics for every train specimen.
         """
-        if payload.split == "test":
-            raise ToolError("Test split is withheld.")
-
         prompt_text = _read_prompt_file(payload.prompt_path)
-
-        # Get specimens for requested split
-        if payload.split == "train":
-            specimens = get_train_specimens()
-        elif payload.split == "valid":
-            specimens = get_valid_specimens()
-        else:
-            raise ToolError(f"Unknown split: {payload.split}. Must be 'train', 'valid', or 'test'.")
+        specimens = get_train_specimens()
 
         # Budget check before starting work
         state.check_budget_before_work()
@@ -377,7 +378,7 @@ def build_server(
         eval_dir = evals_dir / f"eval_{ts}"
         eval_dir.mkdir(parents=True, exist_ok=True)
         (eval_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
-        logger.info("eval_split %s: %s", payload.split, eval_dir)
+        logger.info("eval_train_split: %s", eval_dir)
 
         # Process each specimen once (in parallel)
         async def process_one(specimen: str) -> MetricsRow:
@@ -432,7 +433,7 @@ def build_server(
 
         if failures:
             total_specimens = len(metrics) + len(failures)
-            logger.error(f"{len(failures)}/{total_specimens} specimens failed in {payload.split} split")
+            logger.error(f"{len(failures)}/{total_specimens} train specimens failed")
             # Persist error summary
             errors = [{"type": type(e).__name__, "message": str(e)} for e in failures]
             errors_file = eval_dir / "errors.json"
@@ -449,34 +450,121 @@ def build_server(
 
         budget_remaining = state.budget_limit - state.total_cost if state.budget_limit else None
 
-        # Build output based on split
-        if payload.split == "train":
-            # Train: detailed metrics
-            metrics_dicts = [m.model_dump() for m in metrics]
-            result = EvalSplitOutput(
-                split=payload.split,
-                detailed_metrics=metrics_dicts,
-                specimens=specimens,
-                aggregate_recall=None,
-                aggregate_precision=None,
-                specimen_count=None,
-                issue_count=None,
-                cost=cost,
-                total_cost_so_far=state.total_cost,
-                budget_remaining=budget_remaining,
-                eval_dir=_translate_host_path(eval_dir),
+        # Train: detailed metrics
+        metrics_dicts = [m.model_dump() for m in metrics]
+        result = EvalTrainSplitOutput(
+            detailed_metrics=metrics_dicts,
+            specimens=specimens,
+            cost=cost,
+            total_cost_so_far=state.total_cost,
+            budget_remaining=budget_remaining,
+            eval_dir=_translate_host_path(eval_dir),
+        )
+        (eval_dir / "train_results.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
+        return result
+
+    @mcp.tool(flat=True)
+    async def eval_valid_split(payload: EvalSplitInput) -> EvalValidSplitOutput:
+        """Check validation recall (YOUR OPTIMIZATION TARGET).
+
+        Use this to:
+        - Measure how well your prompt generalizes
+        - Check if improvements on train transfer to validation
+        - Get your proxy metric for final test performance
+
+        Returns ONLY aggregate metrics by design (prevents overfitting):
+        - aggregate_recall: Your target metric
+        - aggregate_precision: May be low due to sparse labeling
+        - No per-specimen details (intentional)
+        """
+        prompt_text = _read_prompt_file(payload.prompt_path)
+        specimens = get_valid_specimens()
+
+        # Budget check before starting work
+        state.check_budget_before_work()
+
+        # Create eval directory
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        eval_dir = evals_dir / f"eval_{ts}"
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        (eval_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
+        logger.info("eval_valid_split: %s", eval_dir)
+
+        # Process each specimen once (in parallel)
+        async def process_one(specimen: str) -> MetricsRow:
+            """Process one specimen and return metrics with cost."""
+            out_dir = eval_dir / specimen
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            # Set up cost tracking (no RichDisplayHandler here - created inside with servers)
+            cost_tracker = CostTrackingHandler()
+            extra_handlers = (cost_tracker,)
+
+            # Run critic
+            critic_obj = await _run_critic_for_specimen(
+                specimen,
+                prompt_text,
+                client,
+                eval_dir,
+                agent_model=agent_model,
+                extra_handlers=extra_handlers,
+                verbose=state.verbose,
+                verbose_prefix=f"  [{specimen}] ",
             )
-            (eval_dir / "train_results.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
-            return result
-        # valid
-        # Valid: aggregates only
+            critic_cost = cost_tracker.total_cost
+
+            # Reset for grader
+            cost_tracker.total_cost = 0.0
+
+            # Run grader
+            grade_obj = await grade_critic_output(
+                specimen,
+                critic_obj,
+                client,
+                transcript_out_dir=out_dir,
+                extra_handlers=extra_handlers,
+                verbose=state.verbose,
+                verbose_prefix=f"  [{specimen}] ",
+            )
+            grader_cost = cost_tracker.total_cost
+
+            (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
+
+            # Construct MetricsRow with nested GradeMetrics
+            total_specimen_cost = critic_cost + grader_cost
+            return MetricsRow(specimen=specimen, metrics=grade_obj.metrics, cost=total_specimen_cost)
+
+        # Run all specimens in parallel (each processed exactly once)
+        results = await asyncio.gather(*[process_one(s) for s in specimens], return_exceptions=True)
+
+        # Separate successes from failures
+        metrics: list[MetricsRow] = [r for r in results if not isinstance(r, BaseException)]
+        failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
+
+        if failures:
+            total_specimens = len(metrics) + len(failures)
+            logger.error(f"{len(failures)}/{total_specimens} validation specimens failed")
+            # Persist error summary
+            errors = [{"type": type(e).__name__, "message": str(e)} for e in failures]
+            errors_file = eval_dir / "errors.json"
+            errors_file.write_text(json.dumps(errors, indent=2), encoding="utf-8")
+            # Translate host path to container path for error message
+            container_errors_path = _translate_host_path(errors_file)
+            raise RuntimeError(
+                f"{len(failures)}/{len(results)} specimens failed. See {container_errors_path} for details."
+            )
+
+        # Calculate total cost from MetricsRow.cost
+        cost = sum(m.cost for m in metrics)
+        state.total_cost += cost
+
+        budget_remaining = state.budget_limit - state.total_cost if state.budget_limit else None
+
+        # Valid: aggregates only (prevents overfitting)
         agg_recall = sum(m.metrics.recall for m in metrics) / len(metrics) if metrics else 0.0
         agg_precision = sum(m.metrics.precision for m in metrics) / len(metrics) if metrics else 0.0
 
-        result = EvalSplitOutput(
-            split=payload.split,
-            detailed_metrics=None,
-            specimens=None,
+        result = EvalValidSplitOutput(
             aggregate_recall=agg_recall,
             aggregate_precision=agg_precision,
             specimen_count=len(metrics),

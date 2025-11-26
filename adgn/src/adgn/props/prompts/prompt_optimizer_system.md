@@ -173,36 +173,47 @@ Tool will raise error if budget exceeded before starting work.
 
 ### eval_specimen(prompt_path, specimen)
 - **Purpose:** Test on full specimen
-- **Cost:** Medium (full specimen review)
+- **Cost:** ~$0.10-0.15 per specimen (measured)
 - **Returns:** expected, reported, true_positives, false_positive, unknown, false_negatives, precision, recall
 - **Caveat:** Precision may be low due to sparse labeling (only issues that bothered annotator)
 
-### eval_split(prompt_path, split: "train"|"valid")
-- **Purpose:** Evaluate on full split
-- **Cost:** ~$0.70 per split (measured on 3-specimen valid split)
-- **Returns:**
-  - split="train": detailed_metrics (per-specimen list), specimens list
-  - split="valid": aggregate_recall, aggregate_precision, specimen_count, issue_count
-    - **Note:** detailed_metrics and specimens are intentionally null for valid (prevents overfitting)
-  - split="test": raises error (hidden from you)
+### eval_train_split(prompt_path)
+- **Purpose:** Analyze train split with detailed per-specimen metrics
+- **Cost:** ~$0.70 (measured on current train split)
+- **Use for:** Understanding which specimens struggle, identifying failure patterns
+- **Returns:** detailed_metrics (per-specimen list), specimens list
+
+### eval_valid_split(prompt_path)
+- **Purpose:** Check validation recall (YOUR OPTIMIZATION TARGET)
+- **Cost:** ~$0.70 (measured on 3-specimen valid split)
+- **Use for:** Validating that prompt improvements generalize
+- **Returns:** aggregate_recall (your target), aggregate_precision, specimen_count, issue_count
+- **IMPORTANT:** Returns ONLY aggregates by design (no per-specimen details)
+  - Prevents overfitting to validation specimens
+  - Provides minimal information intentionally
 
 **Iteration strategy (cheap → expensive):**
 1. **Start small on train**: Test hypotheses cheaply before committing budget
    - File-level: `eval_file()` on 2-3 train files where best prompt failed (fastest)
    - Specimen-level: `eval_specimen()` on 2-3 train specimens (faster than full split)
    - Iterate quickly to debug specific patterns
-2. **Expand to full train split**: `eval_split(split="train")` for comprehensive train analysis
+2. **Expand to full train split**: `eval_train_split()` for comprehensive analysis
    - Only run when you have a promising candidate
-   - Use detailed metrics to identify remaining failure patterns
-3. **Validate generalization**: `eval_split(split="valid")` to check your optimization target
-   - This is expensive - only run when confident in improvements
-   - Validation recall is your proxy for test performance
+   - Returns detailed per-specimen metrics to identify remaining failure patterns
+   - Same cost as validation (~$0.70) but provides much more information
+3. **Validate generalization**: `eval_valid_split()` to check your optimization target
+   - **Use sparingly** - provides minimal information (only aggregates)
+   - Returns ONLY aggregate_recall (your target metric)
+   - No per-specimen details by design (prevents overfitting)
+   - Only run when you're confident in improvements and want to check generalization
 4. **Monitor budget**: Check `budget_remaining` after each call to plan remaining iterations
 
 **Budget management:**
-- Don't run full splits early - you'll waste budget on unpromising prompts
+- Don't run splits early - you'll waste budget on unpromising prompts
 - Use file/specimen evals on small N for rapid iteration
-- Reserve most budget for validation checks of your best candidates
+- `eval_train_split()` is same cost as `eval_valid_split()` but gives WAY more information
+  - Prefer train for analysis, valid only for final validation checks
+- Reserve validation checks for your best 2-3 candidates only
 
 ## Available Data
 
