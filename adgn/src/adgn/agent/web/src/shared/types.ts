@@ -77,13 +77,9 @@ export type SamplingSnapshot = {
 }
 
 // ---- Approval policy (shared) ----
-export type PolicyErrorCode = 'read_error' | 'parse_error'
 
 export type PolicyError = {
   stage: 'read' | 'parse' | 'tests'
-  code: PolicyErrorCode
-  index?: number
-  length?: number
   message?: string | null
 }
 
