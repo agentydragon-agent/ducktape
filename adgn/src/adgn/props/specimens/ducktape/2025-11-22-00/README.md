@@ -1,6 +1,6 @@
-# Specimen: 2025-11-22-post-fixes
+# Specimen: 2025-11-22-00
 
-Bug fixes and improvements applied after reviewing findings from specimen 2025-11-22-repo-2.
+Bug fixes and improvements applied after reviewing findings from specimen 2025-11-22-02.
 
 ## Scope
 
