@@ -48,14 +48,16 @@ export class AgentMcpClient {
    * Call an MCP tool.
    *
    * Tool names are automatically prefixed with agent ID if configured.
-   * Example: 'approve_call' becomes '{agentId}.approve_call'
+   * Example: 'approve_call' becomes '{agentId}_approve_call'
+   *
+   * FastMCP compositor prefixes tools as: {server}_{tool}
    *
    * @param name - Tool name (without agent prefix)
    * @param args - Tool arguments
    * @returns Tool result (parsed from first content item)
    */
   async callTool<T = unknown>(name: string, args: Record<string, unknown> = {}): Promise<T> {
-    const toolName = this.agentId ? `${this.agentId}.${name}` : name
+    const toolName = this.agentId ? `${this.agentId}_${name}` : name
     const result = await this.client.callTool({ name: toolName, arguments: args })
     if (result.content && result.content.length > 0) {
       const first = result.content[0]
@@ -74,13 +76,15 @@ export class AgentMcpClient {
    * Read an MCP resource.
    *
    * Resource URIs are automatically prefixed with agent ID if configured.
-   * Example: 'approvals://pending' becomes '{agentId}:approvals://pending'
+   * FastMCP uses add_resource_prefix() with compositor.resource_prefix_format.
+   * TODO: Verify correct resource prefix format from FastMCP defaults.
    *
    * @param uri - Resource URI (without agent prefix)
    * @returns Resource contents (parsed from first content item)
    */
   async readResource<T = unknown>(uri: string): Promise<T> {
-    const resourceUri = this.agentId ? `${this.agentId}:${uri}` : uri
+    // TODO: This prefix format may be wrong - need to check FastMCP's resource_prefix_format
+    const resourceUri = this.agentId ? `compositor://${this.agentId}/${uri}` : uri
     const result = await this.client.readResource({ uri: resourceUri })
     if (result.contents && result.contents.length > 0) {
       const first = result.contents[0]
@@ -96,6 +100,7 @@ export class AgentMcpClient {
    * Subscribe to an MCP resource and poll for updates.
    *
    * Resource URIs are automatically prefixed with agent ID if configured.
+   * TODO: Verify correct resource prefix format from FastMCP defaults.
    *
    * Note: This implementation uses polling since MCP notifications aren't reliably
    * delivered in all transport modes. The callback will be invoked whenever the
@@ -111,7 +116,8 @@ export class AgentMcpClient {
     callback: (data: T) => void,
     pollIntervalMs: number = 1000
   ): Promise<() => void> {
-    const resourceUri = this.agentId ? `${this.agentId}:${uri}` : uri
+    // TODO: This prefix format may be wrong - need to check FastMCP's resource_prefix_format
+    const resourceUri = this.agentId ? `compositor://${this.agentId}/${uri}` : uri
     await this.client.subscribeResource({ uri: resourceUri })
 
     let active = true
@@ -144,7 +150,7 @@ export class AgentMcpClient {
     return () => {
       active = false
       // Unsubscribe from resource
-      const resourceUri = this.agentId ? `${this.agentId}:${uri}` : uri
+      const resourceUri = this.agentId ? `compositor://${this.agentId}/${uri}` : uri
       this.client.unsubscribeResource({ uri: resourceUri }).catch(e => {
         console.warn(`Failed to unsubscribe from ${resourceUri}:`, e)
       })
