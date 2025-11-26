@@ -75,24 +75,166 @@ Removed:
 
 Committed in: `fb481138 refactor(adgn): remove dead WebSocket infrastructure`
 
-## Phase 2: Frontend MCP Client Infrastructure
+## Phase 2: Wire Existing Approvals Server ⚠️ IN PROGRESS
 
-### Task 2.1: Add MCP SDK Dependency
-**Priority**: High
-**Estimate**: 10 minutes
+### Task 2.1: Add __init__.py to approvals module
+**Status**: TODO
 
-**Command**:
+Create `adgn/src/adgn/mcp/approvals/__init__.py`:
+```python
+from .server import attach_approvals, make_approvals_server, APPROVALS_SERVER_NAME
+
+__all__ = ["attach_approvals", "make_approvals_server", "APPROVALS_SERVER_NAME"]
+```
+
+### Task 2.2: Wire approvals server to agent compositor
+**Status**: TODO
+**File**: `adgn/src/adgn/agent/runtime/container.py`
+
+Add approvals server mounting after chat servers (around line 620):
+```python
+# After attach_persisted_chat_servers call:
+from adgn.mcp.approvals.server import attach_approvals
+
+# Mount approvals server with ApprovalHub
+await attach_approvals(self._compositor, hub=self.approval_hub)
+```
+
+### Task 2.3: Add pending approvals notification to PolicyGatewayMiddleware
+**Status**: TODO
+**File**: `adgn/src/adgn/mcp/policy_gateway/middleware.py`
+
+Update `pending_notifier` callback to also notify the approvals resource when a new approval is pending (around line 250).
+
+## Phase 3: Frontend MCP Client Infrastructure ❌ NOT STARTED
+
+### Task 3.1: Add MCP SDK Dependency
+**Status**: TODO
+
 ```bash
 cd adgn/src/adgn/agent/web
 pnpm add @modelcontextprotocol/sdk
 ```
 
-### Task 2.2: Create MCP Client Wrapper
-**Priority**: High
-**Estimate**: 2 hours
+### Task 3.2: Create MCP Client Wrapper
+**Status**: TODO
 **New File**: `adgn/src/adgn/agent/web/src/features/mcp/client.ts`
 
-**Implementation**:
+Create client wrapper that connects to `/mcp` endpoint via SSE transport.
+See implementation in appendix below.
+
+### Task 3.3: Create MCP Store Manager
+**Status**: TODO
+**New File**: `adgn/src/adgn/agent/web/src/features/mcp/manager.ts`
+
+Manages per-agent MCP client connections and provides connection status store.
+See implementation in appendix below.
+
+## Phase 4: Migrate Frontend Stores to Existing MCP Resources ❌ NOT STARTED
+
+Focus on using **existing** MCP servers only. Deferred items that require new servers are listed separately.
+
+### Task 4.1: Migrate Approval Actions to MCP Tools ✅ CAN DO NOW
+**Status**: TODO
+**File**: `adgn/src/adgn/agent/web/src/features/chat/stores.ts`
+
+Replace broken HTTP calls with MCP tool calls:
+- `approveCall()` → `mcp.callTool('approvals_approve_call', { call_id })`
+- `denyContinue()` → `mcp.callTool('approvals_deny_continue', { call_id })`
+- `deny()` → `mcp.callTool('approvals_deny_abort', { call_id })`
+
+### Task 4.2: Subscribe to Pending Approvals Resource ✅ CAN DO NOW
+**Status**: TODO
+**File**: `adgn/src/adgn/agent/web/src/features/chat/stores.ts`
+
+Replace WebSocket pending approvals with MCP resource subscription:
+```typescript
+// Subscribe to approvals://pending resource
+const unsubscribe = await mcpClient.subscribeResource<{ pending: PendingApproval[] }>(
+  'approvals://pending',
+  (data) => {
+    const map = new Map(data.pending.map(p => [p.call_id, p]))
+    pendingApprovals.set(map)
+  }
+)
+```
+
+### Task 4.3: Migrate Policy Operations to MCP Tools ✅ CAN DO NOW
+**Status**: TODO
+
+Replace HTTP policy endpoints with existing `approval_policy` server tools:
+- `setPolicy()` → `mcp.callTool('approval_policy.admin_set_policy', { content })`
+- `withdrawProposal()` → `mcp.callTool('approval_policy.proposer_withdraw_proposal', { id })`
+- `approveProposal()` → `mcp.callTool('approval_policy.admin_approve_proposal', { id })`
+- `rejectProposal()` → `mcp.callTool('approval_policy.admin_reject_proposal', { id })`
+
+### Task 4.4: Subscribe to Policy Resources ✅ CAN DO NOW
+**Status**: TODO
+
+Subscribe to policy.py and proposals resources:
+```typescript
+// Subscribe to active policy
+await mcpClient.subscribeResource('resource://approval-policy/policy.py', updatePolicyCallback)
+
+// Subscribe to proposals index
+await mcpClient.subscribeResource('resource://approval-policy/proposals', updateProposalsCallback)
+```
+
+### Task 4.5: Remove WebSocket Import from stores.ts ✅ CAN DO NOW
+**Status**: TODO
+**File**: `adgn/src/adgn/agent/web/src/features/chat/stores.ts`
+
+Remove:
+```typescript
+import { connectWS, type WsClient } from './ws'  // DELETE - file no longer exists
+```
+
+## Phase 5: Update UI Components ❌ NOT STARTED
+
+### Task 5.1: Update Connection Status Display
+**Status**: TODO
+**File**: `adgn/src/adgn/agent/web/src/components/RightSidebar.svelte`
+
+Replace WebSocket connection status with MCP connection status:
+```svelte
+<script>
+  import { mcpManager } from '../features/mcp/manager'
+  const { connectionStatus } = mcpManager
+</script>
+
+{#if !$connectionStatus.connected}
+  <div class="error">MCP disconnected: {$connectionStatus.error || 'Unknown'}</div>
+{/if}
+```
+
+### Task 5.2: Remove WebSocket Connection Calls
+**Status**: TODO
+**File**: `adgn/src/adgn/agent/web/src/components/App.svelte`
+
+Remove `connectAgentWs()` / `disconnectAgentWs()` calls, replace with MCP client connection.
+
+## Deferred: Requires New MCP Servers
+
+These tasks cannot be completed until new MCP servers are created:
+
+### ⏸️ Agent Control Server (send_prompt, abort_run)
+- Current: Frontend calls broken `/api/agents/{id}/prompt` and `/api/agents/{id}/abort`
+- Needs: New MCP server with `send_prompt` and `abort_run` tools
+- When created: Update stores to call MCP tools instead
+
+### ⏸️ Agents Management Server (create_agent, delete_agent, list_agents)
+- Current: Frontend calls `/api/agents` HTTP endpoints
+- Needs: New global MCP server with agent lifecycle tools
+- When created: Update agent stores to use MCP tools
+
+### ⏸️ Agent Status/Snapshot Resources
+- Current: Frontend calls `/api/agents/{id}/snapshot` and `/api/agents/{id}/status`
+- Needs: Expose as MCP resources (`agent://{id}/snapshot`, `agent://{id}/status`)
+- When created: Subscribe to resources instead of polling HTTP
+
+## Appendix: Implementation Details
+
+### MCP Client Wrapper Implementation
 ```typescript
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
