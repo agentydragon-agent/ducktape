@@ -128,13 +128,9 @@ def make_policy_engine(docker_client, sqlite_persistence, request: pytest.Fixtur
 
 
 @pytest.fixture
-async def approval_engine(docker_client, sqlite_persistence) -> ApprovalPolicyEngine:
-    return ApprovalPolicyEngine(
-        docker_client=docker_client,
-        agent_id="tests",
-        persistence=sqlite_persistence,
-        policy_source=load_default_policy_source(),
-    )
+def approval_engine(make_policy_engine) -> ApprovalPolicyEngine:
+    """Default approval engine using the default (approve-all) policy."""
+    return make_policy_engine(load_default_policy_source(), agent_id="tests")
 
 
 @pytest.fixture

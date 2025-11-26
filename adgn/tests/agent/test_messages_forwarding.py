@@ -21,7 +21,14 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 @pytest.fixture
 def approval_policy_reader_allow_all(approval_policy_reader_stub):
-    """Override policy reader with a stub that approves without Docker."""
+    """Override global approval_policy_reader_allow_all with Docker-free stub.
+
+    The global fixture (tests/conftest.py) uses ApprovalPolicyEngine with Docker
+    for realistic policy evaluation. This module tests message forwarding logic
+    that doesn't need real policy execution, so we substitute the stub to:
+    - Avoid Docker dependency for faster, more portable tests
+    - Focus on message threading behavior, not policy evaluation
+    """
     return approval_policy_reader_stub
 
 
