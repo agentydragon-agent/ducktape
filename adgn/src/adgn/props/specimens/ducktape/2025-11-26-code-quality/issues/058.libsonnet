@@ -7,30 +7,13 @@ I.issueOneOccurrence(
     Lines 279-298 define `install_policy_gateway()` which is just a wrapper around
     constructor + `add_middleware()`. This is unnecessary indirection.
 
-    **Current:**
-    ```python
-    def install_policy_gateway(
-        comp: Any,
-        *,
-        hub: ApprovalHub,
-        policy_reader: PolicyReaderStub,
-        pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
-        record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
-    ) -> PolicyGatewayMiddleware:
-        """Install PolicyGatewayMiddleware on a FastMCP-like server."""
-        middleware = PolicyGatewayMiddleware(
-            hub=hub, pending_notifier=pending_notifier, record_outcome=record_outcome, policy_reader=policy_reader
-        )
-        comp.add_middleware(middleware)
-        return middleware
-    ```
+    **Current pattern:**
+    `install_policy_gateway(comp, hub=..., policy_reader=..., ...)` creates a
+    `PolicyGatewayMiddleware` instance, calls `comp.add_middleware(middleware)`, and
+    returns the middleware.
 
-    **Problem:** This is a fancy, confusing wrapper around:
-    1. Create middleware instance
-    2. Call `comp.add_middleware()`
-    3. Return the instance
-
-    Callers can do this themselves in 2 lines. The function adds no value.
+    **Problem:** This is just a wrapper around `middleware = PolicyGatewayMiddleware(...);
+    comp.add_middleware(middleware)`. Callers can do this themselves in 2 lines.
 
     **Fix:** Delete the function. Callers should do:
     ```python

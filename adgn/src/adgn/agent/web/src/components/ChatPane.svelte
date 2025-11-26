@@ -1,6 +1,10 @@
 <script lang="ts">
   import DOMPurify from 'dompurify'
-  import { onMount, onDestroy } from 'svelte'
+  // @ts-ignore – asset URL import handled by Vite
+  import darkThemeUrl from 'highlight.js/styles/github-dark.css?url'
+  // @ts-ignore – asset URL import handled by Vite
+  import lightThemeUrl from 'highlight.js/styles/github.css?url'
+  import { onMount } from 'svelte'
 
   import CollapsedToolsGroup from './CollapsedToolsGroup.svelte'
   import ToolExec from './ToolExec.svelte'
@@ -73,16 +77,6 @@
     }
   }
 
-  // Track whether user is near the bottom; only autoscroll then
-  let stickToBottom = true
-  function onMessagesScroll() {
-    if (!messagesEl) return
-    const { scrollTop, scrollHeight, clientHeight } = messagesEl
-    stickToBottom = scrollTop + clientHeight >= scrollHeight - 8
-  }
-  function scrollToBottom() {
-    if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight
-  }
   onMount(() => {
     requestAnimationFrame(() => {
       promptEl?.focus()
@@ -108,11 +102,6 @@
   // No DOM scanning needed; Marked emits highlighted HTML with 'hljs' class
 
   // Load highlight.js themes via media attributes (no JS toggling needed)
-  // @ts-ignore – asset URL import handled by Vite
-  import lightThemeUrl from 'highlight.js/styles/github.css?url'
-  // @ts-ignore – asset URL import handled by Vite
-  import darkThemeUrl from 'highlight.js/styles/github-dark.css?url'
-
   onMount(() => {
     const ensure = (id: string, href: string, media: string) => {
       if (!document.getElementById(id)) {
@@ -157,24 +146,34 @@
 
   // Precompute blocks for rendering with lookahead
   $: blocks = renderItems($uiStateStore && $uiStateStore.items ? $uiStateStore.items : [])
+
+  // Key function for each blocks - use item ID or first item's ID for groups
+  function blockKey(block: RenderBlock): string {
+    if (block.kind === 'item') {
+      return block.item.id
+    } else {
+      return block.items[0]?.id || 'empty-group'
+    }
+  }
 </script>
 
-<section class="chat">
+<section class="chat" {...$$restProps}>
   {#if $lastErrorStore}
     <div class="error">Error: {$lastErrorStore}</div>
   {/if}
 
-  <div class="messages" bind:this={messagesEl} on:scroll={onMessagesScroll}>
+  <div class="messages" bind:this={messagesEl}>
     {#if !$uiStateStore || !($uiStateStore.items && $uiStateStore.items.length)}
       <div class="empty">No messages yet.</div>
     {:else}
       {#key $uiStateStore.seq}
-        {#each blocks as block, i}
+        {#each blocks as block, i (blockKey(block))}
+          {@const nextBlock = blocks[i + 1]}
+          {@const isNextEndTurn = nextBlock?.kind === 'item' && nextBlock.item.kind === 'EndTurn'}
           <div
             class="msg"
             class:endturn={block.kind === 'item' && block.item.kind === 'EndTurn'}
-            class:no-border={blocks[i + 1]?.kind === 'item' &&
-              blocks[i + 1].item.kind === 'EndTurn'}
+            class:no-border={isNextEndTurn}
           >
             {#if block.kind === 'group'}
               <CollapsedToolsGroup items={block.items} />
@@ -184,20 +183,22 @@
               </div>
               <div class="text">{block.item.text}</div>
             {:else if block.kind === 'item' && block.item.kind === 'AssistantMarkdown'}
+              {@const markdownItem = block.item}
               <div class="header">
                 <div class="kind">AssistantMarkdown</div>
                 <button
                   class="copy"
                   title="Copy text"
-                  on:click={() => copyText(block.item.md || '')}>Copy</button
+                  on:click={() => copyText(markdownItem.md || '')}>Copy</button
                 >
               </div>
               {#if renderMarkdown}
                 <div class="text md">
-                  {@html DOMPurify.sanitize(renderMarkdownHtml(block.item.md || ''))}
+                  <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                  {@html DOMPurify.sanitize(renderMarkdownHtml(markdownItem.md || ''))}
                 </div>
               {:else}
-                <div class="text">{block.item.md}</div>
+                <div class="text">{markdownItem.md}</div>
               {/if}
             {:else if block.kind === 'item' && block.item.kind === 'EndTurn'}
               <div class="end-turn-separator"></div>

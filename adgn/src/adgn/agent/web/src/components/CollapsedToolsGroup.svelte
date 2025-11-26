@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { SvelteMap } from 'svelte/reactivity'
+  import { z } from 'zod'
+
   import JsonDisclosure from './JsonDisclosure.svelte'
   import {
     LEAN_BROWSER_LABELS,
@@ -11,8 +14,8 @@
   export let items: ToolItem[] = []
 
   // Persist expansion by group anchor (first item id) across UI updates
-  const EXPANDED_BY_ANCHOR: Map<string, string | null> =
-    (globalThis as any).__adgn_ctg_expanded || new Map()
+  const EXPANDED_BY_ANCHOR: SvelteMap<string, string | null> =
+    (globalThis as any).__adgn_ctg_expanded || new SvelteMap()
   ;(globalThis as any).__adgn_ctg_expanded = EXPANDED_BY_ANCHOR
   // index of expanded item within items, or null
   let expanded: number | null = null
@@ -78,8 +81,6 @@
   }
 
   // For JSON content, display structured_content when present, else raw result
-  import { z } from 'zod'
-
   const CallToolResultZ = z.object({ structured_content: z.unknown().optional() }).passthrough()
   function jsonOutput(it: ToolItem): unknown {
     const c: any = it?.content
@@ -99,7 +100,7 @@
   <div class="inline-list">
     {#if allSameTool}
       {@const label = collapsedLabelFor(items[0])}
-      {#each items as it, idx}
+      {#each items as it, idx (it.id)}
         {@const err = isError(it)}
         <button
           type="button"
@@ -119,7 +120,7 @@
       {/each}
       <span class="group-label">{label}</span>
     {:else}
-      {#each items as it, idx}
+      {#each items as it, idx (it.id)}
         {@const err = isError(it)}
         <button
           type="button"

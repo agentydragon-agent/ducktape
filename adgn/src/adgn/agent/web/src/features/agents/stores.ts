@@ -1,7 +1,7 @@
 import { writable, get } from 'svelte/store'
 import { z } from 'zod'
 
-import { backendOrigin, listAgents, getAgentStatus } from './api'
+import { listAgents } from './api'
 import { currentAgentId, setAgentId } from '../../shared/router'
 
 import type { AgentRow, AgentStatus } from '../../shared/types'
@@ -186,7 +186,9 @@ export function stopAgentsWs(): void {
   if (_ws) {
     try {
       _ws.close()
-    } catch {}
+    } catch {
+      // Ignore websocket close errors
+    }
   }
   _ws = null
 }

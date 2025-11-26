@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
+
   import ModalBackdrop from './ModalBackdrop.svelte'
   import SidebarToggle from './SidebarToggle.svelte'
   import {
     deleteAgent as apiDeleteAgent,
-    createAgent as apiCreateAgent,
     listPresets,
     createAgentFromPreset,
   } from '../features/agents/api'
@@ -13,7 +14,7 @@
 
   import type { AgentRow } from '../shared/types'
 
-  export let onStartResize: (e: MouseEvent) => void
+  export let onStartResize: (_e: MouseEvent) => void
 
   $: agentList = $agents as AgentRow[]
   $: selected = $currentAgentId
@@ -25,7 +26,6 @@
   let modalPreset: string | null = null
   let modalSystem: string = ''
   // Restore scroll position
-  import { onMount, onDestroy } from 'svelte'
 
   async function refreshPresets() {
     try {
@@ -38,14 +38,16 @@
         }
       }
     } catch {
-      // ignore refresh failure
+      // Ignore refresh failure - UI continues with empty preset list
     }
   }
   onMount(() => {
     try {
       const saved = localStorage.getItem('agentsSidebarScrollTop')
       if (saved && listEl) listEl.scrollTop = parseInt(saved, 10) || 0
-    } catch {}
+    } catch {
+      // Ignore localStorage errors - scroll position is not critical
+    }
     // Initial load
     refreshPresets()
     // Auto-refresh on focus and tab visibility
@@ -108,11 +110,6 @@
     }
   }
 
-  async function createNewAgent() {
-    // legacy path if modal not used
-    openPresetDialog()
-  }
-
   async function doDelete(id: string) {
     try {
       const body = await apiDeleteAgent(id)
@@ -123,17 +120,6 @@
       confirmingId = null
     } catch (e) {
       console.warn('delete failed', e)
-    }
-  }
-
-  async function createFromPreset() {
-    if (!selectedPreset) return
-    try {
-      const body = await createAgentFromPreset(selectedPreset)
-      const id = body?.id as string
-      if (id) setAgentId(id)
-    } catch (e) {
-      console.warn('create from preset failed', e)
     }
   }
 
@@ -182,10 +168,12 @@
     on:scroll={() => {
       try {
         localStorage.setItem('agentsSidebarScrollTop', String(listEl?.scrollTop || 0))
-      } catch {}
+      } catch {
+        // Ignore localStorage errors - scroll position persistence is not critical
+      }
     }}
   >
-    {#each agentList as a}
+    {#each agentList as a (a.id)}
       <div
         class="agent-row {a.id === selected ? 'current' : ''}"
         title={lastUpdatedTitle(a)}
@@ -280,7 +268,7 @@
           <div class="row">
             <label for="modal-preset" style="min-width: 80px;">Preset</label>
             <select id="modal-preset" bind:value={modalPreset} style="flex: 1;">
-              {#each presets as p}
+              {#each presets as p (p.name)}
                 <option value={p.name}>{p.name}{p.description ? ` — ${p.description}` : ''}</option>
               {/each}
             </select>

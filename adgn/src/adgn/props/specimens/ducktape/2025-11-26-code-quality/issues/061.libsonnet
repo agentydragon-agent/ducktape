@@ -33,46 +33,15 @@ I.issueOneOccurrence(
     4. No reuse - every test/fixture creates its own instance
 
     **Fix:** Create shared pytest fixtures in `conftest.py`:
+    - `compositor()` fixture - returns `Compositor("comp")` with function scope
+    - `compositor_client(compositor)` - yields Client session contextmanager
+    - `resources_server(compositor)` - creates resources server from compositor
+    - `resources_client(resources_server)` - yields resources client session
+
+    Then replace all 13 direct `Compositor("comp")` instantiations with fixture parameters:
     ```python
-    @pytest.fixture(scope="function")
-    async def compositor():
-        """Fresh Compositor instance for each test.
-
-        No explicit cleanup - compositor will be garbage collected after test completes.
-        This follows the production pattern where Compositor manages its own lifecycle.
-        """
-        return Compositor("comp")
-
-    @pytest.fixture
-    async def compositor_client(compositor):
-        """Client connected to compositor."""
-        async with Client(compositor) as client:
-            yield client
-
-    @pytest.fixture
-    async def resources_server(compositor):
-        """Resources server for the compositor."""
-        return make_resources_server(compositor=compositor)
-
-    @pytest.fixture
-    async def resources_client(resources_server):
-        """Client for resources server."""
-        async with Client(resources_server) as client:
-            yield client
-    ```
-
-    **Then replace all direct instantiations:**
-    ```python
-    # Before:
-    async def test_something():
-        comp = Compositor("comp")
-        async with Client(comp) as client:
-            ...
-
-    # After:
-    async def test_something(compositor, compositor_client):
-        # Just use the fixtures directly
-        ...
+    # Before: async def test_something(): comp = Compositor("comp"); ...
+    # After:  async def test_something(compositor): ...
     ```
 
     **Benefits:**

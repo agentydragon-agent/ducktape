@@ -84,10 +84,11 @@
     <!-- Live mounts summary (derived from snapshots; updates on MCP notifications) -->
     {#if Array.isArray($mcpServerEntriesStore) && $mcpServerEntriesStore.length}
       <div class="mounts">
-        {#each $mcpServerEntriesStore as m}
+        {#each $mcpServerEntriesStore as m (m.name)}
+          {@const errorMsg = m.state === 'failed' ? m.error : null}
           <div
             class="mount-item"
-            title={`server ${m.name}: ${m.state}${m.error ? ' — ' + m.error : ''}`}
+            title={`server ${m.name}: ${m.state}${errorMsg ? ' — ' + errorMsg : ''}`}
           >
             <span class="dot {m.state === 'running' ? 'on' : 'off'}"></span>
             <span class="name">{m.name}</span>

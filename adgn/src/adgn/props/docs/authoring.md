@@ -223,7 +223,7 @@ References to external code should be:
 - Assume reader can look up exact code at cited lines
 
 **Rationale brevity:**
-- **Keep "why this is bad" brief or omit it when obvious**: Dead code, obvious bugs, or issues where the test description makes the problem clear don't need lengthy explanations.
+- **Keep "why this is bad" brief or omit it when obvious**: Dead code, obvious bugs, or issues where the issue description makes the problem clear don't need lengthy explanations.
 - Focus rationale on what's wrong and the correct approach; skip redundant justifications.
 
 ```jsonnet

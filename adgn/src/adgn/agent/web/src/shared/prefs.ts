@@ -24,7 +24,9 @@ function load(): Prefs {
         showAgentsSidebar: obj.showAgentsSidebar ?? true,
       }
     }
-  } catch {}
+  } catch {
+    // Ignore localStorage or parse errors - fall through to defaults
+  }
   return {
     renderMarkdown: true,
     leftSidebarWidth: 220,
@@ -40,5 +42,7 @@ export const prefs = writable<Prefs>(load())
 prefs.subscribe((p) => {
   try {
     localStorage.setItem(KEY, JSON.stringify(p))
-  } catch {}
+  } catch {
+    // Ignore localStorage errors - preferences won't persist but app continues
+  }
 })

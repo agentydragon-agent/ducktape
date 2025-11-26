@@ -29,30 +29,15 @@ I.issueOneOccurrence(
     6. Magic constants duplicated across call sites instead of centralized
 
     **Better approach:**
-    ```python
-    # Constants defined once
-    MAX_PROMPT_CONTEXT_CHARS = 100_000
-    TRUNCATION_NOTE = "[Context truncated to 100k characters]"
+    Replace `_cap_append()` with `join_with_truncation(parts, max_chars, note)` that:
+    1. Takes complete list of parts (already built)
+    2. Joins all parts with `"".join(parts)`
+    3. Truncates once at end if `len(result) > max_chars`
+    4. Returns truncated string + note
 
-    def join_with_truncation(parts: list[str], max_chars: int, note: str) -> str:
-        """Join parts, truncating if needed."""
-        result = "".join(parts)
-        if len(result) > max_chars:
-            return result[:max_chars] + note + "\n"
-        return result
-
-    # Caller just builds list - no mention of truncation:
-    parts = [
-        "$ git status --porcelain\n",
-        _format_status_porcelain(repo) + "\n",
-        f"$ {ns_header}\n",
-        _format_name_status(repo, include_all) + "\n",
-        # ... etc
-    ]
-    return join_with_truncation(parts, MAX_PROMPT_CONTEXT_CHARS, TRUNCATION_NOTE)
-    ```
-
-    Constants appear once. Truncation happens once at the end.
+    Callers build full parts list using plain `list.append()` or list literals, then call
+    `join_with_truncation()` once at the end. Constants `MAX_PROMPT_CONTEXT_CHARS` and
+    `TRUNCATION_NOTE` defined once at module level, not repeated at call sites.
 
     **Benefits:**
     1. Caller doesn't think about truncation - just builds list of parts

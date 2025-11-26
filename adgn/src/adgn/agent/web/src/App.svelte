@@ -9,7 +9,6 @@
   import { stopAgentStatusPolling } from './features/agents/stores'
   import { disconnectAgentWs } from './features/chat/stores'
   import { initAgentUiController } from './features/controller'
-  import { LEFT_MIN, LEFT_MAX } from './shared/layout'
   import { prefs } from './shared/prefs'
   import { currentAgentId as currentAgentIdStore, setAgentId } from './shared/router'
 
@@ -23,28 +22,10 @@
   })
 
   // Resize functionality
-  let isResizing = false
   let isLeftResizing = false
   let isSplitResizing = false
   const SPLIT_MIN_TOP = 120
   const SPLIT_MIN_BOTTOM = 180
-  function startResize() {
-    isResizing = true
-    document.addEventListener('mousemove', handleResize)
-    document.addEventListener('mouseup', stopResize)
-  }
-
-  function handleResize(e: MouseEvent) {
-    if (!isResizing) return
-    // No-op: right sidebar removed
-  }
-
-  function stopResize() {
-    isResizing = false
-    document.removeEventListener('mousemove', handleResize)
-    document.removeEventListener('mouseup', stopResize)
-  }
-  // Right sidebar removed; no keyboard handler needed for width
 
   function startLeftResize() {
     isLeftResizing = true

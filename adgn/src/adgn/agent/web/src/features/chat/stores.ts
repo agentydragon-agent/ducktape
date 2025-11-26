@@ -60,7 +60,9 @@ export function connectAgentWs(agentId: string) {
     try {
       closingIntentional = true
       client.close()
-    } catch {}
+    } catch {
+      // Ignore errors
+    }
   }
   hadErrorPayload = false
   client = connectWS(agentId, {
@@ -120,7 +122,9 @@ export async function approve(call_id: string) {
   }
   try {
     await refreshSnapshot()
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 export async function denyContinue(call_id: string) {
   const id = get(currentAgentId)
@@ -132,7 +136,9 @@ export async function denyContinue(call_id: string) {
   }
   try {
     await refreshSnapshot()
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 export async function deny(call_id: string) {
   const id = get(currentAgentId)
@@ -144,7 +150,9 @@ export async function deny(call_id: string) {
   }
   try {
     await refreshSnapshot()
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 export async function setPolicy(content: string, proposal_id?: string) {
   const id = get(currentAgentId)
@@ -156,7 +164,9 @@ export async function setPolicy(content: string, proposal_id?: string) {
   }
   try {
     await refreshSnapshot()
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 export async function approveProposal(proposal_id: string) {
   const id = get(currentAgentId)
@@ -169,7 +179,9 @@ export async function approveProposal(proposal_id: string) {
   }
   try {
     await refreshSnapshot()
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 export async function withdrawProposal(proposal_id: string) {
   const id = get(currentAgentId)
@@ -182,7 +194,9 @@ export async function withdrawProposal(proposal_id: string) {
   // Fallback: actively refresh via HTTP in case push snapshot races the UI
   try {
     await refreshSnapshot()
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 export async function refreshSnapshot() {
   const id = get(currentAgentId)
@@ -205,7 +219,9 @@ export async function abortRun() {
   // Proactively refresh snapshot so UI clears busy state even if no run was active yet
   try {
     await refreshSnapshot()
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 export async function reconfigureMcp(attach?: Record<string, any>, detach?: string[]) {
   const id = get(currentAgentId)
@@ -224,7 +240,9 @@ export async function reconfigureMcp(attach?: Record<string, any>, detach?: stri
   }
   try {
     await refreshSnapshot()
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 
 function handleSnapshot(p: SnapshotPayload) {

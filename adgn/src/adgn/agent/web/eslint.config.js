@@ -5,6 +5,7 @@ import tsparser from '@typescript-eslint/parser';
 import sveltePlugin from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import importPlugin from 'eslint-plugin-import';
+import globals from 'globals';
 
 export default [
   eslint.configs.recommended,
@@ -15,6 +16,9 @@ export default [
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
+      },
+      globals: {
+        ...globals.browser,
       },
     },
     plugins: {
@@ -50,6 +54,7 @@ export default [
           varsIgnorePattern: '^_',
         },
       ],
+      'no-unused-vars': 'off', // Use @typescript-eslint version instead
 
       // General code quality
       'no-console': ['warn', { allow: ['warn', 'error'] }],
@@ -65,6 +70,9 @@ export default [
         parser: tsparser,
         ecmaVersion: 'latest',
         sourceType: 'module',
+      },
+      globals: {
+        ...globals.browser,
       },
     },
     plugins: {
@@ -95,6 +103,13 @@ export default [
       'svelte/no-unused-svelte-ignore': 'warn',
 
       // General code quality
+      'no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+        },
+      ],
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       'no-multiple-empty-lines': ['error', { max: 1 }],
     },

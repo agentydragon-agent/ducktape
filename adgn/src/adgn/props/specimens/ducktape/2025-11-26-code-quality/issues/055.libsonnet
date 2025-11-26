@@ -24,25 +24,12 @@ I.issueOneOccurrence(
 
     **Problem:** Clunky conversion between mutable sets and immutable structures.
 
-    **Better approach:** Use a mutable NotificationsBatch directly:
-    ```python
-    # Accumulation storage (mutable NotificationsBatch)
-    self._batch: NotificationsBatch = NotificationsBatch()
-
-    # On add:
-    # ... mutate _batch directly ...
-
-    # On poll:
-    batch = self._batch.model_copy()  # Pydantic copy
-    self._batch = NotificationsBatch()  # Reset
-    return batch
-
-    # On peek:
-    return self._batch.model_copy()
-    ```
-
-    **Or even better:** Make NotificationsBatch have a `.copy()` method or use
-    `.model_copy(deep=True)` if needed.
+    **Better approach:**
+    Replace `dict[str, set[str]]` and `set[str]` with a single mutable `NotificationsBatch`
+    instance (`self._batch`). On add operations, mutate `_batch` directly. On poll, return
+    `self._batch.model_copy()` and reset `_batch = NotificationsBatch()`. On peek, return
+    `self._batch.model_copy()`. This eliminates the conversion logic between sets and frozen
+    structures.
 
     **Benefits:**
     1. Simpler - one data structure instead of two representations

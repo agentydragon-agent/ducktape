@@ -15,7 +15,9 @@ export function initAgentUiController(): () => void {
   // Start agents WS immediately so the sidebar populates on refresh (initial snapshot)
   try {
     startAgentsWs()
-  } catch {}
+  } catch {
+    // Ignore errors when starting agents websocket
+  }
 
   let lastId: string | null = null
   const unsub = currentAgentId.subscribe((id) => {

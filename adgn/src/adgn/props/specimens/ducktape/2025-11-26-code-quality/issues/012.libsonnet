@@ -40,24 +40,9 @@ I.issueOneOccurrence(
     - Harder to track where the client is actually used
 
     **Correct approach:**
-    Make it a local variable and pass it directly:
-
-    ```python
-    docker_client = docker.from_env()
-    app.state.registry = AgentRegistry(
-        persistence=app.state.persistence,
-        model=DEFAULT_MODEL,
-        client_factory=default_client_factory,
-        docker_client=docker_client,
-    )
-    # ... later ...
-    app.state.mcp_registry = InfrastructureRegistry(
-        persistence=app.state.persistence,
-        docker_client=docker_client,
-        mcp_config=MCPConfig(servers={}),
-        initial_policy=None,
-    )
-    ```
+    Change line 155 from `app.state.docker_client = docker.from_env()` to
+    `docker_client = docker.from_env()` (local variable). Then replace both uses
+    of `app.state.docker_client` (lines 160, 188) with `docker_client`.
 
     **Benefits:**
     1. Less global state - cleaner architecture

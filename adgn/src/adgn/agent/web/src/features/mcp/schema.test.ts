@@ -25,7 +25,6 @@ describe('MCP schema (Zod)', () => {
   })
 
   it('rejects legacy sse fields', () => {
-    // @ts-expect-error legacy fields not allowed
     const bad: any = {
       transport: 'sse',
       url: 'http://x',

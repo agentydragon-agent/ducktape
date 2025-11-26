@@ -20,14 +20,12 @@ I.issueOneOccurrence(
     porcelain-format status string with "XY path" lines. At line 735, we only care
     if there are ANY changes, not what they are.
 
-    **Investigation needed:** Check if we can replace with a simpler boolean check:
-    ```python
-    def has_uncommitted_changes(repo: pygit2.Repository) -> bool:
-        """Check if there are any uncommitted changes (staged or unstaged)."""
-        return bool(repo.status())
-    ```
+    **Verified solution:**
+    `repo.status()` returns a dict. `bool(repo.status())` works correctly:
+    - Empty dict (no changes) → False
+    - Non-empty dict (has changes) → True
 
-    **If this works:**
+    **Correct approach:**
     ```python
     if not has_uncommitted_changes(repo):
         print("nothing to commit, working tree clean", file=sys.stderr)

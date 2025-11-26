@@ -21,25 +21,25 @@ I.issueOneOccurrence(
     3. This suggests the persistence layer and application layer use different types
     4. Multiple representations of the same concept = drift risk
 
-    **Investigation needed:**
-    - What type is `rec.status`? (likely `str` from database)
-    - Is there a `PolicyProposal.status` field in the persistence models?
-    - Does the Persistence protocol use a different enum?
-    - Should the database return `ProposalStatus` directly?
+    **Root cause (verified):**
+    The `PolicyProposal` model (adgn/src/adgn/agent/persist/__init__.py) has `status: str`,
+    not `status: ProposalStatus`. The conversion `ProposalStatus(rec.status)` happens at
+    the application boundary (line 293).
 
-    **Likely root cause:**
-    The `PolicyProposal` model in persistence likely has `status: str`, and the
-    conversion happens at the application boundary. This creates potential for:
+    This creates potential for:
     - Invalid status strings in database (not caught by type system)
     - Drift between valid database values and enum values
     - Runtime errors if database contains unexpected status strings
 
     **Correct approach:**
-    1. Check if there's a persistence-layer status enum
-    2. If yes: Ensure it's the same as `ProposalStatus` (no duplication)
-    3. If no: Add validation at the persistence layer so it returns `ProposalStatus` directly
-    4. Ideally: Store enum values in DB, parse to enum on read, so application layer always
-       works with typed enums
+    Change `PolicyProposal.status` from `str` to `ProposalStatus` enum. Pydantic will
+    automatically validate on construction. Then line 293 becomes:
+    ```python
+    ProposalRow(id=rec.id, status=rec.status, ...)  # Already ProposalStatus
+    ```
+
+    No conversion needed - persistence layer enforces the enum, application layer receives
+    typed values.
 
     **Benefits:**
     1. Single source of truth for valid status values

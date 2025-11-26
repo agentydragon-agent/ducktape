@@ -18,12 +18,12 @@ I.issueOneOccurrence(
     2. Full hash is more precise (no collision risk, however tiny)
     3. Using full hash eliminates the `get_short_commitish()` function call
 
-    **Investigation:** Check if there's a reason for the short version:
-    - Human readability? No - cache keys are hashed and stored as filenames
-    - Performance? No - the cache key is hashed, so 7 chars vs 40 chars is negligible
-    - Compatibility? Check if existing cache needs to be preserved
+    **Verified:** No reason for short version:
+    - Human readability? No - cache keys are hashed (SHA256 at line 207) and stored as filenames
+    - Performance? No - hashing 7 vs 40 chars is negligible
+    - Compatibility? Breaking cache is acceptable (it's just an optimization)
 
-    **If no reason for short version:**
+    **Correct approach:**
     ```python
     commitish = str(repo.head.peel(pygit2.Commit).id)
     key = build_cache_key(..., commitish=commitish, ...)

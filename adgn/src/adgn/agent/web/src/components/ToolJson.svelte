@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { z } from 'zod'
+
   import JsonDisclosure from './JsonDisclosure.svelte'
 
-  import type { ToolItem } from '../../shared/types'
+  import type { ToolItem } from '../shared/types'
 
   export let item: ToolItem
 
@@ -25,12 +27,12 @@
   function copyJson() {
     try {
       copyText(JSON.stringify(displayResult ?? {}, null, 2))
-    } catch {}
+    } catch {
+      // Ignore JSON serialization errors
+    }
   }
 
   // Prefer structured_content when present (FastMCP CallToolResult)
-  import { z } from 'zod'
-
   const CallToolResultZ = z.object({ structured_content: z.unknown().optional() }).passthrough()
   const StructuredOutZ = z
     .object({
@@ -40,19 +42,21 @@
     })
     .passthrough()
 
-  function pickDisplayResult(): unknown {
+  let displayResult: unknown = null
+  $: {
     const c = item?.content
     const res: unknown = c && (c as any).content_kind === 'Json' ? (c as any).result : undefined
     if (res && typeof res === 'object') {
       const parsed = CallToolResultZ.safeParse(res)
       if (parsed.success && parsed.data.structured_content !== undefined) {
-        return parsed.data.structured_content
+        displayResult = parsed.data.structured_content
+      } else {
+        displayResult = res
       }
+    } else {
+      displayResult = res
     }
-    return res
   }
-  let displayResult: unknown = null
-  $: displayResult = pickDisplayResult()
   $: errorMessage = (() => {
     const v = displayResult
     if (v && typeof v === 'object') {

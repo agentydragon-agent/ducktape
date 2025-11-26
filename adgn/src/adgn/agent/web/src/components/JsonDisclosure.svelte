@@ -1,6 +1,7 @@
 <script lang="ts">
   // @ts-ignore - library ships no types
   import JSONFormatter from 'json-formatter-js'
+  import { onMount } from 'svelte'
 
   export let label: string
   export let value: any = null
@@ -8,14 +9,15 @@
   export let persistKey: string | null = null
 
   let openState: boolean = open
-  import { onMount } from 'svelte'
 
   onMount(() => {
     if (persistKey) {
       try {
         const raw = localStorage.getItem(`jsonDisclosure:${persistKey}`)
         if (raw === 'true' || raw === 'false') openState = raw === 'true'
-      } catch {}
+      } catch {
+        // Ignore localStorage errors - disclosure state is not critical
+      }
     }
   })
   function onToggle(e: Event) {
@@ -24,7 +26,9 @@
     if (persistKey) {
       try {
         localStorage.setItem(`jsonDisclosure:${persistKey}`, String(openState))
-      } catch {}
+      } catch {
+        // Ignore localStorage errors - disclosure state is not critical
+      }
     }
   }
 

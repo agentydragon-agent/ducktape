@@ -14,7 +14,8 @@ I.issueOneOccurrence(
     **Problem:** If all callers pass `-m msg`, the message should be an explicit
     parameter. Splitting into separate list arguments obscures the API.
 
-    **Investigation needed:** Check if line 647 is the only caller that uses `-F`.
+    **Verified:** Line 647 is the ONLY caller that uses `-F` flag. Line 591 uses `-m` flag.
+    The function accepts `message_args` but only two callers exist, each using different format.
     If yes, consider making `message: str` a required parameter and handling `-F`
     vs `-m` internally, or making two separate functions.
 

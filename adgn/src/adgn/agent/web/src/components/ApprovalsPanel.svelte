@@ -1,6 +1,10 @@
 <script lang="ts">
-  import type { ApprovalPolicyInfo, Proposal } from '../shared/types'
+  import hljs from 'highlight.js/lib/common'
+
+  import ProposalCard from './ProposalCard.svelte'
+
   import type { Pending } from '../features/chat/stores'
+  import type { ApprovalPolicyInfo, Proposal } from '../shared/types'
 
   export let pending: Pending[] = []
 
@@ -11,12 +15,12 @@
   // Callbacks provided by parent
   export let startEditingPolicy: () => void
   export let cancelEditingPolicy: () => void
-  export let setPolicy: (content: string) => void
-  export let approveProposal: (id: string) => void
-  export let rejectProposal: (id: string) => void
-  export let approve: (call_id: string) => void
-  export let denyContinue: (call_id: string) => void
-  export let deny: (call_id: string) => void
+  export let setPolicy: (_content: string) => void
+  export let approveProposal: (_id: string) => void
+  export let rejectProposal: (_id: string) => void
+  export let approve: (_call_id: string) => void
+  export let denyContinue: (_call_id: string) => void
+  export let deny: (_call_id: string) => void
 
   function prettyArgs(args_json?: string | null) {
     if (!args_json) return ''
@@ -28,7 +32,6 @@
   }
 
   // Syntax highlighting for current policy (Python)
-  import hljs from 'highlight.js/lib/common'
 
   function renderHighlightedPython(src: string): string {
     try {
@@ -37,8 +40,6 @@
       return src
     }
   }
-
-  import ProposalCard from './ProposalCard.svelte'
 
   // Split proposals into open and past for display
   let allProposals: Proposal[] = []
@@ -53,7 +54,8 @@
     {#if !showPolicyEditor}
       {#if approvalPolicy}
         <pre class="policy-content"><code class="hljs language-python"
-            >{@html renderHighlightedPython(approvalPolicy.content)}</code
+            ><!-- eslint-disable-next-line svelte/no-at-html-tags -->
+            {@html renderHighlightedPython(approvalPolicy.content)}</code
           ></pre>
         <button on:click={startEditingPolicy}>Edit Policy</button>
       {:else}
@@ -81,7 +83,7 @@
   {#if allProposals.length > 0}
     <div class="proposals">
       <h4>Open Proposals ({allProposals.length})</h4>
-      {#each allProposals as proposal}
+      {#each allProposals as proposal (proposal.id)}
         <ProposalCard
           {proposal}
           showActions={true}
@@ -97,7 +99,7 @@
     {#if pending.length === 0}
       <div class="empty">None</div>
     {:else}
-      {#each pending as p}
+      {#each pending as p (p.call_id)}
         <div class="approval">
           <div><code>{p.tool_key}</code> <small>({p.call_id})</small></div>
           {#if p.args_json}

@@ -23,9 +23,8 @@ describe('prefs store', () => {
   })
 
   it('persists changes to localStorage', async () => {
-    let snapshot: any
-    const unsub = prefs.subscribe((v) => {
-      snapshot = v
+    const unsub = prefs.subscribe(() => {
+      // Track subscription but don't need value for this test
     })
     prefs.set({
       renderMarkdown: false,

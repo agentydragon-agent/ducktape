@@ -1,7 +1,7 @@
 <script lang="ts">
   import JsonDisclosure from './JsonDisclosure.svelte'
 
-  import type { ToolItem } from '../../shared/types'
+  import type { ToolItem } from '../shared/types'
 
   export let item: ToolItem
 

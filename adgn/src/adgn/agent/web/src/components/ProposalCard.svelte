@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { createPatch } from 'diff'
   import hljs from 'highlight.js/lib/common'
   import { onMount } from 'svelte'
   import { get } from 'svelte/store'
@@ -11,18 +10,8 @@
 
   export let proposal: Proposal
   export let showActions: boolean = false
-  export let onApprove: ((id: string) => void) | undefined
-  export let onReject: ((id: string) => void) | undefined
-
-  type DiffLine = { cls: 'add' | 'del' | 'hunk' | 'meta' | 'ctx'; text: string }
-
-  function normalizePolicy(src: string): string {
-    let t = (src || '').replaceAll('\r\n', '\n').replaceAll('\r', '\n')
-    t = t.replace(/[ \t]+$/gm, '')
-    if (t.length === 0) return t
-    t = t.replace(/\n+$/g, '') + '\n'
-    return t
-  }
+  export let onApprove: ((_id: string) => void) | undefined
+  export let onReject: ((_id: string) => void) | undefined
 
   let source: string | null = null
   let loadError: string | null = null
@@ -53,7 +42,9 @@
   {#if source}
     <details class="proposal-source" open>
       <summary>Proposal source</summary>
-      <pre class="policy-content"><code class="hljs language-python">{@html highlighted}</code
+      <pre class="policy-content"><code class="hljs language-python"
+          ><!-- eslint-disable-next-line svelte/no-at-html-tags -->
+          {@html highlighted}</code
         ></pre>
     </details>
   {:else if loadError}

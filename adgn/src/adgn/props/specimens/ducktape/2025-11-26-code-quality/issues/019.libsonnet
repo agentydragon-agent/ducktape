@@ -29,26 +29,13 @@ I.issueOneOccurrence(
        that generates TypeScript interfaces, but it needs to be extended to also generate Zod schemas
 
     **Correct approach:**
-    Use the pydantic->ts generator to create Zod schemas from the Pydantic models:
-
+    Replace `JSON.parse(text) as AgentList` with Zod validation:
     ```typescript
-    // Generated from Pydantic model via pydantic->ts generator
-    import { AgentListZ } from '../generated/schemas'
+    import { AgentListZ } from '../generated/schemas'  // Generated from Pydantic
 
-    // Parse with runtime validation
-    if (Array.isArray(contents) && contents.length > 0) {
-      const firstContent = contents[0]
-      if (firstContent.type === 'text' && firstContent.text) {
-        const parseResult = AgentListZ.safeParse(JSON.parse(firstContent.text))
-        if (!parseResult.success) {
-          console.error('Invalid AgentList format:', parseResult.error)
-          agentMode = null
-          return
-        }
-        const agentInfo = parseResult.data.agents.find(a => a.agent_id === id)
-        agentMode = agentInfo?.mode ?? null
-      }
-    }
+    const result = AgentListZ.safeParse(JSON.parse(firstContent.text))
+    if (!result.success) { /* handle error */ }
+    const agentInfo = result.data.agents.find(...)
     ```
 
     **Benefits:**

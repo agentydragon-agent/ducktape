@@ -4,9 +4,9 @@ const DEBUG = import.meta.env.DEV
 
 export type WsHandlers = {
   onOpen?: () => void
-  onClose?: (ev: CloseEvent) => void
-  onError?: (ev: Event) => void
-  onMessage?: (p: IncomingPayload) => void
+  onClose?: (_ev: CloseEvent) => void
+  onError?: (_ev: Event) => void
+  onMessage?: (_payload: IncomingPayload) => void
 }
 
 export type WsClient = { close: () => void }
@@ -55,7 +55,9 @@ export function connectWS(agentId: string, handlers: WsHandlers = {}): WsClient 
     close: () => {
       try {
         ws.close()
-      } catch {}
+      } catch {
+        // Ignore errors when closing websocket
+      }
     },
   }
 }

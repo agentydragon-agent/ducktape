@@ -9,27 +9,10 @@ I.issueOneOccurrence(
     variable is never referenced.
 
     **Current pattern:**
-    ```python
-    class _StubGatewaySession:
-        async def subscribe_resource(self, uri: str) -> None:
-            return None
-
-        async def unsubscribe_resource(self, uri: str) -> None:
-            return None
-
-
-    class _StubGatewayClient:
-        def __init__(self) -> None:
-            self.session = _StubGatewaySession()
-
-
-    async def test_something():
-        # ...
-        gw = _StubGatewayClient()  # Created but never used!
-        res_server = make_resources_server(name="resources", compositor=comp)
-        # gw is not passed to make_resources_server or used anywhere
-        # ...
-    ```
+    Tests define `_StubGatewaySession` (with `subscribe_resource`/`unsubscribe_resource` methods)
+    and `_StubGatewayClient` (holds a session), then instantiate `gw = _StubGatewayClient()` but
+    never reference `gw` afterward. The variable is not passed to `make_resources_server()` or
+    used anywhere in the test.
 
     **Problems:**
     1. Dead code - classes are defined but never used
@@ -38,11 +21,11 @@ I.issueOneOccurrence(
        intended for compositor (based on the session methods)
     4. Adds noise to test files
 
-    **Fix:** Delete both classes and the `gw = _StubGatewayClient()` instantiations.
+    **Verified:** The `gw` variable is created but never referenced after instantiation.
+    `make_resources_server(name="resources", compositor=comp)` doesn't accept a gateway_client
+    parameter. The resources server works without it. These stubs are dead code.
 
-    **Investigation:** Check if these were intended to be passed to `make_resources_server()`
-    but aren't actually needed. The resources server seems to work without any gateway client
-    in these tests.
+    **Fix:** Delete both classes and all `gw = _StubGatewayClient()` instantiations.
   |||,
   filesToRanges={
     'adgn/tests/mcp/resources/test_list_changes_subscriptions.py': [

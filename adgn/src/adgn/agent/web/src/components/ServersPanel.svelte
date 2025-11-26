@@ -1,13 +1,18 @@
 <script lang="ts">
-  import type { ServerEntry } from '../../shared/types'
+  // @ts-ignore - library ships no types
+  import JSONFormatter from 'json-formatter-js'
+  import { SvelteMap } from 'svelte/reactivity'
 
-  export let servers: ServerEntry[] = []
-  import { currentAgentId } from '../shared/router'
   import ModalBackdrop from './ModalBackdrop.svelte'
   import { attachMcpServer, detachMcpServer } from '../features/agents/api'
-  import { refreshSnapshot, reconfigureMcp } from '../features/chat/stores'
+  import { refreshSnapshot } from '../features/chat/stores'
   import { MCP_PRESETS } from '../features/mcp/presets'
   import { buildSpecFromForm } from '../features/mcp/schema'
+  import { currentAgentId } from '../shared/router'
+
+  import type { ServerEntry } from '../shared/types'
+
+  export let servers: ServerEntry[] = []
 
   // Info modal state
   let showInfoModal = false
@@ -16,16 +21,13 @@
     infoServer = health
     showInfoModal = true
   }
-  let modalToolExpanded = new Map<string, boolean>()
+  let modalToolExpanded = new SvelteMap<string, boolean>()
   function toggleModalTool(key: string) {
     modalToolExpanded.set(key, !modalToolExpanded.get(key))
     modalToolExpanded = modalToolExpanded
   }
 
   // Collapsible JSON view action
-  // @ts-ignore - library ships no types
-  import JSONFormatter from 'json-formatter-js'
-
   function jsonView(node: HTMLElement, value: any) {
     const prefersDark =
       typeof window !== 'undefined' &&
@@ -260,7 +262,7 @@
               on:change={(e) => applyPresetFrom((e.target as HTMLSelectElement).value)}
             >
               <option value="">Custom</option>
-              {#each MCP_PRESETS as p}
+              {#each MCP_PRESETS as p (p.id)}
                 <option value={p.id}>{p.label}</option>
               {/each}
             </select>
@@ -479,16 +481,16 @@
   </details>
   <h4>MCP Servers</h4>
   {#if servers && servers.length}
-    {#each servers as health}
+    {#each servers as health (health.name)}
       {@const serverName = health.name}
-      {@const serverTools = health.tools ?? []}
+      {@const serverTools = health.state === 'running' ? (health.tools ?? []) : []}
+      {@const errorMsg = health.state === 'failed' ? health.error : null}
+      {@const failureText = errorMsg ? `: ${errorMsg}` : ''}
       <div class="server-item">
         <div class="server-header-row">
           <div
             class="server-header"
-            title={health?.state === 'running'
-              ? 'running'
-              : `failed${health?.error ? ': ' + health.error : ''}`}
+            title={health?.state === 'running' ? 'running' : `failed${failureText}`}
             role="button"
             tabindex="0"
             on:click={() => openInfo(health)}
@@ -501,9 +503,7 @@
           >
             <span
               class="dot {health?.state === 'running' ? 'on' : 'off'}"
-              title={health?.state === 'running'
-                ? 'running'
-                : `failed${health?.error ? ': ' + health.error : ''}`}
+              title={health?.state === 'running' ? 'running' : `failed${failureText}`}
             ></span>
             <span class="server-name">{serverName}</span>
             <span class="tool-count" title={`${serverTools.length} tools`}
@@ -620,7 +620,7 @@
           <h5>Available Tools</h5>
           {#if Array.isArray(infoServer?.tools) && infoServer.tools.length}
             <div class="tools-list modal-tools">
-              {#each infoServer.tools as tool}
+              {#each infoServer.tools as tool (tool.name)}
                 {@const tkey = `${infoServer.name}:${tool?.name ?? ''}`}
                 <div class="tool-item">
                   <button type="button" class="tool-header" on:click={() => toggleModalTool(tkey)}>

@@ -25,30 +25,11 @@ I.issueOneOccurrence(
     used. Comments say it's "no longer used". This is dead code.
 
     **Fix:**
-    ```python
-    async def mount_standard_inproc_servers(*, compositor: Compositor, mount_resources: bool = True) -> None:
-        """Mount standard servers on the given compositor, pinned by default.
-
-        - Always mounts compositor_meta (pinned)
-        - Always mounts compositor_admin (pinned)
-        - Optionally mounts resources (pinned) if mount_resources=True
-        """
-        if mount_resources:
-            await compositor.mount_inproc(
-                "resources",
-                make_resources_server(name="resources", compositor=compositor),
-                pinned=True
-            )
-
-        compmeta_server = make_compositor_meta_server(compositor=compositor, name=COMPOSITOR_META_SERVER_NAME)
-        await compositor.mount_inproc(COMPOSITOR_META_SERVER_NAME, compmeta_server, pinned=True)
-
-        comp_admin = make_compositor_admin_server(compositor=compositor)
-        await compositor.mount_inproc(COMPOSITOR_ADMIN_SERVER_NAME, comp_admin, pinned=True)
-    ```
-
-    Changed `gateway_client: Client | None = None` to `mount_resources: bool = True`
-    to be explicit about intent.
+    1. Delete useless comments (lines 29-30) about gateway_client parameter history
+    2. Inline `res_server` variable - pass `make_resources_server(...)` directly to `mount_inproc()`
+    3. Replace unused `gateway_client: Client | None = None` parameter with explicit
+       `mount_resources: bool = True` to control whether resources server is mounted
+    4. Update docstring to reflect the new parameter
   |||,
   filesToRanges={
     'adgn/src/adgn/mcp/compositor/setup.py': [

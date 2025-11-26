@@ -5,7 +5,9 @@ import { markedHighlight } from 'marked-highlight'
 
 try {
   if (!hljs.getLanguage('cpp')) hljs.registerLanguage('cpp', cppLang)
-} catch {}
+} catch {
+  // Ignore language registration errors
+}
 
 function normalizeLang(lang?: string): string | undefined {
   if (!lang) return undefined

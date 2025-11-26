@@ -13,16 +13,16 @@ I.issueOneOccurrence(
 
     **Question:** Do these handlers need to be first, or is the order arbitrary?
 
-    **For DisplayEventsHandler:** This handler just logs/displays events. It likely
-    doesn't need to be first - it doesn't modify state or make decisions. It's
-    probably fine to just append() instead of insert(0).
+    **Verified:**
+    `DisplayEventsHandler` (adgn/src/adgn/agent/event_renderer.py:19) is a pure observer -
+    only prints events, doesn't modify state or make decisions. It has no side effects that
+    other handlers depend on, so order doesn't matter.
 
-    **Investigation needed:**
-    1. Check if handler order matters for the agent framework
-    2. If DisplayEventsHandler doesn't need to be first, use append()
-    3. If some handlers DO need specific ordering, document why
+    Line 187 context: `handlers = [CommitController(...)]` then optionally inserts
+    DisplayEventsHandler at position 0 if debug enabled. CommitController handles actual
+    logic; DisplayEventsHandler just logs.
 
-    **Likely fix:**
+    **Correct approach:**
     ```python
     # Instead of:
     handlers.insert(0, DisplayEventsHandler(...))
