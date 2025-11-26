@@ -180,7 +180,38 @@ rationale=|||
 **Example from specimen 2025-11-26-code-quality:**
 Issue 039 asks "Check if auto-discovery works" and includes "If auto-discovery doesn't work: Close this issue as invalid." This research should have been completed first - either document that auto-discovery works (with evidence), or don't create the issue.
 
-### 6. Jsonnet Issue File Template
+### 6. Verifiable External References
+
+**When referencing external code, packages, APIs, or documentation, provide verifiable links.**
+
+References to external code should be:
+- **URLs to official documentation** (e.g., library docs, API references)
+- **GitHub/GitLab permalinks with full commit SHAs** (not branch references)
+- **Package registry links** with specific versions (PyPI, npm, etc.)
+- **RFC or specification documents** with section numbers
+
+**❌ Wrong - Unverifiable references:**
+- "Per the library docs..." (which docs? which version?)
+- "GitHub shows an example..." (which repo? which file? which commit?)
+- "The API supports X" (which API version? link to docs?)
+- "According to best practices..." (which best practices? source?)
+
+**✅ Correct - Verifiable references:**
+- "Per pygit2 docs (https://www.pygit2.org/repository.html#pygit2.Repository), `Repository()` accepts..."
+- "See FastAPI example: https://github.com/tiangolo/fastapi/blob/45321abc.../docs/tutorial/path-params.md#predefined-values"
+- "Pydantic TypeAdapter (https://docs.pydantic.dev/2.5/api/type_adapter/) validates..."
+- "Per PEP 484 (https://www.python.org/dev/peps/pep-0484/#forward-references), forward references..."
+
+**When to provide references:**
+- Suggesting a library feature or API method
+- Claiming something is deprecated or recommended
+- Referring to language features or specifications
+- Citing best practices or style guides
+- Mentioning external tools or packages
+
+**Goal:** Anyone reading the issue years later should be able to verify the claims by following the links.
+
+### 7. Jsonnet Issue File Template
 
 **IMPORTANT**: Do NOT include long code blocks in rationale. Readers have specimen code open - cite file paths and line ranges, briefly summarize what's there. Long code citations bloat issue files unnecessarily.
 
@@ -191,18 +222,20 @@ Issue 039 asks "Check if auto-discovery works" and includes "If auto-discovery d
 - ❌ Multiple large code blocks showing variations
 - Assume reader can look up exact code at cited lines
 
+**Rationale brevity:**
+- **Keep "why this is bad" brief or omit it when obvious**: Dead code, obvious bugs, or issues where the test description makes the problem clear don't need lengthy explanations.
+- Focus rationale on what's wrong and the correct approach; skip redundant justifications.
+
 ```jsonnet
 local I = import '../../specimens/lib.libsonnet';
 
 I.issueOneOccurrence(
   rationale=|||
-    Full explanation of the problem.
-
-    Why it's wrong and what the correct approach should be.
+    Description of the problem and correct approach.
     Cite file:line ranges, briefly summarize patterns.
 
     Do NOT paste long code blocks - reader has specimen open.
-    All context and fix recommendations go in rationale.
+    Keep "why this is bad" brief when obvious (dead code, bugs, etc.).
   |||,
   filesToRanges={
     'path/to/file.py': [
@@ -216,7 +249,7 @@ I.issueOneOccurrence(
 )
 ```
 
-### 7. Comments: Use Sparingly
+### 8. Comments: Use Sparingly
 
 **Ideal: Zero comments.** All information should go in structured fields (`rationale`, `filesToRanges`).
 
@@ -246,43 +279,7 @@ This information belongs in `rationale`, not comments. **Delete such blocks.**
 
 **Rule**: If information can go in a structured field, it MUST go there, not in comments.
 
-## Quality Checklist
-
-Before committing a specimen, verify all of these criteria:
-
-### Structure & Organization
-- [ ] **Manifest present**: `manifest.yaml` exists with `source.commit` (full SHA) and `scope` fields
-- [ ] **Issue files**: All issues in `issues/*.libsonnet` (not scattered in other locations)
-- [ ] **One logical issue per file**: Each `.libsonnet` describes ONE logical problem type
-- [ ] **Same issue, one file**: If the same issue occurs multiple times (e.g., "upgrade to new syntax"), all occurrences are in ONE shared issue file
-- [ ] **README minimal or absent**: README only contains cross-cutting context, not issue summaries/details
-
-### Issue Quality
-- [ ] **No open questions**: All research completed (no "Check if X works" or "TODO: investigate")
-- [ ] **Objective descriptions**: No subjective phrasing ("nice pattern", "user mentioned")
-- [ ] **Proper helpers**: Uses correct Jsonnet helpers (`issueOneOccurrence`, `issueOccurrencesFromLines`, etc.)
-- [ ] **Brief code citations**: No long code blocks (>10 lines), reader can look up details. Use brief verbal descriptions when sufficient
-- [ ] **Proper grouping**: Issues grouped by logical problem, not by location
-- [ ] **Complete rationale**: Full explanation of what's wrong, why, and correct approach
-- [ ] **Snapshot-only references**: Rationale only references the repo state in the specimen snapshot (no historical context or external state required)
-- [ ] **Standalone issues**: Each issue Jsonnet file is self-contained and understandable without access to other issue files or non-captured files
-
-### Jsonnet Style
-- [ ] **Triple-bar spacing**: One space before `|||`, two-space indent inside, closing on own line with comma
-- [ ] **Minimal comments**: Prefer structured fields over comments
-- [ ] **Comments only for metadata**: Comments exist only to describe what cannot fit in structured data fields
-- [ ] **No duplicated info**: Comments don't restate what's in rationale
-- [ ] **Valid syntax**: All Jsonnet files compile without errors
-
-### Frozen Snapshot Principle
-- [ ] **No resolution status**: Issue files don't track "COMPLETED" or "Fixed in commit X"
-- [ ] **Historical accuracy**: Issues describe problems as they existed at the snapshot commit
-- [ ] **Immutable**: Specimen remains unchanged after creation (fixes go on separate branches)
-
-### Bundle Integration
-- [ ] **Bundle excludes specimens**: If using bundle source, `.gitattributes` excludes `specimens/` directory
-- [ ] **File size reasonable**: No files >2MB in hydrated specimen
-- [ ] **Scope accurate**: `scope.include` patterns match what was actually analyzed
+@quality-checklist.md
 
 ## Why This Structure?
 

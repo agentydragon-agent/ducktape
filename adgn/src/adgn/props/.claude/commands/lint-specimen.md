@@ -14,43 +14,7 @@ Report only lints/errors and offer concrete fix suggestions. Do not modify files
 
 Do not duplicate requirement lists here. The linter MUST read the authoring guide at runtime and derive all rules from it.
 
-## Quality Checklist
-
-The linter should verify ALL items from the "Quality Checklist" section in the authoring guide, including:
-
-### Structure & Organization
-- [ ] `manifest.yaml` exists with `source.commit` (full SHA) and `scope` fields
-- [ ] All issues in `issues/*.libsonnet` (not scattered elsewhere)
-- [ ] **Each `.libsonnet` describes ONE logical problem type** (not multiple unrelated issues)
-- [ ] **Same issue across multiple locations = ONE shared issues file** (e.g., all "upgrade to new syntax" occurrences together)
-- [ ] README minimal or absent (only cross-cutting context)
-
-### Issue Quality
-- [ ] No open research questions (no "Check if X works" or "TODO: investigate")
-- [ ] Objective descriptions (no subjective phrasing)
-- [ ] Proper Jsonnet helpers used
-- [ ] Brief code citations (no blocks >10 lines, use verbal descriptions when sufficient)
-- [ ] Issues grouped by logical problem, not location
-- [ ] Complete rationale (what's wrong, why, correct approach)
-- [ ] Snapshot-only references (rationale only references repo state in specimen snapshot)
-- [ ] Standalone issues (each Jsonnet file self-contained without other issue files or non-captured files)
-
-### Jsonnet Style
-- [ ] Triple-bar spacing correct (one space before `|||`, two-space indent, closing with comma)
-- [ ] Minimal comments (prefer structured fields)
-- [ ] Comments only for metadata (describe what cannot fit in structured data fields)
-- [ ] No duplicated info in comments
-- [ ] Valid syntax (all files compile)
-
-### Frozen Snapshot Principle
-- [ ] No resolution status tracking
-- [ ] Historical accuracy (describes problems at snapshot commit)
-- [ ] Immutable (specimens don't change after creation)
-
-### Bundle Integration
-- [ ] Bundle excludes specimens directory (if applicable)
-- [ ] No files >2MB in hydrated specimen
-- [ ] Scope accurate
+@../../docs/quality-checklist.md
 
 ## Input
 - Target specimen: path to a specimen directory or any file inside it.
@@ -74,6 +38,7 @@ A textual report of all violations with:
    - Check if same issue appears in multiple files (should be consolidated)
    - Validate against schema
    - Check for unnecessary code blocks (use verbal descriptions when sufficient)
+   - Verify external references are verifiable (docs URLs, GitHub permalinks with SHAs, package versions)
    - Verify rationale only references snapshot state (no historical context)
    - Ensure issue is standalone (no dependencies on other issues or non-captured files)
 6) Check README (if present) for minimal content
