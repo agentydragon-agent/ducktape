@@ -19,20 +19,20 @@ class Split(StrEnum):
 
 # Explicit train/valid/test assignment for each specimen
 # Format: specimen_slug -> split_name
-# Total: 282 issues across 8 specimens (hierarchical specimens only)
+# Total: 353 issues across 8 specimens (hierarchical specimens only)
 # Note: Flat specimen 2025-08-29-pyright_watch_report excluded until migrated
 SPECIMEN_SPLITS: dict[str, Split] = {
     # Train set: 157 issues
-    "ducktape/2025-09-03-llm": Split.TRAIN,  # 71 issues
-    "ducktape/2025-11-20-adgn": Split.TRAIN,  # 45 issues
+    "ducktape/2025-09-03-00": Split.TRAIN,  # 71 issues
+    "ducktape/2025-11-20-00": Split.TRAIN,  # 45 issues
     "crush/2025-08-30-internal_db": Split.TRAIN,  # 41 issues
-    # Validation set: 57 issues
-    "ducktape/2025-11-21-repo": Split.VALID,  # 39 issues
-    "ducktape/2025-11-22-repo": Split.VALID,  # 17 issues
-    "ducktape/2025-11-22-post-fixes": Split.VALID,  # 1 issue
+    # Validation set: 107 issues
+    "ducktape/2025-11-21-00": Split.VALID,  # 39 issues
+    "ducktape/2025-11-22-01": Split.VALID,  # 17 issues
+    "ducktape/2025-11-22-00": Split.VALID,  # 51 issues
     # Test set: 68 issues
-    "ducktape/2025-11-22-repo-2": Split.TEST,  # 37 issues
-    "ducktape/2025-11-20-repo": Split.TEST,  # 31 issues
+    "ducktape/2025-11-22-02": Split.TEST,  # 37 issues
+    "ducktape/2025-11-20-01": Split.TEST,  # 31 issues
 }
 
 
@@ -40,7 +40,7 @@ def get_split(specimen_slug: str) -> Split:
     """Get the train/valid/test split for a specimen.
 
     Args:
-        specimen_slug: Specimen identifier (e.g., "ducktape/2025-11-20-adgn")
+        specimen_slug: Specimen identifier (e.g., "ducktape/2025-11-20-00")
 
     Returns:
         Split.TRAIN, Split.VALID, or Split.TEST
