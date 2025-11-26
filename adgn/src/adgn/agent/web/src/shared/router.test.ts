@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+
 import { getAgentIdFromUrl, setAgentId, currentAgentId } from './router'
 
 describe('router helpers', () => {
@@ -15,7 +16,9 @@ describe('router helpers', () => {
     setAgentId('abc')
     expect(new URL(window.location.href).searchParams.get('agent_id')).toBe('abc')
     let val: string | null = null
-    const unsub = currentAgentId.subscribe(v => { val = v })
+    const unsub = currentAgentId.subscribe((v) => {
+      val = v
+    })
     expect(val).toBe('abc')
     unsub()
   })

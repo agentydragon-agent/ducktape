@@ -128,9 +128,7 @@ async def grade_critic_output(
     await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, server)
 
     # Collect servers for schema extraction
-    servers = {
-        GRADER_SUBMIT_SERVER_NAME: server,
-    }
+    servers = {GRADER_SUBMIT_SERVER_NAME: server}
 
     handlers: list[BaseHandler] = [
         GateUntil(lambda: grader_state.result is not None),
@@ -140,11 +138,7 @@ async def grade_critic_output(
 
     # Add verbose display if requested (with proper server wiring)
     if verbose:
-        handlers.append(RichDisplayHandler(
-            max_lines=10,
-            prefix=verbose_prefix,
-            servers=servers,
-        ))
+        handlers.append(RichDisplayHandler(max_lines=10, prefix=verbose_prefix, servers=servers))
 
     # Add other handlers (e.g., cost tracking)
     handlers.extend(extra_handlers)

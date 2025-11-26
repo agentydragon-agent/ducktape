@@ -22,18 +22,16 @@
   on:keydown={handleKeydown}
 >
   <slot />
-  
 </div>
 
 <style>
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.35);
+    background: rgba(0, 0, 0, 0.35);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 1000;
   }
 </style>
-

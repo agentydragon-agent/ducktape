@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ServerEntry } from '../../shared/types'
+
   export let servers: ServerEntry[] = []
   import { currentAgentId } from '../shared/router'
   import ModalBackdrop from './ModalBackdrop.svelte'
@@ -11,24 +12,41 @@
   // Info modal state
   let showInfoModal = false
   let infoServer: any | null = null
-  function openInfo(health: any) { infoServer = health; showInfoModal = true }
+  function openInfo(health: any) {
+    infoServer = health
+    showInfoModal = true
+  }
   let modalToolExpanded = new Map<string, boolean>()
-  function toggleModalTool(key: string) { modalToolExpanded.set(key, !modalToolExpanded.get(key)); modalToolExpanded = modalToolExpanded }
+  function toggleModalTool(key: string) {
+    modalToolExpanded.set(key, !modalToolExpanded.get(key))
+    modalToolExpanded = modalToolExpanded
+  }
 
   // Collapsible JSON view action
   // @ts-ignore - library ships no types
   import JSONFormatter from 'json-formatter-js'
+
   function jsonView(node: HTMLElement, value: any) {
-    const prefersDark = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+    const prefersDark =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
     const render = (val: any) => {
       node.innerHTML = ''
       let parsed: any = null
       if (val && typeof val === 'object') parsed = val
       else if (typeof val === 'string') {
-        try { parsed = JSON.parse(val) } catch { parsed = null }
+        try {
+          parsed = JSON.parse(val)
+        } catch {
+          parsed = null
+        }
       }
       if (parsed && typeof parsed === 'object') {
-        const fmt = new (JSONFormatter as any)(parsed, 1, { theme: prefersDark ? 'dark' : undefined, hoverPreviewEnabled: true })
+        const fmt = new (JSONFormatter as any)(parsed, 1, {
+          theme: prefersDark ? 'dark' : undefined,
+          hoverPreviewEnabled: true,
+        })
         node.appendChild(fmt.render())
       } else {
         const pre = document.createElement('pre')
@@ -76,7 +94,8 @@
   // per-field validation errors from zod builder + attach gating
   let fieldErrors: Record<string, string[]> = {}
   let topErrors: string[] = []
-  $: attachEnabled = !attaching && !!newName.trim() && !!previewSpec && Object.keys(fieldErrors).length === 0
+  $: attachEnabled =
+    !attaching && !!newName.trim() && !!previewSpec && Object.keys(fieldErrors).length === 0
 
   // reactive preview values
   let previewSpec: any = null
@@ -86,15 +105,32 @@
   $: {
     const res = buildSpecFromForm({
       transport,
-      stdioCommand, stdioArgs, stdioEnv,
-      sseUrl, sseHeaders, sseTimeout, sseReadTimeout,
-      httpUrl, httpHeaders, httpAuth, httpTimeout, httpReadTimeout,
-      inprocFactory, inprocArgs, inprocKwargs,
+      stdioCommand,
+      stdioArgs,
+      stdioEnv,
+      sseUrl,
+      sseHeaders,
+      sseTimeout,
+      sseReadTimeout,
+      httpUrl,
+      httpHeaders,
+      httpAuth,
+      httpTimeout,
+      httpReadTimeout,
+      inprocFactory,
+      inprocArgs,
+      inprocKwargs,
     })
     previewSpec = res.spec ?? null
     fieldErrors = res.fieldErrors || {}
     topErrors = res.errors || []
-    previewJsonStr = (() => { try { return JSON.stringify(previewSpec ?? {}, null, 2) } catch { return '{}' } })()
+    previewJsonStr = (() => {
+      try {
+        return JSON.stringify(previewSpec ?? {}, null, 2)
+      } catch {
+        return '{}'
+      }
+    })()
   }
 
   function applyPresetFrom(id: string) {
@@ -126,46 +162,79 @@
 
   async function onAttach() {
     const agentId = $currentAgentId
-    if (!agentId) { alert('No agent selected'); return }
+    if (!agentId) {
+      alert('No agent selected')
+      return
+    }
     const { spec, fieldErrors: fe } = buildSpecFromForm({
       transport,
-      stdioCommand, stdioArgs, stdioEnv,
-      sseUrl, sseHeaders, sseTimeout, sseReadTimeout,
-      httpUrl, httpHeaders, httpAuth, httpTimeout, httpReadTimeout,
-      inprocFactory, inprocArgs, inprocKwargs,
+      stdioCommand,
+      stdioArgs,
+      stdioEnv,
+      sseUrl,
+      sseHeaders,
+      sseTimeout,
+      sseReadTimeout,
+      httpUrl,
+      httpHeaders,
+      httpAuth,
+      httpTimeout,
+      httpReadTimeout,
+      inprocFactory,
+      inprocArgs,
+      inprocKwargs,
     })
-    if (!newName.trim()) { attachErr = 'Server name required'; return }
-    if (!spec || (fe && Object.keys(fe).length)) { attachErr = 'Please fix highlighted errors'; return }
-    attaching = true; attachErr = null; attachMsg = 'Attaching…'
+    if (!newName.trim()) {
+      attachErr = 'Server name required'
+      return
+    }
+    if (!spec || (fe && Object.keys(fe).length)) {
+      attachErr = 'Please fix highlighted errors'
+      return
+    }
+    attaching = true
+    attachErr = null
+    attachMsg = 'Attaching…'
     try {
       await attachMcpServer(agentId, newName, spec)
       attachMsg = 'Attached. Refreshing…'
-      await new Promise(r => setTimeout(r, 150))
+      await new Promise((r) => setTimeout(r, 150))
       refreshSnapshot()
       attachMsg = 'Attached.'
     } catch (e: any) {
       attachErr = e?.message || String(e)
     } finally {
       attaching = false
-      setTimeout(() => { attachMsg = null; attachErr = null }, 2000)
+      setTimeout(() => {
+        attachMsg = null
+        attachErr = null
+      }, 2000)
     }
   }
 
   async function onDetach(name: string) {
     const agentId = $currentAgentId
-    if (!agentId) { alert('No agent selected'); return }
+    if (!agentId) {
+      alert('No agent selected')
+      return
+    }
     try {
-      attaching = true; attachErr = null; attachMsg = `Detaching ${name}…`
+      attaching = true
+      attachErr = null
+      attachMsg = `Detaching ${name}…`
       await detachMcpServer(agentId, name)
       attachMsg = 'Detached. Refreshing…'
-      await new Promise(r => setTimeout(r, 150))
+      await new Promise((r) => setTimeout(r, 150))
       refreshSnapshot()
       attachMsg = 'Detached.'
     } catch (e: any) {
       attachErr = e?.message || String(e)
     } finally {
       attaching = false
-      setTimeout(() => { attachMsg = null; attachErr = null }, 2000)
+      setTimeout(() => {
+        attachMsg = null
+        attachErr = null
+      }, 2000)
     }
   }
 
@@ -185,7 +254,11 @@
         <div class="col">
           <div class="field">
             <label class="inline" for="preset-select">Preset</label>
-            <select id="preset-select" bind:value={preset} on:change={(e) => applyPresetFrom((e.target as HTMLSelectElement).value)}>
+            <select
+              id="preset-select"
+              bind:value={preset}
+              on:change={(e) => applyPresetFrom((e.target as HTMLSelectElement).value)}
+            >
               <option value="">Custom</option>
               {#each MCP_PRESETS as p}
                 <option value={p.id}>{p.label}</option>
@@ -219,89 +292,173 @@
       {#if transport === 'stdio'}
         <div class="row">
           <div class="col grow">
-            <label>command <input type="text" placeholder="/path/to/binary" bind:value={stdioCommand} /></label>
-            {#if fieldErrors.stdioCommand}<div class="err">{fieldErrors.stdioCommand.join(', ')}</div>{/if}
+            <label
+              >command <input
+                type="text"
+                placeholder="/path/to/binary"
+                bind:value={stdioCommand}
+              /></label
+            >
+            {#if fieldErrors.stdioCommand}<div class="err">
+                {fieldErrors.stdioCommand.join(', ')}
+              </div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col grow">
-            <label>args (JSON array) <textarea rows="3" bind:value={stdioArgs} spellcheck={false}></textarea></label>
-            {#if fieldErrors.stdioArgs}<div class="err">{fieldErrors.stdioArgs.join(', ')}</div>{/if}
+            <label
+              >args (JSON array) <textarea rows="3" bind:value={stdioArgs} spellcheck={false}
+              ></textarea></label
+            >
+            {#if fieldErrors.stdioArgs}<div class="err">
+                {fieldErrors.stdioArgs.join(', ')}
+              </div>{/if}
           </div>
           <div class="col grow">
-            <label>env (JSON object) <textarea rows="3" bind:value={stdioEnv} spellcheck={false}></textarea></label>
+            <label
+              >env (JSON object) <textarea rows="3" bind:value={stdioEnv} spellcheck={false}
+              ></textarea></label
+            >
             {#if fieldErrors.stdioEnv}<div class="err">{fieldErrors.stdioEnv.join(', ')}</div>{/if}
           </div>
         </div>
       {:else if transport === 'sse'}
         <div class="row">
           <div class="col grow">
-            <label>url <input type="text" placeholder="http://127.0.0.1:8000/sse" bind:value={sseUrl} /></label>
+            <label
+              >url <input
+                type="text"
+                placeholder="http://127.0.0.1:8000/sse"
+                bind:value={sseUrl}
+              /></label
+            >
             {#if fieldErrors.sseUrl}<div class="err">{fieldErrors.sseUrl.join(', ')}</div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col grow">
-            <label>headers (JSON object) <textarea rows="3" bind:value={sseHeaders} spellcheck={false}></textarea></label>
-            {#if fieldErrors.sseHeaders}<div class="err">{fieldErrors.sseHeaders.join(', ')}</div>{/if}
+            <label
+              >headers (JSON object) <textarea rows="3" bind:value={sseHeaders} spellcheck={false}
+              ></textarea></label
+            >
+            {#if fieldErrors.sseHeaders}<div class="err">
+                {fieldErrors.sseHeaders.join(', ')}
+              </div>{/if}
           </div>
           <div class="col">
             <label>timeout_secs (s) <input type="number" min="1" bind:value={sseTimeout} /></label>
-            {#if fieldErrors.sseTimeout}<div class="err">{fieldErrors.sseTimeout.join(', ')}</div>{/if}
+            {#if fieldErrors.sseTimeout}<div class="err">
+                {fieldErrors.sseTimeout.join(', ')}
+              </div>{/if}
           </div>
           <div class="col">
-            <label>sse_read_timeout_secs (s) <input type="number" min="1" bind:value={sseReadTimeout} /></label>
-            {#if fieldErrors.sseReadTimeout}<div class="err">{fieldErrors.sseReadTimeout.join(', ')}</div>{/if}
+            <label
+              >sse_read_timeout_secs (s) <input
+                type="number"
+                min="1"
+                bind:value={sseReadTimeout}
+              /></label
+            >
+            {#if fieldErrors.sseReadTimeout}<div class="err">
+                {fieldErrors.sseReadTimeout.join(', ')}
+              </div>{/if}
           </div>
         </div>
       {:else if transport === 'http'}
         <div class="row">
           <div class="col grow">
-            <label>url <input type="text" placeholder="http://127.0.0.1:8768/mcp" bind:value={httpUrl} /></label>
+            <label
+              >url <input
+                type="text"
+                placeholder="http://127.0.0.1:8768/mcp"
+                bind:value={httpUrl}
+              /></label
+            >
             {#if fieldErrors.httpUrl}<div class="err">{fieldErrors.httpUrl.join(', ')}</div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col grow">
-            <label>headers (JSON object) <textarea rows="3" bind:value={httpHeaders} spellcheck={false}></textarea></label>
-            {#if fieldErrors.httpHeaders}<div class="err">{fieldErrors.httpHeaders.join(', ')}</div>{/if}
+            <label
+              >headers (JSON object) <textarea rows="3" bind:value={httpHeaders} spellcheck={false}
+              ></textarea></label
+            >
+            {#if fieldErrors.httpHeaders}<div class="err">
+                {fieldErrors.httpHeaders.join(', ')}
+              </div>{/if}
           </div>
           <div class="col">
-            <label>auth (Bearer) <input type="text" bind:value={httpAuth} placeholder="optional" /></label>
+            <label
+              >auth (Bearer) <input
+                type="text"
+                bind:value={httpAuth}
+                placeholder="optional"
+              /></label
+            >
             {#if fieldErrors.httpAuth}<div class="err">{fieldErrors.httpAuth.join(', ')}</div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col">
             <label>timeout_secs (s) <input type="number" min="1" bind:value={httpTimeout} /></label>
-            {#if fieldErrors.httpTimeout}<div class="err">{fieldErrors.httpTimeout.join(', ')}</div>{/if}
+            {#if fieldErrors.httpTimeout}<div class="err">
+                {fieldErrors.httpTimeout.join(', ')}
+              </div>{/if}
           </div>
           <div class="col">
-            <label>read_timeout_secs (s) <input type="number" min="1" bind:value={httpReadTimeout} /></label>
-            {#if fieldErrors.httpReadTimeout}<div class="err">{fieldErrors.httpReadTimeout.join(', ')}</div>{/if}
+            <label
+              >read_timeout_secs (s) <input
+                type="number"
+                min="1"
+                bind:value={httpReadTimeout}
+              /></label
+            >
+            {#if fieldErrors.httpReadTimeout}<div class="err">
+                {fieldErrors.httpReadTimeout.join(', ')}
+              </div>{/if}
           </div>
         </div>
       {:else}
         <div class="row">
           <div class="col grow">
-            <label>factory <input type="text" placeholder="pkg.mod:make_server" bind:value={inprocFactory} /></label>
-            {#if fieldErrors.inprocFactory}<div class="err">{fieldErrors.inprocFactory.join(', ')}</div>{/if}
+            <label
+              >factory <input
+                type="text"
+                placeholder="pkg.mod:make_server"
+                bind:value={inprocFactory}
+              /></label
+            >
+            {#if fieldErrors.inprocFactory}<div class="err">
+                {fieldErrors.inprocFactory.join(', ')}
+              </div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col grow">
-            <label>args (JSON array) <textarea rows="3" bind:value={inprocArgs} spellcheck={false}></textarea></label>
-            {#if fieldErrors.inprocArgs}<div class="err">{fieldErrors.inprocArgs.join(', ')}</div>{/if}
+            <label
+              >args (JSON array) <textarea rows="3" bind:value={inprocArgs} spellcheck={false}
+              ></textarea></label
+            >
+            {#if fieldErrors.inprocArgs}<div class="err">
+                {fieldErrors.inprocArgs.join(', ')}
+              </div>{/if}
           </div>
           <div class="col grow">
-            <label>kwargs (JSON object) <textarea rows="3" bind:value={inprocKwargs} spellcheck={false}></textarea></label>
-            {#if fieldErrors.inprocKwargs}<div class="err">{fieldErrors.inprocKwargs.join(', ')}</div>{/if}
+            <label
+              >kwargs (JSON object) <textarea rows="3" bind:value={inprocKwargs} spellcheck={false}
+              ></textarea></label
+            >
+            {#if fieldErrors.inprocKwargs}<div class="err">
+                {fieldErrors.inprocKwargs.join(', ')}
+              </div>{/if}
           </div>
         </div>
       {/if}
 
       <div class="row">
-        <button class="small" type="button" on:click={() => onAttach()} disabled={!attachEnabled}>Attach Server</button>
+        <button class="small" type="button" on:click={() => onAttach()} disabled={!attachEnabled}
+          >Attach Server</button
+        >
         {#if attachMsg}<span class="note">{attachMsg}</span>{/if}
         {#if attachErr}<span class="err">{attachErr}</span>{/if}
         {#if topErrors.length}
@@ -329,18 +486,46 @@
         <div class="server-header-row">
           <div
             class="server-header"
-            title={health?.state === 'running' ? 'running' : `failed${health?.error ? ': ' + health.error : ''}`}
+            title={health?.state === 'running'
+              ? 'running'
+              : `failed${health?.error ? ': ' + health.error : ''}`}
             role="button"
             tabindex="0"
             on:click={() => openInfo(health)}
-            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openInfo(health) } }}
+            on:keydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                openInfo(health)
+              }
+            }}
           >
-            <span class="dot {health?.state === 'running' ? 'on' : 'off'}" title={health?.state === 'running' ? 'running' : `failed${health?.error ? ': ' + health.error : ''}`}></span>
+            <span
+              class="dot {health?.state === 'running' ? 'on' : 'off'}"
+              title={health?.state === 'running'
+                ? 'running'
+                : `failed${health?.error ? ': ' + health.error : ''}`}
+            ></span>
             <span class="server-name">{serverName}</span>
-            <span class="tool-count" title={`${serverTools.length} tools`}>🛠 {serverTools.length}</span>
+            <span class="tool-count" title={`${serverTools.length} tools`}
+              >🛠 {serverTools.length}</span
+            >
           </div>
-          <button class="small detach-btn" type="button" title="Detach server" aria-label="Detach server" on:click={() => onDetach(serverName)}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <button
+            class="small detach-btn"
+            type="button"
+            title="Detach server"
+            aria-label="Detach server"
+            on:click={() => onDetach(serverName)}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="9" y1="9" x2="15" y2="15"></line>
               <line x1="15" y1="9" x2="9" y2="15"></line>
@@ -352,7 +537,9 @@
         {#if health.state === 'running'}
           <div class="server-meta">
             {#if instSnippet(health.initialize?.instructions)}
-              <div class="inst-snippet" title="Instructions snippet">{instSnippet(health.initialize?.instructions)}</div>
+              <div class="inst-snippet" title="Instructions snippet">
+                {instSnippet(health.initialize?.instructions)}
+              </div>
             {/if}
             <div class="caps">
               {#if !!health.initialize?.capabilities?.resources}
@@ -384,7 +571,10 @@
       <header>
         <div style="display:flex; align-items:center; gap:0.5rem;">
           <span class="dot {infoServer?.state === 'running' ? 'on' : 'off'}"></span>
-          <strong style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;">{infoServer?.name}</strong>
+          <strong
+            style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;"
+            >{infoServer?.name}</strong
+          >
           <span class="muted">{infoServer?.state}</span>
         </div>
       </header>
@@ -393,7 +583,10 @@
           <div class="err">Error: {infoServer.error}</div>
         {/if}
         <div class="row">
-          <div style="margin-left:auto;"><strong>Tools:</strong> {Array.isArray(infoServer?.tools) ? infoServer.tools.length : 0}</div>
+          <div style="margin-left:auto;">
+            <strong>Tools:</strong>
+            {Array.isArray(infoServer?.tools) ? infoServer.tools.length : 0}
+          </div>
         </div>
 
         {#if infoServer?.initialize}
@@ -461,64 +654,273 @@
 {/if}
 
 <style>
-  .manage { margin-bottom: 0.5rem; }
-  .manage-body { padding: 0.5rem; border: 1px solid var(--border); background: var(--surface-2); }
-  .row { display: flex; gap: 0.5rem; align-items: flex-start; flex-wrap: wrap; }
-  .col { display: flex; flex-direction: column; gap: 0.25rem; }
-  .field { display: flex; align-items: center; gap: 0.5rem; }
-  .field .inline { white-space: nowrap; color: var(--muted); font-size: 0.85rem; }
+  .manage {
+    margin-bottom: 0.5rem;
+  }
+  .manage-body {
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .field .inline {
+    white-space: nowrap;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
   /* Override full-width controls inside inline fields */
-  .field input[type="text"], .field select { width: auto; }
-  .field input[type="text"] { flex: 1; min-width: 0; }
-  .grow { display: flex; flex-direction: column; width: 100%; }
-  textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; }
-  input[type="text"], select { width: 100%; }
-  .preview { margin-top: 0.5rem; }
-  .note { color: var(--muted); font-size: 0.85rem; }
-  .err { color: #b00020; font-size: 0.85rem; }
-  .servers h4 { margin: 0.25rem 0; }
-  .server-item { margin: 0.25rem 0; }
-  .server-header-row { display: flex; align-items: center; gap: 0.25rem; }
-  .server-header, .tool-header { padding: 0.25rem; display: flex; align-items: center; gap: 0.5rem; user-select: none; }
-  .server-header { flex: 1; text-align: left; cursor: pointer; }
-  .server-header:hover, .tool-header:hover { background: var(--surface-2); }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: #bbb; display: inline-block; }
-  .dot.on { background: #2ecc71; }
-  .dot.off { background: #c0392b; }
-  .disclosure { display:none; }
-  .server-name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; font-weight: 500; }
-  .tool-count { color: var(--muted); font-size: 0.75rem; margin-left: auto; }
-  .small { font-size: 0.75rem; padding: 0.15rem 0.4rem; }
-  .detach-btn { align-self: center; white-space: nowrap; display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.4rem; background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
-  .detach-btn:hover { background: var(--surface-2); }
-  .detach-btn svg { width: 14px; height: 14px; }
-  .tools-list { margin-left: 1rem; border-left: 1px solid var(--border); padding-left: 0.5rem; }
-  .tool-item { margin: 0.25rem 0; }
-  .tool-name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.8rem; }
-  .tool-details { margin-left: 1.5rem; margin-top: 0.25rem; padding: 0.5rem; background: var(--surface-2); border-radius: 0.25rem; }
-  .tool-description { color: #555; font-size: 0.8rem; margin: 0 0 0.5rem 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
-  .pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; }
-  .schema-label { font-weight: 500; font-size: 0.75rem; margin-bottom: 0.25rem; color: var(--muted); }
-  .tool-schema { font-size: 0.75rem; }
-  .empty { color: var(--muted); }
+  .field input[type='text'],
+  .field select {
+    width: auto;
+  }
+  .field input[type='text'] {
+    flex: 1;
+    min-width: 0;
+  }
+  .grow {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  textarea {
+    width: 100%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.85rem;
+  }
+  input[type='text'],
+  select {
+    width: 100%;
+  }
+  .preview {
+    margin-top: 0.5rem;
+  }
+  .note {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .err {
+    color: #b00020;
+    font-size: 0.85rem;
+  }
+  .servers h4 {
+    margin: 0.25rem 0;
+  }
+  .server-item {
+    margin: 0.25rem 0;
+  }
+  .server-header-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .server-header,
+  .tool-header {
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    user-select: none;
+  }
+  .server-header {
+    flex: 1;
+    text-align: left;
+    cursor: pointer;
+  }
+  .server-header:hover,
+  .tool-header:hover {
+    background: var(--surface-2);
+  }
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #bbb;
+    display: inline-block;
+  }
+  .dot.on {
+    background: #2ecc71;
+  }
+  .dot.off {
+    background: #c0392b;
+  }
+  .disclosure {
+    display: none;
+  }
+  .server-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .tool-count {
+    color: var(--muted);
+    font-size: 0.75rem;
+    margin-left: auto;
+  }
+  .small {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.4rem;
+  }
+  .detach-btn {
+    align-self: center;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.4rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+  }
+  .detach-btn:hover {
+    background: var(--surface-2);
+  }
+  .detach-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+  .tools-list {
+    margin-left: 1rem;
+    border-left: 1px solid var(--border);
+    padding-left: 0.5rem;
+  }
+  .tool-item {
+    margin: 0.25rem 0;
+  }
+  .tool-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.8rem;
+  }
+  .tool-details {
+    margin-left: 1.5rem;
+    margin-top: 0.25rem;
+    padding: 0.5rem;
+    background: var(--surface-2);
+    border-radius: 0.25rem;
+  }
+  .tool-description {
+    color: #555;
+    font-size: 0.8rem;
+    margin: 0 0 0.5rem 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.85rem;
+  }
+  .schema-label {
+    font-weight: 500;
+    font-size: 0.75rem;
+    margin-bottom: 0.25rem;
+    color: var(--muted);
+  }
+  .tool-schema {
+    font-size: 0.75rem;
+  }
+  .empty {
+    color: var(--muted);
+  }
   /* server-actions removed; detach now lives in header row */
 
-  .server-meta { margin: 0.2rem 0 0.35rem 1.5rem; display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: center; }
-  .server-meta .inst-snippet { font-size: 0.8rem; color: var(--muted); max-width: 100%; }
+  .server-meta {
+    margin: 0.2rem 0 0.35rem 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    align-items: center;
+  }
+  .server-meta .inst-snippet {
+    font-size: 0.8rem;
+    color: var(--muted);
+    max-width: 100%;
+  }
 
-  .badge { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.4rem; font-size: 0.7rem; margin-left: 0.25rem; color: var(--muted); }
-  .badge.cap { background: var(--surface-2); }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.7rem;
+    margin-left: 0.25rem;
+    color: var(--muted);
+  }
+  .badge.cap {
+    background: var(--surface-2);
+  }
 
   /* Modal styles */
   /* Backdrop styling moved to ModalBackdrop component */
-  .modal { background: var(--surface); color: var(--text); width: min(1000px, 92vw); max-height: 90vh; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); display: flex; flex-direction: column; }
-  .modal header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-weight: 600; }
-  .modal .body { padding: 0.75rem; display: grid; grid-template-columns: 1fr; gap: 0.75rem; overflow: auto; }
-  .modal .row { display: flex; gap: 1rem; align-items: center; }
-  .modal footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--border); }
-  .modal h5 { margin: 0.25rem 0; }
+  .modal {
+    background: var(--surface);
+    color: var(--text);
+    width: min(1000px, 92vw);
+    max-height: 90vh;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+  }
+  .modal header {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+  .modal .body {
+    padding: 0.75rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    overflow: auto;
+  }
+  .modal .row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  .modal footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+  .modal h5 {
+    margin: 0.25rem 0;
+  }
   /* Removed unused .kv styles */
-  .modal-tools { margin-left: 0; border-left: none; padding-left: 0; }
-  .modal .disclosure { display: inline; font-size: 0.75rem; width: 1rem; flex-shrink: 0; }
+  .modal-tools {
+    margin-left: 0;
+    border-left: none;
+    padding-left: 0;
+  }
+  .modal .disclosure {
+    display: inline;
+    font-size: 0.75rem;
+    width: 1rem;
+    flex-shrink: 0;
+  }
   /* info button removed; row click opens modal */
 </style>

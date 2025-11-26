@@ -17,6 +17,7 @@ import tempfile
 from fastmcp.client import Client
 
 from adgn.agent.agent import MiniCodex
+
 # from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Abort, Auto, Continue
@@ -43,9 +44,7 @@ class BudgetHandler(BaseHandler):
     def on_before_sample(self):
         """Check budget and decide whether to continue or abort."""
         if self._state.budget_limit and self._state.total_cost >= self._state.budget_limit:
-            logger.info(
-                f"Budget exhausted: ${self._state.total_cost:.2f} >= ${self._state.budget_limit:.2f}"
-            )
+            logger.info(f"Budget exhausted: ${self._state.total_cost:.2f} >= ${self._state.budget_limit:.2f}")
             return Abort()
         return Continue(Auto())
 
@@ -133,24 +132,15 @@ async def run_prompt_optimizer(
 
         # Train specimens source code (ro) - use original slug form (repo/specimen-name)
         for slug, path in train_specimens.items():
-            extra_volumes[str(path.resolve())] = {
-                "bind": f"/specimens/train/{slug}",
-                "mode": "ro"
-            }
+            extra_volumes[str(path.resolve())] = {"bind": f"/specimens/train/{slug}", "mode": "ro"}
 
         # Mount train-only specimen definitions (ground truth issues)
         # This prevents leaking test split data to the optimization agent
         # Mount at /specimen_defs/train to match specimen source structure
-        extra_volumes[str(train_defs_root.resolve())] = {
-            "bind": "/specimen_defs/train",
-            "mode": "ro"
-        }
+        extra_volumes[str(train_defs_root.resolve())] = {"bind": "/specimen_defs/train", "mode": "ro"}
 
         # Past evaluation results (ro) - already resolved above
-        extra_volumes[str(evals_base)] = {
-            "bind": "/artifacts/prompt_evals",
-            "mode": "ro"
-        }
+        extra_volumes[str(evals_base)] = {"bind": "/artifacts/prompt_evals", "mode": "ro"}
 
         # Create Docker wiring (no /repo mount - would leak test specimen definitions!)
         # workspace_root will be mounted as /workspace (rw mode for agent to write prompts)
@@ -177,10 +167,7 @@ async def run_prompt_optimizer(
         pe_state.verbose = verbose
 
         # Collect servers for tool schema extraction
-        servers = {
-            wiring.server_name: runtime_server,
-            PROMPT_EVAL_SERVER_NAME: prompt_eval_server,
-        }
+        servers = {wiring.server_name: runtime_server, PROMPT_EVAL_SERVER_NAME: prompt_eval_server}
 
         user = f"""Your budget is: ${budget:.2f}.
 

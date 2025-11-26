@@ -1,15 +1,22 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
-  import { uiState as uiStateStore, lastError as lastErrorStore, runStatus as runStatusStore } from '../features/chat/stores'
-  import { sendPrompt, abortRun } from '../features/chat/stores'
-  import { currentAgentId } from '../features/agents/stores'
-  import { renderMarkdown as renderMarkdownHtml } from '../shared/markdown'
   import DOMPurify from 'dompurify'
+  import { onMount, onDestroy } from 'svelte'
+
+  import CollapsedToolsGroup from './CollapsedToolsGroup.svelte'
   import ToolExec from './ToolExec.svelte'
   import ToolJson from './ToolJson.svelte'
-  import CollapsedToolsGroup from './CollapsedToolsGroup.svelte'
-  import type { UiDisplayItem, ToolItem as TToolItem } from '../shared/types'
+  import { currentAgentId } from '../features/agents/stores'
+  import {
+    uiState as uiStateStore,
+    lastError as lastErrorStore,
+    runStatus as runStatusStore,
+    sendPrompt,
+    abortRun,
+  } from '../features/chat/stores'
   import { isCollapsedToolKey } from '../lib/collapsedTools'
+  import { renderMarkdown as renderMarkdownHtml } from '../shared/markdown'
+
+  import type { UiDisplayItem, ToolItem as TToolItem } from '../shared/types'
 
   export let renderMarkdown: boolean = true
 
@@ -18,8 +25,11 @@
   let promptEl: HTMLTextAreaElement | null = null
   $: runStatus = $runStatusStore
   // Consider agent busy for these transient states; allow send only when idle/finished
-  $: busy = runStatus === 'running' || runStatus === 'awaiting_approval' || runStatus === 'starting' || runStatus === 'aborting'
-
+  $: busy =
+    runStatus === 'running' ||
+    runStatus === 'awaiting_approval' ||
+    runStatus === 'starting' ||
+    runStatus === 'aborting'
 
   function sendPromptLocal() {
     if (busy || !prompt.trim()) return
@@ -55,7 +65,11 @@
       ta.value = text
       document.body.appendChild(ta)
       ta.select()
-      try { document.execCommand('copy') } finally { document.body.removeChild(ta) }
+      try {
+        document.execCommand('copy')
+      } finally {
+        document.body.removeChild(ta)
+      }
     }
   }
 
@@ -66,8 +80,14 @@
     const { scrollTop, scrollHeight, clientHeight } = messagesEl
     stickToBottom = scrollTop + clientHeight >= scrollHeight - 8
   }
-  function scrollToBottom() { if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight }
-  onMount(() => { requestAnimationFrame(() => { promptEl?.focus() }) })
+  function scrollToBottom() {
+    if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight
+  }
+  onMount(() => {
+    requestAnimationFrame(() => {
+      promptEl?.focus()
+    })
+  })
 
   // Per-agent draft persistence
   let lastAgentId: string | null = null
@@ -92,6 +112,7 @@
   import lightThemeUrl from 'highlight.js/styles/github.css?url'
   // @ts-ignore – asset URL import handled by Vite
   import darkThemeUrl from 'highlight.js/styles/github-dark.css?url'
+
   onMount(() => {
     const ensure = (id: string, href: string, media: string) => {
       if (!document.getElementById(id)) {
@@ -108,9 +129,7 @@
   })
 
   // Collapsing logic: group consecutive tool items from a configured set
-  type RenderBlock =
-    | { kind: 'group'; items: TToolItem[] }
-    | { kind: 'item'; item: UiDisplayItem }
+  type RenderBlock = { kind: 'group'; items: TToolItem[] } | { kind: 'item'; item: UiDisplayItem }
 
   function isCollapsedTool(it: UiDisplayItem): it is TToolItem {
     return it?.kind === 'Tool' && isCollapsedToolKey((it as TToolItem).tool)
@@ -137,7 +156,7 @@
   }
 
   // Precompute blocks for rendering with lookahead
-  $: blocks = renderItems(($uiStateStore && $uiStateStore.items) ? $uiStateStore.items : [])
+  $: blocks = renderItems($uiStateStore && $uiStateStore.items ? $uiStateStore.items : [])
 </script>
 
 <section class="chat">
@@ -150,36 +169,47 @@
       <div class="empty">No messages yet.</div>
     {:else}
       {#key $uiStateStore.seq}
-      {#each blocks as block, i}
-        <div class="msg" class:endturn={(block.kind === 'item' && block.item.kind === 'EndTurn')} class:no-border={(blocks[i + 1]?.kind === 'item' && blocks[i + 1].item.kind === 'EndTurn')}>
-          {#if block.kind === 'group'}
-            <CollapsedToolsGroup items={block.items} />
-          {:else if block.kind === 'item' && block.item.kind === 'UserMessage'}
-            <div class="header">
-              <div class="kind">UserMessage</div>
-            </div>
-            <div class="text">{block.item.text}</div>
-          {:else if block.kind === 'item' && block.item.kind === 'AssistantMarkdown'}
-            <div class="header">
-              <div class="kind">AssistantMarkdown</div>
-              <button class="copy" title="Copy text" on:click={() => copyText(block.item.md || '')}>Copy</button>
-            </div>
-            {#if renderMarkdown}
-              <div class="text md">{@html DOMPurify.sanitize(renderMarkdownHtml(block.item.md || ''))}</div>
-            {:else}
-              <div class="text">{block.item.md}</div>
+        {#each blocks as block, i}
+          <div
+            class="msg"
+            class:endturn={block.kind === 'item' && block.item.kind === 'EndTurn'}
+            class:no-border={blocks[i + 1]?.kind === 'item' &&
+              blocks[i + 1].item.kind === 'EndTurn'}
+          >
+            {#if block.kind === 'group'}
+              <CollapsedToolsGroup items={block.items} />
+            {:else if block.kind === 'item' && block.item.kind === 'UserMessage'}
+              <div class="header">
+                <div class="kind">UserMessage</div>
+              </div>
+              <div class="text">{block.item.text}</div>
+            {:else if block.kind === 'item' && block.item.kind === 'AssistantMarkdown'}
+              <div class="header">
+                <div class="kind">AssistantMarkdown</div>
+                <button
+                  class="copy"
+                  title="Copy text"
+                  on:click={() => copyText(block.item.md || '')}>Copy</button
+                >
+              </div>
+              {#if renderMarkdown}
+                <div class="text md">
+                  {@html DOMPurify.sanitize(renderMarkdownHtml(block.item.md || ''))}
+                </div>
+              {:else}
+                <div class="text">{block.item.md}</div>
+              {/if}
+            {:else if block.kind === 'item' && block.item.kind === 'EndTurn'}
+              <div class="end-turn-separator"></div>
+            {:else if block.kind === 'item' && block.item.kind === 'Tool'}
+              {#if block.item.content?.content_kind === 'Exec'}
+                <ToolExec item={block.item} />
+              {:else if block.item.content?.content_kind === 'Json'}
+                <ToolJson item={block.item} />
+              {/if}
             {/if}
-          {:else if block.kind === 'item' && block.item.kind === 'EndTurn'}
-            <div class="end-turn-separator"></div>
-          {:else if block.kind === 'item' && block.item.kind === 'Tool'}
-            {#if block.item.content?.content_kind === 'Exec'}
-              <ToolExec item={block.item} />
-            {:else if block.item.content?.content_kind === 'Json'}
-              <ToolJson item={block.item} />
-            {/if}
-          {/if}
-        </div>
-      {/each}
+          </div>
+        {/each}
       {/key}
     {/if}
   </div>
@@ -189,44 +219,142 @@
       bind:this={promptEl}
       bind:value={prompt}
       rows="3"
-      placeholder={busy ? 'Agent is working… (Shift+Enter for newline)' : 'Type a prompt… (Enter to send, Shift+Enter for newline)'}
+      placeholder={busy
+        ? 'Agent is working… (Shift+Enter for newline)'
+        : 'Type a prompt… (Enter to send, Shift+Enter for newline)'}
       on:input={onPromptInput}
       on:keydown={onPromptKeydown}
     ></textarea>
     {#if $runStatusStore === 'running' || $runStatusStore === 'starting'}
-      <button type="button" class="abort" title="Abort current run" on:click={() => abortRun()}>Abort</button>
+      <button type="button" class="abort" title="Abort current run" on:click={() => abortRun()}
+        >Abort</button
+      >
     {/if}
-    <button type="submit" disabled={busy || !prompt.trim()} aria-disabled={busy || !prompt.trim()}>Send</button>
+    <button type="submit" disabled={busy || !prompt.trim()} aria-disabled={busy || !prompt.trim()}
+      >Send</button
+    >
   </form>
 </section>
 
 <style>
   /* Column flex: scrollable messages + fixed composer */
-  .chat { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; min-width: 0; }
-  .error { margin: 0.5rem; padding: 0.5rem; background: #fee; color: #900; border: 1px solid #f99; }
-  .messages { flex: 1 1 auto; min-height: 0; height: auto; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-gutter: stable both-edges; padding: 0.5rem; display: block; font-size: 0.92rem; line-height: 1.3; }
-  .messages > .msg { margin-bottom: 0.25rem; }
-  .empty { color: var(--muted); }
-  .msg { border-bottom: 1px solid var(--border); padding-bottom: 0.25rem; }
-  .msg.no-border { border-bottom: none; }
-  .msg.endturn { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
-  .header { display: flex; align-items: center; gap: 0.5rem; }
-  .kind { font-size: 0.75rem; color: var(--muted); }
-  .text { white-space: pre-wrap; }
-  .text.md { white-space: normal; }
+  .chat {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .error {
+    margin: 0.5rem;
+    padding: 0.5rem;
+    background: #fee;
+    color: #900;
+    border: 1px solid #f99;
+  }
+  .messages {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable both-edges;
+    padding: 0.5rem;
+    display: block;
+    font-size: 0.92rem;
+    line-height: 1.3;
+  }
+  .messages > .msg {
+    margin-bottom: 0.25rem;
+  }
+  .empty {
+    color: var(--muted);
+  }
+  .msg {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.25rem;
+  }
+  .msg.no-border {
+    border-bottom: none;
+  }
+  .msg.endturn {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .kind {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .text {
+    white-space: pre-wrap;
+  }
+  .text.md {
+    white-space: normal;
+  }
   /* Ensure code blocks don’t wrap and can scroll horizontally */
-  .text.md :global(pre) { overflow-x: auto; margin: 0.25rem 0; }
-  .text.md :global(code) { white-space: pre; }
+  .text.md :global(pre) {
+    overflow-x: auto;
+    margin: 0.25rem 0;
+  }
+  .text.md :global(code) {
+    white-space: pre;
+  }
   /* Reduce inter-paragraph spacing inside rendered markdown */
-  .text.md :global(p) { margin: 0.2rem 0; }
-  .text.md :global(p:first-child) { margin-top: 0; }
-  .text.md :global(p:last-child) { margin-bottom: 0; }
-  .end-turn-separator { height: 4px; background: #666; border: none; margin: 0; border-radius: 2px; }
-  .copy { margin-left: 0.5rem; font-size: 0.7rem; padding: 0.1rem 0.4rem; }
+  .text.md :global(p) {
+    margin: 0.2rem 0;
+  }
+  .text.md :global(p:first-child) {
+    margin-top: 0;
+  }
+  .text.md :global(p:last-child) {
+    margin-bottom: 0;
+  }
+  .end-turn-separator {
+    height: 4px;
+    background: #666;
+    border: none;
+    margin: 0;
+    border-radius: 2px;
+  }
+  .copy {
+    margin-left: 0.5rem;
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+  }
   /* Keep composer always visible; prevent shrinking; sticky as a guard */
-  .composer { display: flex; gap: 0.5rem; padding: 0.5rem; border-top: 1px solid var(--border); flex: 0 0 auto; position: sticky; bottom: 0; background: var(--surface); }
-  .composer textarea { flex: 1 1 auto; resize: vertical; min-height: 2rem; display: block; width: 100%; }
-  .composer button { white-space: nowrap; }
-  .composer .abort { background: #b00020; color: #fff; border-color: #b00020; }
-  .composer .abort:hover { filter: brightness(0.95); }
+  .composer {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-top: 1px solid var(--border);
+    flex: 0 0 auto;
+    position: sticky;
+    bottom: 0;
+    background: var(--surface);
+  }
+  .composer textarea {
+    flex: 1 1 auto;
+    resize: vertical;
+    min-height: 2rem;
+    display: block;
+    width: 100%;
+  }
+  .composer button {
+    white-space: nowrap;
+  }
+  .composer .abort {
+    background: #b00020;
+    color: #fff;
+    border-color: #b00020;
+  }
+  .composer .abort:hover {
+    filter: brightness(0.95);
+  }
 </style>

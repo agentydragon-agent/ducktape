@@ -150,10 +150,7 @@ def make_container_info_call(wiring: PropertiesDockerWiring) -> FunctionCallItem
         call_id="bootstrap:res",
         name=build_mcp_function("resources", "read"),
         arguments=ResourcesReadArgs(
-            server=wiring.server_name,
-            uri=RUNTIME_CONTAINER_INFO_URI,
-            start_offset=0,
-            max_bytes=65536,
+            server=wiring.server_name, uri=RUNTIME_CONTAINER_INFO_URI, start_offset=0, max_bytes=65536
         ).model_dump(),
     )
 

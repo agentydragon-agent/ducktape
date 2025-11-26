@@ -1,6 +1,6 @@
 import { currentAgentId, getAgentIdFromUrl, setAgentId } from '../shared/router'
-import { connectAgentWs, disconnectAgentWs } from './chat/stores'
 import { startAgentsWs, stopAgentStatusPolling } from './agents/stores'
+import { connectAgentWs, disconnectAgentWs } from './chat/stores'
 
 export function initAgentUiController(): () => void {
   // Authoritative bootstrap: read agent_id from URL before subscribing
@@ -13,7 +13,9 @@ export function initAgentUiController(): () => void {
   }
 
   // Start agents WS immediately so the sidebar populates on refresh (initial snapshot)
-  try { startAgentsWs() } catch {}
+  try {
+    startAgentsWs()
+  } catch {}
 
   let lastId: string | null = null
   const unsub = currentAgentId.subscribe((id) => {

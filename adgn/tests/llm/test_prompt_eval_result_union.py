@@ -60,7 +60,7 @@ async def test_prompt_eval_signals_tool_error_on_critic_error(
     openai_client_param, tmp_path: Path, make_typed_mcp
 ) -> None:
     # Build server with provided client (mock/live)
-    mcp_server, _state = build_server(client=openai_client_param, name="prompt_eval_test", run_dir_base=tmp_path)
+    mcp_server, _state = build_server(client=openai_client_param, name="prompt_eval_test", evals_base_dir=tmp_path)
 
     # Patch _run_critic_for_specimen to raise within the server module
     async def _fake(specimen, system_prompt, client, run_dir, *, agent_model="gpt-5", **kwargs):
@@ -68,7 +68,7 @@ async def test_prompt_eval_signals_tool_error_on_critic_error(
 
     adgn.props.prompt_eval.server._run_critic_for_specimen = _fake
     # Limit to one real specimen to keep test deterministic and fast while exercising real data
-    adgn.props.prompt_eval.server.list_specimen_names = lambda base: ["2025-09-02-ducktape_wt"]
+    adgn.props.specimens.registry.list_specimen_names = lambda base: ["2025-09-02-ducktape_wt"]
 
     async with make_typed_mcp(mcp_server, "prompt_eval_test") as (client, _sess):
         # Expect an isError tool payload; assert via TypedClient.error
@@ -85,7 +85,7 @@ async def test_prompt_eval_signals_tool_error_on_critic_error(
 )
 async def test_prompt_eval_returns_metrics_on_success(openai_client_param, tmp_path: Path, make_typed_mcp) -> None:
     # Build server with provided client (mock/live)
-    mcp_server, _state = build_server(client=openai_client_param, name="prompt_eval_test2", run_dir_base=tmp_path)
+    mcp_server, _state = build_server(client=openai_client_param, name="prompt_eval_test2", evals_base_dir=tmp_path)
 
     # Patch _run_critic_for_specimen to return a minimal CriticSubmitPayload instance
     async def _fake_ok(specimen, system_prompt, client, run_dir, *, agent_model="gpt-5", **kwargs):
@@ -93,7 +93,7 @@ async def test_prompt_eval_returns_metrics_on_success(openai_client_param, tmp_p
 
     adgn.props.prompt_eval.server._run_critic_for_specimen = _fake_ok
     # Limit to one real specimen for a focused test run
-    adgn.props.prompt_eval.server.list_specimen_names = lambda base: ["2025-09-02-ducktape_wt"]
+    adgn.props.specimens.registry.list_specimen_names = lambda base: ["2025-09-02-ducktape_wt"]
 
     async with make_typed_mcp(mcp_server, "prompt_eval_test2") as (client, _sess):
         payload = PromptEvalArgs(prompt="dummy")

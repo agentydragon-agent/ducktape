@@ -1,12 +1,14 @@
 import { z } from 'zod'
 
 // Zod schemas for MCP server specs (frontend validation)
-export const StdioSpecZ = z.object({
-  transport: z.literal('stdio'),
-  command: z.string().min(1, 'command required'),
-  args: z.array(z.string()).default([]),
-  env: z.record(z.string()).default({}),
-}).strict()
+export const StdioSpecZ = z
+  .object({
+    transport: z.literal('stdio'),
+    command: z.string().min(1, 'command required'),
+    args: z.array(z.string()).default([]),
+    env: z.record(z.string()).default({}),
+  })
+  .strict()
 
 export const SseSpecZ = z
   .object({
@@ -18,12 +20,14 @@ export const SseSpecZ = z
   })
   .strict()
 
-export const InprocSpecZ = z.object({
-  transport: z.literal('inproc'),
-  factory: z.string().min(1, 'factory required'),
-  args: z.array(z.any()).default([]),
-  kwargs: z.record(z.any()).default({}),
-}).strict()
+export const InprocSpecZ = z
+  .object({
+    transport: z.literal('inproc'),
+    factory: z.string().min(1, 'factory required'),
+    args: z.array(z.any()).default([]),
+    kwargs: z.record(z.any()).default({}),
+  })
+  .strict()
 
 export const HttpSpecZ = z
   .object({
@@ -46,7 +50,11 @@ export const TransportSpecZ = z.discriminatedUnion('transport', [
 export type TransportSpec = z.infer<typeof TransportSpecZ>
 
 function safeParseJson<T>(text: string, fallback: T): T {
-  try { return JSON.parse(text) } catch { return fallback }
+  try {
+    return JSON.parse(text)
+  } catch {
+    return fallback
+  }
 }
 
 export type FieldErrors = Record<string, string[]>
@@ -73,7 +81,7 @@ export function buildSpecFromForm(input: {
   inprocFactory?: string
   inprocArgs?: string
   inprocKwargs?: string
-}): { spec?: TransportSpec, errors: string[], fieldErrors: FieldErrors } {
+}): { spec?: TransportSpec; errors: string[]; fieldErrors: FieldErrors } {
   const errs: string[] = []
   const fieldErrors: FieldErrors = {}
   let candidate: unknown
@@ -82,7 +90,8 @@ export function buildSpecFromForm(input: {
       const args = safeParseJson(input.stdioArgs || '[]', null)
       const env = safeParseJson(input.stdioEnv || '{}', null)
       if (!Array.isArray(args)) addFieldErr(fieldErrors, 'stdioArgs', 'args must be JSON array')
-      if (!(env === null || typeof env === 'object')) addFieldErr(fieldErrors, 'stdioEnv', 'env must be JSON object')
+      if (!(env === null || typeof env === 'object'))
+        addFieldErr(fieldErrors, 'stdioEnv', 'env must be JSON object')
       candidate = {
         transport: 'stdio',
         command: input.stdioCommand || '',
@@ -94,7 +103,14 @@ export function buildSpecFromForm(input: {
         // Map zod issues to form field keys
         for (const issue of res.error.issues) {
           const p0 = issue.path[0]
-          const key = p0 === 'command' ? 'stdioCommand' : p0 === 'args' ? 'stdioArgs' : p0 === 'env' ? 'stdioEnv' : String(p0 || 'stdio')
+          const key =
+            p0 === 'command'
+              ? 'stdioCommand'
+              : p0 === 'args'
+                ? 'stdioArgs'
+                : p0 === 'env'
+                  ? 'stdioEnv'
+                  : String(p0 || 'stdio')
           addFieldErr(fieldErrors, key, issue.message)
         }
         errs.push('Invalid stdio spec')
@@ -104,7 +120,8 @@ export function buildSpecFromForm(input: {
     }
     case 'sse': {
       const headers = safeParseJson(input.sseHeaders || '{}', null)
-      if (!(headers === null || typeof headers === 'object')) addFieldErr(fieldErrors, 'sseHeaders', 'headers must be JSON object')
+      if (!(headers === null || typeof headers === 'object'))
+        addFieldErr(fieldErrors, 'sseHeaders', 'headers must be JSON object')
       const timeout = Number(input.sseTimeout ?? 5)
       const rto = Number(input.sseReadTimeout ?? 300)
       candidate = {
@@ -122,7 +139,8 @@ export function buildSpecFromForm(input: {
           if (p0 === 'url') key = 'sseUrl'
           else if (p0 === 'headers') key = 'sseHeaders'
           else if (p0 === 'timeout_secs' || p0 === 'timeout') key = 'sseTimeout'
-          else if (p0 === 'sse_read_timeout_secs' || p0 === 'sse_read_timeout') key = 'sseReadTimeout'
+          else if (p0 === 'sse_read_timeout_secs' || p0 === 'sse_read_timeout')
+            key = 'sseReadTimeout'
           addFieldErr(fieldErrors, key, issue.message)
         }
         errs.push('Invalid sse spec')
@@ -132,7 +150,8 @@ export function buildSpecFromForm(input: {
     }
     case 'http': {
       const headers = safeParseJson(input.httpHeaders || '{}', null)
-      if (!(headers === null || typeof headers === 'object')) addFieldErr(fieldErrors, 'httpHeaders', 'headers must be JSON object')
+      if (!(headers === null || typeof headers === 'object'))
+        addFieldErr(fieldErrors, 'httpHeaders', 'headers must be JSON object')
       const timeout = Number(input.httpTimeout ?? 30)
       const rto = Number(input.httpReadTimeout ?? 300)
       candidate = {
@@ -152,7 +171,8 @@ export function buildSpecFromForm(input: {
           else if (p0 === 'headers') key = 'httpHeaders'
           else if (p0 === 'auth') key = 'httpAuth'
           else if (p0 === 'timeout_secs' || p0 === 'timeout') key = 'httpTimeout'
-          else if (p0 === 'sse_read_timeout_secs' || p0 === 'sse_read_timeout') key = 'httpReadTimeout'
+          else if (p0 === 'sse_read_timeout_secs' || p0 === 'sse_read_timeout')
+            key = 'httpReadTimeout'
           addFieldErr(fieldErrors, key, issue.message)
         }
         errs.push('Invalid http spec')
@@ -164,7 +184,8 @@ export function buildSpecFromForm(input: {
       const args = safeParseJson(input.inprocArgs || '[]', null)
       const kwargs = safeParseJson(input.inprocKwargs || '{}', null)
       if (!Array.isArray(args)) addFieldErr(fieldErrors, 'inprocArgs', 'args must be JSON array')
-      if (!(kwargs === null || typeof kwargs === 'object')) addFieldErr(fieldErrors, 'inprocKwargs', 'kwargs must be JSON object')
+      if (!(kwargs === null || typeof kwargs === 'object'))
+        addFieldErr(fieldErrors, 'inprocKwargs', 'kwargs must be JSON object')
       candidate = {
         transport: 'inproc',
         factory: input.inprocFactory || '',
@@ -175,7 +196,14 @@ export function buildSpecFromForm(input: {
       if (!res.success) {
         for (const issue of res.error.issues) {
           const p0 = issue.path[0]
-          const key = p0 === 'factory' ? 'inprocFactory' : p0 === 'args' ? 'inprocArgs' : p0 === 'kwargs' ? 'inprocKwargs' : String(p0 || 'inproc')
+          const key =
+            p0 === 'factory'
+              ? 'inprocFactory'
+              : p0 === 'args'
+                ? 'inprocArgs'
+                : p0 === 'kwargs'
+                  ? 'inprocKwargs'
+                  : String(p0 || 'inproc')
           addFieldErr(fieldErrors, key, issue.message)
         }
         errs.push('Invalid inproc spec')

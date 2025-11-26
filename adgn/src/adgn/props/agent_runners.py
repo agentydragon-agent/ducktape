@@ -224,27 +224,18 @@ async def run_grader_agent(
         prompt = build_grade_from_json_prompt(
             scope_text=scope_text,
             canonical_json=json.dumps(
-                [ri.model_dump(exclude_none=True) for ri in canonical_prefixed],
-                ensure_ascii=False,
-                indent=2,
+                [ri.model_dump(exclude_none=True) for ri in canonical_prefixed], ensure_ascii=False, indent=2
             ),
-            critique_json=json.dumps(
-                critique_prefixed.model_dump(exclude_none=True), ensure_ascii=False, indent=2
-            ),
+            critique_json=json.dumps(critique_prefixed.model_dump(exclude_none=True), ensure_ascii=False, indent=2),
             known_fp_json=json.dumps(
-                [ri.model_dump(exclude_none=True) for ri in known_fp_prefixed],
-                ensure_ascii=False,
-                indent=2,
+                [ri.model_dump(exclude_none=True) for ri in known_fp_prefixed], ensure_ascii=False, indent=2
             ),
             submit_tool_name=submit_tool_name,
             wiring=wiring,
         )
 
     comp = Compositor("compositor")
-    server = NotifyingFastMCP(
-        GRADER_SUBMIT_SERVER_NAME,
-        instructions="Final grader submission for critique evaluation",
-    )
+    server = NotifyingFastMCP(GRADER_SUBMIT_SERVER_NAME, instructions="Final grader submission for critique evaluation")
     build_grader_submit_tools(server, grader_state, inputs=inputs)
     await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, server)
 
@@ -271,7 +262,5 @@ async def run_grader_agent(
         raise RuntimeError("Grader did not submit")
 
     # Persist grade
-    (transcript_dir.parent / "grade.json").write_text(
-        grader_state.result.model_dump_json(indent=2), encoding="utf-8"
-    )
+    (transcript_dir.parent / "grade.json").write_text(grader_state.result.model_dump_json(indent=2), encoding="utf-8")
     return grader_state.result

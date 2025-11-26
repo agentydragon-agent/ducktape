@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from hamcrest import assert_that, has_item
+from hamcrest import assert_that
 from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 from rich.table import Table
@@ -50,8 +50,7 @@ class FindingsMatcherExpectation(BaseModel):
 
 
 Expectation = Annotated[
-    AnchorExpectation | RationaleExpectation | FindingsMatcherExpectation,
-    Field(discriminator="kind"),
+    AnchorExpectation | RationaleExpectation | FindingsMatcherExpectation, Field(discriminator="kind")
 ]
 
 
@@ -208,9 +207,7 @@ async def eval_issue_spec(
         spec.issue
         if not id_prefix
         else IssueCore(
-            id=f"{id_prefix}{spec.issue.id}",
-            should_flag=spec.issue.should_flag,
-            rationale=spec.issue.rationale,
+            id=f"{id_prefix}{spec.issue.id}", should_flag=spec.issue.should_flag, rationale=spec.issue.rationale
         )
     )
 

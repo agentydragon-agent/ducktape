@@ -24,12 +24,7 @@ class DisplayEventsHandler(BaseHandler):
     """
 
     def __init__(
-        self,
-        *,
-        max_lines: int = 200,
-        max_bytes: int = 8192,
-        write: Callable[[str], None] = print,
-        prefix: str = "",
+        self, *, max_lines: int = 200, max_bytes: int = 8192, write: Callable[[str], None] = print, prefix: str = ""
     ) -> None:
         self._max_lines = max_lines
         self._max_bytes = max_bytes

@@ -20,13 +20,22 @@
 
   function prettyArgs(args_json?: string | null) {
     if (!args_json) return ''
-    try { return JSON.stringify(JSON.parse(args_json), null, 2) } catch { return args_json }
+    try {
+      return JSON.stringify(JSON.parse(args_json), null, 2)
+    } catch {
+      return args_json
+    }
   }
 
   // Syntax highlighting for current policy (Python)
   import hljs from 'highlight.js/lib/common'
+
   function renderHighlightedPython(src: string): string {
-    try { return hljs.highlight(src, { language: 'python' }).value } catch { return src }
+    try {
+      return hljs.highlight(src, { language: 'python' }).value
+    } catch {
+      return src
+    }
   }
 
   import ProposalCard from './ProposalCard.svelte'
@@ -38,18 +47,32 @@
 
 <div class="approvals-tab">
   <div class="policy">
-    <h4>Approval Policy {#if approvalPolicy}<small>(v{approvalPolicy.version})</small>{/if}</h4>
+    <h4>
+      Approval Policy {#if approvalPolicy}<small>(v{approvalPolicy.version})</small>{/if}
+    </h4>
     {#if !showPolicyEditor}
       {#if approvalPolicy}
-        <pre class="policy-content"><code class="hljs language-python">{@html renderHighlightedPython(approvalPolicy.content)}</code></pre>
+        <pre class="policy-content"><code class="hljs language-python"
+            >{@html renderHighlightedPython(approvalPolicy.content)}</code
+          ></pre>
         <button on:click={startEditingPolicy}>Edit Policy</button>
       {:else}
         <div class="empty">No policy loaded</div>
       {/if}
     {:else}
-      <textarea bind:value={editingPolicy} rows="15" placeholder="# Program reads PolicyRequest from stdin and prints PolicyResponse\n# See adgn.agent.policies.scaffold.run(decide)" class="policy-editor"></textarea>
+      <textarea
+        bind:value={editingPolicy}
+        rows="15"
+        placeholder="# Program reads PolicyRequest from stdin and prints PolicyResponse\n# See adgn.agent.policies.scaffold.run(decide)"
+        class="policy-editor"
+      ></textarea>
       <div class="row">
-        <button on:click={() => { setPolicy(editingPolicy); cancelEditingPolicy(); }}>Save</button>
+        <button
+          on:click={() => {
+            setPolicy(editingPolicy)
+            cancelEditingPolicy()
+          }}>Save</button
+        >
         <button on:click={cancelEditingPolicy}>Cancel</button>
       </div>
     {/if}
@@ -59,10 +82,12 @@
     <div class="proposals">
       <h4>Open Proposals ({allProposals.length})</h4>
       {#each allProposals as proposal}
-        <ProposalCard {proposal}
+        <ProposalCard
+          {proposal}
           showActions={true}
           onApprove={(id) => approveProposal(id)}
-          onReject={(id) => rejectProposal(id)} />
+          onReject={(id) => rejectProposal(id)}
+        />
       {/each}
     </div>
   {/if}
@@ -90,11 +115,34 @@
 </div>
 
 <style>
-  .approvals-tab h4 { margin: 0.25rem 0; }
-  .policy-content { background: var(--surface-2); padding: 0.5rem; overflow: auto; max-height: 12rem; font-size: 0.75rem; }
-  .policy-editor { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.75rem; resize: vertical; }
-  .approval { border: 1px solid var(--border); padding: 0.5rem; margin: 0.25rem 0; }
-  .row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-  .empty { color: var(--muted); }
+  .approvals-tab h4 {
+    margin: 0.25rem 0;
+  }
+  .policy-content {
+    background: var(--surface-2);
+    padding: 0.5rem;
+    overflow: auto;
+    max-height: 12rem;
+    font-size: 0.75rem;
+  }
+  .policy-editor {
+    width: 100%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.75rem;
+    resize: vertical;
+  }
+  .approval {
+    border: 1px solid var(--border);
+    padding: 0.5rem;
+    margin: 0.25rem 0;
+  }
+  .row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .empty {
+    color: var(--muted);
+  }
   /* Removed unused diff styles */
 </style>

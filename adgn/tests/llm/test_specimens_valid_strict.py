@@ -4,10 +4,9 @@ from pathlib import Path
 import re
 
 import pytest
-import asyncio
 
-from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names
 from adgn.props.models.specimen import LocalSource
+from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names
 
 
 def _all_specimens() -> list[str]:
@@ -114,23 +113,15 @@ async def test_specimen_references_are_valid(specimen: str) -> None:
                 # Validate each line range
                 for start_line, end_line in line_ranges:
                     if start_line < 1:
-                        errors.append(
-                            f"Invalid start_line {start_line} in {file_path} (must be >= 1)"
-                        )
+                        errors.append(f"Invalid start_line {start_line} in {file_path} (must be >= 1)")
                     elif start_line > num_lines:
-                        errors.append(
-                            f"start_line {start_line} exceeds file length {num_lines} in {file_path}"
-                        )
+                        errors.append(f"start_line {start_line} exceeds file length {num_lines} in {file_path}")
 
                     if end_line is not None:
                         if end_line < start_line:
-                            errors.append(
-                                f"Invalid range [{start_line}, {end_line}] in {file_path} (end < start)"
-                            )
+                            errors.append(f"Invalid range [{start_line}, {end_line}] in {file_path} (end < start)")
                         elif end_line > num_lines:
-                            errors.append(
-                                f"end_line {end_line} exceeds file length {num_lines} in {file_path}"
-                            )
+                            errors.append(f"end_line {end_line} exceeds file length {num_lines} in {file_path}")
 
             except Exception as e:
                 errors.append(f"Error reading {file_path}: {e}")

@@ -15,9 +15,7 @@ if TYPE_CHECKING:
     from fastmcp.server import FastMCP
 
 
-def extract_tool_schemas(
-    servers: dict[str, FastMCP],
-) -> dict[tuple[str, str], type[BaseModel]]:
+def extract_tool_schemas(servers: dict[str, FastMCP]) -> dict[tuple[str, str], type[BaseModel]]:
     """Extract tool result types from FastMCP servers.
 
     Args:
@@ -53,9 +51,7 @@ def extract_tool_schemas(
     return schemas
 
 
-def extract_tool_input_schemas(
-    servers: dict[str, FastMCP],
-) -> dict[tuple[str, str], type[BaseModel]]:
+def extract_tool_input_schemas(servers: dict[str, FastMCP]) -> dict[tuple[str, str], type[BaseModel]]:
     """Extract tool input types from FastMCP servers.
 
     Args:
@@ -93,7 +89,8 @@ def extract_tool_input_schemas(
 
                 # Look for a single Pydantic BaseModel parameter
                 pydantic_params = [
-                    p for p in params
+                    p
+                    for p in params
                     if p.annotation != inspect.Parameter.empty
                     and inspect.isclass(p.annotation)
                     and issubclass(p.annotation, BaseModel)

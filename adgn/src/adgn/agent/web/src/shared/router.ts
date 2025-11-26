@@ -5,7 +5,7 @@ export function getAgentIdFromUrl(): string | null {
 }
 
 export const currentAgentId: Writable<string | null> = writable(
-  typeof window !== 'undefined' ? getAgentIdFromUrl() : null,
+  typeof window !== 'undefined' ? getAgentIdFromUrl() : null
 )
 
 export function setAgentId(id?: string | null) {

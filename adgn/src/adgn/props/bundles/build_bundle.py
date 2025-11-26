@@ -5,25 +5,23 @@ Reads specimen manifests, applies their bundle filters, and creates a git bundle
 containing only the necessary files for each specimen.
 """
 
-import subprocess
-import tempfile
+import fnmatch
 from pathlib import Path
-
-import pygit2
-import yaml
-from pydantic import TypeAdapter
+import subprocess
 
 # Import specimen models
 import sys
+import tempfile
+
+from pydantic import TypeAdapter
+import pygit2
+import yaml
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from props.models.specimen import SpecimenDoc
 
 
-def apply_gitignore_patterns(
-    file_list: list[str],
-    include: list[str] | None,
-    exclude: list[str] | None,
-) -> list[str]:
+def apply_gitignore_patterns(file_list: list[str], include: list[str] | None, exclude: list[str] | None) -> list[str]:
     """Apply gitignore-style include/exclude patterns to a file list.
 
     Args:
@@ -34,33 +32,26 @@ def apply_gitignore_patterns(
     Returns:
         Filtered list of file paths
     """
-    import fnmatch
 
     def matches_pattern(path: str, pattern: str) -> bool:
         """Check if path matches gitignore-style pattern."""
         # Remove trailing slash from pattern (indicates directory)
-        if pattern.endswith('/'):
-            pattern = pattern.rstrip('/')
+        if pattern.endswith("/"):
+            pattern = pattern.rstrip("/")
             # For directory patterns, match the directory and everything under it
-            return path.startswith(pattern + '/') or path == pattern
+            return path.startswith(pattern + "/") or path == pattern
         # For file patterns, use fnmatch
-        return fnmatch.fnmatch(path, pattern) or path.startswith(pattern + '/')
+        return fnmatch.fnmatch(path, pattern) or path.startswith(pattern + "/")
 
     result = file_list
 
     # Apply include patterns (if specified, only keep matching files)
     if include:
-        result = [
-            f for f in result
-            if any(matches_pattern(f, pattern) for pattern in include)
-        ]
+        result = [f for f in result if any(matches_pattern(f, pattern) for pattern in include)]
 
     # Apply exclude patterns (remove matching files)
     if exclude:
-        result = [
-            f for f in result
-            if not any(matches_pattern(f, pattern) for pattern in exclude)
-        ]
+        result = [f for f in result if not any(matches_pattern(f, pattern) for pattern in exclude)]
 
     return result
 
@@ -142,20 +133,20 @@ def create_filtered_tree(
             if not path.startswith(path_prefix):
                 continue
 
-            rel_path = path[len(path_prefix):]
-            if '/' not in rel_path:
+            rel_path = path[len(path_prefix) :]
+            if "/" not in rel_path:
                 # Direct child (file)
-                items[rel_path] = ('blob', oid, mode)
+                items[rel_path] = ("blob", oid, mode)
             else:
                 # Subdirectory
-                dir_name = rel_path.split('/')[0]
+                dir_name = rel_path.split("/")[0]
                 if dir_name not in items:
-                    items[dir_name] = ('tree', None, pygit2.GIT_FILEMODE_TREE)
+                    items[dir_name] = ("tree", None, pygit2.GIT_FILEMODE_TREE)
 
         # Build tree
         for name in sorted(items.keys()):
             item_type, oid, mode = items[name]
-            if item_type == 'tree':
+            if item_type == "tree":
                 # Recursively build subdirectory
                 subtree_oid = build_tree(f"{path_prefix}{name}/")
                 builder.insert(name, subtree_oid, mode)
@@ -268,14 +259,7 @@ def main():
         # Create base commit
         sig = pygit2.Signature("Bundle Builder", "bundle@example.com")
         tree_oid = bundle_repo.TreeBuilder().write()
-        base_commit_oid = bundle_repo.create_commit(
-            "refs/heads/main",
-            sig,
-            sig,
-            "Bundle base commit",
-            tree_oid,
-            [],
-        )
+        base_commit_oid = bundle_repo.create_commit("refs/heads/main", sig, sig, "Bundle base commit", tree_oid, [])
         base_commit = bundle_repo[base_commit_oid]
         print(f"Base commit: {base_commit_oid}")
         print()
@@ -288,7 +272,7 @@ def main():
                 print(f"Warning: No manifest for {spec_id}, skipping")
                 continue
 
-            with open(manifest_path) as f:
+            with manifest_path.open() as f:
                 manifest_data = yaml.safe_load(f)
 
             # Parse into SpecimenDoc
@@ -300,10 +284,7 @@ def main():
 
             # Derive tag name from ref in manifest
             ref = specimen.source.ref
-            if ref.startswith("refs/tags/"):
-                tag_name = ref.removeprefix("refs/tags/")
-            else:
-                tag_name = f"specimen-{spec_id}"
+            tag_name = ref.removeprefix("refs/tags/") if ref.startswith("refs/tags/") else f"specimen-{spec_id}"
 
             # Create filtered commit
             create_filtered_commit(
@@ -317,11 +298,7 @@ def main():
             )
 
         # Create bundle using git command (pygit2 doesn't support bundle creation)
-        subprocess.run(
-            ["git", "bundle", "create", str(output_bundle), "--all"],
-            cwd=bundle_repo_path,
-            check=True,
-        )
+        subprocess.run(["git", "bundle", "create", str(output_bundle), "--all"], cwd=bundle_repo_path, check=True)
 
         # Show result
         size_mb = output_bundle.stat().st_size / 1024 / 1024

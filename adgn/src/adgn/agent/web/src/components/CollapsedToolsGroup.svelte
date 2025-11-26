@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { ToolItem } from '../shared/types'
   import JsonDisclosure from './JsonDisclosure.svelte'
   import {
     LEAN_BROWSER_LABELS,
@@ -7,10 +6,13 @@
     TOOL_RESOURCES_READ,
   } from '../lib/collapsedTools'
 
+  import type { ToolItem } from '../shared/types'
+
   export let items: ToolItem[] = []
 
   // Persist expansion by group anchor (first item id) across UI updates
-  const EXPANDED_BY_ANCHOR: Map<string, string | null> = (globalThis as any).__adgn_ctg_expanded || new Map()
+  const EXPANDED_BY_ANCHOR: Map<string, string | null> =
+    (globalThis as any).__adgn_ctg_expanded || new Map()
   ;(globalThis as any).__adgn_ctg_expanded = EXPANDED_BY_ANCHOR
   // index of expanded item within items, or null
   let expanded: number | null = null
@@ -19,8 +21,8 @@
     if (anchor) {
       const openId = EXPANDED_BY_ANCHOR.get(anchor) || null
       if (openId) {
-        const idx = items.findIndex(it => it.id === openId)
-        expanded = (idx >= 0 ? idx : null)
+        const idx = items.findIndex((it) => it.id === openId)
+        expanded = idx >= 0 ? idx : null
       }
     }
   }
@@ -35,7 +37,7 @@
   }
 
   // If all items are the same tool, we can render compact icon-only tokens
-  $: allSameTool = items && items.length > 1 && items.every(it => it.tool === items[0]?.tool)
+  $: allSameTool = items && items.length > 1 && items.every((it) => it.tool === items[0]?.tool)
 
   function collapsedLabelFor(it: ToolItem): string {
     const name = it.tool || ''
@@ -77,6 +79,7 @@
 
   // For JSON content, display structured_content when present, else raw result
   import { z } from 'zod'
+
   const CallToolResultZ = z.object({ structured_content: z.unknown().optional() }).passthrough()
   function jsonOutput(it: ToolItem): unknown {
     const c: any = it?.content
@@ -90,7 +93,6 @@
     }
     return res ?? null
   }
-
 </script>
 
 <div class="collapsed-tools-group">
@@ -99,7 +101,13 @@
       {@const label = collapsedLabelFor(items[0])}
       {#each items as it, idx}
         {@const err = isError(it)}
-        <button type="button" class="icon-token {expanded === idx ? 'active' : ''}" on:click={() => setExpanded(expanded === idx ? null : idx)} aria-label={`View ${label} #${idx + 1}`} title={label}>
+        <button
+          type="button"
+          class="icon-token {expanded === idx ? 'active' : ''}"
+          on:click={() => setExpanded(expanded === idx ? null : idx)}
+          aria-label={`View ${label} #${idx + 1}`}
+          title={label}
+        >
           {#if err === true}
             <span class="status err" aria-label="error">✗</span>
           {:else if err === false}
@@ -113,14 +121,19 @@
     {:else}
       {#each items as it, idx}
         {@const err = isError(it)}
-        <button type="button" class="token {expanded === idx ? 'active' : ''}" on:click={() => setExpanded(expanded === idx ? null : idx)}>
+        <button
+          type="button"
+          class="token {expanded === idx ? 'active' : ''}"
+          on:click={() => setExpanded(expanded === idx ? null : idx)}
+        >
           {#if err === true}
             <span class="status err" aria-label="error" title="error">✗</span>
           {:else if err === false}
             <span class="status ok" aria-label="ok" title="ok">✓</span>
           {/if}
           {collapsedLabelFor(it)}
-        </button>{#if idx < items.length - 1}, {/if}
+        </button>{#if idx < items.length - 1},
+        {/if}
       {/each}
     {/if}
   </div>
@@ -128,23 +141,66 @@
   {#if expanded !== null}
     {@const it = items[expanded]}
     <div class="expanded">
-      <JsonDisclosure label="Input" value={(isJsonContent(it.content) ? (it.content as any).args : null)} persistKey={`ctg:in:${it.id}`} />
+      <JsonDisclosure
+        label="Input"
+        value={isJsonContent(it.content) ? (it.content as any).args : null}
+        persistKey={`ctg:in:${it.id}`}
+      />
       <JsonDisclosure label="Output" value={jsonOutput(it)} persistKey={`ctg:out:${it.id}`} />
     </div>
   {/if}
 </div>
 
 <style>
-  .collapsed-tools-group { margin: 0.25rem 0; }
-  .inline-list { font-size: 0.85rem; color: var(--text); }
-  .token { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
-  .token.active { text-decoration: none; font-weight: 600; }
-  .icon-token { background: none; border: none; padding: 0 0.125rem; cursor: pointer; font: inherit; text-decoration: none; }
-  .icon-token.active { filter: brightness(0.9); }
-  .expanded { margin-top: 0.25rem; padding-left: 0.5rem; border-left: 2px solid var(--border); }
+  .collapsed-tools-group {
+    margin: 0.25rem 0;
+  }
+  .inline-list {
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+  .token {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    cursor: pointer;
+    font: inherit;
+    text-decoration: underline;
+  }
+  .token.active {
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .icon-token {
+    background: none;
+    border: none;
+    padding: 0 0.125rem;
+    cursor: pointer;
+    font: inherit;
+    text-decoration: none;
+  }
+  .icon-token.active {
+    filter: brightness(0.9);
+  }
+  .expanded {
+    margin-top: 0.25rem;
+    padding-left: 0.5rem;
+    border-left: 2px solid var(--border);
+  }
   /* Removed unused .row */
-  .status { display: inline; text-decoration: none; }
-  .status.ok { color: #2e7d32; }
-  .status.err { color: #c62828; }
-  .group-label { margin-left: 0.25rem; color: var(--text); }
+  .status {
+    display: inline;
+    text-decoration: none;
+  }
+  .status.ok {
+    color: #2e7d32;
+  }
+  .status.err {
+    color: #c62828;
+  }
+  .group-label {
+    margin-left: 0.25rem;
+    color: var(--text);
+  }
 </style>

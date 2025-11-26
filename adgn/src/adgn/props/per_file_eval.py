@@ -30,18 +30,16 @@ class PerFileRunResult(BaseModel):
     """Result of running critic on a single file."""
 
     file_path: str = Field(description="Relative path of the file reviewed")
-    issues_in_file: list[str] = Field(
-        description="Issue IDs that have at least one occurrence in this file"
-    )
+    issues_in_file: list[str] = Field(description="Issue IDs that have at least one occurrence in this file")
     critique: CriticSubmitPayload | None = Field(
         default=None, description="Critique payload from agent (None if failed)"
     )
     grade: GradeSubmitPayload | None = Field(
-        default=None, description="Grading result comparing critique to canonical issues in this file (None if critique failed)"
+        default=None,
+        description="Grading result comparing critique to canonical issues in this file (None if critique failed)",
     )
     detected_issue_ids: list[str] = Field(
-        default_factory=list,
-        description="Issue IDs that were successfully detected (matched as TP by grader)",
+        default_factory=list, description="Issue IDs that were successfully detected (matched as TP by grader)"
     )
     critique_dir: str = Field(description="Directory containing critique artifacts (transcript, unknowns, etc)")
     cost: float = Field(description="Total cost for this file (critic + grader)")
@@ -53,16 +51,11 @@ class PerIssueResult(BaseModel):
     """Aggregated result for a single issue across all files it touches."""
 
     issue_id: str
-    files_containing_issue: list[str] = Field(
-        description="Files where this issue has at least one occurrence"
-    )
+    files_containing_issue: list[str] = Field(description="Files where this issue has at least one occurrence")
     files_that_detected: list[str] = Field(
-        default_factory=list,
-        description="Files where the per-file critic run successfully detected this issue",
+        default_factory=list, description="Files where the per-file critic run successfully detected this issue"
     )
-    detected: bool = Field(
-        description="True if issue was detected in at least one of its files"
-    )
+    detected: bool = Field(description="True if issue was detected in at least one of its files")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -91,10 +84,7 @@ class PerFileEvalMetrics(BaseModel):
         le=1.0,
     )
     avg_file_recall: float | None = Field(
-        default=None,
-        description="Average recall across all per-file runs (where grading succeeded)",
-        ge=0.0,
-        le=1.0,
+        default=None, description="Average recall across all per-file runs (where grading succeeded)", ge=0.0, le=1.0
     )
 
     model_config = ConfigDict(extra="forbid")
@@ -105,12 +95,8 @@ class PerFileEvalResult(BaseModel):
 
     specimen: str
     metrics: PerFileEvalMetrics
-    per_file_runs: list[PerFileRunResult] = Field(
-        description="Results for each file reviewed"
-    )
-    per_issue_results: list[PerIssueResult] = Field(
-        description="Aggregated detection results per issue"
-    )
+    per_file_runs: list[PerFileRunResult] = Field(description="Results for each file reviewed")
+    per_issue_results: list[PerIssueResult] = Field(description="Aggregated detection results per issue")
     eval_dir: str = Field(description="Root directory containing all eval artifacts")
 
     model_config = ConfigDict(extra="forbid")
@@ -275,10 +261,7 @@ async def run_per_file_eval(
         )
 
     # Run all files in parallel
-    results = await asyncio.gather(
-        *[process_one_file(fp) for fp in files_to_review],
-        return_exceptions=True,
-    )
+    results = await asyncio.gather(*[process_one_file(fp) for fp in files_to_review], return_exceptions=True)
 
     # Check for exceptions and collect successful results
     per_file_runs: list[PerFileRunResult] = []
@@ -294,9 +277,7 @@ async def run_per_file_eval(
     # If any files failed, raise an exception with details
     if errors:
         error_summary = "\n".join(f"  - {fp}: {type(e).__name__}: {e}" for fp, e in errors)
-        raise RuntimeError(
-            f"Failed to process {len(errors)} file(s):\n{error_summary}"
-        )
+        raise RuntimeError(f"Failed to process {len(errors)} file(s):\n{error_summary}")
 
     # Aggregate per-issue results (only for issues in reviewed files)
     per_issue_results: list[PerIssueResult] = []
@@ -308,11 +289,7 @@ async def run_per_file_eval(
             continue
 
         # Find which files detected this issue
-        files_that_detected = [
-            run.file_path
-            for run in per_file_runs
-            if issue_id in run.detected_issue_ids
-        ]
+        files_that_detected = [run.file_path for run in per_file_runs if issue_id in run.detected_issue_ids]
 
         per_issue_results.append(
             PerIssueResult(

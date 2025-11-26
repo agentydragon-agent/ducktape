@@ -1,5 +1,22 @@
 import { writable, derived, type Writable, type Readable } from 'svelte/store'
-import { currentAgentId } from '../agents/stores'
+import { get } from 'svelte/store'
+
+import { connectWS, type WsClient } from './ws'
+import {
+  getSnapshot as httpGetSnapshot,
+  getProposal as httpGetProposal,
+  rejectProposal as httpRejectProposal,
+  approveCall,
+  denyAbortCall,
+  denyContinueCall,
+  setPolicy as httpSetPolicy,
+  sendPrompt as httpSendPrompt,
+  abortRun as httpAbortRun,
+  attachMcpServer,
+  detachMcpServer,
+} from '../agents/api'
+import { currentAgentId, agentStatus } from '../agents/stores'
+
 import type {
   IncomingPayload,
   SnapshotPayload,
@@ -9,12 +26,10 @@ import type {
   ApprovalPendingPayload,
   ApprovalDecisionPayload,
   SamplingSnapshot,
+  UiState,
+  ServerEntry,
+  ApprovalPolicyInfo,
 } from '../../shared/types'
-import type { UiState, ServerEntry, ApprovalPolicyInfo } from '../../shared/types'
-import { connectWS, type WsClient } from './ws'
-import { getSnapshot as httpGetSnapshot, getProposal as httpGetProposal, rejectProposal as httpRejectProposal, approveCall, denyAbortCall, denyContinueCall, setPolicy as httpSetPolicy, sendPrompt as httpSendPrompt, abortRun as httpAbortRun, attachMcpServer, detachMcpServer } from '../agents/api'
-import { get } from 'svelte/store'
-import { agentStatus } from '../agents/stores'
 
 export type Pending = { call_id: string; tool_key: string; args_json?: string | null }
 
@@ -22,7 +37,10 @@ export const wsConnected: Writable<boolean> = writable(false)
 export const runStatus: Writable<string> = writable('idle')
 // Agent-scoped UI state
 export const uiStates: Writable<Map<string, UiState>> = writable(new Map())
-export const uiState: Readable<UiState | null> = derived([uiStates, currentAgentId], ([$uiStates, $current]) => ($current ? ($uiStates.get($current) ?? null) : null))
+export const uiState: Readable<UiState | null> = derived(
+  [uiStates, currentAgentId],
+  ([$uiStates, $current]) => ($current ? ($uiStates.get($current) ?? null) : null)
+)
 export const lastError: Writable<string | null> = writable(null)
 export const pendingApprovals: Writable<Map<string, Pending>> = writable(new Map())
 export const approvalPolicy: Writable<ApprovalPolicyInfo | null> = writable(null)
@@ -32,12 +50,17 @@ let client: WsClient | null = null
 let hadErrorPayload = false
 let closingIntentional = false
 
-export function clearError() { lastError.set(null) }
+export function clearError() {
+  lastError.set(null)
+}
 
 export function connectAgentWs(agentId: string) {
   // Close any existing
   if (client) {
-    try { closingIntentional = true; client.close() } catch {}
+    try {
+      closingIntentional = true
+      client.close()
+    } catch {}
   }
   hadErrorPayload = false
   client = connectWS(agentId, {
@@ -53,7 +76,10 @@ export function connectAgentWs(agentId: string) {
       wsConnected.set(false)
       // Ignore intentional closes (switching agents), and do not override
       // a prior specific error payload from the server.
-      if (closingIntentional) { closingIntentional = false; return }
+      if (closingIntentional) {
+        closingIntentional = false
+        return
+      }
       if (hadErrorPayload) return
       // Treat 1000 (normal), 1001 (going away), and 1005 (no status code) as non-errors
       if (ev.code === 1000 || ev.code === 1001 || ev.code === 1005) return
@@ -61,8 +87,10 @@ export function connectAgentWs(agentId: string) {
       // Mark as not live on unexpected close
       agentStatus.set({ id: agentId, live: false })
     },
-    onError: () => { lastError.set('WebSocket error (see console)') },
-    onMessage: (p) => handlePayload(agentId, p)
+    onError: () => {
+      lastError.set('WebSocket error (see console)')
+    },
+    onMessage: (p) => handlePayload(agentId, p),
   })
 }
 
@@ -76,31 +104,59 @@ export async function sendPrompt(text: string) {
   runStatus.set('starting')
   const id = get(currentAgentId)
   if (!id) return
-  try { await httpSendPrompt(id, text) } catch (e) { console.warn('prompt failed', e) }
+  try {
+    await httpSendPrompt(id, text)
+  } catch (e) {
+    console.warn('prompt failed', e)
+  }
 }
 export async function approve(call_id: string) {
   const id = get(currentAgentId)
   if (!id) return
-  try { await approveCall(id, call_id) } catch (e) { console.warn('approve failed', e) }
-  try { await refreshSnapshot() } catch {}
+  try {
+    await approveCall(id, call_id)
+  } catch (e) {
+    console.warn('approve failed', e)
+  }
+  try {
+    await refreshSnapshot()
+  } catch {}
 }
 export async function denyContinue(call_id: string) {
   const id = get(currentAgentId)
   if (!id) return
-  try { await denyContinueCall(id, call_id) } catch (e) { console.warn('deny_continue failed', e) }
-  try { await refreshSnapshot() } catch {}
+  try {
+    await denyContinueCall(id, call_id)
+  } catch (e) {
+    console.warn('deny_continue failed', e)
+  }
+  try {
+    await refreshSnapshot()
+  } catch {}
 }
 export async function deny(call_id: string) {
   const id = get(currentAgentId)
   if (!id) return
-  try { await denyAbortCall(id, call_id) } catch (e) { console.warn('deny_abort failed', e) }
-  try { await refreshSnapshot() } catch {}
+  try {
+    await denyAbortCall(id, call_id)
+  } catch (e) {
+    console.warn('deny_abort failed', e)
+  }
+  try {
+    await refreshSnapshot()
+  } catch {}
 }
 export async function setPolicy(content: string, proposal_id?: string) {
   const id = get(currentAgentId)
   if (!id) return
-  try { await httpSetPolicy(id, content, proposal_id) } catch (e) { console.warn('setPolicy failed', e) }
-  try { await refreshSnapshot() } catch {}
+  try {
+    await httpSetPolicy(id, content, proposal_id)
+  } catch (e) {
+    console.warn('setPolicy failed', e)
+  }
+  try {
+    await refreshSnapshot()
+  } catch {}
 }
 export async function approveProposal(proposal_id: string) {
   const id = get(currentAgentId)
@@ -111,7 +167,9 @@ export async function approveProposal(proposal_id: string) {
   } catch (e) {
     console.warn('approveProposal failed', e)
   }
-  try { await refreshSnapshot() } catch {}
+  try {
+    await refreshSnapshot()
+  } catch {}
 }
 export async function withdrawProposal(proposal_id: string) {
   const id = get(currentAgentId)
@@ -122,7 +180,9 @@ export async function withdrawProposal(proposal_id: string) {
     console.warn('rejectProposal failed', e)
   }
   // Fallback: actively refresh via HTTP in case push snapshot races the UI
-  try { await refreshSnapshot() } catch {}
+  try {
+    await refreshSnapshot()
+  } catch {}
 }
 export async function refreshSnapshot() {
   const id = get(currentAgentId)
@@ -137,9 +197,15 @@ export async function refreshSnapshot() {
 export async function abortRun() {
   const id = get(currentAgentId)
   if (!id) return
-  try { await httpAbortRun(id) } catch (e) { console.warn('abort failed', e) }
+  try {
+    await httpAbortRun(id)
+  } catch (e) {
+    console.warn('abort failed', e)
+  }
   // Proactively refresh snapshot so UI clears busy state even if no run was active yet
-  try { await refreshSnapshot() } catch {}
+  try {
+    await refreshSnapshot()
+  } catch {}
 }
 export async function reconfigureMcp(attach?: Record<string, any>, detach?: string[]) {
   const id = get(currentAgentId)
@@ -156,7 +222,9 @@ export async function reconfigureMcp(attach?: Record<string, any>, detach?: stri
   } catch (e) {
     console.warn('reconfigureMcp failed', e)
   }
-  try { await refreshSnapshot() } catch {}
+  try {
+    await refreshSnapshot()
+  } catch {}
 }
 
 function handleSnapshot(p: SnapshotPayload) {
@@ -173,7 +241,7 @@ function handleSnapshot(p: SnapshotPayload) {
       map.set(a.call_id, {
         call_id: a.call_id,
         tool_key: a.tool_key,
-        args_json: JSON.stringify(a.args)
+        args_json: JSON.stringify(a.args),
       })
     }
     pendingApprovals.set(map)
@@ -182,21 +250,35 @@ function handleSnapshot(p: SnapshotPayload) {
 }
 
 function handleUiStateSnapshot(agentId: string, p: UiStateSnapshotPayload) {
-  uiStates.update(m => { const mm = new Map(m); mm.set(agentId, p.state); return mm })
+  uiStates.update((m) => {
+    const mm = new Map(m)
+    mm.set(agentId, p.state)
+    return mm
+  })
 }
 function handleUiStateUpdated(agentId: string, p: UiStateUpdatedPayload) {
-  uiStates.update(m => { const mm = new Map(m); mm.set(agentId, p.state); return mm })
+  uiStates.update((m) => {
+    const mm = new Map(m)
+    mm.set(agentId, p.state)
+    return mm
+  })
 }
-function handleRunStatus(p: RunStatusPayload) { if (p.run_state?.status) runStatus.set(p.run_state.status) }
+function handleRunStatus(p: RunStatusPayload) {
+  if (p.run_state?.status) runStatus.set(p.run_state.status)
+}
 function handleApprovalPending(p: ApprovalPendingPayload) {
-  pendingApprovals.update(m => {
+  pendingApprovals.update((m) => {
     const mm = new Map(m)
     mm.set(p.call_id, { call_id: p.call_id, tool_key: p.tool_key, args_json: p.args_json ?? null })
     return mm
   })
 }
 function handleApprovalDecision(p: ApprovalDecisionPayload) {
-  pendingApprovals.update(m => { const mm = new Map(m); mm.delete(p.call_id); return mm })
+  pendingApprovals.update((m) => {
+    const mm = new Map(m)
+    mm.delete(p.call_id)
+    return mm
+  })
 }
 
 function handlePayload(agentId: string, p: IncomingPayload) {
@@ -207,17 +289,25 @@ function handlePayload(agentId: string, p: IncomingPayload) {
     console.log('[WS] SNAPSHOT', (p as any).details?.run_state?.status)
   }
   switch (p.type) {
-    case 'snapshot': return handleSnapshot(p)
-    case 'ui_state_snapshot': return handleUiStateSnapshot(agentId, p)
-    case 'ui_state_updated': return handleUiStateUpdated(agentId, p)
-    case 'run_status': return handleRunStatus(p)
-    case 'approval_pending': return handleApprovalPending(p)
-    case 'approval_decision': return handleApprovalDecision(p)
-    case 'accepted': return
+    case 'snapshot':
+      return handleSnapshot(p)
+    case 'ui_state_snapshot':
+      return handleUiStateSnapshot(agentId, p)
+    case 'ui_state_updated':
+      return handleUiStateUpdated(agentId, p)
+    case 'run_status':
+      return handleRunStatus(p)
+    case 'approval_pending':
+      return handleApprovalPending(p)
+    case 'approval_decision':
+      return handleApprovalDecision(p)
+    case 'accepted':
+      return
     case 'error':
       hadErrorPayload = true
       lastError.set(p.message ? `${p.code}: ${p.message}` : String(p.code))
       return
-    default: return
+    default:
+      return
   }
 }

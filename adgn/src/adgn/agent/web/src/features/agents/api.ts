@@ -1,4 +1,5 @@
 import type { AgentListResponse, AgentStatus, DeleteResponse } from '../../shared/types'
+
 const DEBUG = import.meta.env.DEV
 
 export function backendOrigin(): string {
@@ -20,20 +21,25 @@ export async function createAgent(specs: Record<string, any> = {}): Promise<{ id
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ specs })
+    body: JSON.stringify({ specs }),
   })
   if (DEBUG) console.log('[HTTP] POST RES', res.status)
   if (!res.ok) throw new Error('createAgent http ' + res.status)
   return res.json()
 }
 
-export async function listPresets(): Promise<{ presets: Array<{ name: string; description?: string | null }> }> {
+export async function listPresets(): Promise<{
+  presets: Array<{ name: string; description?: string | null }>
+}> {
   const res = await fetch(backendOrigin() + '/api/presets')
   if (!res.ok) throw new Error('listPresets http ' + res.status)
   return res.json()
 }
 
-export async function createAgentFromPreset(preset: string, system?: string): Promise<{ id: string }> {
+export async function createAgentFromPreset(
+  preset: string,
+  system?: string
+): Promise<{ id: string }> {
   const url = backendOrigin() + '/api/agents'
   const body: any = { preset }
   if (system) body.system = system
@@ -41,7 +47,7 @@ export async function createAgentFromPreset(preset: string, system?: string): Pr
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('createAgentFromPreset http ' + res.status)
   return res.json()
@@ -71,7 +77,11 @@ export async function attachMcpServer(agentId: string, name: string, spec: any):
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/mcp/attach`
   const body = { name, spec }
   if (DEBUG) console.log('[HTTP] POST', url, body)
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
   if (DEBUG) console.log('[HTTP] POST RES', res.status)
   if (!res.ok) throw new Error('attachMcpServer http ' + res.status)
   return res.json()
@@ -81,7 +91,11 @@ export async function detachMcpServer(agentId: string, name: string): Promise<an
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/mcp/detach`
   const body = { name }
   if (DEBUG) console.log('[HTTP] POST', url, body)
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
   if (DEBUG) console.log('[HTTP] POST RES', res.status)
   if (!res.ok) throw new Error('detachMcpServer http ' + res.status)
   return res.json()
@@ -98,7 +112,10 @@ export async function getSnapshot(agentId: string): Promise<any> {
   return res.json()
 }
 
-export async function withdrawProposal(agentId: string, proposalId: string): Promise<{ ok: boolean; error?: string | null }> {
+export async function withdrawProposal(
+  agentId: string,
+  proposalId: string
+): Promise<{ ok: boolean; error?: string | null }> {
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/proposals/${encodeURIComponent(proposalId)}/withdraw`
   const res = await fetch(url, { method: 'POST' })
   const body = await res.json().catch(() => null)
@@ -106,19 +123,26 @@ export async function withdrawProposal(agentId: string, proposalId: string): Pro
   return body
 }
 
-export async function setPolicy(agentId: string, content: string, proposalId?: string): Promise<{ ok: boolean; error?: string | null }> {
+export async function setPolicy(
+  agentId: string,
+  content: string,
+  proposalId?: string
+): Promise<{ ok: boolean; error?: string | null }> {
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/policy`
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ content, proposal_id: proposalId ?? null })
+    body: JSON.stringify({ content, proposal_id: proposalId ?? null }),
   })
   const body = await res.json().catch(() => null)
   if (!res.ok) throw new Error('setPolicy http ' + res.status)
   return body
 }
 
-export async function rejectProposal(agentId: string, proposalId: string): Promise<{ ok: boolean; error?: string | null }> {
+export async function rejectProposal(
+  agentId: string,
+  proposalId: string
+): Promise<{ ok: boolean; error?: string | null }> {
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/proposals/${encodeURIComponent(proposalId)}/reject`
   const res = await fetch(url, { method: 'POST' })
   const body = await res.json().catch(() => null)
@@ -126,40 +150,77 @@ export async function rejectProposal(agentId: string, proposalId: string): Promi
   return body
 }
 
-export async function getProposal(agentId: string, proposalId: string): Promise<{ id: string; content: string; status?: string; created_at?: string; decided_at?: string | null }>{
+export async function getProposal(
+  agentId: string,
+  proposalId: string
+): Promise<{
+  id: string
+  content: string
+  status?: string
+  created_at?: string
+  decided_at?: string | null
+}> {
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/proposals/${encodeURIComponent(proposalId)}`
   const res = await fetch(url)
   if (!res.ok) throw new Error('getProposal http ' + res.status)
   return res.json()
 }
 
-export async function approveCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
+export async function approveCall(
+  agentId: string,
+  callId: string
+): Promise<{ ok: boolean; error?: string | null }> {
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/approve`
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ call_id: callId }) })
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ call_id: callId }),
+  })
   const body = await res.json().catch(() => null)
   if (!res.ok) throw new Error('approve http ' + res.status)
   return body
 }
 
-export async function denyContinueCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
+export async function denyContinueCall(
+  agentId: string,
+  callId: string
+): Promise<{ ok: boolean; error?: string | null }> {
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/deny_continue`
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ call_id: callId }) })
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ call_id: callId }),
+  })
   const body = await res.json().catch(() => null)
   if (!res.ok) throw new Error('deny_continue http ' + res.status)
   return body
 }
 
-export async function denyAbortCall(agentId: string, callId: string): Promise<{ ok: boolean; error?: string | null }> {
+export async function denyAbortCall(
+  agentId: string,
+  callId: string
+): Promise<{ ok: boolean; error?: string | null }> {
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/deny_abort`
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ call_id: callId }) })
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ call_id: callId }),
+  })
   const body = await res.json().catch(() => null)
   if (!res.ok) throw new Error('deny_abort http ' + res.status)
   return body
 }
 
-export async function sendPrompt(agentId: string, text: string): Promise<{ ok: boolean; error?: string | null }> {
+export async function sendPrompt(
+  agentId: string,
+  text: string
+): Promise<{ ok: boolean; error?: string | null }> {
   const url = `${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}/prompt`
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
   const body = await res.json().catch(() => null)
   if (!res.ok) throw new Error('prompt http ' + res.status)
   return body

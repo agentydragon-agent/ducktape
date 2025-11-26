@@ -9,11 +9,12 @@
 
   let openState: boolean = open
   import { onMount } from 'svelte'
+
   onMount(() => {
     if (persistKey) {
       try {
         const raw = localStorage.getItem(`jsonDisclosure:${persistKey}`)
-        if (raw === 'true' || raw === 'false') openState = (raw === 'true')
+        if (raw === 'true' || raw === 'false') openState = raw === 'true'
       } catch {}
     }
   })
@@ -21,21 +22,33 @@
     const el = e.currentTarget as HTMLDetailsElement
     openState = !!el.open
     if (persistKey) {
-      try { localStorage.setItem(`jsonDisclosure:${persistKey}`, String(openState)) } catch {}
+      try {
+        localStorage.setItem(`jsonDisclosure:${persistKey}`, String(openState))
+      } catch {}
     }
   }
 
   function jsonView(node: HTMLElement, val: any) {
-    const prefersDark = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+    const prefersDark =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
     const render = (v: any) => {
       node.innerHTML = ''
       let parsed: any = null
       if (v && typeof v === 'object') parsed = v
       else if (typeof v === 'string') {
-        try { parsed = JSON.parse(v) } catch { parsed = null }
+        try {
+          parsed = JSON.parse(v)
+        } catch {
+          parsed = null
+        }
       }
       if (parsed && typeof parsed === 'object') {
-        const fmt = new (JSONFormatter as any)(parsed, 1, { theme: prefersDark ? 'dark' : undefined, hoverPreviewEnabled: true })
+        const fmt = new (JSONFormatter as any)(parsed, 1, {
+          theme: prefersDark ? 'dark' : undefined,
+          hoverPreviewEnabled: true,
+        })
         node.appendChild(fmt.render())
       } else {
         const pre = document.createElement('pre')
@@ -55,6 +68,10 @@
 </details>
 
 <style>
-  .json-disclosure { margin: 0.25rem 0; }
-  .json-body :global(pre) { margin: 0; }
+  .json-disclosure {
+    margin: 0.25rem 0;
+  }
+  .json-body :global(pre) {
+    margin: 0;
+  }
 </style>

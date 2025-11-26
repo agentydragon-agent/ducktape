@@ -42,9 +42,7 @@ class MaxHeight:
         self.renderable = renderable
         self.max_height = max_height
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ):
+    def __rich_console__(self, console: Console, options: ConsoleOptions):
         """Render content with height constraint."""
         # Render inner content to segments
         segments = list(console.render(self.renderable, options))
@@ -54,14 +52,14 @@ class MaxHeight:
         current_line: list[Segment] = []
 
         for segment in segments:
-            if '\n' in segment.text:
+            if "\n" in segment.text:
                 # Split segment on newlines
-                parts = segment.text.split('\n')
+                parts = segment.text.split("\n")
                 for i, part in enumerate(parts):
                     if part:  # Non-empty part
                         current_line.append(Segment(part, segment.style))
                     if i < len(parts) - 1:  # Not the last part
-                        current_line.append(Segment('\n', segment.style))
+                        current_line.append(Segment("\n", segment.style))
                         lines.append(current_line)
                         current_line = []
             else:
@@ -77,7 +75,7 @@ class MaxHeight:
             yield from segments
         else:
             # Tall content: yield first max_height lines, then truncation marker
-            for line in lines[:self.max_height]:
+            for line in lines[: self.max_height]:
                 yield from line
             yield Segment(f"... ({len(lines) - self.max_height} more lines)\n")
 
@@ -153,13 +151,7 @@ class RichDisplayHandler(BaseHandler):
         self._console.print(renderable)
 
     def _panel(
-        self,
-        content: RenderableType,
-        title: str,
-        color: str,
-        *,
-        bold: bool = False,
-        border: bool = False,
+        self, content: RenderableType, title: str, color: str, *, bold: bool = False, border: bool = False
     ) -> Panel:
         """Create a Panel with colored title and height-constrained content.
 
@@ -175,10 +167,10 @@ class RichDisplayHandler(BaseHandler):
         # Wrap content with MaxHeight to enforce limit without padding
         constrained_content = MaxHeight(content, self._max_lines)
 
-        kwargs = {"title": formatted_title, "box": box.HORIZONTALS}
+        kwargs: dict[str, object] = {"title": formatted_title, "box": box.HORIZONTALS}
         if border:
             kwargs["border_style"] = color
-        return Panel(constrained_content, **kwargs)
+        return Panel(constrained_content, **kwargs)  # type: ignore[arg-type]
 
     def _parse_tool_key(self, tool_name: str) -> tuple[str, str] | None:
         """Parse tool name into (server, tool) tuple, or None if invalid format."""
@@ -280,30 +272,16 @@ class RichDisplayHandler(BaseHandler):
                 if tool_key and tool_key in self._tool_schemas:
                     try:
                         result_type = self._tool_schemas[tool_key]
-                        parsed_data = TypeAdapter(result_type).validate_python(
-                            parsed_data
-                        )
+                        parsed_data = TypeAdapter(result_type).validate_python(parsed_data)
                     except Exception:
                         pass  # Keep raw structured_content
 
             # Determine what to display (priority: parsed_data > content > error flag)
-            display_data = (
-                parsed_data
-                if parsed_data is not None
-                else (result.content or {"isError": result.isError})
-            )
+            display_data = parsed_data if parsed_data is not None else (result.content or {"isError": result.isError})
 
             # Handle MCP content blocks
-            if (
-                isinstance(display_data, list)
-                and display_data
-                and isinstance(display_data[0], mcp_types.TextContent)
-            ):
-                texts = [
-                    block.text
-                    for block in display_data
-                    if isinstance(block, mcp_types.TextContent)
-                ]
+            if isinstance(display_data, list) and display_data and isinstance(display_data[0], mcp_types.TextContent):
+                texts = [block.text for block in display_data if isinstance(block, mcp_types.TextContent)]
                 combined = "\n---\n".join(texts)
                 return self._panel(Text(combined), label, "yellow")
 

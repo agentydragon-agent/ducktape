@@ -1,4 +1,5 @@
 import type { IncomingPayload } from '../../shared/types'
+
 const DEBUG = import.meta.env.DEV
 
 export type WsHandlers = {
@@ -35,7 +36,10 @@ export function connectWS(agentId: string, handlers: WsHandlers = {}): WsClient 
     // No timers to clear
     handlers.onClose?.(ev)
   }
-  ws.onerror = (ev) => { if (DEBUG) console.warn('[WS] ERROR', ev); handlers.onError?.(ev) }
+  ws.onerror = (ev) => {
+    if (DEBUG) console.warn('[WS] ERROR', ev)
+    handlers.onError?.(ev)
+  }
   ws.onmessage = (ev) => {
     try {
       const env = JSON.parse(ev.data)
@@ -48,6 +52,10 @@ export function connectWS(agentId: string, handlers: WsHandlers = {}): WsClient 
   }
 
   return {
-    close: () => { try { ws.close() } catch {} }
+    close: () => {
+      try {
+        ws.close()
+      } catch {}
+    },
   }
 }

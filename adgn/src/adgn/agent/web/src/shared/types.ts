@@ -22,7 +22,14 @@ export type AgentStatus = {
   live: boolean
   active_run_id?: string | null
   lifecycle?: 'persisted_only' | 'starting' | 'ready' | 'closing' | 'closed' | 'error'
-  run_phase?: 'idle' | 'sampling' | 'waiting_tool' | 'tools_running' | 'waiting_approval' | 'sending_output' | 'error'
+  run_phase?:
+    | 'idle'
+    | 'sampling'
+    | 'waiting_tool'
+    | 'tools_running'
+    | 'waiting_approval'
+    | 'sending_output'
+    | 'error'
   policy?: PolicyState
   ui?: UiStateLite
   mcp?: McpState
@@ -74,7 +81,6 @@ export type PolicyError = {
   length?: number
   message?: string | null
 }
-
 
 export type Proposal = {
   id: string
@@ -151,11 +157,7 @@ export type ToolItem = {
   content: ToolContent
 }
 
-export type UiDisplayItem =
-  | UserMessageItem
-  | AssistantMarkdownItem
-  | EndTurnItem
-  | ToolItem
+export type UiDisplayItem = UserMessageItem | AssistantMarkdownItem | EndTurnItem | ToolItem
 
 export type UiState = {
   seq: number
@@ -165,8 +167,17 @@ export type UiState = {
 export type UiStateSnapshotPayload = { type: 'ui_state_snapshot'; state: UiState }
 export type UiStateUpdatedPayload = { type: 'ui_state_updated'; state: UiState }
 export type RunStatusPayload = { type: 'run_status'; run_state?: { status?: string } }
-export type ApprovalPendingPayload = { type: 'approval_pending'; call_id: string; tool_key: string; args_json?: string | null }
-export type ApprovalDecisionPayload = { type: 'approval_decision'; call_id: string; decision: ApprovalKind }
+export type ApprovalPendingPayload = {
+  type: 'approval_pending'
+  call_id: string
+  tool_key: string
+  args_json?: string | null
+}
+export type ApprovalDecisionPayload = {
+  type: 'approval_decision'
+  call_id: string
+  decision: ApprovalKind
+}
 export type AcceptedPayload = { type: 'accepted' }
 export type ErrorPayload = { type: 'error'; code: string; message?: string }
 

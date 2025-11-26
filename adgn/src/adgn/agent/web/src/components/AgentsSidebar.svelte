@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { agents, currentAgentId, setAgentId } from '../features/agents/stores'
-  import { deleteAgent as apiDeleteAgent, createAgent as apiCreateAgent, listPresets, createAgentFromPreset } from '../features/agents/api'
-  import type { AgentRow } from '../shared/types'
-  import { prefs } from '../shared/prefs'
-  import { LEFT_MIN, LEFT_MAX } from '../shared/layout'
-  import SidebarToggle from './SidebarToggle.svelte'
   import ModalBackdrop from './ModalBackdrop.svelte'
+  import SidebarToggle from './SidebarToggle.svelte'
+  import {
+    deleteAgent as apiDeleteAgent,
+    createAgent as apiCreateAgent,
+    listPresets,
+    createAgentFromPreset,
+  } from '../features/agents/api'
+  import { agents, currentAgentId, setAgentId } from '../features/agents/stores'
+  import { LEFT_MIN, LEFT_MAX } from '../shared/layout'
+  import { prefs } from '../shared/prefs'
+
+  import type { AgentRow } from '../shared/types'
 
   export let onStartResize: (e: MouseEvent) => void
 
@@ -20,13 +26,14 @@
   let modalSystem: string = ''
   // Restore scroll position
   import { onMount, onDestroy } from 'svelte'
+
   async function refreshPresets() {
     try {
       const r = await listPresets()
       const list = r.presets || []
       presets = list
       if (showPresetModal) {
-        if (!modalPreset || !list.find(p => p.name === modalPreset)) {
+        if (!modalPreset || !list.find((p) => p.name === modalPreset)) {
           modalPreset = list[0]?.name || null
         }
       }
@@ -42,8 +49,12 @@
     // Initial load
     refreshPresets()
     // Auto-refresh on focus and tab visibility
-    const onFocus = () => { void refreshPresets() }
-    const onVis = () => { if (document.visibilityState === 'visible') void refreshPresets() }
+    const onFocus = () => {
+      void refreshPresets()
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void refreshPresets()
+    }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVis)
     return () => {
@@ -90,11 +101,15 @@
       const body = await createAgentFromPreset(modalPreset, modalSystem || undefined)
       const id = body?.id as string
       if (id) setAgentId(id)
-    } catch (e) { console.warn('create agent from modal failed', e) }
-    finally { showPresetModal = false }
+    } catch (e) {
+      console.warn('create agent from modal failed', e)
+    } finally {
+      showPresetModal = false
+    }
   }
 
-  async function createNewAgent() { // legacy path if modal not used
+  async function createNewAgent() {
+    // legacy path if modal not used
     openPresetDialog()
   }
 
@@ -103,7 +118,7 @@
       const body = await apiDeleteAgent(id)
       if (!body?.ok) throw new Error(body?.error || 'delete failed')
       // Optimistically update list and selection
-      agents.update(list => (list || []).filter(a => a.id !== id))
+      agents.update((list) => (list || []).filter((a) => a.id !== id))
       if ($currentAgentId === id) setAgentId(null)
       confirmingId = null
     } catch (e) {
@@ -124,7 +139,11 @@
 
   function lastUpdatedTitle(a: AgentRow): string {
     const lu = a.last_updated ? `\nlast updated: ${a.last_updated}` : ''
-    const s = a.working ? 'working (active run in progress)' : (a.live ? 'on (live container running)' : 'off (no live container)')
+    const s = a.working
+      ? 'working (active run in progress)'
+      : a.live
+        ? 'on (live container running)'
+        : 'off (no live container)'
     return `Agent ${a.id}\n${s}${lu}`
   }
 
@@ -142,19 +161,30 @@
   <div class="leftbar-header">
     <div class="row">
       <strong>Agents</strong>
-      <button class="small add" title="Create new agent" aria-label="Create new agent" on:click={openPresetDialog}>+</button>
+      <button
+        class="small add"
+        title="Create new agent"
+        aria-label="Create new agent"
+        on:click={openPresetDialog}>+</button
+      >
       <SidebarToggle
         title="Hide agents sidebar"
         label="Hide agents sidebar"
         glyph="«"
-        action={() => prefs.update(p => ({ ...p, showAgentsSidebar: false }))}
+        action={() => prefs.update((p) => ({ ...p, showAgentsSidebar: false }))}
       />
     </div>
     <!-- hint removed -->
   </div>
-  <div class="agents-list" bind:this={listEl} on:scroll={() => {
-    try { localStorage.setItem('agentsSidebarScrollTop', String(listEl?.scrollTop || 0)) } catch {}
-  }}>
+  <div
+    class="agents-list"
+    bind:this={listEl}
+    on:scroll={() => {
+      try {
+        localStorage.setItem('agentsSidebarScrollTop', String(listEl?.scrollTop || 0))
+      } catch {}
+    }}
+  >
     {#each agentList as a}
       <div
         class="agent-row {a.id === selected ? 'current' : ''}"
@@ -163,22 +193,46 @@
         role="button"
         tabindex="0"
         on:click={() => open(a.id)}
-        on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(a.id) } }}
+        on:keydown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            open(a.id)
+          }
+        }}
       >
-        <button type="button" class="agent-open" on:click={(e) => { e.stopPropagation(); open(a.id) }}>
-          <span class="dot {a.working ? 'working' : (a.live ? 'on' : 'off')}"></span>
-          <span class="agent-id">{a.id.slice(0,8)}</span>
-          <span class="badge lifecycle lc-{a.lifecycle ?? (a.live ? 'ready' : 'persisted_only')}" title={`Lifecycle: ${lifecycleLabel(a)}`}>{lifecycleLabel(a)}</span>
+        <button
+          type="button"
+          class="agent-open"
+          on:click={(e) => {
+            e.stopPropagation()
+            open(a.id)
+          }}
+        >
+          <span class="dot {a.working ? 'working' : a.live ? 'on' : 'off'}"></span>
+          <span class="agent-id">{a.id.slice(0, 8)}</span>
+          <span
+            class="badge lifecycle lc-{a.lifecycle ?? (a.live ? 'ready' : 'persisted_only')}"
+            title={`Lifecycle: ${lifecycleLabel(a)}`}>{lifecycleLabel(a)}</span
+          >
           {#if a.metadata?.preset}
             <span class="preset" title={`Preset: ${a.metadata.preset}`}>{a.metadata.preset}</span>
           {/if}
         </button>
         <div class="row-actions">
           {#if confirmingId === a.id}
-            <button class="danger small" on:click|stopPropagation={() => doDelete(a.id)}>Confirm</button>
-            <button class="secondary small" on:click|stopPropagation={() => (confirmingId = null)}>Cancel</button>
+            <button class="danger small" on:click|stopPropagation={() => doDelete(a.id)}
+              >Confirm</button
+            >
+            <button class="secondary small" on:click|stopPropagation={() => (confirmingId = null)}
+              >Cancel</button
+            >
           {:else}
-            <button class="danger small icon" aria-label="Delete agent" title="Delete agent" on:click|stopPropagation={() => (confirmingId = a.id)}>×</button>
+            <button
+              class="danger small icon"
+              aria-label="Delete agent"
+              title="Delete agent"
+              on:click|stopPropagation={() => (confirmingId = a.id)}>×</button
+            >
           {/if}
         </div>
       </div>
@@ -198,8 +252,19 @@
     on:mousedown={onStartResize}
     on:keydown={(e) => {
       const step = e.shiftKey ? 32 : 8
-      if (e.key === 'ArrowLeft') { prefs.update(p => ({ ...p, leftSidebarWidth: Math.max(LEFT_MIN, p.leftSidebarWidth - step) })); e.preventDefault() }
-      else if (e.key === 'ArrowRight') { prefs.update(p => ({ ...p, leftSidebarWidth: Math.min(LEFT_MAX, p.leftSidebarWidth + step) })); e.preventDefault() }
+      if (e.key === 'ArrowLeft') {
+        prefs.update((p) => ({
+          ...p,
+          leftSidebarWidth: Math.max(LEFT_MIN, p.leftSidebarWidth - step),
+        }))
+        e.preventDefault()
+      } else if (e.key === 'ArrowRight') {
+        prefs.update((p) => ({
+          ...p,
+          leftSidebarWidth: Math.min(LEFT_MAX, p.leftSidebarWidth + step),
+        }))
+        e.preventDefault()
+      }
     }}
     title="Drag to resize"
     aria-label="Resize agents sidebar"
@@ -225,51 +290,202 @@
         {/if}
         <div class="row">
           <label for="modal-system" style="min-width: 80px;">System</label>
-          <input id="modal-system" type="text" placeholder="(optional) override system message" bind:value={modalSystem} style="flex: 1;" />
+          <input
+            id="modal-system"
+            type="text"
+            placeholder="(optional) override system message"
+            bind:value={modalSystem}
+            style="flex: 1;"
+          />
         </div>
       </div>
       <footer>
         <button class="secondary" on:click={() => (showPresetModal = false)}>Cancel</button>
-        <button class="primary" on:click={confirmCreateFromModal} disabled={!modalPreset && presets.length > 0}>Create</button>
+        <button
+          class="primary"
+          on:click={confirmCreateFromModal}
+          disabled={!modalPreset && presets.length > 0}>Create</button
+        >
       </footer>
     </div>
   </ModalBackdrop>
 {/if}
 
 <style>
-  .leftbar { display: flex; flex-direction: column; position: relative; width: 100%; min-width: 0; }
-  .leftbar-header { padding: 0.5rem; border-bottom: 1px solid var(--border); }
-  .agents-list { overflow-y: auto; padding: 0.25rem 0.5rem; }
-  .agent-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.25rem; border-radius: 4px; width: 100%; cursor: pointer; }
-  .agent-row:hover { background: var(--surface-2); }
-  .agent-row.current { background: rgba(25,118,210,0.1); }
-  .agent-open { display: inline-flex; align-items: center; gap: 0.5rem; background: none; border: 1px solid transparent; cursor: pointer; padding: 0.2rem 0.25rem; }
-  .agent-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: #bbb; display: inline-block; }
-  .dot.on { background: #2ecc71; }
-  .dot.off { background: #bbb; }
-  .badge.lifecycle { font-size: 0.65rem; padding: 0.05rem 0.3rem; border-radius: 0.5rem; text-transform: lowercase; border: 1px solid var(--border); }
-  .badge.lifecycle.lc-ready { background: rgba(46, 204, 113, 0.15); color: #2e7d32; border-color: rgba(46, 204, 113, 0.4); }
-  .badge.lifecycle.lc-starting { background: rgba(255, 193, 7, 0.15); color: #b26a00; border-color: rgba(255, 193, 7, 0.4); }
-  .badge.lifecycle.lc-persisted_only { background: rgba(158, 158, 158, 0.15); color: #616161; border-color: rgba(158, 158, 158, 0.4); }
-  .dot.working { background: #f39c12; animation: blink 1s infinite ease-in-out; }
-  @keyframes blink { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+  .leftbar {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    width: 100%;
+    min-width: 0;
+  }
+  .leftbar-header {
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .agents-list {
+    overflow-y: auto;
+    padding: 0.25rem 0.5rem;
+  }
+  .agent-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.25rem;
+    border-radius: 4px;
+    width: 100%;
+    cursor: pointer;
+  }
+  .agent-row:hover {
+    background: var(--surface-2);
+  }
+  .agent-row.current {
+    background: rgba(25, 118, 210, 0.1);
+  }
+  .agent-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+    padding: 0.2rem 0.25rem;
+  }
+  .agent-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.85rem;
+  }
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #bbb;
+    display: inline-block;
+  }
+  .dot.on {
+    background: #2ecc71;
+  }
+  .dot.off {
+    background: #bbb;
+  }
+  .badge.lifecycle {
+    font-size: 0.65rem;
+    padding: 0.05rem 0.3rem;
+    border-radius: 0.5rem;
+    text-transform: lowercase;
+    border: 1px solid var(--border);
+  }
+  .badge.lifecycle.lc-ready {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2e7d32;
+    border-color: rgba(46, 204, 113, 0.4);
+  }
+  .badge.lifecycle.lc-starting {
+    background: rgba(255, 193, 7, 0.15);
+    color: #b26a00;
+    border-color: rgba(255, 193, 7, 0.4);
+  }
+  .badge.lifecycle.lc-persisted_only {
+    background: rgba(158, 158, 158, 0.15);
+    color: #616161;
+    border-color: rgba(158, 158, 158, 0.4);
+  }
+  .dot.working {
+    background: #f39c12;
+    animation: blink 1s infinite ease-in-out;
+  }
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 0.5;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
   /* Keep the resize handle within the sidebar to avoid overlaying the chat area */
-  .left-resize { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; background: transparent; border: none; padding: 0; }
-  .row { display: flex; gap: 0.5rem; align-items: center; }
-  .preset { flex: 1; min-width: 0; }
+  .left-resize {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+  .row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .preset {
+    flex: 1;
+    min-width: 0;
+  }
   /* Modal styles */
   /* Backdrop styling moved to ModalBackdrop component */
-  .modal { background: var(--surface); color: var(--text); min-width: 320px; max-width: 90vw; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
-  .modal header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-weight: 600; }
-  .modal .body { padding: 0.75rem; display: grid; grid-template-columns: 1fr; gap: 0.5rem; }
-  .modal .row { display: flex; gap: 0.5rem; align-items: center; }
-  .modal footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--border); }
-  .row :global(.toggle-btn) { margin-left: auto; }
-  .row-actions { margin-left: auto; display: inline-flex; gap: 0.25rem; }
-  .small { font-size: 0.75rem; padding: 0.2rem 0.4rem; }
-  .danger { color: #b00020; }
-  .secondary { background: var(--surface-2); }
-  .icon { width: 22px; height: 22px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
-  .add { margin-left: auto; }
+  .modal {
+    background: var(--surface);
+    color: var(--text);
+    min-width: 320px;
+    max-width: 90vw;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+  .modal header {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+  .modal .body {
+    padding: 0.75rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  .modal .row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .modal footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+  .row :global(.toggle-btn) {
+    margin-left: auto;
+  }
+  .row-actions {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 0.25rem;
+  }
+  .small {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.4rem;
+  }
+  .danger {
+    color: #b00020;
+  }
+  .secondary {
+    background: var(--surface-2);
+  }
+  .icon {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+  .add {
+    margin-left: auto;
+  }
 </style>

@@ -5,7 +5,12 @@ export type McpPreset = {
   defaultName?: string
   defaults: {
     stdio?: { command: string; args: any[]; env: Record<string, string> }
-    sse?: { url: string; headers: Record<string, string>; timeout_secs: number; sse_read_timeout_secs: number }
+    sse?: {
+      url: string
+      headers: Record<string, string>
+      timeout_secs: number
+      sse_read_timeout_secs: number
+    }
     inproc?: { factory: string; args: any[]; kwargs: Record<string, any> }
     http?: { url: string; headers?: Record<string, string>; auth?: string }
   }

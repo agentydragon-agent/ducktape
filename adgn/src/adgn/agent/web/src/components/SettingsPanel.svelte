@@ -1,5 +1,6 @@
 <script lang="ts">
   import { prefs } from '../shared/prefs'
+
   export let lastError: string | null = null
   export let clearError: () => void
   export let deleteCurrentAgent: () => void
@@ -8,7 +9,9 @@
 
 <div class="settings">
   <h4>Settings</h4>
-  <label><input type="checkbox" bind:checked={$prefs.renderMarkdown}> Render assistant as Markdown</label>
+  <label
+    ><input type="checkbox" bind:checked={$prefs.renderMarkdown} /> Render assistant as Markdown</label
+  >
   <div class="row">
     <button on:click={clearError} disabled={!lastError}>Clear error</button>
   </div>
@@ -16,7 +19,9 @@
     <h4>Danger Zone</h4>
     <p class="meta">Delete this agent and all of its history.</p>
     {#if !showDeleteConfirm}
-      <button on:click={() => (showDeleteConfirm = true)} style="color: #b00020">Delete Agent and All Data</button>
+      <button on:click={() => (showDeleteConfirm = true)} style="color: #b00020"
+        >Delete Agent and All Data</button
+      >
     {:else}
       <div class="row">
         <button class="danger" on:click={deleteCurrentAgent}>Confirm Delete</button>
@@ -27,10 +32,27 @@
 </div>
 
 <style>
-  .settings h4 { margin: 0.25rem 0; }
-  .row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-  .danger { margin-top: 1rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
-  .meta { color: var(--muted); font-size: 0.85rem; }
-  .danger :global(.danger) { color: #b00020; }
-  .secondary { background: var(--surface-2); }
+  .settings h4 {
+    margin: 0.25rem 0;
+  }
+  .row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .danger {
+    margin-top: 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .danger :global(.danger) {
+    color: #b00020;
+  }
+  .secondary {
+    background: var(--surface-2);
+  }
 </style>

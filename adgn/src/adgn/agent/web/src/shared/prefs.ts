@@ -25,12 +25,20 @@ function load(): Prefs {
       }
     }
   } catch {}
-  return { renderMarkdown: true, leftSidebarWidth: 220, rightSidebarWidth: 280, leftTopHeight: 260, showAgentsSidebar: true }
+  return {
+    renderMarkdown: true,
+    leftSidebarWidth: 220,
+    rightSidebarWidth: 280,
+    leftTopHeight: 260,
+    showAgentsSidebar: true,
+  }
 }
 
 export const prefs = writable<Prefs>(load())
 
 // persist on change
 prefs.subscribe((p) => {
-  try { localStorage.setItem(KEY, JSON.stringify(p)) } catch {}
+  try {
+    localStorage.setItem(KEY, JSON.stringify(p))
+  } catch {}
 })

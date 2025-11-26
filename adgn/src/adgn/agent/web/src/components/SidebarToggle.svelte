@@ -6,7 +6,12 @@
   export let extraClass: string = ''
 </script>
 
-<button class="toggle-btn {extraClass}" {title} aria-label={label} on:click={() => action && action()}>
+<button
+  class="toggle-btn {extraClass}"
+  {title}
+  aria-label={label}
+  on:click={() => action && action()}
+>
   {glyph}
 </button>
 
