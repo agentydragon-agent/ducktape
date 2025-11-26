@@ -21,7 +21,6 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.images import resolve_runtime_image
 from adgn.agent.server.bus import ServerBus
-from adgn.agent.server.protocol import ApprovalPendingEvt
 from adgn.agent.server.rendering import render_compositor_instructions
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.agent.server.system_message import get_ui_system_message
@@ -317,8 +316,6 @@ class AgentContainer:
         assert approval_hub is not None
 
         async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
-            if self._cm is not None and self.session is not None:
-                await self._cm.send_payload(ApprovalPendingEvt(call_id=call_id, tool_key=tool_key, args_json=args_json))
             # Broadcast MCP resource update for pending approvals
             if self._approvals_server is not None:
                 from adgn.mcp.approvals.server import APPROVALS_PENDING_URI
@@ -499,11 +496,7 @@ class AgentContainer:
                     return None
                 return await self._compositor.sampling_snapshot()
             case _SamplingSnapshotIncrementalMsg():
-                # Emit a single compositor-derived snapshot (compositor is always present)
-                if self._compositor is None or self._cm is None or self.session is None:
-                    return None
-                snap = await self._compositor.sampling_snapshot()
-                await self._cm.send_payload(await self.session.build_snapshot(sampling=snap))
+                # Snapshot is now fetched via HTTP GET /api/agents/{id}/snapshot, not pushed
                 return None
             case _CloseMsg():
                 return await self._op_close()
@@ -595,8 +588,8 @@ class AgentContainer:
         assert engine is not None
 
         async def _push_snapshot() -> None:
-            if self.session is not None and self._cm is not None:
-                await self._cm.send_payload(await self.session.build_snapshot())
+            # Snapshot is now fetched via HTTP GET /api/agents/{id}/snapshot, not pushed
+            pass
 
         # Mount approval policy servers: reader + proposer (agent container)
         assert self._compositor is not None
@@ -655,12 +648,8 @@ class AgentContainer:
 
     async def _push_snapshot_and_status(self) -> None:
         """Emit a fresh snapshot and broadcast live/working status."""
-        if self.session is None or self._cm is None:
-            return
-        sampling = await self.sampling_snapshot()
-        await self._cm.send_payload(await self.session.build_snapshot(sampling=sampling))
-        active = self.session.active_run.run_id if self.session.active_run else None
-        await self._cm.broadcast_status(True, active)
+        # Snapshot is now fetched via HTTP GET /api/agents/{id}/snapshot, not pushed
+        pass
 
     # sampling snapshot helpers are inlined in the actor dispatch handlers
 

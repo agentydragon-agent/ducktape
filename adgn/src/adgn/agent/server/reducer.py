@@ -7,7 +7,6 @@ from mcp import types as mcp_types
 
 from adgn.agent.approvals import WellKnownTools
 from adgn.agent.server.protocol import (
-    ApprovalDecisionEvt,
     FunctionCallOutput,
     ToolCall,
     UiEndTurnEvt,
@@ -38,7 +37,6 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
     - UserText
     - ToolCall
     - FunctionCallOutput
-    - ApprovalDecisionEvt
     - UiMessageEvt
     - UiEndTurnEvt
     """
@@ -84,10 +82,6 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
         ):
             return state
         return start_tool(state, tool_call=evt, cmd=cmd, args=parsed_args)
-
-    # Approval decision → add to the current group
-    if isinstance(evt, ApprovalDecisionEvt):
-        return update_tool_decision(state, evt.call_id, decision=evt.decision.kind)
 
     # Function call output → merge stdout/stderr/exit
     if isinstance(evt, FunctionCallOutput):

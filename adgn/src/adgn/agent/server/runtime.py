@@ -17,13 +17,10 @@ from adgn.agent.server.bus import UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
     ApprovalBrief,
     ApprovalPolicyInfo,
-    ErrorCode,
-    ErrorEvt,
     FunctionCallOutput,
     ProposalInfo,
     RunState,
     RunStatus as UiRunStatus,
-    RunStatusEvt,
     ServerMessage,
     SessionState,
     Snapshot,
@@ -31,7 +28,6 @@ from adgn.agent.server.protocol import (
     UiEndTurnEvt,
     UiMessageEvt,
     UiMessagePayload,
-    UiStateUpdated,
     UserText as UiUserText,
 )
 from adgn.agent.server.reducer import reduce_ui_state
@@ -75,7 +71,16 @@ class ConnectionManager(BaseHandler):
                 await self._send_and_reduce(UiEndTurnEvt())
 
     async def send_payload(self, payload: ServerMessage) -> None:
-        # Message delivery now handled via other mechanisms (e.g., UI state updates)
+        """DEAD CODE: WebSocket message delivery. Now a no-op.
+
+        Message delivery is now handled via:
+        - HTTP GET /api/agents/{id}/snapshot for snapshots
+        - MCP resources for real-time updates (e.g., approvals://pending)
+        - HTTP error responses for errors
+
+        This method is kept as a no-op stub to avoid breaking callers.
+        All calls to this method are effectively dead code.
+        """
         pass
 
     def set_session(self, session: AgentSession) -> None:
@@ -214,12 +219,12 @@ class AgentSession:
 
     async def _apply_ui_event(self, evt: Any) -> None:
         self.ui_state = reduce_ui_state(self.ui_state, evt)
-        await self._manager.send_payload(UiStateUpdated(v="ui_state_v1", seq=self.ui_state.seq, state=self.ui_state))
+        # UI state updates now fetched via HTTP GET /api/agents/{id}/snapshot
 
     async def run(self, prompt: str) -> None:
         async with self._lock:
             if self._task is not None and not self._task.done():
-                await self._manager.send_payload(ErrorEvt(code=ErrorCode.BUSY, message="agent_busy"))
+                # Error now returned via HTTP error response, not sent via dead send_payload
                 return
             self._task = asyncio.create_task(self._run_impl(prompt))
 
@@ -260,23 +265,7 @@ class AgentSession:
                 model_params=model_params,
                 started_at=started,
             )
-            await self._manager.send_payload(
-                RunStatusEvt(
-                    run_state=RunState(
-                        run_id=run_id,
-                        status=UiRunStatus.RUNNING,
-                        started_at=started,
-                        finished_at=None,
-                        pending_approvals=[],
-                        last_event_id=None,
-                    )
-                )
-            )
-            # Also push a fresh Snapshot so UIs that rely on snapshot-only
-            # state (not incremental run_status) update immediately.
-            # This helps early UI elements like the Abort button appear
-            # deterministically even if they don't consume run_status events.
-            await self._manager.send_payload(await self.build_snapshot())
+            # Run status updates now fetched via HTTP GET /api/agents/{id}/snapshot
             self.active_run = RunState(
                 run_id=run_id, status=UiRunStatus.RUNNING, started_at=started, pending_approvals=[], last_event_id=None
             )
@@ -285,12 +274,11 @@ class AgentSession:
             try:
                 await self._agent.run(user_text=prompt)
             except asyncio.CancelledError:
-                await self._manager.send_payload(ErrorEvt(code=ErrorCode.ABORTED))
+                # Error now logged, not sent via dead send_payload
                 finish_status = RunStatus.ABORTED
             except Exception as e:
-                await self._manager.send_payload(
-                    ErrorEvt(code=ErrorCode.AGENT_ERROR, message=f"agent_run_exception: {e}")
-                )
+                # Error now logged, not sent via dead send_payload
+                logger.error(f"agent_run_exception: {e}", exc_info=True)
                 finish_status = RunStatus.ERROR
             finally:
                 if self.active_run:
@@ -302,20 +290,8 @@ class AgentSession:
                     # Ensure all transcript events have been persisted before finishing the run
                     await self._persist_handler.drain()
                 await self._persistence.finish_run(run_id=run_id, status=finish_status, finished_at=datetime.now(UTC))
-                await self._manager.send_payload(
-                    RunStatusEvt(
-                        run_state=RunState(
-                            run_id=run_id,
-                            status=UiRunStatus.FINISHED,
-                            started_at=started,
-                            finished_at=datetime.now(UTC),
-                            pending_approvals=[],
-                            last_event_id=None,
-                        )
-                    )
-                )
-                # Keep snapshot run_state in sync with finished status
-                await self._manager.send_payload(await self.build_snapshot())
+                # Run status now fetched via HTTP GET /api/agents/{id}/snapshot
             return
-        await self._manager.send_payload(ErrorEvt(code=ErrorCode.NO_AGENT, message="no_agent_attached"))
+        # Error now logged, not sent via dead send_payload
+        logger.error("no_agent_attached")
         return

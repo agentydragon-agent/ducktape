@@ -313,15 +313,3 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
 def run_uvicorn(host: str = "127.0.0.1", port: int = 8765) -> None:
     uvicorn.run("adgn.agent.server.app:create_app", host=host, port=port, log_level="info", factory=True)
-
-
-# Small helpers to dedupe snapshot send pattern
-async def _send_snapshot(container, sess, sampling=None) -> None:
-    if container._ui_manager is None:
-        raise RuntimeError("UI manager not available for snapshot send")
-    await container._ui_manager.send_payload(await sess.build_snapshot(sampling=sampling))
-
-
-async def _send_snapshot_latest(container, sess) -> None:
-    sampling = await container.running.compositor.sampling_snapshot()
-    await _send_snapshot(container, sess, sampling=sampling)
