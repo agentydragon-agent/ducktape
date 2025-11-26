@@ -64,24 +64,33 @@ I.issueOneOccurrence(
     4. **Better errors**: Invalid data logged with clear messages
     5. **Type inference**: Zod narrows types correctly
 
-    **Implementation plan:**
-    1. **Extend generator for Zod with discriminated union support**: The generator at
-       `adgn/scripts/generate_frontend_code.py` currently outputs only TypeScript interfaces.
-       It needs to also generate Zod schemas with discriminated union support.
+    **Implementation requirements:**
+    The generator at `adgn/scripts/generate_frontend_code.py` (lines 190-250) currently:
+    - Uses `TypeAdapter(model).json_schema()` which properly handles Pydantic discriminated unions
+    - Outputs only TypeScript interfaces via `json-schema-to-typescript`
+    - Does NOT generate Zod schemas
 
-       Zod discriminated unions example:
-       ```typescript
-       const ToolContentZ = z.discriminatedUnion("content_kind", [
-         z.object({ content_kind: z.literal("Exec"), cmd: z.string(), ... }),
-         z.object({ content_kind: z.literal("Json"), result: z.unknown(), ... }),
-       ])
-       ```
+    To implement this fix, extend the generator to output Zod schemas. Two approaches:
 
-    2. **Check discriminated union support**: Verify the pydantic->ts generator can properly
-       handle Pydantic discriminated unions (models with `discriminator` field). The UI bus
-       types use `content_kind` as the discriminator. If the generator doesn't handle this,
-       extend it to detect Pydantic discriminated unions and generate proper Zod discriminatedUnion
-       schemas.
+    **Option 1: Use json-schema-to-zod package**
+    Add `json-schema-to-zod` (npm) to the codegen pipeline. It converts JSON Schema (draft 4+)
+    into Zod schema code. Since Pydantic's JSON Schema includes discriminator metadata, the
+    converter should handle discriminated unions:
+    ```bash
+    npx json-schema-to-zod --input schema.json --output schemas.ts
+    ```
+
+    **Option 2: Custom generator**
+    Detect `discriminator` field in Pydantic's JSON Schema output and emit Zod code directly:
+    ```typescript
+    const ToolContentZ = z.discriminatedUnion("content_kind", [
+      z.object({ content_kind: z.literal("Exec"), cmd: z.string(), ... }),
+      z.object({ content_kind: z.literal("Json"), result: z.unknown(), ... }),
+    ])
+    ```
+
+    Option 1 is simpler and leverages existing tooling. No changes needed to Pydantic model
+    parsing - discriminator information is already in the JSON Schema output.
 
     **Same pattern in:**
     - ToolExec.svelte:8 (checking for 'Exec')
