@@ -25,14 +25,11 @@ class _NotifyCatcher(MessageHandler):
         self.events.append("list_changed")
 
 
-async def test_resources_list_changed_notification():
+async def test_resources_list_changed_notification(compositor):
     # Use a minimal FastMCP as a placeholder gateway client
     gw_server = FastMCP("gw")
     async with Client(gw_server) as gw:
-        from adgn.mcp.compositor.server import Compositor
-
-        comp = Compositor("comp")
-        server = make_resources_server(name="resources", compositor=comp)
+        server = make_resources_server(name="resources", compositor=compositor)
         catcher = _NotifyCatcher()
         async with Client(server, message_handler=catcher) as client:
             # Trigger session capture by invoking list

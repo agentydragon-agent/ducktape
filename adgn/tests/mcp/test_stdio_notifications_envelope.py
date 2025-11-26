@@ -9,12 +9,11 @@ from fastmcp.mcp_config import StdioMCPServer
 
 from adgn.agent.reducer import format_notifications_message
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from tests.util.notifications import parse_system_notification_payload
 
 
-async def test_stdio_child_notifications_envelope(tmp_path: Path):
+async def test_stdio_child_notifications_envelope(compositor, tmp_path: Path):
     # Write a tiny stdio MCP server that emits notifications on a tool call
     server_py = tmp_path / "stdio_child_server.py"
     server_py.write_text(
@@ -40,11 +39,10 @@ async def test_stdio_child_notifications_envelope(tmp_path: Path):
     )
 
     spec = StdioMCPServer(command=sys.executable, args=[str(server_py)])
-    comp = Compositor("comp")
-    await comp.mount_server("stdio_child", spec)
+    await compositor.mount_server("stdio_child", spec)
 
-    buf = NotificationsBuffer(compositor=comp)
-    async with Client(comp, message_handler=buf.handler) as sess:
+    buf = NotificationsBuffer(compositor=compositor)
+    async with Client(compositor, message_handler=buf.handler) as sess:
         # Fire notifications via namespaced tool
         await sess.call_tool(name=build_mcp_function("stdio_child", "emit"), arguments={})
         batch = buf.poll()

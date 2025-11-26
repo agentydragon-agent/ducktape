@@ -5,7 +5,6 @@ from fastmcp.client.messages import MessageHandler
 from mcp import types
 
 from adgn.mcp.chat.server import attach_chat_servers
-from adgn.mcp.compositor.server import Compositor
 
 
 class _Capture(MessageHandler):
@@ -17,9 +16,8 @@ class _Capture(MessageHandler):
         self.updated.append(str(message.params.uri))
 
 
-async def test_chat_head_notifications_other_participant() -> None:
-    comp = Compositor("compositor")
-    store, human, assistant = await attach_chat_servers(comp)
+async def test_chat_head_notifications_other_participant(compositor) -> None:
+    store, human, assistant = await attach_chat_servers(compositor)
 
     # Connect directly to assistant server to capture its notifications
     cap_assist = _Capture()

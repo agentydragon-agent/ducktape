@@ -4,7 +4,6 @@ from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, empty, has_item, has_properties
 
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
@@ -41,15 +40,14 @@ def _make_origin() -> tuple[FastMCP, SubscriptionRecorder]:
     return m, recorder
 
 
-async def test_subscriptions_index_updates_on_unmount():
+async def test_subscriptions_index_updates_on_unmount(compositor):
     # Compositor with one origin server mounted
-    comp = Compositor("comp")
     origin, hooks = _make_origin()
-    await comp.mount_inproc("origin", origin)
+    await compositor.mount_inproc("origin", origin)
 
     # Resources server with a stub gateway client (subscribe logic uses child session)
     gw = _StubGatewayClient()
-    res_server = make_resources_server(name="resources", compositor=comp)
+    res_server = make_resources_server(name="resources", compositor=compositor)
 
     async with Client(res_server) as client:
         # Subscribe to an origin resource via the resources server tool
@@ -64,7 +62,7 @@ async def test_subscriptions_index_updates_on_unmount():
 
         # Unmount the origin server; the resources server should not attempt remote
         # unsubscription. It should drop the non-pinned record from the index.
-        await comp.unmount_server("origin")
+        await compositor.unmount_server("origin")
 
         # Ensure no unsubscribe call happened as a result of unmount
         assert not hooks.unsubscribed, "unexpected origin unsubscribe on unmount"
