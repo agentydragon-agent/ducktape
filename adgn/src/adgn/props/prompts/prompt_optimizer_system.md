@@ -179,10 +179,11 @@ Tool will raise error if budget exceeded before starting work.
 
 ### eval_split(prompt_path, split: "train"|"valid")
 - **Purpose:** Evaluate on full split
-- **Cost:** High (many specimens)
+- **Cost:** ~$0.70 per split (measured on 3-specimen valid split)
 - **Returns:**
   - split="train": detailed_metrics (per-specimen list), specimens list
   - split="valid": aggregate_recall, aggregate_precision, specimen_count, issue_count
+    - **Note:** detailed_metrics and specimens are intentionally null for valid (prevents overfitting)
   - split="test": raises error (hidden from you)
 
 **Iteration strategy:**
