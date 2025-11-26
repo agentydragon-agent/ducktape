@@ -8,6 +8,17 @@ This document outlines the migration from WebSocket-based communication to MCP (
 
 **Target Architecture**: Frontend ↔ MCP HTTP (`/mcp`) ↔ 2-Level MCP Compositor ↔ FastMCP Servers
 
+## Key Distinction: approval_policy vs approvals Servers
+
+| Server | Purpose | Mounted? | Used By |
+|--------|---------|----------|---------|
+| **approval_policy** (reader) | Policy evaluation & resources | ✅ Compositor | Agent (reads policy, calls `decide`) |
+| **approval_policy_proposer** | Create/withdraw policy proposals | ✅ Compositor | Agent (proposes policy changes) |
+| **approval_policy_approver** | Admin policy management | ❌ Private client | HTTP endpoints, admin UI |
+| **approvals** | User approval actions for tool calls | ✅ Compositor | UI (approve/deny pending calls) |
+
+The `approval_policy` servers handle **policy management** (the rules), while `approvals` handles **user decisions** on pending tool calls.
+
 ## 2-Level MCP Compositor Architecture
 
 ### Level 1: Global Compositor
@@ -15,7 +26,7 @@ This document outlines the migration from WebSocket-based communication to MCP (
 - Mounts per-agent sub-compositors
 - **Status**: Implementation unclear - imports missing `mcp_bridge.compositor_factory`
 
-### Level 2: Per-Agent Sub-Compositors
+### Level 2: Per-Agent Sub-Compositors (User-Facing)
 Each `AgentContainer` has a `_compositor: Compositor` that mounts small FastMCP servers:
 
 #### ✅ Existing Standard Servers (mounted via `mount_standard_inproc_servers`):
@@ -34,17 +45,22 @@ Each `AgentContainer` has a `_compositor: Compositor` that mounts small FastMCP 
 6. **loop** - `make_loop_server()` - Loop control
    - Tools: `yield_turn()`
 7. **approval_policy** (3 variants) - Policy & proposal management
-   - Reader: Resources for `resource://approval-policy/policy.py`, `proposals/{id}`
-   - Proposer: Tools: `create_proposal`, `withdraw_proposal`
-   - Admin: Tools: `approve_proposal`, `reject_proposal`, `set_policy`
+   - **Reader** (`approval_policy`): Mounted in user-facing compositor
+     - Resources: `resource://approval-policy/policy.py`, `resource://approval-policy/proposals/{id}`
+     - Tool: `decide(name, arguments)` - Evaluates policy for a tool call via Docker-backed evaluator
+   - **Proposer** (`approval_policy_proposer`): Mounted in user-facing compositor
+     - Tools: `create_proposal(content)`, `withdraw_proposal(id)`
+   - **Admin** (`approval_policy_approver`): NOT mounted in compositor (private client only)
+     - Tools: `approve_proposal(id)`, `reject_proposal(id)`, `set_policy_text(source)`
+     - Access: Via HTTP endpoints or internal `PolicyApproverStub` client
 8. **runtime** - `make_runtime_server()` - Container exec
 9. **seatbelt** - `attach_seatbelt_exec()` - Sandboxed exec (optional)
 
-#### ⚠️ CREATED BUT NOT WIRED:
-10. **approvals** - `/mcp/approvals/server.py` - Approval actions (JUST CREATED)
-    - Tools: `approve_call`, `deny_abort`, `deny_continue`
-    - Resource: `approvals://pending`
-    - **TODO**: Wire to agent compositors, add ApprovalHub notification
+#### ✅ Recently Wired:
+10. **approvals** - `adgn/src/adgn/mcp/approvals/server.py` - User approval actions
+    - Tools: `approve_call(call_id)`, `deny_abort(call_id)`, `deny_continue(call_id)`
+    - Resource: `approvals://pending` - Lists pending approval requests
+    - **Status**: Wired to compositor in `container.py:620-622`, broadcasts resource updates on approval changes
 
 #### ❌ MISSING:
 11. **Agent control tools** - `send_prompt`, `abort_run` (need to create server)
@@ -77,34 +93,35 @@ Committed in: `fb481138 refactor(adgn): remove dead WebSocket infrastructure`
 
 ## Phase 2: Wire Existing Approvals Server ✅ COMPLETED
 
-### Task 2.1: Add __init__.py to approvals module
-**Status**: TODO
+### Task 2.1: Add __init__.py to approvals module ✅ DONE
+**File**: `adgn/src/adgn/mcp/approvals/__init__.py`
 
-Create `adgn/src/adgn/mcp/approvals/__init__.py`:
 ```python
 from .server import attach_approvals, make_approvals_server, APPROVALS_SERVER_NAME
 
 __all__ = ["attach_approvals", "make_approvals_server", "APPROVALS_SERVER_NAME"]
 ```
 
-### Task 2.2: Wire approvals server to agent compositor
-**Status**: TODO
-**File**: `adgn/src/adgn/agent/runtime/container.py`
+### Task 2.2: Wire approvals server to agent compositor ✅ DONE
+**File**: `adgn/src/adgn/agent/runtime/container.py` (lines 620-622)
 
-Add approvals server mounting after chat servers (around line 620):
 ```python
-# After attach_persisted_chat_servers call:
-from adgn.mcp.approvals.server import attach_approvals
-
-# Mount approvals server with ApprovalHub
-await attach_approvals(self._compositor, hub=self.approval_hub)
+# Approvals server (approval actions: approve_call, deny_abort, deny_continue)
+from adgn.mcp.approvals import attach_approvals
+self._approvals_server = await attach_approvals(self._compositor, hub=self.approval_hub)
 ```
 
-### Task 2.3: Add pending approvals notification to PolicyGatewayMiddleware
-**Status**: TODO
-**File**: `adgn/src/adgn/mcp/policy_gateway/middleware.py`
+### Task 2.3: Add pending approvals notification to PolicyGatewayMiddleware ✅ DONE
+**File**: `adgn/src/adgn/agent/runtime/container.py` (lines 317-321)
 
-Update `pending_notifier` callback to also notify the approvals resource when a new approval is pending (around line 250).
+The `_pending_notifier` callback now broadcasts MCP resource updates:
+```python
+async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
+    # Broadcast MCP resource update for pending approvals
+    if self._approvals_server is not None:
+        from adgn.mcp.approvals.server import APPROVALS_PENDING_URI
+        await self._approvals_server.broadcast_resource_updated(APPROVALS_PENDING_URI)
+```
 
 ## Phase 3: Frontend MCP Client Infrastructure ✅ COMPLETED
 
