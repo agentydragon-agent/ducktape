@@ -83,7 +83,7 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
             build_mcp_function(UI_SERVER_NAME, WellKnownTools.END_TURN),
         ):
             return state
-        return start_tool(state, tool=evt.name, call_id=evt.call_id, cmd=cmd, args=parsed_args)
+        return start_tool(state, tool_call=evt, cmd=cmd, args=parsed_args)
 
     # Approval decision → add to the current group
     if isinstance(evt, ApprovalDecisionEvt):

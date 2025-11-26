@@ -101,9 +101,8 @@ def append_item(state: UiState, item: DisplayItem) -> UiState:
     return UiState(seq=state.seq + 1, items=[*state.items, item])
 
 
-def start_tool(state: UiState, *, tool: str, call_id: str, cmd: str | None, args: Any | None) -> UiState:
+def start_tool(state: UiState, *, tool_call: ToolCall, cmd: str | None, args: Any | None) -> UiState:
     content: ToolContent = ExecContent(cmd=cmd, args=args) if cmd is not None else JsonContent(args=args)
-    tool_call = ToolCall(name=tool, call_id=call_id, args_json=None)
     return append_item(state, ToolItem(tool_call=tool_call, content=content))
 
 

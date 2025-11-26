@@ -17,6 +17,7 @@ from adgn.agent.server.status_shared import (
     UiStateLite,
     build_agent_status_core,
 )
+from adgn.agent.types import AgentID
 from adgn.mcp.snapshots import RunningServerEntry
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class AgentBrief(BaseModel):
-    id: str
+    id: AgentID
     live: bool | None = None
     active_run_id: UUID | None = None
     lifecycle: AgentLifecycle | None = None
@@ -46,25 +47,20 @@ class AgentsSnapshotMsg(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class AgentIdData(BaseModel):
-    id: str
-    model_config = ConfigDict(extra="forbid")
-
-
 class AgentCreatedMsg(BaseModel):
     type: Literal["agent_created"] = "agent_created"
-    data: AgentIdData
+    data: AgentID
     model_config = ConfigDict(extra="forbid")
 
 
 class AgentDeletedMsg(BaseModel):
     type: Literal["agent_deleted"] = "agent_deleted"
-    data: AgentIdData
+    data: AgentID
     model_config = ConfigDict(extra="forbid")
 
 
 class AgentStatusData(BaseModel):
-    id: str
+    id: AgentID
     live: bool
     active_run_id: UUID | None = None
     lifecycle: AgentLifecycle
@@ -145,11 +141,11 @@ class AgentsWSHub:
             self._connections.discard(ws)
 
     async def broadcast_agent_created(self, agent_id: str) -> None:
-        msg = AgentCreatedMsg(data=AgentIdData(id=agent_id))
+        msg = AgentCreatedMsg(data=AgentID(agent_id))
         await self.broadcast(msg.model_dump(mode="json"))
 
     async def broadcast_agent_deleted(self, agent_id: str) -> None:
-        msg = AgentDeletedMsg(data=AgentIdData(id=agent_id))
+        msg = AgentDeletedMsg(data=AgentID(agent_id))
         await self.broadcast(msg.model_dump(mode="json"))
 
     async def broadcast_agent_status(self, *, agent_id: str, live: bool, active_run_id: UUID | None) -> None:
