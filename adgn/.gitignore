@@ -5,5 +5,8 @@ scratch
 # Keep the directory in Git, but ignore generated contents
 src/adgn/agent/server/static/**
 
+# Prompt evaluation runs
+src/adgn/props/runs/
+
 # Generated TypeScript types
 src/adgn/agent/web/src/generated/*
