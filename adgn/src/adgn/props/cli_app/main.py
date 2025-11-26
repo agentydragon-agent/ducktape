@@ -837,6 +837,42 @@ def cmd_list_presets() -> None:
     _print_presets()
 
 
+@app.command("specimen-dump")
+def specimen_dump(
+    specimen: str = typer.Argument(..., help="Specimen slug to dump as JSON"),
+    pretty: bool = typer.Option(True, help="Pretty-print JSON with indentation"),
+) -> None:
+    """Dump a specimen's full structure as JSON (manifest, all issues, occurrences)."""
+    try:
+        rec = SpecimenRegistry.load_strict(specimen)
+    except Exception as e:
+        typer.echo(f"ERROR: Failed to load specimen '{specimen}': {e}")
+        raise typer.Exit(2) from e
+
+    # Use existing Pydantic model_dump() for all structured data
+    output = {
+        "slug": rec.slug,
+        "manifest": rec.manifest.model_dump(mode="json"),
+        "issues": {
+            issue_id: {
+                "core": issue.core.model_dump(mode="json"),
+                "instances": [occ.model_dump(mode="json") for occ in issue.instances],
+            }
+            for issue_id, issue in rec.issues.items()
+        },
+        "false_positives": {
+            issue_id: {
+                "core": issue.core.model_dump(mode="json"),
+                "instances": [occ.model_dump(mode="json") for occ in issue.instances],
+            }
+            for issue_id, issue in rec.false_positives.items()
+        },
+    }
+
+    indent = 2 if pretty else None
+    print(json.dumps(output, indent=indent))
+
+
 @app.command("specimen-exec")
 @async_run
 async def specimen_exec(
@@ -859,7 +895,7 @@ async def specimen_exec(
         raise typer.Exit(2) from e
     ensure_critic_image()
 
-    rec = SpecimenRegistry.load_strict(specimen if "/" not in specimen else Path(specimen).name)
+    rec = SpecimenRegistry.load_strict(specimen)
     async with rec.hydrated_copy(exec_git) as content_root:
         try:
             _ = next(content_root.iterdir())

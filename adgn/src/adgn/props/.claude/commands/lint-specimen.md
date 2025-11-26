@@ -1,58 +1,102 @@
 # Lint a specimen for conformance
 
-@README.md
+@../../specimens/CLAUDE.md
 
 ## What this command does
 
-Lint a specimen directory (and its files) against the rules defined in this package’s @README.md (see “Specimens format”).
+Lint a specimen directory (and its files) against the authoring rules defined in @../../specimens/CLAUDE.md (which transcludes @../../docs/authoring.md).
 Report only lints/errors and offer concrete fix suggestions. Do not modify files without explicit user approval.
 
 ## Single source of truth
 
-Do not duplicate requirement lists here. The linter MUST read @README.md at runtime and derive all rules from it.
-Primary sections to parse:
-- “Specimens format” (General, Files, issues.libsonnet rootV2)
-- “Conventions” (apply where relevant)
-- Any other sections that normatively constrain specimen structure/content
+Do not duplicate requirement lists here. The linter MUST read the authoring guide at runtime and derive all rules from it.
 
-Also treat `issues.libsonnet` (canonical issues) as the authoritative ground‑truth format:
-- Evaluate Jsonnet to JSON using python‑jsonnet; fail if evaluation errors occur
-- Validate each item against SpecimenIssues schema (id, should_flag, rationale text block, properties, files/linesByFile)
-- Enforce: rationale is a Jsonnet text block (||| … |||) wrapped ~100 cols; properties only when a definition is clearly violated as written; cardinality rules respected (single vs multi_instances)
-- Cross‑check property slugs against `definitions/**.md` filenames
+## Quality Checklist
 
-## Property definitions adherence
+The linter should verify ALL items from the "Quality Checklist" section in the authoring guide, including:
 
-The agent MUST read every property definition Markdown file under `properties/**.md` and apply them exactly:
-- Treat each property file as the authoritative definition (frontmatter + predicate + acceptance criteria + examples).
-- Items in `covered.md` MUST reference a property only when the finding clearly satisfies that property's definition; do not classify using tangentially related properties.
-- For each `covered.md` item, extract and quote the specific acceptance criterion (or predicate/example) that justifies the match. If you cannot cite a matching line, flag as “Property mismatch (tangential)” and suggest moving the item to `not_covered_yet.md` or choosing a correct property.
-- Validate property links: they MUST resolve to actual files under `properties/**`; IDs/paths must be correct.
-- Apply Markdown properties under `properties/markdown/**` to all specimen Markdown files (README.md, covered.md, not_covered_yet.md, false_positives.md).
+### Structure & Organization
+- [ ] `manifest.yaml` exists with `source.commit` (full SHA) and `scope` fields
+- [ ] All issues in `issues/*.libsonnet` (not scattered elsewhere)
+- [ ] **Each `.libsonnet` describes ONE logical problem type** (not multiple unrelated issues)
+- [ ] **Same issue across multiple locations = ONE shared issues file** (e.g., all "upgrade to new syntax" occurrences together)
+- [ ] README minimal or absent (only cross-cutting context)
+
+### Issue Quality
+- [ ] No open research questions (no "Check if X works" or "TODO: investigate")
+- [ ] Objective descriptions (no subjective phrasing)
+- [ ] Proper Jsonnet helpers used
+- [ ] Brief code citations (no blocks >10 lines, use verbal descriptions when sufficient)
+- [ ] Issues grouped by logical problem, not location
+- [ ] Complete rationale (what's wrong, why, correct approach)
+- [ ] Snapshot-only references (rationale only references repo state in specimen snapshot)
+- [ ] Standalone issues (each Jsonnet file self-contained without other issue files or non-captured files)
+
+### Jsonnet Style
+- [ ] Triple-bar spacing correct (one space before `|||`, two-space indent, closing with comma)
+- [ ] Minimal comments (prefer structured fields)
+- [ ] Comments only for metadata (describe what cannot fit in structured data fields)
+- [ ] No duplicated info in comments
+- [ ] Valid syntax (all files compile)
+
+### Frozen Snapshot Principle
+- [ ] No resolution status tracking
+- [ ] Historical accuracy (describes problems at snapshot commit)
+- [ ] Immutable (specimens don't change after creation)
+
+### Bundle Integration
+- [ ] Bundle excludes specimens directory (if applicable)
+- [ ] No files >2MB in hydrated specimen
+- [ ] Scope accurate
 
 ## Input
 - Target specimen: path to a specimen directory or any file inside it.
-  - A valid specimen contains `issues.libsonnet` (rootV2: source, scope, items).
-  - If omitted, discover candidates via `specimens/*/issues.libsonnet` and `todo-specimen/*/issues.libsonnet`.
+  - A valid specimen contains `issues/*.libsonnet` files
+  - If omitted, discover candidates via `specimens/*/` directories
 
 ## Output
-A textual report of all violations of @README.md.
-
-For each case, include:
-- Location: file path and line number(s) where applicable
-- Rule reference: a minimal quote + pointer to @README.md section (and line(s) if convenient)
-- Suggested fix: a minimal edit description to conform
-
-## Scope of checks
-Derive all specifics directly from @README.md at runtime (do not restate here).
+A textual report of all violations with:
+- Location: file path and line number(s)
+- Rule reference: quote from authoring guide
+- Suggested fix: concrete edit description
 
 ## Procedure
-1) Read @README.md and extract a checklist of required vs recommended items for specimens.
-2) Identify target specimen directory:
-   - If given a file path, resolve its containing specimen directory
-   - Otherwise, discover candidates via `specimens/*/issues.libsonnet` and `todo-specimen/*/issues.libsonnet`
-3) Validate directory and naming.
-4) Validate required files and schema (evaluate `issues.libsonnet` to JSON; validate rootV2: {source, scope, items}).
-5) Validate per-file rules for README.md (if present), covered.md, not_covered_yet.md, false_positives.md, and general constraints; for covered.md, verify each item’s property link is justified by quoting the exact acceptance criterion (or predicate/example) from the property definition; if no exact supporting line can be cited, flag as property mismatch and recommend moving to not_covered_yet.md or correcting the link.
-6) For each violation, emit: one‑line diagnosis, short quoted rule reference from @README.md, and a suggested fix.
-7) Print the report and suggested changes. Do not write changes yet — ask user to confirm which (if any) to apply.
+1) Read authoring guide and extract checklist
+2) Identify target specimen directory
+3) Validate structure and files
+4) **Use `adgn-properties2 specimen-exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper isolation and correct specimen hydration
+5) Check each issue file:
+   - Evaluate Jsonnet to JSON
+   - Verify ONE logical issue per file
+   - Check if same issue appears in multiple files (should be consolidated)
+   - Validate against schema
+   - Check for unnecessary code blocks (use verbal descriptions when sufficient)
+   - Verify rationale only references snapshot state (no historical context)
+   - Ensure issue is standalone (no dependencies on other issues or non-captured files)
+6) Check README (if present) for minimal content
+7) Emit violations with references and suggested fixes
+8) Ask user to confirm which fixes to apply
+
+## Interaction with Specimens
+
+**CRITICAL**: Always use `adgn-properties2 specimen-exec <slug> -- <command>` when you need to interact with the hydrated specimen code:
+- Reading files from the specimen
+- Running tools against the specimen code
+- Checking file existence or structure
+
+This ensures:
+- Proper specimen hydration (git checkout at correct commit)
+- Isolation from the host filesystem
+- Correct working directory context
+
+Example:
+```bash
+# Read a file from specimen
+adgn-properties2 specimen-exec ducktape/2025-11-20-repo -- cat adgn/tests/agent/test_foo.py
+
+# Check if file exists
+adgn-properties2 specimen-exec ducktape/2025-11-20-repo -- test -f adgn/src/adgn/agent/bar.py && echo "exists"
+
+# List files matching pattern
+adgn-properties2 specimen-exec ducktape/2025-11-20-repo -- find adgn -name "*.py" -type f
+```
