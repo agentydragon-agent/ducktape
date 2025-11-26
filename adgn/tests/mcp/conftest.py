@@ -48,7 +48,9 @@ async def resources_client(compositor):
 def _policy_source_for_decision(decision: ApprovalDecision) -> str:
     """Minimal policy program that returns a fixed decision."""
     d = str(decision.value)
-    return f"import sys, json\n_ = json.load(sys.stdin)\nprint(json.dumps({{'decision': '{d}', 'rationale': 'test'}}))\n"
+    return (
+        f"import sys, json\n_ = json.load(sys.stdin)\nprint(json.dumps({{'decision': '{d}', 'rationale': 'test'}}))\n"
+    )
 
 
 @pytest.fixture

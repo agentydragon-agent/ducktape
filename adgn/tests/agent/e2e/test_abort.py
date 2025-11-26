@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from tests.agent.helpers import api_create_agent
+from tests.llm.support.openai_mock import make_mock
 
 pytestmark = pytest.mark.usefixtures()
 
@@ -42,8 +43,6 @@ def test_ui_abort_sampling(page: Page, run_server, responses_factory):
             # If not cancelled (unexpected), return a message
             return responses_factory.make_assistant_message("too-late")
         return responses_factory.make_assistant_message("done")
-
-    from tests.llm.support.openai_mock import make_mock
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]

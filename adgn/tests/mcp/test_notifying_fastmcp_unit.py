@@ -16,7 +16,7 @@ async def test_queued_notifications_flush_on_first_list(make_buffered_client):
     srv = NotifyingFastMCP("child")
     await srv.broadcast_resource_list_changed()  # queued (no sessions yet)
 
-    async with make_buffered_client({"child": srv}) as (client, comp, buf):
+    async with make_buffered_client({"child": srv}) as (client, _comp, buf):
         # Trigger a server-side list (captures session and flushes pending)
         await client.session.list_resources()
         batch = buf.poll()

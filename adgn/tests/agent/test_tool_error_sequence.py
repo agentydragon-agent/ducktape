@@ -19,7 +19,7 @@ async def test_tool_error_is_surfaced_in_sequence(
     async with make_pg_session(
         {"editor": failing_server, "approval_policy": approval_policy_reader_allow_all}
     ) as mcp_client:
-        agent, client = await make_test_agent(
+        agent, _client = await make_test_agent(
             mcp_client,
             [
                 responses_factory.make_tool_call(build_mcp_function("editor", "fail"), {"x": 1}),

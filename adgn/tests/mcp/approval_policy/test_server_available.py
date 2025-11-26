@@ -5,20 +5,16 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.approval_policy.server import ApprovalPolicyServer
+from adgn.mcp.approval_policy.server import ApprovalPolicyProposerServer, ApprovalPolicyServer
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.requires_docker
-async def test_approval_policy_server_is_available(
-    responses_factory, make_echo_spec, make_pg_session, approval_engine
-):
+async def test_approval_policy_server_is_available(responses_factory, make_echo_spec, make_pg_session, approval_engine):
     """Test that the approval policy MCP server is available to the agent and lists tools."""
 
     # Add approval server to specs
     reader = ApprovalPolicyServer(approval_engine)
-    from adgn.mcp.approval_policy.server import ApprovalPolicyProposerServer
-
     proposer = ApprovalPolicyProposerServer(engine=approval_engine)
     servers = dict(make_echo_spec())
     servers["approval_policy"] = reader

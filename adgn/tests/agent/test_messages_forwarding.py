@@ -46,10 +46,7 @@ async def test_stateless_reasoning_forwarding(
     pg_session_echo, responses_factory: ResponsesFactory, make_test_agent
 ) -> None:
     """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
-    agent, client = await make_test_agent(
-        pg_session_echo,
-        [_make_reasoning_then_message("ok", responses_factory)],
-    )
+    agent, _client = await make_test_agent(pg_session_echo, [_make_reasoning_then_message("ok", responses_factory)])
 
     await agent.run("say hi")
 
@@ -89,8 +86,7 @@ async def test_mixed_reasoning_fc_ordering(
         responses_factory.assistant_text("done"),
     )
     agent, client = await make_test_agent(
-        pg_session_echo,
-        [resp, _make_reasoning_then_message("ok", responses_factory)],
+        pg_session_echo, [resp, _make_reasoning_then_message("ok", responses_factory)]
     )
 
     await agent.run("start")
@@ -129,7 +125,11 @@ async def test_model_provided_tool_output_records_without_execution(
     """If the model supplies tool output inline, agent should not run the tool again."""
     agent, client = await make_test_agent(
         pg_session_echo,
-        [responses_factory.make_tool_call_with_output(build_mcp_function("echo", "echo"), {"text": "hi"}, {"echo": "hi"})],
+        [
+            responses_factory.make_tool_call_with_output(
+                build_mcp_function("echo", "echo"), {"text": "hi"}, {"echo": "hi"}
+            )
+        ],
     )
 
     await agent.run("say hi")

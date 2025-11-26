@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 import socket
@@ -10,6 +12,7 @@ from fastmcp.client.transports import StdioTransport
 import pytest
 
 from tests._markers import REQUIRES_SANDBOX_EXEC
+from tests.mcp.sandboxed_jupyter.policy_fixture import write_policy
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
 
@@ -36,8 +39,6 @@ def mcp_client_from_cmd(pkg_src_env_update):
 
     Returns an async context manager that yields the initialized client.
     """
-    import asyncio
-    from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def _create(command: str, args: list[str], *, env: dict[str, str] | None = None, init_timeout: float = 30.0):
@@ -80,8 +81,6 @@ def provision_ws_with_policy(tmp_path: Path):
     OS-stable policy (read: '/', write: run_root/ws), loopback-only net.
     Returns (workspace_path, run_root_path).
     """
-    from .policy_fixture import write_policy
-
     ws = tmp_path / "ws"
     run_root = tmp_path / "run_root"
     ws.mkdir(parents=True, exist_ok=True)

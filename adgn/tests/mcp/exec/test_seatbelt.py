@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import secrets
 from pathlib import Path
+import secrets
 
 from fastmcp.client import Client
 import pytest

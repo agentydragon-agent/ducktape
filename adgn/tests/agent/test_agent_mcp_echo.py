@@ -9,7 +9,7 @@ from adgn.mcp._shared.naming import build_mcp_function
 async def test_agent_mcp_echo_tool_use(
     monkeypatch: pytest.MonkeyPatch, responses_factory, pg_session_echo, recording_handler, make_test_agent
 ) -> None:
-    agent, client = await make_test_agent(
+    agent, _client = await make_test_agent(
         pg_session_echo,
         [
             responses_factory.make_tool_call(build_mcp_function("echo", "echo"), {"text": "hello"}),

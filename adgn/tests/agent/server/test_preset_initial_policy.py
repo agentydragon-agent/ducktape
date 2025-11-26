@@ -10,7 +10,7 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 def test_preset_initial_policy_loaded_into_engine(
-    agent_app_client, tmp_path, monkeypatch, policy_ui_send_message_allow, patch_agent_build_client, responses_factory
+    agent_test_client, tmp_path, monkeypatch, policy_ui_send_message_allow, patch_agent_build_client, responses_factory
 ):
     # Prepare a preset with an explicit approval policy
     d = tmp_path / "presets"
@@ -27,7 +27,7 @@ def test_preset_initial_policy_loaded_into_engine(
     )
     monkeypatch.setenv("ADGN_AGENT_PRESETS_DIR", str(d))
 
-    _app, c = agent_app_client
+    c = agent_test_client
     model_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
     patch_agent_build_client(model_client)
     # Create agent from preset
@@ -53,7 +53,7 @@ def test_preset_initial_policy_loaded_into_engine(
 
 
 def test_preset_policy_with_failing_tests_falls_back(
-    agent_app_client, tmp_path, monkeypatch, policy_failing_tests, patch_agent_build_client, responses_factory
+    agent_test_client, tmp_path, monkeypatch, policy_failing_tests, patch_agent_build_client, responses_factory
 ):
     # Prepare a preset with an explicit approval policy that fails its test
     d = tmp_path / "presets"
@@ -72,7 +72,7 @@ def test_preset_policy_with_failing_tests_falls_back(
     )
     monkeypatch.setenv("ADGN_AGENT_PRESETS_DIR", str(d))
 
-    _app, c = agent_app_client
+    c = agent_test_client
     model_client = FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
     patch_agent_build_client(model_client)
     # Create agent from preset

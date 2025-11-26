@@ -16,11 +16,7 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 @pytest.mark.requires_docker
 async def test_approval_system_wired_and_blocks_on_ask(
-    responses_factory,
-    make_echo_spec,
-    make_pg_session,
-    approval_hub: ApprovalHub,
-    make_policy_engine,
+    responses_factory, make_echo_spec, make_pg_session, approval_hub: ApprovalHub, make_policy_engine
 ) -> None:
     """Test that the approval system is properly wired and blocks tool calls via middleware."""
 

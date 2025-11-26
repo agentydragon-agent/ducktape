@@ -4,8 +4,8 @@ from tests.agent.testdata.approval_policy import fetch_policy
 from tests.llm.support.openai_mock import make_mock
 
 
-def test_set_policy_rejects_when_tests_missing(agent_app_client, create_live_agent, agent_ws_box):
-    app, c = agent_app_client
+def test_set_policy_rejects_when_tests_missing(agent_test_client, create_live_agent, agent_ws_box):
+    c = agent_test_client
     # Create a default agent
     _ = create_live_agent(c, specs={})
 
@@ -19,8 +19,8 @@ def test_set_policy_rejects_when_tests_missing(agent_app_client, create_live_age
         assert r.status_code == 400
 
 
-def test_set_policy_rejects_when_test_fails(agent_app_client, create_live_agent, agent_ws_box):
-    app, c = agent_app_client
+def test_set_policy_rejects_when_test_fails(agent_test_client, create_live_agent, agent_ws_box):
+    c = agent_test_client
     _ = create_live_agent(c, specs={})
 
     dummy_client = make_mock(lambda req: None)

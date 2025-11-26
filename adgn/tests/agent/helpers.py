@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from hamcrest import all_of, assert_that, contains_string, has_item, has_properties
+import requests
 from uvicorn import Config, Server
 
 from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
@@ -72,8 +73,6 @@ def api_create_agent(base_url: str, *, preset: str = "default", system: str | No
 
     Keeps E2E tests concise and consistent.
     """
-    import requests
-
     body: dict[str, object] = {"preset": preset}
     if system is not None:
         body["system"] = system

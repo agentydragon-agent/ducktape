@@ -7,7 +7,6 @@ the agent continues with the next phase instead of aborting the entire turn.
 from __future__ import annotations
 
 from hamcrest import assert_that, contains_string
-import pytest
 
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function

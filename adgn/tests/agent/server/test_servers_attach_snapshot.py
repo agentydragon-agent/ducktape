@@ -5,8 +5,8 @@ from pydantic import TypeAdapter
 from adgn.agent.server.protocol import Envelope, Snapshot
 
 
-def test_attach_server_populates_sampling_servers(agent_app_client):
-    app, client = agent_app_client
+def test_attach_server_populates_sampling_servers(agent_test_client):
+    client = agent_test_client
     # Create an agent
     r = client.post("/api/agents", json={"preset": "default"})
     assert r.status_code == 200
