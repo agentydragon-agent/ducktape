@@ -318,7 +318,7 @@ class AgentContainer:
             if self._cm is not None and self.session is not None:
                 await self._cm.send_payload(ApprovalPendingEvt(call_id=call_id, tool_key=tool_key, args_json=args_json))
 
-        policy_gateway = PolicyGatewayMiddleware(
+        self._policy_gateway = PolicyGatewayMiddleware(
             hub=approval_hub,
             pending_notifier=_pending_notifier,
             record_outcome=lambda call_id, tool_key, outcome: asyncio.create_task(
@@ -326,8 +326,7 @@ class AgentContainer:
             ),
             policy_reader=self._policy_reader,
         )
-        comp.add_middleware(policy_gateway)
-        self._policy_gateway = policy_gateway
+        comp.add_middleware(self._policy_gateway)
 
         # Mount standard in-proc servers (resources, compositor_meta, compositor_admin)
         await mount_standard_inproc_servers(compositor=comp, mount_resources=True)

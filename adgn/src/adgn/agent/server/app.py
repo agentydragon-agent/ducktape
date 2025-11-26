@@ -180,10 +180,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Create minimal infrastructure registry for agents server
         # Note: This is a simplified setup - in production, you'd want proper registry management
         app.state.mcp_registry = InfrastructureRegistry(
-            persistence=app.state.persistence,
-            docker_client=docker_client,
-            mcp_config=MCPConfig(),
-            initial_policy=None,
+            persistence=app.state.persistence, docker_client=docker_client, mcp_config=MCPConfig(), initial_policy=None
         )
 
         # Create global compositor with two-level architecture
@@ -283,12 +280,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # Proposals list/content
     @app.get("/api/agents/{agent_id}/proposals", response_model=ProposalsList)
     async def api_list_proposals(agent_id: AgentID) -> ProposalsList:
-        return ProposalsList(proposals=[
-            ProposalRow(
-                id=rec.id, status=ProposalStatus(rec.status), created_at=rec.created_at, decided_at=rec.decided_at
-            )
-            for rec in await app.state.persistence.list_policy_proposals(agent_id)
-        ])
+        return ProposalsList(
+            proposals=[
+                ProposalRow(id=rec.id, status=rec.status, created_at=rec.created_at, decided_at=rec.decided_at)
+                for rec in await app.state.persistence.list_policy_proposals(agent_id)
+            ]
+        )
 
     # Mount MCP routing endpoint
     # Note: The agents_server is created during startup, so this uses a lazy sub-app
