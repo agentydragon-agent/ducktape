@@ -4,13 +4,15 @@
 
 ```
 specimen-name/
-├── manifest.yaml       # VCS source, commit ref, scope (include patterns)
-├── README.md          # Brief overview (optional, cross-cutting context only)
+├── manifest.yaml            # VCS source, commit ref, scope (include patterns)
+├── README.md               # Brief overview (optional, cross-cutting context only)
 └── issues/
-    ├── 001.libsonnet  # Detailed issue with rationale, locations
-    ├── 002.libsonnet
+    ├── dead-code.libsonnet      # Detailed issue with rationale, locations
+    ├── missing-types.libsonnet  # Use descriptive slugs, not numbers
     └── ...
 ```
+
+**Naming convention:** Issue files use descriptive slugs (lowercase with hyphens), not numerical indices. Slugs should be short (0-30 characters) and convey the issue type. Examples: `dead-code.libsonnet`, `missing-error-handling.libsonnet`, `duplicate-logic.libsonnet`.
 
 ## Critical: Specimens are Frozen Snapshots
 
@@ -285,13 +287,6 @@ This information belongs in `rationale`, not comments. **Delete such blocks.**
 
 1. **DRY**: One authoritative description per issue (in Jsonnet)
 2. **Tooling-friendly**: Jsonnet is machine-readable for analysis tools
-3. **Human-friendly**: README provides navigation, Jsonnet provides depth
+3. **Human-friendly**: Jsonnet provides full detail in a structured format
 4. **Maintainable**: Updates happen in one place only
 5. **Composable**: Tools can combine/aggregate issues from multiple specimens
-
-## When Adding New Issues
-
-1. Create `issues/NNN.libsonnet` with full details
-2. Add one-line summary to README.md issue list
-3. Commit with message: `feat(props): add issue NNN - brief-title`
-4. **DO NOT** copy rationale/analysis into README.md or commit message details

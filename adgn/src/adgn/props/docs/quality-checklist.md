@@ -5,6 +5,7 @@ Before committing a specimen, verify all of these criteria:
 ### Structure & Organization
 - [ ] **Manifest present**: `manifest.yaml` exists with `source.commit` (full SHA) and `scope` fields
 - [ ] **Issue files**: All issues in `issues/*.libsonnet` (not scattered in other locations)
+- [ ] **Slug-based naming**: Issue files use descriptive slugs (e.g., `dead-code.libsonnet`, `missing-types.libsonnet`), not numerical indices. Slugs should be short (0-30 characters), lowercase with hyphens
 - [ ] **One logical issue per file**: Each `.libsonnet` describes ONE logical problem type
 - [ ] **Same issue, one file**: If the same issue occurs multiple times (e.g., "upgrade to new syntax"), all occurrences are in ONE shared issue file
 - [ ] **README minimal or absent**: README only contains cross-cutting context, not issue summaries/details
