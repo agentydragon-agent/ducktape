@@ -146,14 +146,14 @@ Tool will raise error if budget exceeded before starting work.
 
 **File-level evaluation** (`eval_file`):
 - Agent reviews **one file** known to have issues
-- Faster feedback loop (~$0.10-0.50 per file, ~30-60 seconds)
+- Faster feedback loop
 - Clearer signal: file is known to contain specific issues
 - **Best for iteration:** When debugging why agent misses specific issues
 - **Limitations:** Only train split (prevents leakage), only files with >0 issues
 
 **Specimen-level evaluation** (`eval_specimen`, `eval_split`):
 - Agent reviews **whole codebase**, searches for all issues
-- More realistic but slower (~$1-5 per specimen, ~5-10 minutes)
+- More realistic but slower
 - Signal may be noisy: specimens are often **sparsely labeled**
   - Ground truth may only include 10% of real issues (what bothered a human)
   - Agent may find unlabeled real issues (counted as false positives)
@@ -167,19 +167,19 @@ Tool will raise error if budget exceeded before starting work.
 
 ### eval_file(prompt_path, specimen, file_path)
 - **Purpose:** Fast iteration on one file
-- **Cost:** Low (~$0.10-0.50, ~30-60 seconds)
+- **Cost:** Low (single file review)
 - **Constraints:** Train split only, file must have >0 issues
 - **Returns:** detection_rate, detected_issues, issues_in_file
 
 ### eval_specimen(prompt_path, specimen)
 - **Purpose:** Test on full specimen
-- **Cost:** Medium (~$1-5, ~5-10 minutes)
+- **Cost:** Medium (full specimen review)
 - **Returns:** expected, reported, true_positives, false_positive, unknown, false_negatives, precision, recall
 - **Caveat:** Precision may be low due to sparse labeling (only issues that bothered annotator)
 
 ### eval_split(prompt_path, split: "train"|"valid")
 - **Purpose:** Evaluate on full split
-- **Cost:** High (many specimens, $20-100+)
+- **Cost:** High (many specimens)
 - **Returns:**
   - split="train": detailed_metrics (per-specimen list), specimens list
   - split="valid": aggregate_recall, aggregate_precision, specimen_count, issue_count
