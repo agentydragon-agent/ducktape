@@ -4,10 +4,7 @@ import time
 from typing import Any
 from unittest.mock import patch
 
-from fastmcp.server import FastMCP
-
 from adgn.agent.agent import MiniCodex
-from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import Abort, Auto, Continue
 from adgn.agent.reducer import BaseHandler
 from adgn.mcp._shared.naming import build_mcp_function
@@ -42,46 +39,21 @@ class OneShotSyntheticHandler(BaseHandler):
         return None
 
 
-def _make_slow_server(per_call_secs: float = 0.30) -> FastMCP:
-    """Return a FastMCP server implementing two slow tools.
-
-    The tools are async and sleep for per_call_secs to simulate latency. This
-    exercises the real inproc FastMCP transport in tests (higher fidelity).
-    """
-    mcp = FastMCP("dummy")
-
-    @mcp.tool()
-    async def slow() -> dict[str, Any]:
-        await asyncio.sleep(per_call_secs)
-        return {"ok": True, "tool": "slow", "args": {}}
-
-    @mcp.tool()
-    async def slow2() -> dict[str, Any]:
-        await asyncio.sleep(per_call_secs)
-        return {"ok": True, "tool": "slow2", "args": {}}
-
-    return mcp
-
-
-async def test_parallel_tool_calls_reduce_wall_time(make_session):
-    # Build a real inproc FastMCP server with two slow tools
-
+async def test_parallel_tool_calls_reduce_wall_time(make_session, slow_server, recording_handler):
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
     tc1 = FunctionCallItem(name=build_mcp_function("dummy", "slow"), call_id="call_1", arguments=json.dumps({}))
     tc2 = FunctionCallItem(name=build_mcp_function("dummy", "slow2"), call_id="call_2", arguments=json.dumps({}))
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
-    rec = RecordingHandler()
-
-    async with make_session({"dummy": _make_slow_server()}) as mcp_client:
+    async with make_session({"dummy": slow_server}) as mcp_client:
         agent = await MiniCodex.create(
             model="noop",
             system="test",
             mcp_client=mcp_client,
             client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI
             parallel_tool_calls=True,
-            handlers=[handler, rec],
+            handlers=[handler, recording_handler],
         )
 
         t0 = time.perf_counter()
@@ -93,11 +65,11 @@ async def test_parallel_tool_calls_reduce_wall_time(make_session):
         target_records = 4  # 2 tools x 2 events each
 
         # Store original methods
-        original_on_tool_call = rec.on_tool_call_event
-        original_on_tool_result = rec.on_tool_result_event
+        original_on_tool_call = recording_handler.on_tool_call_event
+        original_on_tool_result = recording_handler.on_tool_result_event
 
         def check_and_signal():
-            if len(rec.records) >= target_records:
+            if len(recording_handler.records) >= target_records:
                 completion_event.set()
 
         def enhanced_tool_call(evt):
@@ -110,8 +82,8 @@ async def test_parallel_tool_calls_reduce_wall_time(make_session):
 
         # Use proper mocking to patch the methods
         with (
-            patch.object(rec, "on_tool_call_event", side_effect=enhanced_tool_call),
-            patch.object(rec, "on_tool_result_event", side_effect=enhanced_tool_result),
+            patch.object(recording_handler, "on_tool_call_event", side_effect=enhanced_tool_call),
+            patch.object(recording_handler, "on_tool_result_event", side_effect=enhanced_tool_result),
         ):
             await asyncio.wait_for(completion_event.wait(), timeout=2.0)
         elapsed = time.perf_counter() - t0
@@ -121,10 +93,10 @@ async def test_parallel_tool_calls_reduce_wall_time(make_session):
     assert elapsed < 0.55, f"expected parallel speedup; took {elapsed:.3f}s"
 
     # Sanity checks on outputs/metrics via recording handler
-    tc_count = len([e for e in rec.records if e.get("kind") == "tool_call"])
-    function_call_output_count = len([e for e in rec.records if e.get("kind") == "function_call_output"])
+    tc_count = len([e for e in recording_handler.records if e.get("kind") == "tool_call"])
+    function_call_output_count = len([e for e in recording_handler.records if e.get("kind") == "function_call_output"])
     assert tc_count >= 2
     assert function_call_output_count >= 2
-    kinds = [evt.get("kind") for evt in rec.records if isinstance(evt, dict)]
+    kinds = [evt.get("kind") for evt in recording_handler.records if isinstance(evt, dict)]
     assert kinds.count("tool_call") >= 2
     assert kinds.count("function_call_output") >= 2

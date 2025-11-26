@@ -1,23 +1,12 @@
 from __future__ import annotations
 
-from fastmcp.server import FastMCP
-
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 
 
-def _make_backend(name: str = "backend") -> FastMCP:
-    m = FastMCP(name)
-
-    @m.tool(name="ping")
-    def ping() -> str:
-        return "pong"
-
-    return m
-
-
-async def test_admin_client_list_and_detach(make_pg_session, approval_policy_reader_allow_all):
-    backend = _make_backend()
-    async with make_pg_session({"backend": backend, "approval_policy": approval_policy_reader_allow_all}) as sess:
+async def test_admin_client_list_and_detach(make_pg_session, approval_policy_reader_allow_all, backend_server):
+    async with make_pg_session(
+        {"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}
+    ) as sess:
         admin = CompositorAdminClient(sess)
         meta = CompositorMetaClient(sess)
         states = await meta.list_states()

@@ -1,19 +1,8 @@
 from __future__ import annotations
 
-from fastmcp.server import FastMCP
 from pydantic import TypeAdapter
 
 from adgn.agent.server.protocol import Envelope, Snapshot
-
-
-def _make_echo() -> FastMCP:
-    m = FastMCP("echo")
-
-    @m.tool()
-    def echo(text: str) -> dict[str, str]:
-        return {"echo": text}
-
-    return m
 
 
 def test_attach_server_populates_sampling_servers(agent_app_client):
@@ -30,7 +19,7 @@ def test_attach_server_populates_sampling_servers(agent_app_client):
 
         # Attach an in-proc echo server via HTTP API
         # The API expects typed attach spec per server name
-        # For tests, we use the in-proc factory form: { "inproc": { "factory": "adgn.mcp.testing.simple_servers.make_simple_mcp", "args": ["echo"], "kwargs": {} } }
+        # For tests, we use the in-proc factory form
         attach = {
             "echo": {
                 "type": "inproc",

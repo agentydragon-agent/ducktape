@@ -16,6 +16,7 @@ import pytest
 from starlette.testclient import WebSocketTestSession
 
 from adgn.agent.approvals import ApprovalPolicyEngine
+from adgn.agent.loggers import RecordingHandler
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.server.app import create_app
@@ -439,3 +440,61 @@ def agent_ws_box(ws_session, make_agent_http):
             yield Box(client=client, ws=ws, collect=_collect, agent_id=agent_id, http=http)
 
     return _open
+
+
+# ---- Recording handler fixture -----------------------------------------------
+
+
+@pytest.fixture
+def recording_handler() -> RecordingHandler:
+    """Fresh RecordingHandler for capturing agent events during tests."""
+    return RecordingHandler()
+
+
+# ---- Server fixtures for tool error and parallel tests ------------------------
+
+
+@pytest.fixture
+def validation_server() -> FastMCP:
+    """FastMCP server with a tool that validates input strictly."""
+    from typing import Literal
+
+    mcp = FastMCP("validator")
+
+    @mcp.tool()
+    def send_message(mime: Literal["text/markdown"], content: str) -> dict[str, Any]:
+        return {"ok": True, "message": content}
+
+    return mcp
+
+
+@pytest.fixture
+def failing_server() -> FastMCP:
+    """FastMCP server with a tool that returns an error."""
+    mcp = FastMCP("editor")
+
+    @mcp.tool()
+    def fail(x: int) -> dict[str, Any]:
+        return {"ok": False, "error": "boom"}
+
+    return mcp
+
+
+@pytest.fixture
+def slow_server() -> FastMCP:
+    """FastMCP server with two slow async tools for parallel call testing."""
+    import asyncio
+
+    mcp = FastMCP("dummy")
+
+    @mcp.tool()
+    async def slow() -> dict[str, Any]:
+        await asyncio.sleep(0.30)
+        return {"ok": True, "tool": "slow", "args": {}}
+
+    @mcp.tool()
+    async def slow2() -> dict[str, Any]:
+        await asyncio.sleep(0.30)
+        return {"ok": True, "tool": "slow2", "args": {}}
+
+    return mcp

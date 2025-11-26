@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
-from importlib import resources
 import os
 from pathlib import Path
 import platform
@@ -246,47 +245,28 @@ def make_session():
 
 
 @pytest.fixture
-def make_pg_session_box(approval_policy_reader_allow_all, make_pg_session):
-    """Helper to open a session with a boxed Docker exec server and policy.
-
-    Mounts a per-session container exec server under name "box" and mounts the
-    approval_policy reader. Yields the MCP client session.
-    """
-
-    @asynccontextmanager
-    async def _open():
-        server = make_container_exec_server(make_container_opts("python:3.12-slim"), name="box")
-        async with make_pg_session({"box": server, "approval_policy": approval_policy_reader_allow_all}) as client:
-            yield client
-
-    return _open
+async def pg_session_box(approval_policy_reader_allow_all, make_pg_session):
+    """Async fixture yielding a session with boxed Docker exec server and policy."""
+    server = make_container_exec_server(make_container_opts("python:3.12-slim"), name="box")
+    async with make_pg_session({"box": server, "approval_policy": approval_policy_reader_allow_all}) as client:
+        yield client
 
 
 @pytest.fixture
-def make_pg_session_echo(make_echo_spec, approval_policy_reader_allow_all, make_pg_session):
-    """Helper to open a session with the echo server and policy mounted.
-
-    Yields the MCP client session.
-    """
-
-    @asynccontextmanager
-    async def _open():
-        spec_factory = make_echo_spec
-        servers = {**spec_factory(), "approval_policy": approval_policy_reader_allow_all}
-        async with make_pg_session(servers) as client:
-            yield client
-
-    return _open
+async def pg_session_echo(make_echo_spec, approval_policy_reader_allow_all, make_pg_session):
+    """Async fixture yielding a session with echo + approval mounted."""
+    servers = {**make_echo_spec(), "approval_policy": approval_policy_reader_allow_all}
+    async with make_pg_session(servers) as client:
+        yield client
 
 
 @pytest.fixture
-async def pg_session_echo(make_pg_session_echo):
-    """Async fixture yielding a session with echo + approval mounted.
+async def pg_session_policy_only(make_pg_session, approval_policy_reader_allow_all):
+    """Async fixture yielding a session with only approval_policy mounted.
 
-    Convenience wrapper around make_pg_session_echo() so tests can depend on a
-    ready session without using an explicit async with.
+    Useful for tests that don't need any backend servers but need policy gateway.
     """
-    async with make_pg_session_echo() as client:
+    async with make_pg_session({"approval_policy": approval_policy_reader_allow_all}) as client:
         yield client
 
 
@@ -364,16 +344,12 @@ def docker_inproc_spec_py312():
 
 
 @pytest.fixture
-async def approval_policy_reader_allow_all(docker_client, sqlite_persistence) -> FastMCP:
+async def approval_policy_reader_allow_all(make_policy_engine) -> FastMCP:
     """Approval policy reader server with an approve-all policy program.
 
     Uses the packaged approve_all.py source and evaluates via Docker.
     """
-    policy_text = resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
-    eng = ApprovalPolicyEngine(
-        docker_client=docker_client, agent_id="tests", persistence=sqlite_persistence, policy_source=policy_text
-    )
-    return ApprovalPolicyServer(eng)
+    return ApprovalPolicyServer(make_policy_engine(load_default_policy_source()))
 
 
 @pytest.fixture

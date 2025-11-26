@@ -7,7 +7,6 @@ from fastmcp.mcp_config import StdioMCPServer
 import pytest
 
 from adgn.mcp.compositor.clients import CompositorAdminClient
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
@@ -20,27 +19,25 @@ def stdio_echo_spec() -> StdioMCPServer:
 
 
 @pytest.fixture
-async def admin_env():
+async def admin_env(compositor):
     """Compositor with standard admin/meta servers and an admin client.
 
     Yields a tuple (admin_client, compositor).
     """
-    comp = Compositor("comp")
-    await mount_standard_inproc_servers(compositor=comp, gateway_client=None)
-    async with Client(comp) as client:
+    await mount_standard_inproc_servers(compositor=compositor, gateway_client=None)
+    async with Client(compositor) as client:
         admin = CompositorAdminClient(client)
-        yield admin, comp
+        yield admin, compositor
 
 
 @pytest.fixture
-async def resources_env():
+async def resources_env(compositor):
     """Compositor + resources server mounted using a real gateway client.
 
     Yields (ResourcesClient, Compositor) so tests can mount origins and use the
     typed resources client to subscribe/unsubscribe and read the index.
     """
-    comp = Compositor("comp")
-    async with Client(comp) as gw:
-        res_server = make_resources_server(gateway_client=gw, compositor=comp)
+    async with Client(compositor) as gw:
+        res_server = make_resources_server(gateway_client=gw, compositor=compositor)
         async with Client(res_server) as res_client:
-            yield ResourcesClient(res_client), comp
+            yield ResourcesClient(res_client), compositor
