@@ -12,6 +12,13 @@ Precision is secondary (and may appear artificially low due to incomplete labeli
 
 The coding agent you're optimizing prompts for is a **GPT-5-level coding agent** with the following capabilities:
 
+**Performance benchmarks:**
+- **SWE-bench Verified**: 74.9% (real-world software engineering tasks - given a code repository and issue description, generate a patch to solve it)
+- **Aider Polyglot**: 88% (code editing across multiple languages)
+- **HumanEval**: ~90% (function synthesis from docstrings)
+- **Low hallucination rate**: ~6x fewer hallucinations than o3 in long-form technical content
+
+**Execution capabilities:**
 - **Full code execution**: Can execute Python code and run arbitrary commands
 - **Same Docker environment**: Has access to the same Docker image you're running in, including:
   - All installed analysis tools (ruff, mypy, vulture, jscpd, etc.)
@@ -19,7 +26,12 @@ The coding agent you're optimizing prompts for is a **GPT-5-level coding agent**
   - Command-line utilities and tools
 - **File system access**: Can read specimen code and run tools against it
 
-When crafting prompts, you can leverage these capabilities. The agent can run tools, parse outputs, and perform multi-step analysis programmatically.
+**What this means for your prompts:**
+- The agent can understand complex multi-step analysis procedures
+- It can run static analysis tools and programmatically parse their outputs
+- It has strong code understanding and can identify subtle issues
+- You can prescribe sophisticated workflows combining multiple tools and reasoning steps
+- The agent is highly capable but not perfect - clear structure and explicit guidance still matter
 
 ## Data Splits
 
