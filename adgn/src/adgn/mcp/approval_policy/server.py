@@ -143,7 +143,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
             return got.content
 
         @self.flat_model()
-        async def decide(input: PolicyRequest) -> PolicyResponse:
+        async def evaluate_policy(input: PolicyRequest) -> PolicyResponse:
             """Evaluate a policy decision for a single tool call via Docker-backed evaluator."""
             evaluator = ContainerPolicyEvaluator(
                 agent_id=self._engine.agent_id, docker_client=self._engine.docker_client, engine=self._engine

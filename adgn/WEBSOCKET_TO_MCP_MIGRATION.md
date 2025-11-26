@@ -12,7 +12,7 @@ This document outlines the migration from WebSocket-based communication to MCP (
 
 | Server | Purpose | Mounted? | Used By |
 |--------|---------|----------|---------|
-| **approval_policy** (reader) | Policy evaluation & resources | ✅ Compositor | Agent (reads policy, calls `decide`) |
+| **approval_policy** (reader) | Policy evaluation & resources | ✅ Compositor | Agent (reads policy, calls `evaluate_policy`) |
 | **approval_policy_proposer** | Create/withdraw policy proposals | ✅ Compositor | Agent (proposes policy changes) |
 | **approval_policy_approver** | Admin policy management | ❌ Private client | HTTP endpoints, admin UI |
 | **approvals** | User approval actions for tool calls | ✅ Compositor | UI (approve/deny pending calls) |
@@ -47,7 +47,7 @@ Each `AgentContainer` has a `_compositor: Compositor` that mounts small FastMCP 
 7. **approval_policy** (3 variants) - Policy & proposal management
    - **Reader** (`approval_policy`): Mounted in user-facing compositor
      - Resources: `resource://approval-policy/policy.py`, `resource://approval-policy/proposals/{id}`
-     - Tool: `decide(name, arguments)` - Evaluates policy for a tool call via Docker-backed evaluator
+     - Tool: `evaluate_policy(name, arguments)` - Evaluates policy for a tool call via Docker-backed evaluator
    - **Proposer** (`approval_policy_proposer`): Mounted in user-facing compositor
      - Tools: `create_proposal(content)`, `withdraw_proposal(id)`
    - **Admin** (`approval_policy_approver`): NOT mounted in compositor (private client only)

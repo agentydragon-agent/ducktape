@@ -382,8 +382,8 @@ def stub_approval_policy_engine():
 def approval_policy_reader_stub() -> FastMCP:
     server = FastMCP("approval_policy")
 
-    @server.tool(name="decide")
-    def _decide(name: str, arguments: dict | None = None) -> dict[str, str]:
+    @server.tool(name="evaluate_policy")
+    def _evaluate_policy(name: str, arguments: dict | None = None) -> dict[str, str]:
         return {"decision": "allow", "rationale": "stub"}
 
     return server

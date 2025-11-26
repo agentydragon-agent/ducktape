@@ -144,7 +144,7 @@ class PolicyGatewayMiddleware(Middleware):
 
         # Evaluate decision via MCP reader server when available; fallback to local evaluator
         try:
-            decision_res = await self._policy_reader.decide(PolicyRequest(name=name, arguments=arguments))
+            decision_res = await self._policy_reader.evaluate_policy(PolicyRequest(name=name, arguments=arguments))
             decision = decision_res.decision
             rationale = decision_res.rationale
         except Exception as e:  # policy engine failure → explicit evaluator error
