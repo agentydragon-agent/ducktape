@@ -155,13 +155,11 @@ class CommitController(BaseHandler):
         return Continue(RequireAny())
 
 
-async def generate_commit_message_minicodex(model: str, *, debug: bool = False, amend: bool = False) -> str:
+async def generate_commit_message_minicodex(
+    repo: pygit2.Repository, model: str, *, debug: bool = False, amend: bool = False
+) -> str:
     """Run MiniCodex with docker_exec + submit_commit_message MCP servers and return the commit message text."""
-    # Wire an in-proc read-only Git MCP server bound to the current repo
-    gitdir = pygit2.discover_repository(Path.cwd())
-    assert gitdir, "Unable to locate git repository"
-    repo = pygit2.Repository(gitdir)
-    repo_root = Path(repo.workdir or Path(gitdir).parent)
+    repo_root = Path(repo.workdir or repo.path).parent
 
     submit_state = SubmitState()
 
@@ -187,7 +185,7 @@ async def generate_commit_message_minicodex(model: str, *, debug: bool = False, 
 
     handlers: list[BaseHandler] = [CommitController(submit_state, GIT_RO_SERVER_NAME, amend=amend)]
     if debug:
-        handlers.insert(0, DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
+        handlers.append(DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
 
     # Build compositor, mount servers, and run agent with a client
     comp = Compositor("compositor")

@@ -164,6 +164,8 @@ class PolicyGatewayMiddleware(Middleware):
                 await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_ALLOW)
 
             # Track in-flight tool call
+            # NOTE: Using synthetic ID because FastMCP middleware interface doesn't expose
+            # the JSON-RPC request ID. This limits correlation with actual MCP call events.
             call_id = uuid.uuid4().hex
             self._inflight[call_id] = tool_key
             try:
@@ -274,25 +276,3 @@ class PolicyGatewayMiddleware(Middleware):
                 )
             )
         return None
-
-
-def install_policy_gateway(
-    comp: Any,
-    *,
-    hub: ApprovalHub,
-    policy_reader: PolicyReaderStub,
-    pending_notifier: Callable[[str, str, str | None], Awaitable[None]] | None = None,
-    record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
-) -> PolicyGatewayMiddleware:
-    """Install PolicyGatewayMiddleware on a FastMCP-like server.
-
-    This mirrors production wiring in the container; tests should reuse this
-    helper to avoid drift in middleware configuration.
-
-    Returns the installed middleware instance for tracking in-flight calls.
-    """
-    middleware = PolicyGatewayMiddleware(
-        hub=hub, pending_notifier=pending_notifier, record_outcome=record_outcome, policy_reader=policy_reader
-    )
-    comp.add_middleware(middleware)
-    return middleware

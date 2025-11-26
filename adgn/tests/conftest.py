@@ -23,7 +23,7 @@ from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.mcp.policy_gateway.middleware import install_policy_gateway
+from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp
 from tests.types import McpServerSpecs
@@ -200,9 +200,10 @@ def make_pg_compositor(approval_hub: ApprovalHub):
         try:
             _reader_client = await stack.enter_async_context(Client(reader))
             policy_reader = PolicyReaderStub(TypedClient(_reader_client))
-            install_policy_gateway(comp, hub=approval_hub, policy_reader=policy_reader, pending_notifier=notifier)
+            middleware = PolicyGatewayMiddleware(hub=approval_hub, policy_reader=policy_reader, pending_notifier=notifier)
+            comp.add_middleware(middleware)
             # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
-            await mount_standard_inproc_servers(compositor=comp, gateway_client=None)
+            await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
             async with Client(comp) as sess:
                 yield sess, comp
         finally:

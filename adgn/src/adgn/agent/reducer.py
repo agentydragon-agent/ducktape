@@ -182,9 +182,6 @@ def format_notifications_message(batch: NotificationsBatch) -> UserMessage | Non
 
     Returns None if no notifications to format.
     """
-    if not batch.resources:
-        return None
-
     # Filter to only include servers with actual updates or list changes
     resources_filtered: dict[str, ResourcesServerNotice] = {
         name: entry for name, entry in batch.resources.items() if entry.updated or entry.list_changed
@@ -197,8 +194,7 @@ def format_notifications_message(batch: NotificationsBatch) -> UserMessage | Non
     )
 
     # Insert as input-side user message, clearly tagged as a system notification
-    tagged = f"<system notification>\n{payload}\n</system notification>"
-    return UserMessage.text(tagged)
+    return UserMessage.text(f"<system notification>\n{payload}\n</system notification>")
 
 
 class NotificationsHandler(BaseHandler):

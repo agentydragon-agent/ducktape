@@ -59,20 +59,9 @@ class NotificationsBuffer:
     def clear_hooks(self) -> None:
         self._hooks.clear()
 
-    def poll(self) -> NotificationsBatch:
-        """Poll and clear buffered notifications, returning grouped batch."""
-        resources = self._build_resources()
-        self._updates.clear()
-        self._list_changed.clear()
-        return NotificationsBatch(resources=resources)
-
     def peek(self) -> NotificationsBatch:
         """Peek at buffered notifications without clearing them."""
-        resources = self._build_resources()
-        return NotificationsBatch(resources=resources)
-
-    def _build_resources(self) -> dict[str, ResourcesServerNotice]:
-        """Build the grouped resources structure from current buffer state."""
+        # Build the grouped resources structure from current buffer state
         resources: dict[str, ResourcesServerNotice] = {}
         # Add servers with updated resources
         for server, uris in self._updates.items():
@@ -87,7 +76,14 @@ class NotificationsBuffer:
                     updated=frozenset(),
                     list_changed=True
                 )
-        return resources
+        return NotificationsBatch(resources=resources)
+
+    def poll(self) -> NotificationsBatch:
+        """Poll and clear buffered notifications, returning grouped batch."""
+        batch = self.peek()
+        self._updates.clear()
+        self._list_changed.clear()
+        return batch
 
     async def _on_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
         # Add URI to the server's update set
@@ -112,7 +108,12 @@ class NotificationsBuffer:
             name_str = str(name)
             if has_resource_prefix(uri, name_str, fmt):
                 return name_str
-        return "unknown"
+
+        # No server found - fail loudly
+        raise ValueError(
+            f"Could not derive server for URI {uri!r}. "
+            f"Available servers: {sorted(specs.keys())}"
+        )
 
     async def _on_resource_listener(self, name: str, uri: str) -> None:
         self._updates.setdefault(name, set()).add(uri)

@@ -41,7 +41,7 @@ async def compositor_client(compositor):
 @pytest.fixture
 async def resources_server(compositor):
     """Resources server for the compositor."""
-    return make_resources_server(compositor=compositor)
+    return make_resources_server(client=Client(compositor), compositor=compositor)
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ async def admin_env(make_compositor):
     Yields a tuple (admin_client, compositor).
     """
     async with make_compositor({}) as (client, comp):
-        await mount_standard_inproc_servers(compositor=comp, gateway_client=None)
+        await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
         admin = CompositorAdminClient(client)
         yield admin, comp
 

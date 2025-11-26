@@ -202,18 +202,22 @@ def _build_window_payload(
 
 
 def make_resources_server(
-    name: str = "resources", *, compositor: Compositor
+    name: str = "resources", *, client: Client, compositor: Compositor
 ) -> NotifyingFastMCP:
     """Create a MCP server that aggregates resources across servers.
+
+    Args:
+        name: Server name
+        client: Direct client to compositor (should bypass policy gateway to prevent double enforcement)
+        compositor: Compositor for metadata and lifecycle listeners
 
     - Synthetic server injected by the runtime; reserved name is ``resources``.
     - Provides a uniform API to discover and read resources exposed by other servers.
 
     **Policy enforcement architecture:**
     - LLM tool calls to this server go through the policy gateway (tool-level enforcement)
-    - This server's internal calls to the compositor BYPASS the policy gateway
+    - This server's internal calls to the compositor BYPASS the policy gateway via the direct client
     - This prevents double policy enforcement and keeps the resources server as a pure facade
-    - The compositor client created here does NOT have policy middleware installed
 
     Tools
     - ``list(server?: string, uri_prefix?: string) -> { resources: [...] }``
@@ -235,10 +239,7 @@ def make_resources_server(
         name, instructions=("Resources aggregator for listing/reading resources across mounted servers.")
     )
 
-    # Direct client to compositor (bypasses policy gateway to prevent double enforcement)
-    # This client is created without middleware since tools calling this server already
-    # went through the policy gateway
-    compositor_client = Client(compositor)
+    compositor_client = client
 
     # ---- Subscriptions index (single resource) -----------------------------
     # Internal store for subscriptions made via this server's subscribe tool.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import logging
 from typing import Annotated, Any, Literal
@@ -70,17 +71,17 @@ class AgentStatusData(BaseModel):
     run_phase: RunPhase
     ui: UiStateLite
     container: ContainerState
-    last_event_at: str | None = None
+    last_event_at: datetime | None = None
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
     def from_core(cls, core: AgentStatusCore) -> AgentStatusData:
         """Build a WS-friendly AgentStatusData from the internal status core.
 
-        Centralizes the mapping and ensures JSON-friendly fields (e.g., last_event_at ISO string).
+        Centralizes the mapping and ensures JSON-friendly fields.
         Keeps the WS schema stable without exposing internal types directly.
         """
-        last = core.last_event_at.isoformat() if core.last_event_at is not None else None
+        last = core.last_event_at
         return cls(
             id=core.id,
             live=core.live,

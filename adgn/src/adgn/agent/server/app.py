@@ -19,6 +19,8 @@ from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel
 import uvicorn
 
+from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
+from adgn.agent.mcp_bridge.server import InfrastructureRegistry
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import RunRow
 from adgn.agent.persist.events import EventRecord
@@ -48,11 +50,10 @@ STATIC_DIR = Path(__file__).with_name("static")
 
 
 def default_client_factory(model: str) -> OpenAIModelProto:
-    """Default LLM client factory."""
     return build_client(model, enable_debug_logging=True)
 
 
-# Request/Response models (module-level to avoid nested classes)
+# Request/Response models
 
 
 # Typed status bundle (references component models defined above)
@@ -152,12 +153,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     app.state.persistence = SQLitePersistence(db_path)
     # Construct a single Docker client and pass through to the registry/containers
-    app.state.docker_client = docker.from_env()
+    docker_client = docker.from_env()
     app.state.registry = AgentRegistry(
         persistence=app.state.persistence,
         model=DEFAULT_MODEL,
         client_factory=default_client_factory,
-        docker_client=app.state.docker_client,
+        docker_client=docker_client,
     )
 
     # (continued below)
@@ -176,17 +177,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         await app.state.persistence.ensure_schema()
         logger.info("persistence ready", extra={"db_path": str(db_path)})
 
-        # Create agents management server for MCP routing
-        # Import here to avoid circular dependency with registry setup
-        from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor  # noqa: PLC0415
-        from adgn.agent.mcp_bridge.server import InfrastructureRegistry  # noqa: PLC0415
-
         # Create minimal infrastructure registry for agents server
         # Note: This is a simplified setup - in production, you'd want proper registry management
         app.state.mcp_registry = InfrastructureRegistry(
             persistence=app.state.persistence,
-            docker_client=app.state.docker_client,
-            mcp_config=MCPConfig(servers={}),
+            docker_client=docker_client,
+            mcp_config=MCPConfig(),
             initial_policy=None,
         )
 
@@ -287,14 +283,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     # Proposals list/content
     @app.get("/api/agents/{agent_id}/proposals", response_model=ProposalsList)
     async def api_list_proposals(agent_id: AgentID) -> ProposalsList:
-        rows = await app.state.persistence.list_policy_proposals(agent_id)
-        items = [
+        return ProposalsList(proposals=[
             ProposalRow(
                 id=rec.id, status=ProposalStatus(rec.status), created_at=rec.created_at, decided_at=rec.decided_at
             )
-            for rec in rows
-        ]
-        return ProposalsList(proposals=items)
+            for rec in await app.state.persistence.list_policy_proposals(agent_id)
+        ])
 
     # Mount MCP routing endpoint
     # Note: The agents_server is created during startup, so this uses a lazy sub-app

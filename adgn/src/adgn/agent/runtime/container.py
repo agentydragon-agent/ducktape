@@ -48,7 +48,7 @@ from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import make_loop_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
-from adgn.mcp.policy_gateway.middleware import install_policy_gateway
+from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
 from adgn.mcp.runtime.server import make_runtime_server
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
 from adgn.mcp.stubs.typed_stubs import TypedClient
@@ -126,8 +126,6 @@ logger = logging.getLogger(__name__)
 
 
 def default_client_factory(model: str) -> OpenAIModelProto:
-    """Default LLM client factory used when no custom factory is provided."""
-
     return build_client(model, enable_debug_logging=True)
 
 
@@ -194,7 +192,7 @@ class AgentContainer:
     _policy_reader: PolicyReaderStub | None = field(default=None, init=False)
     _policy_approver: PolicyApproverStub | None = field(default=None, init=False)
     # Policy gateway middleware (for tracking in-flight tool calls)
-    _policy_gateway: Any | None = field(default=None, init=False)  # PolicyGatewayMiddleware
+    _policy_gateway: PolicyGatewayMiddleware | None = field(default=None, init=False)
 
     @property
     def policy_approver(self) -> PolicyApproverStub:
@@ -320,8 +318,7 @@ class AgentContainer:
             if self._cm is not None and self.session is not None:
                 await self._cm.send_payload(ApprovalPendingEvt(call_id=call_id, tool_key=tool_key, args_json=args_json))
 
-        policy_gateway = install_policy_gateway(
-            comp,
+        policy_gateway = PolicyGatewayMiddleware(
             hub=approval_hub,
             pending_notifier=_pending_notifier,
             record_outcome=lambda call_id, tool_key, outcome: asyncio.create_task(
@@ -329,10 +326,11 @@ class AgentContainer:
             ),
             policy_reader=self._policy_reader,
         )
+        comp.add_middleware(policy_gateway)
         self._policy_gateway = policy_gateway
 
         # Mount standard in-proc servers (resources, compositor_meta, compositor_admin)
-        await mount_standard_inproc_servers(compositor=comp, gateway_client=mcp_client)
+        await mount_standard_inproc_servers(compositor=comp, mount_resources=True)
 
         return (comp, mcp_client, notif_buffer, self._policy_reader, self._policy_approver)
 

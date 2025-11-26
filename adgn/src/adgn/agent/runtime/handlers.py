@@ -22,10 +22,6 @@ def build_handlers(
     get_run_id: Callable[[], UUID | None],
     ui_bus: ServerBus | None = None,
 ) -> tuple[list[BaseHandler], RunPersistenceHandler]:
-    """Construct the standard handler stack for an agent.
-
-    Returns (handlers, persist_handler).
-    """
     persist_handler = RunPersistenceHandler(persistence=persistence, get_run_id=get_run_id)
     handlers: list[BaseHandler] = [manager, persist_handler]
     if ui_bus is not None:

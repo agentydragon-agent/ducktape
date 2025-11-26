@@ -9,24 +9,15 @@ MAX_PROMPT_CONTEXT_CHARS = 100_000  # 100k character cap for AI context block
 PAST_COMMITS_MAX_CHARS = 6000
 RECENT_COMMITS_FOR_CONTEXT = 30
 DIFF_SNIPPET_CHARS = 5000
+TRUNCATION_NOTE = "[Context truncated to 100k characters]"
 
 
-def _len_chars(s: str) -> int:
-    return len(s)
-
-
-def _cap_append(parts: list[str], chunk: str, cap_chars: int, truncation_note: str) -> bool:
-    """Append chunk to parts unless this would exceed cap; returns True if truncated."""
-    current_chars = sum(_len_chars(p) for p in parts)
-    needed_chars = _len_chars(chunk)
-    if current_chars + needed_chars >= cap_chars:
-        remaining_chars = cap_chars - current_chars
-        if remaining_chars > 0:
-            parts.append(chunk[:remaining_chars])
-        parts.append(truncation_note + "\n")
-        return True
-    parts.append(chunk)
-    return False
+def _join_with_truncation(parts: list[str], max_chars: int, note: str) -> str:
+    """Join parts, truncating if needed."""
+    result = "".join(parts)
+    if len(result) > max_chars:
+        return result[:max_chars] + note + "\n"
+    return result
 
 
 def _diff(repo: pygit2.Repository, include_all: bool) -> pygit2.Diff:
@@ -64,6 +55,11 @@ STATUS_LETTER_TO_TEXT: dict[str, str] = {
 
 def status_letter_text(letter: str) -> str:
     return STATUS_LETTER_TO_TEXT.get(letter, f"{letter}:")
+
+
+def has_uncommitted_changes(repo: pygit2.Repository) -> bool:
+    """Check if there are any uncommitted changes (staged or unstaged)."""
+    return bool(repo.status())
 
 
 def _format_status_porcelain(repo: pygit2.Repository) -> str:
@@ -128,31 +124,21 @@ def _log_subjects(repo: pygit2.Repository, n: int = 10) -> list[str]:
 
 
 def _build_ai_context(repo: pygit2.Repository, include_all: bool) -> str:
-    parts: list[str] = []
-
-    parts.append("$ git status --porcelain\n")
-    status_out = _format_status_porcelain(repo) + "\n"
-    _cap_append(parts, status_out, MAX_PROMPT_CONTEXT_CHARS, "[Context truncated to 100k characters]")
-
     ns_header = "git diff HEAD --name-status" if include_all else "git diff --cached --name-status"
-    parts.append(f"$ {ns_header}\n")
-    ns_out = _format_name_status(repo, include_all) + "\n"
-    _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_CHARS, "[Context truncated to 100k characters]")
-
-    parts.append(f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %B\n")
-    log_out = "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n"
-    _cap_append(parts, log_out, MAX_PROMPT_CONTEXT_CHARS, "[Context truncated to 100k characters]")
-
     diff_header = "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
-    parts.append(f"$ {diff_header}\n")
-    diff_out = _format_unified_diff(repo, include_all) + "\n"
-    _cap_append(parts, diff_out, MAX_PROMPT_CONTEXT_CHARS, "[Context truncated to 100k characters]")
 
-    out = "".join(parts)
-    if _len_chars(out) > MAX_PROMPT_CONTEXT_CHARS:
-        out = out[:MAX_PROMPT_CONTEXT_CHARS]
-        out += "\n[Context truncated to 100k characters]\n"
-    return out
+    parts = [
+        "$ git status --porcelain\n",
+        _format_status_porcelain(repo) + "\n",
+        f"$ {ns_header}\n",
+        _format_name_status(repo, include_all) + "\n",
+        f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %B\n",
+        "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n",
+        f"$ {diff_header}\n",
+        _format_unified_diff(repo, include_all) + "\n",
+    ]
+
+    return _join_with_truncation(parts, MAX_PROMPT_CONTEXT_CHARS, TRUNCATION_NOTE)
 
 
 def diffstat(repo: pygit2.Repository, include_all: bool) -> str:

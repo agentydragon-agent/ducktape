@@ -108,8 +108,7 @@ def start_tool(state: UiState, *, tool: str, call_id: str, cmd: str | None, args
 
 
 def _find_last_tool_index(state: UiState, call_id: str) -> int | None:
-    for idx in range(len(state.items) - 1, -1, -1):
-        it = state.items[idx]
+    for idx, it in reversed(list(enumerate(state.items))):
         if isinstance(it, ToolItem) and it.tool_call.call_id == call_id:
             return idx
     return None

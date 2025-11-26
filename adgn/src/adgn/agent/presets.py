@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
 from typing import cast
 
@@ -67,8 +68,6 @@ def discover_presets(*, override_dir: str | Path | None = None) -> dict[str, Age
     Precedence: override_dir > ADGN_AGENT_PRESETS_DIR env > XDG config
     Later directories do not override earlier names.
     """
-    import os
-
     out: dict[str, AgentPreset] = {}
     roots: list[Path] = []
 

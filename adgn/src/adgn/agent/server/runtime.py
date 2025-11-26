@@ -42,6 +42,7 @@ from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
 from adgn.agent.server.status_shared import RunPhase, determine_run_phase
 from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,7 @@ class AgentSession:
         agent_id: str | None = None,
         ui_bus: Any | None = None,
         approval_engine: ApprovalPolicyEngine | None = None,
-        policy_gateway: Any | None = None,  # PolicyGatewayMiddleware for tracking in-flight calls
+        policy_gateway: PolicyGatewayMiddleware | None = None,
     ) -> None:
         self._task: asyncio.Task | None = None
         self.approval_hub = approval_hub or ApprovalHub()
@@ -214,22 +215,19 @@ class AgentSession:
             raise RuntimeError("approval_engine not configured for session")
 
         content, version = self.approval_engine.get_policy()
-        proposals: list[ProposalInfo] = []
         # Load proposals from persistence policy store
-        if self._persistence is not None and self.agent_id:
-            rows = await self._persistence.list_policy_proposals(self.agent_id)
-            for r in rows:
-                pid = str(r.id)
-                raw = str(r.status)
-                # Strict mapping; surface invalid data rather than swallowing
-                status = ProposalStatus(raw)
-                proposals.append(ProposalInfo(id=pid, status=status))
+        proposals = [
+            ProposalInfo(id=r.id, status=ProposalStatus(r.status))
+            for r in await self._persistence.list_policy_proposals(self.agent_id)
+        ] if self._persistence is not None and self.agent_id else []
         approval_policy = ApprovalPolicyInfo(content=content, version=version, proposals=proposals)
 
         # Build preferred details bundle when all components are present
-        details = None
-        if (self.active_run is not None) and (sampling is not None) and (approval_policy is not None):
-            details = SnapshotDetails(run_state=self.active_run, sampling=sampling, approval_policy=approval_policy)
+        details = (
+            SnapshotDetails(run_state=self.active_run, sampling=sampling, approval_policy=approval_policy)
+            if self.active_run and sampling and approval_policy
+            else None
+        )
 
         return Snapshot(
             v="1.0.0",
