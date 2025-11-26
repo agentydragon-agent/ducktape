@@ -151,7 +151,7 @@ Tool will raise error if budget exceeded before starting work.
 - **Best for iteration:** When debugging why agent misses specific issues
 - **Limitations:** Only train split (prevents leakage), only files with >0 issues
 
-**Specimen-level evaluation** (`eval_specimen`, `eval_split`):
+**Specimen-level evaluation** (`eval_specimen`, `eval_train_split`, `eval_valid_split`):
 - Agent reviews **whole codebase**, searches for all issues
 - More realistic but slower
 - Signal may be noisy: specimens are often **sparsely labeled**
@@ -163,7 +163,7 @@ Tool will raise error if budget exceeded before starting work.
 **When to use each:**
 - Iterating on specific patterns? → `eval_file` on train files where agent failed
 - Testing overall prompt? → `eval_specimen` on a few train specimens
-- Measuring generalization? → `eval_split` on train (detailed) or valid (aggregate)
+- Measuring generalization? → `eval_train_split` on train (detailed) or `eval_valid_split` for valid (aggregate)
 
 ### eval_file(prompt_path, specimen, file_path)
 - **Purpose:** Fast iteration on one file
@@ -239,7 +239,7 @@ You can read past evaluation results, specimen code, and ground truth from the c
 - You have limited budget - spend it wisely
 - Explore existing results in `/artifacts/prompt_evals/` first to learn from past runs
 - Use cheap tools (eval_file, eval_specimen) for experimentation
-- Run expensive eval_split only when you have a promising candidate
+- Run expensive split evaluations (eval_train_split, eval_valid_split) only when you have a promising candidate
 
 **Learning from past work:**
 - Check `/artifacts/prompt_evals/eval_<timestamp>/` directories for previous runs
