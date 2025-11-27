@@ -6,6 +6,7 @@ import logging
 import uuid
 
 from docker.client import DockerClient
+from fastmcp.server import FastMCP
 from fastmcp.server.context import ServerSession
 from jinja2 import Template
 from pydantic import AnyUrl, BaseModel
@@ -77,22 +78,15 @@ def _load_instructions() -> str:
     return str(rendered)
 
 
-class ApprovalPolicyServer(NotifyingFastMCP):
-    """MCP server for approval policy: stores policy state, exposes resources and tools.
+class ApprovalPolicy:
+    """Approval policy state and business logic with 3 owned MCP servers.
 
-    This class combines the former ApprovalPolicyEngine (business logic) with the MCP
-    server layer. Policy changes trigger MCP resource broadcasts directly, eliminating
-    the notifier callback indirection.
+    This class holds policy state and exposes it via 3 MCP servers:
+    - reader: resources (policy.py, proposals) + evaluate_policy tool
+    - proposer: create_proposal, withdraw_proposal tools
+    - approver: approve_proposal, reject_proposal, set_policy_text tools
 
-    Exposes on self (reader):
-    - Resources: policy.py, proposals/{id}
-    - Tool: evaluate_policy()
-
-    Owns sub-servers as attributes:
-    - self.proposer: create_proposal, withdraw_proposal tools
-    - self.approver: approve_proposal, reject_proposal, set_policy_text tools
-
-    Exposes a deterministic waiter for tests via wait_for_broadcast(since_version).
+    The reader broadcasts resource updates on policy/proposal changes.
     """
 
     def __init__(
@@ -102,11 +96,8 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         agent_id: str,
         persistence: Persistence,
         policy_source: str,
-        name: str = APPROVAL_POLICY_SERVER_NAME_READER,
     ) -> None:
-        super().__init__(name=name, instructions=_load_instructions())
-
-        # Policy state (formerly in ApprovalPolicyEngine)
+        # Policy state
         self._policy_source: str = policy_source
         self._policy_version: int = 1  # Start at 1 since we have default content
 
@@ -119,21 +110,19 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         self._broadcast_version: int = 0
         self._broadcast_cond: asyncio.Condition = asyncio.Condition()
 
-        # Register resources and tools on self (reader server)
-        self._register_resources()
+        # Create owned servers
+        self.reader = NotifyingFastMCP(name=APPROVAL_POLICY_SERVER_NAME_READER, instructions=_load_instructions())
+        self.proposer = FastMCP(name=APPROVAL_POLICY_SERVER_NAME_PROPOSER, instructions=None)
+        self.approver = FastMCP(name=APPROVAL_POLICY_SERVER_NAME_APPROVER, instructions=None)
 
-        # Create owned sub-servers for proposer and approver roles
-        self.proposer = NotifyingFastMCP(name=APPROVAL_POLICY_SERVER_NAME_PROPOSER, instructions=None)
-        self.approver = NotifyingFastMCP(name=APPROVAL_POLICY_SERVER_NAME_APPROVER, instructions=None)
-        self._register_proposer_tools()
-        self._register_approver_tools()
+        # Register tools/resources on each server
+        self._register_reader()
+        self._register_proposer()
+        self._register_approver()
 
-        # Protocol-level resource subscriptions: acknowledge subscribe/unsubscribe
-        # and maintain a minimal per-session index. Notifications are broadcast
-        # by the server regardless of subscriptions, but handlers ensure that
-        # capability gating reflects true support and calls succeed.
+        # Protocol-level resource subscriptions on reader
         self._session_subscriptions: defaultdict[ServerSession, set[AnyUrl]] = defaultdict(set)
-        mcp_server = self._mcp_server
+        mcp_server = self.reader._mcp_server
 
         def _subscriptions() -> set[AnyUrl]:
             """Return subscription set for current session context."""
@@ -146,12 +135,8 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         @mcp_server.unsubscribe_resource()
         async def _unsubscribe(uri: AnyUrl):
             _subscriptions().discard(uri)
-            # Do not error if unknown; protocol allows idempotent unsubscribe
 
-        # Do not expose a server-local "list subscriptions" resource; the
-        # aggregator (resources server) provides a single index for the UI.
-
-    # ---- Policy state methods (formerly ApprovalPolicyEngine) ----
+    # ---- Policy state methods ----
 
     def get_policy(self) -> tuple[str, int]:
         """Return current policy source and version."""
@@ -223,69 +208,72 @@ class ApprovalPolicyServer(NotifyingFastMCP):
 
     async def _broadcast_and_signal(self, uri: str) -> None:
         if uri == APPROVAL_POLICY_PROPOSALS_INDEX_URI:
-            await self.broadcast_resource_list_changed()
+            await self.reader.broadcast_resource_list_changed()
         else:
-            await self.broadcast_resource_updated(uri)
+            await self.reader.broadcast_resource_updated(uri)
         async with self._broadcast_cond:
             self._broadcast_version += 1
             self._broadcast_cond.notify_all()
 
-    def _register_resources(self) -> None:
-        # Resources for agents: active policy, proposals index and items
-        @self.resource(APPROVAL_POLICY_RESOURCE_URI, name="policy.py", mime_type="text/x-python")
+    # ---- Server registration ----
+
+    def _register_reader(self) -> None:
+        """Register resources and evaluate_policy tool on reader server."""
+
+        @self.reader.resource(APPROVAL_POLICY_RESOURCE_URI, name="policy.py", mime_type="text/x-python")
         def active_policy() -> str:
             content, _version = self.get_policy()
             return content
 
-        @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
+        @self.reader.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
         async def proposal_item(id: str) -> str:
             if (got := await self.persistence.get_policy_proposal(self.agent_id, id)) is None:
                 raise KeyError(id)
             return got.content
 
-        @self.flat_model()
+        @self.reader.flat_model()
         async def evaluate_policy(input: PolicyRequest) -> PolicyResponse:
             """Evaluate a policy decision for a single tool call via Docker-backed evaluator."""
             evaluator = ContainerPolicyEvaluator(
                 agent_id=self.agent_id, docker_client=self.docker_client, engine=self
             )
-            # Pass through input directly; it's already a PolicyRequest
             return await evaluator.decide(input)
 
-    def _register_proposer_tools(self) -> None:
-        """Register tools on self.proposer: create_proposal, withdraw_proposal."""
+    def _register_proposer(self) -> None:
+        """Register tools on proposer server: create_proposal, withdraw_proposal."""
 
-        @self.proposer.flat_model()
-        async def create_proposal(input: CreateProposalArgs) -> ProposalDescriptor:
+        @self.proposer.tool()
+        async def create_proposal(content: str) -> dict:
             """Create a new policy proposal and return its descriptor."""
-            new_id = await self.create_proposal(input.content)
-            return ProposalDescriptor(
+            new_id = await self.create_proposal(content)
+            desc = ProposalDescriptor(
                 id=new_id, status=ProposalStatus.PENDING, created_at=datetime.now(UTC), decided_at=None
             )
+            return desc.model_dump(mode="json")
 
-        @self.proposer.flat_model()
-        async def withdraw_proposal(input: WithdrawProposalArgs) -> None:
+        @self.proposer.tool()
+        async def withdraw_proposal(id: str) -> None:
             """Withdraw a pending policy proposal by id."""
-            await self.withdraw_proposal(input.id)
+            await self.withdraw_proposal(id)
 
-    def _register_approver_tools(self) -> None:
-        """Register tools on self.approver: approve_proposal, reject_proposal, set_policy_text."""
+    def _register_approver(self) -> None:
+        """Register tools on approver server: approve_proposal, reject_proposal, set_policy_text."""
 
-        @self.approver.flat_model()
-        async def approve_proposal(input: ApproveProposalArgs) -> None:
+        @self.approver.tool()
+        async def approve_proposal(id: str) -> None:
             """Approve a pending policy proposal by id (activates policy)."""
-            await self.approve_proposal(input.id)
+            await self.approve_proposal(id)
 
-        @self.approver.flat_model()
-        async def reject_proposal(input: RejectProposalArgs) -> None:
+        @self.approver.tool()
+        async def reject_proposal(id: str) -> None:
             """Reject a pending policy proposal by id."""
-            await self.reject_proposal(input.id)
+            await self.reject_proposal(id)
 
-        @self.approver.flat_model()
-        async def set_policy_text(input: SetPolicyTextArgs) -> None:
+        @self.approver.tool()
+        async def set_policy_text(source: str) -> None:
             """Directly set active policy text after self-check."""
-            self.self_check(input.source)
-            self.set_policy(input.source)
+            self.self_check(source)
+            self.set_policy(source)
 
     async def wait_for_broadcast(self, since_version: int | None = None) -> int:
         """Await the next completed broadcast and return the new version.
@@ -298,40 +286,33 @@ class ApprovalPolicyServer(NotifyingFastMCP):
             await self._broadcast_cond.wait_for(lambda: self._broadcast_version >= target)
             return self._broadcast_version
 
-    # No nested IO models; see module-level CreateProposalArgs/ProposalDescriptor
+
+# Backwards compatibility alias
+ApprovalPolicyServer = ApprovalPolicy
 
 
 # ---- Compositor attach helpers ----
 
 
 async def attach_approval_policy_readonly(
-    comp: Compositor, policy_server: ApprovalPolicyServer, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER
-) -> ApprovalPolicyServer:
-    """Attach the approval policy readonly server (resources + evaluate_policy tool).
-
-    The policy_server itself is the reader server.
-    """
-    await comp.mount_inproc(name, policy_server)
-    return policy_server
+    comp: Compositor, policy: ApprovalPolicy, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER
+) -> NotifyingFastMCP:
+    """Attach the approval policy reader server (resources + evaluate_policy tool)."""
+    await comp.mount_inproc(name, policy.reader)
+    return policy.reader
 
 
 async def attach_approval_policy_proposer(
-    comp: Compositor, policy_server: ApprovalPolicyServer, *, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER
-) -> NotifyingFastMCP:
-    """Attach the approval policy proposer server (create/withdraw proposals).
-
-    Uses policy_server.proposer which is an owned sub-server.
-    """
-    await comp.mount_inproc(name, policy_server.proposer)
-    return policy_server.proposer
+    comp: Compositor, policy: ApprovalPolicy, *, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER
+) -> FastMCP:
+    """Attach the approval policy proposer server (create/withdraw proposals)."""
+    await comp.mount_inproc(name, policy.proposer)
+    return policy.proposer
 
 
 async def attach_approval_policy_admin(
-    comp: Compositor, policy_server: ApprovalPolicyServer, *, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER
-) -> NotifyingFastMCP:
-    """Attach the approval policy admin server (approve/reject/set_policy_text).
-
-    Uses policy_server.approver which is an owned sub-server.
-    """
-    await comp.mount_inproc(name, policy_server.approver)
-    return policy_server.approver
+    comp: Compositor, policy: ApprovalPolicy, *, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER
+) -> FastMCP:
+    """Attach the approval policy admin server (approve/reject/set_policy_text)."""
+    await comp.mount_inproc(name, policy.approver)
+    return policy.approver
