@@ -19,8 +19,7 @@ from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel
 import uvicorn
 
-from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
-from adgn.agent.mcp_bridge.server import InfrastructureRegistry
+from adgn.agent.mcp_bridge import InfrastructureRegistry, create_global_compositor, load_tokens
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import RunRow
 from adgn.agent.persist.events import EventRecord
@@ -177,21 +176,30 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         await app.state.persistence.ensure_schema()
         logger.info("persistence ready", extra={"db_path": str(db_path)})
 
-        # Create minimal infrastructure registry for agents server
-        # Note: This is a simplified setup - in production, you'd want proper registry management
+        # Create infrastructure registry for Phase 5 two-compositor architecture
         app.state.mcp_registry = InfrastructureRegistry(
-            persistence=app.state.persistence, docker_client=docker_client, mcp_config=MCPConfig(), initial_policy=None
+            persistence=app.state.persistence,
+            model=DEFAULT_MODEL,
+            client_factory=default_client_factory,
+            docker_client=docker_client,
+            mcp_config=MCPConfig(),
+            initial_policy=None,
         )
 
-        # Create global compositor with two-level architecture
-        # TODO: Figure out gateway_client setup for resources server
-        # For now, pass None - standard infrastructure servers won't be mounted
-        gateway_client = None
-
-        app.state.agents_server = await create_global_compositor(
-            registry=app.state.mcp_registry, gateway_client=gateway_client
+        # Create global compositor with agents management server
+        app.state.global_compositor = await create_global_compositor(
+            registry=app.state.mcp_registry,
         )
-        logger.info("agents management compositor created")
+        logger.info("Global compositor created with agents management server")
+
+        # Load tokens and create external agents at startup
+        _user_tokens, agent_tokens = load_tokens()
+        for agent_id in agent_tokens.values():
+            try:
+                await app.state.mcp_registry.create_external_agent(agent_id)
+                logger.info(f"Created external agent from token: {agent_id}")
+            except Exception as e:
+                logger.error(f"Failed to create external agent {agent_id}: {e}")
 
         # Multi-agent: agents should be created via API after startup
         app.state.ready.set()
@@ -203,6 +211,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         with contextlib.suppress(Exception):
             await app.state.stack.aclose()
             # Continue shutdown on errors; they will be logged by the caller
+
+        # Shutdown all agents via mcp_registry (Phase 5 path)
+        if hasattr(app.state, "mcp_registry"):
+            await app.state.mcp_registry.shutdown_all()
+
+        # Legacy registry path for backwards compatibility
         for container in app.state.registry.list():
             # Flush legacy UI manager
             if container._ui_manager:
@@ -288,7 +302,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         )
 
     # Mount MCP routing endpoint
-    # Note: The agents_server is created during startup, so this uses a lazy sub-app
+    # Note: The global_compositor is created during startup, so this uses a lazy sub-app
     from fastapi import FastAPI as SubApp  # noqa: PLC0415
 
     mcp_sub_app = SubApp()
@@ -296,12 +310,15 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     @mcp_sub_app.middleware("http")
     async def mcp_routing_middleware_wrapper(request, call_next):
         """Wrapper to apply MCP routing middleware after startup."""
-        if not hasattr(app.state, "agents_server"):
+        if not hasattr(app.state, "global_compositor"):
             return Response(content="Server not ready", status_code=503)
 
         # Create middleware instance
         middleware = MCPRoutingMiddleware(
-            app=mcp_sub_app, token_table=TOKEN_TABLE, registry=app.state.registry, agents_server=app.state.agents_server
+            app=mcp_sub_app,
+            token_table=TOKEN_TABLE,
+            registry=app.state.registry,
+            agents_server=app.state.global_compositor,
         )
         return await middleware.dispatch(request, call_next)
 

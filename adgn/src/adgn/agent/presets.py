@@ -3,11 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
+from fastmcp.mcp_config import MCPConfig
 from platformdirs import user_config_dir
 from pydantic import BaseModel, Field, JsonValue
 import yaml
+
+if TYPE_CHECKING:
+    from adgn.agent.persist.sqlite import SQLitePersistence
+    from adgn.agent.types import AgentID
 
 
 def _xdg_presets_dir() -> Path:
@@ -91,3 +96,46 @@ def discover_presets(*, override_dir: str | Path | None = None) -> dict[str, Age
     if "default" not in out:
         out["default"] = AgentPreset(name="default", description="Default UI agent", system=None, specs={})
     return out
+
+
+async def create_agent_from_preset(
+    persistence: "SQLitePersistence",
+    preset_name: str | None,
+    base_mcp_config: MCPConfig,
+) -> tuple["AgentID", MCPConfig, str | None]:
+    """Create a new agent from a preset.
+
+    Args:
+        persistence: SQLite persistence for storing agent record
+        preset_name: Name of preset to use (defaults to "default")
+        base_mcp_config: Base MCP config to merge with preset specs
+
+    Returns:
+        Tuple of (agent_id, mcp_config, system_prompt)
+    """
+    from adgn.agent.persist import AgentMetadata
+
+    # Load preset
+    presets = discover_presets()
+    preset = presets.get(preset_name or "default") or presets["default"]
+
+    # Merge preset specs with base config
+    mcp_config = base_mcp_config.model_copy(deep=True)
+    if preset.specs:
+        # Parse preset specs as MCPConfig servers
+        for name, spec in preset.specs.items():
+            if isinstance(spec, dict):
+                # Try to parse as server config
+                from fastmcp.mcp_config import parse_server_config
+
+                try:
+                    server_config = parse_server_config(spec)
+                    mcp_config.mcpServers[name] = server_config
+                except Exception:
+                    pass  # Skip invalid specs
+
+    # Create agent record in DB
+    metadata = AgentMetadata(preset=preset.name)
+    agent_id = await persistence.create_agent(mcp_config=mcp_config, metadata=metadata)
+
+    return agent_id, mcp_config, preset.system
