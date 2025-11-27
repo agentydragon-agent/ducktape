@@ -4,151 +4,42 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueOneOccurrence(
   rationale=|||
-    The "notifier" callback pattern used throughout the codebase (ApprovalHub, ApprovalPolicyEngine,
-    AgentRegistry, sessions) has several design problems that make it brittle and error-prone:
+    The notifier callback pattern (ApprovalHub, ApprovalPolicyEngine, AgentRegistry, sessions)
+    has 5 design problems making it brittle:
 
     **Problem 1: 0-or-1 receivers, not N**
 
-    Each class has a single notifier field (`_notifier`, `_notify`) that gets replaced with `set_notifier()`.
-    Only one listener can be registered at a time - not a proper observer/pub-sub pattern.
+    Single notifier field (`_notifier`, `_notify`) replaced by `set_notifier()`. Only one listener
+    at a time - not proper observer/pub-sub. Multiple consumers require manual wrapper functions.
 
-    **Examples:**
-    - `ApprovalHub._notifier: Callable[[], None] | None` (line 82)
-    - `ApprovalPolicyEngine._notify: Callable[[str], None] | None` (line 156)
-    - `AgentRegistry._notifier: Callable[[str], Awaitable[None]] | None` (server.py:92)
-
-    If you need multiple consumers, you must manually create a wrapper function that calls all of them:
-
-    ```python
-    # Current pattern forces this workaround:
-    def multi_notifier():
-        notifier1()
-        notifier2()
-        notifier3()
-    hub.set_notifier(multi_notifier)
-    ```
+    Examples: ApprovalHub._notifier (line 82), ApprovalPolicyEngine._notify (line 156),
+    AgentRegistry._notifier (server.py:92).
 
     **Problem 2: Mixed sync/async with awkward contract**
 
-    Notifiers are typed as sync callables but are documented as "sync and non-blocking (may schedule async work)":
-
-    **ApprovalHub contract (approvals.py:87):**
-    ```python
-    def set_notifier(self, notifier: Callable[[], None]) -> None:
-        """Install/replace the out-of-band notifier for approval state changes.
-
-        Contract: notifier() is sync and non-blocking (may schedule async work).
-        """
-    ```
-
-    **ApprovalPolicyEngine contract (approvals.py:165):**
-    ```python
-    def set_notifier(self, notifier: Callable[[str], None]) -> None:
-        """Install/replace the out-of-band notifier for resource changes.
-
-        Contract: notifier(uri) is sync and non-blocking (may schedule async work).
-        """
-    ```
-
-    But the AgentRegistry expects async:
-    ```python
-    def set_notifier(self, notifier: Callable[[str], Awaitable[None]]) -> None:
-    ```
-
-    This inconsistency is confusing. The "sync but schedules async work" pattern forces implementations
-    to use `loop.create_task()`:
-
-    **approval_policy/server.py:96-100:**
-    ```python
-    def _notify(uri: str) -> None:
-        # Fire-and-forget; schedule broadcast and signal completion to waiters
-        logger.debug("engine notify uri=%s", uri)
-        task = asyncio.create_task(self._broadcast_and_signal(uri))
-        task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
-    ```
+    Notifiers typed as sync but documented "sync and non-blocking (may schedule async work)"
+    (approvals.py:87, 165). AgentRegistry expects async. Forces `loop.create_task()` wrappers
+    (approval_policy/server.py:96-100).
 
     **Problem 3: Exception swallowing**
 
-    When notifiers are called directly (sync), exceptions propagate:
-    ```python
-    if self._notifier:
-        self._notifier()  # Exception propagates up
-    ```
-
-    But when notifiers use `create_task()` (fire-and-forget), exceptions are swallowed or only logged:
-
-    **agents.py:844-851:**
-    ```python
-    loop = asyncio.get_running_loop()
-    _task = loop.create_task(server.broadcast_resource_updated(uri))
-    # Don't await task - fire and forget notification
-    _task.add_done_callback(
-        lambda t: logger.debug(f"Broadcast complete for {uri}")
-        if not t.exception()
-        else logger.warning(f"Broadcast failed for {uri}: {t.exception()}")
-    )
-    ```
-
-    The exception is logged but not re-raised. If `broadcast_resource_updated` fails, the caller never knows.
-
-    **approval_policy/server.py:100:**
-    ```python
-    task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
-    ```
-
-    This accesses `t.exception()` only to prevent asyncio warnings - doesn't actually handle or log the error!
+    Fire-and-forget `create_task()` swallows or only logs exceptions (agents.py:844-851).
+    Caller never knows if broadcast_resource_updated fails. approval_policy/server.py:100
+    accesses exception only to prevent asyncio warnings - doesn't handle or log.
 
     **Problem 4: No exception handling at call sites**
 
-    Notifiers are called without try/except:
-
-    **approvals.py:101-102:**
-    ```python
-    if self._notifier:
-        self._notifier()  # No try/except - exception crashes the caller
-    return await fut
-    ```
-
-    **approvals.py:109-110:**
-    ```python
-    if self._notifier:
-        self._notifier()  # No try/except
-    ```
-
-    **approvals.py:178-181:**
-    ```python
-    if self._notify:
-        self._notify(APPROVAL_POLICY_RESOURCE_URI)  # No try/except
-        # Also notify agent-specific policy state resource
-        self._notify(AGENTS_POLICY_STATE_URI_FMT.format(agent_id=self.agent_id))  # No try/except
-    ```
-
-    If a notifier throws, it crashes the whole operation (e.g., policy update fails).
+    Notifiers called without try/except (approvals.py:101-102, 109-110, 178-181). If notifier
+    throws, crashes whole operation.
 
     **Problem 5: Inconsistent patterns**
 
-    Some places guard with `if self._notifier:`, others use intermediate `cb` variable:
+    Some use `if self._notifier:`, others use intermediate `cb` variable (lines 204-206, 209-211).
+    Intermediate variable pointless.
 
-    **Pattern 1 - Direct check (lines 101, 109, 178):**
-    ```python
-    if self._notifier:
-        self._notifier()
-    ```
+    **Fix:**
 
-    **Pattern 2 - Intermediate variable (lines 204-206, 209-211):**
-    ```python
-    cb = self._notify
-    if cb:
-        cb(uri)
-    ```
-
-    The intermediate variable pattern is pointless - just adds a line for no benefit.
-
-    **What should be done:**
-
-    **Option 1: Use proper async observer pattern with URI parameters**
-
-    Replace single notifier with a list of async observers that receive URI parameters for granular notifications:
+    Replace with async observer pattern:
 
     ```python
     class ApprovalHub:
@@ -158,78 +49,19 @@ I.issueOneOccurrence(
         def add_observer(self, observer: Callable[[str], Awaitable[None]]) -> None:
             self._observers.append(observer)
 
-        def remove_observer(self, observer: Callable[[str], Awaitable[None]]) -> None:
-            self._observers.remove(observer)
-
         async def _notify_observers(self, uri: str) -> None:
             for observer in self._observers:
                 try:
                     await observer(uri)
                 except Exception as e:
                     logger.warning(f"Observer notification failed for {uri}: {e}", exc_info=True)
-                    # Continue notifying other observers
     ```
 
-    Then call sites become:
-    ```python
-    await self._notify_observers(resources.agent_approvals_pending(self.agent_id))
-    ```
+    **Benefits:** Multiple observers, granular URI notifications, consistent async/await,
+    explicit exception handling per observer, type-safe.
 
-    **Benefits:**
-    - Multiple observers supported natively
-    - Observers receive specific URI that changed (granular notifications)
-    - Consistent async/await pattern (no sync/async mixing)
-    - Explicit exception handling per observer
-    - Failed observers don't prevent other observers from being notified
-    - Type-safe (no "sync but may schedule async" hack)
-
-    **Option 2: Use asyncio events/queues instead of callbacks**
-
-    Replace callbacks with structured events that include URI information:
-
-    ```python
-    @dataclass
-    class ResourceChangeEvent:
-        uri: str
-        timestamp: datetime
-
-    class ApprovalHub:
-        def __init__(self):
-            self._event_queue: asyncio.Queue[ResourceChangeEvent] = asyncio.Queue()
-
-        async def await_decision(...):
-            # ... set up pending ...
-            await self._event_queue.put(
-                ResourceChangeEvent(uri=resources.agent_approvals_pending(self.agent_id),
-                                   timestamp=datetime.now())
-            )
-            return await fut
-
-        async def notification_listener(self):
-            while True:
-                event = await self._event_queue.get()
-                # Handle event (broadcast event.uri, etc.)
-    ```
-
-    **Benefits:**
-    - Decouples event producers from consumers
-    - Events are queued and processed in order
-    - Can include additional metadata (timestamp, event type, etc.)
-    - Natural backpressure via queue size limits
-    - Easier to test (can drain queue and inspect events)
-
-    **Recommendation:**
-    Option 1 (async observer pattern with URI parameters) is simpler and more direct. It requires
-    minimal refactoring and naturally fits the current call-site patterns. Option 2 (event queues)
-    is more complex but provides better decoupling if that becomes necessary.
-
-    **Impact:**
-    This is a fundamental architectural issue that affects:
-    - `ApprovalHub` (2 notifier call sites)
-    - `ApprovalPolicyEngine` (5+ notifier call sites)
-    - `AgentRegistry` (1 notifier call site)
-    - Session notifiers (UI state, session state)
-    - All the wiring code in agents.py (lines 833-932)
+    **Impact:** ApprovalHub (2 call sites), ApprovalPolicyEngine (5+ call sites), AgentRegistry
+    (1 call site), session notifiers, wiring code (agents.py:833-932).
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [

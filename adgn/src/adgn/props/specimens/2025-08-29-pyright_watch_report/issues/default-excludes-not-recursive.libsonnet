@@ -15,7 +15,7 @@ I.issueOneOccurrence(
   |||,
   filesToRanges={
     // Defaults that include non-recursive excludes
-    'adgn_llm/properties/specimens/2025-08-29-pyright_watch_report/code/pyright_watch_report.py': [
+    'pyright_watch_report.py': [
       [204, 214],  // default exclude list with 'build', 'dist', '.mypy_cache'
       [60, 76],    // expand_include_patterns exists, but no equivalent for excludes
       [134, 141],  // exclude matching applies patterns literally via fnmatch

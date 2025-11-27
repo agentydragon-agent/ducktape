@@ -61,8 +61,8 @@ I.issueOneOccurrence(
 
     **1. Generate Zod schema from Pydantic model:**
 
-    Tools like `pydantic-to-typescript` or custom scripts can generate both TypeScript
-    types and Zod schemas from Pydantic models.
+    Tools like `pydantic-to-typescript` (https://www.npmjs.com/package/pydantic-to-typescript)
+    or custom scripts can generate both TypeScript types and Zod schemas from Pydantic models.
 
     ```typescript
     // Generated from Pydantic ToolCall model
@@ -146,17 +146,17 @@ I.issueOneOccurrence(
     5. **Single source of truth**: Backend Pydantic → Frontend Zod
     6. **Catch backend changes**: If backend changes model, validation fails
 
-    **User's note: "parsing tool calls should use zod copied from json side
-    pydantic (possibly ToolCall?)"**
+    **Backend already has structured ToolCall model:**
 
-    Yes, the backend has `ToolCall` Pydantic model in `agent/types.py`. The frontend
+    The backend has `ToolCall` Pydantic model in `agent/types.py`. The frontend
     should use a Zod schema generated from this model instead of manual parsing.
 
     **Workflow for Pydantic → Zod:**
 
     The existing `adgn/scripts/generate_types.py` (commit 7c6cae7ad) generates TypeScript
     interfaces from Pydantic models. To add Zod support, extend it to also generate Zod
-    schemas using `json-schema-to-zod` from the same JSON Schema output.
+    schemas using `json-schema-to-zod` (https://www.npmjs.com/package/json-schema-to-zod)
+    from the same JSON Schema output.
 
     Then use `ToolCallSchema.parse(data)` instead of manual `JSON.parse()` to get
     runtime validation with detailed error messages.

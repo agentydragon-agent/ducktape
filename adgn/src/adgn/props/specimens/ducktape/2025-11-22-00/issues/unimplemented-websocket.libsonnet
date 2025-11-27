@@ -43,10 +43,10 @@ I.issueWithOccurrences(
     - Token refresh per client
     - Hard to track connection status
 
-    **ChatPane is worst offender:**
-    Creates TWO clients in same component for no reason - one to list agents,
-    another to abort agents. Even without shared infrastructure, should reuse
-    its own client.
+    **ChatPane creates multiple independent clients:**
+    Creates TWO clients in the same component - one to list agents,
+    another to abort agents. Even without shared infrastructure, these
+    operations could reuse a single client instance.
 
     **The correct approach: Shared MCP client**
 
