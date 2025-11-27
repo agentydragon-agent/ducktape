@@ -7,8 +7,6 @@ from mcp import types
 
 from adgn.agent.server.bus import MimeType
 from adgn.agent.server.protocol import (
-    ApprovalApprove,
-    ApprovalDecisionEvt,
     FunctionCallOutput,
     ToolCall,
     UiMessageEvt,
@@ -66,16 +64,6 @@ def test_tool_call_json_starts_json_content_with_args():
     assert isinstance(it, ToolItem)
     assert it.content.content_kind == "Json"
     assert it.content.args == args
-
-
-def test_approval_sets_single_decision():
-    s = new_state()
-    s1 = reduce_ui_state(s, ToolCall(name=build_mcp_function("ui", "noop"), args_json="{}", call_id="c3"))
-    s2 = reduce_ui_state(s1, ApprovalDecisionEvt(call_id="c3", decision=ApprovalApprove()))
-    it = s2.items[0]
-    assert isinstance(it, ToolItem)
-    assert it.kind == "Tool"
-    assert it.decision == "approve"
 
 
 def test_function_output_updates_exec_stream():

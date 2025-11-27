@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from adgn.agent.loop_control import Auto, Continue
-from adgn.agent.notifications.types import NotificationsBatch, ResourceUpdateEvent
+from adgn.agent.notifications.types import NotificationsBatch, ResourcesServerNotice
 from adgn.agent.reducer import NotificationsHandler
-from tests.agent.helpers import extract_input_text_content, strip_system_notification_wrapper
+from adgn.openai_utils.text_extraction import extract_input_text_content
+from tests.agent.helpers import strip_system_notification_wrapper
 
 
 class _FakeBuffer:
     def __init__(self) -> None:
-        # New notifications types do not carry synthetic versions; only server+uri
+        # NotificationsBatch uses dict[server, ResourcesServerNotice]
         self._batch = NotificationsBatch(
-            resources_updated=[
-                ResourceUpdateEvent(server="git-ro", uri="http://a.txt"),
-                ResourceUpdateEvent(server="editor", uri="file:///b.py"),
-            ]
+            resources={
+                "git-ro": ResourcesServerNotice(updated=frozenset({"http://a.txt"})),
+                "editor": ResourcesServerNotice(updated=frozenset({"file:///b.py"})),
+            }
         )
 
     def poll(self) -> NotificationsBatch:

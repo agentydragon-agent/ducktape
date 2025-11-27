@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 import threading
 import time
 from typing import Any
 
-from hamcrest import all_of, assert_that, contains_string, has_item, has_properties
 import requests
 from uvicorn import Config, Server
 
-from adgn.agent.server.protocol import ErrorCode, RunStatus, ServerMessage
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 from adgn.util.net import pick_free_port
 
@@ -112,34 +109,3 @@ def http_set_policy(client, agent_id: str, content: str, proposal_id: str | None
     return client.post(agent_endpoint(agent_id, "policy"), json=body)
 
 
-# --------------------------------
-# Payload assertion helper routines
-# --------------------------------
-
-
-def _message_contains(fragment: str):
-    """Return a matcher ensuring an error message contains ``fragment``."""
-
-    return has_properties(message=contains_string(fragment))
-
-
-def expect_error(
-    payloads: Sequence[ServerMessage], *, code: ErrorCode | str, message_substr: str | None = None
-) -> None:
-    """Assert that an ErrorEvt with a given code (and optional message substring) is present.
-
-    Uses PyHamcrest matchers against typed Pydantic models.
-    """
-    # Normalize string to enum for stable equality
-    code_enum = ErrorCode(code) if isinstance(code, str) else code
-    m = has_properties(type="error", code=code_enum)
-    if message_substr:
-        m = all_of(m, _message_contains(message_substr))
-    assert_that(payloads, has_item(m))
-
-
-def expect_run_finished(payloads: Sequence[ServerMessage]) -> None:
-    """Assert that a finished run_status is present in payloads (typed, hamcrest)."""
-    assert_that(
-        payloads, has_item(has_properties(type="run_status", run_state=has_properties(status=RunStatus.FINISHED)))
-    )
