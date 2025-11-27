@@ -16,10 +16,8 @@ def _runtime_spec_persession(image: str = "alpine:3.19"):
 
 
 @pytest.mark.requires_docker
-async def test_runtime_per_session_timeout_then_next_call_ok(make_pg_client, approval_policy_reader_allow_all) -> None:
-    async with make_pg_client(
-        {"runtime": _runtime_spec_persession(), "approval_policy": approval_policy_reader_allow_all}
-    ) as mcp_client:
+async def test_runtime_per_session_timeout_then_next_call_ok(make_pg_client) -> None:
+    async with make_pg_client({"runtime": _runtime_spec_persession()}) as mcp_client:
         # Cause a host-side timeout: sleep longer than timeout_ms
         # Namespaced exec via Compositor
         stub = ToolStub(mcp_client, build_mcp_function("runtime", "exec"), BaseExecResult)

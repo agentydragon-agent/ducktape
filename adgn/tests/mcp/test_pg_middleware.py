@@ -50,13 +50,9 @@ async def test_pg_middleware_deny_continue(make_pg_client, make_decision_engine,
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_reserved_backend_code_remap(
-    make_pg_client, approval_policy_reader_allow_all, backend_server
-):
-    # Ensure middleware is installed (requires approval_policy server); policy allows all
-    async with make_pg_client(
-        {"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as sess:
+async def test_pg_middleware_reserved_backend_code_remap(make_pg_client, backend_server):
+    # Middleware already installed by make_pg_client with allow-all policy
+    async with make_pg_client({"backend": backend_server}) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "raise_reserved"), {})
         # Backend used reserved policy code/message; middleware remaps to explicit misuse error
@@ -66,10 +62,8 @@ async def test_pg_middleware_reserved_backend_code_remap(
 
 @pytest.mark.requires_docker
 @pytest.mark.xfail(reason="In-proc raises drop ErrorData; stamp not inspectable at middleware layer")
-async def test_pg_middleware_backend_stamp_misuse(make_pg_client, approval_policy_reader_allow_all, backend_server):
-    async with make_pg_client(
-        {"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as sess:
+async def test_pg_middleware_backend_stamp_misuse(make_pg_client, backend_server):
+    async with make_pg_client({"backend": backend_server}) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "raise_with_gateway_stamp"), {})
         s = str(ei.value)
@@ -77,15 +71,13 @@ async def test_pg_middleware_backend_stamp_misuse(make_pg_client, approval_polic
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_backend_stamp_misuse_via_proxy(
-    make_pg_client, approval_policy_reader_allow_all, backend_server
-):
+async def test_pg_middleware_backend_stamp_misuse_via_proxy(make_pg_client, backend_server):
     # Backend raises an McpError with a spoofed gateway stamp
     # Wrap backend in a FastMCP proxy so downstream errors arrive as result-path
     # CallToolResult (structured ErrorData preserved)
     proxy = FastMCP.as_proxy(backend_server)
 
-    async with make_pg_client({"proxy": proxy, "approval_policy": approval_policy_reader_allow_all}) as sess:
+    async with make_pg_client({"proxy": proxy}) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("proxy", "raise_with_gateway_stamp"), {})
         s = str(ei.value)

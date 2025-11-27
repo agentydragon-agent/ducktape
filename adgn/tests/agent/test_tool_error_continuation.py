@@ -16,7 +16,6 @@ from tests.agent.ws_helpers import assert_function_call_output_structured
 async def test_tool_error_continues_turn(
     responses_factory,
     make_pg_client,
-    approval_policy_reader_allow_all,
     validation_server,
     recording_handler,
     make_test_agent,
@@ -30,9 +29,7 @@ async def test_tool_error_continues_turn(
     4. Retry with correct mime type (text/markdown)
     5. Successfully complete
     """
-    async with make_pg_client(
-        {"validator": validation_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as mcp_client:
+    async with make_pg_client({"validator": validation_server}) as mcp_client:
         # Simulate the agent trying with wrong mime, then correcting itself
         seq = [
             # First attempt with wrong mime type
