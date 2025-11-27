@@ -65,18 +65,18 @@ Single `/mcp` endpoint serves both users and agents. Bearer token determines rou
 
 ```
 User-Facing Global Compositor
-├── agents (management server)
-│   ├── agents://list resource (all agents with state)
-│   ├── agents://presets resource
-│   ├── create_agent tool
-│   ├── delete_agent tool
-│   └── boot_agent tool ──► lazy mounts per-agent compositor
+├── agents (management server, prefix="agents")
+│   ├── list resource → agents://agents/list
+│   ├── presets resource → agents://agents/presets
+│   ├── create_agent tool → agents_create_agent
+│   ├── delete_agent tool → agents_delete_agent
+│   └── boot_agent tool → agents_boot_agent (lazy mounts per-agent)
 │
-└── agent_{id} (per-agent user compositor, mounted on boot_agent)
-    ├── reader (policy.py)
-    ├── admin (approve/reject/set)
-    ├── agent_control (send_prompt, abort_run)
-    └── status, snapshot resources
+└── agent_{id} (per-agent user compositor, mounted dynamically)
+    ├── reader (policy.py) → agent_{id}_reader_*
+    ├── admin (approve/reject/set) → agent_{id}_admin_*
+    ├── agent_control (INTERNAL ONLY: send_prompt, abort_run)
+    └── status, snapshot resources → agent_{id}://agent_{id}/status
 ```
 
 ### Architecture: Agent-Facing Compositor
@@ -97,12 +97,12 @@ Agent Compositor (per-agent, gated)
 1. **Single endpoint, token-based routing**
    - Same `/mcp` URL for users and agents
    - Bearer token determines which compositor handles request
-   - Use FastMCP's `StaticTokenVerifier` for token validation
-   - **Custom middleware for routing** (FastMCP doesn't route by token natively)
+   - **Custom ASGI app for routing** (`TokenRoutingASGI`) - FastMCP doesn't route by token natively
 
-2. **Lazy mounting via `boot_agent(id)`**
-   - Global compositor mounts `agents` server at startup
-   - `boot_agent(id)` ensures agent is live, then mounts its user compositor
+2. **Agent lifecycle: `create_agent` vs `boot_agent`**
+   - `create_agent(preset)`: Creates NEW agent from preset + boots it immediately
+   - `boot_agent(id)`: Boots EXISTING agent that has state in DB (internal agents only)
+   - Both mount agent's user compositor to global compositor
    - Uses `asyncio.Lock` for concurrent calls - boot once, others succeed
    - **Does NOT generate tokens** - internal agents use inproc MCP
 
@@ -130,15 +130,22 @@ Agent Compositor (per-agent, gated)
    - Single engine per agent, shared between both compositors
    - Both mount same `.reader`, `.policy_proposer`, `.admin` servers
 
-6. **Resource URI prefixing**
-   - FastMCP "path" format: `agents://list` → `agents://agents/list` when mounted
-   - To avoid double-prefix, use short server names or configure prefix format
-   - Current adgn compositor uses `prefix=name` in `mount()` calls
+6. **Resource URI prefixing (FastMCP path format)**
+   - FastMCP default "path" format: `{scheme}://{path}` → `{scheme}://{prefix}/{path}`
+   - Example: `agents://list` mounted with prefix "agents" → `agents://agents/list`
+   - Frontend uses prefixed URIs: `agents://agents/list`, `agent_foo://agent_foo/status`
+   - Tool names also prefixed: `list_agents` → `agents_list_agents`
 
 7. **Token types**
    - **User tokens**: Pre-generated, stored in `tokens.yaml`, route to global compositor
    - **Agent tokens**: Pre-generated for external agents only, route to that agent's compositor
    - **Internal agents**: Use inproc MCP transport, bypass HTTP/token routing entirely
+
+8. **External agent limitations**
+   - External agents can't be controlled via user UI (no `send_prompt`, no `abort_run`)
+   - Implemented by not mounting `agent_control` server for external agents
+   - User compositor for external agents only mounts: `reader`, `admin`
+   - External agent drives itself - user can only view state and approve/reject
 
 ### Implementation Steps
 
@@ -211,21 +218,22 @@ class InfrastructureRegistry:
             return container
 ```
 
-#### Step 3: Bearer Token Auth & Routing
+#### Step 3: Static Token Verifier
 
-FastMCP provides `TokenVerifier` interface. Implement custom verifier that also routes:
+Simple token verifier for static token lookup (FastMCP doesn't have one built-in):
 
 ```python
-class TokenRouter:
-    """Verifies tokens and routes to appropriate compositor."""
+from fastmcp.server.auth import TokenVerifier, AccessToken
+
+class StaticTokenVerifier(TokenVerifier):
+    """Simple token verifier for pre-configured static tokens."""
 
     def __init__(
         self,
-        registry: InfrastructureRegistry,
         user_tokens: dict[str, str],       # token → user_id
-        agent_tokens: dict[str, AgentID],  # token → agent_id (which agent this token belongs to)
+        agent_tokens: dict[str, AgentID],  # token → agent_id
     ):
-        self.registry = registry
+        super().__init__()
         self.user_tokens = user_tokens
         self.agent_tokens = agent_tokens
 
@@ -238,30 +246,16 @@ class TokenRouter:
                 expires_at=None,
             )
         if token in self.agent_tokens:
-            agent_id = self.agent_tokens[token]
             return AccessToken(
                 token=token,
-                client_id=str(agent_id),
+                client_id=str(self.agent_tokens[token]),
                 scopes=["agent"],
                 expires_at=None,
             )
         return None
-
-    def get_compositor_for_token(self, token: str) -> Compositor | None:
-        """Route to correct compositor based on token type."""
-        if token in self.user_tokens:
-            # User token → global user-facing compositor
-            return self.registry.global_compositor
-        if token in self.agent_tokens:
-            # Agent token → that agent's agent-facing compositor
-            agent_id = self.agent_tokens[token]
-            container = self.registry.get_agent(agent_id)
-            if container:
-                return container.agent_compositor  # The gated one
-        return None
 ```
 
-**Key insight**: Agent tokens are per-agent. When agent presents its token, we look up which agent it belongs to and route directly to that agent's compositor (with policy gateway).
+**Note**: This verifier is only used if we want FastMCP's auth middleware. For our custom `TokenRoutingASGI`, we do token lookup directly in the ASGI app.
 
 #### Step 4: Dual Compositor per Agent
 
@@ -414,9 +408,9 @@ EXTERNAL AGENT FLOW:
 ### Notes
 
 - **No existing bearer token code on devel** - needs full implementation
-- **FastMCP auth**: Use `StaticTokenVerifier` for simple token→claims mapping
-- **Routing by token**: FastMCP doesn't support this natively; need custom Starlette middleware
-- **Props specimens** reference planned `mcp_bridge/auth.py` that was never created
+- **FastMCP auth**: No built-in `StaticTokenVerifier` - implement our own (see Step 3)
+- **Routing by token**: FastMCP doesn't support this natively; custom `TokenRoutingASGI` required
+- **Resource notifications**: Use FastMCP's `notify_resource_updated()` for real-time updates
 
 ### FastMCP Auth Integration
 
@@ -569,51 +563,20 @@ External agents (e.g., Claude Code connecting remotely) need:
 
 #### Startup Behavior
 
-At server startup, external agent containers are created eagerly from the tokens config.
-Their **user compositors are mounted on the global compositor** (same as internal agents)
-so the user sees ALL agents in the same UI.
-
-```python
-async def create_routing_app(
-    registry: InfrastructureRegistry,
-    user_tokens: dict[str, str],
-    agent_tokens: dict[str, AgentID],
-) -> TokenRoutingASGI:
-    """Create the ASGI app with token-based routing.
-
-    Creates external agent containers at startup from tokens config.
-    Each external agent's user compositor is mounted on the global compositor.
-    """
-    # Create external agents first (mounts user compositors to global)
-    agent_apps: dict[AgentID, ASGIApp] = {}
-    for agent_id in set(agent_tokens.values()):
-        # Creates container AND mounts user compositor to global
-        container = await registry.create_external_agent(agent_id)
-        # Agent ASGI app is for the AGENT's connection (with policy gateway)
-        agent_apps[agent_id] = create_streamable_http_app(container.agent_compositor)
-
-    # Create user-facing compositor ASGI app (now includes external agent prefixes)
-    user_app = create_streamable_http_app(registry.global_compositor)
-
-    return TokenRoutingASGI(
-        user_tokens=user_tokens,
-        agent_tokens=agent_tokens,
-        user_app=user_app,
-        agent_apps=agent_apps,
-    )
-```
+External agent containers are created at startup from tokens config. See **Step 6: app.py** for full implementation.
 
 **Startup sequence:**
 1. Load tokens from `tokens.yaml`
-2. Create global user-facing compositor
+2. Create global user-facing compositor (with `agents` server mounted)
 3. For each external agent token:
    - Create `AgentContainer` (user compositor + agent compositor with policy gateway)
-   - Mount user compositor to global as `agent_{id}`
-4. Build `TokenRoutingASGI` with user ASGI app + agent ASGI apps
-5. Mount at `/mcp` endpoint
+   - Mount user compositor to global as `agent_{id}` (NO agent_control - external can't be controlled)
+4. Create ASGI apps: one for global compositor, one per external agent's agent compositor
+5. Build `TokenRoutingASGI` with all ASGI apps
+6. Mount at `/mcp` endpoint
 
 **Internal vs External agents:**
-- **Internal**: Created lazily via `boot_agent()`, use inproc MCP (no HTTP token)
+- **Internal**: Created lazily via `create_agent()`/`boot_agent()`, use inproc MCP (no HTTP token)
 - **External**: Created at startup, connect via HTTP with agent token
 - **Both**: User compositor mounted on global → user sees all agents in same UI
 
@@ -623,18 +586,18 @@ async def create_routing_app(
 
 #### Current REST Endpoints → MCP Replacements
 
-| REST Endpoint | MCP Replacement | Server |
-|---------------|-----------------|--------|
+| REST Endpoint | MCP Replacement | Notes |
+|---------------|-----------------|-------|
 | **Agent Management** | | |
-| `GET /api/agents` | `agents://list` resource | `agents` |
-| `POST /api/agents` | `agents_create_agent` tool | `agents` |
-| `DELETE /api/agents/{id}` | `agents_delete_agent` tool | `agents` |
-| `GET /api/agents/{id}/status` | `agent_{id}_status` resource | per-agent |
-| `GET /api/agents/{id}/snapshot` | `agent_{id}_snapshot` resource | per-agent |
-| `GET /api/presets` | `agents://presets` resource | `agents` |
-| **Agent Control** | | |
-| `POST /api/agents/{id}/prompt` | `agent_{id}_agent_control_send_prompt` tool | per-agent |
-| `POST /api/agents/{id}/abort` | `agent_{id}_agent_control_abort_run` tool | per-agent |
+| `GET /api/agents` | `agents://agents/list` resource | Prefixed URI |
+| `POST /api/agents` | `agents_create_agent` tool | |
+| `DELETE /api/agents/{id}` | `agents_delete_agent` tool | |
+| `GET /api/agents/{id}/status` | `agent_{id}://agent_{id}/status` resource | Per-agent prefixed |
+| `GET /api/agents/{id}/snapshot` | `agent_{id}://agent_{id}/snapshot` resource | Per-agent prefixed |
+| `GET /api/presets` | `agents://agents/presets` resource | Prefixed URI |
+| **Agent Control (internal agents only)** | | |
+| `POST /api/agents/{id}/prompt` | `agent_{id}_agent_control_send_prompt` tool | |
+| `POST /api/agents/{id}/abort` | `agent_{id}_agent_control_abort_run` tool | |
 | **Policy/Approvals** | | |
 | `POST /api/agents/{id}/approve` | `agent_{id}_admin_approve_call` tool | per-agent |
 | `POST /api/agents/{id}/deny_continue` | `agent_{id}_admin_reject_call` tool | per-agent |
@@ -661,8 +624,8 @@ async def create_routing_app(
    - Keep only: `/` (index.html), `/vite.svg`, `/static/*`, `/mcp`
 
 2. **Add to `agents` server (`mcp_bridge/servers/agents.py`):**
-   - `agents://list` resource (list all agents)
-   - `agents://presets` resource (list available presets)
+   - `list` resource → exposed as `agents://agents/list` (after mount prefixing)
+   - `presets` resource → exposed as `agents://agents/presets`
    - `runs://list`, `runs://{id}`, `runs://{id}/events` resources
 
 3. **Add to per-agent user compositor:**
@@ -721,13 +684,13 @@ export class AgentMcpClient {
     return new AgentMcpClient(client, transport)
   }
 
-  // Resources for read operations
+  // Resources for read operations (use prefixed URIs)
   async listAgents() {
-    return this.readResource('agents://list')
+    return this.readResource('agents://agents/list')
   }
 
   async listPresets() {
-    return this.readResource('agents://presets')
+    return this.readResource('agents://agents/presets')
   }
 
   // Tools for mutations
