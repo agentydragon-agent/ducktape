@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 import pygit2
 
 # Shared constants used by backends and CLI

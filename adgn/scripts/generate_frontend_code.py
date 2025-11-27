@@ -35,9 +35,15 @@ from adgn.agent.mcp_bridge.servers.agents import (
     PolicyProposalInfo,
     RejectToolCallArgs,
 )
-from adgn.agent.persist import ApprovalOutcome, Decision, EventType, PersistenceRunStatus, ToolCallExecution, ToolCallRecord
+from adgn.agent.persist import (
+    ApprovalOutcome,
+    Decision,
+    EventType,
+    PersistenceRunStatus,
+    ToolCallExecution,
+    ToolCallRecord,
+)
 from adgn.agent.types import ToolCall
-
 
 # ============================================================================
 # MCP Constants Generation

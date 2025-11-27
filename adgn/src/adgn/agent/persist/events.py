@@ -4,9 +4,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from mcp import types as mcp_types
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
-
-from . import EventType
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # Canonical typed payloads per event type

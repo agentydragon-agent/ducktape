@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from mcp import types as mcp_types
+
 from pydantic import BaseModel, Field
 
 

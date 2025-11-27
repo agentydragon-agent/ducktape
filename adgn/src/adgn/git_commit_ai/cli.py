@@ -50,7 +50,7 @@ import pygit2
 
 from adgn.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
 
-from .core import _diff, _format_status_porcelain
+from .core import _diff
 from .editor_template import SCISSORS_MARK, build_commit_template
 
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)

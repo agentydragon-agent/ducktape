@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from adgn.agent.models.policy_error import PolicyTestsSummary
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.server.bus import MimeType
-from adgn.agent.server.state import UiState
 from adgn.mcp.snapshots import SamplingSnapshot  # structured snapshot model (module-level)
 
 # --------------------------

@@ -61,11 +61,11 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
 
     def __init__(
         self,
-        app: "FastAPI",
+        app: FastAPI,
         *,
         token_table: dict[str, str],
-        registry: "AgentRegistry",
-        agents_server: "Compositor",
+        registry: AgentRegistry,
+        agents_server: Compositor,
     ) -> None:
         super().__init__(app)
         self.token_table = token_table

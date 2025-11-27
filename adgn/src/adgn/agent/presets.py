@@ -99,10 +99,10 @@ def discover_presets(*, override_dir: str | Path | None = None) -> dict[str, Age
 
 
 async def create_agent_from_preset(
-    persistence: "SQLitePersistence",
+    persistence: SQLitePersistence,
     preset_name: str | None,
     base_mcp_config: MCPConfig,
-) -> tuple["AgentID", MCPConfig, str | None]:
+) -> tuple[AgentID, MCPConfig, str | None]:
     """Create a new agent from a preset.
 
     Args:

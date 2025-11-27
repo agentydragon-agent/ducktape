@@ -6,13 +6,7 @@ from typing import Any
 from mcp import types as mcp_types
 
 from adgn.agent.approvals import WellKnownTools
-from adgn.agent.server.protocol import (
-    FunctionCallOutput,
-    ToolCall,
-    UiEndTurnEvt,
-    UiMessageEvt,
-    UserText,
-)
+from adgn.agent.server.protocol import FunctionCallOutput, ToolCall, UiEndTurnEvt, UiMessageEvt, UserText
 from adgn.mcp._shared.constants import UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 
@@ -24,7 +18,6 @@ from .state import (
     UserMessageItem,
     append_item,
     start_tool,
-    update_tool_decision,
     update_tool_exec_stream,
     update_tool_json_output,
 )
