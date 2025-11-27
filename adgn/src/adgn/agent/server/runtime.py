@@ -154,7 +154,6 @@ class AgentSession:
         approval_policy = ApprovalPolicyInfo(content=content, version=version, proposals=proposals)
 
         return Snapshot(
-            v="1.0.0",
             session_state=SessionState(
                 session_id=self._manager._session_id,
                 version="1.0.0",
