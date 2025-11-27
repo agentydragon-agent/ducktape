@@ -6,7 +6,7 @@ from fastmcp.mcp_config import MCPConfig
 import pytest
 
 from adgn.agent.runtime.container import build_container
-from adgn.mcp.approval_policy.server import SetPolicyTextArgs
+from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult
 from tests.fixtures.responses import ResponsesFactory
 from tests.llm.support.openai_mock import make_mock

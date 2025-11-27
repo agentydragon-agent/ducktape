@@ -63,17 +63,23 @@ def _session_state_from_ctx(ctx: Any) -> ContainerSessionState:
     return cast(ContainerSessionState, ctx.request_context.lifespan_context)
 
 
+def _volumes_to_binds(volumes: dict[str, dict[str, str]] | list[str] | None) -> list[str]:
+    """Convert volumes dict to aiodocker Binds format."""
+    if not volumes or not isinstance(volumes, dict):
+        return []
+    binds = []
+    for host_path, volume_config in volumes.items():
+        bind = f"{host_path}:{volume_config['bind']}"
+        if mode := volume_config.get("mode"):
+            bind += f":{mode}"
+        binds.append(bind)
+    return binds
+
+
 async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) -> dict[str, Any]:
-    # Convert volumes to aiodocker format
     host_config: dict[str, Any] = {"AutoRemove": True}
-    if opts.volumes:
-        host_config["Binds"] = []
-        if isinstance(opts.volumes, dict):
-            for host_path, volume_config in opts.volumes.items():
-                bind = f"{host_path}:{volume_config['bind']}"
-                if volume_config.get("mode"):
-                    bind += f":{volume_config['mode']}"
-                host_config["Binds"].append(bind)
+    if binds := _volumes_to_binds(opts.volumes):
+        host_config["Binds"] = binds
 
     container_config: dict[str, Any] = {
         "Image": opts.image,
@@ -92,8 +98,8 @@ async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) 
 
     container = await client.containers.create(container_config)
     await container.start()
-    # Return dict format to match expected API
-    return {"Id": container._id, "Name": getattr(container, "_name", "")}
+    # Return dict format to match expected API; aiodocker containers use _id internally
+    return {"Id": container._id, "Name": ""}
 
 
 # ---- Lifespan factory (per-session container) ----
@@ -157,16 +163,9 @@ async def _run_ephemeral_container(
     """Run command in ephemeral container using aiodocker."""
     docker_client = s.docker_client
 
-    # Convert volumes to aiodocker format
     host_config: dict[str, Any] = {}
-    if s.volumes:
-        host_config["Binds"] = []
-        if isinstance(s.volumes, dict):
-            for host_path, volume_config in s.volumes.items():
-                bind = f"{host_path}:{volume_config['bind']}"
-                if volume_config.get("mode"):
-                    bind += f":{volume_config['mode']}"
-                host_config["Binds"].append(bind)
+    if binds := _volumes_to_binds(s.volumes):
+        host_config["Binds"] = binds
 
     ephemeral_config: dict[str, Any] = {
         "Image": s.image,
@@ -281,71 +280,63 @@ async def _run_session_container(
     timed_out = False
     exit_code = None
 
-    try:
-        # Create exec instance with explicit args (avoid **kwargs issues)
-        exec_obj = await container_instance.exec(
-            cmd,
-            stdout=True,
-            stderr=True,
-            stdin=False,
-            tty=False,  # No TTY to ensure stdout/stderr separation
-            workdir=str(input.cwd) if input.cwd is not None else str(s.working_dir),
-            environment=input.env,
-            user=input.user or "",
-        )
+    # Create exec instance with explicit args (avoid **kwargs issues)
+    exec_obj = await container_instance.exec(
+        cmd,
+        stdout=True,
+        stderr=True,
+        stdin=False,
+        tty=False,  # No TTY to ensure stdout/stderr separation
+        workdir=str(input.cwd) if input.cwd is not None else str(s.working_dir),
+        environment=input.env,
+        user=input.user or "",
+    )
 
-        # Start exec and collect output with timeout
-        stream: Any = exec_obj.start()
+    # Start exec and collect output with timeout
+    stream: Any = exec_obj.start()
 
-        async def collect_output():
-            while True:
-                chunk = await stream.read_out()
-                if chunk is None:
-                    break
+    async def collect_output():
+        while True:
+            chunk = await stream.read_out()
+            if chunk is None:
+                break
 
-                # chunk is a Message namedtuple with stream (1=stdout, 2=stderr) and data (bytes)
-                chunk_bytes = chunk.data  # Always bytes from aiodocker
+            # chunk is a Message namedtuple with stream (1=stdout, 2=stderr) and data (bytes)
+            chunk_bytes = chunk.data  # Always bytes from aiodocker
 
-                # Check stream type (1=stdout, 2=stderr)
-                stream_type = chunk.stream
-                if stream_type == 1:
-                    stdout_buf.extend(chunk_bytes)
-                elif stream_type == 2:
-                    stderr_buf.extend(chunk_bytes)
-                else:
-                    # Unknown stream type, default to stdout
-                    stdout_buf.extend(chunk_bytes)
+            # Check stream type (1=stdout, 2=stderr)
+            stream_type = chunk.stream
+            if stream_type == 1:
+                stdout_buf.extend(chunk_bytes)
+            elif stream_type == 2:
+                stderr_buf.extend(chunk_bytes)
+            else:
+                # Unknown stream type, default to stdout
+                stdout_buf.extend(chunk_bytes)
 
-        # Implement external timeout mechanism
-        timeout_task = asyncio.create_task(asyncio.sleep(input.timeout_ms / 1000.0))
-        collect_task = asyncio.create_task(collect_output())
+    # Implement external timeout mechanism
+    timeout_task = asyncio.create_task(asyncio.sleep(input.timeout_ms / 1000.0))
+    collect_task = asyncio.create_task(collect_output())
 
-        done, pending = await asyncio.wait({timeout_task, collect_task}, return_when=asyncio.FIRST_COMPLETED)
+    done, pending = await asyncio.wait({timeout_task, collect_task}, return_when=asyncio.FIRST_COMPLETED)
 
-        # Cancel pending tasks
-        for task in pending:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+    # Cancel pending tasks
+    for task in pending:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
-        if timeout_task in done:
-            # External timeout - we killed it
-            timed_out = True
-            exit_code = None
-            try:
-                # Kill and restart container on timeout
-                await container_instance.kill()
-                await asyncio.sleep(0.5)
-                # Restart the container
-                s.container = await _start_container(client=docker_client, opts=opts)
-            except Exception:
-                pass
-        else:
-            # Command completed normally
-            # Get exit code from exec object if available
-            exit_code = getattr(exec_obj, "exit_code", 0)
-    except Exception:
-        exit_code = EXIT_CODE_SIGTERM
+    if timeout_task in done:
+        # External timeout - kill and restart container
+        timed_out = True
+        exit_code = None
+        await container_instance.kill()
+        await asyncio.sleep(0.5)
+        s.container = await _start_container(client=docker_client, opts=opts)
+    else:
+        # Command completed normally - inspect exec for exit code
+        inspect_result = await exec_obj.inspect()
+        exit_code = inspect_result.get("ExitCode", 0)
 
     return stdout_buf, stderr_buf, exit_code, timed_out
 

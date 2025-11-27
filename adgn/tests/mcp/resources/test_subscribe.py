@@ -1,12 +1,8 @@
-from fastmcp.client import Client
-
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.mcp.resources.clients import ResourcesClient
-from adgn.mcp.resources.server import make_resources_server
 from tests.util.notifications import enable_resources_caps, install_subscription_recorder
 
 
-async def test_client_resource_subscribe_and_unsubscribe(compositor):
+async def test_client_resource_subscribe_and_unsubscribe(compositor, typed_resources_client):
     """Subscribe/unsubscribe to a server resource via the Compositor client.
 
     Uses an origin that exposes a dummy resource and advertises subscribe capability.
@@ -22,15 +18,8 @@ async def test_client_resource_subscribe_and_unsubscribe(compositor):
 
     await compositor.mount_inproc("origin", origin)
 
-    # Gateway client connected to the compositor front door
-    async with (
-        Client(compositor) as gw,
-        # Resources server mounted standalone using the compositor gateway client
-        Client(make_resources_server(gateway_client=gw, compositor=compositor)) as res,
-    ):
-        rc = ResourcesClient(res)
-        # Subscribe to the resource and then unsubscribe
-        await rc.subscribe(server="origin", uri="resource://foo/bar")
-        await rc.unsubscribe(server="origin", uri="resource://foo/bar")
-        assert recorder.subscribed, "expected origin to receive subscribe"
-        assert recorder.unsubscribed, "expected origin unsubscribe call"
+    # Subscribe to the resource and then unsubscribe
+    await typed_resources_client.subscribe(server="origin", uri="resource://foo/bar")
+    await typed_resources_client.unsubscribe(server="origin", uri="resource://foo/bar")
+    assert recorder.subscribed, "expected origin to receive subscribe"
+    assert recorder.unsubscribed, "expected origin unsubscribe call"

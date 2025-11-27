@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../styles/shared.css'
   import DOMPurify from 'dompurify'
   // @ts-ignore – asset URL import handled by Vite
   import darkThemeUrl from 'highlight.js/styles/github-dark.css?url'
@@ -247,13 +248,6 @@
     overflow: hidden;
     min-width: 0;
   }
-  .error {
-    margin: 0.5rem;
-    padding: 0.5rem;
-    background: #fee;
-    color: #900;
-    border: 1px solid #f99;
-  }
   .messages {
     flex: 1 1 auto;
     min-height: 0;
@@ -268,9 +262,6 @@
   }
   .messages > .msg {
     margin-bottom: 0.25rem;
-  }
-  .empty {
-    color: var(--muted);
   }
   .msg {
     border-bottom: 1px solid var(--border);
@@ -323,11 +314,6 @@
     border: none;
     margin: 0;
     border-radius: 2px;
-  }
-  .copy {
-    margin-left: 0.5rem;
-    font-size: 0.7rem;
-    padding: 0.1rem 0.4rem;
   }
   /* Keep composer always visible; prevent shrinking; sticky as a guard */
   .composer {

@@ -5,9 +5,8 @@
   import ChatPane from './components/ChatPane.svelte'
   import RightSidebar from './components/RightSidebar.svelte'
   import SidebarToggle from './components/SidebarToggle.svelte'
-  import { backendOrigin } from './features/agents/api'
-  import { stopAgentStatusPolling } from './features/agents/stores'
-  import { disconnectAgentWs } from './features/chat/stores'
+  import { deleteAgent } from './features/agents/stores'
+  import { disconnectAgentMcp } from './features/chat/stores'
   import { initAgentUiController } from './features/controller'
   import { prefs } from './shared/prefs'
   import { currentAgentId as currentAgentIdStore, setAgentId } from './shared/router'
@@ -17,8 +16,7 @@
   let agentId: string | null = null
 
   onDestroy(() => {
-    stopAgentStatusPolling()
-    disconnectAgentWs()
+    disconnectAgentMcp()
   })
 
   // Resize functionality
@@ -69,12 +67,9 @@
   async function deleteCurrentAgent() {
     if (!agentId) return
     try {
-      const res = await fetch(`${backendOrigin()}/api/agents/${encodeURIComponent(agentId)}`, {
-        method: 'DELETE',
-      })
-      const body = await res.json().catch(() => null)
-      if (!res.ok || !body?.ok) {
-        throw new Error(body?.error || 'HTTP ' + res.status)
+      const body = await deleteAgent(agentId)
+      if (!body?.ok) {
+        throw new Error(body?.error || 'delete failed')
       }
       // Clear current agent; center pane shows AgentsList
       setAgentId(null)

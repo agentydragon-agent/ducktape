@@ -111,7 +111,7 @@ class ResponsesFactory:
         self, name: str, arguments: dict[str, Any], output: Any, call_id: str | None = None
     ) -> ResponsesResult:
         call = self._item_factory.tool_call(name, arguments, call_id)
-        result = CallToolResult(content=[], structuredContent=output, isError=False)
+        result = CallToolResult(content=[], structuredContent=output, isError=False, meta=None)
         payload_json = TypeAdapter(CallToolResult).dump_json(result, by_alias=True)
         out = FunctionCallOutputItem(call_id=call.call_id, output=payload_json.decode('utf-8'))
         return self.make(call, out)

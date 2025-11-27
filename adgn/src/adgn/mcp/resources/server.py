@@ -1,16 +1,17 @@
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from enum import StrEnum
 from typing import Annotated, Literal
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.server.server import add_resource_prefix, has_resource_prefix, remove_resource_prefix
+from fastmcp.server.server import add_resource_prefix, remove_resource_prefix
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.mcp._shared.constants import RESOURCES_SUBSCRIPTIONS_INDEX_URI
+from adgn.mcp._shared.resources import derive_origin_server
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
 from adgn.mcp.compositor.server import Compositor, MountEvent
@@ -189,7 +190,7 @@ def _iter_window_parts(
 
 
 def _build_window_payload(
-    contents: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents],
+    contents: Sequence[mcp_types.TextResourceContents | mcp_types.BlobResourceContents],
     start_offset: int,
     max_bytes: int | None,
 ) -> ResourceReadResult:
@@ -201,13 +202,21 @@ def _build_window_payload(
     )
 
 
-def make_resources_server(
-    name: str = "resources", *, gateway_client: Client, compositor: Compositor
-) -> NotifyingFastMCP:
+def make_resources_server(name: str = "resources", *, client: Client, compositor: Compositor) -> NotifyingFastMCP:
     """Create a MCP server that aggregates resources across servers.
+
+    Args:
+        name: Server name
+        client: Direct client to compositor (should bypass policy gateway to prevent double enforcement)
+        compositor: Compositor for metadata and lifecycle listeners
 
     - Synthetic server injected by the runtime; reserved name is ``resources``.
     - Provides a uniform API to discover and read resources exposed by other servers.
+
+    **Policy enforcement architecture:**
+    - LLM tool calls to this server go through the policy gateway (tool-level enforcement)
+    - This server's internal calls to the compositor BYPASS the policy gateway via the direct client
+    - This prevents double policy enforcement and keeps the resources server as a pure facade
 
     Tools
     - ``list(server?: string, uri_prefix?: string) -> { resources: [...] }``
@@ -228,6 +237,8 @@ def make_resources_server(
     mcp = NotifyingFastMCP(
         name, instructions=("Resources aggregator for listing/reading resources across mounted servers.")
     )
+
+    compositor_client = client
 
     # ---- Subscriptions index (single resource) -----------------------------
     # Internal store for subscriptions made via this server's subscribe tool.
@@ -335,26 +346,24 @@ def make_resources_server(
     @mcp.flat_model()
     async def list_resources_tool(input: ResourcesListArgs) -> ResourcesListResult:
         """List resources via aggregator; derive origin using FastMCP prefix logic."""
-        mcp_list = await gateway_client.list_resources()
+        mcp_list = await compositor_client.list_resources()
         specs = await compositor.mount_specs()
-        mount_names = sorted(specs.keys())
+        mount_names = list(specs.keys())
         out: list[ResourceEntry] = []
         for r in mcp_list:
             uri_str = str(r.uri)
-            origin: str | None = None
-            for mn in mount_names:
-                if has_resource_prefix(uri_str, mn, compositor.resource_prefix_format):
-                    origin = mn
-                    break
+            try:
+                origin = derive_origin_server(uri_str, mount_names, compositor.resource_prefix_format)
+            except ValueError:
+                # Skip resources that don't match any known server
+                continue
             if input.server and origin != input.server:
                 continue
             # If a uri_prefix filter is provided, match against the raw (de-prefixed) URI
-            if input.uri_prefix and origin:
+            if input.uri_prefix:
                 raw_uri = remove_resource_prefix(uri_str, origin, compositor.resource_prefix_format)
                 if not raw_uri.startswith(input.uri_prefix):
                     continue
-            if origin is None:
-                continue
             out.append(ResourceEntry(server=origin, resource=r))
         return ResourcesListResult(resources=out)
 
@@ -370,9 +379,10 @@ def make_resources_server(
         """
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
         uri_value = ANY_URL.validate_python(prefixed)
-        res = await gateway_client.read_resource_mcp(uri_value)
-        contents = list(res.contents)
-        return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
+        res = await compositor_client.read_resource_mcp(uri_value)
+        return _build_window_payload(
+            res.contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes
+        )
 
     @mcp.flat_model()
     async def subscribe(input: ResourcesReadArgs) -> SimpleOk:

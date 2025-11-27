@@ -1,6 +1,6 @@
 import { currentAgentId, getAgentIdFromUrl, setAgentId } from '../shared/router'
-import { startAgentsWs, stopAgentStatusPolling } from './agents/stores'
-import { connectAgentWs, disconnectAgentWs } from './chat/stores'
+import { startAgentsSubscription, stopAgentsSubscription } from './agents/stores'
+import { connectAgentMcp, disconnectAgentMcp } from './chat/stores'
 
 export function initAgentUiController(): () => void {
   // Authoritative bootstrap: read agent_id from URL before subscribing
@@ -12,12 +12,8 @@ export function initAgentUiController(): () => void {
     bootstrapped = true
   }
 
-  // Start agents WS immediately so the sidebar populates on refresh (initial snapshot)
-  try {
-    startAgentsWs()
-  } catch {
-    // Ignore errors when starting agents websocket
-  }
+  // Start agents MCP subscription immediately so the sidebar populates on refresh
+  startAgentsSubscription()
 
   let lastId: string | null = null
   const unsub = currentAgentId.subscribe((id) => {
@@ -26,29 +22,17 @@ export function initAgentUiController(): () => void {
     if (id === lastId) return
     lastId = id ?? null
     if (typeof id === 'string' && id.length > 0) {
-      // Agents list comes via WS; ensure status polling is off (rely on WS + agent WS)
-      stopAgentStatusPolling()
-      disconnectAgentWs()
+      // Agent selected: connect to agent MCP (connectAgentMcp handles disconnect internally)
       // Defer to next microtask to avoid racing with URL/store updates
-      queueMicrotask(() => connectAgentWs(id))
+      queueMicrotask(() => connectAgentMcp(id))
     } else {
-      // No agent selected: ensure list WS is active and status polling is off
-      startAgentsWs()
-      stopAgentStatusPolling()
-      if (lastId !== null) disconnectAgentWs()
+      // No agent selected: disconnect agent MCP
+      if (lastId !== null) void disconnectAgentMcp()
     }
   })
 
-  const onVis = () => {
-    // Keep WS running across visibility changes to avoid missing events
-    // Only stop legacy status polling (which we no longer use by default)
-    stopAgentStatusPolling()
-  }
-  document.addEventListener('visibilitychange', onVis)
-
   return () => {
     unsub()
-    document.removeEventListener('visibilitychange', onVis)
-    // Do not forcibly close agents WS here; leaving it open simplifies UX.
+    stopAgentsSubscription()
   }
 }

@@ -1,40 +1,37 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Callable, Iterable
-from contextlib import asynccontextmanager, contextmanager
-from dataclasses import dataclass
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-import os
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi.testclient import TestClient
 from fastmcp.client import Client
+from fastmcp.client.client import CallToolResult
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
-from starlette.testclient import WebSocketTestSession
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.loggers import RecordingHandler
+from adgn.agent.persist.events import EventRecord, FunctionCallOutputPayload, ToolCallPayload, UserTextPayload
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
-from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt, ServerMessage
+from adgn.agent.server.protocol import FunctionCallOutput, ToolCall
+from adgn.agent.server.state import new_state
+from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.editor_server import make_editor_server
 from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
-from tests.agent.ws_helpers import (
-    _short_payload,
-    collect_payloads_until_finished,
-    collect_payloads_until_finished_auto_approve,
-    wait_for_accepted,
-)
 from tests.llm.support.openai_mock import FakeOpenAIModel
 from tests.types import McpServerSpecs
 
@@ -88,25 +85,25 @@ class _AgentHttp:
         return self.post("policy", json=body)
 
 
-# Note: approval_engine fixture is provided globally in tests/conftest.py
+# Note: docker_client and approval_policy_server fixtures are provided globally in tests/conftest.py
 
 
 @pytest.fixture
-def policy_evaluator(docker_client, approval_engine: ApprovalPolicyEngine) -> ContainerPolicyEvaluator:
+def policy_evaluator(docker_client, approval_policy_server: PolicyEngine) -> ContainerPolicyEvaluator:
     """Container-backed policy evaluator using the default policy engine.
 
     Deduplicates setup across tests that need to call policy.decide(...).
     Requires Docker (tests should mark with @pytest.mark.requires_docker).
     """
-    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker_client, engine=approval_engine)
+    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker_client, engine=approval_policy_server)
 
 
 @pytest.fixture
-def make_policy_evaluator(docker_client, make_policy_engine):
+def make_policy_evaluator(docker_client, make_approval_policy_server):
     """Factory that builds a ContainerPolicyEvaluator for a given policy source."""
 
     def _make(policy_source: str, *, agent_id: str = "tests") -> ContainerPolicyEvaluator:
-        engine = make_policy_engine(policy_source, agent_id=agent_id)
+        engine = make_approval_policy_server(policy_source, agent_id=agent_id)
         return ContainerPolicyEvaluator(agent_id=agent_id, docker_client=docker_client, engine=engine)
 
     return _make
@@ -251,7 +248,7 @@ def typed_editor_factory(tmp_path: Path):
 # make_typed_mcp now provided globally in tests/conftest.py
 
 
-# make_echo_spec is provided at tests/conftest.py for all suites.
+# echo_spec fixture is provided at tests/conftest.py for all suites.
 
 
 # Helper: create a live agent via HTTP on a TestClient and return its id
@@ -348,50 +345,6 @@ def make_spy_spec() -> Callable[[list[str]], McpServerSpecs]:
     return _spec
 
 
-# ---- Seatbelt helpers (removed)
-
-
-# Unified WS session fixture
-@pytest.fixture
-def ws_session(agent_test_client, create_live_agent, patch_agent_build_client):
-    """Factory to open a websocket session for a newly created agent.
-
-    Usage:
-        with ws_session(model_client, specs=my_specs) as (client, ws, collect, agent_id):
-            ws.send_json({"type": "send", "text": "hi"})
-            payloads = collect(limit=100)  # collects until finished
-
-    Args:
-        model_client: Fake/Bound OpenAI client used for the agent
-        specs: optional MCP specs dict (typed JSON or runtime slot specs)
-        wait_accepted: if True, wait for Accepted after connecting
-        auto_approve: if True, collector auto-approves approval_pending events
-    """
-
-    @contextmanager
-    def _open(
-        model_client: OpenAIModelProto,
-        *,
-        specs: McpServerSpecs | None = None,
-        wait_accepted: bool = True,
-        auto_approve: bool = False,
-    ):
-        patch_agent_build_client(model_client)
-        agent_id = create_live_agent(agent_test_client, specs=specs or {})
-        with agent_test_client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
-            if wait_accepted:
-                wait_for_accepted(ws)
-
-            def _collect(limit: int = 200):
-                if auto_approve:
-                    return collect_payloads_until_finished_auto_approve(ws, limit=limit)
-                return collect_payloads_until_finished(ws, limit=limit)
-
-            yield agent_test_client, ws, _collect, agent_id
-
-    return _open
-
-
 # ---- Bound HTTP helper fixture ----------------------------------------------
 
 
@@ -410,68 +363,6 @@ def make_agent_http():
         http.deny_abort(call_id)
     """
     return _AgentHttp
-
-
-# ---- Combined agent WS box fixture ------------------------------------------
-
-
-@pytest.fixture
-def agent_ws_box(ws_session, make_agent_http):
-    """Factory that opens a WS-connected live agent and returns a bound box.
-
-    Usage:
-        with agent_ws_box(model_client, specs={}) as box:
-            box.http.prompt("hi")
-            payloads = box.collect(limit=100)
-            box.ws  # underlying WS
-            box.agent_id
-    """
-
-    @dataclass
-    class Box:
-        client: TestClient
-        ws: WebSocketTestSession
-        collect: Callable[[int], list]
-        agent_id: str
-        http: _AgentHttp
-
-    @contextmanager
-    def _open(
-        model_client: OpenAIModelProto,
-        *,
-        specs: McpServerSpecs | None = None,
-        wait_accepted: bool = True,
-        auto_approve: bool = False,
-    ):
-        with ws_session(model_client, specs=specs, wait_accepted=wait_accepted, auto_approve=auto_approve) as (
-            client,
-            ws,
-            _collect_orig,
-            agent_id,
-        ):
-            http = make_agent_http(client, agent_id)
-
-            def _collect(limit: int = 200):
-                out: list[ServerMessage] = []
-                for _ in range(limit):
-                    env = Envelope.model_validate(ws.receive_json())
-                    p = env.payload
-                    # Optional trace for visibility when debugging CI flakes
-                    if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
-                        print(f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}")
-                    # Auto-approve via REST when requested
-                    if isinstance(p, ApprovalPendingEvt) and auto_approve:
-                        http.approve(p.call_id)
-                        out.append(p)
-                        continue
-                    out.append(p)
-                    if isinstance(p, RunStatusEvt) and p.run_state.status == RunStatus.FINISHED:
-                        break
-                return out
-
-            yield Box(client=client, ws=ws, collect=_collect, agent_id=agent_id, http=http)
-
-    return _open
 
 
 # ---- Recording handler fixture -----------------------------------------------
@@ -526,3 +417,122 @@ def slow_server() -> FastMCP:
         return {"ok": True, "tool": "slow2", "args": {}}
 
     return mcp
+
+
+# ---- UI reducer/history test fixtures ----------------------------------------
+
+
+@pytest.fixture
+def fresh_ui_state():
+    """Fresh UI state for reducer tests."""
+    return new_state()
+
+
+@pytest.fixture
+def make_tool_call() -> Callable[..., ToolCall]:
+    """Factory for creating ToolCall instances with defaults."""
+
+    def _make(
+        server: str,
+        tool: str,
+        call_id: str,
+        args: dict[str, Any] | None = None,
+    ) -> ToolCall:
+        return ToolCall(
+            name=build_mcp_function(server, tool),
+            call_id=call_id,
+            args_json=json.dumps(args) if args else None,
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_call_result() -> Callable[..., Any]:
+    """Factory for creating pydantic CallToolResult with sensible defaults."""
+
+    def _make(
+        structured_content: dict[str, Any] | None = None,
+        *,
+        is_error: bool = False,
+    ):
+        return to_pydantic(
+            CallToolResult(
+                content=[],
+                structured_content=structured_content or {},
+                is_error=is_error,
+                meta=None,
+            )
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_function_output(make_call_result) -> Callable[..., FunctionCallOutput]:
+    """Factory for FunctionCallOutput with defaults."""
+
+    def _make(
+        call_id: str,
+        structured_content: dict[str, Any] | None = None,
+        *,
+        is_error: bool = False,
+    ) -> FunctionCallOutput:
+        return FunctionCallOutput(
+            call_id=call_id,
+            result=make_call_result(structured_content, is_error=is_error),
+        )
+
+    return _make
+
+
+# --- EventRecord factories for history tests ---
+
+
+@pytest.fixture
+def event_ts() -> datetime:
+    """Shared timestamp for event records in tests."""
+    return datetime.now(UTC)
+
+
+@pytest.fixture
+def make_user_text_event(event_ts) -> Callable[[int, str], EventRecord]:
+    """Factory for UserText EventRecord."""
+
+    def _make(seq: int, text: str) -> EventRecord:
+        return EventRecord(seq=seq, ts=event_ts, payload=UserTextPayload(text=text))
+
+    return _make
+
+
+@pytest.fixture
+def make_tool_call_event(event_ts) -> Callable[..., EventRecord]:
+    """Factory for ToolCall EventRecord."""
+
+    def _make(seq: int, server: str, tool: str, call_id: str, args_json: str | None = None) -> EventRecord:
+        return EventRecord(
+            seq=seq,
+            ts=event_ts,
+            payload=ToolCallPayload(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id),
+            call_id=call_id,
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_function_output_event(event_ts, make_call_result) -> Callable[..., EventRecord]:
+    """Factory for FunctionCallOutput EventRecord."""
+
+    def _make(seq: int, call_id: str, structured_content: dict[str, Any] | None = None) -> EventRecord:
+        return EventRecord(
+            seq=seq,
+            ts=event_ts,
+            payload=FunctionCallOutputPayload(
+                call_id=call_id,
+                result=make_call_result(structured_content),
+            ),
+            call_id=call_id,
+        )
+
+    return _make

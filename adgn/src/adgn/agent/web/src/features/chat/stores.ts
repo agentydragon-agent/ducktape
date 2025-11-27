@@ -1,39 +1,20 @@
 import { writable, derived, type Writable, type Readable } from 'svelte/store'
 import { get } from 'svelte/store'
 
-import { connectWS, type WsClient } from './ws'
-import {
-  getSnapshot as httpGetSnapshot,
-  getProposal as httpGetProposal,
-  rejectProposal as httpRejectProposal,
-  approveCall,
-  denyAbortCall,
-  denyContinueCall,
-  setPolicy as httpSetPolicy,
-  sendPrompt as httpSendPrompt,
-  abortRun as httpAbortRun,
-  attachMcpServer,
-  detachMcpServer,
-} from '../agents/api'
 import { currentAgentId, agentStatus } from '../agents/stores'
+import { mcpManager } from '../mcp/manager'
 
 import type {
-  IncomingPayload,
   SnapshotPayload,
-  UiStateSnapshotPayload,
-  UiStateUpdatedPayload,
-  RunStatusPayload,
-  ApprovalPendingPayload,
-  ApprovalDecisionPayload,
   SamplingSnapshot,
   UiState,
   ServerEntry,
   ApprovalPolicyInfo,
 } from '../../shared/types'
+import type { AgentMcpClient } from '../mcp/client'
 
 export type Pending = { call_id: string; tool_key: string; args_json?: string | null }
 
-export const wsConnected: Writable<boolean> = writable(false)
 export const runStatus: Writable<string> = writable('idle')
 // Agent-scoped UI state
 export const uiStates: Writable<Map<string, UiState>> = writable(new Map())
@@ -46,216 +27,222 @@ export const pendingApprovals: Writable<Map<string, Pending>> = writable(new Map
 export const approvalPolicy: Writable<ApprovalPolicyInfo | null> = writable(null)
 export const mcpServerEntries: Writable<ServerEntry[]> = writable([])
 
-let client: WsClient | null = null
-let hadErrorPayload = false
-let closingIntentional = false
+let currentClient: AgentMcpClient | null = null
+let approvalsUnsubscribe: (() => void) | null = null
 
 export function clearError() {
   lastError.set(null)
 }
 
-export function connectAgentWs(agentId: string) {
-  // Close any existing
-  if (client) {
-    try {
-      closingIntentional = true
-      client.close()
-    } catch {
-      // Ignore errors
-    }
-  }
-  hadErrorPayload = false
-  client = connectWS(agentId, {
-    onOpen: () => {
-      wsConnected.set(true)
-      // Reflect that this agent is live once WS is open
-      agentStatus.set({ id: agentId, live: true })
-      // Immediately pull a snapshot to avoid races on first paint
-      // WS pushes will continue to keep state fresh
-      refreshSnapshot()
-    },
-    onClose: (ev) => {
-      wsConnected.set(false)
-      // Ignore intentional closes (switching agents), and do not override
-      // a prior specific error payload from the server.
-      if (closingIntentional) {
-        closingIntentional = false
-        return
-      }
-      if (hadErrorPayload) return
-      // Treat 1000 (normal), 1001 (going away), and 1005 (no status code) as non-errors
-      if (ev.code === 1000 || ev.code === 1001 || ev.code === 1005) return
-      lastError.set(`WS closed: code=${ev.code} reason=${ev.reason || ''}`)
-      // Mark as not live on unexpected close
-      agentStatus.set({ id: agentId, live: false })
-    },
-    onError: () => {
-      lastError.set('WebSocket error (see console)')
-    },
-    onMessage: (p) => handlePayload(agentId, p),
-  })
+/** Log error to console and set lastError store with consistent formatting. */
+function handleError(label: string, e: unknown): void {
+  const msg = e instanceof Error ? e.message : String(e)
+  console.warn(`${label} failed`, e)
+  lastError.set(`${label} failed: ${msg}`)
 }
 
-export function disconnectAgentWs() {
-  if (client) client.close()
-  client = null
+export async function connectAgentMcp(agentId: string) {
+  // Disconnect any existing
+  await disconnectAgentMcp()
+
+  try {
+    // Connect to agent's MCP compositor
+    currentClient = await mcpManager.connectAgent(agentId)
+
+    // Mark agent as live
+    agentStatus.set({ id: agentId, live: true })
+
+    // Subscribe to pending approvals resource
+    approvalsUnsubscribe = await currentClient.subscribeResource<{ pending: Pending[] }>(
+      'approvals://pending',
+      (data) => {
+        const map = new Map(data.pending.map((p) => [p.call_id, p]))
+        pendingApprovals.set(map)
+      }
+    )
+
+    // Initial snapshot fetch
+    await refreshSnapshot()
+  } catch (e) {
+    handleError('MCP connection', e)
+    agentStatus.set({ id: agentId, live: false })
+  }
 }
+
+export async function disconnectAgentMcp() {
+  if (approvalsUnsubscribe) {
+    approvalsUnsubscribe()
+    approvalsUnsubscribe = null
+  }
+
+  if (currentClient) {
+    const agentId = get(currentAgentId)
+    if (agentId) {
+      await mcpManager.disconnectAgent(agentId)
+    }
+    currentClient = null
+  }
+}
+
+// --- Tool Actions (MCP-based) ---
 
 export async function sendPrompt(text: string) {
-  // Optimistically reflect starting state; server will emit run_status shortly
+  // Optimistically reflect starting state
   runStatus.set('starting')
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) {
+    lastError.set('Not connected to agent')
+    return
+  }
   try {
-    await httpSendPrompt(id, text)
+    // Use MCP tool: agent_control_send_prompt
+    await currentClient.callTool('agent_control_send_prompt', { prompt: text })
   } catch (e) {
-    console.warn('prompt failed', e)
+    handleError('Send prompt', e)
   }
 }
+
 export async function approve(call_id: string) {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    await approveCall(id, call_id)
+    await currentClient.callTool('approvals_approve_call', { call_id })
   } catch (e) {
-    console.warn('approve failed', e)
+    handleError('Approve', e)
   }
-  try {
-    await refreshSnapshot()
-  } catch {
-    // Ignore errors
-  }
+  // Pending approvals will update via resource subscription
 }
+
 export async function denyContinue(call_id: string) {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    await denyContinueCall(id, call_id)
+    await currentClient.callTool('approvals_deny_continue', { call_id })
   } catch (e) {
-    console.warn('deny_continue failed', e)
-  }
-  try {
-    await refreshSnapshot()
-  } catch {
-    // Ignore errors
+    handleError('Deny continue', e)
   }
 }
+
 export async function deny(call_id: string) {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    await denyAbortCall(id, call_id)
+    await currentClient.callTool('approvals_deny_abort', { call_id })
   } catch (e) {
-    console.warn('deny_abort failed', e)
-  }
-  try {
-    await refreshSnapshot()
-  } catch {
-    // Ignore errors
+    handleError('Deny abort', e)
   }
 }
+
 export async function setPolicy(content: string, proposal_id?: string) {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    await httpSetPolicy(id, content, proposal_id)
+    await currentClient.callTool('approval_policy.admin_set_policy', {
+      content,
+      proposal_id: proposal_id ?? null,
+    })
   } catch (e) {
-    console.warn('setPolicy failed', e)
+    handleError('Set policy', e)
   }
-  try {
-    await refreshSnapshot()
-  } catch {
-    // Ignore errors
-  }
+  await refreshSnapshot()
 }
+
 export async function approveProposal(proposal_id: string) {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    const p = await httpGetProposal(id, proposal_id)
-    await httpSetPolicy(id, p.content, proposal_id)
+    // Approve proposal via MCP tool
+    await currentClient.callTool('approval_policy.admin_approve_proposal', {
+      id: proposal_id,
+    })
   } catch (e) {
-    console.warn('approveProposal failed', e)
+    handleError('Approve proposal', e)
   }
-  try {
-    await refreshSnapshot()
-  } catch {
-    // Ignore errors
-  }
+  await refreshSnapshot()
 }
+
 export async function withdrawProposal(proposal_id: string) {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    await httpRejectProposal(id, proposal_id)
+    await currentClient.callTool('approval_policy.proposer_withdraw_proposal', {
+      id: proposal_id,
+    })
   } catch (e) {
-    console.warn('rejectProposal failed', e)
+    handleError('Withdraw proposal', e)
   }
-  // Fallback: actively refresh via HTTP in case push snapshot races the UI
-  try {
-    await refreshSnapshot()
-  } catch {
-    // Ignore errors
-  }
+  await refreshSnapshot()
 }
+
 export async function refreshSnapshot() {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    const snap = await httpGetSnapshot(id)
+    // Read snapshot via MCP resource
+    const snap = await currentClient.readResource<SnapshotPayload>('snapshot://current')
     handleSnapshot(snap)
   } catch (e) {
     console.warn('refreshSnapshot failed', e)
   }
 }
+
 export async function abortRun() {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    await httpAbortRun(id)
+    // Use MCP tool: agent_control_abort_run
+    await currentClient.callTool('agent_control_abort_run', {})
   } catch (e) {
-    console.warn('abort failed', e)
+    handleError('Abort run', e)
   }
-  // Proactively refresh snapshot so UI clears busy state even if no run was active yet
-  try {
-    await refreshSnapshot()
-  } catch {
-    // Ignore errors
-  }
+  await refreshSnapshot()
 }
+
 export async function reconfigureMcp(attach?: Record<string, any>, detach?: string[]) {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
+    // Use MCP tools for attach/detach via compositor_admin
     if (attach && Object.keys(attach).length) {
       for (const [name, spec] of Object.entries(attach)) {
-        await attachMcpServer(id, name, spec)
+        await currentClient.callTool('compositor_admin_attach_server', { name, spec })
       }
     }
     if (detach && detach.length) {
-      for (const name of detach) await detachMcpServer(id, name)
+      for (const name of detach) {
+        await currentClient.callTool('compositor_admin_detach_server', { name })
+      }
     }
   } catch (e) {
-    console.warn('reconfigureMcp failed', e)
+    handleError('Reconfigure MCP', e)
   }
-  try {
-    await refreshSnapshot()
-  } catch {
-    // Ignore errors
+  await refreshSnapshot()
+}
+
+/**
+ * Attach a new MCP server to the current agent.
+ */
+export async function attachMcpServer(name: string, spec: any): Promise<void> {
+  if (!currentClient) {
+    throw new Error('Not connected to agent')
   }
+  await currentClient.callTool('compositor_admin_attach_server', { name, spec })
+}
+
+/**
+ * Detach an MCP server from the current agent.
+ */
+export async function detachMcpServer(name: string): Promise<void> {
+  if (!currentClient) {
+    throw new Error('Not connected to agent')
+  }
+  await currentClient.callTool('compositor_admin_detach_server', { name })
 }
 
 function handleSnapshot(p: SnapshotPayload) {
-  const sampling: SamplingSnapshot | undefined = p.details?.sampling as any
+  const sampling: SamplingSnapshot | undefined = p.sampling as any
   if (sampling) {
     mcpServerEntries.set(sampling.servers || [])
   }
-  const st = p.details?.run_state.status
+  const st = p.run_state?.status
   if (st) runStatus.set(st)
   else runStatus.set('idle')
-  if (Array.isArray(p.details?.run_state?.pending_approvals)) {
+
+  // Pending approvals are now updated via MCP resource subscription
+  // But still handle snapshot data for initial state
+  if (Array.isArray(p.run_state?.pending_approvals)) {
     const map = new Map<string, Pending>()
-    for (const a of p.details!.run_state!.pending_approvals!) {
+    for (const a of p.run_state!.pending_approvals!) {
       map.set(a.call_id, {
         call_id: a.call_id,
         tool_key: a.tool_key,
@@ -264,68 +251,5 @@ function handleSnapshot(p: SnapshotPayload) {
     }
     pendingApprovals.set(map)
   }
-  if (p.details?.approval_policy) approvalPolicy.set(p.details.approval_policy)
-}
-
-function handleUiStateSnapshot(agentId: string, p: UiStateSnapshotPayload) {
-  uiStates.update((m) => {
-    const mm = new Map(m)
-    mm.set(agentId, p.state)
-    return mm
-  })
-}
-function handleUiStateUpdated(agentId: string, p: UiStateUpdatedPayload) {
-  uiStates.update((m) => {
-    const mm = new Map(m)
-    mm.set(agentId, p.state)
-    return mm
-  })
-}
-function handleRunStatus(p: RunStatusPayload) {
-  if (p.run_state?.status) runStatus.set(p.run_state.status)
-}
-function handleApprovalPending(p: ApprovalPendingPayload) {
-  pendingApprovals.update((m) => {
-    const mm = new Map(m)
-    mm.set(p.call_id, { call_id: p.call_id, tool_key: p.tool_key, args_json: p.args_json ?? null })
-    return mm
-  })
-}
-function handleApprovalDecision(p: ApprovalDecisionPayload) {
-  pendingApprovals.update((m) => {
-    const mm = new Map(m)
-    mm.delete(p.call_id)
-    return mm
-  })
-}
-
-function handlePayload(agentId: string, p: IncomingPayload) {
-  // Debug: log select payloads to aid e2e diagnosis
-  if (p.type === 'run_status') {
-    console.log('[WS] RUN_STATUS', (p as any).run_state?.status)
-  } else if (p.type === 'snapshot') {
-    console.log('[WS] SNAPSHOT', (p as any).details?.run_state?.status)
-  }
-  switch (p.type) {
-    case 'snapshot':
-      return handleSnapshot(p)
-    case 'ui_state_snapshot':
-      return handleUiStateSnapshot(agentId, p)
-    case 'ui_state_updated':
-      return handleUiStateUpdated(agentId, p)
-    case 'run_status':
-      return handleRunStatus(p)
-    case 'approval_pending':
-      return handleApprovalPending(p)
-    case 'approval_decision':
-      return handleApprovalDecision(p)
-    case 'accepted':
-      return
-    case 'error':
-      hadErrorPayload = true
-      lastError.set(p.message ? `${p.code}: ${p.message}` : String(p.code))
-      return
-    default:
-      return
-  }
+  if (p.approval_policy) approvalPolicy.set(p.approval_policy)
 }

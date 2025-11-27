@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../styles/shared.css'
   import ApprovalsPanel from './ApprovalsPanel.svelte'
   import ServersPanel from './ServersPanel.svelte'
   import SettingsPanel from './SettingsPanel.svelte'
@@ -7,7 +8,6 @@
     agentStatusError as agentStatusErrorStore,
   } from '../features/agents/stores'
   import {
-    wsConnected,
     runStatus as runStatusStore,
     pendingApprovals,
     approvalPolicy as approvalPolicyStore,
@@ -21,6 +21,10 @@
     approveProposal as wsApproveProposal,
     withdrawProposal as wsWithdrawProposal,
   } from '../features/chat/stores'
+  import { mcpManager } from '../features/mcp/manager'
+
+  // Derive connection status from MCP manager
+  const mcpConnected = mcpManager.connectionStatus
 
   // Local UI state
   let activeTab: 'approvals' | 'servers' | 'settings' = 'approvals'
@@ -42,12 +46,12 @@
 <div class="sidebar-header">
   <div
     class="ws"
-    title={$wsConnected
-      ? 'WebSocket connected (browser ↔ server). Controls live updates; not agent liveness.'
-      : 'WebSocket disconnected (browser ↔ server). Live updates paused; not agent liveness.'}
+    title={$mcpConnected.connected
+      ? 'MCP connected (browser ↔ server). Controls live updates; not agent liveness.'
+      : 'MCP disconnected (browser ↔ server). Live updates paused; not agent liveness.'}
   >
-    <span class="dot {$wsConnected ? 'on' : 'off'}"></span>
-    <span>{$wsConnected ? 'WS connected' : 'WS disconnected'}</span>
+    <span class="dot {$mcpConnected.connected ? 'on' : 'off'}"></span>
+    <span>{$mcpConnected.connected ? 'MCP connected' : 'MCP disconnected'}</span>
   </div>
   <div class="status">Status: {$runStatusStore}</div>
   {#if $agentStatusStore}
@@ -168,19 +172,6 @@
     align-items: center;
     gap: 0.5rem;
   }
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #bbb;
-    display: inline-block;
-  }
-  .dot.on {
-    background: #2ecc71;
-  }
-  .dot.off {
-    background: #bbb;
-  }
   .status {
     color: var(--text);
   }
@@ -195,11 +186,6 @@
     border-radius: 0.75rem;
     padding: 0 0.4rem;
     font-size: 0.7rem;
-  }
-  .row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
   }
   .mounts {
     display: flex;

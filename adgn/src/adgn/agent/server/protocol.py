@@ -11,24 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from adgn.agent.models.policy_error import PolicyTestsSummary
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.server.bus import MimeType
-from adgn.agent.server.state import UiState
 from adgn.mcp.snapshots import SamplingSnapshot  # structured snapshot model (module-level)
 
 # --------------------------
-# Envelope and core state
+# Core state
 # --------------------------
-
-
-class Envelope(BaseModel):
-    """Message envelope: carries protocol metadata and typed payload.
-    session: {id: str}, event: {id: int, ts: datetime}, payload: ServerMessage
-    """
-
-    session_id: str
-    event_id: int
-    event_at: datetime
-    payload: ServerMessage
-    model_config = ConfigDict(extra="forbid")
 
 
 class SessionState(BaseModel):
@@ -168,155 +155,30 @@ TranscriptItem = Annotated[
 # --------------------------
 # Server -> Client messages
 # --------------------------
-
-
-class Welcome(Envelope):
-    type: Literal["welcome"] = "welcome"
-    v: str
-    session_state: SessionState
-
-
-class SnapshotDetails(BaseModel):
-    """Non-nullable bundle of snapshot details.
-
-    Group formerly individually-optional fields into a single optional bundle.
-    This reduces surprising nullability at the protocol boundary.
-    """
-
-    run_state: RunState
-    sampling: SamplingSnapshot
-    approval_policy: ApprovalPolicyInfo
-
-    model_config = ConfigDict(extra="forbid")
+# NOTE: WebSocket has been replaced by MCP. Many of these event types are
+# now dead code (only used in send_payload which is a no-op). They're kept
+# for internal state management (reducer, snapshots) where still needed.
 
 
 class Snapshot(BaseModel):
     type: Literal["snapshot"] = "snapshot"
-    v: str
     session_state: SessionState
     approval_policy: ApprovalPolicyInfo | None = None
-    # Preferred: a single optional bundle; each item inside is non-nullable
-    details: SnapshotDetails | None = None
+    run_state: RunState | None = None
+    sampling: SamplingSnapshot | None = None
     model_config = ConfigDict(extra="forbid")
 
 
-# New: server-owned UiState messages
-class UiStateSnapshot(BaseModel):
-    type: Literal["ui_state_snapshot"] = "ui_state_snapshot"
-    v: Literal["ui_state_v1"] = "ui_state_v1"
-    seq: int
-    state: UiState
-    model_config = ConfigDict(extra="forbid")
-
-
-class UiStateUpdated(BaseModel):
-    type: Literal["ui_state_updated"] = "ui_state_updated"
-    v: Literal["ui_state_v1"] = "ui_state_v1"
-    seq: int
-    state: UiState
-    model_config = ConfigDict(extra="forbid")
-
-
-class Accepted(BaseModel):
-    type: Literal["accepted"] = "accepted"
-    model_config = ConfigDict(extra="forbid")
-
-
-class RunStatusEvt(BaseModel):
-    type: Literal["run_status"] = "run_status"
-    run_state: RunState
-    model_config = ConfigDict(extra="forbid")
-
-
-class ApprovalPendingEvt(BaseModel):
-    type: Literal["approval_pending"] = "approval_pending"
-    call_id: str
-    tool_key: str
-    args_json: str | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-# Approval decisions are protocol-native (distinct from handler actions)
-class ApprovalApprove(BaseModel):
-    kind: Literal["approve"] = "approve"
-    model_config = ConfigDict(extra="forbid")
-
-
-class ApprovalDenyContinue(BaseModel):
-    kind: Literal["deny_continue"] = "deny_continue"
-    model_config = ConfigDict(extra="forbid")
-
-
-class ApprovalDenyAbort(BaseModel):
-    kind: Literal["deny_abort"] = "deny_abort"
-    model_config = ConfigDict(extra="forbid")
-
-
-ApprovalDecision = Annotated[ApprovalApprove | ApprovalDenyContinue | ApprovalDenyAbort, Field(discriminator="kind")]
-
-
-class ApprovalDecisionEvt(BaseModel):
-    type: Literal["approval_decision"] = "approval_decision"
-    call_id: str
-    decision: ApprovalDecision
-    model_config = ConfigDict(extra="forbid")
-
-
-class TurnDone(BaseModel):
-    type: Literal["turn_done"] = "turn_done"
-    model_config = ConfigDict(extra="forbid")
-
-
-class ErrorCode(StrEnum):
-    INVALID_JSON = "INVALID_JSON"
-    MISSING_FIELD = "MISSING_FIELD"
-    INVALID_COMMAND = "INVALID_COMMAND"
-    BUSY = "BUSY"
-    ABORTING = "ABORTING"
-    NOT_RUNNING = "NOT_RUNNING"
-    NO_AGENT = "NO_AGENT"
-    AGENT_ERROR = "AGENT_ERROR"
-    ABORTED = "ABORTED"
-
-
-class ErrorEvt(BaseModel):
-    type: Literal["error"] = "error"
-    code: ErrorCode
-    message: str | None = None
-    details: dict | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-class HeartbeatEvt(BaseModel):
-    type: Literal["heartbeat"] = "heartbeat"
-    interval_ms: int
-    model_config = ConfigDict(extra="forbid")
-
-
-class BackpressureEvt(BaseModel):
-    type: Literal["backpressure"] = "backpressure"
-    state: Literal["drain", "ok"]
-    model_config = ConfigDict(extra="forbid")
-
-
+# ServerMessage union - Used for reducer and HTTP snapshot endpoint
+# Dead WebSocket event types removed in Phase 6 cleanup
 ServerMessage = Annotated[
-    Accepted
-    | RunStatusEvt
-    | ApprovalPendingEvt
-    | ApprovalDecisionEvt
-    | TurnDone
-    | ErrorEvt
-    | HeartbeatEvt
-    | BackpressureEvt
-    | Snapshot
-    | UiStateSnapshot
-    | UiStateUpdated
-    | UserText
-    | AssistantText
-    | ToolCall
-    | FunctionCallOutput
-    | ReasoningChunk
-    | UiMessageEvt
-    | UiEndTurnEvt,
+    Snapshot  # HTTP snapshot endpoint
+    | UserText  # Reducer
+    | AssistantText  # Reducer
+    | ToolCall  # Reducer
+    | FunctionCallOutput  # Reducer
+    | ReasoningChunk  # Transcript items
+    | UiMessageEvt  # Reducer
+    | UiEndTurnEvt,  # Reducer
     Field(discriminator="type"),
 ]

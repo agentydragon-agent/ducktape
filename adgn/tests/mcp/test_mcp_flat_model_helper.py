@@ -20,7 +20,9 @@ class EchoOutput(BaseModel):
     text: str
 
 
-def make_echo_server():
+@pytest.fixture
+def echo_server():
+    """Echo server for testing flat model helpers."""
     mcp = FlatModelFastMCP("echo")
 
     @mcp.tool(name="echo", title="Echo", description="Echo a message", structured_output=True, flat=True)
@@ -31,10 +33,8 @@ def make_echo_server():
     return mcp
 
 
-async def test_flat_schema_and_typed_invocation(make_typed_mcp):
-    server = make_echo_server()
-
-    async with make_typed_mcp(server, "echo") as (client, sess):
+async def test_flat_schema_and_typed_invocation(make_typed_mcp, echo_server):
+    async with make_typed_mcp(echo_server, "echo") as (client, sess):
         # Fast path: typed client can call tool like client.echo(EchoInput(...)) -> EchoOutput
         echo_input_class = client.models["echo"].Input
         assert echo_input_class is EchoInput

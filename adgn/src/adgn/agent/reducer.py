@@ -13,7 +13,7 @@ from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, T
 from adgn.agent.loop_control import Abort, Auto, Continue, InjectedItem, LoopDecision, NoLoopDecision, RequireAny
 from adgn.openai_utils.model import ReasoningItem, UserMessage
 
-from .notifications.types import NotificationsBatch, NotificationsForModel, ResourcesServerNotice
+from .notifications.types import NotificationsBatch, ResourcesServerNotice
 
 logger = logging.getLogger(__name__)
 
@@ -177,41 +177,20 @@ class SystemMessage(BaseModel):
     content: str
 
 
-def format_notifications_message(batch: NotificationsBatch) -> UserMessage | None:
-    """Format MCP notifications as a system message.
+def format_notifications_message(batch: NotificationsBatch) -> UserMessage:
+    """Format MCP notifications as a user message.
 
-    Returns None if no notifications to format.
+    Caller must ensure batch has at least one notification.
     """
-    # Use derived per-server list_changed from batch (no magic string checks)
-    list_changed_servers = set(batch.resource_list_changed or [])
-    if not batch.resources_updated and not list_changed_servers:
-        return None
-
-    # Build minimal, non-synthetic payload for the model, grouped by server under "resources".
-    # Per-server fields: updated (URIs), list_changed (best effort)
-    per_server: dict[str, ResourcesServerNotice] = {}
-    for ev in batch.resources_updated:
-        entry = per_server.setdefault(ev.server, ResourcesServerNotice())
-        entry.updated.append(ev.uri)
-
-    # Mark list_changed for servers recorded in the batch, even if no updated URIs
-    for name in list_changed_servers:
-        entry = per_server.setdefault(name, ResourcesServerNotice())
-        entry.list_changed = True
-
-    # Build minimal per-server map using Pydantic (exclude defaults/empty)
+    # Filter to only include servers with actual updates or list changes
     resources_filtered: dict[str, ResourcesServerNotice] = {
-        name: entry for name, entry in per_server.items() if entry.updated or entry.list_changed
+        name: entry for name, entry in batch.resources.items() if entry.updated or entry.list_changed
     }
-    if not resources_filtered:
-        return None
-    payload = NotificationsForModel(resources=resources_filtered).model_dump_json(
-        exclude_defaults=True, exclude_none=True
-    )
+
+    payload = NotificationsBatch(resources=resources_filtered).model_dump_json(exclude_defaults=True, exclude_none=True)
 
     # Insert as input-side user message, clearly tagged as a system notification
-    tagged = f"<system notification>\n{payload}\n</system notification>"
-    return UserMessage.text(tagged)
+    return UserMessage.text(f"<system notification>\n{payload}\n</system notification>")
 
 
 class NotificationsHandler(BaseHandler):
@@ -228,38 +207,14 @@ class NotificationsHandler(BaseHandler):
 
     def on_before_sample(self):
         batch = self._poll()
-        msg = format_notifications_message(batch)
+        notification_count = batch.count_notifications()
 
-        if msg is None:
+        if notification_count == 0:
             logger.debug("NotificationsHandler: no updates")
             return NoLoopDecision()
 
         self._msg_counter += 1
         logger.info(
-            "NotificationsHandler: delivering %d updates (msg #%d)", len(batch.resources_updated), self._msg_counter
+            "NotificationsHandler: delivering %d notifications (msg #%d)", notification_count, self._msg_counter
         )
-        return Continue(Auto(), inserts_input=(msg,))
-
-    # ---- Event forwarding (typed, observer-only) ----
-    def on_response(self, evt: Response) -> None:
-        return None
-
-    def on_error(self, exc: Exception) -> None:
-        return None
-
-    def on_user_text(self, evt: UserText) -> None:
-        return None
-
-    def on_assistant_text(self, evt: AssistantText) -> None:
-        return None
-
-    def on_tool_call(self, evt: ToolCall) -> None:
-        return None
-
-    # Agent-level before-tool gating removed; Policy Gateway middleware enforces approvals/denials
-
-    def on_tool_result(self, evt: ToolCallOutput) -> None:
-        return None
-
-    def on_reasoning(self, item: ReasoningItem) -> None:
-        return None
+        return Continue(Auto(), inserts_input=(format_notifications_message(batch),))

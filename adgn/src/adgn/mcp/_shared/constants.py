@@ -31,9 +31,8 @@ CRITIC_SUBMIT_SERVER_NAME: Final[str] = "critic_submit"
 MATRIX_CONTROL_SERVER_NAME: Final[str] = "matrix_control"
 UI_SERVER_NAME: Final[str] = "ui"
 APPROVAL_POLICY_SERVER_NAME: Final[str] = "approval_policy"
-APPROVAL_POLICY_SERVER_NAME_READER: Final[str] = APPROVAL_POLICY_SERVER_NAME
-APPROVAL_POLICY_SERVER_NAME_PROPOSER: Final[str] = f"{APPROVAL_POLICY_SERVER_NAME}.proposer"
-APPROVAL_POLICY_SERVER_NAME_APPROVER: Final[str] = f"{APPROVAL_POLICY_SERVER_NAME}.approver"
+POLICY_PROPOSER_SERVER_NAME: Final[str] = "policy_proposer"
+POLICY_ADMIN_SERVER_NAME: Final[str] = "admin"
 DOCKER_SERVER_NAME: Final[str] = "docker"
 PROMPT_EVAL_SERVER_NAME: Final[str] = "prompt_eval"
 EDITOR_SERVER_NAME: Final[str] = "editor"
@@ -46,6 +45,9 @@ SEATBELT_EXEC_SERVER_NAME: Final[str] = "seatbelt_exec"
 # Approval policy resource URI (neutral/logical; no host mount implications)
 APPROVAL_POLICY_RESOURCE_URI: Final[str] = "resource://approval-policy/policy.py"
 APPROVAL_POLICY_PROPOSALS_INDEX_URI: Final[str] = "resource://approval-policy/proposals"
+
+# Pending tool call approvals resource (runtime state, not policy definitions)
+PENDING_CALLS_URI: Final[str] = "pending://calls"
 
 # MCP notification method names (match MCP spec)
 RESOURCES_UPDATED_METHOD: Final[str] = "notifications/resources/updated"

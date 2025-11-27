@@ -4,21 +4,18 @@ import pytest
 
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.ws_helpers import assert_function_call_output_structured
+from tests.agent.test_matchers import assert_function_call_output_structured
 
 
 async def test_tool_error_is_surfaced_in_sequence(
     monkeypatch: pytest.MonkeyPatch,
     responses_factory,
-    make_pg_session,
-    approval_policy_reader_allow_all,
+    make_pg_client,
     failing_server,
     recording_handler,
     make_test_agent,
 ) -> None:
-    async with make_pg_session(
-        {"editor": failing_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as mcp_client:
+    async with make_pg_client({"editor": failing_server}) as mcp_client:
         agent, _client = await make_test_agent(
             mcp_client,
             [

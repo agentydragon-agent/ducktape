@@ -18,16 +18,19 @@ All mounts are pinned by default to prevent accidental unmounts.
 """
 
 
-async def mount_standard_inproc_servers(*, compositor: Compositor, gateway_client: Client | None = None) -> None:
+async def mount_standard_inproc_servers(*, compositor: Compositor, mount_resources: bool = True) -> None:
     """Mount standard servers on the given compositor, pinned by default.
 
     - Always mounts compositor_meta (pinned)
     - Always mounts compositor_admin (pinned)
-    - Mounts resources (pinned) only when a gateway client is provided
+    - Optionally mounts resources (pinned) if mount_resources=True
     """
-    if gateway_client is not None:
-        res_server = make_resources_server(name="resources", gateway_client=gateway_client, compositor=compositor)
-        await compositor.mount_inproc("resources", res_server, pinned=True)
+    if mount_resources:
+        await compositor.mount_inproc(
+            "resources",
+            make_resources_server(name="resources", client=Client(compositor), compositor=compositor),
+            pinned=True,
+        )
 
     compmeta_server = make_compositor_meta_server(compositor=compositor, name=COMPOSITOR_META_SERVER_NAME)
     await compositor.mount_inproc(COMPOSITOR_META_SERVER_NAME, compmeta_server, pinned=True)

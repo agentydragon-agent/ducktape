@@ -7,13 +7,19 @@ from adgn.mcp.exec.models import ExecInput, Exited, TimedOut
 from tests.conftest import make_container_opts
 
 
-def _make_server(ephemeral: bool):
-    return make_container_exec_server(make_container_opts("alpine:3.19", ephemeral=ephemeral))
+@pytest.fixture
+def make_exec_server():
+    """Factory fixture for creating exec servers."""
+
+    def _make(ephemeral: bool):
+        return make_container_exec_server(make_container_opts("alpine:3.19", ephemeral=ephemeral))
+
+    return _make
 
 
 @pytest.mark.requires_docker
-async def test_ephemeral_exec_stdout_stderr_timeout(make_typed_mcp) -> None:
-    server = _make_server(ephemeral=True)
+async def test_ephemeral_exec_stdout_stderr_timeout(make_typed_mcp, make_exec_server) -> None:
+    server = make_exec_server(ephemeral=True)
 
     async with make_typed_mcp(server, "docker") as (client, _session):
         # stdout
@@ -31,8 +37,8 @@ async def test_ephemeral_exec_stdout_stderr_timeout(make_typed_mcp) -> None:
 
 
 @pytest.mark.requires_docker
-async def test_persession_exec_timeout_then_next_ok(make_typed_mcp) -> None:
-    server = _make_server(ephemeral=False)
+async def test_persession_exec_timeout_then_next_ok(make_typed_mcp, make_exec_server) -> None:
+    server = make_exec_server(ephemeral=False)
 
     async with make_typed_mcp(server, "docker") as (client, _session):
         # Force timeout

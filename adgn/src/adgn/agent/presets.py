@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
+from fastmcp.mcp_config import MCPConfig
 from platformdirs import user_config_dir
 from pydantic import BaseModel, Field, JsonValue
 import yaml
+
+if TYPE_CHECKING:
+    from adgn.agent.persist.sqlite import SQLitePersistence
+    from adgn.agent.types import AgentID
 
 
 def _xdg_presets_dir() -> Path:
@@ -56,18 +62,32 @@ def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
     return out
 
 
-def discover_presets(env_dir: str | None = None) -> dict[str, AgentPreset]:
+def discover_presets(*, override_dir: str | Path | None = None) -> dict[str, AgentPreset]:
     """Search for preset files in configured and default directories.
 
-    Precedence: env_dir (if set) first, then DEFAULT_PRESETS_DIRS.
+    Args:
+        override_dir: Optional directory to use instead of env var + defaults.
+                     Useful for testing. If None, uses ADGN_AGENT_PRESETS_DIR
+                     env var (if set) followed by XDG config directory.
+
+    Precedence: override_dir > ADGN_AGENT_PRESETS_DIR env > XDG config
     Later directories do not override earlier names.
     """
     out: dict[str, AgentPreset] = {}
     roots: list[Path] = []
-    if env_dir:
-        roots.append(Path(env_dir))
-    # Resolve only via platformdirs: user_config_dir('adgn') / 'presets'
+
+    # Handle override for testing
+    if override_dir is not None:
+        roots.append(Path(override_dir))
+    else:
+        # Read env var internally (production path)
+        env_dir = os.getenv("ADGN_AGENT_PRESETS_DIR")
+        if env_dir:
+            roots.append(Path(env_dir))
+
+    # Always check XDG directory
     roots.append(_xdg_presets_dir())
+
     for r in roots:
         for name, preset in load_presets_from_dir(r).items():
             if name not in out:
@@ -76,3 +96,44 @@ def discover_presets(env_dir: str | None = None) -> dict[str, AgentPreset]:
     if "default" not in out:
         out["default"] = AgentPreset(name="default", description="Default UI agent", system=None, specs={})
     return out
+
+
+async def create_agent_from_preset(
+    persistence: SQLitePersistence, preset_name: str | None, base_mcp_config: MCPConfig
+) -> tuple[AgentID, MCPConfig, str | None]:
+    """Create a new agent from a preset.
+
+    Args:
+        persistence: SQLite persistence for storing agent record
+        preset_name: Name of preset to use (defaults to "default")
+        base_mcp_config: Base MCP config to merge with preset specs
+
+    Returns:
+        Tuple of (agent_id, mcp_config, system_prompt)
+    """
+    from adgn.agent.persist import AgentMetadata
+
+    # Load preset
+    presets = discover_presets()
+    preset = presets.get(preset_name or "default") or presets["default"]
+
+    # Merge preset specs with base config
+    mcp_config = base_mcp_config.model_copy(deep=True)
+    if preset.specs:
+        # Parse preset specs as MCPConfig servers
+        for name, spec in preset.specs.items():
+            if isinstance(spec, dict):
+                # Try to parse as server config
+                from fastmcp.mcp_config import parse_server_config
+
+                try:
+                    server_config = parse_server_config(spec)
+                    mcp_config.mcpServers[name] = server_config
+                except Exception:
+                    pass  # Skip invalid specs
+
+    # Create agent record in DB
+    metadata = AgentMetadata(preset=preset.name)
+    agent_id = await persistence.create_agent(mcp_config=mcp_config, metadata=metadata)
+
+    return agent_id, mcp_config, preset.system

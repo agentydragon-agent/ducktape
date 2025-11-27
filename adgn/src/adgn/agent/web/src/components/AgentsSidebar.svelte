@@ -1,14 +1,17 @@
 <script lang="ts">
+  import '../styles/shared.css'
   import { onMount } from 'svelte'
 
   import ModalBackdrop from './ModalBackdrop.svelte'
   import SidebarToggle from './SidebarToggle.svelte'
   import {
-    deleteAgent as apiDeleteAgent,
+    agents,
+    currentAgentId,
+    setAgentId,
+    deleteAgent,
     listPresets,
     createAgentFromPreset,
-  } from '../features/agents/api'
-  import { agents, currentAgentId, setAgentId } from '../features/agents/stores'
+  } from '../features/agents/stores'
   import { LEFT_MIN, LEFT_MAX } from '../shared/layout'
   import { prefs } from '../shared/prefs'
 
@@ -112,7 +115,7 @@
 
   async function doDelete(id: string) {
     try {
-      const body = await apiDeleteAgent(id)
+      const body = await deleteAgent(id)
       if (!body?.ok) throw new Error(body?.error || 'delete failed')
       // Optimistically update list and selection
       agents.update((list) => (list || []).filter((a) => a.id !== id))
@@ -343,26 +346,6 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
     font-size: 0.85rem;
   }
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #bbb;
-    display: inline-block;
-  }
-  .dot.on {
-    background: #2ecc71;
-  }
-  .dot.off {
-    background: #bbb;
-  }
-  .badge.lifecycle {
-    font-size: 0.65rem;
-    padding: 0.05rem 0.3rem;
-    border-radius: 0.5rem;
-    text-transform: lowercase;
-    border: 1px solid var(--border);
-  }
   .badge.lifecycle.lc-ready {
     background: rgba(46, 204, 113, 0.15);
     color: #2e7d32;
@@ -403,48 +386,9 @@
     border: none;
     padding: 0;
   }
-  .row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
   .preset {
     flex: 1;
     min-width: 0;
-  }
-  /* Modal styles */
-  /* Backdrop styling moved to ModalBackdrop component */
-  .modal {
-    background: var(--surface);
-    color: var(--text);
-    min-width: 320px;
-    max-width: 90vw;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  }
-  .modal header {
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--border);
-    font-weight: 600;
-  }
-  .modal .body {
-    padding: 0.75rem;
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.5rem;
-  }
-  .modal .row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .modal footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    border-top: 1px solid var(--border);
   }
   .row :global(.toggle-btn) {
     margin-left: auto;
@@ -453,16 +397,6 @@
     margin-left: auto;
     display: inline-flex;
     gap: 0.25rem;
-  }
-  .small {
-    font-size: 0.75rem;
-    padding: 0.2rem 0.4rem;
-  }
-  .danger {
-    color: #b00020;
-  }
-  .secondary {
-    background: var(--surface-2);
   }
   .icon {
     width: 22px;

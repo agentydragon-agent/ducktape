@@ -7,40 +7,33 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
 import os
-from typing import cast
+from typing import Literal, cast
 
 from docker.client import DockerClient
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
+from pydantic import BaseModel, Field
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, load_default_policy_source, make_policy_engine
+from adgn.agent.approvals import load_default_policy_source
 from adgn.agent.persist import ApprovalOutcome
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.images import resolve_runtime_image
 from adgn.agent.server.bus import ServerBus
-from adgn.agent.server.protocol import ApprovalPendingEvt
 from adgn.agent.server.rendering import render_compositor_instructions
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.mcp._shared.constants import (
-    APPROVAL_POLICY_SERVER_NAME_APPROVER,
-    APPROVAL_POLICY_SERVER_NAME_PROPOSER,
-    APPROVAL_POLICY_SERVER_NAME_READER,
     RUNTIME_EXEC_TOOL_NAME,
     RUNTIME_SERVER_NAME,
     SEATBELT_EXEC_SERVER_NAME,
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
-from adgn.mcp.approval_policy.server import (
-    ApprovalPolicyAdminServer,
-    ApprovalPolicyProposerServer,
-    ApprovalPolicyServer,
-)
+from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
+from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.mcp.compositor.server import Compositor
@@ -48,10 +41,8 @@ from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import make_loop_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
-from adgn.mcp.policy_gateway.middleware import install_policy_gateway
 from adgn.mcp.runtime.server import make_runtime_server
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
-from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.ui.server import make_ui_server
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
@@ -68,6 +59,33 @@ class CloseResult:
 
 
 type ActorResult = SamplingSnapshot | CloseResult | None
+
+
+# ---- Agent control MCP models ------------------------------------------------
+
+
+class SendPromptInput(BaseModel):
+    """Input for the send_prompt tool."""
+
+    prompt: str = Field(description="The prompt to send to start an agent run")
+
+
+class SendPromptOutput(BaseModel):
+    """Output for the send_prompt tool."""
+
+    status: Literal["started", "error"]
+    message: str
+
+
+class AbortRunInput(BaseModel):
+    """Input for the abort_run tool (empty - no parameters)."""
+
+
+class AbortRunOutput(BaseModel):
+    """Output for the abort_run tool."""
+
+    status: Literal["aborted", "error"]
+    message: str
 
 
 class _ActorMsg:
@@ -99,10 +117,6 @@ class _SamplingSnapshotMsg(_ActorMsg):
     """Request a one-shot sampling snapshot for UI/model consumption."""
 
 
-class _SamplingSnapshotIncrementalMsg(_ActorMsg):
-    """Request an incremental sampling snapshot stream as servers initialize."""
-
-
 class _CloseMsg(_ActorMsg):
     """Request container shutdown; drains, closes agent and mcp manager."""
 
@@ -126,8 +140,6 @@ logger = logging.getLogger(__name__)
 
 
 def default_client_factory(model: str) -> OpenAIModelProto:
-    """Default LLM client factory used when no custom factory is provided."""
-
     return build_client(model, enable_debug_logging=True)
 
 
@@ -162,8 +174,7 @@ class AgentContainer:
     runtime_ephemeral: bool = False
 
     # Populated after Start
-    approval_engine: ApprovalPolicyEngine | None = None
-    approval_hub: ApprovalHub = field(default_factory=ApprovalHub)
+    approval_engine: PolicyEngine | None = None
     session: AgentSession | None = None
     agent: MiniCodex | None = None
     persist_handler: RunPersistenceHandler | None = None
@@ -189,16 +200,6 @@ class AgentContainer:
     _compositor: Compositor | None = field(default=None, init=False)
     # Front-door MCP client (FastMCP Client connected to the compositor with policy middleware)
     _compositor_client: Client | None = field(default=None, init=False)
-    # No direct reference to resources server; mounted via helper
-    # Policy clients (managed via AsyncExitStack)
-    _policy_reader: PolicyReaderStub | None = field(default=None, init=False)
-    _policy_approver: PolicyApproverStub | None = field(default=None, init=False)
-
-    @property
-    def policy_approver(self) -> PolicyApproverStub:
-        if self._policy_approver is None:
-            raise RuntimeError("policy approver client not initialized")
-        return self._policy_approver
 
     @property
     def compositor_client(self) -> Client | None:
@@ -215,16 +216,50 @@ class AgentContainer:
         meta = CompositorMetaClient(self._compositor_client)
         return cast(dict[str, ServerEntry], await meta.list_states())
 
+    def make_control_server(self, name: str) -> FlatModelFastMCP:
+        """Create an agent control MCP server for this container.
+
+        Tools:
+        - send_prompt(prompt) - Send a prompt to start an agent run
+        - abort_run() - Abort the currently running agent
+
+        Args:
+            name: Server name
+
+        Returns:
+            FlatModelFastMCP server instance
+        """
+        mcp = FlatModelFastMCP(name)
+        container = self  # capture self for closures
+
+        @mcp.tool(flat=True)
+        async def send_prompt(input: SendPromptInput) -> SendPromptOutput:
+            """Send a prompt to start an agent run."""
+            if container.session is None:
+                return SendPromptOutput(status="error", message="Agent session not initialized")
+            await container.session.run(input.prompt)
+            return SendPromptOutput(status="started", message="Prompt sent successfully")
+
+        @mcp.tool(flat=True)
+        async def abort_run(input: AbortRunInput) -> AbortRunOutput:
+            """Abort the currently running agent."""
+            if container.session is None:
+                return AbortRunOutput(status="error", message="Agent session not initialized")
+            await container.session.cancel_active_run()
+            return AbortRunOutput(status="aborted", message="Run aborted successfully")
+
+        return mcp
+
     # ---- Phase-based initialization methods ---------------------------------
 
-    async def _setup_approval_infrastructure(self) -> tuple[ApprovalPolicyEngine, ApprovalHub]:
+    async def _setup_approval_infrastructure(self) -> PolicyEngine:
         """Phase 1: Set up approval infrastructure.
 
         Resolves the initial policy source (from preset, initial_policy parameter, or default)
-        and constructs the approval policy engine.
+        and constructs the PolicyEngine which owns servers, hub, and gateway.
 
         Returns:
-            tuple: (approval_engine, approval_hub)
+            PolicyEngine: Complete policy subsystem
         """
         # Resolve initial policy source via preset/persistence/override
         row = await self.persistence.get_agent(self.agent_id)
@@ -239,31 +274,26 @@ class AgentContainer:
             or load_default_policy_source()
         )
 
-        # Construct the approval engine with the chosen initial policy (DI)
-        approval_engine = make_policy_engine(
+        # Construct PolicyEngine - owns servers, hub, and gateway
+        return PolicyEngine(
             agent_id=self.agent_id, persistence=self.persistence, docker_client=self.docker_client, policy_source=chosen
         )
-        # approval_hub is constructed at init; ensure it exists
-        assert self.approval_hub is not None
-
-        return (approval_engine, self.approval_hub)
 
     async def _setup_mcp_infrastructure(
-        self, approval_engine: ApprovalPolicyEngine, approval_hub: ApprovalHub, mcp_config: MCPConfig
-    ) -> tuple[Compositor, Client, NotificationsBuffer, PolicyReaderStub, PolicyApproverStub]:
+        self, approval_engine: PolicyEngine, mcp_config: MCPConfig
+    ) -> tuple[Compositor, Client, NotificationsBuffer]:
         """Phase 2: Set up MCP infrastructure.
 
         Creates the compositor, mounts all MCP servers (external and internal),
         sets up the notifications buffer, creates the MCP client, and installs
-        the policy gateway middleware.
+        the policy gateway middleware from the engine.
 
         Args:
-            approval_engine: The approval policy engine from phase 1
-            approval_hub: The approval hub from phase 1
+            approval_engine: The PolicyEngine from phase 1 (owns gateway)
             mcp_config: MCP configuration with servers to mount
 
         Returns:
-            tuple: (compositor, mcp_client, notifications_buffer, policy_reader, policy_approver)
+            tuple: (compositor, mcp_client, notifications_buffer)
         """
         # Session & manager
         self._cm = ConnectionManager()
@@ -289,56 +319,19 @@ class AgentContainer:
         self._compositor_client = mcp_client
         self._notif_buffer = notif_buffer
 
-        # Coalesced Snapshot refresh
-        self._snapshot_push_pending = False
-
-        async def _coalesced_push() -> None:
-            if self._snapshot_push_pending:
-                return
-            self._snapshot_push_pending = True
-            try:
-                await asyncio.sleep(0.05)
-                await self._push_snapshot_and_status()
-            finally:
-                self._snapshot_push_pending = False
-
-        notif_buffer.add_hook(lambda: asyncio.create_task(_coalesced_push()))
-
         # Attach in-proc UI/approval/runtime servers
         await self._attach_inproc_servers(self._ui_bus)
 
-        # Ensure policy clients are initialized by _attach_inproc_servers
-        if self._policy_reader is None:
-            raise RuntimeError("policy reader not initialized")
-        if self._policy_approver is None:
-            raise RuntimeError("policy approver not initialized")
-        assert approval_hub is not None
-
-        async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
-            if self._cm is not None and self.session is not None:
-                await self._cm.send_payload(ApprovalPendingEvt(call_id=call_id, tool_key=tool_key, args_json=args_json))
-
-        install_policy_gateway(
-            comp,
-            hub=approval_hub,
-            pending_notifier=_pending_notifier,
-            record_outcome=lambda call_id, tool_key, outcome: asyncio.create_task(
-                self.record_policy_outcome(call_id, tool_key, ApprovalOutcome(outcome))
-            ),
-            policy_reader=self._policy_reader,
-        )
+        # Install policy gateway middleware from engine
+        comp.add_middleware(approval_engine.gateway)
 
         # Mount standard in-proc servers (resources, compositor_meta, compositor_admin)
-        await mount_standard_inproc_servers(compositor=comp, gateway_client=mcp_client)
+        await mount_standard_inproc_servers(compositor=comp, mount_resources=True)
 
-        return (comp, mcp_client, notif_buffer, self._policy_reader, self._policy_approver)
+        return (comp, mcp_client, notif_buffer)
 
     async def _setup_agent_runtime(
-        self,
-        mcp_client: Client,
-        notifications: NotificationsBuffer,
-        approval_hub: ApprovalHub,
-        approval_engine: ApprovalPolicyEngine,
+        self, mcp_client: Client, notifications: NotificationsBuffer, approval_engine: PolicyEngine
     ) -> tuple[AgentSession, MiniCodex]:
         """Phase 3: Set up agent runtime.
 
@@ -348,8 +341,7 @@ class AgentContainer:
         Args:
             mcp_client: MCP client from phase 2
             notifications: Notifications buffer from phase 2
-            approval_hub: Approval hub from phase 1
-            approval_engine: Approval engine from phase 1
+            approval_engine: PolicyEngine from phase 1 (owns hub and gateway)
 
         Returns:
             tuple: (session, agent)
@@ -361,11 +353,10 @@ class AgentContainer:
         # Create session
         sess = AgentSession(
             manager,
-            approval_hub=approval_hub,
             persistence=self.persistence,
             agent_id=self.agent_id,
-            ui_bus=self._ui_bus if self.with_ui else None,
             approval_engine=approval_engine,
+            ui_bus=self._ui_bus if self.with_ui else None,
         )
 
         # LLM client
@@ -380,10 +371,7 @@ class AgentContainer:
             poll_notifications=notifications.poll,
             manager=manager,
             persistence=self.persistence,
-            approval_engine=approval_engine,
-            approval_hub=approval_hub,
             get_run_id=_get_run_id,
-            agent_id=self.agent_id,
             ui_bus=self._ui_bus if self.with_ui else None,
         )
         sess.set_persist_handler(persist_handler)
@@ -429,21 +417,17 @@ class AgentContainer:
         """Dispatch a typed actor message using structural pattern matching."""
         match msg:
             case _StartMsg(mcp_config=mcp_cfg):
-                # Phase 1: Approval infrastructure
-                self.approval_engine, self.approval_hub = await self._setup_approval_infrastructure()
+                # Phase 1: PolicyEngine (owns servers, hub, gateway)
+                self.approval_engine = await self._setup_approval_infrastructure()
 
                 # Phase 2: MCP infrastructure
-                (
-                    self._compositor,
-                    self._compositor_client,
-                    self._notif_buffer,
-                    self._policy_reader,
-                    self._policy_approver,
-                ) = await self._setup_mcp_infrastructure(self.approval_engine, self.approval_hub, mcp_cfg)
+                (self._compositor, self._compositor_client, self._notif_buffer) = await self._setup_mcp_infrastructure(
+                    self.approval_engine, mcp_cfg
+                )
 
                 # Phase 3: Agent runtime
                 self.session, self.agent = await self._setup_agent_runtime(
-                    self._compositor_client, self._notif_buffer, self.approval_hub, self.approval_engine
+                    self._compositor_client, self._notif_buffer, self.approval_engine
                 )
 
                 return None
@@ -485,19 +469,11 @@ class AgentContainer:
                             attach_args2.append((name, spec))
                     if attach_args2:
                         await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args2))
-                await self._push_snapshot_and_status()
                 return None
             case _SamplingSnapshotMsg():
                 if self._compositor is None:
                     return None
                 return await self._compositor.sampling_snapshot()
-            case _SamplingSnapshotIncrementalMsg():
-                # Emit a single compositor-derived snapshot (compositor is always present)
-                if self._compositor is None or self._cm is None or self.session is None:
-                    return None
-                snap = await self._compositor.sampling_snapshot()
-                await self._cm.send_payload(await self.session.build_snapshot(sampling=snap))
-                return None
             case _CloseMsg():
                 return await self._op_close()
             case _AttachOneMsg(name=name, spec=spec):
@@ -506,14 +482,12 @@ class AgentContainer:
                     raise RuntimeError("mcp client not initialized")
                 admin = CompositorAdminClient(self._compositor_client)
                 await admin.attach_server(name=name, spec=spec)
-                await self._push_snapshot_and_status()
                 return None
             case _DetachOneMsg(name=name):
                 if self._compositor_client is None:
                     raise RuntimeError("mcp client not initialized")
                 admin = CompositorAdminClient(self._compositor_client)
                 await admin.detach_server(name=name)
-                await self._push_snapshot_and_status()
                 return None
             case _:
                 raise TypeError(f"unsupported actor message: {type(msg).__name__}")
@@ -564,10 +538,6 @@ class AgentContainer:
         res = await self._post_msg(_SamplingSnapshotMsg())
         return cast(SamplingSnapshot | None, res)
 
-    async def sampling_snapshot_incremental(self) -> None:
-        """Start streaming sampling snapshots as MCP servers initialize."""
-        await self._post_msg(_SamplingSnapshotIncrementalMsg())
-
     async def record_policy_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
         if self.session is None:
             return
@@ -586,29 +556,12 @@ class AgentContainer:
     async def _attach_inproc_servers(self, ui_bus: ServerBus | None) -> None:
         engine = self.approval_engine
         assert engine is not None
-
-        async def _push_snapshot() -> None:
-            if self.session is not None and self._cm is not None:
-                await self._cm.send_payload(await self.session.build_snapshot())
-
-        # Mount approval policy servers: reader + proposer (agent container)
         assert self._compositor is not None
-        reader_server = ApprovalPolicyServer(engine, name=APPROVAL_POLICY_SERVER_NAME_READER)
-        await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_READER, reader_server)
-        proposer_server = ApprovalPolicyProposerServer(engine=engine, name=APPROVAL_POLICY_SERVER_NAME_PROPOSER)
-        await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_PROPOSER, proposer_server)
-        # Admin (approver) server is NOT mounted into the compositor. It is exposed only
-        # via a private client held by the container for user/admin HTTP flows.
-        approver_server = ApprovalPolicyAdminServer(engine=engine, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
-        # Create in-proc client to the reader for policy gateway middleware
-        _policy_reader_client = Client(reader_server)
-        await self._stack.enter_async_context(_policy_reader_client)
-        policy_reader = PolicyReaderStub(TypedClient(_policy_reader_client))
-        self._policy_reader = policy_reader
-        # Create in-proc client for admin operations and keep on container
-        _policy_approver_client = Client(approver_server)
-        await self._stack.enter_async_context(_policy_approver_client)
-        self._policy_approver = PolicyApproverStub(TypedClient(_policy_approver_client))
+
+        # Mount policy servers: reader + policy_proposer (agent compositor)
+        # admin server is mounted on user compositor later (Phase 5 of consolidation)
+        await self._compositor.mount_inproc("reader", engine.reader)
+        await self._compositor.mount_inproc("policy_proposer", engine.policy_proposer)
 
         if self.with_ui and ui_bus is not None:
             # UI server (in-proc)
@@ -641,17 +594,6 @@ class AgentContainer:
             docker_client=self.docker_client,
             name=SEATBELT_EXEC_SERVER_NAME,
         )
-
-    async def _push_snapshot_and_status(self) -> None:
-        """Emit a fresh snapshot and broadcast live/working status."""
-        if self.session is None or self._cm is None:
-            return
-        sampling = await self.sampling_snapshot()
-        await self._cm.send_payload(await self.session.build_snapshot(sampling=sampling))
-        active = self.session.active_run.run_id if self.session.active_run else None
-        await self._cm.broadcast_status(True, active)
-
-    # sampling snapshot helpers are inlined in the actor dispatch handlers
 
     async def _op_close(self) -> CloseResult:
         drained_ok = True

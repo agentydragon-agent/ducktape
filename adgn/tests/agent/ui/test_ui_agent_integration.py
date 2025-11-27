@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import json
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.handler import ContinueDecision
 from adgn.agent.notifications.types import NotificationsBatch
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
@@ -34,7 +32,7 @@ def _make_ui_behavior(rf: ResponsesFactory):
 
 
 async def test_ui_server_with_mock_agent_produces_ui_state_updates(
-    responses_factory: ResponsesFactory, make_pg_session, stub_approval_policy_engine, approval_policy_reader_stub
+    responses_factory: ResponsesFactory, make_pg_client, stub_policy_engine, approval_policy_reader_stub
 ):
     # Per-agent bus and UI MCP server
     bus = ServerBus()
@@ -54,28 +52,19 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
     sess = AgentSession(mgr, persistence=_NoopPersist())
     # Wire the per-agent bus so manager drains it on function outputs
     sess.ui_bus = bus
-    sess.approval_engine = stub_approval_policy_engine
+    sess.approval_engine = stub_policy_engine
 
     # Patch send_json to capture envelopes
     orig_send_json = mgr.send_json
 
     async def _capture(payload: dict):
         captured.append(payload)
-        # Auto-approve tool calls via the server's approval hub when running headless
-        try:
-            pl = payload.get("payload") if isinstance(payload, dict) else None
-            if isinstance(pl, dict) and pl.get("type") == "approval_pending":
-                call_id = pl.get("call_id") or ""
-                # Defer resolution slightly to avoid resolving within send pipeline
-                asyncio.get_running_loop().call_soon(sess.approval_hub.resolve, call_id, ContinueDecision())
-        except Exception:
-            # Tests should fail loudly elsewhere; keep capture non-fatal
-            pass
+        # Note: stub policy always allows, so no approval_pending messages expected
         await orig_send_json(payload)
 
     mgr.send_json = _capture  # type: ignore[assignment]  # Test fixture: replace method for capturing
 
-    async with make_pg_session({"ui": ui_server, "approval_policy": approval_policy_reader_stub}) as mcp_client:
+    async with make_pg_client({"ui": ui_server, "approval_policy": approval_policy_reader_stub}) as mcp_client:
         handlers = [ServerModeHandler(bus=bus, poll_notifications=lambda: NotificationsBatch())]
         agent = await MiniCodex.create(
             model="test-model",

@@ -6,7 +6,7 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto
-from tests.agent.ws_helpers import assert_function_call_output_structured
+from tests.agent.test_matchers import assert_function_call_output_structured
 from tests.llm.support.openai_mock import LIVE, FakeOpenAIModel
 
 

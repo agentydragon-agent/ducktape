@@ -6,7 +6,7 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.loop_control import Abort, Auto, Continue
 from adgn.agent.reducer import BaseHandler, Reducer
 from adgn.openai_utils.model import FunctionCallItem, InputTextPart, UserMessage
-from tests.agent.helpers import extract_input_text_content
+from adgn.openai_utils.text_extraction import extract_input_text_content
 
 
 class _InsertsHandler(BaseHandler):

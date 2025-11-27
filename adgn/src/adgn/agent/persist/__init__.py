@@ -8,6 +8,9 @@ from uuid import UUID
 from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from adgn.agent.models.proposal_status import ProposalStatus
+from adgn.agent.persist.events import EventRecord
+
 
 class AgentMetadata(BaseModel):
     """Typed per-agent metadata stored in persistence.
@@ -66,13 +69,10 @@ class RunRow(BaseModel):
 
 class PolicyProposal(BaseModel):
     id: str
-    status: str
+    status: ProposalStatus
     created_at: datetime
     decided_at: datetime | None = None
     content: str
-
-
-from .events import EventRecord  # noqa: E402
 
 
 class Persistence(Protocol):
@@ -109,7 +109,6 @@ class Persistence(Protocol):
         run_id: UUID,
         seq: int,
         ts: datetime,
-        type: EventType,
         payload: dict[str, JsonValue],
         call_id: str | None = None,
         tool_key: str | None = None,

@@ -2,14 +2,11 @@ import asyncio
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
-from fastmcp.server import FastMCP
 from mcp import types
-
-from adgn.mcp.resources.server import make_resources_server
 
 
 class _DummyBackend:
-    async def list_resources(self, only=None):
+    async def list_resources(self, _only=None):
         return []
 
     async def read_resource(self, server: str, uri: str):
@@ -25,20 +22,16 @@ class _NotifyCatcher(MessageHandler):
         self.events.append("list_changed")
 
 
-async def test_resources_list_changed_notification(compositor):
-    # Use a minimal FastMCP as a placeholder gateway client
-    gw_server = FastMCP("gw")
-    async with Client(gw_server) as gw:
-        server = make_resources_server(name="resources", gateway_client=gw, compositor=compositor)
-        catcher = _NotifyCatcher()
-        async with Client(server, message_handler=catcher) as client:
-            # Trigger session capture by invoking list
-            await client.list_resources()
-            # Broadcast list changed from server and ensure the client receives it
-            await server.broadcast_resource_list_changed()
-            # Allow the event loop to deliver the notification
-            for _ in range(10):
-                if catcher.events:
-                    break
-                await asyncio.sleep(0.01)
-            assert "list_changed" in catcher.events
+async def test_resources_list_changed_notification(compositor, resources_server):
+    catcher = _NotifyCatcher()
+    async with Client(resources_server, message_handler=catcher) as client:
+        # Trigger session capture by invoking list
+        await client.list_resources()
+        # Broadcast list changed from server and ensure the client receives it
+        await resources_server.broadcast_resource_list_changed()
+        # Allow the event loop to deliver the notification
+        for _ in range(10):
+            if catcher.events:
+                break
+            await asyncio.sleep(0.01)
+        assert "list_changed" in catcher.events

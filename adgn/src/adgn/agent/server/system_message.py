@@ -24,9 +24,6 @@ _BASE = dedent(
     """
 ).strip()
 
-# Tooling and approvals behavior as surfaced in the UI
-_APPROVALS_AND_TOOLS = dedent("").strip()
-
 # Output format expectations consistent with UI renderers (markdown + terminals)
 _OUTPUT_STYLE = dedent(
     """
@@ -53,4 +50,4 @@ def get_ui_system_message() -> str:
     Pure function; no environment or storage reads. Update constants above to
     change behavior.
     """
-    return "\n\n".join([_BASE, _APPROVALS_AND_TOOLS, _OUTPUT_STYLE, _HOUSE_RULES])
+    return "\n\n".join([_BASE, _OUTPUT_STYLE, _HOUSE_RULES])

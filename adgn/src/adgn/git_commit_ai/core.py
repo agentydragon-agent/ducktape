@@ -1,32 +1,21 @@
 from __future__ import annotations
 
-import re
-
 import pygit2
 
 # Shared constants used by backends and CLI
-MAX_PROMPT_CONTEXT_BYTES = 100 * 1024  # 100 KiB cap for AI context block
+MAX_PROMPT_CONTEXT_CHARS = 100_000  # 100k character cap for AI context block
 PAST_COMMITS_MAX_CHARS = 6000
 RECENT_COMMITS_FOR_CONTEXT = 30
 DIFF_SNIPPET_CHARS = 5000
+TRUNCATION_NOTE = "[Context truncated to 100k characters]"
 
 
-def _len_bytes(s: str) -> int:
-    return len(s.encode("utf-8"))
-
-
-def _cap_append(parts: list[str], chunk: str, cap_bytes: int, truncation_note: str) -> bool:
-    """Append chunk to parts unless this would exceed cap; returns True if truncated."""
-    current_bytes = _len_bytes("".join(parts))
-    needed_bytes = _len_bytes(chunk)
-    if current_bytes + needed_bytes >= cap_bytes:
-        remaining_bytes = cap_bytes - current_bytes
-        if remaining_bytes > 0:
-            parts.append(chunk.encode("utf-8")[:remaining_bytes].decode("utf-8", errors="ignore"))
-        parts.append(truncation_note + "\n")
-        return True
-    parts.append(chunk)
-    return False
+def _join_with_truncation(parts: list[str], max_chars: int, note: str) -> str:
+    """Join parts, truncating if needed."""
+    result = "".join(parts)
+    if len(result) > max_chars:
+        return result[:max_chars] + note + "\n"
+    return result
 
 
 def _diff(repo: pygit2.Repository, include_all: bool) -> pygit2.Diff:
@@ -37,17 +26,11 @@ def _format_name_status(repo: pygit2.Repository, include_all: bool) -> str:
     diff = _diff(repo, include_all)
     lines: list[str] = []
     for d in diff.deltas:
-        st = d.status
-        if st == pygit2.GIT_DELTA_ADDED:
-            lines.append(f"A\t{d.new_file.path}")
-        elif st == pygit2.GIT_DELTA_DELETED:
-            lines.append(f"D\t{d.old_file.path}")
-        elif st == pygit2.GIT_DELTA_MODIFIED:
-            lines.append(f"M\t{d.new_file.path}")
-        elif st == pygit2.GIT_DELTA_RENAMED:
-            lines.append(f"R\t{d.old_file.path}\t{d.new_file.path}")
-        elif st == pygit2.GIT_DELTA_TYPECHANGE:
-            lines.append(f"T\t{d.new_file.path}")
+        status_char = d.status_char()
+        if status_char in ("A", "D", "M", "T"):
+            lines.append(f"{status_char}\t{d.new_file.path if status_char != 'D' else d.old_file.path}")
+        elif status_char == "R":
+            lines.append(f"{status_char}\t{d.old_file.path}\t{d.new_file.path}")
         else:
             # Other statuses (e.g., copied, ignored) — skip for prompt brevity
             continue
@@ -56,11 +39,6 @@ def _format_name_status(repo: pygit2.Repository, include_all: bool) -> str:
 
 def _format_unified_diff(repo: pygit2.Repository, include_all: bool) -> str:
     return _diff(repo, include_all).patch or ""
-
-
-def include_all_from_passthru(passthru: list[str]) -> bool:
-    """Return True if '-a' or '--all' flags are present."""
-    return ("-a" in passthru) or ("--all" in passthru)
 
 
 # Unified mapping for status letters to human text (commit template rendering)
@@ -75,6 +53,11 @@ STATUS_LETTER_TO_TEXT: dict[str, str] = {
 
 def status_letter_text(letter: str) -> str:
     return STATUS_LETTER_TO_TEXT.get(letter, f"{letter}:")
+
+
+def has_uncommitted_changes(repo: pygit2.Repository) -> bool:
+    """Check if there are any uncommitted changes (staged or unstaged)."""
+    return bool(repo.status())
 
 
 def _format_status_porcelain(repo: pygit2.Repository) -> str:
@@ -139,55 +122,38 @@ def _log_subjects(repo: pygit2.Repository, n: int = 10) -> list[str]:
 
 
 def _build_ai_context(repo: pygit2.Repository, include_all: bool) -> str:
-    parts: list[str] = []
-
-    parts.append("$ git status --porcelain\n")
-    status_out = _format_status_porcelain(repo) + "\n"
-    _cap_append(parts, status_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-
     ns_header = "git diff HEAD --name-status" if include_all else "git diff --cached --name-status"
-    parts.append(f"$ {ns_header}\n")
-    ns_out = _format_name_status(repo, include_all) + "\n"
-    _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-
-    parts.append(f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %B\n")
-    log_out = "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n"
-    _cap_append(parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-
     diff_header = "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
-    parts.append(f"$ {diff_header}\n")
-    diff_out = _format_unified_diff(repo, include_all) + "\n"
-    _cap_append(parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
 
-    out = "".join(parts)
-    if _len_bytes(out) > MAX_PROMPT_CONTEXT_BYTES:
-        out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode("utf-8", errors="ignore")
-        out += "\n[Context truncated to 100 KiB]\n"
-    return out
+    parts = [
+        "$ git status --porcelain\n",
+        _format_status_porcelain(repo) + "\n",
+        f"$ {ns_header}\n",
+        _format_name_status(repo, include_all) + "\n",
+        f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %B\n",
+        "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n",
+        f"$ {diff_header}\n",
+        _format_unified_diff(repo, include_all) + "\n",
+    ]
+
+    return _join_with_truncation(parts, MAX_PROMPT_CONTEXT_CHARS, TRUNCATION_NOTE)
 
 
-def diffstat(repo: pygit2.Repository, passthru: list[str]) -> str:
-    include_all = include_all_from_passthru(passthru)
+def diffstat(repo: pygit2.Repository, include_all: bool) -> str:
     diff = _diff(repo, include_all)
     # Emulate a minimal --stat: path and change status
     lines: list[str] = []
     for d in diff.deltas:
-        st = d.status
-        if st == pygit2.GIT_DELTA_ADDED:
-            lines.append(f"{d.new_file.path} | A")
-        elif st == pygit2.GIT_DELTA_DELETED:
-            lines.append(f"{d.old_file.path} | D")
-        elif st == pygit2.GIT_DELTA_MODIFIED:
-            lines.append(f"{d.new_file.path} | M")
-        elif st == pygit2.GIT_DELTA_RENAMED:
-            lines.append(f"{d.old_file.path} -> {d.new_file.path} | R")
-        elif st == pygit2.GIT_DELTA_TYPECHANGE:
-            lines.append(f"{d.new_file.path} | T")
+        status_char = d.status_char()
+        if status_char in ("A", "M", "D", "T"):
+            path = d.new_file.path if status_char != "D" else d.old_file.path
+            lines.append(f"{path} | {status_char}")
+        elif status_char == "R":
+            lines.append(f"{d.old_file.path} -> {d.new_file.path} | {status_char}")
     return "\n".join(lines)
 
 
-def build_prompt(repo: pygit2.Repository, diff: str, passthru: list[str], previous_message: str | None = None) -> str:
-    include_all = include_all_from_passthru(passthru)
+def build_prompt(repo: pygit2.Repository, diff: str, include_all: bool, previous_message: str | None = None) -> str:
     context = _build_ai_context(repo, include_all)
     if previous_message:
         prompt = f"""Update and refine this existing commit message based on the current changes.
@@ -225,7 +191,7 @@ Refactor database connection handling
 Diffstat:
 $ {"git diff HEAD --stat" if include_all else "git diff --cached --stat"}
 
-{diffstat(repo, passthru)}
+{diffstat(repo, include_all)}
 """
     if len(diff) < DIFF_SNIPPET_CHARS:
         prompt = (
@@ -255,9 +221,3 @@ Staged diff (first to {DIFF_SNIPPET_CHARS} of {len(diff)} chars)
         if block_body:
             prompt += block_header + block_body.rstrip()
     return prompt
-
-
-def _extract_message_from_text(text: str) -> str:
-    if match := re.search(r"<message>\s*(.*?)\s*</message>", text, re.DOTALL):
-        return match.group(1).strip()
-    return text.strip()

@@ -21,9 +21,8 @@ class _Event:
 class TranscriptHandler(BaseHandler):
     """Unified transcript writer for MiniCodex runs.
 
-    Emits two JSONL streams under the destination directory:
+    Emits a JSONL stream under the destination directory:
     - events.jsonl with timestamped records: {"ts": ISO8601, ...to_jsonl_record(evt)...}
-    - transcript.jsonl with compact records: ...to_jsonl_record(evt)...
 
     Also writes metadata.json once at start with a started timestamp.
 
@@ -36,7 +35,6 @@ class TranscriptHandler(BaseHandler):
         self._root = dest_dir
         self._root.mkdir(parents=True, exist_ok=True)
         self._events_path = self._root / "events.jsonl"
-        self._transcript_path = self._root / "transcript.jsonl"
         # Fail fast if a transcript already exists at destination
         if self._events_path.exists():
             raise FileExistsError(f"Transcript already exists: {self._events_path}")
@@ -52,9 +50,6 @@ class TranscriptHandler(BaseHandler):
         out = {"ts": datetime.now(UTC).isoformat(), **rec}
         with self._events_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(out, ensure_ascii=False) + "\n")
-        # Compact transcript (transcript.jsonl)
-        with self._transcript_path.open("a", encoding="utf-8") as g:
-            g.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     # ---- BaseHandler hooks (typed) ----
     def on_user_text_event(self, evt: UserText) -> None:

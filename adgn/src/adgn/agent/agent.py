@@ -116,8 +116,7 @@ def _maybe_error_message(res: CallToolResult) -> str | None:
         return None
     structured = res.structured_content
     if isinstance(structured, dict):
-        err = structured.get("error")
-        if isinstance(err, str) and err:
+        if isinstance(err := structured.get("error"), str) and err:
             return err
     for block in res.content or []:
         # Only support plain text blocks for now; surface others explicitly.

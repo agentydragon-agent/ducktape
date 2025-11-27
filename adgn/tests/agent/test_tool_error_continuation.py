@@ -10,16 +10,11 @@ from hamcrest import assert_that, contains_string
 
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.ws_helpers import assert_function_call_output_structured
+from tests.agent.test_matchers import assert_function_call_output_structured
 
 
 async def test_tool_error_continues_turn(
-    responses_factory,
-    make_pg_session,
-    approval_policy_reader_allow_all,
-    validation_server,
-    recording_handler,
-    make_test_agent,
+    responses_factory, make_pg_client, validation_server, recording_handler, make_test_agent
 ) -> None:
     """Test that a tool validation error doesn't abort the turn.
 
@@ -30,9 +25,7 @@ async def test_tool_error_continues_turn(
     4. Retry with correct mime type (text/markdown)
     5. Successfully complete
     """
-    async with make_pg_session(
-        {"validator": validation_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as mcp_client:
+    async with make_pg_client({"validator": validation_server}) as mcp_client:
         # Simulate the agent trying with wrong mime, then correcting itself
         seq = [
             # First attempt with wrong mime type
