@@ -319,6 +319,163 @@ AGENT FLOW:
 - **FastMCP auth**: Use `TokenVerifier` interface, `InMemoryOAuthProvider` as reference
 - **Props specimens** reference planned `mcp_bridge/auth.py` that was never created
 
+### Token Configuration
+
+#### Token File Format
+
+Tokens are stored in YAML format at `~/.config/adgn/tokens.yaml`:
+
+```yaml
+# User tokens (admin access to global compositor)
+users:
+  admin: "user_token_abc123..."
+
+# Agent tokens (per-agent access to agent compositor)
+# These are pre-generated for external agents connecting via HTTP
+agents:
+  external-agent-1: "agent_token_xyz789..."
+  external-agent-2: "agent_token_def456..."
+```
+
+#### Loading Behavior
+
+```python
+from pathlib import Path
+import os
+import yaml
+
+def load_tokens() -> tuple[dict[str, str], dict[str, AgentID]]:
+    """Load tokens from config file.
+
+    Returns:
+        Tuple of (user_tokens, agent_tokens)
+        - user_tokens: token → user_id mapping
+        - agent_tokens: token → agent_id mapping
+    """
+    # Check env override first
+    tokens_path = os.getenv("ADGN_TOKENS_FILE")
+    if not tokens_path:
+        tokens_path = Path.home() / ".config" / "adgn" / "tokens.yaml"
+    else:
+        tokens_path = Path(tokens_path)
+
+    if not tokens_path.exists():
+        return {}, {}
+
+    with open(tokens_path) as f:
+        data = yaml.safe_load(f) or {}
+
+    # Invert: file has user_id → token, we want token → user_id
+    user_tokens = {token: user_id for user_id, token in data.get("users", {}).items()}
+    agent_tokens = {token: AgentID(agent_id) for agent_id, token in data.get("agents", {}).items()}
+
+    return user_tokens, agent_tokens
+```
+
+#### Environment Variable Override
+
+- `ADGN_TOKENS_FILE`: Override default token file path
+
+#### Internal Agents (MiniCodex)
+
+Internal agents created via `create_agent()` don't need tokens in the file. They connect via inproc MCP transport which bypasses bearer token routing entirely.
+
+#### External Agents
+
+External agents (e.g., Claude Code connecting remotely) need:
+1. Pre-generated token in `tokens.yaml`
+2. HTTP URL: `http://host:port/mcp`
+3. Bearer token in `Authorization` header
+
+### Frontend Updates
+
+#### Current State
+
+The frontend (`adgn/src/adgn/agent/web/`) currently:
+- Uses HTTP REST API (`api.ts`) for agent CRUD, snapshots, approvals
+- Uses MCP SSE client (`client.ts`) connecting to `/mcp` for tool calls/resources
+- **No authentication** - direct connection without bearer tokens
+
+#### Required Changes
+
+1. **Add Bearer Token to MCP Client** (`src/features/mcp/client.ts`)
+
+```typescript
+export interface McpClientOptions {
+  agentId?: string
+  bearerToken?: string  // NEW: Authentication token
+}
+
+export class AgentMcpClient {
+  static async connect(options: McpClientOptions = {}): Promise<AgentMcpClient> {
+    const url = `${window.location.origin}/mcp`
+
+    // SSEClientTransport supports custom headers for auth
+    const headers: Record<string, string> = {}
+    if (options.bearerToken) {
+      headers['Authorization'] = `Bearer ${options.bearerToken}`
+    }
+
+    const transport = new SSEClientTransport(new URL(url), {
+      requestInit: { headers }  // Add bearer token to requests
+    })
+    // ... rest unchanged
+  }
+}
+```
+
+2. **Token Storage** (`src/shared/auth.ts` - new file)
+
+```typescript
+const TOKEN_KEY = 'adgn_user_token'
+
+export function getStoredToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setStoredToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearStoredToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+```
+
+3. **Login Flow** (optional, for production)
+
+For development: Token can be passed via URL query param or env config
+For production: Add simple login page that validates token and stores it
+
+4. **MCP Manager Update** (`src/features/mcp/manager.ts`)
+
+```typescript
+import { getStoredToken } from '../../shared/auth'
+
+async function createClient(agentId: string): Promise<AgentMcpClient> {
+  const token = getStoredToken()
+  if (!token) {
+    throw new Error('Not authenticated')
+  }
+  return AgentMcpClient.connect({
+    agentId,
+    bearerToken: token
+  })
+}
+```
+
+#### Migration Path
+
+1. **Phase 5a**: Backend implements token routing (user token → global compositor)
+2. **Phase 5b**: Frontend adds bearer token support (defaults to env-provided dev token)
+3. **Phase 5c**: Add token configuration UI (stretch goal)
+
+#### No Changes Needed
+
+- HTTP REST API (`api.ts`) - These endpoints remain separate from MCP routing
+  - Agent CRUD still uses `/api/agents/*`
+  - This separation is intentional - REST for management, MCP for tool execution
+
 ### Dependencies
 
 - PolicyEngine with `.reader`, `.policy_proposer`, `.admin` servers (✅ Done)
