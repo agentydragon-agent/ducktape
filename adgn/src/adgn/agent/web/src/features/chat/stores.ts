@@ -3,14 +3,6 @@ import { get } from 'svelte/store'
 
 import { mcpManager } from '../mcp/manager'
 import type { AgentMcpClient } from '../mcp/client'
-import {
-  getSnapshot as httpGetSnapshot,
-  getProposal as httpGetProposal,
-  sendPrompt as httpSendPrompt,
-  abortRun as httpAbortRun,
-  attachMcpServer,
-  detachMcpServer,
-} from '../agents/api'
 import { currentAgentId, agentStatus } from '../agents/stores'
 
 import type {
@@ -91,14 +83,16 @@ export async function disconnectAgentMcp() {
 export async function sendPrompt(text: string) {
   // Optimistically reflect starting state
   runStatus.set('starting')
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) {
+    lastError.set('Not connected to agent')
+    return
+  }
   try {
-    // TODO: Replace with MCP tool call when agent control server exists
-    // await currentClient?.callTool('agent_control_send_prompt', { text })
-    await httpSendPrompt(id, text)
+    // Use MCP tool: agent_control_send_prompt
+    await currentClient.callTool('agent_control_send_prompt', { prompt: text })
   } catch (e) {
     console.warn('prompt failed', e)
+    lastError.set(`Send prompt failed: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
 
@@ -149,11 +143,7 @@ export async function setPolicy(content: string, proposal_id?: string) {
 
 export async function approveProposal(proposal_id: string) {
   if (!currentClient) return
-  const id = get(currentAgentId)
-  if (!id) return
   try {
-    // Get proposal content via HTTP (TODO: use MCP resource when available)
-    const p = await httpGetProposal(id, proposal_id)
     // Approve proposal via MCP tool
     await currentClient.callTool('approval_policy.admin_approve_proposal', {
       id: proposal_id,
@@ -179,11 +169,10 @@ export async function withdrawProposal(proposal_id: string) {
 }
 
 export async function refreshSnapshot() {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    // TODO: Replace with MCP resource subscription when agent://{{id}}/snapshot exists
-    const snap = await httpGetSnapshot(id)
+    // Read snapshot via MCP resource
+    const snap = await currentClient.readResource<SnapshotPayload>('snapshot://current')
     handleSnapshot(snap)
   } catch (e) {
     console.warn('refreshSnapshot failed', e)
@@ -191,34 +180,56 @@ export async function refreshSnapshot() {
 }
 
 export async function abortRun() {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
-    // TODO: Replace with MCP tool call when agent control server exists
-    // await currentClient?.callTool('agent_control_abort_run', {})
-    await httpAbortRun(id)
+    // Use MCP tool: agent_control_abort_run
+    await currentClient.callTool('agent_control_abort_run', {})
   } catch (e) {
     console.warn('abort failed', e)
+    lastError.set(`Abort run failed: ${e instanceof Error ? e.message : String(e)}`)
   }
   await refreshSnapshot()
 }
 
 export async function reconfigureMcp(attach?: Record<string, any>, detach?: string[]) {
-  const id = get(currentAgentId)
-  if (!id) return
+  if (!currentClient) return
   try {
+    // Use MCP tools for attach/detach via compositor_admin
     if (attach && Object.keys(attach).length) {
       for (const [name, spec] of Object.entries(attach)) {
-        await attachMcpServer(id, name, spec)
+        await currentClient.callTool('compositor_admin_attach_server', { name, spec })
       }
     }
     if (detach && detach.length) {
-      for (const name of detach) await detachMcpServer(id, name)
+      for (const name of detach) {
+        await currentClient.callTool('compositor_admin_detach_server', { name })
+      }
     }
   } catch (e) {
     console.warn('reconfigureMcp failed', e)
+    lastError.set(`Reconfigure MCP failed: ${e instanceof Error ? e.message : String(e)}`)
   }
   await refreshSnapshot()
+}
+
+/**
+ * Attach a new MCP server to the current agent.
+ */
+export async function attachMcpServer(name: string, spec: any): Promise<void> {
+  if (!currentClient) {
+    throw new Error('Not connected to agent')
+  }
+  await currentClient.callTool('compositor_admin_attach_server', { name, spec })
+}
+
+/**
+ * Detach an MCP server from the current agent.
+ */
+export async function detachMcpServer(name: string): Promise<void> {
+  if (!currentClient) {
+    throw new Error('Not connected to agent')
+  }
+  await currentClient.callTool('compositor_admin_detach_server', { name })
 }
 
 function handleSnapshot(p: SnapshotPayload) {

@@ -5,8 +5,7 @@
   import { SvelteMap } from 'svelte/reactivity'
 
   import ModalBackdrop from './ModalBackdrop.svelte'
-  import { attachMcpServer, detachMcpServer } from '../features/agents/api'
-  import { refreshSnapshot } from '../features/chat/stores'
+  import { attachMcpServer, detachMcpServer, refreshSnapshot } from '../features/chat/stores'
   import { MCP_PRESETS } from '../features/mcp/presets'
   import { buildSpecFromForm } from '../features/mcp/schema'
   import { currentAgentId } from '../shared/router'
@@ -164,8 +163,7 @@
   // Remove legacy local JSON validators; rely on zod builder above
 
   async function onAttach() {
-    const agentId = $currentAgentId
-    if (!agentId) {
+    if (!$currentAgentId) {
       alert('No agent selected')
       return
     }
@@ -199,7 +197,7 @@
     attachErr = null
     attachMsg = 'Attaching…'
     try {
-      await attachMcpServer(agentId, newName, spec)
+      await attachMcpServer(newName, spec)
       attachMsg = 'Attached. Refreshing…'
       await new Promise((r) => setTimeout(r, 150))
       refreshSnapshot()
@@ -216,8 +214,7 @@
   }
 
   async function onDetach(name: string) {
-    const agentId = $currentAgentId
-    if (!agentId) {
+    if (!$currentAgentId) {
       alert('No agent selected')
       return
     }
@@ -225,7 +222,7 @@
       attaching = true
       attachErr = null
       attachMsg = `Detaching ${name}…`
-      await detachMcpServer(agentId, name)
+      await detachMcpServer(name)
       attachMsg = 'Detached. Refreshing…'
       await new Promise((r) => setTimeout(r, 150))
       refreshSnapshot()

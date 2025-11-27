@@ -12,6 +12,9 @@ export interface ConnectionStatus {
 }
 
 class McpManager {
+  // Global client (no agent scope, accesses agents server directly)
+  private _globalClient: AgentMcpClient | null = null
+
   // Per-agent clients
   private agentClients = new Map<string, AgentMcpClient>()
 
@@ -20,6 +23,31 @@ class McpManager {
     connected: false,
     error: null,
   })
+
+  /**
+   * Connect the global MCP client (no agent scope).
+   * This client accesses the agents management server directly.
+   */
+  async connectGlobal(): Promise<AgentMcpClient> {
+    if (this._globalClient) return this._globalClient
+
+    try {
+      this._globalClient = await AgentMcpClient.connect({})
+      this.connectionStatus.set({ connected: true, error: null })
+      return this._globalClient
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e)
+      this.connectionStatus.set({ connected: false, error })
+      throw e
+    }
+  }
+
+  /**
+   * Get the global MCP client (returns null if not connected).
+   */
+  getGlobalClient(): AgentMcpClient | null {
+    return this._globalClient
+  }
 
   /**
    * Connect to a specific agent's MCP compositor.
@@ -71,9 +99,15 @@ class McpManager {
   }
 
   /**
-   * Disconnect all clients.
+   * Disconnect all clients (including global).
    */
   async disconnectAll(): Promise<void> {
+    // Close global client
+    if (this._globalClient) {
+      await this._globalClient.close().catch(e => console.warn('Close error:', e))
+      this._globalClient = null
+    }
+    // Close agent clients
     const clients = Array.from(this.agentClients.values())
     this.agentClients.clear()
     await Promise.all(clients.map(c => c.close().catch(e => console.warn('Close error:', e))))
@@ -83,3 +117,11 @@ class McpManager {
 
 // Singleton instance
 export const mcpManager = new McpManager()
+
+/**
+ * Helper to get the global MCP client.
+ * Returns null if not connected yet.
+ */
+export function globalMcpClient(): AgentMcpClient | null {
+  return mcpManager.getGlobalClient()
+}

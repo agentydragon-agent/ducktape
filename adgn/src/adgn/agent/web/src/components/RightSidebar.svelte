@@ -8,7 +8,6 @@
     agentStatusError as agentStatusErrorStore,
   } from '../features/agents/stores'
   import {
-    wsConnected,
     runStatus as runStatusStore,
     pendingApprovals,
     approvalPolicy as approvalPolicyStore,
@@ -22,6 +21,10 @@
     approveProposal as wsApproveProposal,
     withdrawProposal as wsWithdrawProposal,
   } from '../features/chat/stores'
+  import { mcpManager } from '../features/mcp/manager'
+
+  // Derive connection status from MCP manager
+  const mcpConnected = mcpManager.connectionStatus
 
   // Local UI state
   let activeTab: 'approvals' | 'servers' | 'settings' = 'approvals'
@@ -43,12 +46,12 @@
 <div class="sidebar-header">
   <div
     class="ws"
-    title={$wsConnected
-      ? 'WebSocket connected (browser ↔ server). Controls live updates; not agent liveness.'
-      : 'WebSocket disconnected (browser ↔ server). Live updates paused; not agent liveness.'}
+    title={$mcpConnected.connected
+      ? 'MCP connected (browser ↔ server). Controls live updates; not agent liveness.'
+      : 'MCP disconnected (browser ↔ server). Live updates paused; not agent liveness.'}
   >
-    <span class="dot {$wsConnected ? 'on' : 'off'}"></span>
-    <span>{$wsConnected ? 'WS connected' : 'WS disconnected'}</span>
+    <span class="dot {$mcpConnected.connected ? 'on' : 'off'}"></span>
+    <span>{$mcpConnected.connected ? 'MCP connected' : 'MCP disconnected'}</span>
   </div>
   <div class="status">Status: {$runStatusStore}</div>
   {#if $agentStatusStore}

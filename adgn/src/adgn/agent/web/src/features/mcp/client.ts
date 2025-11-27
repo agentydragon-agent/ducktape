@@ -2,21 +2,40 @@
  * MCP Client wrapper for agent web UI.
  *
  * Provides simplified interface for connecting to the MCP compositor and calling tools/resources.
+ * Supports bearer token authentication from URL query param (?token=...).
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 export interface McpClientOptions {
   /** Agent ID for scoping tool calls (used as prefix in compositor hierarchy) */
   agentId?: string
+  /** Bearer token for authentication (defaults to URL query param) */
+  token?: string
+}
+
+/**
+ * Get authentication token from URL query params or localStorage.
+ */
+function getAuthToken(): string | null {
+  // Check URL query param first
+  const params = new URLSearchParams(window.location.search)
+  const urlToken = params.get('token')
+  if (urlToken) {
+    // Store in localStorage for persistence across page reloads
+    localStorage.setItem('adgn_auth_token', urlToken)
+    return urlToken
+  }
+  // Fall back to localStorage
+  return localStorage.getItem('adgn_auth_token')
 }
 
 export class AgentMcpClient {
   private client: Client
-  private transport: SSEClientTransport
+  private transport: StreamableHTTPClientTransport
   private agentId?: string
 
-  private constructor(client: Client, transport: SSEClientTransport, agentId?: string) {
+  private constructor(client: Client, transport: StreamableHTTPClientTransport, agentId?: string) {
     this.client = client
     this.transport = transport
     this.agentId = agentId
@@ -34,9 +53,24 @@ export class AgentMcpClient {
   static async connect(options: McpClientOptions = {}): Promise<AgentMcpClient> {
     const url = `${window.location.origin}/mcp`
 
-    const transport = new SSEClientTransport(new URL(url))
+    // Get auth token
+    const token = options.token ?? getAuthToken()
+    if (!token) {
+      throw new Error('No authentication token found. Add ?token=... to URL.')
+    }
+
+    // Create transport with bearer token auth
+    const transport = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      },
+    })
+
     const client = new Client(
       { name: 'adgn-web', version: '1.0.0' },
+      // @ts-expect-error - SDK types don't expose resources capability but it's needed
       { capabilities: { resources: { subscribe: true } } }
     )
 
@@ -59,9 +93,11 @@ export class AgentMcpClient {
   async callTool<T = unknown>(name: string, args: Record<string, unknown> = {}): Promise<T> {
     const toolName = this.agentId ? `${this.agentId}_${name}` : name
     const result = await this.client.callTool({ name: toolName, arguments: args })
-    if (result.content && result.content.length > 0) {
-      const first = result.content[0]
-      if (first.type === 'text') {
+    // Cast to expected shape - MCP SDK types don't fully describe the result
+    const content = result.content as Array<{ type: string; text?: string }> | undefined
+    if (content && content.length > 0) {
+      const first = content[0]
+      if (first.type === 'text' && first.text) {
         try {
           return JSON.parse(first.text) as T
         } catch {
@@ -86,12 +122,16 @@ export class AgentMcpClient {
     // FastMCP "path" format: protocol://prefix/path
     const resourceUri = this.agentId ? this.prefixResourceUri(uri, this.agentId) : uri
     const result = await this.client.readResource({ uri: resourceUri })
-    if (result.contents && result.contents.length > 0) {
-      const first = result.contents[0]
-      if (first.mimeType === 'application/json' || first.uri.startsWith('approvals://')) {
-        return JSON.parse(first.text) as T
+    // Cast to expected shape - MCP SDK union type doesn't narrow well
+    const contents = result.contents as Array<{ uri: string; mimeType?: string; text?: string }> | undefined
+    if (contents && contents.length > 0) {
+      const first = contents[0]
+      if (first.text !== undefined) {
+        if (first.mimeType === 'application/json' || first.uri.startsWith('approvals://')) {
+          return JSON.parse(first.text) as T
+        }
+        return first.text as T
       }
-      return first.text as T
     }
     throw new Error(`No content in resource: ${uri}`)
   }
@@ -128,11 +168,13 @@ export class AgentMcpClient {
       while (active) {
         try {
           const result = await this.client.readResource({ uri: resourceUri })
-          if (result.contents && result.contents.length > 0) {
-            const first = result.contents[0]
+          // Cast to expected shape - MCP SDK union type doesn't narrow well
+          const contents = result.contents as Array<{ uri: string; mimeType?: string; text?: string }> | undefined
+          if (contents && contents.length > 0) {
+            const first = contents[0]
             const content = first.text
             // Only call callback if content changed
-            if (content !== lastContent) {
+            if (content !== undefined && content !== lastContent) {
               lastContent = content
               const data = first.mimeType === 'application/json' || uri.startsWith('approvals://')
                 ? JSON.parse(content) as T

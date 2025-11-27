@@ -2,10 +2,8 @@
   import '../styles/shared.css'
   import hljs from 'highlight.js/lib/common'
   import { onMount } from 'svelte'
-  import { get } from 'svelte/store'
 
-  import { getProposal } from '../features/agents/api'
-  import { currentAgentId } from '../features/agents/stores'
+  import { getProposal, currentAgentId } from '../features/agents/stores'
 
   import type { Proposal } from '../shared/types'
 
@@ -18,16 +16,16 @@
   let loadError: string | null = null
   let highlighted: string = ''
   onMount(async () => {
-    const agentId = get(currentAgentId) as string | null
-    if (!agentId) {
+    if (!$currentAgentId) {
       loadError = 'No agent selected'
       return
     }
-    const rec = await getProposal(agentId, proposal.id)
-    source = rec.content
     try {
+      const rec = await getProposal(proposal.id)
+      source = rec.content
       highlighted = hljs.highlight(source || '', { language: 'python' }).value
-    } catch {
+    } catch (e) {
+      loadError = e instanceof Error ? e.message : String(e)
       highlighted = source || ''
     }
   })

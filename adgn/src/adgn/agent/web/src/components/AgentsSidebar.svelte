@@ -5,11 +5,13 @@
   import ModalBackdrop from './ModalBackdrop.svelte'
   import SidebarToggle from './SidebarToggle.svelte'
   import {
-    deleteAgent as apiDeleteAgent,
+    agents,
+    currentAgentId,
+    setAgentId,
+    deleteAgent,
     listPresets,
     createAgentFromPreset,
-  } from '../features/agents/api'
-  import { agents, currentAgentId, setAgentId } from '../features/agents/stores'
+  } from '../features/agents/stores'
   import { LEFT_MIN, LEFT_MAX } from '../shared/layout'
   import { prefs } from '../shared/prefs'
 
@@ -113,7 +115,7 @@
 
   async function doDelete(id: string) {
     try {
-      const body = await apiDeleteAgent(id)
+      const body = await deleteAgent(id)
       if (!body?.ok) throw new Error(body?.error || 'delete failed')
       // Optimistically update list and selection
       agents.update((list) => (list || []).filter((a) => a.id !== id))
