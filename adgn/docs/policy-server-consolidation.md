@@ -192,9 +192,34 @@ ADMIN_SERVER_NAME = "admin"
 
 - `adgn/src/adgn/agent/mcp_bridge/compositor_factory.py` - User compositor (Phase 5)
 
+## Open Questions Resolved
+
+1. **Gateway needs reader client for policy evaluation**
+   - Pass a client to the reader when instantiating PolicyEngine
+   - Engine creates internal client to its own reader server
+
+2. **Persistence for record_outcome**
+   - PolicyEngine takes `persistence` as constructor arg
+   - Records outcomes internally
+
+3. **Type locations**
+   - Keep `ApprovalRequest`, `ApprovalToolCall` in `adgn/agent/approvals.py`
+   - Keep `ContinueDecision`, `AbortTurnDecision` in `adgn/agent/handler.py`
+   - Import into engine.py as needed
+
+4. **Test access to hub**
+   - No direct hub access exposed
+   - Tests use the actual MCP API:
+     - Read `pending://calls` resource from reader
+     - Call `decide_call` tool on admin server
+   - `test_approval_integration.py` rewritten to use PolicyEngine + MCP tools
+
 ## Testing
 
-- Update `test_approval_integration.py` to use new tool names
+- Update `test_approval_integration.py`:
+  - Remove `approval_hub` fixture usage
+  - Create PolicyEngine directly
+  - Check pending via `pending://calls` resource
+  - Approve via `decide_call` tool on admin server
 - Update any tests referencing `approve_call`/`deny_abort` etc.
-- Update tests that create `ApprovalHub` directly (use engine instead)
 - Verify pending resource broadcasts correctly
