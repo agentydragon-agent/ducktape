@@ -4,18 +4,14 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueOneOccurrence(
   rationale=|||
-    Two locations use `handlers.insert(0, DisplayEventsHandler(...))` to prepend the
-    handler, but this is unnecessary because DisplayEventsHandler is a pure observer
-    with no ordering requirements.
+    Uses `handlers.insert(0, DisplayEventsHandler(...))` to prepend the handler, but
+    this is unnecessary because DisplayEventsHandler is a pure observer with no ordering
+    requirements.
 
     **Analysis:**
     `DisplayEventsHandler` (adgn/src/adgn/agent/event_renderer.py:19) only prints events
     and doesn't modify state or make decisions. It has no side effects that other handlers
     depend on, so order doesn't matter.
-
-    **Current pattern:**
-    - `minicodex_backend.py:190` - inserts DisplayEventsHandler at position 0 if debug
-    - `per_file_eval.py:225` - inserts DisplayEventsHandler at position 0
 
     In minicodex_backend.py line 187 context: `handlers = [CommitController(...)]` then
     optionally inserts DisplayEventsHandler at start if debug enabled. CommitController
@@ -29,9 +25,6 @@ I.issueOneOccurrence(
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/minicodex_backend.py': [
       190,  // handlers.insert(0, DisplayEventsHandler)
-    ],
-    'adgn/src/adgn/props/per_file_eval.py': [
-      225,  // handlers_list.insert(0, DisplayEventsHandler)
     ],
   },
 )

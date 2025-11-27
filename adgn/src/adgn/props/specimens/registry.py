@@ -1,33 +1,38 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from filelock import FileLock
 from importlib import resources
 import json
-import os
 import logging
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import tarfile
 import tempfile
 import time
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
 from urllib.parse import urlunparse
+from urllib.request import urlopen
 import uuid
+import warnings
 
 import _jsonnet
+from filelock import FileLock
 from platformdirs import user_cache_dir
-import pygit2
+from pydantic import BaseModel, ConfigDict
 import yaml
-from typing import Any, Callable, cast
 
+from ..ids import FalsePositiveID, TruePositiveID
 from ..models.issue import IssueCore, Occurrence, SpecimenIssuesLoadError
 from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
+from ..paths import FileType, classify_path
 from ..prop_utils import pkg_dir
+from ..rationale import Rationale
+from ..validation_context import SpecimenContext
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +58,28 @@ def _specimen_extract_filter(member: tarfile.TarInfo, path: str) -> tarfile.TarI
             f"Skipping absolute symlink in specimen: {member.name} -> {member.linkname}"
         )
         return None
+
+
+# TODO: Consider generic Issue[IDType] to reduce duplication between these models
+class CanonicalIssue(BaseModel):
+    """Canonical true positive issue with typed namespaced ID."""
+
+    id: TruePositiveID
+    rationale: Rationale
+    occurrences: list[Occurrence]
+
+    model_config = ConfigDict(frozen=True)
+
+
+class KnownFalsePositive(BaseModel):
+    """Known false positive issue with typed namespaced ID."""
+
+    id: FalsePositiveID
+    rationale: Rationale
+    occurrences: list[Occurrence]
+
+    model_config = ConfigDict(frozen=True)
+
 
 @dataclass(frozen=True)
 class IssueRecord:
@@ -81,28 +108,20 @@ def _jsonnet_importer(base: str, rel: str) -> tuple[str, bytes]:
     raise RuntimeError(f"import not found: base={base!r} rel={rel!r}")
 
 
-def _jsonnet_load_dir(
-    spec_dir: Path,
-    subdir: str,
-    should_flag: bool,
-    *,
-    strict: bool = True,
-    allow_missing: bool = False,
-) -> IssuesLoadResult:
+def _jsonnet_evaluate_to_dict(spec_dir: Path, subdir: str, should_flag: bool) -> dict[str, dict] | None:
+    """Evaluate Jsonnet files to raw dicts without Pydantic validation.
+
+    Returns:
+        Dict mapping issue_id -> raw dict (with id, should_flag injected), or None if directory missing.
+    """
     dir_path = spec_dir / subdir
-    items: list[IssueRecord] = []
-    errors: list[str] = []
     if not dir_path.is_dir():
-        if allow_missing:
-            return IssuesLoadResult(items=items, errors=errors)
-        raise SpecimenIssuesLoadError(
-            [f"No {subdir}/ directory found under: {spec_dir}"],
-        )
+        return None
 
     # Discover all libsonnet files
     issue_files = sorted(dir_path.glob("*.libsonnet"))
     if not issue_files:
-        return IssuesLoadResult(items=items, errors=errors)
+        return {}
 
     # Optimization: batch-load all issues in single Jsonnet evaluation
     # Jsonnet requires static import paths, so we compose the aggregator in Python
@@ -130,27 +149,41 @@ def _jsonnet_load_dir(
     if not isinstance(all_issues, dict):
         raise SpecimenIssuesLoadError([f"{subdir}: Expected dict, got {type(all_issues)}"])
 
-    # Process batch result: validate each issue directly (id/should_flag already injected)
-    for p in issue_files:
-        name = p.stem
-        issue_dict = all_issues.get(name)
-        if issue_dict is None:
-            errors.append(f"{subdir}/{name}.libsonnet: Missing from batch result")
-            continue
+    return all_issues
+
+
+def _validate_issues_from_dicts(
+    raw_issues: dict[str, dict],
+    validation_context: dict,
+    strict: bool,
+) -> IssuesLoadResult:
+    """Validate pre-evaluated issue dicts with complete context.
+
+    Args:
+        raw_issues: Dict mapping issue_id -> raw dict (from Jsonnet evaluation)
+        validation_context: Complete validation context (specimen_context with files + IDs)
+        strict: If True, raise on any validation errors
+
+    Returns:
+        IssuesLoadResult with validated items and errors
+    """
+    items: list[IssueRecord] = []
+    errors: list[str] = []
+
+    for issue_id, issue_dict in raw_issues.items():
         if not isinstance(issue_dict, dict):
-            errors.append(f"{subdir}/{name}.libsonnet: Not a dict (got {type(issue_dict)})")
+            errors.append(f"{issue_id}: Not a dict (got {type(issue_dict)})")
             continue
 
         try:
             # IssueCore validation (copy dict, drop instances field)
-            # This ensures we fail if Jsonnet adds unexpected extra fields
             core_fields = {k: v for k, v in issue_dict.items() if k != "instances"}
-            core = IssueCore.model_validate(core_fields)
+            core = IssueCore.model_validate(core_fields, context=validation_context)
             inst_raw = issue_dict.get("instances", [])
-            instances = [Occurrence.model_validate(inst) for inst in inst_raw]
+            instances = [Occurrence.model_validate(inst, context=validation_context) for inst in inst_raw]
             items.append(IssueRecord(core=core, instances=instances))
         except Exception as e:
-            errors.append(f"{subdir}/{name}.libsonnet: {e}")
+            errors.append(f"{issue_id}: {e}")
             continue
 
     if errors and strict:
@@ -158,31 +191,6 @@ def _jsonnet_load_dir(
     return IssuesLoadResult(items=items, errors=errors)
 
 
-def _jsonnet_load_issues_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadResult:
-    return _jsonnet_load_dir(
-        spec_dir,
-        "issues",
-        True,
-        strict=strict,
-        allow_missing=False,
-    )
-
-
-def _jsonnet_load_false_positives_dir(
-    spec_dir: Path,
-    strict: bool = True,
-) -> IssuesLoadResult:
-    """Load false positives from false_positives/ and force should_flag=False.
-
-    If directory does not exist, returns empty set without error.
-    """
-    return _jsonnet_load_dir(
-        spec_dir,
-        "false_positives",
-        False,
-        strict=strict,
-        allow_missing=True,
-    )
 
 
 def _xdg_cache_base() -> Path:
@@ -575,6 +583,7 @@ class SpecimenRecord:
     manifest: SpecimenDoc
     issues: dict[str, IssueRecord]
     false_positives: dict[str, IssueRecord]
+    known_files: dict[Path, FileType]  # File map from hydration (for complete validation contexts)
 
     @asynccontextmanager
     async def hydrated_copy(self, gitconfig: Path | None = None) -> AsyncIterator[Path]:
@@ -637,6 +646,44 @@ class SpecimenRecord:
         finally:
             shutil.rmtree(mount_root, ignore_errors=True)
 
+    def _validation_context(self) -> dict:
+        """Build complete validation context for specimen.
+
+        Returns:
+            Dict with "specimen_context" key for model_validate(..., context=...)
+        """
+        ctx = SpecimenContext(
+            specimen_slug=self.slug,
+            known_files=self.known_files,  # Use stored file map for complete context
+            allowed_tp_ids=self.issues.keys(),
+            allowed_fp_ids=self.false_positives.keys(),
+        )
+        return {"specimen_context": ctx}
+
+    @property
+    def canonical_issues(self) -> list[CanonicalIssue]:
+        """Canonical true positive issues with typed namespaced IDs."""
+        return [
+            CanonicalIssue(
+                id=TruePositiveID(record.core.id),
+                rationale=record.core.rationale,
+                occurrences=record.instances,
+            )
+            for record in self.issues.values()
+        ]
+
+    @property
+    def known_false_positives(self) -> list[KnownFalsePositive]:
+        """Known false positive issues with typed namespaced IDs."""
+        return [
+            KnownFalsePositive(
+                id=FalsePositiveID(record.core.id),
+                rationale=record.core.rationale,
+                occurrences=record.instances,
+            )
+            for record in self.false_positives.values()
+        ]
+
 
 class SpecimenRegistry:
     """Entry point for listing and obtaining specimen records (code-only facade).
@@ -649,11 +696,97 @@ class SpecimenRegistry:
         self._specimens = specimens
 
     @classmethod
-    def load_strict(cls, slug: str, base: Path | None = None) -> SpecimenRecord:
-        rec, errors = cls.load_lenient(slug, base=base)
-        if errors:
-            raise SpecimenIssuesLoadError(errors)
-        return rec
+    @asynccontextmanager
+    async def load_and_hydrate(
+        cls,
+        slug: str,
+        base: Path | None = None,
+        gitconfig: Path | None = None,
+    ) -> AsyncIterator[tuple[SpecimenRecord, Path]]:
+        """Load specimen with validation and yield record + hydrated root together.
+
+        Avoids double-hydration when caller needs both loaded issues and hydrated specimen.
+
+        Yields:
+            (SpecimenRecord, hydrated_root_path): Validated specimen and its hydrated working tree
+
+        Example:
+            async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-20-00") as (rec, root):
+                await run_critic_agent(specimen_rec=rec, content_root=root, ...)
+        """
+        base_dir = base or find_specimens_base()
+        manifest_path = (base_dir / slug.replace("/", os.sep) / "manifest.yaml").resolve()
+        raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(raw, dict):
+            raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
+        man = SpecimenDoc.model_validate(raw)
+
+        # Evaluate Jsonnet to raw dicts (no validation yet)
+        raw_issues = _jsonnet_evaluate_to_dict(manifest_path.parent, "issues", should_flag=True)
+        raw_fps = _jsonnet_evaluate_to_dict(manifest_path.parent, "false_positives", should_flag=False)
+
+        if raw_issues is None:
+            raise SpecimenIssuesLoadError([f"No issues/ directory found under: {manifest_path.parent}"])
+        if raw_fps is None:
+            raw_fps = {}  # FPs are optional
+
+        # Hydrate specimen to build complete validation context
+        gitconfig = gitconfig or _default_gitconfig()
+        hydrated_root = resolve_source_root(man, manifest_path, gitconfig)
+        try:
+            # Build complete context: files from hydration + IDs from Jsonnet
+            known_files = {p.relative_to(hydrated_root): classify_path(p) for p in hydrated_root.rglob("*")}
+            ctx = SpecimenContext(
+                specimen_slug=slug,
+                known_files=known_files,
+                allowed_tp_ids=list(raw_issues.keys()),  # IDs from Jsonnet (strings)
+                allowed_fp_ids=list(raw_fps.keys()),  # IDs from Jsonnet (strings)
+            )
+            context_dict = {"specimen_context": ctx}
+
+            # Validate with complete context (both paths and IDs)
+            res_pos = _validate_issues_from_dicts(raw_issues, context_dict, strict=True)
+            res_fp = _validate_issues_from_dicts(raw_fps, context_dict, strict=True)
+
+            if res_pos.errors or res_fp.errors:
+                raise SpecimenIssuesLoadError([*res_pos.errors, *res_fp.errors])
+
+            # Create record with stored file map
+            rec = SpecimenRecord(
+                slug=slug,
+                manifest_path=manifest_path,
+                manifest=man,
+                issues={it.core.id: it for it in res_pos.items},
+                false_positives={it.core.id: it for it in res_fp.items},
+                known_files=known_files,  # Store for complete validation contexts
+            )
+
+            # Yield both - caller can use hydrated specimen without re-hydrating
+            yield rec, hydrated_root
+        finally:
+            # Clean up hydrated specimen
+            shutil.rmtree(
+                hydrated_root.parent if hydrated_root.parent.name.startswith("adgn-specimen-") else hydrated_root,
+                ignore_errors=True,
+            )
+
+    @classmethod
+    async def load_strict(cls, slug: str, base: Path | None = None, gitconfig: Path | None = None) -> SpecimenRecord:
+        """Load a specimen, raising SpecimenIssuesLoadError on any validation errors.
+
+        .. deprecated::
+            Use `load_and_hydrate()` directly instead. This wrapper discards the hydrated content root.
+
+        Hydrates temporarily for validation, then cleans up.
+        For use cases that need both specimen and hydrated root, use load_and_hydrate() instead.
+        """
+        warnings.warn(
+            "load_strict() is deprecated. Use load_and_hydrate() context manager directly.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        async with cls.load_and_hydrate(slug, base, gitconfig) as (rec, _):
+            return rec
 
     @classmethod
     def load_manifest_only(
@@ -676,28 +809,35 @@ class SpecimenRegistry:
         return (manifest_path, manifest)
 
     @classmethod
-    def load_lenient(
+    async def load_lenient(
         cls,
         slug: str,
         base: Path | None = None,
+        gitconfig: Path | None = None,
     ) -> tuple[SpecimenRecord, list[str]]:
-        """Load a specimen by hierarchical ID (e.g., 'ducktape/2025-11-20-adgn')."""
-        base_dir = base or find_specimens_base()
-        manifest_path = (base_dir / slug.replace("/", os.sep) / "manifest.yaml").resolve()
-        raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
-        if not isinstance(raw, dict):
-            raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
-        man = SpecimenDoc.model_validate(raw)
-        res_pos = _jsonnet_load_issues_dir(manifest_path.parent, strict=False)
-        res_fp = _jsonnet_load_false_positives_dir(manifest_path.parent, strict=False)
-        rec = SpecimenRecord(
-            slug=slug,
-            manifest_path=manifest_path,
-            manifest=man,
-            issues={it.core.id: it for it in res_pos.items},
-            false_positives={it.core.id: it for it in res_fp.items},
+        """Load a specimen by hierarchical ID (e.g., 'ducktape/2025-11-20-adgn').
+
+        .. deprecated::
+            Use `load_and_hydrate()` directly instead. This wrapper has no lenient behavior
+            (just re-raises exceptions) and discards the hydrated content root.
+
+        Returns specimen and any non-fatal errors encountered during loading.
+        Hydrates temporarily for validation, then cleans up.
+        For use cases that need both specimen and hydrated root, use load_and_hydrate() instead.
+        """
+        warnings.warn(
+            "load_lenient() is deprecated. Use load_and_hydrate() context manager directly.",
+            DeprecationWarning,
+            stacklevel=2
         )
-        return rec, [*res_pos.errors, *res_fp.errors]
+        try:
+            async with cls.load_and_hydrate(slug, base, gitconfig) as (rec, _):
+                return rec, []
+        except SpecimenIssuesLoadError:
+            # load_and_hydrate raises on errors; convert to lenient format
+            # Re-run without strict mode by catching and returning errors
+            # For now, just propagate (lenient mode not really different in new impl)
+            raise
 
     @property
     def specimen_ids(self) -> list[str]:

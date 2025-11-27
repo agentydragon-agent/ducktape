@@ -12,6 +12,7 @@ import aiosqlite
 from fastmcp.mcp_config import MCPConfig
 from pydantic import JsonValue
 
+from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import PolicyProposal
 from adgn.agent.runtime.auto_attach import filter_persistable_servers
 
@@ -312,7 +313,7 @@ ORDER BY created_at DESC
                     out.append(
                         PolicyProposal(
                             id=str(row["id"]),
-                            status=str(row["status"]),
+                            status=ProposalStatus(str(row["status"])),
                             created_at=datetime.fromisoformat(cast(str, row["created_at"])),
                             decided_at=(
                                 datetime.fromisoformat(cast(str, row["decided_at"])) if row["decided_at"] else None
@@ -339,7 +340,7 @@ WHERE agent_id = ? AND id = ?
                 return None
             return PolicyProposal(
                 id=str(row["id"]),
-                status=str(row["status"]),
+                status=ProposalStatus(str(row["status"])),
                 created_at=datetime.fromisoformat(cast(str, row["created_at"])),
                 decided_at=(datetime.fromisoformat(cast(str, row["decided_at"])) if row["decided_at"] else None),
                 content=cast(str, row["content"]),
@@ -456,7 +457,7 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
     async def record_approval(
         self,
         *,
-        run_id: UUID,
+        run_id: UUID | None,
         agent_id: str | None,
         call_id: str,
         tool_key: str,
@@ -472,7 +473,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     call_id,
-                    str(run_id),
+                    str(run_id) if run_id is not None else None,
                     agent_id,
                     tool_key,
                     outcome.value,

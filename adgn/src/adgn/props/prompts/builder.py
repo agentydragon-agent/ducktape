@@ -4,9 +4,17 @@ from typing import Literal
 
 from adgn.props.critic import CriticSubmitPayload, ReportedIssue
 from adgn.props.docker_env import PropertiesDockerWiring
-from adgn.props.grader import CoverageCredit, GradeMetrics, GradeSubmitInput, GradeSubmitPayload
-from adgn.props.ids import CANON_FP_PREFIX, CANON_TP_PREFIX, CRIT_PREFIX
+from adgn.props.grader import (
+    CanonicalFPCoverage,
+    CanonicalTPCoverage,
+    CritiqueInputIssue,
+    GradeMetrics,
+    GradeSubmitInput,
+    NovelIssueReasoning,
+    ReportedIssueRatios,
+)
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
+from adgn.props.specimens.registry import CanonicalIssue, KnownFalsePositive
 
 from .util import build_input_schemas_json, render_prompt_template
 
@@ -27,7 +35,7 @@ def build_role_prompt(
     """
     # Compute the schemas map once here; templates pick header_schema_names
     schemas_json = build_input_schemas_json(
-        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload]
+        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitInput]
     )
 
     template = "discover.j2.md" if mode == "discover" else ("open.j2.md" if mode == "open" else "find.j2.md")
@@ -68,7 +76,7 @@ def build_grade_prompt(
     - Returns the composed Markdown string
     """
     schemas_json = build_input_schemas_json(
-        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload]
+        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitInput]
     )
     return render_prompt_template(
         "grade.j2.md",
@@ -143,19 +151,13 @@ def build_enforce_prompt(
 def build_grade_from_json_prompt(
     *,
     scope_text: str,
-    canonical_json: str,
-    critique_json: str,
-    known_fp_json: str | None,
+    canonical_issues: list[CanonicalIssue],
+    critique_issues: list[CritiqueInputIssue],
+    known_fps: list[KnownFalsePositive],
     submit_tool_name: str,
     wiring: PropertiesDockerWiring,
 ) -> str:
-    """Compose grader prompt that consumes structured JSON and requires submit via grader_submit.
-
-    - canonical_json: JSON block of canonical positives (IssueCore+Occurrence) list or mapping
-    - critique_json: JSON block produced by the unified run (critic output)
-    - known_fp_json: JSON block of known false positives (IssueCore+Occurrence) list or mapping
-    - submit_tool_name: fully-qualified MCP function name for grader_submit.submit_result
-    """
+    """Compose grader prompt that consumes structured JSON and requires submit via grader_submit."""
     schemas_json = build_input_schemas_json(
         [
             Occurrence,
@@ -165,21 +167,19 @@ def build_grade_from_json_prompt(
             CriticSubmitPayload,
             GradeMetrics,
             GradeSubmitInput,
-            CoverageCredit,
+            CanonicalTPCoverage,
+            CanonicalFPCoverage,
+            NovelIssueReasoning,
+            ReportedIssueRatios,
         ]
     )
-    # Pass shared ID prefix constants into the template to avoid drift
-
     return render_prompt_template(
         "grade_from_json.j2.md",
         scope_text=scope_text,
-        canonical_json=canonical_json,
-        critique_json=critique_json,
-        known_fp_json=known_fp_json or "",
+        canonical_issues=canonical_issues,
+        critique_issues=critique_issues,
+        known_fps=known_fps,
         submit_tool_name=submit_tool_name,
-        canon_tp_prefix=CANON_TP_PREFIX,
-        canon_fp_prefix=CANON_FP_PREFIX,
-        crit_prefix=CRIT_PREFIX,
         wiring=wiring,
         schemas_json=schemas_json,
     )

@@ -6,13 +6,12 @@ with budget tracking and granular evaluation tools.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from importlib import resources
 import logging
 from pathlib import Path
-import shutil
-import tempfile
 
 from fastmcp.client import Client
 
@@ -50,50 +49,38 @@ class BudgetHandler(BaseHandler):
 
 
 @asynccontextmanager
-async def hydrate_train_specimens_to_temp():
-    """Hydrate all train specimens to temp directories, yield (specimen_paths, defs_root).
+async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path]]:
+    """Hydrate all train specimens and keep them alive for direct Docker mounting.
 
-    Returns:
-        specimen_paths: {specimen_slug: Path_to_hydrated_copy}
-        train_defs_root: Path to temp directory with train specimen definitions only
+    Uses AsyncExitStack to keep all specimens hydrated until context exits.
+    No copying - mount each specimen and its definitions directly as separate Docker volumes.
+
+    Yields:
+        (specimen_paths, defs_root):
+            - specimen_paths: {specimen_slug: Path_to_hydrated_specimen} - mount each as /specimens/{slug}
+            - defs_root: Base path to specimen definitions - mount {slug} subdirs as /defs/{slug}
     """
-    tmpdir = Path(tempfile.mkdtemp(prefix="train_specimens_"))
-    train_defs_dir = Path(tempfile.mkdtemp(prefix="train_defs_"))
     specimen_paths: dict[str, Path] = {}
+    defs_root = specimens_definitions_root()
 
-    try:
+    async with AsyncExitStack() as stack:
         train_specimens = get_train_specimens()
-        logger.info(f"Hydrating {len(train_specimens)} train specimens to {tmpdir}")
-
-        specimens_defs_root = specimens_definitions_root()
+        logger.info(f"Hydrating {len(train_specimens)} train specimens (for direct Docker mount)")
 
         for slug in train_specimens:
-            # Hydrate source code
-            rec = SpecimenRegistry.load_strict(slug)
-            async with rec.hydrated_copy(gitconfig=None) as content_root:
-                # Copy hydrated content to persistent temp location
-                # Use slug directly (repo/specimen-name form)
-                dest = tmpdir / slug
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(content_root, dest, symlinks=True)
-                specimen_paths[slug] = dest
-                logger.debug(f"Hydrated {slug} to {dest}")
+            # Load and hydrate specimen, keep alive for Docker mounting
+            _rec, content_root = await stack.enter_async_context(
+                SpecimenRegistry.load_and_hydrate(slug, gitconfig=None)
+            )
+            # No copying - mount hydrated path directly as separate Docker volume
+            specimen_paths[slug] = content_root
+            logger.debug(f"Hydrated {slug} → {content_root} (mount as /specimens/{slug})")
 
-            # Copy specimen definitions (ground truth) to train-only defs directory
-            def_src = specimens_defs_root / slug
-            if def_src.exists():
-                def_dest = train_defs_dir / slug
-                def_dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(def_src, def_dest, symlinks=True)
-                logger.debug(f"Copied definitions {slug} to {def_dest}")
+        # Return base definitions directory - consumer mounts defs_root/{slug} for each train specimen
+        logger.info(f"Definitions available at {defs_root} (mount subdirs as /defs/{{slug}})")
 
-        yield specimen_paths, train_defs_dir
-    finally:
-        # Cleanup temp directories
-        logger.info(f"Cleaning up hydrated specimens: {tmpdir}")
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        logger.info(f"Cleaning up train definitions: {train_defs_dir}")
-        shutil.rmtree(train_defs_dir, ignore_errors=True)
+        yield specimen_paths, defs_root
+        # AsyncExitStack will cleanup all hydrated specimens automatically
 
 
 async def run_prompt_optimizer(
@@ -124,23 +111,28 @@ async def run_prompt_optimizer(
     evals_base = (pkg_dir() / "runs" / "prompt_evals").resolve()
     evals_base.mkdir(parents=True, exist_ok=True)
 
-    # Hydrate train specimens to temp directories
-    async with hydrate_train_specimens_to_temp() as (train_specimens, train_defs_root):
+    # Hydrate train specimens and keep alive for Docker mounting
+    async with hydrate_train_specimens() as (train_specimens, defs_root):
         # Build extra volumes for Docker (specimens + eval results + definitions)
         # Format: {host_path: {"bind": container_path, "mode": "ro"|"rw"}}
         extra_volumes = {}
 
-        # Train specimens source code (ro) - use original slug form (repo/specimen-name)
+        # Train specimens source code (ro) - mount each separately
         for slug, path in train_specimens.items():
             extra_volumes[str(path.resolve())] = {"bind": f"/specimens/train/{slug}", "mode": "ro"}
 
-        # Mount train-only specimen definitions (ground truth issues)
-        # This prevents leaking test split data to the optimization agent
-        # Mount at /specimen_defs/train to match specimen source structure
-        extra_volumes[str(train_defs_root.resolve())] = {"bind": "/specimen_defs/train", "mode": "ro"}
+        # Mount train specimen definitions separately (ground truth issues)
+        # This prevents leaking test/valid split data to the optimization agent
+        for slug in train_specimens:
+            def_path = defs_root / slug
+            if def_path.exists():
+                extra_volumes[str(def_path.resolve())] = {"bind": f"/specimen_defs/train/{slug}", "mode": "ro"}
 
-        # Past evaluation results (ro) - already resolved above
-        extra_volumes[str(evals_base)] = {"bind": "/artifacts/prompt_evals", "mode": "ro"}
+        # Past evaluation results (ro) - ONLY mount train split to prevent validation leakage
+        # Create train/ directory eagerly (required for Docker mount)
+        train_evals = evals_base / "train"
+        train_evals.mkdir(parents=True, exist_ok=True)
+        extra_volumes[str(train_evals)] = {"bind": "/artifacts/prompt_evals/train", "mode": "ro"}
 
         # Create Docker wiring (no /repo mount - would leak test specimen definitions!)
         # workspace_root will be mounted as /workspace (rw mode for agent to write prompts)

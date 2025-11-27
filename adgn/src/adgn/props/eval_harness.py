@@ -21,7 +21,8 @@ from adgn.openai_utils.model import (
     ToolChoiceFunction,
     UserMessage,
 )
-from adgn.props.models.issue import IssueCore, IssueId, LineRange, Occurrence
+from adgn.props.ids import BaseIssueID
+from adgn.props.models.issue import IssueCore, LineRange, Occurrence
 from adgn.props.models.lint import AnchorIncorrect
 
 from .lint_issue import lint_issue_run
@@ -75,57 +76,21 @@ class IssueEvalSpec(BaseModel):
     cases: list[OccurrenceCase]
 
 
-# Canonical dataset: 2025-09-02-ducktape_wt iss-014 (four occurrences)
-WT_ISS014_CASES: list[OccurrenceCase] = [
-    OccurrenceCase(
-        occurrence=Occurrence(
-            files={"wt/wt/server/wt_server.py": [LineRange(start_line=413, end_line=424)]}, note="StatusSnapshot"
-        ),
-        expectations=[AnchorExpectation(start_window=(410, 412), end_window=(421, 423))],
-    ),
-    OccurrenceCase(
-        occurrence=Occurrence(
-            files={"wt/wt/server/wt_server.py": [LineRange(start_line=425, end_line=429)]}, note="WorktreeRuntime"
-        ),
-        expectations=[AnchorExpectation(start_window=(422, 424), end_window=(427, 429))],
-    ),
-    OccurrenceCase(
-        occurrence=Occurrence(
-            files={"wt/wt/server/wt_server.py": [LineRange(start_line=640, end_line=1144)]}, note="GitStatusdProcess"
-        ),
-        expectations=[AnchorExpectation(start_window=(638, 640), end_window=(1142, 1144))],
-    ),
-    OccurrenceCase(
-        occurrence=Occurrence(
-            files={"wt/wt/server/wt_server.py": [LineRange(start_line=1130, end_line=1233)]},
-            note="_record_github_error",
-        ),
-        expectations=[AnchorExpectation(start_window=(1129, 1130), end_window=(1232, 1233))],
-    ),
-]
+# Placeholder for eval samples - populate with real specimen data as needed
+# TODO: Add evaluation test cases from actual specimens
 
 
 class SampleRunSummary(BaseModel):
     specimen: str
-    issue_id: IssueId
+    issue_id: BaseIssueID
     total: int
     passed: int
     failed: int
     summary_path: str
 
 
-class SampleIndexEntry(BaseModel):
-    name: str
-    specimen: str
-    issue_id: IssueId
-    summary: str
-    total: int
-    passed: int
-    failed: int
-
-
 class EvalIndex(BaseModel):
-    samples: list[SampleIndexEntry]
+    samples: list[SampleRunSummary]
 
 
 async def _grade_rationale_with_llm(
@@ -189,32 +154,17 @@ async def _grade_rationale_with_llm(
 
 
 async def eval_issue_spec(
-    spec: IssueEvalSpec,
-    *,
-    model: str = "gpt-5",
-    gitconfig: str | None = None,
-    client: OpenAIModelProto,
-    out_dir: Path | str | None = None,
-    id_prefix: str = "",
+    spec: IssueEvalSpec, *, model: str = "gpt-5", client: OpenAIModelProto, out_dir: Path | str | None = None
 ) -> SampleRunSummary:
     """Run lint_issue_run over a list of cases and write an eval summary.
 
     Returns a structured SampleRunSummary and writes summary.json to out_dir.
     """
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Allow local renamings/prefix for clustering or grading runs
-    effective_issue = (
-        spec.issue
-        if not id_prefix
-        else IssueCore(
-            id=f"{id_prefix}{spec.issue.id}", should_flag=spec.issue.should_flag, rationale=spec.issue.rationale
-        )
-    )
-
     base = (
         Path(out_dir)
         if out_dir is not None
-        else (Path.cwd() / "runs" / "evals" / f"{spec.specimen}_{effective_issue.id}_{ts}")
+        else (Path.cwd() / "runs" / "evals" / f"{spec.specimen}_{spec.issue.id}_{ts}")
     )
     base.mkdir(parents=True, exist_ok=True)
 
@@ -242,16 +192,15 @@ async def eval_issue_spec(
 
         payload = await lint_issue_run(
             specimen=spec.specimen,
-            issue_core=effective_issue,
+            issue_core=spec.issue,
             occurrence=occ,
             model=model,
-            gitconfig=gitconfig,
             client=client,
             handlers=[OneLineProgressHandler()],
         )
 
         # Print the structured output object produced by the agent for this case
-        Console().print(f"[bold]{spec.specimen} {effective_issue.id} case {idx} {path}[/bold]")
+        Console().print(f"[bold]{spec.specimen} {spec.issue.id} case {idx} {path}[/bold]")
         Console().print(render_to_rich(payload))
 
         # Effective ranges: derive corrections from AnchorIncorrect findings when present
@@ -263,7 +212,7 @@ async def eval_issue_spec(
                     corr = f.correction
                     corrections.setdefault(corr.file, []).append(corr.range)
 
-        ranges = corrections.get(path, [])
+        ranges = corrections.get(str(path), [])
         all_ranges = [(r.start_line, r.end_line) for r in ranges]
         effective: list[tuple[int, int | None]] = all_ranges or [(start_line, end_line)]
 
@@ -334,7 +283,7 @@ async def eval_issue_spec(
 
     summary_obj = {
         "specimen": spec.specimen,
-        "issue_id": effective_issue.id,
+        "issue_id": spec.issue.id,
         "total": len(spec.cases),
         "passed": passes,
         "failed": len(spec.cases) - passes,
@@ -344,7 +293,7 @@ async def eval_issue_spec(
 
     return SampleRunSummary(
         specimen=spec.specimen,
-        issue_id=effective_issue.id,
+        issue_id=spec.issue.id,
         total=len(spec.cases),
         passed=passes,
         failed=len(spec.cases) - passes,
@@ -352,91 +301,17 @@ async def eval_issue_spec(
     )
 
 
-# Flat list of samples (no dataset abstraction)
-SAMPLES: list[IssueEvalSpec] = [
-    IssueEvalSpec(
-        specimen="2025-09-02-ducktape_wt",
-        issue=IssueCore(
-            id="iss-014",
-            should_flag=True,
-            rationale="Delete StatusSnapshot - dead code; never used and should be removed.",
-        ),
-        cases=list(WT_ISS014_CASES),
-    ),
-    IssueEvalSpec(
-        specimen="2025-09-02-ducktape_wt",
-        issue=IssueCore(
-            id="iss-036",
-            should_flag=True,
-            rationale=(
-                "Prefer a single pre-check + list comprehension for simple arg filtering to reduce nesting and eliminate one-off append/continue state."
-            ),
-        ),
-        cases=[
-            OccurrenceCase(
-                occurrence=Occurrence(
-                    files={"wt/wt/cli.py": [LineRange(start_line=143, end_line=143)]},
-                    note="arg filtering loop (prefer comprehension)",
-                ),
-                expectations=[AnchorExpectation(start_window=(138, 143), end_window=(152, 153))],
-            )
-        ],
-    ),
-    IssueEvalSpec(
-        specimen="2025-09-02-ducktape_wt",
-        issue=IssueCore(
-            id="iss-046",
-            should_flag=True,
-            rationale="`parse_gitstatusd_response` is a thin wrapper around GitStatusdProtocol; migrate callers to Protocol methods and delete.",
-        ),
-        cases=[
-            OccurrenceCase(
-                occurrence=Occurrence(
-                    files={"wt/wt/server/gitstatusd_client.py": [LineRange(start_line=358, end_line=360)]},
-                    note="parse_gitstatusd_response",
-                ),
-                expectations=[
-                    AnchorExpectation(start_window=(356, 358), end_window=(360, 362)),
-                    RationaleExpectation(
-                        rubric="Original says migrate callers; there are no callers. New rationale should simply prescribe deleting dead code without mentioning callers."
-                    ),
-                ],
-            )
-        ],
-    ),
-    IssueEvalSpec(
-        specimen="2025-09-02-ducktape_wt",
-        issue=IssueCore(
-            id="iss-047",
-            should_flag=True,
-            rationale="`create_gitstatusd_request` is a thin wrapper around GitStatusdProtocol; migrate callers to Protocol methods and delete.",
-        ),
-        cases=[
-            OccurrenceCase(
-                occurrence=Occurrence(
-                    files={"wt/wt/server/gitstatusd_client.py": [LineRange(start_line=363, end_line=370)]},
-                    note="create_gitstatusd_request",
-                ),
-                expectations=[
-                    AnchorExpectation(start_window=(361, 363), end_window=(370, 372)),
-                    RationaleExpectation(
-                        rubric="Original says migrate callers; there are no callers. New rationale should simply prescribe deleting dead code without mentioning callers."
-                    ),
-                ],
-            )
-        ],
-    ),
-]
+def _load_samples() -> list[IssueEvalSpec]:
+    """Load eval samples from real specimen data.
+
+    TODO: Populate with actual test cases from current specimens.
+    """
+    # Return empty list for now - add real evaluation cases as needed
+    return []
 
 
 async def run_all_evals(
-    *,
-    model: str = "gpt-5",
-    gitconfig: str | None = None,
-    client: OpenAIModelProto,
-    root_out: Path | None = None,
-    concurrency: int = 4,
-    id_prefix: str = "",
+    *, model: str = "gpt-5", client: OpenAIModelProto, root_out: Path | None = None, concurrency: int = 4
 ) -> EvalIndex:
     """Run all samples concurrently (bounded), print a Rich summary, and return EvalIndex."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -445,39 +320,27 @@ async def run_all_evals(
 
     sem = asyncio.Semaphore(max(1, concurrency))
 
-    async def _run_one(sample: IssueEvalSpec) -> SampleIndexEntry:
+    async def _run_one(sample: IssueEvalSpec) -> SampleRunSummary:
         async with sem:
-            effective_id = f"{id_prefix}{sample.issue.id}" if id_prefix else sample.issue.id
-            out_dir = root / effective_id
-            summary = await eval_issue_spec(
-                spec=sample, model=model, gitconfig=gitconfig, client=client, out_dir=out_dir, id_prefix=id_prefix
-            )
-            return SampleIndexEntry(
-                name=effective_id,
-                specimen=sample.specimen,
-                issue_id=effective_id,
-                summary=summary.summary_path,
-                total=summary.total,
-                passed=summary.passed,
-                failed=summary.failed,
-            )
+            out_dir = root / sample.issue.id
+            return await eval_issue_spec(spec=sample, model=model, client=client, out_dir=out_dir)
 
-    entries = await asyncio.gather(*[_run_one(s) for s in SAMPLES])
+    entries = await asyncio.gather(*[_run_one(s) for s in _load_samples()])
 
     eval_index = EvalIndex(samples=list(entries))
     (root / "index.json").write_text(eval_index.model_dump_json(indent=2), encoding="utf-8")
 
     # Pretty print a concise Rich table summary (in-memory; no read-back)
     table = Table(title="Eval Summary", show_lines=False)
-    table.add_column("Sample", style="bold")
     table.add_column("Specimen")
     table.add_column("Issue")
     table.add_column("Total", justify="right")
     table.add_column("Passed", justify="right", style="green")
     table.add_column("Failed", justify="right", style="red")
+    table.add_column("Summary Path")
 
     for ent in eval_index.samples:
-        table.add_row(ent.name, ent.specimen, ent.issue_id, str(ent.total), str(ent.passed), str(ent.failed))
+        table.add_row(ent.specimen, ent.issue_id, str(ent.total), str(ent.passed), str(ent.failed), ent.summary_path)
     Console().print(table)
 
     return eval_index

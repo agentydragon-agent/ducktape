@@ -5,9 +5,7 @@ import socket
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 
-def wait_for_port(
-    host: str, port: int, *, timeout_secs: float = 10.0, interval_secs: float = 0.25
-) -> None:
+def wait_for_port(host: str, port: int, *, timeout_secs: float = 10.0, interval_secs: float = 0.25) -> None:
     """Block until host:port accepts TCP connections or timeout.
 
     Uses tenacity for robust retrying with configurable timeout and interval.

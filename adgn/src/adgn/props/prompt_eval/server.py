@@ -13,12 +13,13 @@ Behavior:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 import json
 import logging
 from pathlib import Path
-from typing import Any
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
@@ -39,7 +40,7 @@ from adgn.props.agent_runners import CostTrackingHandler
 from adgn.props.critic import CriticSubmitPayload, CriticSubmitState, attach_critic_submit
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grade_runner import grade_critic_output
-from adgn.props.grader import GradeMetrics
+from adgn.props.grader import ReportedIssueRatios
 from adgn.props.lint_issue import BootstrapInspectHandler
 from adgn.props.per_file_eval import run_per_file_eval
 from adgn.props.prompts.util import build_scope_text, render_prompt_template
@@ -48,6 +49,148 @@ from adgn.props.specimens.registry import SpecimenRegistry
 from adgn.props.splits import get_train_specimens, get_valid_specimens
 
 logger = logging.getLogger(__name__)
+
+# Role identifiers for verbose prefixes
+ROLE_CRITIC = "CRITIC"
+ROLE_GRADER = "GRADER"
+
+
+def _role_prefix(specimen: str, role: str) -> str:
+    """Build verbose prefix for display handler: '[specimen/ROLE] '."""
+    return f"  [{specimen}/{role}] "
+
+
+async def _run_critic_and_grader(
+    specimen: str,
+    prompt_text: str,
+    client: OpenAIModelProto,
+    eval_dir: Path,
+    out_dir: Path,
+    *,
+    agent_model: str,
+    verbose: bool,
+) -> MetricsRow:
+    """Run critic and grader on one specimen; return MetricsRow with agent-computed metrics."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    cost_tracker = CostTrackingHandler()
+    extra_handlers = (cost_tracker,)
+
+    # Run critic
+    critic_obj = await _run_critic_for_specimen(
+        specimen,
+        prompt_text,
+        client,
+        eval_dir,
+        agent_model=agent_model,
+        extra_handlers=extra_handlers,
+        verbose=verbose,
+        verbose_prefix=_role_prefix(specimen, ROLE_CRITIC),
+    )
+    critic_cost = cost_tracker.total_cost
+
+    # Reset for grader
+    cost_tracker.total_cost = 0.0
+
+    # Run grader
+    grade_obj = await grade_critic_output(
+        specimen,
+        critic_obj,
+        client,
+        transcript_out_dir=out_dir,
+        extra_handlers=extra_handlers,
+        verbose=verbose,
+        verbose_prefix=_role_prefix(specimen, ROLE_GRADER),
+    )
+    grader_cost = cost_tracker.total_cost
+
+    # Persist grade
+    (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
+
+    # Extract agent-computed metrics (recall and reported_issue_ratios)
+    return MetricsRow(
+        specimen=specimen,
+        recall=grade_obj.recall,
+        reported_issue_ratios=grade_obj.reported_issue_ratios,
+        cost=critic_cost + grader_cost,
+    )
+
+
+async def _run_split_eval(
+    specimens: list[str],
+    split_name: str,
+    prompt_path: str,
+    *,
+    client: OpenAIModelProto,
+    agent_model: str,
+    evals_dir: Path,
+    state: PromptEvalState,
+    read_prompt_file: Callable[[str], str],
+    translate_host_path: Callable[[Path], str],
+) -> tuple[Path, list[MetricsRow], float, float | None]:
+    """Run evaluation on a split; return (eval_dir, metrics, cost, budget_remaining).
+
+    Shared logic for eval_train_split and eval_valid_split:
+    - Setup (read prompt, check budget, create eval dir under split-specific subdir)
+    - Parallel execution (run critic+grader on all specimens)
+    - Error handling (persist errors.json, raise on failures)
+    - Cost tracking (sum costs, update state, compute remaining budget)
+
+    Directory structure ensures validation results are NOT mounted to container:
+    - Train: evals_dir/train/eval_<ts>/ -> mounted to /artifacts/prompt_evals/train/...
+    - Valid: evals_dir/valid/eval_<ts>/ -> NOT mounted (prevents information leakage)
+    """
+    prompt_text = read_prompt_file(prompt_path)
+
+    # Budget check before starting work
+    state.check_budget_before_work()
+
+    # Create eval directory under split-specific subdirectory
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    split_dir = evals_dir / split_name
+    split_dir.mkdir(parents=True, exist_ok=True)
+    eval_dir = split_dir / f"eval_{ts}"
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    (eval_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
+    logger.info("eval_%s_split: %s", split_name, eval_dir)
+
+    # Process each specimen once (in parallel)
+    process_one = partial(
+        _run_critic_and_grader,
+        prompt_text=prompt_text,
+        client=client,
+        eval_dir=eval_dir,
+        agent_model=agent_model,
+        verbose=state.verbose,
+    )
+
+    # Run all specimens in parallel (each processed exactly once)
+    results = await asyncio.gather(
+        *[process_one(specimen=s, out_dir=eval_dir / s) for s in specimens], return_exceptions=True
+    )
+
+    # Separate successes from failures
+    metrics: list[MetricsRow] = [r for r in results if not isinstance(r, BaseException)]
+    failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
+
+    if failures:
+        total_specimens = len(metrics) + len(failures)
+        logger.error(f"{len(failures)}/{total_specimens} {split_name} specimens failed")
+        # Persist error summary
+        errors = [{"type": type(e).__name__, "message": str(e)} for e in failures]
+        errors_file = eval_dir / "errors.json"
+        errors_file.write_text(json.dumps(errors, indent=2), encoding="utf-8")
+        # Translate host path to container path for error message
+        container_errors_path = translate_host_path(errors_file)
+        raise RuntimeError(f"{len(failures)}/{len(results)} specimens failed. See {container_errors_path} for details.")
+
+    # Calculate total cost from MetricsRow.cost
+    cost = sum(m.cost for m in metrics)
+    state.total_cost += cost
+
+    budget_remaining = state.budget_limit - state.total_cost if state.budget_limit else None
+
+    return eval_dir, metrics, cost, budget_remaining
 
 
 class PromptEvalArgs(BaseModel):
@@ -84,28 +227,22 @@ class EvalSplitInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class EvalFileOutput(BaseModel):
-    """Output from eval_file."""
-
-    specimen: str
-    file_path: str
-    issues_in_file: list[str]
-    detected_issues: list[str]
-    detection_rate: float
-
-    cost: float
-    eval_dir: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class EvalSpecimenOutput(BaseModel):
-    """Output from eval_specimen."""
+    """Output from eval_train_specimen and eval_train_specimen_file.
+
+    Contains grader agent's primary computed metrics (recall, issue ratios).
+    """
 
     specimen: str
-    metrics: GradeMetrics
+    recall: float = Field(description="Weighted recall computed by grader agent (primary optimization target)")
+    reported_issue_ratios: ReportedIssueRatios = Field(
+        description="Breakdown of reported issues: TP/FP/unlabeled fractions"
+    )
     cost: float
-    eval_dir: str
+    budget_remaining: float | None
+    detailed_artifacts_dir: str = Field(
+        description="Container path to evaluation artifacts (transcripts, grades, critic output)"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -113,15 +250,16 @@ class EvalSpecimenOutput(BaseModel):
 class EvalTrainSplitOutput(BaseModel):
     """Output from eval_train_split: detailed per-specimen metrics for analysis."""
 
-    detailed_metrics: list[dict[str, Any]] = Field(
-        description="Per-specimen metrics (specimen, metrics, cost) for detailed analysis"
+    detailed_metrics: list[MetricsRow] = Field(
+        description="Per-specimen agent-computed metrics: recall, reported_issue_ratios (tp/fp/unlabeled), cost"
     )
     specimens: list[str] = Field(description="List of specimen slugs evaluated")
 
     cost: float
-    total_cost_so_far: float
     budget_remaining: float | None
-    eval_dir: str
+    detailed_artifacts_dir: str = Field(
+        description="Container path to evaluation artifacts (per-specimen transcripts, grades, critic outputs)"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -130,30 +268,29 @@ class EvalValidSplitOutput(BaseModel):
     """Output from eval_valid_split: aggregate metrics only (prevents overfitting).
 
     Validation provides minimal information by design:
-    - Only aggregate recall/precision (your optimization target)
+    - Only aggregate recall and TP ratio (your optimization targets)
     - No per-specimen details (prevents overfitting to validation specimens)
+    - No detailed_artifacts_dir (prevents agent from reading detailed results)
     """
 
     aggregate_recall: float = Field(description="Average recall across validation specimens (YOUR TARGET METRIC)")
-    aggregate_precision: float = Field(
-        description="Average precision (may be low due to sparse labeling - focus on recall)"
+    aggregate_tp_ratio: float = Field(
+        description="Average TP ratio (fraction of reported issues matching canonical TPs)"
     )
     specimen_count: int = Field(description="Number of validation specimens evaluated")
-    issue_count: int = Field(description="Total issues across all validation specimens")
 
     cost: float
-    total_cost_so_far: float
     budget_remaining: float | None
-    eval_dir: str
 
     model_config = ConfigDict(extra="forbid")
 
 
 class MetricsRow(BaseModel):
-    """Typed per-specimen metrics row returned by prompt_eval.test_prompt."""
+    """Typed per-specimen metrics row (agent-computed primary metrics only)."""
 
     specimen: str
-    metrics: GradeMetrics
+    recall: float
+    reported_issue_ratios: ReportedIssueRatios
     cost: float = Field(description="Total cost for this specimen (critic + grader)")
 
     model_config = ConfigDict(extra="forbid")
@@ -188,14 +325,13 @@ async def _run_critic_for_specimen(
         verbose: If True, create RichDisplayHandler with proper server wiring
         verbose_prefix: Prefix for RichDisplayHandler output
     """
-    rec = SpecimenRegistry.load_strict(specimen)
     critic_state = CriticSubmitState()
 
-    # Render user prompt with explicit scope (no property definitions mounted)
-    scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
-    user_prompt = render_prompt_template("critic_user_prompt.j2.md", scope_text=scope_text)
-
-    async with rec.hydrated_copy(gitconfig=None) as content_root:
+    # Load and hydrate specimen (single hydration, avoid wasteful re-hydrate)
+    async with SpecimenRegistry.load_and_hydrate(specimen, gitconfig=None) as (rec, content_root):
+        # Render user prompt with explicit scope (no property definitions mounted)
+        scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
+        user_prompt = render_prompt_template("critic_user_prompt.j2.md", scope_text=scope_text)
         wiring = properties_docker_spec(content_root, mount_properties=False)
         comp = Compositor("compositor")
         runtime_server = await wiring.attach(comp)
@@ -230,7 +366,7 @@ async def _run_critic_for_specimen(
         model_client: OpenAIModelProto = client
         async with Client(comp) as mcp_client:
             # Mount standard servers (resources, compositor_meta, compositor_admin)
-            await mount_standard_inproc_servers(compositor=comp, gateway_client=mcp_client)
+            await mount_standard_inproc_servers(compositor=comp)
             agent = await MiniCodex.create(
                 model=agent_model,
                 mcp_client=mcp_client,
@@ -294,18 +430,61 @@ def build_server(
 
     Layout:
     evals_base_dir/
-      eval_<timestamp>/
+      train/eval_<timestamp>/
         <specimen>/
           critic.json
           grade.json
           critic/events.jsonl
           grader/events.jsonl
+      valid/eval_<timestamp>/
+        <specimen>/
+          (same structure but not mounted to container)
     """
     # Shared evaluation directory (tests may inject a tmp dir)
     evals_dir = evals_base_dir if evals_base_dir is not None else pkg_dir() / "runs" / "prompt_evals"
     evals_dir.mkdir(parents=True, exist_ok=True)
 
     state = PromptEvalState()
+
+    def _validate_train_specimen(specimen: str) -> None:
+        """Validate specimen is in train split; raise ToolError if not.
+
+        Args:
+            specimen: Specimen slug to validate
+
+        Raises:
+            ToolError: If specimen is not in train split
+        """
+        train_specimens = get_train_specimens()
+        if specimen not in train_specimens:
+            raise ToolError(
+                f"This tool only works on train split to prevent leakage. "
+                f"Specimen '{specimen}' is not in train split. "
+                f"Available train specimens: {', '.join(sorted(train_specimens))}"
+            )
+
+    def _setup_eval_dir(prompt_path: str, log_context: str) -> tuple[Path, str]:
+        """Setup eval directory for train split tools (eval_file, eval_specimen).
+
+        Args:
+            prompt_path: Container path to prompt file
+            log_context: Context string for logging (e.g., "eval_file foo:bar.py")
+
+        Returns:
+            (eval_dir, prompt_text): Created eval directory and prompt content
+        """
+        prompt_text = _read_prompt_file(prompt_path)
+        state.check_budget_before_work()
+
+        # Create eval directory under train/ (will be mounted to container)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        train_dir = evals_dir / "train"
+        train_dir.mkdir(parents=True, exist_ok=True)
+        eval_dir = train_dir / f"eval_{ts}"
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        (eval_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
+        logger.info("%s: %s", log_context, eval_dir)
+        return eval_dir, prompt_text
 
     def _translate_container_path(container_path: str) -> Path:
         """Translate container path to host path.
@@ -330,12 +509,17 @@ def build_server(
             host_path: Host filesystem path
 
         Returns:
-            Container path string (e.g., /artifacts/prompt_evals/...)
+            Container path string (e.g., /artifacts/prompt_evals/train/...)
+            Note: Only train split paths are mounted; valid split paths return host paths.
         """
         # Check if path is under evals_dir
         try:
             relative = host_path.relative_to(evals_dir)
-            return f"/artifacts/prompt_evals/{relative}"
+            # Only train split is mounted to container
+            if relative.parts[0] == "train":
+                return f"/artifacts/prompt_evals/{relative}"
+            # Valid split is not mounted - return host path
+            return str(host_path)
         except ValueError:
             # Not under evals_dir, return as-is
             return str(host_path)
@@ -365,100 +549,36 @@ def build_server(
         - Identifying patterns in failures across multiple specimens
         - Getting detailed metrics to guide prompt improvements
 
-        Returns detailed metrics for every train specimen.
+        Returns detailed metrics for every train specimen plus detailed_artifacts_dir for full access to:
+        - Critic transcripts: <dir>/<specimen>/critic/events.jsonl
+        - Grader transcripts: <dir>/<specimen>/grader/events.jsonl
+        - Results: <dir>/<specimen>/critic.json, grade.json
         """
-        prompt_text = _read_prompt_file(payload.prompt_path)
         specimens = get_train_specimens()
 
-        # Budget check before starting work
-        state.check_budget_before_work()
-
-        # Create eval directory
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        eval_dir = evals_dir / f"eval_{ts}"
-        eval_dir.mkdir(parents=True, exist_ok=True)
-        (eval_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
-        logger.info("eval_train_split: %s", eval_dir)
-
-        # Process each specimen once (in parallel)
-        async def process_one(specimen: str) -> MetricsRow:
-            """Process one specimen and return metrics with cost."""
-            out_dir = eval_dir / specimen
-            out_dir.mkdir(parents=True, exist_ok=True)
-
-            # Set up cost tracking (no RichDisplayHandler here - created inside with servers)
-            cost_tracker = CostTrackingHandler()
-            extra_handlers = (cost_tracker,)
-
-            # Run critic
-            critic_obj = await _run_critic_for_specimen(
-                specimen,
-                prompt_text,
-                client,
-                eval_dir,
-                agent_model=agent_model,
-                extra_handlers=extra_handlers,
-                verbose=state.verbose,
-                verbose_prefix=f"  [{specimen}] ",
-            )
-            critic_cost = cost_tracker.total_cost
-
-            # Reset for grader
-            cost_tracker.total_cost = 0.0
-
-            # Run grader
-            grade_obj = await grade_critic_output(
-                specimen,
-                critic_obj,
-                client,
-                transcript_out_dir=out_dir,
-                extra_handlers=extra_handlers,
-                verbose=state.verbose,
-                verbose_prefix=f"  [{specimen}] ",
-            )
-            grader_cost = cost_tracker.total_cost
-
-            (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
-
-            # Construct MetricsRow with nested GradeMetrics
-            total_specimen_cost = critic_cost + grader_cost
-            return MetricsRow(specimen=specimen, metrics=grade_obj.metrics, cost=total_specimen_cost)
-
-        # Run all specimens in parallel (each processed exactly once)
-        results = await asyncio.gather(*[process_one(s) for s in specimens], return_exceptions=True)
-
-        # Separate successes from failures
-        metrics: list[MetricsRow] = [r for r in results if not isinstance(r, BaseException)]
-        failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
-
-        if failures:
-            total_specimens = len(metrics) + len(failures)
-            logger.error(f"{len(failures)}/{total_specimens} train specimens failed")
-            # Persist error summary
-            errors = [{"type": type(e).__name__, "message": str(e)} for e in failures]
-            errors_file = eval_dir / "errors.json"
-            errors_file.write_text(json.dumps(errors, indent=2), encoding="utf-8")
-            # Translate host path to container path for error message
-            container_errors_path = _translate_host_path(errors_file)
-            raise RuntimeError(
-                f"{len(failures)}/{len(results)} specimens failed. See {container_errors_path} for details."
-            )
-
-        # Calculate total cost from MetricsRow.cost
-        cost = sum(m.cost for m in metrics)
-        state.total_cost += cost
-
-        budget_remaining = state.budget_limit - state.total_cost if state.budget_limit else None
+        # Run split evaluation (shared logic)
+        eval_dir, metrics, cost, budget_remaining = await _run_split_eval(
+            specimens=specimens,
+            split_name="train",
+            prompt_path=payload.prompt_path,
+            client=client,
+            agent_model=agent_model,
+            evals_dir=evals_dir,
+            state=state,
+            read_prompt_file=_read_prompt_file,
+            translate_host_path=_translate_host_path,
+        )
 
         # Train: detailed metrics
-        metrics_dicts = [m.model_dump() for m in metrics]
+        if not metrics:
+            raise ToolError("No metrics collected from train split")
+
         result = EvalTrainSplitOutput(
-            detailed_metrics=metrics_dicts,
+            detailed_metrics=metrics,
             specimens=specimens,
             cost=cost,
-            total_cost_so_far=state.total_cost,
             budget_remaining=budget_remaining,
-            eval_dir=_translate_host_path(eval_dir),
+            detailed_artifacts_dir=_translate_host_path(eval_dir),
         )
         (eval_dir / "train_results.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
         return result
@@ -477,199 +597,107 @@ def build_server(
         - aggregate_precision: May be low due to sparse labeling
         - No per-specimen details (intentional)
         """
-        prompt_text = _read_prompt_file(payload.prompt_path)
         specimens = get_valid_specimens()
 
-        # Budget check before starting work
-        state.check_budget_before_work()
-
-        # Create eval directory
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        eval_dir = evals_dir / f"eval_{ts}"
-        eval_dir.mkdir(parents=True, exist_ok=True)
-        (eval_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
-        logger.info("eval_valid_split: %s", eval_dir)
-
-        # Process each specimen once (in parallel)
-        async def process_one(specimen: str) -> MetricsRow:
-            """Process one specimen and return metrics with cost."""
-            out_dir = eval_dir / specimen
-            out_dir.mkdir(parents=True, exist_ok=True)
-
-            # Set up cost tracking (no RichDisplayHandler here - created inside with servers)
-            cost_tracker = CostTrackingHandler()
-            extra_handlers = (cost_tracker,)
-
-            # Run critic
-            critic_obj = await _run_critic_for_specimen(
-                specimen,
-                prompt_text,
-                client,
-                eval_dir,
-                agent_model=agent_model,
-                extra_handlers=extra_handlers,
-                verbose=state.verbose,
-                verbose_prefix=f"  [{specimen}] ",
-            )
-            critic_cost = cost_tracker.total_cost
-
-            # Reset for grader
-            cost_tracker.total_cost = 0.0
-
-            # Run grader
-            grade_obj = await grade_critic_output(
-                specimen,
-                critic_obj,
-                client,
-                transcript_out_dir=out_dir,
-                extra_handlers=extra_handlers,
-                verbose=state.verbose,
-                verbose_prefix=f"  [{specimen}] ",
-            )
-            grader_cost = cost_tracker.total_cost
-
-            (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
-
-            # Construct MetricsRow with nested GradeMetrics
-            total_specimen_cost = critic_cost + grader_cost
-            return MetricsRow(specimen=specimen, metrics=grade_obj.metrics, cost=total_specimen_cost)
-
-        # Run all specimens in parallel (each processed exactly once)
-        results = await asyncio.gather(*[process_one(s) for s in specimens], return_exceptions=True)
-
-        # Separate successes from failures
-        metrics: list[MetricsRow] = [r for r in results if not isinstance(r, BaseException)]
-        failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
-
-        if failures:
-            total_specimens = len(metrics) + len(failures)
-            logger.error(f"{len(failures)}/{total_specimens} validation specimens failed")
-            # Persist error summary
-            errors = [{"type": type(e).__name__, "message": str(e)} for e in failures]
-            errors_file = eval_dir / "errors.json"
-            errors_file.write_text(json.dumps(errors, indent=2), encoding="utf-8")
-            # Translate host path to container path for error message
-            container_errors_path = _translate_host_path(errors_file)
-            raise RuntimeError(
-                f"{len(failures)}/{len(results)} specimens failed. See {container_errors_path} for details."
-            )
-
-        # Calculate total cost from MetricsRow.cost
-        cost = sum(m.cost for m in metrics)
-        state.total_cost += cost
-
-        budget_remaining = state.budget_limit - state.total_cost if state.budget_limit else None
+        # Run split evaluation (shared logic)
+        eval_dir, metrics, cost, budget_remaining = await _run_split_eval(
+            specimens=specimens,
+            split_name="valid",
+            prompt_path=payload.prompt_path,
+            client=client,
+            agent_model=agent_model,
+            evals_dir=evals_dir,
+            state=state,
+            read_prompt_file=_read_prompt_file,
+            translate_host_path=_translate_host_path,
+        )
 
         # Valid: aggregates only (prevents overfitting)
-        agg_recall = sum(m.metrics.recall for m in metrics) / len(metrics) if metrics else 0.0
-        agg_precision = sum(m.metrics.precision for m in metrics) / len(metrics) if metrics else 0.0
+        if not metrics:
+            raise ToolError("No metrics collected from validation split")
+
+        # TODO: These are specimen-averaged, not issue-averaged. Specimens differ in number of issues,
+        # so this treats each specimen equally regardless of its size. Consider issue-weighted averaging
+        # if specimens have significantly different issue counts.
+        agg_recall = sum(m.recall for m in metrics) / len(metrics)
+        agg_tp_ratio = sum(m.reported_issue_ratios.tp for m in metrics) / len(metrics)
 
         result = EvalValidSplitOutput(
             aggregate_recall=agg_recall,
-            aggregate_precision=agg_precision,
+            aggregate_tp_ratio=agg_tp_ratio,
             specimen_count=len(metrics),
-            issue_count=sum(m.metrics.expected for m in metrics),
             cost=cost,
-            total_cost_so_far=state.total_cost,
             budget_remaining=budget_remaining,
-            eval_dir=_translate_host_path(eval_dir),
         )
         (eval_dir / "valid_summary.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
         return result
 
     @mcp.tool(flat=True)
-    async def eval_specimen(payload: EvalSpecimenInput) -> EvalSpecimenOutput:
-        """Evaluate a prompt on one specimen (medium cost, ~$1-5)."""
-        # Read prompt from file (translate container path to host path)
-        prompt_text = _read_prompt_file(payload.prompt_path)
+    async def eval_train_specimen(payload: EvalSpecimenInput) -> EvalSpecimenOutput:
+        """Evaluate a prompt on one train specimen (medium cost, ~$1-5).
 
-        # Budget check before starting work
-        state.check_budget_before_work()
+        Use this to:
+        - Test prompt on a specific specimen you're debugging
+        - Get detailed metrics and full access to transcripts/artifacts
 
-        # Create eval directory
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        eval_dir = evals_dir / f"eval_{ts}"
-        eval_dir.mkdir(parents=True, exist_ok=True)
-        (eval_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
-        logger.info("eval_specimen %s: %s", payload.specimen, eval_dir)
+        Constraints:
+        - Only works on train split (prevents leakage to valid/test)
 
-        # Run critic + grader on specimen
-        out_dir = eval_dir / payload.specimen
-        out_dir.mkdir(parents=True, exist_ok=True)
+        To find a specimen to evaluate, check /specimen_defs/train/ for available specimens
+        and review their issues/*.libsonnet files.
+        """
+        _validate_train_specimen(payload.specimen)
+        eval_dir, prompt_text = _setup_eval_dir(payload.prompt_path, f"eval_train_specimen {payload.specimen}")
 
-        # Set up cost tracking (no RichDisplayHandler here - created inside with servers)
-        cost_tracker = CostTrackingHandler()
-        extra_handlers = (cost_tracker,)
-
-        # Run critic
-        critic_obj = await _run_critic_for_specimen(
+        # Run critic + grader on specimen (returns MetricsRow with computed metrics)
+        metrics_row = await _run_critic_and_grader(
             payload.specimen,
             prompt_text,
             client,
             eval_dir,
+            eval_dir / payload.specimen,
             agent_model=agent_model,
-            extra_handlers=extra_handlers,
             verbose=state.verbose,
-            verbose_prefix=f"  [{payload.specimen}] ",
         )
-        critic_cost = cost_tracker.total_cost
 
-        # Reset for grader
-        cost_tracker.total_cost = 0.0
+        state.total_cost += metrics_row.cost
+        budget_remaining = state.budget_limit - state.total_cost if state.budget_limit else None
 
-        # Run grader
-        grade_obj = await grade_critic_output(
-            payload.specimen,
-            critic_obj,
-            client,
-            transcript_out_dir=out_dir,
-            extra_handlers=extra_handlers,
-            verbose=state.verbose,
-            verbose_prefix=f"  [{payload.specimen}] ",
-        )
-        grader_cost = cost_tracker.total_cost
-
-        (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
-
-        # Calculate cost
-        cost = critic_cost + grader_cost
-        state.total_cost += cost
-
-        # Construct output with nested GradeMetrics
+        # Construct output with agent-computed metrics
         return EvalSpecimenOutput(
-            specimen=payload.specimen, metrics=grade_obj.metrics, cost=cost, eval_dir=_translate_host_path(eval_dir)
+            specimen=payload.specimen,
+            recall=metrics_row.recall,
+            reported_issue_ratios=metrics_row.reported_issue_ratios,
+            cost=metrics_row.cost,
+            budget_remaining=budget_remaining,
+            detailed_artifacts_dir=_translate_host_path(eval_dir),
         )
 
     @mcp.tool(flat=True)
-    async def eval_file(payload: EvalFileInput) -> EvalFileOutput:
-        """Evaluate a prompt on one file (fast iteration, low cost ~$0.10-0.50).
+    async def eval_train_specimen_file(payload: EvalFileInput) -> EvalSpecimenOutput:
+        """Evaluate a prompt on one file in a train specimen (fast iteration, low cost ~$0.10-0.50).
+
+        Use this for:
+        - Fast iteration on specific files during prompt development
+        - Testing prompt changes on files you know are problematic
+
+        Returns same metrics as eval_train_specimen but scoped to a single file.
 
         Constraints:
         - Only works on train split (prevents leakage to valid/test)
         - Only works on files with >0 issues (validates before running)
+
+        To find files to evaluate:
+        1. Check /specimen_defs/train/<specimen>/issues/*.libsonnet for issue definitions
+        2. Each issue shows filesToRanges mapping which files contain issues
+        3. Pick a file path and pass it to this tool
         """
-        # Validate specimen is in train split
-        train_specimens = get_train_specimens()
-        if payload.specimen not in train_specimens:
-            raise ToolError(
-                f"eval_file only works on train split to prevent leakage. "
-                f"Specimen '{payload.specimen}' is not in train split."
-            )
+        _validate_train_specimen(payload.specimen)
+        eval_dir, prompt_text = _setup_eval_dir(
+            payload.prompt_path, f"eval_train_specimen_file {payload.specimen}:{payload.file_path}"
+        )
 
-        # Read prompt from file (translate container path to host path)
-        prompt_text = _read_prompt_file(payload.prompt_path)
-
-        # Budget check before starting work
-        state.check_budget_before_work()
-
-        # Create eval directory
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        eval_dir = evals_dir / f"eval_{ts}"
-        eval_dir.mkdir(parents=True, exist_ok=True)
-        (eval_dir / "prompt.txt").write_text(prompt_text, encoding="utf-8")
-        logger.info("eval_file %s:%s: %s", payload.specimen, payload.file_path, eval_dir)
-
-        # Run per-file eval with file filter (cost tracked internally)
+        # Run per-file eval with file filter (runs critic + grader on single file)
         result = await run_per_file_eval(
             specimen=payload.specimen,
             system_prompt=prompt_text,
@@ -683,22 +711,29 @@ def build_server(
         # Extract cost from per-file run results (single file in this case)
         cost = sum(run.cost for run in result.per_file_runs)
         state.total_cost += cost
+        budget_remaining = state.budget_limit - state.total_cost if state.budget_limit else None
 
         # Extract results for the single file
         if not result.per_file_runs:
             raise RuntimeError(f"No results returned for file {payload.file_path}")
 
         file_result = result.per_file_runs[0]  # Only one file since we filtered
-        detected_ids = file_result.detected_issue_ids
 
-        return EvalFileOutput(
+        # Extract grade and agent-computed metrics
+        if file_result.grade is None:
+            raise RuntimeError(f"Grading failed for file {payload.file_path}")
+
+        if file_result.critique is None:
+            raise RuntimeError(f"Critique failed for file {payload.file_path}")
+
+        # Use agent-computed metrics directly
+        return EvalSpecimenOutput(
             specimen=payload.specimen,
-            file_path=payload.file_path,
-            issues_in_file=file_result.issues_in_file,
-            detected_issues=detected_ids,
-            detection_rate=(len(detected_ids) / len(file_result.issues_in_file) if file_result.issues_in_file else 0.0),
+            recall=file_result.grade.recall,
+            reported_issue_ratios=file_result.grade.reported_issue_ratios,
             cost=cost,
-            eval_dir=_translate_host_path(eval_dir),
+            budget_remaining=budget_remaining,
+            detailed_artifacts_dir=_translate_host_path(eval_dir),
         )
 
     return mcp, state

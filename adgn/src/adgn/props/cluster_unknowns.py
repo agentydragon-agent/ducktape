@@ -16,7 +16,9 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP  # type: ignore
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
+from adgn.props.ids import BaseIssueID
 from adgn.props.prop_utils import pkg_dir
+from adgn.props.rationale import Rationale
 
 
 class UnknownIssue(BaseModel):
@@ -24,10 +26,10 @@ class UnknownIssue(BaseModel):
 
     uid: str = Field(..., description="Unique id, prefixed with run/specimen to avoid collisions")
     specimen: str
-    id: str
+    id: BaseIssueID
     should_flag: bool | None = None
-    rationale: str
-    files: list[str]
+    rationale: Rationale
+    files: set[str]
     yaml_path: str
 
 
@@ -70,7 +72,7 @@ def load_unknowns(paths: Iterable[Path]) -> list[UnknownIssue]:
             specimen = "UNKNOWN"
             run_ts = ""
         iid = str(core.get("id") or "")
-        files = list((occ.get("files") or {}).keys())
+        files = set((occ.get("files") or {}).keys())
         uid = f"{run_ts}:{iid}"
         issues.append(
             UnknownIssue(

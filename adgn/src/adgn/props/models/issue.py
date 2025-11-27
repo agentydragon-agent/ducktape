@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+
+from adgn.props.ids import BaseIssueID
+from adgn.props.paths import SpecimenRelativePath
+from adgn.props.rationale import Rationale
 
 
 class LineRange(BaseModel):
@@ -33,7 +37,7 @@ class Occurrence(BaseModel):
       Issue.rationale for the global explanation and acceptance criteria.
     """
 
-    files: dict[Annotated[str, StringConstraints(pattern=r"^[^\n]+$")], list[LineRange] | None] = Field(
+    files: dict[SpecimenRelativePath, list[LineRange] | None] = Field(
         description=(
             "Maps file paths -> list of LineRanges within that file or `None` to indicate an unspecified anchor in the file. "
             + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
@@ -47,15 +51,12 @@ class Occurrence(BaseModel):
         ),
     )
 
-    model_config = ConfigDict(extra="forbid")
+    @field_serializer("files", when_used="json")
+    def _serialize_files(self, value: dict[SpecimenRelativePath, list[LineRange] | None]) -> dict[str, Any]:
+        """Convert Path keys to strings for JSON serialization."""
+        return {str(k): v for k, v in value.items()}
 
-    @model_validator(mode="after")
-    def _validate_files_keys(self) -> Occurrence:
-        # TODO(mpokorny): During grading/runs, validate that each path resolves within the hydrated specimen root.
-        for k in self.files or {}:
-            if k in {"paths", ""}:
-                raise ValueError(f"Invalid files key: {k!r} — expected a real file path")
-        return self
+    model_config = ConfigDict(extra="forbid")
 
 
 class SpecimenIssuesLoadError(Exception):
@@ -74,7 +75,7 @@ class SpecimenIssuesLoadError(Exception):
 
 
 # Strongly-typed identifiers with validation
-IssueId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{0,200}$", min_length=1)]
+# BaseIssueID imported from ids module (validates no colons)
 
 
 class IssueCore(BaseModel):
@@ -85,8 +86,8 @@ class IssueCore(BaseModel):
     one or more Occurrence objects rather than repeating metadata.
     """
 
-    id: IssueId
+    id: BaseIssueID
     should_flag: bool
-    rationale: str
+    rationale: Rationale
 
     model_config = ConfigDict(extra="forbid")

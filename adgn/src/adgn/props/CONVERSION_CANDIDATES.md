@@ -34,21 +34,3 @@ Process, not outcome:
 
 Probably skip:
 - ascii-art-prefer-generated (harder to detect reliably)
-
----
-
-Converted (done)
-- [x] self-describing-units
-- [x] imports-at-top — `properties/imports-at-top.md`
-- [x] markdown-inline-formatting — `properties/markdown-inline-formatting.md`
-- [x] use-walrus-trivial-conditions — `properties/python/walrus.md`
-- [x] no-unnecessary-line-breaks — `properties/no-unnecessary-line-breaks.md`
-- [x] no-useless-docs — `properties/no-useless-docs.md`
-- [x] forbid-dynamic-attrs — `properties/forbid-dynamic-attrs.md`
-- [x] modern-type-hints — `properties/modern-type-hints.md`
-- [x] use-pathlib — `properties/use-pathlib.md`
-- [x] avoid-one-off-vars — `properties/no-oneoff-vars-and-trivial-wrappers.md`
-- [x] pathlike-pass-path-not-str — `properties/pathlike-pass-path-not-str.md`
-- [x] self-describing-names — `properties/self-describing-names.md`
-- [x] str-removeprefix-removesuffix — `properties/str-removeprefix-removesuffix.md`
-- [x] early-bailout (style heuristic)

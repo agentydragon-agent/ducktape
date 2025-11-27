@@ -10,14 +10,12 @@ async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen() -> No
     'pyright_watch_report.py'. The hydrated working directory yielded by the
     context manager must therefore contain exactly one file: that python file.
     """
-    rec = SpecimenRegistry.load_strict("2025-08-29-pyright_watch_report")
-
-    async with rec.hydrated_copy() as content_root:
+    async with SpecimenRegistry.load_and_hydrate("2025-08-29-pyright_watch_report") as (_rec, content_root):
         assert content_root.is_dir(), f"hydrated content root not a directory: {content_root}"
         files = [p.name for p in content_root.iterdir() if p.is_file()]
-    assert files == ["pyright_watch_report.py"], (
-        f"Expected exactly one file ['pyright_watch_report.py'] in {content_root}, got: {files}"
-    )
+        assert files == ["pyright_watch_report.py"], (
+            f"Expected exactly one file ['pyright_watch_report.py'] in {content_root}, got: {files}"
+        )
 
 
 async def test_hydrated_copy_git_specimen_has_wt_tree_rooted_correctly() -> None:
@@ -27,9 +25,7 @@ async def test_hydrated_copy_git_specimen_has_wt_tree_rooted_correctly() -> None
     Using specimen 'ducktape/2025-11-20-01', assert that <root>/wt/src/wt/server exists
     and contains at least one file or subdirectory.
     """
-    rec = SpecimenRegistry.load_strict("ducktape/2025-11-20-01")
-
-    async with rec.hydrated_copy() as root:
+    async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-20-01") as (_rec, root):
         assert root.is_dir(), f"hydrated content root not a directory: {root}"
         server_dir = root / "wt" / "src" / "wt" / "server"
         assert server_dir.is_dir(), f"expected directory missing: {server_dir}"

@@ -25,6 +25,7 @@ SPECIMEN_SPLITS: dict[str, Split] = {
     # Train set: 157 issues
     "ducktape/2025-09-03-00": Split.TRAIN,  # 71 issues
     "ducktape/2025-11-20-00": Split.TRAIN,  # 45 issues
+    "ducktape/2025-11-26-00": Split.TRAIN,  # TBD issues
     "crush/2025-08-30-internal_db": Split.TRAIN,  # 41 issues
     # Validation set: 77 issues
     "ducktape/2025-11-21-repo": Split.VALID,  # 39 issues

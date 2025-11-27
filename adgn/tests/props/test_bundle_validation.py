@@ -6,13 +6,7 @@ from pathlib import Path
 import pytest
 
 from adgn.props.models.specimen import GitSource
-from adgn.props.specimens.registry import (
-    SpecimenRegistry,
-    ensure_archive_for_specimen_slug,
-    find_specimens_base,
-    list_specimen_names,
-    resolve_bundle_url,
-)
+from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names, resolve_bundle_url
 
 # Size limit for files in bundle (2MB)
 MAX_FILE_SIZE = 2 * 1024 * 1024
@@ -25,27 +19,6 @@ MAX_BUNDLE_SIZE = 10 * 1024 * 1024
 def specimens_base() -> Path:
     """Base directory containing all specimens."""
     return find_specimens_base()
-
-
-@pytest.fixture(scope="session")
-def prehydrate_specimen_cache(specimens_base: Path):
-    """Pre-populate specimen cache to avoid parallel lock contention.
-
-    This fixture runs once at session start and ensures all specimen archives
-    are created serially. Subsequent test workers then hit the fast cache path.
-    """
-    all_specimens = list_specimen_names(specimens_base)
-
-    for slug in all_specimens:
-        rec, errors = SpecimenRegistry.load_lenient(slug, base=specimens_base)
-        if errors:
-            continue
-
-        if isinstance(rec.manifest.source, GitSource):
-            bundle_url = resolve_bundle_url(rec.manifest_path, rec.manifest.source.url)
-            if bundle_url.startswith("file://"):
-                # Trigger cache creation for this specimen
-                ensure_archive_for_specimen_slug(rec.manifest, rec.manifest_path, None)
 
 
 def pytest_generate_tests(metafunc):
@@ -70,14 +43,14 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture
-def specimen_record(request, specimens_base: Path, prehydrate_specimen_cache):
+async def specimen_record(request, specimens_base: Path):
     """Fixture that loads a specimen record without hydration.
 
     Parameter: specimen_slug (string)
     Returns: SpecimenRecord
     """
     specimen_slug = request.param
-    return SpecimenRegistry.load_strict(specimen_slug, base=specimens_base)
+    return await SpecimenRegistry.load_strict(specimen_slug, base=specimens_base)
 
 
 @pytest.fixture

@@ -117,7 +117,7 @@ class Persistence(Protocol):
     async def record_approval(
         self,
         *,
-        run_id: UUID,
+        run_id: UUID | None,
         agent_id: str | None,
         call_id: str,
         tool_key: str,

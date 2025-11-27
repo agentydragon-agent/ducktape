@@ -125,7 +125,7 @@ class ResourceReadResult(BaseModel):
 
 
 def _normalize_parts(
-    contents: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents],
+    contents: Sequence[mcp_types.TextResourceContents | mcp_types.BlobResourceContents],
 ) -> list[NormalizedPart]:
     """Normalize resource parts to a small, typed internal shape."""
     norm: list[NormalizedPart] = []
@@ -142,7 +142,7 @@ def _normalize_parts(
 
 
 def _iter_window_parts(
-    contents: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents],
+    contents: Sequence[mcp_types.TextResourceContents | mcp_types.BlobResourceContents],
     start_offset: int,
     max_bytes: int | None,
 ) -> Iterator[WindowedPart]:

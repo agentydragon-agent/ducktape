@@ -103,18 +103,17 @@ def test_split_distribution():
     assert test_count >= 1, f"Test has {test_count} specimens, expected >=1"
 
 
-def test_all_specimens_in_splits_can_load():
+async def test_all_specimens_in_splits_can_load():
     """Verify every specimen in splits can be loaded without errors."""
     base = find_specimens_base()
 
     for slug in SPECIMEN_SPLITS:
-        rec, errors = SpecimenRegistry.load_lenient(slug, base=base)
-        assert not errors, f"Specimen {slug} loaded with errors: {errors}"
+        rec = await SpecimenRegistry.load_strict(slug, base=base)
         assert rec is not None, f"Specimen {slug} failed to load"
         assert len(rec.issues) > 0, f"Specimen {slug} has no issues"
 
 
-def test_split_issue_counts():
+async def test_split_issue_counts():
     """Verify issue counts meet minimum constraints (slow test, uses registry).
 
     Constraint: Valid and Test must each have at least 60 issues.
@@ -127,8 +126,7 @@ def test_split_issue_counts():
     test_issues = 0
 
     for slug in SPECIMEN_SPLITS:
-        rec, errors = SpecimenRegistry.load_lenient(slug, base=base)
-        assert not errors, f"Specimen {slug} has errors: {errors}"
+        rec = await SpecimenRegistry.load_strict(slug, base=base)
         issue_count = len(rec.issues)
 
         if is_train(slug):

@@ -11,6 +11,7 @@ Critic agent MUST call ``submit(issues_count)`` after building the critique usin
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, NoReturn
 
 from fastmcp.exceptions import ToolError
@@ -24,7 +25,9 @@ from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import CRITIC_SUBMIT_SERVER_NAME
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.props.models.issue import IssueId, LineRange, Occurrence
+from adgn.props.ids import BaseIssueID
+from adgn.props.models.issue import LineRange, Occurrence
+from adgn.props.rationale import Rationale
 
 
 class ReportedIssue(BaseModel):
@@ -35,8 +38,8 @@ class ReportedIssue(BaseModel):
     Note: occurrences may be empty while the critique is being built incrementally; the submit tool enforces ≥1.
     """
 
-    id: IssueId
-    rationale: str
+    id: BaseIssueID
+    rationale: Rationale
     occurrences: list[Occurrence] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -84,7 +87,7 @@ class SubmitAck(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def _raise_unknown_issue(issue_id: IssueId) -> NoReturn:
+def _raise_unknown_issue(issue_id: BaseIssueID) -> NoReturn:
     """Raise a ToolError for unknown issue references (DRY helper)."""
     raise ToolError(f"Unknown issue '{issue_id}'. Create the issue before adding occurrences.")
 
@@ -101,7 +104,7 @@ RangeAtom = int | list[int]
 class UpsertIssueInput(BaseModel):
     """Create or update an issue header (id + rationale)."""
 
-    issue_id: IssueId
+    issue_id: BaseIssueID
     description: str = Field(description="Issue rationale/description")
 
     model_config = ConfigDict(extra="forbid")
@@ -110,7 +113,7 @@ class UpsertIssueInput(BaseModel):
 class CancelIssueInput(BaseModel):
     """Remove an issue and all its occurrences by id."""
 
-    issue_id: IssueId
+    issue_id: BaseIssueID
 
     model_config = ConfigDict(extra="forbid")
 
@@ -122,7 +125,7 @@ class AddOccurrenceInput(BaseModel):
     Example: [123, [140,150]]
     """
 
-    issue_id: IssueId
+    issue_id: BaseIssueID
     file: Annotated[str, StringConstraints(pattern=r"^[^\n]+$")]
     ranges: Annotated[
         list[RangeAtom], Field(min_length=1, description="List of single lines (int) or spans [start,end]")
@@ -145,7 +148,7 @@ class AddOccurrenceFilesInput(BaseModel):
     files: map of file -> list of range atoms (int or [start,end]).
     """
 
-    issue_id: IssueId
+    issue_id: BaseIssueID
     files: dict[Annotated[str, StringConstraints(pattern=r"^[^\n]+$")], list[RangeAtom]]
 
     model_config = ConfigDict(extra="forbid")
@@ -215,7 +218,7 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
         work = _ensure_work_payload()
         for it in work.issues:
             if it.id == payload.issue_id:
-                files_map: dict[str, list[LineRange] | None] = {payload.file: _normalize_ranges(payload.ranges)}
+                files_map: dict[Path, list[LineRange] | None] = {Path(payload.file): _normalize_ranges(payload.ranges)}
                 it.occurrences.append(Occurrence(files=files_map))
                 total_occs = sum(len(i.occurrences) for i in work.issues)
                 return ToolAck(
@@ -233,8 +236,8 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
         work = _ensure_work_payload()
         for it in work.issues:
             if it.id == payload.issue_id:
-                files_map: dict[str, list[LineRange] | None] = {
-                    p: _normalize_ranges(r) for p, r in (payload.files or {}).items()
+                files_map: dict[Path, list[LineRange] | None] = {
+                    Path(p): _normalize_ranges(r) for p, r in (payload.files or {}).items()
                 }
                 it.occurrences.append(Occurrence(files=files_map))
                 total_occs = sum(len(i.occurrences) for i in work.issues)

@@ -1,62 +1,68 @@
-from __future__ import annotations
+"""ID system for properties/grading.
 
-"""Shared helpers for ID prefixing and checks in properties tooling.
+Provides strongly-typed IDs with namespace separation:
+- BaseIssueID: Un-namespaced IDs (used in specimens, critique)
+- TruePositiveID, FalsePositiveID, InputIssueID: NewType wrappers for type safety
 
-Provides a single source of truth for the canonical/critique ID prefixes and
-small utilities to normalize and inspect IDs.
+All IDs are Pydantic-validated. BaseIssueID cannot contain colons (reserved
+for legacy string serialization).
+
+NewTypes provide compile-time type safety (mypy distinguishes them) while
+remaining strings at runtime (work as JSON dict keys).
 """
 
-CANON_TP_PREFIX = "canon_tp_"
-CANON_FP_PREFIX = "canon_fp_"
-CRIT_PREFIX = "crit_"
+from __future__ import annotations
+
+from typing import Annotated, Any, NewType, TypeAlias
+
+from pydantic import BeforeValidator, PlainSerializer, constr
+
+# =============================================================================
+# Shared Serializer
+# =============================================================================
+
+# Shared identity serializer for all string-based Annotated types
+# Preserves string value unchanged during serialization
+_STR_IDENTITY_SERIALIZER = PlainSerializer(lambda x: x, return_type=str, when_used="json")
 
 
-def _ensure_prefixed(value: str | None, prefix: str) -> str | None:
-    if value is None:
-        return None
-    s = str(value)
-    return s if s.startswith(prefix) else f"{prefix}{s}"
+# =============================================================================
+# Base Issue ID (un-namespaced)
+# =============================================================================
 
 
-def ensure_crit_id(value: str | None) -> str | None:
-    return _ensure_prefixed(value, CRIT_PREFIX)
+def _reject_colon(v: Any) -> Any:
+    """Validator rejecting colons (reserved for namespace separator in legacy code)."""
+    if isinstance(v, str) and ":" in v:
+        raise ValueError(f"BaseIssueID cannot contain colon (reserved for namespaces): {v!r}")
+    return v
 
 
-def ensure_canon_tp_id(value: str | None) -> str | None:
-    return _ensure_prefixed(value, CANON_TP_PREFIX)
+# Base issue ID type (used in specimens, critique definitions)
+# Pattern: lowercase alphanumeric, underscore, hyphen only
+# Length: 5-40 characters
+# No colons (reserved for namespace separator)
+# ruff: noqa: UP040 - TypeAlias required for mypy compatibility with complex Annotated types
+BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitation with complex Annotated
+    constr(pattern=r"^[a-z0-9_-]+$", min_length=5, max_length=40),
+    BeforeValidator(_reject_colon),
+    _STR_IDENTITY_SERIALIZER,
+]
 
 
-def ensure_canon_fp_id(value: str | None) -> str | None:
-    return _ensure_prefixed(value, CANON_FP_PREFIX)
+# =============================================================================
+# Namespaced IDs (NewType for type safety)
+# =============================================================================
 
+# NewType creates nominal types for mypy (compile-time type safety)
+# At runtime, these are just BaseIssueID strings (work as JSON dict keys)
+# Type is implied by position in data structure (true positive keys in canonical_tp_coverage, etc.)
 
-def is_crit_id(value: str | None) -> bool:
-    return bool(value) and str(value).startswith(CRIT_PREFIX)
+TruePositiveID = NewType("TruePositiveID", BaseIssueID)  # type: ignore[valid-newtype]
+"""True positive ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
 
+FalsePositiveID = NewType("FalsePositiveID", BaseIssueID)  # type: ignore[valid-newtype]
+"""False positive ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
 
-def is_canon_tp_id(value: str | None) -> bool:
-    return bool(value) and str(value).startswith(CANON_TP_PREFIX)
-
-
-def is_canon_fp_id(value: str | None) -> bool:
-    return bool(value) and str(value).startswith(CANON_FP_PREFIX)
-
-
-def strip_crit_prefix(value: str | None) -> str:
-    s = "" if value is None else str(value)
-    return s.removeprefix(CRIT_PREFIX)
-
-
-def ensure_with_prefix(value: str | None, prefix: str) -> str | None:
-    """Normalize an ID to include the expected prefix.
-
-    Recognizes known prefixes (canon_tp_, canon_fp_, crit_) and delegates to the
-    dedicated helpers. For any other prefix, falls back to a generic concatenation.
-    """
-    if prefix == CANON_TP_PREFIX:
-        return ensure_canon_tp_id(value)
-    if prefix == CANON_FP_PREFIX:
-        return ensure_canon_fp_id(value)
-    if prefix == CRIT_PREFIX:
-        return ensure_crit_id(value)
-    return _ensure_prefixed(value, prefix)
+InputIssueID = NewType("InputIssueID", BaseIssueID)  # type: ignore[valid-newtype]
+"""Input critique ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""

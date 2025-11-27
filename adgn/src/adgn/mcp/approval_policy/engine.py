@@ -519,7 +519,7 @@ class PolicyEngine:
         run_policy_source(
             docker_client=self.docker_client,
             source=source,
-            input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
+            input_payload=PolicyRequest(name=build_mcp_function(UI_SERVER_NAME, "send_message"), arguments={}),
         )
 
     # ---- Proposal management methods ----

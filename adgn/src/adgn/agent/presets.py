@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from fastmcp.mcp_config import MCPConfig
 from platformdirs import user_config_dir
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, Field
 import yaml
 
 if TYPE_CHECKING:
@@ -29,19 +29,11 @@ class AgentPreset(BaseModel):
     name: str
     description: str | None = None
     system: str | None = None
-    specs: dict[str, JsonValue] = Field(default_factory=dict)
+    mcp: MCPConfig = Field(default_factory=lambda: MCPConfig(mcpServers={}))
     approval_policy: str | None = None
     # Source metadata (filled by loader; used by UI)
     file_path: str | None = None
     modified_at: str | None = None  # ISO-8601 string
-
-
-def _load_yaml(path: Path) -> dict[str, JsonValue]:
-    with path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    if not isinstance(data, dict):
-        raise ValueError(f"preset must be a mapping: {path}")
-    return cast(dict[str, JsonValue], data)
 
 
 def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
@@ -49,10 +41,14 @@ def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
     if not root.exists() or not root.is_dir():
         return out
     for p in sorted(root.glob("*.y*ml")):
-        data = _load_yaml(p)
+        with p.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if data is None:
+            data = {}
+        if not isinstance(data, dict):
+            raise ValueError(f"preset must be a mapping: {p}")
         # Default name from filename when missing in YAML
         if "name" not in data or not data.get("name"):
-            data = dict(data)
             data["name"] = p.stem
         preset = AgentPreset.model_validate(data)
         stat = p.stat()  # Fail fast on OS errors
@@ -94,7 +90,7 @@ def discover_presets(*, override_dir: str | Path | None = None) -> dict[str, Age
                 out[name] = preset
     # Always include a built-in default if none present
     if "default" not in out:
-        out["default"] = AgentPreset(name="default", description="Default UI agent", system=None, specs={})
+        out["default"] = AgentPreset(name="default", description="Default UI agent", system=None)
     return out
 
 
@@ -117,20 +113,12 @@ async def create_agent_from_preset(
     presets = discover_presets()
     preset = presets.get(preset_name or "default") or presets["default"]
 
-    # Merge preset specs with base config
+    # Merge preset MCP config with base config
     mcp_config = base_mcp_config.model_copy(deep=True)
-    if preset.specs:
-        # Parse preset specs as MCPConfig servers
-        for name, spec in preset.specs.items():
-            if isinstance(spec, dict):
-                # Try to parse as server config
-                from fastmcp.mcp_config import parse_server_config
-
-                try:
-                    server_config = parse_server_config(spec)
-                    mcp_config.mcpServers[name] = server_config
-                except Exception:
-                    pass  # Skip invalid specs
+    # Merge preset's MCP servers into the config
+    if preset.mcp and preset.mcp.mcpServers:
+        for name, spec in preset.mcp.mcpServers.items():
+            mcp_config.mcpServers[name] = spec
 
     # Create agent record in DB
     metadata = AgentMetadata(preset=preset.name)

@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import json
+from typing import Any
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 from pydantic import BaseModel
+
+
+def _to_json_filter(value: Any, indent: int = 2) -> str:
+    """Jinja filter to serialize Pydantic models/lists to JSON."""
+    if isinstance(value, list) and value and isinstance(value[0], BaseModel):
+        return json.dumps([item.model_dump(mode="json") for item in value], ensure_ascii=False, indent=indent)
+    if isinstance(value, BaseModel):
+        return value.model_dump_json(indent=indent)
+    return json.dumps(value, ensure_ascii=False, indent=indent)
 
 
 def get_templates_env() -> Environment:
@@ -11,12 +22,14 @@ def get_templates_env() -> Environment:
 
     Templates live under the adgn.props.prompts package directory.
     """
-    return Environment(
+    env = Environment(
         loader=PackageLoader("adgn.props", "prompts"),
         autoescape=select_autoescape(["md", "markdown", "txt", "j2"]),
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    env.filters["to_json"] = _to_json_filter
+    return env
 
 
 def render_prompt_template(name: str, **ctx: object) -> str:

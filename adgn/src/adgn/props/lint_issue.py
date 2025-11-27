@@ -15,22 +15,24 @@ from rich.table import Table
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import Abort, Auto, Continue, RequireAny
+from adgn.agent.loop_control import Abort, Auto, Continue, NoLoopDecision, RequireAny
 from adgn.agent.reducer import BaseHandler
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp._shared.constants import LINT_SUBMIT_SERVER_NAME
+from adgn.mcp._shared.constants import LINT_SUBMIT_SERVER_NAME, RUNTIME_CONTAINER_INFO_URI
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.models import ExecInput
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.builders import make_item_tool_call
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
-from adgn.props.models.issue import IssueCore, IssueId, LineRange, Occurrence
+from adgn.props.ids import BaseIssueID
+from adgn.props.models.issue import IssueCore, LineRange, Occurrence
 from adgn.props.models.lint import AnchorIncorrect, IssueLintFindingRecord, LintSubmitPayload
 from adgn.props.prompts.util import build_input_schemas_json, render_prompt_template
-from adgn.props.prop_utils import pkg_dir, props_definitions_root
+from adgn.props.prop_utils import props_definitions_root
 from adgn.props.specimens.registry import SpecimenRegistry
 
 from .cli_shared import now_ts
@@ -124,7 +126,7 @@ def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit"
 @dataclass
 class LintConfig:
     specimen: str
-    issue_id: IssueId
+    issue_id: BaseIssueID
     model: str = "gpt-5"
     dry_run: bool = False
 
@@ -143,9 +145,6 @@ def make_nl_tool_call(server_name: str, container_path: Path, call_id: str) -> F
 
 def make_container_info_call(wiring: PropertiesDockerWiring) -> FunctionCallItem:
     """resources.read for runtime container.info resource."""
-    from adgn.mcp._shared.constants import RUNTIME_CONTAINER_INFO_URI
-    from adgn.mcp.resources.server import ResourcesReadArgs
-
     return make_item_tool_call(
         call_id="bootstrap:res",
         name=build_mcp_function("resources", "read"),
@@ -174,8 +173,6 @@ class BootstrapInspectHandler(BaseHandler):
         self._emitted: bool = False
 
     def on_before_sample(self):
-        from adgn.agent.loop_control import NoLoopDecision
-
         if self._done:
             return NoLoopDecision()
         # First cycle: emit synthetic calls, but do NOT mark done yet
@@ -187,20 +184,6 @@ class BootstrapInspectHandler(BaseHandler):
         # Second cycle: mark done and defer; subsequent cycles will continue normally
         self._done = True
         return NoLoopDecision()
-
-
-def extract_canonical_issue_ids(prefixed_ids: list[str]) -> list[str]:
-    """Extract original issue IDs from grader true_positive_ids (strips canon_tp_ prefix).
-
-    Args:
-        prefixed_ids: List of IDs like ["canon_tp_issue-001", "canon_tp_issue-002"]
-
-    Returns:
-        List of unprefixed IDs like ["issue-001", "issue-002"]
-    """
-    from adgn.props.ids import CANON_TP_PREFIX
-
-    return [id.replace(CANON_TP_PREFIX, "", 1) for id in prefixed_ids if id.startswith(CANON_TP_PREFIX)]
 
 
 # TODO(mpokorny): Bridge: accept (IssueCore, Occurrence) now; migrate to IssueDoc
@@ -269,7 +252,7 @@ class LinterController(BaseHandler):
             st = hp.stat()
             if not hp.is_file():
                 raise SystemExit(f"Expected a regular file for occurrence path: {hp}")
-            sizes[p] = int(st.st_size)
+            sizes[str(p)] = int(st.st_size)
         self._big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
         # Pre-build synthetic steps
         self._step1 = [make_container_info_call(self._wiring)]
@@ -287,7 +270,7 @@ class LinterController(BaseHandler):
         def _content_calls() -> list[FunctionCallItem]:
             out: list[FunctionCallItem] = []
             for q in self._files:
-                if sizes[q] > BIG_THRESHOLD:
+                if sizes[str(q)] > BIG_THRESHOLD:
                     continue
                 out.append(
                     make_nl_tool_call(
@@ -332,76 +315,98 @@ class LinterController(BaseHandler):
 
 
 async def lint_issue_run(
-    specimen: str,
+    specimen: str | None,
     issue_core: IssueCore,
     occurrence: Occurrence,
     *,
     model: str = "gpt-5",
     client: OpenAIModelProto,
-    gitconfig: str | None = None,
     handlers: list[BaseHandler] | None = None,
+    content_root: Path | None = None,
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
-    - Hydrates specimen under $HOME/.cache
+    Args:
+        specimen: Specimen slug (required if content_root not provided, for hydration)
+        issue_core: Issue to lint
+        occurrence: Single occurrence to lint
+        model: Model ID for agent
+        client: OpenAI client
+        handlers: Additional handlers (optional)
+        content_root: Pre-hydrated specimen root (optional, avoids rehydration)
+
+    - If content_root provided: uses it directly (caller manages hydration)
+    - If content_root not provided: hydrates specimen under $HOME/.cache
     - Launches in-proc submit server and docker_exec MCP
     - Uses same LinterController bootstrap/tool policy as the CLI path
     """
-    # Determine default gitconfig fallback (kept in sync with load_single_issue)
-    if gitconfig is None:
-        cfg = pkg_dir() / "gitconfig.local"
-        if cfg.exists():
-            gitconfig = str(cfg)
-    gc_path = Path(gitconfig).expanduser().resolve() if gitconfig else None
-
-    # Resolve specimen manifest for archive hydration (fail fast on errors)
-
-    rec = SpecimenRegistry.load_strict(Path(specimen).name)
-
     submit_state = LintSubmitState()
 
-    # Hydrate specimen via registry context manager (centralized cleanup)
-    async with rec.hydrated_copy(gc_path) as content_root:
-        # Build in-process FastMCP servers
-        # Lint submit as tools-builder secured attach
-        def _build_lint_submit_tools(s: NotifyingFastMCP) -> None:
-            @s.flat_model()
-            async def submit_result(result: LintSubmitPayload) -> SimpleOk:
-                submit_state.result = result
-                return SimpleOk(ok=True)
-
-        wiring = properties_docker_spec(content_root, mount_properties=True)
-
-        props: list[Path] = []
-        prompt = _build_prompt(
-            issue_core,
-            submit_tool_name=build_mcp_function("lint_submit", "submit_result"),
-            occurrence=occurrence,
-            wiring=wiring,
+    # If content_root provided, use it directly; otherwise hydrate
+    if content_root is not None:
+        # Caller manages hydration
+        return await _lint_issue_run_with_hydrated_root(
+            content_root, issue_core, occurrence, model, client, submit_state, handlers
         )
 
-        # Controller: LinterController with identical bootstrap/tool policy
-        ctrl = LinterController(
-            state=submit_state, occ=occurrence, content_root=content_root, docker_wiring=wiring, prop_host_paths=props
+    # Hydrate and run
+    if specimen is None:
+        raise ValueError("Either specimen or content_root must be provided")
+
+    async with SpecimenRegistry.load_and_hydrate(Path(specimen).name) as (_rec, hydrated_root):
+        return await _lint_issue_run_with_hydrated_root(
+            hydrated_root, issue_core, occurrence, model, client, submit_state, handlers
         )
 
-        # Build compositor and client
-        comp = Compositor("compositor")
-        await wiring.attach(comp)
-        # Create a small server and mount in-proc (no auth)
-        submit_srv = NotifyingFastMCP(LINT_SUBMIT_SERVER_NAME, instructions="Lint submit")
-        _build_lint_submit_tools(submit_srv)
-        await comp.mount_inproc(LINT_SUBMIT_SERVER_NAME, submit_srv)
-        async with Client(comp) as mcp_client:
-            agent = await MiniCodex.create(
-                model=model,
-                mcp_client=mcp_client,
-                system="You are a code agent. Be concise.",
-                client=client,
-                handlers=[ctrl, *(handlers if handlers is not None else [])],
-                parallel_tool_calls=True,
-            )
-            await agent.run(prompt)
+
+async def _lint_issue_run_with_hydrated_root(
+    content_root: Path,
+    issue_core: IssueCore,
+    occurrence: Occurrence,
+    model: str,
+    client: OpenAIModelProto,
+    submit_state: LintSubmitState,
+    handlers: list[BaseHandler] | None,
+) -> LintSubmitPayload:
+    """Core lint logic with pre-hydrated specimen root."""
+    wiring = properties_docker_spec(content_root, mount_properties=True)
+
+    props: list[Path] = []
+    prompt = _build_prompt(
+        issue_core,
+        submit_tool_name=build_mcp_function("lint_submit", "submit_result"),
+        occurrence=occurrence,
+        wiring=wiring,
+    )
+
+    # Controller: LinterController with identical bootstrap/tool policy
+    ctrl = LinterController(
+        state=submit_state, occ=occurrence, content_root=content_root, docker_wiring=wiring, prop_host_paths=props
+    )
+
+    # Build compositor and client
+    comp = Compositor("compositor")
+    await wiring.attach(comp)
+
+    # Create lint submit server and mount in-proc
+    submit_srv = NotifyingFastMCP(LINT_SUBMIT_SERVER_NAME, instructions="Lint submit")
+
+    @submit_srv.flat_model()
+    async def submit_result(result: LintSubmitPayload) -> SimpleOk:
+        submit_state.result = result
+        return SimpleOk(ok=True)
+
+    await comp.mount_inproc(LINT_SUBMIT_SERVER_NAME, submit_srv)
+    async with Client(comp) as mcp_client:
+        agent = await MiniCodex.create(
+            model=model,
+            mcp_client=mcp_client,
+            system="You are a code agent. Be concise.",
+            client=client,
+            handlers=[ctrl, *(handlers if handlers is not None else [])],
+            parallel_tool_calls=True,
+        )
+        await agent.run(prompt)
 
     assert submit_state.result, "submit_result somehow not called?"
     result: LintSubmitPayload = submit_state.result
@@ -415,76 +420,71 @@ async def lint_issue_run(
 
 async def run_specimen_lint_issue_async(
     specimen: str,
-    issue_id: IssueId,
+    issue_id: BaseIssueID,
     *,
     model: str = "gpt-5",
     dry_run: bool = False,
-    gitconfig: str | None = None,
     occurrence_index: int,
     client: OpenAIModelProto,
 ) -> int:
-    # Resolve specimen/issue via registry (strict load; crash on invalid specimen/issues)
-    rec = SpecimenRegistry.load_strict(specimen)
-    try:
+    # Load and hydrate once (avoids rehydration in lint_issue_run)
+    async with SpecimenRegistry.load_and_hydrate(specimen) as (rec, content_root):
         irec = rec.issues[issue_id]
-    except KeyError:
-        raise SystemExit(f"Issue id not found in specimen issues: {issue_id}") from None
 
-    # Require a single occurrence; do not run on the full issue or mutate the Issue
-    if not (0 <= occurrence_index < len(irec.instances)):
-        raise SystemExit(f"occurrence_index out of range: {occurrence_index} (instances={len(irec.instances)})")
-    occ = irec.instances[occurrence_index]
+        # Require a single occurrence; do not run on the full issue or mutate the Issue
+        if not (0 <= occurrence_index < len(irec.instances)):
+            raise SystemExit(f"occurrence_index out of range: {occurrence_index} (instances={len(irec.instances)})")
+        occ = irec.instances[occurrence_index]
 
-    # Build submit tool name for dry-run prompt
-    submit_tool_name = build_mcp_function("lint_submit", "submit_result")
+        # Build submit tool name for dry-run prompt
+        submit_tool_name = build_mcp_function("lint_submit", "submit_result")
 
-    if dry_run:
-        # Build a wiring for prompt rendering (no container launched in dry-run)
-        # any existing directory works for template context
-        dummy_root = pkg_dir()
-        wiring = properties_docker_spec(dummy_root, mount_properties=True)
-        prompt = _build_prompt(
-            irec.core,  # render via IssueCore + single occurrence
-            submit_tool_name=submit_tool_name,
+        if dry_run:
+            # Build a wiring for prompt rendering (no container launched in dry-run)
+            # Use hydrated content_root for accurate wiring
+            wiring = properties_docker_spec(content_root, mount_properties=True)
+            prompt = _build_prompt(
+                irec.core,  # render via IssueCore + single occurrence
+                submit_tool_name=submit_tool_name,
+                occurrence=occ,
+                wiring=wiring,
+            )
+            tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+            tmpdir.mkdir(parents=True, exist_ok=True)
+            ts = now_ts()
+            outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
+            outfile.write_text(prompt, encoding="utf-8")
+            print(f"[dry-run] Saved prompt: {outfile}")
+            return 0
+
+        # Shared core: run and capture structured payload (reuses hydrated content_root)
+        # Add per-run transcript logger handler
+        run_dir = Path.cwd() / "logs" / "mini_codex" / "lint_issue"
+        run_dir = run_dir / f"run_{now_ts()}_{os.getpid()}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        res = await lint_issue_run(
+            specimen=None,  # Not needed when content_root provided
+            issue_core=irec.core,
             occurrence=occ,
-            wiring=wiring,
+            model=model,
+            client=client,
+            handlers=[DisplayEventsHandler(), TranscriptHandler(dest_dir=run_dir)],
+            content_root=content_root,  # Reuse hydrated root (avoids rehydration)
         )
-        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-        tmpdir.mkdir(parents=True, exist_ok=True)
-        ts = now_ts()
-        outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
-        outfile.write_text(prompt, encoding="utf-8")
-        print(f"[dry-run] Saved prompt: {outfile}")
+
+        # Print the exact occurrence representation as fed to the model
+        issue_dict = irec.core.model_dump(exclude_none=True)
+        issue_dict.pop("id", None)
+        occ_dict: dict[str, Any] = occ.model_dump(exclude_none=True)
+        issue_dict["instances"] = [occ_dict]
+        issue_json = json.dumps(issue_dict, ensure_ascii=False)
+        print("Issue (JSON):")
+        print(issue_json)
+
+        # Pretty-print final agent output via Rich renderer
+        Console().print(render_to_rich(res))
         return 0
-
-    # Shared core: run and capture structured payload
-    # Add per-run transcript logger handler
-    run_dir = Path.cwd() / "logs" / "mini_codex" / "lint_issue"
-    run_dir = run_dir / f"run_{now_ts()}_{os.getpid()}"
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    res = await lint_issue_run(
-        specimen,
-        irec.core,
-        occ,
-        model=model,
-        gitconfig=gitconfig,
-        client=client,
-        handlers=[DisplayEventsHandler(), TranscriptHandler(dest_dir=run_dir)],
-    )
-
-    # Print the exact occurrence representation as fed to the model
-    issue_dict = irec.core.model_dump(exclude_none=True)
-    issue_dict.pop("id", None)
-    occ_dict: dict[str, Any] = occ.model_dump(exclude_none=True)
-    issue_dict["instances"] = [occ_dict]
-    issue_json = json.dumps(issue_dict, ensure_ascii=False)
-    print("Issue (JSON):")
-    print(issue_json)
-
-    # Pretty-print final agent output via Rich renderer
-    Console().print(render_to_rich(res))
-    return 0
 
 
 # Generic docker exec tool identifiers

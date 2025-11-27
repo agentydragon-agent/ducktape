@@ -20,6 +20,7 @@ import tempfile
 import time
 from typing import Any, Literal
 
+import _jsonnet
 import docker
 from fastmcp.client import Client
 from rich.console import Console
@@ -58,7 +59,7 @@ from adgn.props.docker_env import (
 )
 from adgn.props.eval_harness import run_all_evals
 from adgn.props.grade_runner import _metrics_row, grade_critic_output
-from adgn.props.grader import GradeMetrics, GradeSubmitPayload
+from adgn.props.grader import GradeMetrics, GradeSubmitInput
 from adgn.props.lint_issue import run_specimen_lint_issue_async
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
 from adgn.props.per_file_eval import run_per_file_eval
@@ -72,7 +73,13 @@ from adgn.props.prompts.builder import (
 )
 from adgn.props.prompts.util import build_scope_text, get_templates_env
 from adgn.props.prop_utils import pkg_dir
-from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names
+from adgn.props.specimens.registry import (
+    JSONNET_LIBDIR,
+    SpecimenRegistry,
+    _jsonnet_importer,
+    find_specimens_base,
+    list_specimen_names,
+)
 
 # Reduce Rich traceback verbosity for CLI errors
 rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
@@ -212,38 +219,28 @@ async def _run_specimen_minicodex_async(
     output_final_message: Path | None,
     client: OpenAIModelProto,
 ) -> int:
-    rec = SpecimenRegistry.load_strict(specimen)
-    man = rec.manifest
+    # Load and hydrate specimen (single hydration for both dry-run and real run)
+    async with SpecimenRegistry.load_and_hydrate(specimen, gitconfig=gitconfig) as (rec, content_root):
+        man = rec.manifest
+        supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
 
-    supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
+        # Build prompt according to mode
+        scope_text = build_scope_text(man.scope.include, man.scope.exclude)
+        role_mode: Literal["discover", "open", "find"] = (
+            "discover" if mode == "discover" else ("open" if mode == "open" else "find")
+        )
 
-    # Build prompt according to mode
-    scope_text = build_scope_text(man.scope.include, man.scope.exclude)
-    role_mode: Literal["discover", "open", "find"] = (
-        "discover" if mode == "discover" else ("open" if mode == "open" else "find")
-    )
-
-    # In dry-run, hydrate and create real wiring; compose prompt only
-    if dry_run:
-        async with rec.hydrated_copy(gitconfig) as content_root:
-            wiring = properties_docker_spec(content_root, mount_properties=True)
-            prompt = build_role_prompt(
-                role_mode,
-                scope_text,
-                wiring=wiring,
-                supplemental_text=supplemental_text,
-                available_tools=detect_tools(),
-            )
-            tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-            tmpdir.mkdir(parents=True, exist_ok=True)
-            save_prompt_to_tmp(f"codex_prompt_specimen_{mode}", prompt)
-        return 0
-
-    async with rec.hydrated_copy(gitconfig) as content_root:
         wiring = properties_docker_spec(content_root, mount_properties=True)
         prompt = build_role_prompt(
             role_mode, scope_text, wiring=wiring, supplemental_text=supplemental_text, available_tools=detect_tools()
         )
+
+        # In dry-run, just save prompt and exit
+        if dry_run:
+            tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+            tmpdir.mkdir(parents=True, exist_ok=True)
+            save_prompt_to_tmp(f"codex_prompt_specimen_{mode}", prompt)
+            return 0
 
         # Critic flow via MiniCodex: agent must call critic_submit.submit_result
         submit_state = CriticSubmitState()
@@ -398,16 +395,34 @@ async def prompt_eval(
 @app.command("specimen-grade")
 @async_run
 async def specimen_grade(specimen: str = ARG_SPECIMEN, critique: Path = OPT_CRITIQUE) -> None:
-    """Grade a saved critique JSON for a specimen against canonical findings; print concise metrics with fuzzy values."""
+    """Grade a saved critique JSON/jsonnet for a specimen against canonical findings; print concise metrics with fuzzy values.
+
+    Accepts both .json and .jsonnet files. Jsonnet files are compiled to JSON before grading.
+    """
     try:
-        crit_obj = CriticSubmitPayload.model_validate_json(critique.read_text(encoding="utf-8"))
+        # Handle jsonnet files by compiling them first
+        if critique.suffix == ".jsonnet":
+            json_str = _jsonnet.evaluate_file(
+                str(critique), jpathdir=[str(JSONNET_LIBDIR)], import_callback=_jsonnet_importer
+            )
+            crit_obj = CriticSubmitPayload.model_validate_json(json_str)
+        else:
+            # Plain JSON file
+            crit_obj = CriticSubmitPayload.model_validate_json(critique.read_text(encoding="utf-8"))
     except Exception as e:
-        typer.echo(f"ERROR: failed to parse or validate critique JSON: {e}")
+        typer.echo(f"ERROR: failed to parse or validate critique: {e}")
         raise typer.Exit(code=2) from e
 
     # Use a unique transcript directory per grading run to avoid collisions
     grader_out = critique.parent / f"grader_{now_ts()}"
-    grade = await grade_critic_output(specimen, crit_obj, build_client("gpt-5"), transcript_out_dir=grader_out)
+    grade = await grade_critic_output(
+        specimen,
+        crit_obj,
+        build_client("gpt-5"),
+        transcript_out_dir=grader_out,
+        verbose=True,
+        verbose_prefix="[GRADER] ",
+    )
     row = _metrics_row(grade, specimen=specimen)
     typer.echo(json.dumps(row, indent=2))
     # Persist full payload near the input for convenience
@@ -460,15 +475,8 @@ async def cmd_lint_issue(
     dry_run: bool = OPT_DRY_RUN,
     gitconfig: Path | None = OPT_GITCONFIG,
 ) -> None:
-    git_path = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
     rc = await run_specimen_lint_issue_async(
-        specimen,
-        issue_id,
-        model=model,
-        dry_run=dry_run,
-        gitconfig=(str(git_path) if git_path else None),
-        occurrence_index=occurrence,
-        client=build_client(model),
+        specimen, issue_id, model=model, dry_run=dry_run, occurrence_index=occurrence, client=build_client(model)
     )
     raise typer.Exit(code=rc)
 
@@ -476,7 +484,7 @@ async def cmd_lint_issue(
 @app.command("eval-all")
 @async_run
 async def cmd_eval_all() -> None:
-    await run_all_evals(model="gpt-5", gitconfig=None, client=build_client("gpt-5"))
+    await run_all_evals(model="gpt-5", client=build_client("gpt-5"))
 
 
 @app.command("per-file-eval")
@@ -598,7 +606,7 @@ def _render_prompt_with_context(text: str, *, wiring: PropertiesDockerWiring, sc
     env = get_templates_env()
     tmpl = env.from_string(text)
     schemas_json = build_input_schemas_json(
-        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload]
+        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitInput]
     )
     return str(
         tmpl.render(
@@ -622,20 +630,21 @@ async def _open_run_context(path: Path | None, specimen: str | None, gitconfig: 
         wiring = properties_docker_spec(path, mount_properties=True, ephemeral=False)
         yield wiring, build_scope_text(["/workspace/**"]), path.name
         return
-    rec = SpecimenRegistry.load_strict(specimen or "")
-    async with rec.hydrated_copy(_resolve_gitconfig(str(gitconfig) if gitconfig else None)) as content_root:
+    # Load and hydrate specimen (single hydration, avoid wasteful re-hydrate)
+    gc = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
+    async with SpecimenRegistry.load_and_hydrate(specimen or "", gitconfig=gc) as (rec, content_root):
         wiring = properties_docker_spec(content_root, mount_properties=True, ephemeral=False)
         scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
         yield wiring, scope_text, rec.slug
 
 
-def _compute_scope_and_label(path: Path | None, specimen: str | None, gitconfig: Path | None) -> tuple[str, str]:
+async def _compute_scope_and_label(path: Path | None, specimen: str | None, gitconfig: Path | None) -> tuple[str, str]:
     """Return (scope_text, label) without requiring Docker/hydration.
 
     Used by --dry-run to avoid side effects while still rendering prompts consistently.
     """
     if specimen is not None:
-        rec = SpecimenRegistry.load_strict(specimen)
+        rec = await SpecimenRegistry.load_strict(specimen)
         scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
         return scope_text, rec.slug
     assert path is not None
@@ -658,12 +667,15 @@ async def _compose_prompt_only(
     if path is not None:
         wiring = properties_docker_spec(path, mount_properties=True)
         scope_text = build_scope_text(["/workspace/**"])
+        prompt = _render_prompt_with_context(prompt_raw, wiring=wiring, scope_text=scope_text)
     else:
-        rec = SpecimenRegistry.load_strict(specimen or "")
-        async with rec.hydrated_copy(_resolve_gitconfig(str(gitconfig) if gitconfig else None)) as content_root:
+        # specimen must be non-None here (validated at call site line 806)
+        assert specimen is not None, "specimen must be provided when path is None"
+        gc = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
+        async with SpecimenRegistry.load_and_hydrate(specimen, gitconfig=gc) as (rec, content_root):
             wiring = properties_docker_spec(content_root, mount_properties=True)
             scope_text = build_scope_text(rec.manifest.scope.include, rec.manifest.scope.exclude)
-    prompt = _render_prompt_with_context(prompt_raw, wiring=wiring, scope_text=scope_text)
+            prompt = _render_prompt_with_context(prompt_raw, wiring=wiring, scope_text=scope_text)
     tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
     tmpdir.mkdir(parents=True, exist_ok=True)
     save_prompt_to_tmp(f"codex_prompt_run_{preset or 'run'}", prompt)
@@ -838,13 +850,13 @@ def cmd_list_presets() -> None:
 
 
 @app.command("specimen-dump")
-def specimen_dump(
+async def specimen_dump(
     specimen: str = typer.Argument(..., help="Specimen slug to dump as JSON"),
     pretty: bool = typer.Option(True, help="Pretty-print JSON with indentation"),
 ) -> None:
     """Dump a specimen's full structure as JSON (manifest, all issues, occurrences)."""
     try:
-        rec = SpecimenRegistry.load_strict(specimen)
+        rec = await SpecimenRegistry.load_strict(specimen)
     except Exception as e:
         typer.echo(f"ERROR: Failed to load specimen '{specimen}': {e}")
         raise typer.Exit(2) from e
@@ -895,8 +907,8 @@ async def specimen_exec(
         raise typer.Exit(2) from e
     ensure_critic_image()
 
-    rec = SpecimenRegistry.load_strict(specimen)
-    async with rec.hydrated_copy(exec_git) as content_root:
+    # Load and hydrate specimen (keep hydrated for entire container lifetime)
+    async with SpecimenRegistry.load_and_hydrate(specimen, gitconfig=exec_git) as (_rec, content_root):
         try:
             _ = next(content_root.iterdir())
         except StopIteration:
