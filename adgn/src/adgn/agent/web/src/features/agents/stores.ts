@@ -1,8 +1,8 @@
 import { writable, get } from 'svelte/store'
 import { z } from 'zod'
 
-import { globalMcpClient, mcpManager } from '../mcp/manager'
 import { currentAgentId, setAgentId } from '../../shared/router'
+import { globalMcpClient, mcpManager } from '../mcp/manager'
 
 import type { AgentRow, AgentStatus } from '../../shared/types'
 
@@ -122,7 +122,7 @@ export function stopAgentsSubscription() {
 }
 
 // Legacy HTTP polling (deprecated, use MCP subscription)
-export function startAgentsPolling(intervalMs = 2500) {
+export function startAgentsPolling(_intervalMs = 2500) {
   console.warn('startAgentsPolling is deprecated, use startAgentsSubscription instead')
   startAgentsSubscription()
 }

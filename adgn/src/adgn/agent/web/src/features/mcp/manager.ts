@@ -4,6 +4,7 @@
  * Singleton instance that handles per-agent MCP client connections.
  */
 import { writable, type Writable } from 'svelte/store'
+
 import { AgentMcpClient } from './client'
 
 export interface ConnectionStatus {

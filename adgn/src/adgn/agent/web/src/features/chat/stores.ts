@@ -1,9 +1,8 @@
 import { writable, derived, type Writable, type Readable } from 'svelte/store'
 import { get } from 'svelte/store'
 
-import { mcpManager } from '../mcp/manager'
-import type { AgentMcpClient } from '../mcp/client'
 import { currentAgentId, agentStatus } from '../agents/stores'
+import { mcpManager } from '../mcp/manager'
 
 import type {
   SnapshotPayload,
@@ -12,6 +11,7 @@ import type {
   ServerEntry,
   ApprovalPolicyInfo,
 } from '../../shared/types'
+import type { AgentMcpClient } from '../mcp/client'
 
 export type Pending = { call_id: string; tool_key: string; args_json?: string | null }
 
