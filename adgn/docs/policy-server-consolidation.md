@@ -39,7 +39,7 @@ Consolidate policy and approval handling into a single `PolicyEngine` class that
 
 ### Overview
 
-Single `/mcp` endpoint serves both users and agents. Bearer token determines routing:
+Single `/mcp` endpoint serves both users and agents. Bearer token determines routing to **completely different ASGI applications**:
 
 ```
                           ┌─────────────────────────────────────────────┐
@@ -48,15 +48,18 @@ Single `/mcp` endpoint serves both users and agents. Bearer token determines rou
                           └─────────────────┬───────────────────────────┘
                                             │
                           ┌─────────────────┴───────────────────────────┐
-                          │         Bearer Token Router                  │
-                          │   (FastMCP TokenVerifier middleware)        │
+                          │           TokenRoutingASGI                   │
+                          │   (ASGI app that dispatches by token)        │
                           └─────────┬───────────────────────┬───────────┘
                                     │                       │
                     ┌───────────────┴───────┐   ┌───────────┴───────────────┐
                     │   User Token          │   │   Agent Token             │
-                    │   → User Compositor   │   │   → Agent Compositor      │
+                    │   → user ASGI app     │   │   → agent_{id} ASGI app   │
+                    │   (global compositor) │   │   (agent compositor)      │
                     └───────────────────────┘   └───────────────────────────┘
 ```
+
+**Key insight**: This is NOT middleware that modifies requests. It's ASGI-level routing where different tokens dispatch to **completely separate FastMCP ASGI apps**, each with their own compositor instance.
 
 ### Architecture: User-Facing Compositor (2-level)
 
@@ -187,6 +190,20 @@ class InfrastructureRegistry:
             await self.global_compositor.unmount_server(f"agent_{agent_id}")
             container = self._agents.pop(agent_id)
             await container.shutdown()
+
+    async def create_external_agent(self, agent_id: AgentID) -> AgentContainer:
+        """Create an external agent's container at startup.
+
+        External agents are created eagerly from tokens config.
+        Unlike boot_agent(), this does NOT mount to global compositor
+        (external agents have their own ASGI app, not a prefix on the global).
+        """
+        async with self._lock:
+            if agent_id in self._agents:
+                return self._agents[agent_id]
+            container = await self._create_container(agent_id)
+            self._agents[agent_id] = container
+            return container
 ```
 
 #### Step 3: Bearer Token Auth & Routing
@@ -292,17 +309,64 @@ def make_agent_control_server(container: AgentContainer) -> FastMCP:
 #### Step 6: Fix app.py
 
 ```python
+from fastmcp.server import create_streamable_http_app
+from starlette.applications import Starlette
+from starlette.routing import Mount
+
 from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
 from adgn.agent.mcp_bridge.server import InfrastructureRegistry
-from adgn.agent.mcp_bridge.auth import AgentTokenVerifier
+from adgn.agent.mcp_bridge.auth import TokenRoutingASGI, load_tokens
 
-# In lifespan:
-registry = InfrastructureRegistry(...)
-global_comp = await create_global_compositor(registry)
+async def lifespan(app):
+    # Load tokens at startup
+    user_tokens, agent_tokens = load_tokens()
 
-# Route based on token
-verifier = AgentTokenVerifier(user_tokens, agent_tokens)
-# Use FastMCP's auth middleware with custom verifier
+    # Create infrastructure registry
+    registry = InfrastructureRegistry(
+        persistence=...,
+        docker_client=...,
+        mcp_config=...,
+        initial_policy=...,
+    )
+
+    # Create global user-facing compositor
+    global_comp = await create_global_compositor(registry)
+    registry.global_compositor = global_comp
+
+    # Create ASGI app for user compositor
+    user_app = create_streamable_http_app(global_comp)
+
+    # Create external agent compositors at startup
+    agent_apps: dict[AgentID, ASGIApp] = {}
+    for agent_id in set(agent_tokens.values()):
+        container = await registry.create_external_agent(agent_id)
+        agent_apps[agent_id] = create_streamable_http_app(container.agent_compositor)
+
+    # Build token routing app
+    mcp_app = TokenRoutingASGI(
+        user_tokens=user_tokens,
+        agent_tokens=agent_tokens,
+        user_app=user_app,
+        agent_apps=agent_apps,
+    )
+
+    # Store for route mounting
+    app.state.mcp_app = mcp_app
+    app.state.registry = registry
+
+    yield
+
+    # Shutdown
+    await registry.shutdown_all()
+
+# Starlette app with /mcp mounted to token router
+app = Starlette(
+    lifespan=lifespan,
+    routes=[
+        Mount("/mcp", app=lambda: app.state.mcp_app),
+        # Static files, etc.
+    ],
+)
 ```
 
 ### Implementation Flow
@@ -366,43 +430,65 @@ token_info = await verifier.verify_token("user_token_abc")
 # AccessToken(token="...", client_id="admin", scopes=["user"], ...)
 ```
 
-**Custom routing middleware required:**
+**ASGI-level routing required:**
+
+FastMCP creates a separate ASGI app per compositor via `create_streamable_http_app()`.
+We need custom ASGI routing to dispatch requests to different ASGI apps based on bearer token:
 
 ```python
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.responses import Response
 
-class TokenRoutingMiddleware(BaseHTTPMiddleware):
-    """Routes requests to different compositors based on bearer token."""
+class TokenRoutingASGI:
+    """ASGI app that routes /mcp requests to different MCP servers based on bearer token.
 
-    def __init__(self, app, user_compositor, agent_compositors, verifier):
-        super().__init__(app)
-        self.user_compositor = user_compositor
-        self.agent_compositors = agent_compositors  # dict[AgentID, Compositor]
-        self.verifier = verifier
+    This is NOT middleware - it's a top-level ASGI app that dispatches to
+    completely different ASGI applications based on the token.
+    """
 
-    async def dispatch(self, request, call_next):
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return Response("Unauthorized", status_code=401)
+    def __init__(
+        self,
+        user_tokens: dict[str, str],           # token → user_id
+        agent_tokens: dict[str, AgentID],      # token → agent_id
+        user_app: ASGIApp,                     # ASGI app for user compositor
+        agent_apps: dict[AgentID, ASGIApp],    # ASGI apps for agent compositors
+    ):
+        self.user_tokens = user_tokens
+        self.agent_tokens = agent_tokens
+        self.user_app = user_app
+        self.agent_apps = agent_apps
 
-        token = auth_header[7:]
-        token_info = await self.verifier.verify_token(token)
-        if not token_info:
-            return Response("Invalid token", status_code=401)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            # Passthrough for lifespan, websocket, etc.
+            await self.user_app(scope, receive, send)
+            return
 
-        # Route based on scopes
-        if "user" in token_info.scopes:
-            request.state.compositor = self.user_compositor
-        elif "agent" in token_info.scopes:
-            agent_id = AgentID(token_info.client_id)
-            compositor = self.agent_compositors.get(agent_id)
-            if not compositor:
-                return Response("Agent not found", status_code=404)
-            request.state.compositor = compositor
+        # Extract Authorization header
+        headers = dict(scope.get("headers", []))
+        auth = headers.get(b"authorization", b"").decode()
+
+        if not auth.startswith("Bearer "):
+            response = Response("Unauthorized", status_code=401)
+            await response(scope, receive, send)
+            return
+
+        token = auth[7:]
+
+        # Route based on token
+        if token in self.user_tokens:
+            await self.user_app(scope, receive, send)
+        elif token in self.agent_tokens:
+            agent_id = self.agent_tokens[token]
+            agent_app = self.agent_apps.get(agent_id)
+            if agent_app is None:
+                response = Response("Agent not found", status_code=404)
+                await response(scope, receive, send)
+                return
+            await agent_app(scope, receive, send)
         else:
-            return Response("Unknown token type", status_code=403)
-
-        return await call_next(request)
+            response = Response("Invalid token", status_code=401)
+            await response(scope, receive, send)
 ```
 
 ### Token Configuration
@@ -472,6 +558,49 @@ External agents (e.g., Claude Code connecting remotely) need:
 1. Pre-generated token in `tokens.yaml`
 2. HTTP URL: `http://host:port/mcp`
 3. Bearer token in `Authorization` header
+
+#### Startup Behavior
+
+At server startup, external agent compositors are created eagerly from the tokens config:
+
+```python
+async def create_routing_app(
+    registry: InfrastructureRegistry,
+    user_tokens: dict[str, str],
+    agent_tokens: dict[str, AgentID],
+) -> TokenRoutingASGI:
+    """Create the ASGI app with token-based routing.
+
+    Creates external agent compositors at startup from tokens config.
+    """
+    # Create user-facing compositor ASGI app
+    user_app = create_streamable_http_app(registry.global_compositor)
+
+    # Create agent ASGI apps for ALL external agents defined in tokens
+    agent_apps: dict[AgentID, ASGIApp] = {}
+    for agent_id in set(agent_tokens.values()):
+        # Create agent container (with agent compositor + policy gateway)
+        container = await registry.create_external_agent(agent_id)
+        # Create ASGI app for this agent's compositor
+        agent_apps[agent_id] = create_streamable_http_app(container.agent_compositor)
+
+    return TokenRoutingASGI(
+        user_tokens=user_tokens,
+        agent_tokens=agent_tokens,
+        user_app=user_app,
+        agent_apps=agent_apps,
+    )
+```
+
+**Startup sequence:**
+1. Load tokens from `tokens.yaml`
+2. Create global user-facing compositor
+3. For each external agent token: create `AgentContainer` with agent compositor
+4. Build `TokenRoutingASGI` with all ASGI apps
+5. Mount at `/mcp` endpoint
+
+**Internal agents** (created via `boot_agent()` tool) are created lazily at runtime
+and use inproc MCP - they bypass HTTP/token routing entirely
 
 ### REST API Removal
 
@@ -658,6 +787,7 @@ See: [GitHub Issue #852](https://github.com/modelcontextprotocol/typescript-sdk/
 
 - PolicyEngine with `.reader`, `.policy_proposer`, `.admin` servers (✅ Done)
 - Compositor with middleware support (✅ Done)
-- Streamable HTTP MCP transport on `/mcp` (FastMCP supports via `create_streamable_http_app`)
+- Streamable HTTP MCP transport on `/mcp` (FastMCP supports via `create_streamable_http_app`) (✅ Available)
 - FastMCP `StaticTokenVerifier` for token validation (✅ Available)
-- Custom Starlette middleware for token-based compositor routing (needs implementation)
+- Custom ASGI app for token-based routing (`TokenRoutingASGI`) (⏳ Needs implementation)
+- External agent compositor startup from tokens config (⏳ Needs implementation)
