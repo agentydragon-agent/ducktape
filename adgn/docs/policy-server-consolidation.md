@@ -183,20 +183,43 @@ from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
 from adgn.agent.mcp_bridge.server import InfrastructureRegistry
 ```
 
-### Open Questions
+### Design Decisions (Resolved)
 
-1. **Dynamic mounting**: How does global compositor mount per-agent user compositors?
-   - Option A: Eagerly mount all agents on startup
-   - Option B: Lazy mount on first access (needs compositor hot-mount support)
+1. **Dynamic mounting**: Lazy mount on `boot_agent(id)` call
+   - Global compositor mounts `agents` server with tools: `list_agents`, `create_agent`, `delete_agent`, `boot_agent`
+   - `boot_agent(id)` ensures agent is live, then mounts its user compositor to the global compositor
+   - Uses Compositor's existing `mount_inproc()` for hot-mounting
 
-2. **Agent ID routing**: How does `/mcp` route to correct agent?
-   - Option A: Tool prefix: `agent_123_send_prompt`
-   - Option B: Nested server: `agents/123/send_prompt`
-   - Option C: Query param: `/mcp?agent_id=123`
+2. **Agent ID routing**: Tool prefix via FastMCP's `mount(prefix=...)`
+   - FastMCP's `mount()` automatically prefixes: `{prefix}_{tool}`
+   - Example: `agent_123_send_prompt`, `agent_123_abort_run`
+   - Resources: `snapshot://agent_123/state`
+   - No query params or nested paths needed
 
-3. **Shared vs separate PolicyEngine**: Should both compositors share the same engine instance?
-   - Yes: Shared state (pending calls, policy version)
-   - Current design: Single engine, both compositors mount its servers
+3. **Shared PolicyEngine**: Yes, single engine per agent
+   - Both agent and user compositors mount the same engine's servers
+   - Shared state: pending calls, policy version, hub futures
+
+### Implementation Flow
+
+```
+1. User calls: agents_boot_agent(id="123")
+   ↓
+2. InfrastructureRegistry.ensure_live("123")
+   - Creates AgentContainer if not exists
+   - Starts agent_compositor (for LLM)
+   - Creates user_compositor (for UI)
+   ↓
+3. Global compositor mounts user_compositor:
+   global_comp.mount_inproc(f"agent_{id}", user_comp)
+   ↓
+4. Tools now available as:
+   - agent_123_send_prompt
+   - agent_123_abort_run
+   - agent_123_approve_call (via admin)
+   Resources:
+   - snapshot://agent_123/state
+```
 
 ### Dependencies
 
