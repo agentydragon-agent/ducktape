@@ -6,13 +6,7 @@ from fastmcp.client.client import CallToolResult
 from mcp import types
 
 from adgn.agent.server.bus import MimeType
-from adgn.agent.server.protocol import (
-    FunctionCallOutput,
-    ToolCall,
-    UiMessageEvt,
-    UiMessagePayload,
-    UserText,
-)
+from adgn.agent.server.protocol import FunctionCallOutput, ToolCall, UiMessageEvt, UiMessagePayload, UserText
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import ExecContent, ToolItem, UiState, new_state
 from adgn.mcp._shared.calltool import to_pydantic

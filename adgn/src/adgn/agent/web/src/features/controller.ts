@@ -22,13 +22,12 @@ export function initAgentUiController(): () => void {
     if (id === lastId) return
     lastId = id ?? null
     if (typeof id === 'string' && id.length > 0) {
-      // Agent selected: connect to agent MCP
-      disconnectAgentMcp()
+      // Agent selected: connect to agent MCP (connectAgentMcp handles disconnect internally)
       // Defer to next microtask to avoid racing with URL/store updates
       queueMicrotask(() => connectAgentMcp(id))
     } else {
       // No agent selected: disconnect agent MCP
-      if (lastId !== null) disconnectAgentMcp()
+      if (lastId !== null) void disconnectAgentMcp()
     }
   })
 

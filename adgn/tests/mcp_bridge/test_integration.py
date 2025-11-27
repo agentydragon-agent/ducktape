@@ -19,9 +19,9 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from adgn.agent.mcp_bridge.agents import make_agents_server
 from adgn.agent.mcp_bridge.auth import TokenRoutingASGI, TokensConfig
 from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
-from adgn.agent.mcp_bridge.agents import make_agents_server
 
 # ---------------------------------------------------------------------------
 # Shared Fixtures
@@ -361,7 +361,7 @@ class TestInfrastructureRegistry:
     @pytest.mark.asyncio
     async def test_shutdown_agent_raises_without_compositor(self, registry):
         """shutdown_agent raises RuntimeError without global compositor."""
-        with pytest.raises(RuntimeError, match="global compositor not initialized"):
+        with pytest.raises(RuntimeError, match="(?i)global compositor not initialized"):
             await registry.shutdown_agent("unknown-id")
 
     @pytest.mark.asyncio
@@ -434,7 +434,7 @@ class TestInfrastructureRegistry:
     @pytest.mark.asyncio
     async def test_boot_agent_raises_without_compositor(self, registry):
         """boot_agent raises RuntimeError without global compositor."""
-        with pytest.raises(RuntimeError, match="global compositor not initialized"):
+        with pytest.raises(RuntimeError, match="(?i)global compositor not initialized"):
             await registry.boot_agent("nonexistent-agent")
 
     @pytest.mark.asyncio
@@ -452,7 +452,7 @@ class TestInfrastructureRegistry:
     @pytest.mark.asyncio
     async def test_create_external_agent_raises_without_compositor(self, registry):
         """create_external_agent raises RuntimeError without global compositor."""
-        with pytest.raises(RuntimeError, match="global compositor not initialized"):
+        with pytest.raises(RuntimeError, match="(?i)global compositor not initialized"):
             await registry.create_external_agent("test-agent-1")
 
     @pytest.mark.asyncio

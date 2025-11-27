@@ -6,7 +6,6 @@ Tests that policy is correctly loaded from presets and accessible via MCP resour
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
@@ -154,7 +153,6 @@ class TestPresetPolicyResolution:
     @pytest.mark.asyncio
     async def test_agent_metadata_records_preset(self, sqlite_persistence):
         """Creating agent from preset records preset name in metadata."""
-        from adgn.agent.persist import AgentMetadata
         from adgn.agent.presets import create_agent_from_preset
 
         agent_id, _config, _system = await create_agent_from_preset(

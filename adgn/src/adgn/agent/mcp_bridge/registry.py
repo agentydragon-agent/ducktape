@@ -29,6 +29,10 @@ AGENT_CONTROL_SERVER_NAME = "agent_control"
 logger = logging.getLogger(__name__)
 
 
+class CompositorNotInitializedError(RuntimeError):
+    """Raised when attempting operations requiring the global compositor before it's set."""
+
+
 @dataclass
 class InfrastructureRegistry:
     """Registry managing global compositor and agent containers.
@@ -69,6 +73,28 @@ class InfrastructureRegistry:
     def is_external(self, agent_id: AgentID) -> bool:
         """Check if agent is external (cannot be controlled via UI)."""
         return agent_id in self._external_agents
+
+    def _ensure_compositor(self) -> Compositor:
+        """Return global compositor or raise CompositorNotInitializedError."""
+        if (comp := self.global_compositor) is None:
+            raise CompositorNotInitializedError("Global compositor not initialized")
+        return comp
+
+    async def _register_and_mount_agent(
+        self, container: AgentContainer, *, external: bool
+    ) -> None:
+        """Register container and mount to global compositor.
+
+        For internal agents, also mounts agent_control server.
+        """
+        comp = self._ensure_compositor()
+        self._agents[container.agent_id] = container
+
+        if not external:
+            await self._mount_agent_control(container)
+
+        # Mount agent compositor to global
+        await comp.mount_inproc(f"agent_{container.agent_id}", container._compositor)
 
     async def _mount_agent_control(self, container: AgentContainer) -> None:
         """Mount agent_control server on container's compositor.
@@ -131,10 +157,9 @@ class InfrastructureRegistry:
             Booted AgentContainer
 
         Raises:
-            RuntimeError: If global compositor is not set
+            CompositorNotInitializedError: If global compositor is not set
         """
-        if self.global_compositor is None:
-            raise RuntimeError("Cannot create agent: global compositor not initialized")
+        self._ensure_compositor()  # Validate early
 
         async with self._lock:
             # Create agent record in DB from preset
@@ -144,13 +169,7 @@ class InfrastructureRegistry:
 
             # Build and start container
             container = await self._create_container(agent_id, mcp_config=mcp_config, system=system, external=False)
-            self._agents[agent_id] = container
-
-            # Mount agent_control for internal agents
-            await self._mount_agent_control(container)
-
-            # Mount agent compositor to global
-            await self.global_compositor.mount_inproc(f"agent_{agent_id}", container._compositor)
+            await self._register_and_mount_agent(container, external=False)
 
             return container
 
@@ -167,31 +186,23 @@ class InfrastructureRegistry:
             Booted AgentContainer
 
         Raises:
-            RuntimeError: If global compositor is not set
+            CompositorNotInitializedError: If global compositor is not set
             KeyError: If agent doesn't exist in DB
         """
-        if self.global_compositor is None:
-            raise RuntimeError("Cannot boot agent: global compositor not initialized")
+        self._ensure_compositor()  # Validate early
 
         async with self._lock:
             # Return existing if already booted
-            if agent_id in self._agents:
-                return self._agents[agent_id]
+            if existing := self._agents.get(agent_id):
+                return existing
 
             # Load from persistence
-            row = await self.persistence.get_agent(agent_id)
-            if row is None:
+            if (row := await self.persistence.get_agent(agent_id)) is None:
                 raise KeyError(f"Agent not found: {agent_id}")
 
             # Build and start container
             container = await self._create_container(agent_id, mcp_config=row.mcp_config, external=False)
-            self._agents[agent_id] = container
-
-            # Mount agent_control for internal agents
-            await self._mount_agent_control(container)
-
-            # Mount agent compositor to global
-            await self.global_compositor.mount_inproc(f"agent_{agent_id}", container._compositor)
+            await self._register_and_mount_agent(container, external=False)
 
             return container
 
@@ -213,27 +224,20 @@ class InfrastructureRegistry:
             Created AgentContainer
 
         Raises:
-            RuntimeError: If global compositor is not set
+            CompositorNotInitializedError: If global compositor is not set
         """
-        if self.global_compositor is None:
-            raise RuntimeError("Cannot create external agent: global compositor not initialized")
+        self._ensure_compositor()  # Validate early
 
         async with self._lock:
-            if agent_id in self._agents:
-                return self._agents[agent_id]
+            if existing := self._agents.get(agent_id):
+                return existing
 
-            # Check if agent exists in DB, create if not
+            # Check if agent exists in DB, use its config or fall back to base
             row = await self.persistence.get_agent(agent_id)
             mcp_config = row.mcp_config if row else self.mcp_config
 
             container = await self._create_container(agent_id, mcp_config=mcp_config, external=True)
-            self._agents[agent_id] = container
-
-            # NOTE: No agent_control mount for external agents
-            # User can view state and approve/reject, but cannot send_prompt or abort_run
-
-            # Mount agent compositor to global
-            await self.global_compositor.mount_inproc(f"agent_{agent_id}", container._compositor)
+            await self._register_and_mount_agent(container, external=True)
 
             logger.info(f"Created external agent: {agent_id}")
             return container
@@ -242,11 +246,10 @@ class InfrastructureRegistry:
         """Shutdown agent and unmount its user compositor.
 
         Raises:
-            RuntimeError: If global compositor is not set
+            CompositorNotInitializedError: If global compositor is not set
             KeyError: If agent is not running
         """
-        if self.global_compositor is None:
-            raise RuntimeError("Cannot shutdown agent: global compositor not initialized")
+        comp = self._ensure_compositor()
 
         async with self._lock:
             if agent_id not in self._agents:
@@ -254,9 +257,9 @@ class InfrastructureRegistry:
 
             # Unmount from global
             try:
-                await self.global_compositor.unmount_server(f"agent_{agent_id}")
-            except Exception as e:
-                logger.warning(f"Failed to unmount agent {agent_id}: {e}")
+                await comp.unmount_server(f"agent_{agent_id}")
+            except KeyError:
+                logger.debug(f"Agent {agent_id} already unmounted")
 
             # Close container
             container = self._agents.pop(agent_id)
@@ -271,14 +274,11 @@ class InfrastructureRegistry:
         """Shutdown all agents.
 
         Raises:
-            RuntimeError: If global compositor is not set and agents exist
+            CompositorNotInitializedError: If global compositor is not set and agents exist
         """
         if not self._agents:
             return
-        if self.global_compositor is None:
-            raise RuntimeError("Cannot shutdown agents: global compositor not initialized")
+        self._ensure_compositor()
 
-        agent_ids = list(self._agents.keys())
-        for agent_id in agent_ids:
-            # shutdown_agent checks are satisfied by the guard above
+        for agent_id in list(self._agents.keys()):
             await self.shutdown_agent(agent_id)

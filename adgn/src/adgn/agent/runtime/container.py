@@ -7,15 +7,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
 import os
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 from docker.client import DockerClient
-from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from pydantic import BaseModel, Field
-
-from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import load_default_policy_source
@@ -35,6 +32,7 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
@@ -373,9 +371,7 @@ class AgentContainer:
             poll_notifications=notifications.poll,
             manager=manager,
             persistence=self.persistence,
-            approval_engine=approval_engine,
             get_run_id=_get_run_id,
-            agent_id=self.agent_id,
             ui_bus=self._ui_bus if self.with_ui else None,
         )
         sess.set_persist_handler(persist_handler)

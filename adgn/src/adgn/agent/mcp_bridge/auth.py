@@ -68,13 +68,18 @@ class TokensConfig(BaseModel):
         logger.info(f"Loaded {len(config.users)} user tokens, {len(config.agents)} agent tokens")
         return config
 
+    @staticmethod
+    def _invert_tokens(mapping: dict[str, str | None]) -> dict[str, str]:
+        """Invert id->token mapping to token->id, filtering None values."""
+        return {token: id_ for id_, token in mapping.items() if token}
+
     def user_tokens(self) -> dict[str, str]:
         """Return token -> user_id mapping (inverted from config)."""
-        return {token: user_id for user_id, token in self.users.items() if token}
+        return self._invert_tokens(self.users)
 
     def agent_tokens(self) -> dict[str, str]:
         """Return token -> agent_id mapping (inverted from config)."""
-        return {token: agent_id for agent_id, token in self.agents.items() if token}
+        return self._invert_tokens(self.agents)
 
 
 class TokenRoutingASGI:
@@ -101,6 +106,13 @@ class TokenRoutingASGI:
         self.user_app = user_app
         self.agent_apps = agent_apps
 
+    @staticmethod
+    async def _send_error(
+        scope: Scope, receive: Receive, send: Send, message: str, status_code: int
+    ) -> None:
+        """Send an HTTP error response."""
+        await Response(message, status_code=status_code)(scope, receive, send)
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             # Passthrough for lifespan, websocket, etc.
@@ -112,27 +124,21 @@ class TokenRoutingASGI:
         auth = headers.get(b"authorization", b"").decode()
 
         if not auth.startswith("Bearer "):
-            response = Response("Unauthorized: Bearer token required", status_code=401)
-            await response(scope, receive, send)
+            await self._send_error(scope, receive, send, "Unauthorized: Bearer token required", 401)
             return
 
         token = auth[7:]
 
         # Route based on token
-        if token in self.user_tokens:
-            user_id = self.user_tokens[token]
+        if user_id := self.user_tokens.get(token):
             logger.debug(f"Routing to user compositor for user: {user_id}")
             await self.user_app(scope, receive, send)
-        elif token in self.agent_tokens:
-            agent_id = self.agent_tokens[token]
-            agent_app = self.agent_apps.get(agent_id)
-            if agent_app is None:
+        elif agent_id := self.agent_tokens.get(token):
+            if agent_app := self.agent_apps.get(agent_id):
+                logger.debug(f"Routing to agent compositor for agent: {agent_id}")
+                await agent_app(scope, receive, send)
+            else:
                 logger.warning(f"Agent app not found for agent_id: {agent_id}")
-                response = Response(f"Agent not found: {agent_id}", status_code=404)
-                await response(scope, receive, send)
-                return
-            logger.debug(f"Routing to agent compositor for agent: {agent_id}")
-            await agent_app(scope, receive, send)
+                await self._send_error(scope, receive, send, f"Agent not found: {agent_id}", 404)
         else:
-            response = Response("Invalid token", status_code=401)
-            await response(scope, receive, send)
+            await self._send_error(scope, receive, send, "Invalid token", 401)

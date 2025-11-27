@@ -34,6 +34,13 @@ export function clearError() {
   lastError.set(null)
 }
 
+/** Log error to console and set lastError store with consistent formatting. */
+function handleError(label: string, e: unknown): void {
+  const msg = e instanceof Error ? e.message : String(e)
+  console.warn(`${label} failed`, e)
+  lastError.set(`${label} failed: ${msg}`)
+}
+
 export async function connectAgentMcp(agentId: string) {
   // Disconnect any existing
   await disconnectAgentMcp()
@@ -57,8 +64,7 @@ export async function connectAgentMcp(agentId: string) {
     // Initial snapshot fetch
     await refreshSnapshot()
   } catch (e) {
-    const error = e instanceof Error ? e.message : String(e)
-    lastError.set(`MCP connection failed: ${error}`)
+    handleError('MCP connection', e)
     agentStatus.set({ id: agentId, live: false })
   }
 }
@@ -91,8 +97,7 @@ export async function sendPrompt(text: string) {
     // Use MCP tool: agent_control_send_prompt
     await currentClient.callTool('agent_control_send_prompt', { prompt: text })
   } catch (e) {
-    console.warn('prompt failed', e)
-    lastError.set(`Send prompt failed: ${e instanceof Error ? e.message : String(e)}`)
+    handleError('Send prompt', e)
   }
 }
 
@@ -101,8 +106,7 @@ export async function approve(call_id: string) {
   try {
     await currentClient.callTool('approvals_approve_call', { call_id })
   } catch (e) {
-    console.warn('approve failed', e)
-    lastError.set(`Approve failed: ${e instanceof Error ? e.message : String(e)}`)
+    handleError('Approve', e)
   }
   // Pending approvals will update via resource subscription
 }
@@ -112,8 +116,7 @@ export async function denyContinue(call_id: string) {
   try {
     await currentClient.callTool('approvals_deny_continue', { call_id })
   } catch (e) {
-    console.warn('deny_continue failed', e)
-    lastError.set(`Deny continue failed: ${e instanceof Error ? e.message : String(e)}`)
+    handleError('Deny continue', e)
   }
 }
 
@@ -122,8 +125,7 @@ export async function deny(call_id: string) {
   try {
     await currentClient.callTool('approvals_deny_abort', { call_id })
   } catch (e) {
-    console.warn('deny_abort failed', e)
-    lastError.set(`Deny abort failed: ${e instanceof Error ? e.message : String(e)}`)
+    handleError('Deny abort', e)
   }
 }
 
@@ -135,8 +137,7 @@ export async function setPolicy(content: string, proposal_id?: string) {
       proposal_id: proposal_id ?? null,
     })
   } catch (e) {
-    console.warn('setPolicy failed', e)
-    lastError.set(`Set policy failed: ${e instanceof Error ? e.message : String(e)}`)
+    handleError('Set policy', e)
   }
   await refreshSnapshot()
 }
@@ -149,8 +150,7 @@ export async function approveProposal(proposal_id: string) {
       id: proposal_id,
     })
   } catch (e) {
-    console.warn('approveProposal failed', e)
-    lastError.set(`Approve proposal failed: ${e instanceof Error ? e.message : String(e)}`)
+    handleError('Approve proposal', e)
   }
   await refreshSnapshot()
 }
@@ -162,8 +162,7 @@ export async function withdrawProposal(proposal_id: string) {
       id: proposal_id,
     })
   } catch (e) {
-    console.warn('withdrawProposal failed', e)
-    lastError.set(`Withdraw proposal failed: ${e instanceof Error ? e.message : String(e)}`)
+    handleError('Withdraw proposal', e)
   }
   await refreshSnapshot()
 }
@@ -185,8 +184,7 @@ export async function abortRun() {
     // Use MCP tool: agent_control_abort_run
     await currentClient.callTool('agent_control_abort_run', {})
   } catch (e) {
-    console.warn('abort failed', e)
-    lastError.set(`Abort run failed: ${e instanceof Error ? e.message : String(e)}`)
+    handleError('Abort run', e)
   }
   await refreshSnapshot()
 }
@@ -206,8 +204,7 @@ export async function reconfigureMcp(attach?: Record<string, any>, detach?: stri
       }
     }
   } catch (e) {
-    console.warn('reconfigureMcp failed', e)
-    lastError.set(`Reconfigure MCP failed: ${e instanceof Error ? e.message : String(e)}`)
+    handleError('Reconfigure MCP', e)
   }
   await refreshSnapshot()
 }
