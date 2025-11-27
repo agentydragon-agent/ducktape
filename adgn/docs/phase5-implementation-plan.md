@@ -41,7 +41,7 @@ Components updated: AgentsSidebar, App, ServersPanel, ProposalCard, RightSidebar
 
 ---
 
-## Phase 5d: Test Coverage
+## Phase 5d: Test Coverage ✅
 
 - [x] Unit tests for `TokenRoutingASGI`
 - [x] Unit tests for `InfrastructureRegistry`
@@ -49,10 +49,12 @@ Components updated: AgentsSidebar, App, ServersPanel, ProposalCard, RightSidebar
 - [ ] Integration tests for full user flow (future)
 - [ ] Integration tests for external agent flow (future)
 
+Tests in `tests/mcp_bridge/test_integration.py`.
+
 ---
 
 ## PRs
 
 1. ✅ **Phase 5a**: Core infrastructure (mcp_bridge, token routing, agents/agent_control servers)
 2. ✅ **Phase 5b**: Frontend migration to MCP
-3. **Phase 5c+d**: REST API removal + test coverage
+3. ✅ **Phase 5c+d**: REST API removal + test coverage
