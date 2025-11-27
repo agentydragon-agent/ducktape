@@ -5,7 +5,7 @@ import yaml
 
 from adgn.agent.presets import AgentPreset
 from adgn.agent.server.protocol import Snapshot
-from tests.agent.ws_helpers import wait_for_accepted
+from tests.agent.test_matchers import wait_for_accepted
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 

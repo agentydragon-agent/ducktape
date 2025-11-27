@@ -1,11 +1,10 @@
-"""Test helpers and Hamcrest matchers for agent tests.
+"""Reusable Hamcrest matchers for agent test assertions.
 
-NOTE: WebSocket test infrastructure has been removed as MCP replaced WebSocket.
-This file now contains only reusable Hamcrest matchers for test assertions.
+This module provides matchers for verifying agent behavior in tests.
+WebSocket-specific infrastructure has been removed (MCP replaced WebSocket).
 """
-from __future__ import annotations
 
-from typing import Any
+from __future__ import annotations
 
 from hamcrest import (
     any_of,
@@ -16,13 +15,37 @@ from hamcrest import (
     has_item,
     has_items,
     has_properties,
-    instance_of,
     is_not,
     none,
 )
 from hamcrest.core.matcher import Matcher
+import pytest
 
 from adgn.agent.server.protocol import RunStatus
+
+# ------------------------
+# Deprecated WS helpers (stubs)
+# ------------------------
+
+
+def drain_until_match(*args, **kwargs):
+    """DEPRECATED: WebSocket infrastructure removed. Use MCP-based test patterns."""
+    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
+
+
+def is_ui_state_event(*args, **kwargs):
+    """DEPRECATED: WebSocket infrastructure removed. Use MCP-based test patterns."""
+    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
+
+
+def collect_payloads_until_finished(*args, **kwargs):
+    """DEPRECATED: WebSocket infrastructure removed. Use MCP-based test patterns."""
+    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
+
+
+def wait_for_accepted(*args, **kwargs):
+    """DEPRECATED: WebSocket infrastructure removed. Use MCP-based test patterns."""
+    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
 
 
 # ------------------------

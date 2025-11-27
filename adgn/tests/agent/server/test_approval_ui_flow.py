@@ -8,7 +8,7 @@ from hamcrest import assert_that, has_items, has_properties
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.ws_helpers import has_finished_run, is_function_call_output_end_turn
+from tests.agent.test_matchers import has_finished_run, is_function_call_output_end_turn
 from tests.llm.support.openai_mock import make_mock
 
 

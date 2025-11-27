@@ -7,7 +7,7 @@ from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import Envelope, UiStateSnapshot
 from adgn.agent.server.state import AssistantMarkdownItem
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.ws_helpers import assert_finished, collect_payloads_until_finished, wait_for_accepted
+from tests.agent.test_matchers import assert_finished, collect_payloads_until_finished, wait_for_accepted
 from tests.llm.support.openai_mock import FakeOpenAIModel, make_mock
 
 

@@ -5,7 +5,7 @@ from concurrent.futures import CancelledError
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.ws_helpers import (
+from tests.agent.test_matchers import (
     assert_payloads_have,
     has_finished_run,
     is_function_call_output,

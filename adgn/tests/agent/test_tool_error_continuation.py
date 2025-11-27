@@ -10,7 +10,7 @@ from hamcrest import assert_that, contains_string
 
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.ws_helpers import assert_function_call_output_structured
+from tests.agent.test_matchers import assert_function_call_output_structured
 
 
 async def test_tool_error_continues_turn(

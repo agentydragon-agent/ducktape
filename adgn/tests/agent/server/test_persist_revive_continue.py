@@ -8,7 +8,7 @@ import pytest
 from adgn.agent.server.protocol import Envelope, RunStatus, RunStatusEvt, UiStateSnapshot
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.agent.ui_asserts import assert_ui_items_have, item_assistant_markdown
-from tests.agent.ws_helpers import drain_until_match, has_finished_run
+from tests.agent.test_matchers import drain_until_match, has_finished_run
 from tests.llm.support.openai_mock import make_mock
 
 
