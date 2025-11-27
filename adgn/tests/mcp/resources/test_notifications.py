@@ -2,14 +2,11 @@ import asyncio
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
-from fastmcp.server import FastMCP
 from mcp import types
-
-from adgn.mcp.resources.server import make_resources_server
 
 
 class _DummyBackend:
-    async def list_resources(self, only=None):
+    async def list_resources(self, _only=None):
         return []
 
     async def read_resource(self, server: str, uri: str):

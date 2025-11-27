@@ -63,7 +63,7 @@ async def test_prompt_eval_signals_tool_error_on_critic_error(
     mcp_server, _state = build_server(client=openai_client_param, name="prompt_eval_test", evals_base_dir=tmp_path)
 
     # Patch _run_critic_for_specimen to raise within the server module
-    async def _fake(specimen, system_prompt, client, run_dir, *, agent_model="gpt-5", **kwargs):
+    async def _fake(specimen, _system_prompt, client, _run_dir, *, _agent_model="gpt-5", **kwargs):
         raise RuntimeError("simulated critic failure")
 
     adgn.props.prompt_eval.server._run_critic_for_specimen = _fake
@@ -88,7 +88,7 @@ async def test_prompt_eval_returns_metrics_on_success(openai_client_param, tmp_p
     mcp_server, _state = build_server(client=openai_client_param, name="prompt_eval_test2", evals_base_dir=tmp_path)
 
     # Patch _run_critic_for_specimen to return a minimal CriticSubmitPayload instance
-    async def _fake_ok(specimen, system_prompt, client, run_dir, *, agent_model="gpt-5", **kwargs):
+    async def _fake_ok(specimen, _system_prompt, client, _run_dir, *, _agent_model="gpt-5", **kwargs):
         return CriticSubmitPayload(issues=[], notes_md=None)
 
     adgn.props.prompt_eval.server._run_critic_for_specimen = _fake_ok

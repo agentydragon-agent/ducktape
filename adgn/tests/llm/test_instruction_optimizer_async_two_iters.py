@@ -103,7 +103,7 @@ async def test_optimize_prompts_two_iterations_async(
 ):
     # Provide a lightweight runner that avoids Docker and writes deterministic outputs
     class FakeRunner(AgentRunner):
-        async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:
+        async def setup(self, task: TaskDefinition, _task_type_config: dict) -> None:
             self._env = WorkspaceEnvironment(workspace_path=str(tmp_path / "ws"))
             (tmp_path / "ws").mkdir(parents=True, exist_ok=True)
 
@@ -126,7 +126,7 @@ async def test_optimize_prompts_two_iterations_async(
         def get_environment(self) -> RunnerEnvironment | None:
             return getattr(self, "_env", None)
 
-    def _fake_create_runner(runner_name: str, runner_configs: dict, openai_model=None):
+    def _fake_create_runner(runner_name: str, runner_configs: dict, _openai_model=None):
         return FakeRunner(runner_id=runner_name, config=runner_configs.get(runner_name, {}).get("config", {}))
 
     monkeypatch.setattr(adgn.inop.engine.runner_factory, "create_runner", _fake_create_runner)
@@ -155,7 +155,7 @@ async def test_optimize_prompts_two_iterations_async(
     # Disable plotting by stubbing tracker.generate_report
     orig_generate_report = adgn.inop.engine.optimizer.ScoreEvolutionTracker.generate_report
 
-    def _no_plot(self, run_dir, log_path):
+    def _no_plot(self, _run_dir, _log_path):
         return "report"
 
     monkeypatch.setattr(adgn.inop.engine.optimizer.ScoreEvolutionTracker, "generate_report", _no_plot)
