@@ -83,6 +83,35 @@ def agent_app_factory():
 
 
 @pytest.fixture
+def make_token_router(user_app, agent_app_factory):
+    """Factory to create TokenRoutingASGI with customizable tokens and apps.
+
+    Default configuration:
+    - Single user token: "user-token" -> "admin"
+    - Empty agent tokens and apps
+
+    Usage:
+        router = make_token_router()  # defaults
+        router = make_token_router(agent_tokens={"tok": "agent-1"}, agent_ids=["1"])
+    """
+
+    def _make(
+        *,
+        user_tokens: dict[str, str] | None = None,
+        agent_tokens: dict[str, str] | None = None,
+        agent_ids: list[str] | None = None,
+    ) -> TokenRoutingASGI:
+        return TokenRoutingASGI(
+            user_tokens=user_tokens or {"user-token": "admin"},
+            agent_tokens=agent_tokens or {},
+            user_app=user_app,
+            agent_apps={aid: agent_app_factory(aid) for aid in (agent_ids or [])},
+        )
+
+    return _make
+
+
+@pytest.fixture
 def registry(sqlite_persistence):
     """InfrastructureRegistry with real persistence and mock Docker client."""
     return InfrastructureRegistry(
@@ -165,13 +194,12 @@ users:
 class TestTokenRoutingASGI:
     """Tests for TokenRoutingASGI ASGI router."""
 
-    def test_routes_user_token_to_user_app(self, user_app, agent_app_factory):
+    def test_routes_user_token_to_user_app(self, make_token_router):
         """User tokens route to user compositor app."""
-        router = TokenRoutingASGI(
+        router = make_token_router(
             user_tokens={"user-token-123": "admin"},
             agent_tokens={"agent-token-abc": "agent-1"},
-            user_app=user_app,
-            agent_apps={"agent-1": agent_app_factory("1")},
+            agent_ids=["agent-1"],
         )
 
         client = TestClient(router)
@@ -179,16 +207,12 @@ class TestTokenRoutingASGI:
         assert response.status_code == 200
         assert response.text == "user-app"
 
-    def test_routes_agent_token_to_agent_app(self, user_app, agent_app_factory):
+    def test_routes_agent_token_to_agent_app(self, make_token_router):
         """Agent tokens route to their specific agent compositor app."""
-        router = TokenRoutingASGI(
+        router = make_token_router(
             user_tokens={"user-token-123": "admin"},
             agent_tokens={"agent-token-abc": "agent-1", "agent-token-xyz": "agent-2"},
-            user_app=user_app,
-            agent_apps={
-                "agent-1": agent_app_factory("1"),
-                "agent-2": agent_app_factory("2"),
-            },
+            agent_ids=["agent-1", "agent-2"],
         )
 
         client = TestClient(router)
@@ -196,62 +220,46 @@ class TestTokenRoutingASGI:
         # First agent
         response = client.get("/", headers={"Authorization": "Bearer agent-token-abc"})
         assert response.status_code == 200
-        assert response.text == "agent-1"
+        assert response.text == "agent-agent-1"
 
         # Second agent
         response = client.get("/", headers={"Authorization": "Bearer agent-token-xyz"})
         assert response.status_code == 200
-        assert response.text == "agent-2"
+        assert response.text == "agent-agent-2"
 
-    def test_returns_401_without_token(self, user_app):
+    def test_returns_401_without_token(self, make_token_router):
         """Returns 401 when no Authorization header is present."""
-        router = TokenRoutingASGI(
-            user_tokens={"token": "user"},
-            agent_tokens={},
-            user_app=user_app,
-            agent_apps={},
-        )
+        router = make_token_router()
 
         client = TestClient(router, raise_server_exceptions=False)
         response = client.get("/")
         assert response.status_code == 401
         assert "Bearer token required" in response.text
 
-    def test_returns_401_without_bearer_prefix(self, user_app):
+    def test_returns_401_without_bearer_prefix(self, make_token_router):
         """Returns 401 when Authorization header doesn't use Bearer scheme."""
-        router = TokenRoutingASGI(
-            user_tokens={"token": "user"},
-            agent_tokens={},
-            user_app=user_app,
-            agent_apps={},
-        )
+        router = make_token_router()
 
         client = TestClient(router, raise_server_exceptions=False)
         response = client.get("/", headers={"Authorization": "Basic token"})
         assert response.status_code == 401
         assert "Bearer token required" in response.text
 
-    def test_returns_401_for_invalid_token(self, user_app):
+    def test_returns_401_for_invalid_token(self, make_token_router):
         """Returns 401 when token is not recognized."""
-        router = TokenRoutingASGI(
-            user_tokens={"valid-token": "user"},
-            agent_tokens={},
-            user_app=user_app,
-            agent_apps={},
-        )
+        router = make_token_router(user_tokens={"valid-token": "user"})
 
         client = TestClient(router, raise_server_exceptions=False)
         response = client.get("/", headers={"Authorization": "Bearer invalid-token"})
         assert response.status_code == 401
         assert "Invalid token" in response.text
 
-    def test_returns_404_when_agent_app_not_found(self, user_app):
+    def test_returns_404_when_agent_app_not_found(self, make_token_router):
         """Returns 404 when agent token is valid but agent app isn't registered."""
-        router = TokenRoutingASGI(
+        router = make_token_router(
             user_tokens={},
             agent_tokens={"agent-token": "agent-1"},
-            user_app=user_app,
-            agent_apps={},  # Empty - no agent apps registered
+            agent_ids=[],  # No agent apps registered
         )
 
         client = TestClient(router, raise_server_exceptions=False)
