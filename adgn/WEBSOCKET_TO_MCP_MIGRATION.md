@@ -45,13 +45,17 @@ Each `AgentContainer` has a `_compositor: Compositor` that mounts small FastMCP 
 6. **loop** - `make_loop_server()` - Loop control
    - Tools: `yield_turn()`
 7. **approval_policy** (3 variants) - Policy & proposal management
-   - **Reader** (`approval_policy`): Mounted in user-facing compositor
+   - **Reader** (`approval_policy`): `ApprovalPolicyServer` - Mounted in user-facing compositor
      - Resources: `resource://approval-policy/policy.py`, `resource://approval-policy/proposals/{id}`
      - Tool: `evaluate_policy(name, arguments)` - Evaluates policy for a tool call via Docker-backed evaluator
-   - **Proposer** (`approval_policy_proposer`): Mounted in user-facing compositor
+     - **Note**: `ApprovalPolicyServer` now contains all policy business logic (formerly in `ApprovalPolicyEngine`).
+       Policy changes trigger MCP broadcasts directly, eliminating the notifier callback indirection.
+   - **Proposer** (`approval_policy_proposer`): `ApprovalPolicyProposerServer` - Mounted in user-facing compositor
      - Tools: `create_proposal(content)`, `withdraw_proposal(id)`
-   - **Admin** (`approval_policy_approver`): NOT mounted in compositor (private client only)
+     - Delegates to `ApprovalPolicyServer` for business logic
+   - **Admin** (`approval_policy_approver`): `ApprovalPolicyAdminServer` - NOT mounted in compositor (private client only)
      - Tools: `approve_proposal(id)`, `reject_proposal(id)`, `set_policy_text(source)`
+     - Delegates to `ApprovalPolicyServer` for business logic
      - Access: Via HTTP endpoints or internal `PolicyApproverStub` client
 8. **runtime** - `make_runtime_server()` - Container exec
 9. **seatbelt** - `attach_seatbelt_exec()` - Sandboxed exec (optional)

@@ -14,7 +14,7 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, load_default_policy_source, make_policy_engine
+from adgn.agent.approvals import ApprovalHub, load_default_policy_source
 from adgn.agent.persist import ApprovalOutcome
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -159,7 +159,7 @@ class AgentContainer:
     runtime_ephemeral: bool = False
 
     # Populated after Start
-    approval_engine: ApprovalPolicyEngine | None = None
+    approval_engine: ApprovalPolicyServer | None = None
     approval_hub: ApprovalHub = field(default_factory=ApprovalHub)
     session: AgentSession | None = None
     agent: MiniCodex | None = None
@@ -218,14 +218,14 @@ class AgentContainer:
 
     # ---- Phase-based initialization methods ---------------------------------
 
-    async def _setup_approval_infrastructure(self) -> tuple[ApprovalPolicyEngine, ApprovalHub]:
+    async def _setup_approval_infrastructure(self) -> tuple[ApprovalPolicyServer, ApprovalHub]:
         """Phase 1: Set up approval infrastructure.
 
         Resolves the initial policy source (from preset, initial_policy parameter, or default)
-        and constructs the approval policy engine.
+        and constructs the approval policy server.
 
         Returns:
-            tuple: (approval_engine, approval_hub)
+            tuple: (approval_engine (ApprovalPolicyServer), approval_hub)
         """
         # Resolve initial policy source via preset/persistence/override
         row = await self.persistence.get_agent(self.agent_id)
@@ -240,8 +240,8 @@ class AgentContainer:
             or load_default_policy_source()
         )
 
-        # Construct the approval engine with the chosen initial policy (DI)
-        approval_engine = make_policy_engine(
+        # Construct the approval policy server with the chosen initial policy
+        approval_engine = ApprovalPolicyServer(
             agent_id=self.agent_id, persistence=self.persistence, docker_client=self.docker_client, policy_source=chosen
         )
         # approval_hub is constructed at init; ensure it exists
@@ -250,7 +250,7 @@ class AgentContainer:
         return (approval_engine, self.approval_hub)
 
     async def _setup_mcp_infrastructure(
-        self, approval_engine: ApprovalPolicyEngine, approval_hub: ApprovalHub, mcp_config: MCPConfig
+        self, approval_engine: ApprovalPolicyServer, approval_hub: ApprovalHub, mcp_config: MCPConfig
     ) -> tuple[Compositor, Client, NotificationsBuffer, PolicyReaderStub, PolicyApproverStub]:
         """Phase 2: Set up MCP infrastructure.
 
@@ -341,7 +341,7 @@ class AgentContainer:
         mcp_client: Client,
         notifications: NotificationsBuffer,
         approval_hub: ApprovalHub,
-        approval_engine: ApprovalPolicyEngine,
+        approval_engine: ApprovalPolicyServer,
     ) -> tuple[AgentSession, MiniCodex]:
         """Phase 3: Set up agent runtime.
 
@@ -352,7 +352,7 @@ class AgentContainer:
             mcp_client: MCP client from phase 2
             notifications: Notifications buffer from phase 2
             approval_hub: Approval hub from phase 1
-            approval_engine: Approval engine from phase 1
+            approval_engine: Approval policy server from phase 1
 
         Returns:
             tuple: (session, agent)
@@ -584,24 +584,24 @@ class AgentContainer:
         )
 
     async def _attach_inproc_servers(self, ui_bus: ServerBus | None) -> None:
-        engine = self.approval_engine
-        assert engine is not None
+        policy_server = self.approval_engine
+        assert policy_server is not None
 
         async def _push_snapshot() -> None:
             # Snapshot is now fetched via HTTP GET /api/agents/{id}/snapshot, not pushed
             pass
 
         # Mount approval policy servers: reader + proposer (agent container)
+        # The reader server IS the policy_server (ApprovalPolicyServer with merged engine logic)
         assert self._compositor is not None
-        reader_server = ApprovalPolicyServer(engine, name=APPROVAL_POLICY_SERVER_NAME_READER)
-        await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_READER, reader_server)
-        proposer_server = ApprovalPolicyProposerServer(engine=engine, name=APPROVAL_POLICY_SERVER_NAME_PROPOSER)
+        await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_READER, policy_server)
+        proposer_server = ApprovalPolicyProposerServer(policy_server=policy_server, name=APPROVAL_POLICY_SERVER_NAME_PROPOSER)
         await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_PROPOSER, proposer_server)
         # Admin (approver) server is NOT mounted into the compositor. It is exposed only
         # via a private client held by the container for user/admin HTTP flows.
-        approver_server = ApprovalPolicyAdminServer(engine=engine, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
+        approver_server = ApprovalPolicyAdminServer(policy_server=policy_server, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
         # Create in-proc client to the reader for policy gateway middleware
-        _policy_reader_client = Client(reader_server)
+        _policy_reader_client = Client(policy_server)
         await self._stack.enter_async_context(_policy_reader_client)
         policy_reader = PolicyReaderStub(TypedClient(_policy_reader_client))
         self._policy_reader = policy_reader

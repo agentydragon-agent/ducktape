@@ -9,7 +9,8 @@ from typing import Any
 import uuid
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
+from adgn.agent.approvals import ApprovalHub
+from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
 from adgn.agent.persist import RunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
@@ -129,7 +130,7 @@ class AgentSession:
         persistence=None,
         agent_id: str | None = None,
         ui_bus: Any | None = None,
-        approval_engine: ApprovalPolicyEngine | None = None,
+        approval_engine: ApprovalPolicyServer | None = None,
         policy_gateway: PolicyGatewayMiddleware | None = None,
     ) -> None:
         self._task: asyncio.Task | None = None
@@ -142,7 +143,7 @@ class AgentSession:
         self._persistence = persistence
         self.ui_bus: Any | None = ui_bus
         self.ui_state: UiState = new_state()
-        self.approval_engine: ApprovalPolicyEngine | None = approval_engine
+        self.approval_engine: ApprovalPolicyServer | None = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
         # Optional: agent identifier to associate runs with a specific hosted agent
         self.agent_id: str | None = agent_id
