@@ -33,14 +33,8 @@ class TestPolicyValidation:
             result = await sess.call_tool("set_policy", {"source": failing_policy})
             # Tool should return error or raise
             assert result is not None
-            # Check for error in result
-            if hasattr(result, "is_error"):
-                assert result.is_error, "Expected error for failing tests policy"
-            else:
-                # If no error structure, check content for failure indicators
-                content = str(result)
-                # The policy runner should fail because TEST_CASES don't match decide() output
-                assert "error" in content.lower() or "fail" in content.lower()
+            # CallToolResult always has is_error - check for error
+            assert result.is_error, "Expected error for failing tests policy"
 
     @pytest.mark.asyncio
     async def test_set_policy_accepts_valid_policy(self, sqlite_persistence, docker_client, policy_allow_all):
@@ -54,13 +48,9 @@ class TestPolicyValidation:
 
         async with Client(engine.admin) as sess:
             result = await sess.call_tool("set_policy", {"source": policy_allow_all})
-            # Should succeed - check for ok: true response
+            # Should succeed - CallToolResult.is_error should be False
             assert result is not None
-            # The result should indicate success
-            content = str(result)
-            # Either has ok=True or no error indication
-            if hasattr(result, "is_error"):
-                assert not result.is_error
+            assert not result.is_error
 
     @pytest.mark.asyncio
     async def test_create_proposal_validates_policy(self, sqlite_persistence, docker_client):
@@ -78,10 +68,8 @@ class TestPolicyValidation:
             # Try to create proposal with failing policy - should fail validation
             try:
                 result = await sess.call_tool("create_proposal", {"content": failing_policy})
-                # If we get here, check for error in result
-                if hasattr(result, "is_error") and result.is_error:
-                    pass  # Expected
-                else:
+                # If we get here without exception, result should indicate error
+                if not result.is_error:
                     pytest.fail("Expected proposal creation to fail for policy with failing tests")
             except Exception:
                 # Exception during validation is expected

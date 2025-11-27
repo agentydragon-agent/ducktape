@@ -298,8 +298,8 @@ class _PolicyGatewayMiddleware(Middleware):
             self._inflight[call_id] = tool_key
             try:
                 call_result = await call_next(context)
-                if bool(getattr(call_result, "is_error", False)):
-                    err = getattr(call_result, "error", None)
+                if call_result.is_error:
+                    err = call_result.error
                     if err is None:
                         return call_result
                     try:

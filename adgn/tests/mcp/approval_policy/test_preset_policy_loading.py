@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
+from mcp.types import TextContent
 import pytest
 
 from adgn.agent.presets import discover_presets
@@ -70,7 +71,7 @@ class TestPresetPolicyLoading:
             # Read the policy resource
             contents = await sess.read_resource(str(APPROVAL_POLICY_RESOURCE_URI))
             assert contents is not None
-            text_parts = [c for c in contents if hasattr(c, "text")]
+            text_parts = [c for c in contents if isinstance(c, TextContent)]
             assert len(text_parts) >= 1
             # Should contain the allow_all policy
             policy_text = text_parts[0].text
@@ -90,7 +91,7 @@ class TestPresetPolicyLoading:
 
         async with Client(engine.reader) as sess:
             contents = await sess.read_resource(str(APPROVAL_POLICY_RESOURCE_URI))
-            text_parts = [c for c in contents if hasattr(c, "text")]
+            text_parts = [c for c in contents if isinstance(c, TextContent)]
             policy_text = text_parts[0].text
             # const policy should be returned
             assert "const" in policy_text.lower() or "PolicyResponse" in policy_text

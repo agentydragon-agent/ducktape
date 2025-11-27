@@ -27,8 +27,8 @@ from adgn.mcp.approval_policy.engine import CallDecision
 async def test_pg_middleware_allow(pg_client):
     # pg_client already has allow-all policy
     res = await pg_client.call_tool(build_mcp_function("backend", "echo"), {"text": "7"})
-    assert not getattr(res, "is_error", False)
-    assert getattr(res, "structured_content", None) == {"echo": "7"}
+    assert not res.is_error
+    assert res.structured_content == {"echo": "7"}
 
 
 @pytest.mark.requires_docker

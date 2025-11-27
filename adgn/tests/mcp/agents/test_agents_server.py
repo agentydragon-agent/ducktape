@@ -5,10 +5,12 @@ Tests agents://list resource and agent lifecycle via MCP tools.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
+from mcp.types import TextContent
 import pytest
 
 from adgn.agent.mcp_bridge.servers.agents import AgentInfo, make_agents_server
@@ -53,11 +55,9 @@ class TestAgentsListResource:
             contents = await sess.read_resource("agents://list")
             assert contents is not None
             # Content should be a list (empty)
-            text_parts = [c for c in contents if hasattr(c, "text")]
+            text_parts = [c for c in contents if isinstance(c, TextContent)]
             assert len(text_parts) >= 1
             # Validate structure - should be JSON list
-            import json
-
             data = json.loads(text_parts[0].text)
             assert isinstance(data, list)
             assert len(data) == 0
@@ -79,8 +79,6 @@ class TestAgentsListResource:
 
         async with Client(agents_server) as sess:
             contents = await sess.read_resource("agents://list")
-            import json
-
             data = json.loads(contents[0].text)
             assert len(data) == 1
             agent = AgentInfo.model_validate(data[0])
@@ -102,8 +100,6 @@ class TestAgentsListResource:
 
         async with Client(agents_server) as sess:
             contents = await sess.read_resource("agents://list")
-            import json
-
             data = json.loads(contents[0].text)
             assert len(data) == 1
             agent = AgentInfo.model_validate(data[0])
@@ -127,8 +123,6 @@ class TestAgentsListResource:
 
         async with Client(agents_server) as sess:
             contents = await sess.read_resource("agents://list")
-            import json
-
             data = json.loads(contents[0].text)
             assert len(data) == 1
             agent = AgentInfo.model_validate(data[0])
@@ -144,8 +138,6 @@ class TestAgentsPresetsResource:
         """agents://presets returns available presets."""
         async with Client(agents_server) as sess:
             contents = await sess.read_resource("agents://presets")
-            import json
-
             data = json.loads(contents[0].text)
             assert isinstance(data, list)
             # Should have at least the default preset
