@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from adgn.agent.mcp_bridge.servers import make_agents_server
+from adgn.agent.mcp_bridge.servers.agents import make_agents_server
 from adgn.mcp.compositor.server import Compositor
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ AGENTS_SERVER_NAME = "agents"
 
 
 async def create_global_compositor(
-    registry: "InfrastructureRegistry",
+    registry: InfrastructureRegistry,
 ) -> Compositor:
     """Create the global user-facing compositor.
 

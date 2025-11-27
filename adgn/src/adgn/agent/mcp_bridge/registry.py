@@ -9,23 +9,20 @@ Manages:
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+import logging
 
 from docker.client import DockerClient
 from fastmcp.mcp_config import MCPConfig
 
 from adgn.agent.mcp_bridge.servers.agent_control import make_agent_control_server
 from adgn.agent.persist.sqlite import SQLitePersistence
+from adgn.agent.presets import create_agent_from_preset
 from adgn.agent.runtime.container import AgentContainer, build_container
 from adgn.agent.types import AgentID
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.model import OpenAIModelProto
-
-if TYPE_CHECKING:
-    pass
 
 # Server name for agent control (send_prompt, abort_run)
 AGENT_CONTROL_SERVER_NAME = "agent_control"
@@ -137,8 +134,6 @@ class InfrastructureRegistry:
         Returns:
             Booted AgentContainer
         """
-        from adgn.agent.presets import create_agent_from_preset
-
         async with self._lock:
             # Create agent record in DB from preset
             agent_id, mcp_config, system = await create_agent_from_preset(

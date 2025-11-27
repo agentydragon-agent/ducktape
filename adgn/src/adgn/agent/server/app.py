@@ -8,14 +8,16 @@ import os
 from pathlib import Path
 
 import docker  # type: ignore
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, FastAPI as SubApp, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastmcp.mcp_config import MCPConfig
 import uvicorn
 
-from adgn.agent.mcp_bridge import InfrastructureRegistry, create_global_compositor, load_tokens
+from adgn.agent.mcp_bridge.auth import load_tokens
+from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
+from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.registry import AgentRegistry
 from adgn.agent.server.mcp_routing import TOKEN_TABLE, MCPRoutingMiddleware
@@ -165,8 +167,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     # Mount MCP routing endpoint
     # Note: The global_compositor is created during startup, so this uses a lazy sub-app
-    from fastapi import FastAPI as SubApp  # noqa: PLC0415
-
     mcp_sub_app = SubApp()
 
     @mcp_sub_app.middleware("http")

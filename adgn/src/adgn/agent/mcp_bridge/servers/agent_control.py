@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def make_agent_control_server(
     name: str,
-    container: "AgentContainer",
+    container: AgentContainer,
 ) -> FastMCP:
     """Create the agent control MCP server.
 

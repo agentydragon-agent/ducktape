@@ -12,9 +12,9 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
+import yaml
 
 if TYPE_CHECKING:
     from adgn.agent.types import AgentID
@@ -56,7 +56,7 @@ def load_tokens(
         logger.warning(f"Tokens config not found at {config_path}, using empty tokens")
         return user_tokens, agent_tokens
 
-    with open(config_path) as f:
+    with config_path.open() as f:
         data = yaml.safe_load(f) or {}
 
     # Parse users section: user_id -> token becomes token -> user_id
@@ -90,9 +90,9 @@ class TokenRoutingASGI:
     def __init__(
         self,
         user_tokens: dict[str, str],  # token → user_id
-        agent_tokens: dict[str, "AgentID"],  # token → agent_id
+        agent_tokens: dict[str, AgentID],  # token → agent_id
         user_app: ASGIApp,  # ASGI app for user compositor
-        agent_apps: dict["AgentID", ASGIApp],  # ASGI apps for agent compositors
+        agent_apps: dict[AgentID, ASGIApp],  # ASGI apps for agent compositors
     ):
         self.user_tokens = user_tokens
         self.agent_tokens = agent_tokens

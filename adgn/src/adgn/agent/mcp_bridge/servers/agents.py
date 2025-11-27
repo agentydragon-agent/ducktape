@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any
 from fastmcp import FastMCP
 from pydantic import BaseModel
 
+from adgn.agent.presets import discover_presets
+
 if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
 
@@ -40,7 +42,7 @@ class PresetInfo(BaseModel):
 
 def make_agents_server(
     name: str,
-    registry: "InfrastructureRegistry",
+    registry: InfrastructureRegistry,
 ) -> FastMCP:
     """Create the agents management MCP server.
 
@@ -100,8 +102,6 @@ def make_agents_server(
     @mcp.resource("agents://presets")
     async def list_presets() -> list[PresetInfo]:
         """List available agent presets."""
-        from adgn.agent.presets import discover_presets
-
         presets = discover_presets()
         return [
             PresetInfo(name=p.name, description=p.description) for p in presets.values()

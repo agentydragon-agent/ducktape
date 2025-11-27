@@ -20,7 +20,7 @@ import uvicorn
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.mcp_bridge import load_tokens
+from adgn.agent.mcp_bridge.auth import load_tokens
 from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
 from adgn.agent.server.bus import ServerBus

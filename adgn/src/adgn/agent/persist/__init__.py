@@ -74,7 +74,7 @@ class PolicyProposal(BaseModel):
     content: str
 
 
-from .events import EventRecord  # noqa: E402
+from .events import EventRecord  # noqa: E402 - late import to avoid circular dependency
 
 
 class Persistence(Protocol):
