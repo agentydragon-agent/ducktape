@@ -396,12 +396,12 @@ External agents (e.g., Claude Code connecting remotely) need:
 | REST Endpoint | MCP Replacement | Server |
 |---------------|-----------------|--------|
 | **Agent Management** | | |
-| `GET /api/agents` | `agents_list_agents` tool | `agents` |
+| `GET /api/agents` | `agents://list` resource | `agents` |
 | `POST /api/agents` | `agents_create_agent` tool | `agents` |
 | `DELETE /api/agents/{id}` | `agents_delete_agent` tool | `agents` |
 | `GET /api/agents/{id}/status` | `agent_{id}_status` resource | per-agent |
 | `GET /api/agents/{id}/snapshot` | `agent_{id}_snapshot` resource | per-agent |
-| `GET /api/presets` | `agents_list_presets` tool | `agents` |
+| `GET /api/presets` | `agents://presets` resource | `agents` |
 | **Agent Control** | | |
 | `POST /api/agents/{id}/prompt` | `agent_{id}_agent_control_send_prompt` tool | per-agent |
 | `POST /api/agents/{id}/abort` | `agent_{id}_agent_control_abort_run` tool | per-agent |
@@ -418,9 +418,9 @@ External agents (e.g., Claude Code connecting remotely) need:
 | `POST /api/agents/{id}/mcp/attach` | `agent_{id}_compositor_attach` tool | per-agent |
 | `POST /api/agents/{id}/mcp/detach` | `agent_{id}_compositor_detach` tool | per-agent |
 | **Runs (Historical)** | | |
-| `GET /api/runs` | `agents_list_runs` tool | `agents` |
-| `GET /api/runs/{id}` | `agents_get_run` tool | `agents` |
-| `GET /api/runs/{id}/events` | `agents_get_run_events` tool | `agents` |
+| `GET /api/runs` | `runs://list` resource | `agents` |
+| `GET /api/runs/{id}` | `runs://{id}` resource | `agents` |
+| `GET /api/runs/{id}/events` | `runs://{id}/events` resource | `agents` |
 
 #### Backend Changes
 
@@ -431,8 +431,9 @@ External agents (e.g., Claude Code connecting remotely) need:
    - Keep only: `/` (index.html), `/vite.svg`, `/static/*`, `/mcp`
 
 2. **Add to `agents` server (`mcp_bridge/servers/agents.py`):**
-   - `list_presets` tool
-   - `list_runs`, `get_run`, `get_run_events` tools
+   - `agents://list` resource (list all agents)
+   - `agents://presets` resource (list available presets)
+   - `runs://list`, `runs://{id}`, `runs://{id}/events` resources
 
 3. **Add to per-agent user compositor:**
    - `status` resource
@@ -490,11 +491,16 @@ export class AgentMcpClient {
     return new AgentMcpClient(client, transport)
   }
 
-  // Tool calls use global compositor prefixes
+  // Resources for read operations
   async listAgents() {
-    return this.callTool('agents_list_agents')
+    return this.readResource('agents://list')
   }
 
+  async listPresets() {
+    return this.readResource('agents://presets')
+  }
+
+  // Tools for mutations
   async createAgent(preset?: string) {
     return this.callTool('agents_create_agent', { preset })
   }
