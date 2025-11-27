@@ -16,11 +16,11 @@ async def test_model_reads_container_info_with_stubbed_openai(
     reasoning_model,
     responses_factory,
     docker_inproc_spec_alpine,
-    make_pg_session,
+    make_pg_client,
     approval_policy_reader_allow_all,
     recording_handler,
 ) -> None:
-    async with make_pg_session(
+    async with make_pg_client(
         {"runtime": docker_inproc_spec_alpine, "approval_policy": approval_policy_reader_allow_all}
     ) as mcp_client:
         # Prepare a deterministic two-step sequence: function_call then final text

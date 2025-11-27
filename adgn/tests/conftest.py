@@ -202,6 +202,36 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
         await comp.mount_inproc(name, srv)
 
 
+def _load_allow_all_policy() -> str:
+    """Load the packaged approve_all.py policy source."""
+    return resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
+
+
+async def _setup_pg_compositor(
+    servers: McpServerSpecs,
+    policy_engine: PolicyEngine | None,
+    sqlite_persistence,
+    agent_id: str,
+) -> tuple[Compositor, PolicyEngine]:
+    """Shared setup for make_pg_client and make_pg_compositor."""
+    comp = Compositor("comp")
+
+    if policy_engine is None:
+        policy_engine = PolicyEngine(
+            docker_client=docker.from_env(),
+            agent_id=agent_id,
+            persistence=sqlite_persistence,
+            policy_source=_load_allow_all_policy(),
+        )
+
+    await comp.mount_inproc("reader", policy_engine.reader)
+    await _mount_servers(comp, servers)
+    comp.add_middleware(policy_engine.gateway)
+    await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
+
+    return comp, policy_engine
+
+
 @pytest.fixture
 def make_pg_client(sqlite_persistence, request: pytest.FixtureRequest):
     """Async helper to open a Compositor with policy gateway, yielding just the client.
@@ -212,34 +242,11 @@ def make_pg_client(sqlite_persistence, request: pytest.FixtureRequest):
 
     For tests that need access to the compositor or engine, use make_pg_compositor instead.
     """
-    from importlib import resources as pkg_resources
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
-        comp = Compositor("comp")
-
-        # If no engine provided, create one with allow-all policy
-        if policy_engine is None:
-            policy_text = pkg_resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
-            default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
-            policy_engine = PolicyEngine(
-                docker_client=docker.from_env(),
-                agent_id=default_id,
-                persistence=sqlite_persistence,
-                policy_source=policy_text,
-            )
-
-        # Mount the policy engine's reader on compositor
-        await comp.mount_inproc("reader", policy_engine.reader)
-
-        # Mount other provided servers
-        await _mount_servers(comp, servers)
-
-        # Install policy gateway middleware from the engine
-        comp.add_middleware(policy_engine.gateway)
-
-        # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
-        await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
+        default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
+        comp, _ = await _setup_pg_compositor(servers, policy_engine, sqlite_persistence, default_id)
         async with Client(comp) as sess:
             yield sess
 
@@ -247,7 +254,7 @@ def make_pg_client(sqlite_persistence, request: pytest.FixtureRequest):
 
 
 @pytest.fixture
-def make_pg_compositor(make_pg_client, sqlite_persistence, request: pytest.FixtureRequest):
+def make_pg_compositor(sqlite_persistence, request: pytest.FixtureRequest):
     """Async helper with full access to compositor and engine.
 
     Usage:
@@ -256,36 +263,13 @@ def make_pg_compositor(make_pg_client, sqlite_persistence, request: pytest.Fixtu
 
     For tests that only need the client, prefer make_pg_client instead.
     """
-    from importlib import resources as pkg_resources
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
-        comp = Compositor("comp")
-
-        # If no engine provided, create one with allow-all policy
-        if policy_engine is None:
-            policy_text = pkg_resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
-            default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
-            policy_engine = PolicyEngine(
-                docker_client=docker.from_env(),
-                agent_id=default_id,
-                persistence=sqlite_persistence,
-                policy_source=policy_text,
-            )
-
-        # Mount the policy engine's reader on compositor
-        await comp.mount_inproc("reader", policy_engine.reader)
-
-        # Mount other provided servers
-        await _mount_servers(comp, servers)
-
-        # Install policy gateway middleware from the engine
-        comp.add_middleware(policy_engine.gateway)
-
-        # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
-        await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
+        default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
+        comp, engine = await _setup_pg_compositor(servers, policy_engine, sqlite_persistence, default_id)
         async with Client(comp) as sess:
-            yield sess, comp, policy_engine
+            yield sess, comp, engine
 
     return _open
 
@@ -431,7 +415,44 @@ def docker_inproc_spec_py312():
     return make_container_exec_server(opts)
 
 
-# --- Approval policy reader presets ------------------------------------------
+# --- Approval policy presets ------------------------------------------
+
+
+def make_policy_source(decision: str) -> str:
+    """Generate a policy source that always returns the specified decision.
+
+    Args:
+        decision: One of 'allow', 'deny_abort', 'deny_continue', 'ask'
+    """
+    decision_upper = decision.upper()
+    return f'''"""Policy that returns {decision} for all calls."""
+from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
+from adgn.agent.policies.scaffold import run
+
+def decide(_req: PolicyRequest) -> PolicyResponse:
+    return PolicyResponse(decision=ApprovalDecision.{decision_upper}, rationale="{decision}")
+
+if __name__ == "__main__":
+    raise SystemExit(run(decide))
+'''
+
+
+@pytest.fixture
+def make_decision_engine(make_approval_policy_server):
+    """Factory for creating PolicyEngine with a specific decision policy.
+
+    Usage:
+        engine = make_decision_engine("allow")
+        engine = make_decision_engine("deny_abort")
+        engine = make_decision_engine("ask")
+
+    Thin wrapper around make_approval_policy_server that handles policy source generation.
+    """
+
+    def _make(decision: str) -> PolicyEngine:
+        return make_approval_policy_server(make_policy_source(decision))
+
+    return _make
 
 
 @pytest.fixture
@@ -440,9 +461,11 @@ async def approval_policy_reader_allow_all(sqlite_persistence) -> FastMCP:
 
     Uses the packaged approve_all.py source and evaluates via Docker.
     """
-    policy_text = resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
     engine = PolicyEngine(
-        docker_client=docker.from_env(), agent_id="tests", persistence=sqlite_persistence, policy_source=policy_text
+        docker_client=docker.from_env(),
+        agent_id="tests",
+        persistence=sqlite_persistence,
+        policy_source=_load_allow_all_policy(),
     )
     return engine.reader
 

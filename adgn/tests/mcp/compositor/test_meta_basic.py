@@ -9,8 +9,8 @@ from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 
 @pytest.mark.requires_docker
-async def test_compositor_meta_resources_available(make_pg_session, approval_policy_reader_allow_all, backend_server):
-    async with make_pg_session(
+async def test_compositor_meta_resources_available(make_pg_client, approval_policy_reader_allow_all, backend_server):
+    async with make_pg_client(
         {"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}
     ) as sess:
         # Read per-mount state from the compositor_meta server

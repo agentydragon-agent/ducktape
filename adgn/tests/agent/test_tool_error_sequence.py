@@ -10,13 +10,13 @@ from tests.agent.ws_helpers import assert_function_call_output_structured
 async def test_tool_error_is_surfaced_in_sequence(
     monkeypatch: pytest.MonkeyPatch,
     responses_factory,
-    make_pg_session,
+    make_pg_client,
     approval_policy_reader_allow_all,
     failing_server,
     recording_handler,
     make_test_agent,
 ) -> None:
-    async with make_pg_session(
+    async with make_pg_client(
         {"editor": failing_server, "approval_policy": approval_policy_reader_allow_all}
     ) as mcp_client:
         agent, _client = await make_test_agent(
