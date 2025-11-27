@@ -84,9 +84,13 @@ class ApprovalPolicyServer(NotifyingFastMCP):
     server layer. Policy changes trigger MCP resource broadcasts directly, eliminating
     the notifier callback indirection.
 
-    Exposes:
+    Exposes on self (reader):
     - Resources: policy.py, proposals/{id}
     - Tool: evaluate_policy()
+
+    Owns sub-servers as attributes:
+    - self.proposer: create_proposal, withdraw_proposal tools
+    - self.approver: approve_proposal, reject_proposal, set_policy_text tools
 
     Exposes a deterministic waiter for tests via wait_for_broadcast(since_version).
     """
@@ -115,8 +119,14 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         self._broadcast_version: int = 0
         self._broadcast_cond: asyncio.Condition = asyncio.Condition()
 
-        # Register resources and tools
+        # Register resources and tools on self (reader server)
         self._register_resources()
+
+        # Create owned sub-servers for proposer and approver roles
+        self.proposer = NotifyingFastMCP(name=APPROVAL_POLICY_SERVER_NAME_PROPOSER, instructions=None)
+        self.approver = NotifyingFastMCP(name=APPROVAL_POLICY_SERVER_NAME_APPROVER, instructions=None)
+        self._register_proposer_tools()
+        self._register_approver_tools()
 
         # Protocol-level resource subscriptions: acknowledge subscribe/unsubscribe
         # and maintain a minimal per-session index. Notifications are broadcast
@@ -242,6 +252,41 @@ class ApprovalPolicyServer(NotifyingFastMCP):
             # Pass through input directly; it's already a PolicyRequest
             return await evaluator.decide(input)
 
+    def _register_proposer_tools(self) -> None:
+        """Register tools on self.proposer: create_proposal, withdraw_proposal."""
+
+        @self.proposer.flat_model()
+        async def create_proposal(input: CreateProposalArgs) -> ProposalDescriptor:
+            """Create a new policy proposal and return its descriptor."""
+            new_id = await self.create_proposal(input.content)
+            return ProposalDescriptor(
+                id=new_id, status=ProposalStatus.PENDING, created_at=datetime.now(UTC), decided_at=None
+            )
+
+        @self.proposer.flat_model()
+        async def withdraw_proposal(input: WithdrawProposalArgs) -> None:
+            """Withdraw a pending policy proposal by id."""
+            await self.withdraw_proposal(input.id)
+
+    def _register_approver_tools(self) -> None:
+        """Register tools on self.approver: approve_proposal, reject_proposal, set_policy_text."""
+
+        @self.approver.flat_model()
+        async def approve_proposal(input: ApproveProposalArgs) -> None:
+            """Approve a pending policy proposal by id (activates policy)."""
+            await self.approve_proposal(input.id)
+
+        @self.approver.flat_model()
+        async def reject_proposal(input: RejectProposalArgs) -> None:
+            """Reject a pending policy proposal by id."""
+            await self.reject_proposal(input.id)
+
+        @self.approver.flat_model()
+        async def set_policy_text(input: SetPolicyTextArgs) -> None:
+            """Directly set active policy text after self-check."""
+            self.self_check(input.source)
+            self.set_policy(input.source)
+
     async def wait_for_broadcast(self, since_version: int | None = None) -> int:
         """Await the next completed broadcast and return the new version.
 
@@ -256,52 +301,37 @@ class ApprovalPolicyServer(NotifyingFastMCP):
     # No nested IO models; see module-level CreateProposalArgs/ProposalDescriptor
 
 
-class ApprovalPolicyProposerServer(NotifyingFastMCP):
-    """Proposer-only MCP server: create/withdraw proposals (no resources).
+# ---- Compositor attach helpers ----
 
-    Delegates to the main ApprovalPolicyServer for business logic.
+
+async def attach_approval_policy_readonly(
+    comp: Compositor, policy_server: ApprovalPolicyServer, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER
+) -> ApprovalPolicyServer:
+    """Attach the approval policy readonly server (resources + evaluate_policy tool).
+
+    The policy_server itself is the reader server.
     """
-
-    def __init__(self, *, policy_server: ApprovalPolicyServer, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER) -> None:
-        super().__init__(name=name, instructions=None)
-        self._policy_server = policy_server
-
-        @self.flat_model()
-        async def create_proposal(input: CreateProposalArgs) -> ProposalDescriptor:
-            """Create a new policy proposal and return its descriptor."""
-            new_id = await self._policy_server.create_proposal(input.content)
-            return ProposalDescriptor(
-                id=new_id, status=ProposalStatus.PENDING, created_at=datetime.now(UTC), decided_at=None
-            )
-
-        @self.flat_model()
-        async def withdraw_proposal(input: WithdrawProposalArgs) -> None:
-            """Withdraw a pending policy proposal by id."""
-            await self._policy_server.withdraw_proposal(input.id)
+    await comp.mount_inproc(name, policy_server)
+    return policy_server
 
 
-class ApprovalPolicyAdminServer(NotifyingFastMCP):
-    """Admin-only MCP server: approve/reject proposals; may set policy text directly.
+async def attach_approval_policy_proposer(
+    comp: Compositor, policy_server: ApprovalPolicyServer, *, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER
+) -> NotifyingFastMCP:
+    """Attach the approval policy proposer server (create/withdraw proposals).
 
-    Delegates to the main ApprovalPolicyServer for business logic.
+    Uses policy_server.proposer which is an owned sub-server.
     """
+    await comp.mount_inproc(name, policy_server.proposer)
+    return policy_server.proposer
 
-    def __init__(self, *, policy_server: ApprovalPolicyServer, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER) -> None:
-        super().__init__(name=name, instructions=None)
-        self._policy_server = policy_server
 
-        @self.flat_model()
-        async def approve_proposal(input: ApproveProposalArgs) -> None:
-            """Approve a pending policy proposal by id (activates policy)."""
-            await self._policy_server.approve_proposal(input.id)
+async def attach_approval_policy_admin(
+    comp: Compositor, policy_server: ApprovalPolicyServer, *, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER
+) -> NotifyingFastMCP:
+    """Attach the approval policy admin server (approve/reject/set_policy_text).
 
-        @self.flat_model()
-        async def reject_proposal(input: RejectProposalArgs) -> None:
-            """Reject a pending policy proposal by id."""
-            await self._policy_server.reject_proposal(input.id)
-
-        @self.flat_model()
-        async def set_policy_text(input: SetPolicyTextArgs) -> None:
-            """Directly set active policy text after self-check."""
-            self._policy_server.self_check(input.source)
-            self._policy_server.set_policy(input.source)
+    Uses policy_server.approver which is an owned sub-server.
+    """
+    await comp.mount_inproc(name, policy_server.approver)
+    return policy_server.approver

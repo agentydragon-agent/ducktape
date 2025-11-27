@@ -25,7 +25,6 @@ from adgn.agent.server.rendering import render_compositor_instructions
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.mcp._shared.constants import (
-    APPROVAL_POLICY_SERVER_NAME_APPROVER,
     APPROVAL_POLICY_SERVER_NAME_PROPOSER,
     APPROVAL_POLICY_SERVER_NAME_READER,
     RUNTIME_EXEC_TOOL_NAME,
@@ -35,11 +34,7 @@ from adgn.mcp._shared.constants import (
 )
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
-from adgn.mcp.approval_policy.server import (
-    ApprovalPolicyAdminServer,
-    ApprovalPolicyProposerServer,
-    ApprovalPolicyServer,
-)
+from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.mcp.compositor.server import Compositor
@@ -47,6 +42,7 @@ from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import make_loop_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
 from adgn.mcp.runtime.server import make_runtime_server
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
@@ -593,20 +589,19 @@ class AgentContainer:
 
         # Mount approval policy servers: reader + proposer (agent container)
         # The reader server IS the policy_server (ApprovalPolicyServer with merged engine logic)
+        # The proposer and approver are owned sub-servers (policy_server.proposer, policy_server.approver)
         assert self._compositor is not None
         await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_READER, policy_server)
-        proposer_server = ApprovalPolicyProposerServer(policy_server=policy_server, name=APPROVAL_POLICY_SERVER_NAME_PROPOSER)
-        await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_PROPOSER, proposer_server)
+        await self._compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_PROPOSER, policy_server.proposer)
         # Admin (approver) server is NOT mounted into the compositor. It is exposed only
         # via a private client held by the container for user/admin HTTP flows.
-        approver_server = ApprovalPolicyAdminServer(policy_server=policy_server, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
         # Create in-proc client to the reader for policy gateway middleware
         _policy_reader_client = Client(policy_server)
         await self._stack.enter_async_context(_policy_reader_client)
         policy_reader = PolicyReaderStub(TypedClient(_policy_reader_client))
         self._policy_reader = policy_reader
         # Create in-proc client for admin operations and keep on container
-        _policy_approver_client = Client(approver_server)
+        _policy_approver_client = Client(policy_server.approver)
         await self._stack.enter_async_context(_policy_approver_client)
         self._policy_approver = PolicyApproverStub(TypedClient(_policy_approver_client))
 
@@ -649,7 +644,6 @@ class AgentContainer:
     async def _push_snapshot_and_status(self) -> None:
         """Emit a fresh snapshot and broadcast live/working status."""
         # Snapshot is now fetched via HTTP GET /api/agents/{id}/snapshot, not pushed
-        pass
 
     # sampling snapshot helpers are inlined in the actor dispatch handlers
 

@@ -116,7 +116,39 @@ def make_policy_engine(sqlite_persistence, request: pytest.FixtureRequest):
 
 @pytest.fixture
 async def approval_engine(sqlite_persistence) -> ApprovalPolicyEngine:
+    """DEPRECATED: Use approval_policy_server fixture instead."""
     return ApprovalPolicyEngine(
+        docker_client=docker.from_env(),
+        agent_id="tests",
+        persistence=sqlite_persistence,
+        policy_source=load_default_policy_source(),
+    )
+
+
+@pytest.fixture
+def make_approval_policy_server(sqlite_persistence, request: pytest.FixtureRequest):
+    """Factory producing ApprovalPolicyServer instances with per-test defaults.
+
+    The returned server owns .proposer and .approver sub-servers.
+    """
+
+    def _make(policy_source: str, *, agent_id: str | None = None) -> ApprovalPolicyServer:
+        default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
+        effective_id = agent_id or default_id
+        return ApprovalPolicyServer(
+            docker_client=docker.from_env(),
+            agent_id=effective_id,
+            persistence=sqlite_persistence,
+            policy_source=policy_source,
+        )
+
+    return _make
+
+
+@pytest.fixture
+async def approval_policy_server(sqlite_persistence) -> ApprovalPolicyServer:
+    """ApprovalPolicyServer fixture that owns .proposer and .approver sub-servers."""
+    return ApprovalPolicyServer(
         docker_client=docker.from_env(),
         agent_id="tests",
         persistence=sqlite_persistence,
