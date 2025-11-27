@@ -398,65 +398,76 @@ The frontend (`adgn/src/adgn/agent/web/`) currently:
 
 #### Required Changes
 
-1. **Add Bearer Token to MCP Client** (`src/features/mcp/client.ts`)
+1. **Switch to Streamable HTTP Transport** (`src/features/mcp/client.ts`)
+
+The MCP SDK deprecated SSE transport in favor of Streamable HTTP (introduced 2025-03-26).
+Use `StreamableHTTPClientTransport` instead of `SSEClientTransport`:
 
 ```typescript
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+
 export interface McpClientOptions {
   agentId?: string
-  bearerToken?: string  // NEW: Authentication token
+  bearerToken: string  // Required: Token from URL query param
 }
 
 export class AgentMcpClient {
-  static async connect(options: McpClientOptions = {}): Promise<AgentMcpClient> {
+  static async connect(options: McpClientOptions): Promise<AgentMcpClient> {
     const url = `${window.location.origin}/mcp`
 
-    // SSEClientTransport supports custom headers for auth
-    const headers: Record<string, string> = {}
-    if (options.bearerToken) {
-      headers['Authorization'] = `Bearer ${options.bearerToken}`
-    }
-
-    const transport = new SSEClientTransport(new URL(url), {
-      requestInit: { headers }  // Add bearer token to requests
+    const transport = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: {
+        headers: {
+          'Authorization': `Bearer ${options.bearerToken}`
+        }
+      }
     })
-    // ... rest unchanged
+
+    const client = new Client(
+      { name: 'adgn-web', version: '1.0.0' },
+      { capabilities: { resources: { subscribe: true } } }
+    )
+
+    await client.connect(transport)
+    return new AgentMcpClient(client, transport, options.agentId)
   }
 }
 ```
 
-2. **Token Storage** (`src/shared/auth.ts` - new file)
+2. **Token from URL Query Parameter** (`src/shared/auth.ts` - new file)
+
+CLI prints URL like: `http://localhost:8765?token=user_token_abc123`
 
 ```typescript
-const TOKEN_KEY = 'adgn_user_token'
-
-export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+/**
+ * Extract bearer token from URL query parameter.
+ * CLI provides URL with token embedded: http://host:port?token=...
+ */
+export function getTokenFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('token')
 }
 
-export function setStoredToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token)
-}
-
-export function clearStoredToken(): void {
-  localStorage.removeItem(TOKEN_KEY)
+/**
+ * Get token, throwing if not present in URL.
+ */
+export function requireToken(): string {
+  const token = getTokenFromUrl()
+  if (!token) {
+    throw new Error('Missing token in URL. Launch via CLI to get authenticated URL.')
+  }
+  return token
 }
 ```
 
-3. **Login Flow** (optional, for production)
-
-For development: Token can be passed via URL query param or env config
-For production: Add simple login page that validates token and stores it
-
-4. **MCP Manager Update** (`src/features/mcp/manager.ts`)
+3. **MCP Manager Update** (`src/features/mcp/manager.ts`)
 
 ```typescript
-import { getStoredToken } from '../../shared/auth'
+import { requireToken } from '../../shared/auth'
 
 async function createClient(agentId: string): Promise<AgentMcpClient> {
-  const token = getStoredToken()
-  if (!token) {
-    throw new Error('Not authenticated')
-  }
+  const token = requireToken()
   return AgentMcpClient.connect({
     agentId,
     bearerToken: token
@@ -464,17 +475,32 @@ async function createClient(agentId: string): Promise<AgentMcpClient> {
 }
 ```
 
+4. **CLI URL Output** (backend `cli.py`)
+
+```python
+# When starting server, print authenticated URL:
+token = load_tokens()[0].get("admin") or generate_dev_token()
+print(f"Open UI: http://{host}:{port}?token={token}")
+```
+
 #### Migration Path
 
-1. **Phase 5a**: Backend implements token routing (user token → global compositor)
-2. **Phase 5b**: Frontend adds bearer token support (defaults to env-provided dev token)
-3. **Phase 5c**: Add token configuration UI (stretch goal)
+1. **Phase 5a**: Backend implements token routing + Streamable HTTP transport
+2. **Phase 5b**: Frontend switches to Streamable HTTP + token from URL
+3. **Phase 5c**: CLI prints authenticated URL on startup
 
 #### No Changes Needed
 
 - HTTP REST API (`api.ts`) - These endpoints remain separate from MCP routing
   - Agent CRUD still uses `/api/agents/*`
   - This separation is intentional - REST for management, MCP for tool execution
+
+#### Browser Session Issue (Known)
+
+There's a known issue in the MCP TypeScript SDK where `mcp-session-id` headers
+aren't properly maintained in browser environments. If session continuity issues
+arise, may need to implement custom session handling or await SDK fix.
+See: [GitHub Issue #852](https://github.com/modelcontextprotocol/typescript-sdk/issues/852)
 
 ### Dependencies
 
