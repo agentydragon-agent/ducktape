@@ -9,41 +9,61 @@ Consolidate policy and approval handling into a single `PolicyEngine` class that
 | Phase | Status |
 |-------|--------|
 | Phase 1-3: Core consolidation | ✅ Done |
-| Phase 4: Rename constants | ⏳ Partial |
+| Phase 4: Cleanup deprecated code | ⏳ Next |
 | Phase 5: Two-compositor architecture | ❌ Future |
-| Test migration | ⏳ Partial |
 
 ## Completed
 
 - `_ApprovalHub` and `_PolicyGatewayMiddleware` moved into `engine.py` as private classes
 - `pending://calls` resource added to reader (hub changes trigger broadcast)
-- `decide_call(call_id, decision: CallDecision)` and `decide_proposal(proposal_id, decision: ProposalDecision)` tools on admin server
+- `decide_call` and `decide_proposal` tools on admin server
 - Deleted `mcp/approvals/` and `mcp/policy_gateway/` directories
-- `container.py` simplified: uses `engine.gateway`, no separate hub/gateway fields
-- `runtime.py` no longer accesses PolicyEngine internal state; UI reads `pending://calls` directly
-- Type annotations fixed (`AgentID`, `Persistence`, `ServerBus`)
-- Test fixtures: `make_pg_client` (yields client) and `make_pg_compositor` (yields client, comp, engine)
+- `container.py` simplified: uses `engine.gateway`
+- `runtime.py` no longer accesses PolicyEngine internal state
+- Test fixtures migrated: `pg_client`, `make_pg_client`, `make_pg_compositor`, `make_decision_engine`
 
-## Remaining
+## Remaining: Phase 4 Cleanup
 
-### Test migration (10 files using old `make_pg_session` fixture)
+### 1. Remove deprecated `ApprovalPolicyEngine` class
 
+File: `adgn/agent/approvals.py`
+
+Still used by:
+- `tests/conftest.py`: `make_policy_engine`, `approval_engine` fixtures
+- `tests/agent/conftest.py`: `policy_evaluator` fixture
+- `tests/agent/server/test_snapshot_proposals_invalid.py`: direct usage
+
+Action: Migrate these to use `PolicyEngine` from `mcp/approval_policy/engine.py`
+
+### 2. Remove deprecated `ApprovalHub` class
+
+File: `adgn/agent/approvals.py`
+
+No longer used externally (hub is now private `_ApprovalHub` in engine.py)
+
+Action: Delete class after confirming no imports
+
+### 3. Rename/remove old constants
+
+File: `adgn/mcp/_shared/constants.py`
+
+```python
+# Old (to remove/rename):
+APPROVAL_POLICY_SERVER_NAME = "approval_policy"
+APPROVAL_POLICY_SERVER_NAME_READER = ...
+APPROVAL_POLICY_SERVER_NAME_PROPOSER = ...
+APPROVAL_POLICY_SERVER_NAME_APPROVER = ...
 ```
-tests/mcp/test_pg_middleware.py
-tests/agent/ui/test_ui_agent_integration.py
-tests/agent/test_mcp_resources_flow.py
-tests/agent/test_runtime_timeout.py
-tests/agent/test_tool_error_*.py
-tests/agent/test_policy_eval_abort_on_error.py
-tests/mcp/compositor/test_meta_basic.py
-tests/mcp/compositor/test_admin_pinned_detach.py
-tests/props/test_lint_issue_bootstrap.py
-```
 
-Pattern: `make_pg_session(...)` → `make_pg_client(...)` or `make_pg_compositor(...)`
-Pattern: `approval_hub.resolve(call_id, ...)` → `admin.call_tool("decide_call", {"call_id": ..., "decision": ...})`
+Used by:
+- `agent/runtime/auto_attach.py`: `DEFAULT_AUTO_SERVER_NAMES`
+- `mcp/approval_policy/clients.py`: `READER_SERVER_NAME`, `APPROVER_SERVER_NAME`
 
-### Cleanup
+Action: Update usages to use new names, then remove old constants
 
-- Remove deprecated `ApprovalHub`/`ApprovalPolicyEngine` from `adgn/agent/approvals.py`
-- Remove old `APPROVAL_POLICY_SERVER_NAME*` constants
+## Future: Phase 5 Two-Compositor Architecture
+
+Separate agent-facing and user-facing compositors:
+- Agent compositor: `reader`, `policy_proposer`, gateway middleware
+- User compositor: `reader`, `admin`
+- Global `/mcp` endpoint routes to user compositor
