@@ -14,7 +14,7 @@ from fastmcp.server import FastMCP
 from openai import AsyncOpenAI
 import pytest
 
-from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
+from adgn.agent.approvals import load_default_policy_source
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
 from adgn.mcp._shared.container_session import ContainerOptions
@@ -89,38 +89,16 @@ def _per_test_agent_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
 
 
 @pytest.fixture
+def docker_client():
+    """Provide a Docker client for tests that need container operations."""
+    return docker.from_env()
+
+
+@pytest.fixture
 async def sqlite_persistence(tmp_path):
     p = SQLitePersistence(tmp_path / "agent.sqlite")
     await p.ensure_schema()
     return p
-
-
-@pytest.fixture
-def make_policy_engine(sqlite_persistence, request: pytest.FixtureRequest):
-    """Factory producing ApprovalPolicyEngine instances with per-test defaults."""
-
-    def _make(policy_source: str, *, agent_id: str | None = None) -> ApprovalPolicyEngine:
-        default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
-        effective_id = agent_id or default_id
-        return ApprovalPolicyEngine(
-            docker_client=docker.from_env(),
-            agent_id=effective_id,
-            persistence=sqlite_persistence,
-            policy_source=policy_source,
-        )
-
-    return _make
-
-
-@pytest.fixture
-async def approval_engine(sqlite_persistence) -> ApprovalPolicyEngine:
-    """DEPRECATED: Use approval_policy_server fixture instead."""
-    return ApprovalPolicyEngine(
-        docker_client=docker.from_env(),
-        agent_id="tests",
-        persistence=sqlite_persistence,
-        policy_source=load_default_policy_source(),
-    )
 
 
 @pytest.fixture
@@ -481,12 +459,14 @@ async def approval_policy_reader_allow_all(sqlite_persistence) -> FastMCP:
 
 
 @pytest.fixture
-def stub_approval_policy_engine():
-    class _StubApprovalPolicyEngine:
+def stub_policy_engine():
+    """Stub policy engine for tests that don't need real policy evaluation."""
+
+    class _StubPolicyEngine:
         def get_policy(self) -> tuple[str, int]:
             return ("# allow all\n", 1)
 
-    return _StubApprovalPolicyEngine()
+    return _StubPolicyEngine()
 
 
 @pytest.fixture

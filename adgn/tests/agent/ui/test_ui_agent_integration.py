@@ -32,7 +32,7 @@ def _make_ui_behavior(rf: ResponsesFactory):
 
 
 async def test_ui_server_with_mock_agent_produces_ui_state_updates(
-    responses_factory: ResponsesFactory, make_pg_client, stub_approval_policy_engine, approval_policy_reader_stub
+    responses_factory: ResponsesFactory, make_pg_client, stub_policy_engine, approval_policy_reader_stub
 ):
     # Per-agent bus and UI MCP server
     bus = ServerBus()
@@ -52,7 +52,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates(
     sess = AgentSession(mgr, persistence=_NoopPersist())
     # Wire the per-agent bus so manager drains it on function outputs
     sess.ui_bus = bus
-    sess.approval_engine = stub_approval_policy_engine
+    sess.approval_engine = stub_policy_engine
 
     # Patch send_json to capture envelopes
     orig_send_json = mgr.send_json

@@ -20,7 +20,7 @@ from tests.fixtures.responses import ResponsesFactory
 def approval_policy_reader_allow_all(approval_policy_reader_stub):
     """Override global approval_policy_reader_allow_all with Docker-free stub.
 
-    The global fixture (tests/conftest.py) uses ApprovalPolicyEngine with Docker
+    The global fixture (tests/conftest.py) uses PolicyEngine with Docker
     for realistic policy evaluation. This module tests message forwarding logic
     that doesn't need real policy execution, so we substitute the stub to:
     - Avoid Docker dependency for faster, more portable tests

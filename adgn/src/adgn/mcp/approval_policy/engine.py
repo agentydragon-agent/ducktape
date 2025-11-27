@@ -35,6 +35,7 @@ from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import (
     APPROVAL_POLICY_PROPOSALS_INDEX_URI,
     APPROVAL_POLICY_RESOURCE_URI,
+    APPROVAL_POLICY_SERVER_NAME,
     PENDING_CALLS_URI,
     POLICY_BACKEND_RESERVED_MISUSE_CODE,
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
@@ -697,3 +698,17 @@ async def attach_admin(comp: Compositor, engine: PolicyEngine, *, name: str = "a
     """Attach the policy admin server (decide_call/decide_proposal/set_policy)."""
     await comp.mount_inproc(name, engine.admin)
     return engine.admin
+
+
+async def attach_approval_policy_readonly(
+    comp: Compositor, engine: PolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME
+) -> NotifyingFastMCP:
+    """Attach the policy reader server with the standard approval_policy name."""
+    return await attach_reader(comp, engine, name=name)
+
+
+async def attach_approval_policy_proposer(
+    comp: Compositor, engine: PolicyEngine, *, name: str = "policy_proposer"
+) -> FastMCP:
+    """Attach the policy proposer server for creating/withdrawing proposals."""
+    return await attach_policy_proposer(comp, engine, name=name)

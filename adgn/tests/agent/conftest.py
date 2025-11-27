@@ -18,10 +18,10 @@ import pytest
 from starlette.testclient import WebSocketTestSession
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
+from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt, ServerMessage
@@ -88,25 +88,25 @@ class _AgentHttp:
         return self.post("policy", json=body)
 
 
-# Note: approval_engine fixture is provided globally in tests/conftest.py
+# Note: docker_client and approval_policy_server fixtures are provided globally in tests/conftest.py
 
 
 @pytest.fixture
-def policy_evaluator(docker_client, approval_engine: ApprovalPolicyEngine) -> ContainerPolicyEvaluator:
+def policy_evaluator(docker_client, approval_policy_server: PolicyEngine) -> ContainerPolicyEvaluator:
     """Container-backed policy evaluator using the default policy engine.
 
     Deduplicates setup across tests that need to call policy.decide(...).
     Requires Docker (tests should mark with @pytest.mark.requires_docker).
     """
-    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker_client, engine=approval_engine)
+    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker_client, engine=approval_policy_server)
 
 
 @pytest.fixture
-def make_policy_evaluator(docker_client, make_policy_engine):
+def make_policy_evaluator(docker_client, make_approval_policy_server):
     """Factory that builds a ContainerPolicyEvaluator for a given policy source."""
 
     def _make(policy_source: str, *, agent_id: str = "tests") -> ContainerPolicyEvaluator:
-        engine = make_policy_engine(policy_source, agent_id=agent_id)
+        engine = make_approval_policy_server(policy_source, agent_id=agent_id)
         return ContainerPolicyEvaluator(agent_id=agent_id, docker_client=docker_client, engine=engine)
 
     return _make

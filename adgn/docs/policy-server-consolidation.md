@@ -9,10 +9,12 @@ Consolidate policy and approval handling into a single `PolicyEngine` class that
 | Phase | Status |
 |-------|--------|
 | Phase 1-3: Core consolidation | ✅ Done |
-| Phase 4: Cleanup deprecated code | ⏳ Next |
+| Phase 4: Cleanup deprecated code | ✅ Done |
 | Phase 5: Two-compositor architecture | ❌ Future |
 
 ## Completed
+
+### Phase 1-3: Core Consolidation
 
 - `_ApprovalHub` and `_PolicyGatewayMiddleware` moved into `engine.py` as private classes
 - `pending://calls` resource added to reader (hub changes trigger broadcast)
@@ -22,44 +24,16 @@ Consolidate policy and approval handling into a single `PolicyEngine` class that
 - `runtime.py` no longer accesses PolicyEngine internal state
 - Test fixtures migrated: `pg_client`, `make_pg_client`, `make_pg_compositor`, `make_decision_engine`
 
-## Remaining: Phase 4 Cleanup
+### Phase 4: Cleanup Deprecated Code
 
-### 1. Remove deprecated `ApprovalPolicyEngine` class
-
-File: `adgn/agent/approvals.py`
-
-Still used by:
-- `tests/conftest.py`: `make_policy_engine`, `approval_engine` fixtures
-- `tests/agent/conftest.py`: `policy_evaluator` fixture
-- `tests/agent/server/test_snapshot_proposals_invalid.py`: direct usage
-
-Action: Migrate these to use `PolicyEngine` from `mcp/approval_policy/engine.py`
-
-### 2. Remove deprecated `ApprovalHub` class
-
-File: `adgn/agent/approvals.py`
-
-No longer used externally (hub is now private `_ApprovalHub` in engine.py)
-
-Action: Delete class after confirming no imports
-
-### 3. Rename/remove old constants
-
-File: `adgn/mcp/_shared/constants.py`
-
-```python
-# Old (to remove/rename):
-APPROVAL_POLICY_SERVER_NAME = "approval_policy"
-APPROVAL_POLICY_SERVER_NAME_READER = ...
-APPROVAL_POLICY_SERVER_NAME_PROPOSER = ...
-APPROVAL_POLICY_SERVER_NAME_APPROVER = ...
-```
-
-Used by:
-- `agent/runtime/auto_attach.py`: `DEFAULT_AUTO_SERVER_NAMES`
-- `mcp/approval_policy/clients.py`: `READER_SERVER_NAME`, `APPROVER_SERVER_NAME`
-
-Action: Update usages to use new names, then remove old constants
+- Removed `ApprovalPolicyEngine` class and related fixtures from tests
+- Removed `ApprovalHub` class (now `_ApprovalHub` private in engine.py)
+- Removed deprecated `make_policy_engine` factory function
+- Updated `approvals.py` to only export: `ApprovalRequest`, `ApprovalToolCall`, `WellKnownTools`, `load_default_policy_source`
+- Simplified constants: removed `APPROVAL_POLICY_SERVER_NAME_READER/_PROPOSER/_APPROVER`
+- Added new constants: `POLICY_PROPOSER_SERVER_NAME`, `POLICY_ADMIN_SERVER_NAME`
+- Added `docker_client` fixture to `tests/conftest.py`
+- Renamed `stub_approval_policy_engine` fixture to `stub_policy_engine`
 
 ## Future: Phase 5 Two-Compositor Architecture
 

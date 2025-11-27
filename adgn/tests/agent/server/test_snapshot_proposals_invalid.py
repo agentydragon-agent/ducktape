@@ -3,7 +3,8 @@ from __future__ import annotations
 from fastmcp.mcp_config import MCPConfig
 from hamcrest import assert_that, equal_to, has_length, not_none
 
-from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
+from adgn.agent.approvals import load_default_policy_source
+from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.agent.persist import AgentMetadata
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
@@ -18,7 +19,7 @@ async def test_snapshot_surfaces_invalid_proposal(docker_client, sqlite_persiste
     cm = ConnectionManager()
     sess = AgentSession(cm, persistence=sqlite_persistence)
     sess.agent_id = agent_id
-    sess.approval_engine = ApprovalPolicyEngine(
+    sess.approval_engine = PolicyEngine(
         docker_client=docker_client,
         agent_id=agent_id,
         persistence=sqlite_persistence,
