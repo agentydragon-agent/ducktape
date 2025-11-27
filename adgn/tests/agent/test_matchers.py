@@ -1,52 +1,10 @@
-"""Reusable Hamcrest matchers for agent test assertions.
-
-This module provides matchers for verifying agent behavior in tests.
-WebSocket-specific infrastructure has been removed (MCP replaced WebSocket).
-"""
+"""Reusable Hamcrest matchers for agent test assertions."""
 
 from __future__ import annotations
 
-from hamcrest import (
-    any_of,
-    assert_that,
-    contains_string,
-    equal_to,
-    has_entries,
-    has_item,
-    has_items,
-    has_properties,
-    is_not,
-    none,
-)
-from hamcrest.core.matcher import Matcher
-import pytest
+from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties
 
 from adgn.agent.server.protocol import RunStatus
-
-# ------------------------
-# Deprecated WS helpers (stubs)
-# ------------------------
-
-
-def drain_until_match(*args, **kwargs):
-    """DEPRECATED: WebSocket infrastructure removed. Use MCP-based test patterns."""
-    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
-
-
-def is_ui_state_event(*args, **kwargs):
-    """DEPRECATED: WebSocket infrastructure removed. Use MCP-based test patterns."""
-    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
-
-
-def collect_payloads_until_finished(*args, **kwargs):
-    """DEPRECATED: WebSocket infrastructure removed. Use MCP-based test patterns."""
-    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
-
-
-def wait_for_accepted(*args, **kwargs):
-    """DEPRECATED: WebSocket infrastructure removed. Use MCP-based test patterns."""
-    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
-
 
 # ------------------------
 # Hamcrest matcher helpers
@@ -56,30 +14,6 @@ def wait_for_accepted(*args, **kwargs):
 def has_finished_run():
     """Matcher: run_status with status == finished."""
     return has_properties(type="run_status", run_state=has_properties(status=RunStatus.FINISHED))
-
-
-# ------------------------
-# Hub WS (agents) matchers
-# ------------------------
-
-
-ACTIVE_RUN_SET = is_not(none())
-ACTIVE_RUN_CLEARED = any_of(none(), equal_to(""))
-
-
-def agent_status(agent_id: str, *, active_run_id: Matcher | None = None, live: bool | None = True):
-    """Generic matcher for hub JSON agent_status.
-
-    - agent_id: required id
-    - live: constrain live flag (default True). Pass None to avoid asserting it.
-    - active_run_id: Hamcrest matcher for active_run_id (e.g., ACTIVE_RUN_SET / ACTIVE_RUN_CLEARED)
-    """
-    data_kvs: dict[str, object] = {"id": agent_id}
-    if live is not None:
-        data_kvs["live"] = live
-    if active_run_id is not None:
-        data_kvs["active_run_id"] = active_run_id
-    return has_entries(type="agent_status", data=has_entries(**data_kvs))
 
 
 def is_ui_message(content: str | None = None, mime: str | None = None):

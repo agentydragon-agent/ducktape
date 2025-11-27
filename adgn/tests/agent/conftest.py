@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable
-from contextlib import asynccontextmanager, contextmanager
-from dataclasses import dataclass
-from datetime import UTC, datetime
-import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -340,16 +337,6 @@ def make_spy_spec() -> Callable[[list[str]], McpServerSpecs]:
     return _spec
 
 
-# ---- Seatbelt helpers (removed)
-
-
-# WebSocket session fixture - DEPRECATED: WebSocket has been replaced by MCP
-@pytest.fixture
-def ws_session():
-    """DEPRECATED: WebSocket has been replaced by MCP. Use MCP-based test fixtures instead."""
-    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
-
-
 # ---- Bound HTTP helper fixture ----------------------------------------------
 
 
@@ -368,13 +355,6 @@ def make_agent_http():
         http.deny_abort(call_id)
     """
     return _AgentHttp
-
-
-# WebSocket box fixture - DEPRECATED: WebSocket has been replaced by MCP
-@pytest.fixture
-def agent_ws_box():
-    """DEPRECATED: WebSocket has been replaced by MCP. Use MCP-based test fixtures instead."""
-    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
 
 
 # ---- Recording handler fixture -----------------------------------------------
