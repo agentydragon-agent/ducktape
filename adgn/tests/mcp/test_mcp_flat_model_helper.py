@@ -34,9 +34,7 @@ def echo_server():
 
 
 async def test_flat_schema_and_typed_invocation(make_typed_mcp, echo_server):
-    server = echo_server
-
-    async with make_typed_mcp(server, "echo") as (client, sess):
+    async with make_typed_mcp(echo_server, "echo") as (client, sess):
         # Fast path: typed client can call tool like client.echo(EchoInput(...)) -> EchoOutput
         echo_input_class = client.models["echo"].Input
         assert echo_input_class is EchoInput

@@ -3,8 +3,10 @@ from __future__ import annotations
 import sys
 
 from fastmcp.client import Client
+from fastmcp.client.messages import MessageHandler
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
+from mcp import types
 import pytest
 
 from adgn.mcp.compositor.clients import CompositorAdminClient
@@ -13,6 +15,16 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
 from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
+
+
+class ResourceUpdatedCapture(MessageHandler):
+    """MessageHandler that captures resource updated notifications."""
+
+    def __init__(self) -> None:
+        self.updated: list[str] = []
+
+    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
+        self.updated.append(str(message.params.uri))
 
 
 @pytest.fixture

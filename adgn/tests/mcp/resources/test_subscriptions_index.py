@@ -2,22 +2,19 @@ from __future__ import annotations
 
 from hamcrest import assert_that, empty, has_item, has_properties
 
-from adgn.mcp.resources.clients import ResourcesClient
 
-
-async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_recorder, resources_client):
+async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_recorder, typed_resources_client):
     # Compositor with one origin server mounted
     origin, hooks = origin_with_recorder
     await compositor.mount_inproc("origin", origin)
 
     # Subscribe to an origin resource via the resources server tool
-    rc = ResourcesClient(resources_client)
-    await rc.subscribe(server="origin", uri="resource://foo/bar")
+    await typed_resources_client.subscribe(server="origin", uri="resource://foo/bar")
 
     # Verify origin subscribe handler ran and index reflects the subscription
     assert hooks.subscribed, "expected origin to receive subscribe"
     # Use typed client helper to parse the subscriptions index
-    idx = await rc.list_subscriptions()
+    idx = await typed_resources_client.list_subscriptions()
     assert_that(idx.subscriptions, has_item(has_properties(server="origin", uri="resource://foo/bar")))
 
     # Unmount the origin server; the resources server should not attempt remote
@@ -28,5 +25,5 @@ async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_re
     assert not hooks.unsubscribed, "unexpected origin unsubscribe on unmount"
 
     # Subscriptions index should be empty now
-    idx2 = await rc.list_subscriptions()
+    idx2 = await typed_resources_client.list_subscriptions()
     assert_that(idx2.subscriptions, empty())

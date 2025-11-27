@@ -2,10 +2,8 @@ import asyncio
 from typing import Any, cast
 
 from fastmcp.client import Client
-from fastmcp.client.messages import MessageHandler
 from hamcrest import anything, assert_that, contains, empty, has_properties, is_not, none
 from hamcrest.core.matcher import Matcher
-from mcp import types
 import pytest
 
 from adgn.mcp.chat.server import (
@@ -17,8 +15,9 @@ from adgn.mcp.chat.server import (
     ReadPendingInput,
     make_chat_server,
 )
-from adgn.mcp.stubs.chat_stubs import ChatServerStub
 from adgn.mcp.stubs.typed_stubs import TypedClient
+from adgn.mcp.testing.chat_stubs import ChatServerStub
+from tests.mcp.conftest import ResourceUpdatedCapture
 
 
 @pytest.fixture
@@ -82,20 +81,11 @@ async def test_chat_flow_user_to_agent_then_agent_to_user(chat_servers) -> None:
         assert_that(hpage.messages, contains(assistant_markdown_message("roger")))
 
 
-class _Capture(MessageHandler):
-    def __init__(self) -> None:
-        self.updated: list[str] = []
-
-    # Override with narrower type than base MessageHandler (which accepts Any)
-    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
-        self.updated.append(str(message.params.uri))
-
-
 async def test_chat_head_notifications_other_participant(chat_servers) -> None:
     store, human, assistant = chat_servers
 
     # Assistant notifications on human posts
-    cap_assist = _Capture()
+    cap_assist = ResourceUpdatedCapture()
     async with Client(assistant, message_handler=cap_assist) as assist_sess, Client(human) as human_sess:
         h_post = TypedClient.from_server(human, human_sess).stub("post", PostResult)
         await h_post(PostInput(mime="text/markdown", content="hello"))
@@ -103,7 +93,7 @@ async def test_chat_head_notifications_other_participant(chat_servers) -> None:
         assert any(uri.endswith("chat://head") for uri in cap_assist.updated), cap_assist.updated
 
     # Human notifications on assistant posts
-    cap_human = _Capture()
+    cap_human = ResourceUpdatedCapture()
     async with Client(human, message_handler=cap_human) as human_sess, Client(assistant) as assist_sess:
         a_post = TypedClient.from_server(assistant, assist_sess).stub("post", PostResult)
         await a_post(PostInput(mime="text/markdown", content="roger"))
@@ -115,7 +105,7 @@ async def test_chat_last_read_updates_with_read_pending(chat_servers) -> None:
     store, human, assistant = chat_servers
 
     # Attach a capture handler to the assistant server where read_pending is called
-    cap_assist = _Capture()
+    cap_assist = ResourceUpdatedCapture()
     async with Client(assistant, message_handler=cap_assist) as assistant_sess, Client(human) as human_sess:
         h = ChatServerStub.from_server(human, human_sess)
         a = ChatServerStub.from_server(assistant, assistant_sess)
