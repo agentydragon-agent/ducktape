@@ -268,10 +268,7 @@ class AgentContainer:
         return (comp, mcp_client, notif_buffer)
 
     async def _setup_agent_runtime(
-        self,
-        mcp_client: Client,
-        notifications: NotificationsBuffer,
-        approval_engine: PolicyEngine,
+        self, mcp_client: Client, notifications: NotificationsBuffer, approval_engine: PolicyEngine
     ) -> tuple[AgentSession, MiniCodex]:
         """Phase 3: Set up agent runtime.
 
@@ -295,8 +292,8 @@ class AgentContainer:
             manager,
             persistence=self.persistence,
             agent_id=self.agent_id,
-            ui_bus=self._ui_bus if self.with_ui else None,
             approval_engine=approval_engine,
+            ui_bus=self._ui_bus if self.with_ui else None,
         )
 
         # LLM client
@@ -363,11 +360,9 @@ class AgentContainer:
                 self.approval_engine = await self._setup_approval_infrastructure()
 
                 # Phase 2: MCP infrastructure
-                (
-                    self._compositor,
-                    self._compositor_client,
-                    self._notif_buffer,
-                ) = await self._setup_mcp_infrastructure(self.approval_engine, mcp_cfg)
+                (self._compositor, self._compositor_client, self._notif_buffer) = await self._setup_mcp_infrastructure(
+                    self.approval_engine, mcp_cfg
+                )
 
                 # Phase 3: Agent runtime
                 self.session, self.agent = await self._setup_agent_runtime(

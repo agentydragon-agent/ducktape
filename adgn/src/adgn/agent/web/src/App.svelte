@@ -5,7 +5,7 @@
   import ChatPane from './components/ChatPane.svelte'
   import RightSidebar from './components/RightSidebar.svelte'
   import SidebarToggle from './components/SidebarToggle.svelte'
-  import { stopAgentStatusPolling, deleteAgent } from './features/agents/stores'
+  import { deleteAgent } from './features/agents/stores'
   import { disconnectAgentMcp } from './features/chat/stores'
   import { initAgentUiController } from './features/controller'
   import { prefs } from './shared/prefs'
@@ -16,7 +16,6 @@
   let agentId: string | null = null
 
   onDestroy(() => {
-    stopAgentStatusPolling()
     disconnectAgentMcp()
   })
 

@@ -4,10 +4,11 @@ import logging
 import os
 
 import docker
-from docker.client import DockerClient
 import docker.errors
+from docker.client import DockerClient
 
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
+from adgn.agent.policy_eval.constants import ENV_POLICY_INPUT, ENV_POLICY_SRC
 from adgn.agent.runtime.images import resolve_runtime_image
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ def run_policy_source(
         command=["python", "-m", "adgn.agent.policy_eval.shim"],
         detach=True,
         tty=False,
-        environment={"PYTHONUNBUFFERED": "1", "POLICY_SRC": source, "POLICY_INPUT": ctx_json},
+        environment={"PYTHONUNBUFFERED": "1", ENV_POLICY_SRC: source, ENV_POLICY_INPUT: ctx_json},
         network_mode="none",
         volumes={},
         stdin_open=False,

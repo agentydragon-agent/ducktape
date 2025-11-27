@@ -109,10 +109,10 @@ class AgentSession:
         self,
         manager: ConnectionManager,
         *,
-        persistence: Persistence | None = None,
-        agent_id: AgentID | None = None,
+        persistence: Persistence,
+        agent_id: AgentID,
+        approval_engine: PolicyEngine,
         ui_bus: ServerBus | None = None,
-        approval_engine: PolicyEngine | None = None,
     ) -> None:
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
@@ -120,13 +120,13 @@ class AgentSession:
         self._run_counter = 0
         self._agent: MiniCodex | None = None
         self._manager = manager
-        self._persistence: Persistence | None = persistence
+        self._persistence: Persistence = persistence
         self.ui_bus: ServerBus | None = ui_bus
         self.ui_state: UiState = new_state()
-        self.approval_engine: PolicyEngine | None = approval_engine
+        self.approval_engine: PolicyEngine = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
-        # Optional: agent identifier to associate runs with a specific hosted agent
-        self.agent_id: AgentID | None = agent_id
+        # Agent identifier to associate runs with a specific hosted agent
+        self.agent_id: AgentID = agent_id
 
     def current_run_phase(self) -> RunPhase:
         """Compute the current run phase from live signals (no stored state).
@@ -146,20 +146,11 @@ class AgentSession:
     async def build_snapshot(self, sampling=None) -> Snapshot:
         # Note: pending_approvals not populated here; UI reads pending://calls resource via MCP
 
-        approval_policy = None
-        if self.approval_engine is None:
-            raise RuntimeError("approval_engine not configured for session")
-
         content, version = self.approval_engine.get_policy()
         # Load proposals from persistence policy store
-        proposals = (
-            [
-                ProposalInfo(id=r.id, status=r.status)
-                for r in await self._persistence.list_policy_proposals(self.agent_id)
-            ]
-            if self._persistence is not None and self.agent_id
-            else []
-        )
+        proposals = [
+            ProposalInfo(id=r.id, status=r.status) for r in await self._persistence.list_policy_proposals(self.agent_id)
+        ]
         approval_policy = ApprovalPolicyInfo(content=content, version=version, proposals=proposals)
 
         return Snapshot(
@@ -224,8 +215,6 @@ class AgentSession:
             run_id = uuid.uuid4()
             started = datetime.now(UTC)
             model_params: dict[str, Any] = {}
-            if self._persistence is None:
-                raise RuntimeError("persistence not configured")
             await self._persistence.start_run(
                 run_id=run_id,
                 agent_id=self.agent_id,

@@ -9,6 +9,7 @@ from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from adgn.agent.models.proposal_status import ProposalStatus
+from adgn.agent.persist.events import EventRecord
 
 
 class AgentMetadata(BaseModel):
@@ -72,9 +73,6 @@ class PolicyProposal(BaseModel):
     created_at: datetime
     decided_at: datetime | None = None
     content: str
-
-
-from .events import EventRecord  # noqa: E402 - late import to avoid circular dependency
 
 
 class Persistence(Protocol):

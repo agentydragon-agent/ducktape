@@ -15,7 +15,6 @@ from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
-from starlette.testclient import WebSocketTestSession
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
@@ -23,18 +22,11 @@ from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
-from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt, ServerMessage
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.editor_server import make_editor_server
 from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
-from tests.agent.ws_helpers import (
-    _short_payload,
-    collect_payloads_until_finished,
-    collect_payloads_until_finished_auto_approve,
-    wait_for_accepted,
-)
 from tests.llm.support.openai_mock import FakeOpenAIModel
 from tests.types import McpServerSpecs
 
@@ -351,45 +343,11 @@ def make_spy_spec() -> Callable[[list[str]], McpServerSpecs]:
 # ---- Seatbelt helpers (removed)
 
 
-# Unified WS session fixture
+# WebSocket session fixture - DEPRECATED: WebSocket has been replaced by MCP
 @pytest.fixture
-def ws_session(agent_test_client, create_live_agent, patch_agent_build_client):
-    """Factory to open a websocket session for a newly created agent.
-
-    Usage:
-        with ws_session(model_client, specs=my_specs) as (client, ws, collect, agent_id):
-            ws.send_json({"type": "send", "text": "hi"})
-            payloads = collect(limit=100)  # collects until finished
-
-    Args:
-        model_client: Fake/Bound OpenAI client used for the agent
-        specs: optional MCP specs dict (typed JSON or runtime slot specs)
-        wait_accepted: if True, wait for Accepted after connecting
-        auto_approve: if True, collector auto-approves approval_pending events
-    """
-
-    @contextmanager
-    def _open(
-        model_client: OpenAIModelProto,
-        *,
-        specs: McpServerSpecs | None = None,
-        wait_accepted: bool = True,
-        auto_approve: bool = False,
-    ):
-        patch_agent_build_client(model_client)
-        agent_id = create_live_agent(agent_test_client, specs=specs or {})
-        with agent_test_client.websocket_connect(f"/ws?agent_id={agent_id}") as ws:
-            if wait_accepted:
-                wait_for_accepted(ws)
-
-            def _collect(limit: int = 200):
-                if auto_approve:
-                    return collect_payloads_until_finished_auto_approve(ws, limit=limit)
-                return collect_payloads_until_finished(ws, limit=limit)
-
-            yield agent_test_client, ws, _collect, agent_id
-
-    return _open
+def ws_session():
+    """DEPRECATED: WebSocket has been replaced by MCP. Use MCP-based test fixtures instead."""
+    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
 
 
 # ---- Bound HTTP helper fixture ----------------------------------------------
@@ -412,66 +370,11 @@ def make_agent_http():
     return _AgentHttp
 
 
-# ---- Combined agent WS box fixture ------------------------------------------
-
-
+# WebSocket box fixture - DEPRECATED: WebSocket has been replaced by MCP
 @pytest.fixture
-def agent_ws_box(ws_session, make_agent_http):
-    """Factory that opens a WS-connected live agent and returns a bound box.
-
-    Usage:
-        with agent_ws_box(model_client, specs={}) as box:
-            box.http.prompt("hi")
-            payloads = box.collect(limit=100)
-            box.ws  # underlying WS
-            box.agent_id
-    """
-
-    @dataclass
-    class Box:
-        client: TestClient
-        ws: WebSocketTestSession
-        collect: Callable[[int], list]
-        agent_id: str
-        http: _AgentHttp
-
-    @contextmanager
-    def _open(
-        model_client: OpenAIModelProto,
-        *,
-        specs: McpServerSpecs | None = None,
-        wait_accepted: bool = True,
-        auto_approve: bool = False,
-    ):
-        with ws_session(model_client, specs=specs, wait_accepted=wait_accepted, auto_approve=auto_approve) as (
-            client,
-            ws,
-            _collect_orig,
-            agent_id,
-        ):
-            http = make_agent_http(client, agent_id)
-
-            def _collect(limit: int = 200):
-                out: list[ServerMessage] = []
-                for _ in range(limit):
-                    env = Envelope.model_validate(ws.receive_json())
-                    p = env.payload
-                    # Optional trace for visibility when debugging CI flakes
-                    if os.getenv("ADGN_TEST_TRACE_WS", "0") in ("1", "true", "TRUE"):
-                        print(f"[ws:agent {datetime.now(UTC).isoformat()}] recv: {_short_payload(p)}")
-                    # Auto-approve via REST when requested
-                    if isinstance(p, ApprovalPendingEvt) and auto_approve:
-                        http.approve(p.call_id)
-                        out.append(p)
-                        continue
-                    out.append(p)
-                    if isinstance(p, RunStatusEvt) and p.run_state.status == RunStatus.FINISHED:
-                        break
-                return out
-
-            yield Box(client=client, ws=ws, collect=_collect, agent_id=agent_id, http=http)
-
-    return _open
+def agent_ws_box():
+    """DEPRECATED: WebSocket has been replaced by MCP. Use MCP-based test fixtures instead."""
+    pytest.skip("WebSocket infrastructure removed; use MCP-based test fixtures")
 
 
 # ---- Recording handler fixture -----------------------------------------------

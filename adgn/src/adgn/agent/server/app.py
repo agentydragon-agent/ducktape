@@ -42,6 +42,10 @@ def default_client_factory(model: str) -> OpenAIModelProto:
 def create_app(*, require_static_assets: bool = True) -> FastAPI:
     app = FastAPI()
 
+    # Initialize state variables to None for proper type checking
+    app.state.mcp_registry: InfrastructureRegistry | None = None
+    app.state.global_compositor = None
+
     def _mount_static(path: str, directory: Path, name: str) -> None:
         if not directory.exists():
             if require_static_assets:
@@ -118,11 +122,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Load tokens and create external agents at startup
         _user_tokens, agent_tokens = load_tokens()
         for agent_id in agent_tokens.values():
-            try:
-                await app.state.mcp_registry.create_external_agent(agent_id)
-                logger.info(f"Created external agent from token: {agent_id}")
-            except Exception as e:
-                logger.error(f"Failed to create external agent {agent_id}: {e}")
+            await app.state.mcp_registry.create_external_agent(agent_id)
+            logger.info(f"Created external agent from token: {agent_id}")
 
         # Multi-agent: agents should be created via API after startup
         app.state.ready.set()
@@ -136,7 +137,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             # Continue shutdown on errors; they will be logged by the caller
 
         # Shutdown all agents via mcp_registry (Phase 5 path)
-        if hasattr(app.state, "mcp_registry"):
+        if app.state.mcp_registry is not None:
             await app.state.mcp_registry.shutdown_all()
 
         # Legacy registry path for backwards compatibility
@@ -172,7 +173,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     @mcp_sub_app.middleware("http")
     async def mcp_routing_middleware_wrapper(request, call_next):
         """Wrapper to apply MCP routing middleware after startup."""
-        if not hasattr(app.state, "global_compositor"):
+        if app.state.global_compositor is None:
             return Response(content="Server not ready", status_code=503)
 
         # Create middleware instance
