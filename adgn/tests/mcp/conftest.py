@@ -28,6 +28,12 @@ class ResourceUpdatedCapture(MessageHandler):
 
 
 @pytest.fixture
+def resource_capture() -> ResourceUpdatedCapture:
+    """Fresh ResourceUpdatedCapture instance for each test."""
+    return ResourceUpdatedCapture()
+
+
+@pytest.fixture
 def stdio_echo_spec() -> StdioMCPServer:
     """Launch packaged echo server module via -m as a stdio spec."""
     return StdioMCPServer(command=sys.executable, args=["-m", "adgn.mcp.testing.stdio_app"])

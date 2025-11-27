@@ -11,6 +11,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 import pytest
 
+from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.mcp._shared.constants import (
     PENDING_CALLS_URI,
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
@@ -32,7 +33,7 @@ async def test_pg_middleware_allow(pg_client):
 
 @pytest.mark.requires_docker
 async def test_pg_middleware_deny_abort(make_pg_client, make_decision_engine, backend_server):
-    engine = make_decision_engine("deny_abort")
+    engine = make_decision_engine(ApprovalDecision.DENY_ABORT)
     async with make_pg_client({"backend": backend_server}, policy_engine=engine) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
@@ -41,7 +42,7 @@ async def test_pg_middleware_deny_abort(make_pg_client, make_decision_engine, ba
 
 @pytest.mark.requires_docker
 async def test_pg_middleware_deny_continue(make_pg_client, make_decision_engine, backend_server):
-    engine = make_decision_engine("deny_continue")
+    engine = make_decision_engine(ApprovalDecision.DENY_CONTINUE)
     async with make_pg_client({"backend": backend_server}, policy_engine=engine) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
@@ -81,7 +82,7 @@ async def test_pg_middleware_backend_stamp_misuse_via_proxy(make_pg_client, back
 @pytest.mark.requires_docker
 async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_engine, backend_server):
     """Test ASK decision: tool call blocks until approved via admin server."""
-    engine = make_decision_engine("ask")
+    engine = make_decision_engine(ApprovalDecision.ASK)
     call_ids: list[str] = []
 
     async with make_pg_compositor({"backend": backend_server}, policy_engine=engine) as (sess, _comp, policy_engine):

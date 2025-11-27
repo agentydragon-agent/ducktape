@@ -16,6 +16,7 @@ import pytest
 from adgn.agent.approvals import load_default_policy_source
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.policies.loader import approve_all_policy_text
+from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.engine import PolicyEngine
@@ -379,19 +380,18 @@ def docker_inproc_spec_py312():
 # --- Approval policy presets ------------------------------------------
 
 
-def make_policy_source(decision: str) -> str:
+def make_policy_source(decision: ApprovalDecision) -> str:
     """Generate a policy source that always returns the specified decision.
 
     Args:
-        decision: One of 'allow', 'deny_abort', 'deny_continue', 'ask'
+        decision: ApprovalDecision enum value (ALLOW, ASK, DENY_CONTINUE, DENY_ABORT)
     """
-    decision_upper = decision.upper()
-    return f'''"""Policy that returns {decision} for all calls."""
+    return f'''"""Policy that returns {decision.value} for all calls."""
 from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from adgn.agent.policies.scaffold import run
 
 def decide(_req: PolicyRequest) -> PolicyResponse:
-    return PolicyResponse(decision=ApprovalDecision.{decision_upper}, rationale="{decision}")
+    return PolicyResponse(decision=ApprovalDecision.{decision.name}, rationale="{decision.value}")
 
 if __name__ == "__main__":
     raise SystemExit(run(decide))
@@ -403,14 +403,14 @@ def make_decision_engine(make_approval_policy_server):
     """Factory for creating PolicyEngine with a specific decision policy.
 
     Usage:
-        engine = make_decision_engine("allow")
-        engine = make_decision_engine("deny_abort")
-        engine = make_decision_engine("ask")
+        engine = make_decision_engine(ApprovalDecision.ALLOW)
+        engine = make_decision_engine(ApprovalDecision.DENY_ABORT)
+        engine = make_decision_engine(ApprovalDecision.ASK)
 
     Thin wrapper around make_approval_policy_server that handles policy source generation.
     """
 
-    def _make(decision: str) -> PolicyEngine:
+    def _make(decision: ApprovalDecision) -> PolicyEngine:
         return make_approval_policy_server(make_policy_source(decision))
 
     return _make
