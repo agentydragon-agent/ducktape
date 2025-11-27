@@ -377,12 +377,9 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
         """
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
         uri_value = ANY_URL.validate_python(prefixed)
-        # Call compositor's internal _read_resource_mcp directly to avoid client dependency
+        # Call compositor method that converts FastMCP types to MCP protocol types
         # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
-        # Cast needed because FastMCP returns list[ReadResourceContents] which mypy doesn't recognize
-        # as compatible with our union type, even though it is at runtime
-        contents_raw = await compositor._read_resource_mcp(uri_value)
-        contents: Sequence[mcp_types.TextResourceContents | mcp_types.BlobResourceContents] = contents_raw  # type: ignore[assignment]
+        contents = await compositor.read_resource_contents(uri_value)
         return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
 
     @mcp.flat_model()
