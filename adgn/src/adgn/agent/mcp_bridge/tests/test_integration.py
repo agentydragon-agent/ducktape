@@ -24,6 +24,87 @@ from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
 from adgn.agent.mcp_bridge.servers.agent_control import make_agent_control_server
 from adgn.agent.mcp_bridge.servers.agents import make_agents_server
 
+# ---------------------------------------------------------------------------
+# Shared Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_persistence():
+    """Create mock persistence layer."""
+    persistence = AsyncMock()
+    persistence.get_agent = AsyncMock(return_value=None)
+    persistence.list_agents = AsyncMock(return_value=[])
+    persistence.delete_agent = AsyncMock()
+    return persistence
+
+
+@pytest.fixture
+def mock_compositor():
+    """Create mock compositor."""
+    compositor = AsyncMock()
+    compositor.mount_inproc = AsyncMock()
+    compositor.unmount_server = AsyncMock()
+    return compositor
+
+
+@pytest.fixture
+def mock_container():
+    """Create mock agent container."""
+    container = MagicMock()
+    container.agent_id = "test-agent-1"
+    container._compositor = MagicMock()
+    container.session = None  # For agent_control tests
+    container.close = AsyncMock()
+    return container
+
+
+@pytest.fixture
+def mock_registry(mock_persistence):
+    """Create mock infrastructure registry."""
+    registry = MagicMock()
+    registry.list_agents.return_value = []
+    registry.persistence = mock_persistence
+    return registry
+
+
+@pytest.fixture
+def user_app():
+    """Create a simple user-facing ASGI app for routing tests."""
+    async def homepage(request):
+        return PlainTextResponse("user-app")
+    return Starlette(routes=[Route("/", homepage)])
+
+
+@pytest.fixture
+def agent_app_factory():
+    """Factory to create agent ASGI apps that identify themselves."""
+    def make_app(agent_id: str):
+        async def homepage(request):
+            return PlainTextResponse(f"agent-{agent_id}")
+        return Starlette(routes=[Route("/", homepage)])
+    return make_app
+
+
+@pytest.fixture
+def registry_factory(mock_persistence):
+    """Factory to create InfrastructureRegistry with mocked dependencies."""
+    def make_registry(**kwargs):
+        return InfrastructureRegistry(
+            persistence=kwargs.get("persistence", mock_persistence),
+            model="test-model",
+            client_factory=lambda m: MagicMock(),
+            docker_client=MagicMock(),
+            mcp_config=MCPConfig(mcpServers={}),
+            **{k: v for k, v in kwargs.items() if k != "persistence"},
+        )
+    return make_registry
+
+
+# ---------------------------------------------------------------------------
+# Token Loading Tests
+# ---------------------------------------------------------------------------
+
 
 class TestLoadTokens:
     """Tests for token loading."""
@@ -83,36 +164,21 @@ users:
         assert agent_tokens == {}
 
 
+# ---------------------------------------------------------------------------
+# Token Routing Tests
+# ---------------------------------------------------------------------------
+
+
 class TestTokenRoutingASGI:
     """Tests for TokenRoutingASGI ASGI router."""
 
-    @pytest.fixture
-    def user_app(self):
-        """Create a simple user-facing app."""
-        async def homepage(request):
-            return PlainTextResponse("user-app")
-        return Starlette(routes=[Route("/", homepage)])
-
-    @pytest.fixture
-    def agent_app_factory(self):
-        """Factory to create agent apps that identify themselves."""
-        def make_app(agent_id: str):
-            async def homepage(request):
-                return PlainTextResponse(f"agent-{agent_id}")
-            return Starlette(routes=[Route("/", homepage)])
-        return make_app
-
     def test_routes_user_token_to_user_app(self, user_app, agent_app_factory):
         """User tokens route to user compositor app."""
-        user_tokens = {"user-token-123": "admin"}
-        agent_tokens = {"agent-token-abc": "agent-1"}
-        agent_apps = {"agent-1": agent_app_factory("1")}
-
         router = TokenRoutingASGI(
-            user_tokens=user_tokens,
-            agent_tokens=agent_tokens,
+            user_tokens={"user-token-123": "admin"},
+            agent_tokens={"agent-token-abc": "agent-1"},
             user_app=user_app,
-            agent_apps=agent_apps,
+            agent_apps={"agent-1": agent_app_factory("1")},
         )
 
         client = TestClient(router)
@@ -122,18 +188,14 @@ class TestTokenRoutingASGI:
 
     def test_routes_agent_token_to_agent_app(self, user_app, agent_app_factory):
         """Agent tokens route to their specific agent compositor app."""
-        user_tokens = {"user-token-123": "admin"}
-        agent_tokens = {"agent-token-abc": "agent-1", "agent-token-xyz": "agent-2"}
-        agent_apps = {
-            "agent-1": agent_app_factory("1"),
-            "agent-2": agent_app_factory("2"),
-        }
-
         router = TokenRoutingASGI(
-            user_tokens=user_tokens,
-            agent_tokens=agent_tokens,
+            user_tokens={"user-token-123": "admin"},
+            agent_tokens={"agent-token-abc": "agent-1", "agent-token-xyz": "agent-2"},
             user_app=user_app,
-            agent_apps=agent_apps,
+            agent_apps={
+                "agent-1": agent_app_factory("1"),
+                "agent-2": agent_app_factory("2"),
+            },
         )
 
         client = TestClient(router)
@@ -192,7 +254,6 @@ class TestTokenRoutingASGI:
 
     def test_returns_404_when_agent_app_not_found(self, user_app):
         """Returns 404 when agent token is valid but agent app isn't registered."""
-        # Token exists but agent_apps doesn't have the corresponding app
         router = TokenRoutingASGI(
             user_tokens={},
             agent_tokens={"agent-token": "agent-1"},
@@ -206,18 +267,17 @@ class TestTokenRoutingASGI:
         assert "Agent not found" in response.text
 
 
+# ---------------------------------------------------------------------------
+# MCP Server Creation Tests
+# ---------------------------------------------------------------------------
+
+
 class TestAgentsServer:
     """Tests for agents management server."""
 
     @pytest.mark.asyncio
-    async def test_make_agents_server_creates_server(self):
+    async def test_make_agents_server_creates_server(self, mock_registry):
         """make_agents_server creates a FastMCP server."""
-        # Create mock registry
-        mock_registry = MagicMock()
-        mock_registry.list_agents.return_value = []
-        mock_registry.persistence = AsyncMock()
-        mock_registry.persistence.list_agents = AsyncMock(return_value=[])
-
         server = make_agents_server("test-agents", mock_registry)
 
         assert server is not None
@@ -228,60 +288,21 @@ class TestAgentControlServer:
     """Tests for agent_control server."""
 
     @pytest.mark.asyncio
-    async def test_make_agent_control_server_creates_server(self):
+    async def test_make_agent_control_server_creates_server(self, mock_container):
         """make_agent_control_server creates a FastMCP server."""
-        # Create mock container
-        mock_container = MagicMock()
-        mock_container.session = None
-
         server = make_agent_control_server("test-control", mock_container)
 
         assert server is not None
         assert server.name == "test-control"
 
 
+# ---------------------------------------------------------------------------
+# Infrastructure Registry Tests
+# ---------------------------------------------------------------------------
+
+
 class TestInfrastructureRegistry:
     """Tests for InfrastructureRegistry agent lifecycle management."""
-
-    @pytest.fixture
-    def mock_persistence(self):
-        """Create mock persistence layer."""
-        persistence = AsyncMock()
-        persistence.get_agent = AsyncMock(return_value=None)
-        persistence.list_agents = AsyncMock(return_value=[])
-        persistence.delete_agent = AsyncMock()
-        return persistence
-
-    @pytest.fixture
-    def mock_compositor(self):
-        """Create mock compositor."""
-        compositor = AsyncMock()
-        compositor.mount_inproc = AsyncMock()
-        compositor.unmount_server = AsyncMock()
-        return compositor
-
-    @pytest.fixture
-    def mock_container(self):
-        """Create mock agent container."""
-        container = MagicMock()
-        container.agent_id = "test-agent-1"
-        container._compositor = MagicMock()
-        container.close = AsyncMock()
-        return container
-
-    @pytest.fixture
-    def registry_factory(self, mock_persistence):
-        """Factory to create registry with mocked dependencies."""
-        def make_registry(**kwargs):
-            return InfrastructureRegistry(
-                persistence=kwargs.get("persistence", mock_persistence),
-                model="test-model",
-                client_factory=lambda m: MagicMock(),
-                docker_client=MagicMock(),
-                mcp_config=MCPConfig(mcpServers={}),
-                **{k: v for k, v in kwargs.items() if k != "persistence"},
-            )
-        return make_registry
 
     def test_get_agent_returns_none_for_unknown(self, registry_factory):
         """get_agent returns None for unknown agent."""
@@ -396,10 +417,10 @@ class TestInfrastructureRegistry:
 
         # Patch build_container to return a mock
         with patch("adgn.agent.mcp_bridge.registry.build_container") as mock_build:
-            mock_container = MagicMock()
-            mock_container.agent_id = "external-agent"
-            mock_container._compositor = MagicMock()
-            mock_build.return_value = mock_container
+            container = MagicMock()
+            container.agent_id = "external-agent"
+            container._compositor = MagicMock()
+            mock_build.return_value = container
 
             await registry.create_external_agent("external-agent")
 
