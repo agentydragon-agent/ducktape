@@ -152,16 +152,10 @@ agents:
         user_tokens, agent_tokens = load_tokens(config)
 
         # User tokens: token -> user_id
-        assert user_tokens == {
-            "admin-token-123": "admin",
-            "viewer-token-456": "viewer",
-        }
+        assert user_tokens == {"admin-token-123": "admin", "viewer-token-456": "viewer"}
 
         # Agent tokens: token -> agent_id
-        assert agent_tokens == {
-            "agent-token-aaa": "claude-code-1",
-            "agent-token-bbb": "external-agent",
-        }
+        assert agent_tokens == {"agent-token-aaa": "claude-code-1", "agent-token-bbb": "external-agent"}
 
     def test_load_tokens_empty_file(self, tmp_path: Path):
         """Returns empty tokens when config file is empty."""
@@ -197,9 +191,7 @@ class TestTokenRoutingASGI:
     def test_routes_user_token_to_user_app(self, make_token_router):
         """User tokens route to user compositor app."""
         router = make_token_router(
-            user_tokens={"user-token-123": "admin"},
-            agent_tokens={"agent-token-abc": "agent-1"},
-            agent_ids=["agent-1"],
+            user_tokens={"user-token-123": "admin"}, agent_tokens={"agent-token-abc": "agent-1"}, agent_ids=["agent-1"]
         )
 
         client = TestClient(router)
@@ -318,10 +310,18 @@ class TestInfrastructureRegistry:
         assert registry.is_external("unknown-id") is False
 
     @pytest.mark.asyncio
-    async def test_shutdown_agent_no_op_for_unknown(self, registry):
-        """shutdown_agent does nothing for unknown agent."""
-        # Should not raise
-        await registry.shutdown_agent("unknown-id")
+    async def test_shutdown_agent_raises_for_unknown(self, registry, mock_compositor):
+        """shutdown_agent raises KeyError for unknown agent."""
+        registry.global_compositor = mock_compositor
+
+        with pytest.raises(KeyError, match="Agent not running"):
+            await registry.shutdown_agent("unknown-id")
+
+    @pytest.mark.asyncio
+    async def test_shutdown_agent_raises_without_compositor(self, registry):
+        """shutdown_agent raises RuntimeError without global compositor."""
+        with pytest.raises(RuntimeError, match="global compositor not initialized"):
+            await registry.shutdown_agent("unknown-id")
 
     @pytest.mark.asyncio
     async def test_shutdown_agent_closes_container(self, registry, mock_container, mock_compositor):
@@ -374,8 +374,9 @@ class TestInfrastructureRegistry:
         assert len(registry._agents) == 0
 
     @pytest.mark.asyncio
-    async def test_boot_agent_returns_existing_if_already_booted(self, registry, mock_container):
+    async def test_boot_agent_returns_existing_if_already_booted(self, registry, mock_container, mock_compositor):
         """boot_agent returns existing container if already booted."""
+        registry.global_compositor = mock_compositor
         registry._agents["test-agent-1"] = mock_container
 
         result = await registry.boot_agent("test-agent-1")
@@ -383,19 +384,35 @@ class TestInfrastructureRegistry:
         assert result is mock_container
 
     @pytest.mark.asyncio
-    async def test_boot_agent_raises_for_unknown_agent(self, registry):
+    async def test_boot_agent_raises_for_unknown_agent(self, registry, mock_compositor):
         """boot_agent raises KeyError if agent not in DB (using real persistence)."""
+        registry.global_compositor = mock_compositor
         with pytest.raises(KeyError, match="Agent not found"):
             await registry.boot_agent("nonexistent-agent")
 
     @pytest.mark.asyncio
-    async def test_create_external_agent_returns_existing_if_already_created(self, registry, mock_container):
+    async def test_boot_agent_raises_without_compositor(self, registry):
+        """boot_agent raises RuntimeError without global compositor."""
+        with pytest.raises(RuntimeError, match="global compositor not initialized"):
+            await registry.boot_agent("nonexistent-agent")
+
+    @pytest.mark.asyncio
+    async def test_create_external_agent_returns_existing_if_already_created(
+        self, registry, mock_container, mock_compositor
+    ):
         """create_external_agent returns existing container if already exists."""
+        registry.global_compositor = mock_compositor
         registry._agents["test-agent-1"] = mock_container
 
         result = await registry.create_external_agent("test-agent-1")
 
         assert result is mock_container
+
+    @pytest.mark.asyncio
+    async def test_create_external_agent_raises_without_compositor(self, registry):
+        """create_external_agent raises RuntimeError without global compositor."""
+        with pytest.raises(RuntimeError, match="global compositor not initialized"):
+            await registry.create_external_agent("test-agent-1")
 
     @pytest.mark.asyncio
     async def test_create_external_agent_marks_as_external(self, registry, mock_compositor):
