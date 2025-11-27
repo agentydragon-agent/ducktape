@@ -1,95 +1,76 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// Merged: redundant-default-comments, useless-block-comments
-// Both describe comments that add no value (redundant or pure noise)
+// Merged: redundant-default-noop-comments, useless-separator-block-comments,
+// useless-moved-function-comment, useless-removed-code-comment
+// All describe comments that add no value and should be deleted
 
 I.issueOneOccurrence(
   rationale= |||
-    Multiple locations have comments that add no value: either redundant "Default: no-op"
-    statements in hook methods or separator/block comments that serve as visual noise.
+    Comments that add no value: redundant, obvious, historical breadcrumbs, or noise.
+    Good comments explain non-obvious decisions; these comments should be deleted.
 
-    **Pattern 1: Redundant "Default: no-op" comments** (handler.py:132-182):
-    ```python
-    def on_response(self, evt: Response) -> None:
-        """Called after receiving a complete model response with usage stats.
+    **Four categories of useless comments:**
 
-        Default: no-op.
-        """
-        return
+    **1. Redundant "Default: no-op" docstrings (handler.py)**
+    Six hook methods have "Default: no-op" in docstrings when implementation shows
+    `return` (obviously a no-op). Base class hooks are conventionally no-ops by design.
+    Keep the one-line explanation of what the hook does, delete the redundant statement.
 
-    def on_user_text_event(self, evt: UserText) -> None:
-        """Called when user text is added to the conversation.
+    **2. Separator lines and vague section labels (cli.py)**
+    Six locations with useless separators and obvious/vague labels:
+    - "# -------------" separator with no section content
+    - "# ---------- constants" restates what all-caps naming already shows
+    - "# Core logic" is vague, adds no information
+    - Comments that merely restate following code
 
-        Default: no-op.
-        """
-        return
-    ```
+    **3. Historical breadcrumbs about moved functions (container.py)**
+    Comment noting `run_policy_source` was moved to another module. Git history is the
+    source of truth for when/where functions moved. Use `git log`/`git blame` instead
+    of leaving stale breadcrumbs.
 
-    Problems:
-    - Implementation already shows `return` (obvious no-op)
-    - Base class hooks are conventionally no-ops by design
-    - Extra line adds no information
-    - Docstring should focus on what the hook does, not what the default does
+    **4. Documenting removed code (sqlite.py)**
+    Four-line comment block listing old method names that no longer exist. Git commit
+    messages should document what was removed and why. Comments about historical removals
+    add noise without actionable information.
 
-    Occurs in 6 hook methods: on_response, on_user_text_event, on_assistant_text_event,
-    on_tool_call_event, on_tool_result_event, on_reasoning.
+    **Problems with useless comments:**
+    - Add cognitive load when scanning code
+    - Become stale as code evolves (wrong/outdated information)
+    - Duplicate what's already visible (code structure, naming, implementation)
+    - Replace proper documentation (git history, commit messages)
+    - Make it harder to find valuable comments
 
-    **Pattern 2: Separator and block indicator comments** (cli.py):
-    ```python
-    # ---------------------------------------------------------------------
-    # ---------- constants -------------------------------------------------
-    MAX_FILE_LINES = 400
+    **Correct approach: Delete useless comments**
 
-    # Core logic
-    def get_short_commitish(repo: pygit2.Repository) -> str:
-    ```
-
-    Problems:
-    - Separator with no actual section content (line 55)
-    - "constants" comment redundant (all-caps naming already indicates constants)
-    - "Core logic" is vague and useless (what makes this "core" vs other logic?)
-    - Add noise without providing information
-
-    **Why these are problematic:**
-    - **Noise**: Make code harder to scan without adding information
-    - **Maintenance burden**: Must be kept in sync as code changes
-    - **False organization**: Imply structure that doesn't exist
-    - **Redundant**: Code already conveys the information
-
-    **Recommended fix:**
-    For hook methods: Keep one-line docstrings that explain what the hook does:
-    ```python
-    def on_response(self, evt: Response) -> None:
-        """Called after receiving a complete model response with usage stats."""
-        return
-    ```
-
-    For block comments: Delete separator lines and vague labels. If grouping is truly
-    needed, use blank lines or meaningful section comments that explain WHY, not WHAT.
-
-    **Benefits:**
-    - More concise code
-    - Focus on what hooks do, not implementation details
-    - Less maintenance overhead
-    - Standard Python convention (hooks have no-op defaults)
+    Comments should explain non-obvious decisions, edge cases, or rationale not visible
+    in code. Delete comments that:
+    - Restate what code/naming already shows
+    - Are vague section labels with no specific guidance
+    - Track historical changes (use git history)
+    - Are separator lines for visual grouping
   |||,
-
   filesToRanges={
     'adgn/src/adgn/agent/handler.py': [
-      [132, 137],  // on_response: "Default: no-op"
-      [149, 154],  // on_user_text_event: "Default: no-op"
-      [156, 161],  // on_assistant_text_event: "Default: no-op"
-      [163, 168],  // on_tool_call_event: "Default: no-op"
-      [170, 175],  // on_tool_result_event: "Default: no-op"
-      [177, 182],  // on_reasoning: "Default: no-op"
+      [132, 137],  // on_response: "Default: no-op" comment
+      [149, 154],  // on_user_text_event: "Default: no-op" comment
+      [156, 161],  // on_assistant_text_event: "Default: no-op" comment
+      [163, 168],  // on_tool_call_event: "Default: no-op" comment
+      [170, 175],  // on_tool_result_event: "Default: no-op" comment
+      [177, 182],  // on_reasoning: "Default: no-op" comment
     ],
     'adgn/src/adgn/git_commit_ai/cli.py': [
-      [55, 55],   // "# -------------" - separator with no content
-      [58, 58],   // "# ---------- constants" - restates obvious
-      [176, 176], // "# Core logic" - vague and useless
-      [680, 680], // "# Stage if requested" - restates obvious
-      [683, 683], // "# Get previous commit message if amending" - restates obvious
-      [687, 687], // "# Check if there's truly nothing to commit" - restates obvious
+      [55, 55],    // Useless separator line
+      [58, 58],    // "# ---------- constants" restates obvious
+      [176, 176],  // "# Core logic" vague label
+      [680, 680],  // Comment restating code
+      [683, 683],  // Comment restating code
+      [687, 687],  // Comment restating code
+    ],
+    'adgn/src/adgn/agent/policy_eval/container.py': [
+      [58, 58],    // Historical breadcrumb about moved function
+    ],
+    'adgn/src/adgn/agent/persist/sqlite.py': [
+      [530, 533],  // Four-line block documenting removed code
     ],
   },
 )

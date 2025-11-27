@@ -44,7 +44,9 @@ A textual report of all violations with:
      - Example: "Useless comments" in Python appearing in issues 031, 040, 041 should be ONE issue
    - Validate against schema
    - Check for unnecessary code blocks (use verbal descriptions when sufficient)
-   - Verify external references are verifiable (docs URLs, GitHub permalinks with SHAs, package versions)
+   - Verify external references are verifiable when needed:
+     - **Do need URLs**: Specific tools/packages (e.g., npm packages, PyPI packages), APIs, commit references (full SHA or GitHub permalink), project-specific components/SDKs
+     - **Don't need URLs**: Well-known frameworks/standards (e.g., React, Tailwind CSS, PostgreSQL, Python, pytest)
    - Verify rationale only references snapshot state (no historical context)
    - Ensure issue is standalone (no dependencies on other issues or non-captured files)
 6) Check README (if present) for minimal content

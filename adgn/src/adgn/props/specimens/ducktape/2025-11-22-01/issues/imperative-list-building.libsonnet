@@ -1,87 +1,141 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-009: _convert_pending_approvals should use list comprehension
+// Merged: imperative-list-building, imperative-approvals-list, imperative-proposals-list
+// All describe imperative append() loops that should use list comprehensions
 
 I.issueOneOccurrence(
-  rationale=|||
-    The `_convert_pending_approvals` function uses an imperative loop-and-append
-    pattern when a list comprehension would be clearer and more Pythonic.
+  rationale= |||
+    Multiple functions build lists imperatively using `append()` in loops when
+    list comprehensions would be more concise, readable, and Pythonic.
 
-    **Current code (lines 50-59):**
+    **Pattern: Initialize empty list, loop, append**
+
+    This non-idiomatic pattern appears in three locations:
+
+    **Location 1: _convert_pending_approvals (agents.py:50-59)**
     ```python
     def _convert_pending_approvals(pending_map: dict[str, ToolCall]) -> list[PendingApproval]:
         result: list[PendingApproval] = []
         for _call_id, tool_call in pending_map.items():
-            result.append(
-                PendingApproval(
-                    tool_call=tool_call,
-                    timestamp=datetime.now(),  # TODO: Track creation time in PendingApproval or separately
-                )
-            )
+            result.append(PendingApproval(...))
         return result
     ```
 
-    **Problems with imperative style:**
-    1. **Verbose**: 9 lines for what should be 7 (or 5 if compact)
-    2. **Mutable state**: `result` list is mutated via append
-    3. **Less Pythonic**: List comprehensions preferred for simple transformations
-    4. **Unused variable**: `_call_id` underscore-prefixed but still appears in code
-    5. **Intent unclear**: Reader must parse loop to see it's just a map operation
-    6. **Naming overhead**: `result` variable adds no semantic value
+    **Location 2: list_approvals (approvals_bridge.py:64-108)**
+    ```python
+    approvals_list = []
+    pending_count = 0
 
-    **Correct approach with list comprehension:**
+    # Add pending approvals
+    for call_id, tool_call in pending_map.items():
+        approvals_list.append(ApprovalItem(...))
+        pending_count += 1
+
+    # Add decided approvals
+    for record in records:
+        if record.decision is not None:
+            approvals_list.append(ApprovalItem(...))
+            decided_count += 1
+    ```
+
+    **Location 3: get_policy (runtime.py:267-274)**
+    ```python
+    proposals: list[ProposalInfo] = []
+    if self._persistence is not None and self.agent_id:
+        rows = await self._persistence.list_policy_proposals(self.agent_id)
+        for r in rows:
+            pid = str(r.id)
+            raw = str(r.status)
+            proposals.append(ProposalInfo(id=pid, status=ProposalStatus(raw)))
+    ```
+
+    **Problems with imperative style:**
+    - Verbose (extra lines for initialization and loop mechanics)
+    - Mutable state (list mutated via append)
+    - Less Pythonic (comprehensions preferred for transformations)
+    - Intent unclear (must parse loop to see it's a map operation)
+    - Unnecessary intermediate variables in some cases
+
+    **Correct approach: Use list comprehensions**
+
+    Location 1:
     ```python
     def _convert_pending_approvals(pending_map: dict[str, ToolCall]) -> list[PendingApproval]:
         return [
             PendingApproval(
                 tool_call=tool_call,
-                timestamp=datetime.now(),  # TODO: Track creation time in PendingApproval or separately
+                timestamp=datetime.now(),
             )
-            for tool_call in pending_map.values()
+            for tool_call in pending_map.values()  # Use .values() since call_id unused
         ]
     ```
 
-    **Benefits:**
-    1. **More concise**: 7 lines instead of 9
-    2. **Immutable**: No intermediate list mutation
-    3. **Pythonic**: Idiomatic Python for transformations
-    4. **Clearer intent**: "Return list of PendingApprovals built from tool_calls"
-    5. **No unused variables**: Directly iterate values (call_id not needed)
-    6. **Type inference**: Return type obvious from comprehension
-
-    **Additional improvement - Don't need call_id:**
-    The current code iterates `.items()` to get `(call_id, tool_call)` pairs but
-    only uses `tool_call`. Since `call_id` is unused (underscore-prefixed), should
-    iterate `.values()` directly:
-
+    Location 2:
     ```python
-    # Current (unnecessary)
-    for _call_id, tool_call in pending_map.items():
+    # Pending approvals
+    pending_approvals = [
+        ApprovalItem(
+            call_id=call_id,
+            tool_call=tool_call,
+            status=ApprovalStatus.PENDING,
+            reason=None,
+            timestamp=datetime.now(),
+        )
+        for call_id, tool_call in self._hub.pending.items()
+    ]
 
-    # Better
-    for tool_call in pending_map.values()
+    # Decided approvals
+    decided_approvals = [
+        ApprovalItem(
+            call_id=record.tool_call.id,
+            tool_call=record.tool_call,
+            status=_map_outcome_to_status(record.decision.outcome),
+            reason=record.decision.reason,
+            timestamp=record.decision.decided_at,
+        )
+        for record in await self._persistence.get_tool_call_records(self._agent_id)
+        if record.decision is not None
+    ]
+
+    approvals_list = sorted(
+        pending_approvals + decided_approvals,
+        key=lambda x: x.timestamp,
+        reverse=True
+    )
     ```
 
-    This makes the comprehension even cleaner and signals that call_id is not needed.
+    Location 3:
+    ```python
+    proposals = (
+        [
+            ProposalInfo(id=str(r.id), status=ProposalStatus(str(r.status)))
+            for r in await self._persistence.list_policy_proposals(self.agent_id)
+        ]
+        if self._persistence is not None and self.agent_id
+        else []
+    )
+    ```
 
-    **When NOT to use list comprehension:**
-    - Loop body has side effects (not the case - just constructs objects)
-    - Complex control flow (not the case - simple 1:1 mapping)
-    - Need to accumulate state across iterations (not the case - independent items)
-    - Readability suffers from nested comprehensions (not the case - single level)
-
-    None of these apply here. This is a textbook case for list comprehension:
-    simple 1:1 transformation of input items to output items.
-
-    **Python style guide (PEP 8):**
-    List comprehensions are preferred over map() and filter() for simple cases,
-    and over loop-and-append for simple transformations. This aligns with the
-    Pythonic principle of "Simple is better than complex."
+    **Benefits:**
+    - More concise and readable
+    - Immutable (no list mutation)
+    - Pythonic (idiomatic for simple transformations)
+    - Clearer intent (obviously building list from iterable)
+    - Eliminates unnecessary intermediate variables
+    - Type inference more obvious
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
-      [50, 59],   // Loop-and-append pattern that should be list comprehension
+      [50, 59],   // _convert_pending_approvals: loop-and-append
       [52, 52],   // Iterates .items() but doesn't use call_id (should use .values())
+    ],
+    'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py': [
+      [64, 65],   // approvals_list initialization
+      [71, 80],   // pending approvals loop
+      [99, 108],  // decided approvals loop
+    ],
+    'adgn/src/adgn/agent/server/runtime.py': [
+      [267, 274], // proposals list building with for loop
     ],
   },
 )

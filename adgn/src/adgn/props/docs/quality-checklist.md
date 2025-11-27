@@ -3,6 +3,7 @@
 Before committing a specimen, verify all of these criteria:
 
 ### Structure & Organization
+- [ ] **Specimen slug format**: Directory name follows `{project}/{YYYY-MM-DD-NN}` pattern (e.g., `ducktape/2025-11-20-00`). Date is specimen creation date, NN is zero-padded sequence number for that day
 - [ ] **Manifest present**: `manifest.yaml` exists with `source.commit` (full SHA) and `scope` fields
 - [ ] **Issue files**: All issues in `issues/*.libsonnet` (not scattered in other locations)
 - [ ] **Slug-based naming**: Issue files use descriptive slugs (e.g., `dead-code.libsonnet`, `missing-types.libsonnet`), not numerical indices. Slugs should be short (0-30 characters), lowercase with hyphens
@@ -16,7 +17,9 @@ Before committing a specimen, verify all of these criteria:
 - [ ] **Proper helpers**: Uses correct Jsonnet helpers (`issueOneOccurrence`, `issueOccurrencesFromLines`, etc.)
 - [ ] **Brief code citations**: No long code blocks (>10 lines), reader can look up details. Use brief verbal descriptions when sufficient
 - [ ] **Proper grouping**: Issues grouped by logical problem, not by location
-- [ ] **Complete rationale**: Full explanation of what's wrong, why, and correct approach
+- [ ] **Accurate line ranges**: Line ranges verified using `adgn-properties2 specimen-exec <slug> -- sed -n '<start>,<end>p' <file>` to ensure cited lines match what the issue describes
+- [ ] **Complete rationale**: Points out the issue clearly. If not obvious, explains what's wrong, why it's wrong, and what problems it causes. Correct approach is optional
+- [ ] **Concise rationale**: Rationale is between 10-5000 characters (after whitespace stripping). If over limit, trim unnecessary detail or reconsider if this is actually multiple distinct issues
 - [ ] **Verifiable external references**: External code/API/package references include verifiable links (docs URLs, GitHub permalinks with SHAs, package versions)
 - [ ] **Snapshot-only references**: Rationale only references the repo state in the specimen snapshot (no historical context or external state required)
 - [ ] **Standalone issues**: Each issue Jsonnet file is self-contained and understandable without access to other issue files or non-captured files

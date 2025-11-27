@@ -4,144 +4,50 @@ local I = import '../../specimens/lib.libsonnet';
 
 I.issueOneOccurrence(
   rationale=|||
-    Multiple functions check both `get_agent_mode(agent_id) != AgentMode.LOCAL` and then
-    `get_local_runtime(agent_id) is None`. The second check is redundant because of the invariant:
-    **mode == LOCAL ⟺ local_runtime is not None**.
+    Five functions check both `get_agent_mode(agent_id) != AgentMode.LOCAL` and then
+    `get_local_runtime(agent_id) is None`. The second check is redundant - the invariant
+    is **mode == LOCAL ⟺ local_runtime is not None**.
 
-    **Evidence of invariant:**
+    **Evidence:** RunningAgent class (server.py:43) defines `local_runtime: LocalAgentRuntime | None`
+    with comment "None for bridge agents". get_local_runtime docstring (server.py:159) says
+    "Returns None if agent is not local". register_local_agent (server.py:171-173) always sets
+    mode=LOCAL with a local_runtime value.
 
-    1. `RunningAgent` class (server.py:43):
-       ```python
-       local_runtime: LocalAgentRuntime | None  # None for bridge agents
-       ```
+    **Redundant patterns:**
 
-    2. `get_local_runtime` docstring (server.py:159):
-       ```python
-       """Returns None if agent is not local. Raises KeyError if agent not in registry."""
-       ```
-
-    3. `register_local_agent` implementation (server.py:171-173):
-       ```python
-       self._agents[agent_id].agent = RunningAgent(
-           running=running, compositor_app=compositor_app, mode=AgentMode.LOCAL, local_runtime=local_runtime
-       )
-       ```
-       Always sets mode=LOCAL with a local_runtime value.
-
-    **Five redundant check patterns:**
-
-    **1. agent_state (lines 322-326):**
+    Three fully redundant (lines 322-326, 345-349, 367-371):
     ```python
     if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
         raise ValueError(f"Agent {agent_id} is not a local agent")
-
     if (local_runtime := registry.get_local_runtime(agent_id)) is None:
         raise ValueError(f"Agent {agent_id} has no local runtime")
     ```
-    **Fully redundant** - if mode is LOCAL, local_runtime will never be None.
+    If mode is LOCAL, local_runtime never None.
 
-    **2. agent_snapshot (lines 345-349):**
+    Two partially redundant (lines 561-566, 644-649):
     ```python
     if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
-        raise ValueError(f"Agent {agent_id} is not a local agent")
-
-    if (local_runtime := registry.get_local_runtime(agent_id)) is None:
-        raise ValueError(f"Agent {agent_id} has no local runtime")
-    ```
-    **Fully redundant** - same pattern.
-
-    **3. agent_mcp_state (lines 367-371):**
-    ```python
-    if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
-        raise ValueError(f"Agent {agent_id} is not a local agent")
-
-    if (local_runtime := registry.get_local_runtime(agent_id)) is None:
-        raise ValueError(f"Agent {agent_id} has no local runtime")
-    ```
-    **Fully redundant** - same pattern.
-
-    **4. session_state (lines 561-566):**
-    ```python
-    if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
-        raise ValueError(f"Agent {agent_id} is not a local agent")
-
+        raise ValueError(...)
     local_runtime = registry.get_local_runtime(agent_id)
-    if local_runtime is None or local_runtime.session is None:
-        raise ValueError(f"Agent {agent_id} has no session")
+    if local_runtime is None or local_runtime.session is None:  # or .agent is None
+        raise ValueError(...)
     ```
-    **Partially redundant** - the `local_runtime is None` part is redundant, but
-    `local_runtime.session is None` is a valid additional check.
+    The `local_runtime is None` part is redundant, but `.session/.agent is None` is valid.
 
-    **5. abort_agent (lines 644-649):**
+    **Fix:**
+
+    Cases 1-3: Remove second check entirely or add assertion.
+    Cases 4-5: Remove `local_runtime is None` part, keep field checks:
     ```python
     if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
-        raise ValueError(f"Agent {agent_id} is not a local agent (cannot abort)")
-
+        raise ValueError(...)
     local_runtime = registry.get_local_runtime(agent_id)
-    if local_runtime is None or local_runtime.agent is None:
-        raise ValueError(f"Agent {agent_id} has no agent loop")
-    ```
-    **Partially redundant** - the `local_runtime is None` part is redundant, but
-    `local_runtime.agent is None` is a valid additional check.
-
-    **Why this is problematic:**
-
-    1. **Violates DRY**: Same condition checked twice (mode == LOCAL implies local_runtime is not None)
-    2. **Misleading error messages**: Suggests local_runtime could be None for local agents (it can't)
-    3. **Unnecessary code**: Extra lines that provide no value
-    4. **Confuses readers**: Makes them wonder if there's a case where mode is LOCAL but local_runtime is None
-
-    **Recommended fix:**
-
-    **For cases 1-3 (fully redundant):**
-    Remove the second check entirely and use assertion if needed:
-    ```python
-    if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
-        raise ValueError(f"Agent {agent_id} is not a local agent")
-
-    local_runtime = registry.get_local_runtime(agent_id)
-    assert local_runtime is not None  # Guaranteed by LOCAL mode
+    if local_runtime.session is None:  # .session/.agent check only
+        raise ValueError(...)
     ```
 
-    Or even simpler (just remove the None check):
-    ```python
-    if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
-        raise ValueError(f"Agent {agent_id} is not a local agent")
-
-    local_runtime = registry.get_local_runtime(agent_id)
-    # Continue using local_runtime - guaranteed not None for LOCAL agents
-    ```
-
-    **For cases 4-5 (partially redundant):**
-    Remove the `local_runtime is None` part, keep the specific field check:
-    ```python
-    # Case 4 (session_state):
-    if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
-        raise ValueError(f"Agent {agent_id} is not a local agent")
-
-    local_runtime = registry.get_local_runtime(agent_id)
-    if local_runtime.session is None:  # local_runtime is None check removed
-        raise ValueError(f"Agent {agent_id} has no session")
-
-    # Case 5 (abort_agent):
-    if registry.get_agent_mode(agent_id) != AgentMode.LOCAL:
-        raise ValueError(f"Agent {agent_id} is not a local agent (cannot abort)")
-
-    local_runtime = registry.get_local_runtime(agent_id)
-    if local_runtime.agent is None:  # local_runtime is None check removed
-        raise ValueError(f"Agent {agent_id} has no agent loop")
-    ```
-
-    **Benefits:**
-    - Eliminates redundant checks
-    - Clearer code (no confusion about when local_runtime could be None)
-    - Trusts the documented invariant
-    - Simpler error handling
-    - Fewer lines of code
-
-    **Note:**
-    If the invariant ever needs to change (e.g., LOCAL agents without local_runtime), that would
-    require refactoring the entire agent infrastructure, not just adding None checks.
+    **Benefits:** Eliminates redundant checks, clearer code, trusts documented invariant,
+    simpler error handling.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [

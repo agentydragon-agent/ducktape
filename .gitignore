@@ -51,6 +51,10 @@ ansible/collections/
 **/terraform.tfstate*
 *.tfvars
 !*.tfvars.example
+!example.tfvars
+
+# NixOS build artifacts
+terraform/nixos-dev-env/nixos-cloud-image
 
 # Web and build artifacts
 **/.sass-cache/

@@ -184,34 +184,43 @@ An issue asks "Check if auto-discovery works" and includes "If auto-discovery do
 
 ### 6. Verifiable External References
 
-**When referencing external code, packages, APIs, or documentation, provide verifiable links.**
+**When referencing specific tools, APIs, or implementation details, provide verifiable links. Well-known frameworks/standards don't need URLs.**
 
-References to external code should be:
-- **URLs to official documentation** (e.g., library docs, API references)
-- **GitHub/GitLab permalinks with full commit SHAs** (not branch references)
-- **Package registry links** with specific versions (PyPI, npm, etc.)
-- **RFC or specification documents** with section numbers
+**DO need URLs (specific implementation details):**
+- **Specific tools/packages:** npm packages, PyPI packages, CLI tools
+- **APIs and library methods:** Specific API endpoints, method documentation
+- **Commit references:** Full 40-character SHAs or GitHub/GitLab permalinks
+- **Project-specific components:** SDKs, internal libraries, custom tools
+- **Specifications:** RFCs, PEPs with section numbers
+
+**DON'T need URLs (well-known frameworks/standards):**
+- **Common frameworks:** React, Vue, Angular, Tailwind CSS, Bootstrap
+- **Standard libraries:** Python stdlib, Node.js core modules
+- **Well-known tools:** pytest, Jest, Docker, PostgreSQL, Redis
+- **Programming languages:** Python, JavaScript, TypeScript, Go, Rust
+- **Common patterns:** REST, GraphQL, OAuth, JWT
 
 **❌ Wrong - Unverifiable references:**
 - "Per the library docs..." (which docs? which version?)
 - "GitHub shows an example..." (which repo? which file? which commit?)
 - "The API supports X" (which API version? link to docs?)
 - "According to best practices..." (which best practices? source?)
+- "Commit 7c6cae7ad..." (short SHA - use full SHA or permalink)
 
 **✅ Correct - Verifiable references:**
 - "Per pygit2 docs (https://www.pygit2.org/repository.html#pygit2.Repository), `Repository()` accepts..."
 - "See FastAPI example: https://github.com/tiangolo/fastapi/blob/45321abc.../docs/tutorial/path-params.md#predefined-values"
 - "Pydantic TypeAdapter (https://docs.pydantic.dev/2.5/api/type_adapter/) validates..."
 - "Per PEP 484 (https://www.python.org/dev/peps/pep-0484/#forward-references), forward references..."
+- "The `json-schema-to-zod` package (https://www.npmjs.com/package/json-schema-to-zod)..."
 
-**When to provide references:**
-- Suggesting a library feature or API method
-- Claiming something is deprecated or recommended
-- Referring to language features or specifications
-- Citing best practices or style guides
-- Mentioning external tools or packages
+**✅ Correct - Well-known frameworks (no URL needed):**
+- "Use pytest parameterization for multiple test cases"
+- "Tailwind CSS provides utility classes for styling"
+- "PostgreSQL supports JSON columns"
+- "React hooks should follow the rules of hooks"
 
-**Goal:** Anyone reading the issue years later should be able to verify the claims by following the links.
+**Goal:** Anyone reading the issue years later should be able to verify specific claims by following the links, without needing URLs for universally-known technologies.
 
 ### 7. Jsonnet Issue File Template
 

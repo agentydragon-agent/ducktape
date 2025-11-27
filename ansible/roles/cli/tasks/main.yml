@@ -1,8 +1,7 @@
 ---
 # Include system inspection sudo permissions for all systems
-- name: Include system inspection sudo permissions
-  ansible.builtin.import_role:
-    name: system_inspection_nopasswd
+- import_role:
+    name: system-inspection-nopasswd
   tags: [sudo, system]
 
 - name: System-wide apt lock acquire timeout (3 min)
@@ -41,6 +40,7 @@
       # removed 2024-04-13, defaults in pop os:
       #   diffutils
       # See consolidated migration comment above
+      - ffmpeg
       - gnupg-agent  # gnupg moved to Nix, but keeping agent for system integration
       - grep
       - gzip
@@ -59,7 +59,6 @@
   become: true
   ansible.builtin.apt:
     pkg:
-      - silversearcher-ag  # I replaced with rg
       - hyphen-en-ca
       - hyphen-en-gb
     state: absent
@@ -129,5 +128,4 @@
 
 - name: Configure system locale settings
   ansible.builtin.include_tasks: tasks/locale.yml
-
 # TODO: hyphenation patterns? hyphen-cs hyphen-de

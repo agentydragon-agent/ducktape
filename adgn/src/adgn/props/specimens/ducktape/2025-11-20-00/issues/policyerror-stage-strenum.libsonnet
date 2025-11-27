@@ -1,36 +1,25 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-006: PolicyError.stage should be StrEnum (if field should exist at all)
-
 I.issueOneOccurrence(
-  rationale=|||
-    PolicyError.stage uses Literal["read", "parse", "tests"] instead of StrEnum.
+  rationale= |||
+    PolicyError.stage uses Literal["read", "parse", "tests"] instead of StrEnum
+    for consistency with the rest of the codebase.
 
-    Same file already uses StrEnum for PolicyErrorCode (lines 9-11), creating inconsistency.
-    For fixed string sets with semantic meaning, StrEnum is preferred over Literal.
+    Same file already uses StrEnum for PolicyErrorCode (lines 9-11), creating
+    inconsistency. For fixed string sets with semantic meaning, StrEnum is
+    preferred over Literal because it provides IDE autocomplete, type checking,
+    refactoring support, and runtime validation.
 
-    StrEnum benefits:
-    - IDE autocomplete and type checking
-    - Refactoring support (rename across codebase)
-    - Runtime validation (can't pass arbitrary string)
-    - Consistent with PolicyErrorCode pattern in same file
+    Should define PolicyErrorStage as StrEnum with READ/PARSE/TESTS members.
 
-    Should be:
-    class PolicyErrorStage(StrEnum):
-        READ = "read"
-        PARSE = "parse"
-        TESTS = "tests"
-
-    Deeper question (per user): Should stage field exist at all?
-    - PolicyErrorCode already captures error type (READ_ERROR, PARSE_ERROR)
-    - If stage is always derivable from code, it's redundant
-    - Consider removing if it doesn't provide independent information
+    Deeper question: Should stage field exist at all? PolicyErrorCode already
+    captures error type (READ_ERROR, PARSE_ERROR). If stage is always derivable
+    from code, it's redundant.
   |||,
-
   filesToRanges={
     'adgn/src/adgn/agent/models/policy_error.py': [
-      15,           // stage: Literal["read", "parse", "tests"]
-      [9, 11],      // PolicyErrorCode StrEnum (shows existing pattern)
+      15,
+      [9, 11],
     ],
-  }
+  },
 )
