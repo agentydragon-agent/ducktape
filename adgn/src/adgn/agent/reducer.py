@@ -187,9 +187,7 @@ def format_notifications_message(batch: NotificationsBatch) -> UserMessage:
         name: entry for name, entry in batch.resources.items() if entry.updated or entry.list_changed
     }
 
-    payload = NotificationsBatch(resources=resources_filtered).model_dump_json(
-        exclude_defaults=True, exclude_none=True
-    )
+    payload = NotificationsBatch(resources=resources_filtered).model_dump_json(exclude_defaults=True, exclude_none=True)
 
     # Insert as input-side user message, clearly tagged as a system notification
     return UserMessage.text(f"<system notification>\n{payload}\n</system notification>")

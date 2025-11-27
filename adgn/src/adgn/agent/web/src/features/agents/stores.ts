@@ -67,9 +67,7 @@ export async function deleteAgent(agentId: string): Promise<{ ok: boolean; error
 /**
  * Get proposal content via MCP resource.
  */
-export async function getProposal(
-  proposalId: string
-): Promise<{ id: string; content: string }> {
+export async function getProposal(proposalId: string): Promise<{ id: string; content: string }> {
   const agentId = get(currentAgentId)
   if (!agentId) {
     throw new Error('No agent selected')
@@ -79,7 +77,9 @@ export async function getProposal(
     throw new Error('MCP client not connected to agent')
   }
   // The resource URI is resource://approval-policy/proposals/{id} which returns the content string
-  const content = await client.readResource<string>(`resource://approval-policy/proposals/${proposalId}`)
+  const content = await client.readResource<string>(
+    `resource://approval-policy/proposals/${proposalId}`
+  )
   return { id: proposalId, content: content || '' }
 }
 

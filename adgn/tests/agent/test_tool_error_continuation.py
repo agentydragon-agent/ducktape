@@ -14,11 +14,7 @@ from tests.agent.test_matchers import assert_function_call_output_structured
 
 
 async def test_tool_error_continues_turn(
-    responses_factory,
-    make_pg_client,
-    validation_server,
-    recording_handler,
-    make_test_agent,
+    responses_factory, make_pg_client, validation_server, recording_handler, make_test_agent
 ) -> None:
     """Test that a tool validation error doesn't abort the turn.
 

@@ -148,9 +148,7 @@ def get_commit_diff(repo: pygit2.Repository, include_all: bool, previous_message
         return ""
 
     # Compute raw diff then apply per-file truncation
-    return _truncate_hunks(
-        _build_amend_diff(repo, include_all) if previous_message else diff.patch or ""
-    )
+    return _truncate_hunks(_build_amend_diff(repo, include_all) if previous_message else diff.patch or "")
 
 
 def repo_cache_dir(repo: pygit2.Repository) -> Path:
@@ -465,11 +463,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--accept-ai", action="store_true", help="Commit immediately with the AI-drafted message (skip editor)"
     )
-    parser.add_argument("-a", "--all", action="store_true", dest="stage_all",
-                       help="Stage all tracked changes (like git commit -a)")
+    parser.add_argument(
+        "-a", "--all", action="store_true", dest="stage_all", help="Stage all tracked changes (like git commit -a)"
+    )
     # Capture -m/--message to reject it explicitly (we supply the commit message)
-    parser.add_argument("-m", "--message", dest="message",
-                       help=argparse.SUPPRESS)  # Hidden; validated to be None
+    parser.add_argument("-m", "--message", dest="message", help=argparse.SUPPRESS)  # Hidden; validated to be None
     return parser
 
 
@@ -529,9 +527,7 @@ async def _execute_git_commit(message: str, passthru: list[str]) -> None:
         message: Commit message
         passthru: Additional git commit flags to forward
     """
-    commit_proc = await asyncio.create_subprocess_exec(
-        "git", "commit", "-m", message, "--no-verify", *passthru
-    )
+    commit_proc = await asyncio.create_subprocess_exec("git", "commit", "-m", message, "--no-verify", *passthru)
     code = await commit_proc.wait()
     if code != 0:
         raise SystemExit(code)

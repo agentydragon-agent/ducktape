@@ -12,22 +12,15 @@ class ResourcesServerNotice(BaseModel):
     - list_changed: whether resources/list changed for this server
     """
 
-    updated: frozenset[str] = Field(
-        default_factory=frozenset,
-        description="Resource URIs that were updated"
-    )
-    list_changed: bool = Field(
-        default=False,
-        description="Whether resources/list changed"
-    )
+    updated: frozenset[str] = Field(default_factory=frozenset, description="Resource URIs that were updated")
+    list_changed: bool = Field(default=False, description="Whether resources/list changed")
 
 
 class NotificationsBatch(BaseModel):
     """Buffered notifications grouped by server for efficient consumption."""
 
     resources: dict[str, ResourcesServerNotice] = Field(
-        default_factory=dict,
-        description="Per-server resources notice: {server -> {updated, list_changed}}"
+        default_factory=dict, description="Per-server resources notice: {server -> {updated, list_changed}}"
     )
 
     def iter_updated_uris(self) -> Iterable[tuple[str, str]]:
@@ -38,11 +31,7 @@ class NotificationsBatch(BaseModel):
 
     def get_servers_with_list_changes(self) -> set[str]:
         """Get set of server names where resources/list changed."""
-        return {
-            server
-            for server, notice in self.resources.items()
-            if notice.list_changed
-        }
+        return {server for server, notice in self.resources.items() if notice.list_changed}
 
     def count_notifications(self) -> int:
         """Count total notifications (updated URIs + list changes)."""

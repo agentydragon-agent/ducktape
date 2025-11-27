@@ -86,9 +86,7 @@ async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_en
 
     async with make_pg_compositor({"backend": backend_server}, policy_engine=engine) as (sess, _comp, policy_engine):
         # Start tool call in background - it will block waiting for approval
-        call_task = asyncio.create_task(
-            sess.call_tool(build_mcp_function("backend", "echo"), {"text": "3"})
-        )
+        call_task = asyncio.create_task(sess.call_tool(build_mcp_function("backend", "echo"), {"text": "3"}))
 
         # Wait briefly for the call to reach pending state
         await asyncio.sleep(0.2)
@@ -104,10 +102,7 @@ async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_en
 
         # Approve via admin server
         async with Client(policy_engine.admin) as admin:
-            await admin.call_tool(
-                "decide_call",
-                arguments={"call_id": call_id, "decision": CallDecision.APPROVE},
-            )
+            await admin.call_tool("decide_call", arguments={"call_id": call_id, "decision": CallDecision.APPROVE})
 
         # Wait for the tool call to complete
         res = await call_task

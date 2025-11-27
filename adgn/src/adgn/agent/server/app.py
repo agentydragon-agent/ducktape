@@ -114,9 +114,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         )
 
         # Create global compositor with agents management server
-        app.state.global_compositor = await create_global_compositor(
-            registry=app.state.mcp_registry,
-        )
+        app.state.global_compositor = await create_global_compositor(registry=app.state.mcp_registry)
         logger.info("Global compositor created with agents management server")
 
         # Load tokens and create external agents at startup

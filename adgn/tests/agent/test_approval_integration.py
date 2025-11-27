@@ -63,8 +63,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
         # Approve the tool call via admin server's decide_call tool
         async with Client(policy_engine.admin) as admin_client:
             await admin_client.call_tool(
-                "decide_call",
-                arguments={"call_id": call_id, "decision": CallDecision.APPROVE},
+                "decide_call", arguments={"call_id": call_id, "decision": CallDecision.APPROVE}
             )
         result = await run_task
         assert result.text.strip() == "done"

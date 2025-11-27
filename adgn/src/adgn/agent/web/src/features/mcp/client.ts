@@ -31,7 +31,8 @@ interface ContentItem {
  * Handles mimeType hints and URI-based detection.
  */
 function parseContent<T>(text: string, mimeType?: string, uri?: string): T {
-  const isJson = mimeType === 'application/json' ||
+  const isJson =
+    mimeType === 'application/json' ||
     uri?.startsWith('approvals://') ||
     uri?.startsWith('agents://') ||
     uri?.startsWith('snapshot://')
@@ -48,10 +49,7 @@ function parseContent<T>(text: string, mimeType?: string, uri?: string): T {
 /**
  * Extract first content item from MCP result and parse it.
  */
-function extractContent<T>(
-  contents: ContentItem[] | undefined,
-  uri?: string
-): T | null {
+function extractContent<T>(contents: ContentItem[] | undefined, uri?: string): T | null {
   if (!contents || contents.length === 0) return null
   const first = contents[0]
   if (first.text !== undefined) {
@@ -94,25 +92,19 @@ export class AgentMcpClient {
    */
   private setupNotificationHandler(): void {
     // Handle resource update notifications (specific resource changed)
-    this.client.setNotificationHandler(
-      ResourceUpdatedNotificationSchema,
-      async (notification) => {
-        const uri = notification.params?.uri
-        if (uri) {
-          await this.notifySubscribers(uri)
-        }
+    this.client.setNotificationHandler(ResourceUpdatedNotificationSchema, async (notification) => {
+      const uri = notification.params?.uri
+      if (uri) {
+        await this.notifySubscribers(uri)
       }
-    )
+    })
 
     // Handle resource list changed notifications (re-fetch all subscribed)
-    this.client.setNotificationHandler(
-      ResourceListChangedNotificationSchema,
-      async () => {
-        for (const uri of this.subscriptions.keys()) {
-          await this.notifySubscribers(uri)
-        }
+    this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
+      for (const uri of this.subscriptions.keys()) {
+        await this.notifySubscribers(uri)
       }
-    )
+    })
   }
 
   /**
@@ -161,7 +153,7 @@ export class AgentMcpClient {
     const transport = new StreamableHTTPClientTransport(new URL(url), {
       requestInit: {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
       },
     })
@@ -192,7 +184,7 @@ export class AgentMcpClient {
     const toolName = this.agentId ? `${this.agentId}_${name}` : name
     const result = await this.client.callTool({ name: toolName, arguments: args })
     const data = extractContent<T>(result.content as ContentItem[])
-    return data ?? result as T
+    return data ?? (result as T)
   }
 
   /**
@@ -229,10 +221,7 @@ export class AgentMcpClient {
    * @param callback - Called with resource data on updates
    * @returns Unsubscribe function
    */
-  async subscribeResource<T>(
-    uri: string,
-    callback: (data: T) => void
-  ): Promise<() => void> {
+  async subscribeResource<T>(uri: string, callback: (data: T) => void): Promise<() => void> {
     const resourceUri = this.agentId ? this.prefixResourceUri(uri, this.agentId) : uri
 
     // Register callback
@@ -262,7 +251,7 @@ export class AgentMcpClient {
         // Only unsubscribe when no more callbacks
         if (callbacks.size === 0) {
           this.subscriptions.delete(resourceUri)
-          this.client.unsubscribeResource({ uri: resourceUri }).catch(e => {
+          this.client.unsubscribeResource({ uri: resourceUri }).catch((e) => {
             console.warn(`Failed to unsubscribe from ${resourceUri}:`, e)
           })
         }

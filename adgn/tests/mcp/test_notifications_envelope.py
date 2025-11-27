@@ -11,6 +11,7 @@ from tests.util.notifications import parse_system_notification_payload
 @pytest.fixture
 def make_notifier():
     """Factory fixture for creating NotifyingFastMCP servers."""
+
     def _make(name: str = "child") -> NotifyingFastMCP:
         m = NotifyingFastMCP(name)
 
@@ -23,6 +24,7 @@ def make_notifier():
             return True
 
         return m
+
     return _make
 
 

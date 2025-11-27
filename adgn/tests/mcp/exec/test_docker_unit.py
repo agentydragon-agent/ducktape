@@ -10,8 +10,10 @@ from tests.conftest import make_container_opts
 @pytest.fixture
 def make_exec_server():
     """Factory fixture for creating exec servers."""
+
     def _make(ephemeral: bool):
         return make_container_exec_server(make_container_opts("alpine:3.19", ephemeral=ephemeral))
+
     return _make
 
 

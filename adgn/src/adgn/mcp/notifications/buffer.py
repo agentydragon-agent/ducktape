@@ -23,10 +23,7 @@ class _ServerNoticeAccumulator:
 
     def to_frozen(self) -> ResourcesServerNotice:
         """Convert to immutable ResourcesServerNotice."""
-        return ResourcesServerNotice(
-            updated=frozenset(self.updated),
-            list_changed=self.list_changed
-        )
+        return ResourcesServerNotice(updated=frozenset(self.updated), list_changed=self.list_changed)
 
 
 class _ResourceNotificationHandler(MessageHandler):
@@ -76,10 +73,7 @@ class NotificationsBuffer:
 
     def peek(self) -> NotificationsBatch:
         """Peek at buffered notifications without clearing them."""
-        resources = {
-            server: acc.to_frozen()
-            for server, acc in self._servers.items()
-        }
+        resources = {server: acc.to_frozen() for server, acc in self._servers.items()}
         return NotificationsBatch(resources=resources)
 
     def poll(self) -> NotificationsBatch:

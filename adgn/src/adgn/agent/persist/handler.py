@@ -93,12 +93,7 @@ class RunPersistenceHandler(BaseHandler):
         self._seq += 1
         self._spawn(
             self._persistence.append_event(
-                run_id=rid,
-                seq=self._seq,
-                ts=self._now(),
-                payload=payload,
-                call_id=call_id,
-                tool_key=tool_key,
+                run_id=rid, seq=self._seq, ts=self._now(), payload=payload, call_id=call_id, tool_key=tool_key
             )
         )
 
@@ -116,11 +111,7 @@ class RunPersistenceHandler(BaseHandler):
     def on_tool_call_event(self, evt: ToolCall) -> None:
         payload = evt.model_dump(mode="json", exclude_none=True)
         payload["type"] = "tool_call"
-        self._record_event(
-            payload=payload,
-            call_id=evt.call_id,
-            tool_key=evt.name,
-        )
+        self._record_event(payload=payload, call_id=evt.call_id, tool_key=evt.name)
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         # Persist full Pydantic MCP CallToolResult (with content when available)

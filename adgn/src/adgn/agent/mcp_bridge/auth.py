@@ -25,9 +25,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_TOKENS_PATH = Path("~/.config/adgn/tokens.yaml").expanduser()
 
 
-def load_tokens(
-    path: Path | None = None,
-) -> tuple[dict[str, str], dict[str, str]]:
+def load_tokens(path: Path | None = None) -> tuple[dict[str, str], dict[str, str]]:
     """Load tokens from YAML config file.
 
     Args:

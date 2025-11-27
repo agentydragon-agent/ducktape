@@ -21,10 +21,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def make_agent_control_server(
-    name: str,
-    container: AgentContainer,
-) -> FastMCP:
+def make_agent_control_server(name: str, container: AgentContainer) -> FastMCP:
     """Create the agent control MCP server.
 
     Tools:

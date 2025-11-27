@@ -327,7 +327,11 @@ class _PolicyGatewayMiddleware(Middleware):
                 raise
             except Exception as e:
                 s = str(e)
-                if (POLICY_DENIED_ABORT_MSG in s) or (POLICY_DENIED_CONTINUE_MSG in s) or (POLICY_EVALUATOR_ERROR_MSG in s):
+                if (
+                    (POLICY_DENIED_ABORT_MSG in s)
+                    or (POLICY_DENIED_CONTINUE_MSG in s)
+                    or (POLICY_EVALUATOR_ERROR_MSG in s)
+                ):
                     raise McpError(
                         ErrorData(
                             code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
@@ -412,12 +416,7 @@ class PolicyEngine:
     """
 
     def __init__(
-        self,
-        *,
-        docker_client: DockerClient,
-        agent_id: AgentID,
-        persistence: Persistence,
-        policy_source: str,
+        self, *, docker_client: DockerClient, agent_id: AgentID, persistence: Persistence, policy_source: str
     ) -> None:
         # Policy state
         self._policy_source: str = policy_source
@@ -463,9 +462,7 @@ class PolicyEngine:
 
         # Create gateway middleware (uses internal evaluate method)
         self._gateway = _PolicyGatewayMiddleware(
-            hub=self._hub,
-            evaluate_policy=self._evaluate_policy,
-            record_outcome=self._record_outcome,
+            hub=self._hub, evaluate_policy=self._evaluate_policy, record_outcome=self._record_outcome
         )
 
         # Internal reader client for gateway (created lazily)
@@ -486,9 +483,7 @@ class PolicyEngine:
 
     async def _evaluate_policy(self, request: PolicyRequest) -> PolicyResponse:
         """Evaluate policy for a tool call via Docker-backed evaluator."""
-        evaluator = ContainerPolicyEvaluator(
-            agent_id=self.agent_id, docker_client=self.docker_client, engine=self
-        )
+        evaluator = ContainerPolicyEvaluator(agent_id=self.agent_id, docker_client=self.docker_client, engine=self)
         return await evaluator.decide(request)
 
     async def _record_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
@@ -603,9 +598,7 @@ class PolicyEngine:
             """List all pending tool call approval requests."""
             items = [
                 PendingCallItem(
-                    call_id=call_id,
-                    tool_key=req.tool_key,
-                    args_json=req.tool_call.args_json if req.tool_call else None,
+                    call_id=call_id, tool_key=req.tool_key, args_json=req.tool_call.args_json if req.tool_call else None
                 )
                 for call_id, req in self._hub.pending.items()
             ]

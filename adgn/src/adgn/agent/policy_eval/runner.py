@@ -4,8 +4,8 @@ import logging
 import os
 
 import docker
-import docker.errors
 from docker.client import DockerClient
+import docker.errors
 
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.agent.policy_eval.constants import ENV_POLICY_INPUT, ENV_POLICY_SRC

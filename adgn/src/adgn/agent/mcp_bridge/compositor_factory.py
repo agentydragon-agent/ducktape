@@ -22,9 +22,7 @@ logger = logging.getLogger(__name__)
 AGENTS_SERVER_NAME = "agents"
 
 
-async def create_global_compositor(
-    registry: InfrastructureRegistry,
-) -> Compositor:
+async def create_global_compositor(registry: InfrastructureRegistry) -> Compositor:
     """Create the global user-facing compositor.
 
     The global compositor provides:

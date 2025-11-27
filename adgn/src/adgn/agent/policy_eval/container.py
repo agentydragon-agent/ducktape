@@ -31,9 +31,7 @@ class ContainerPolicyEvaluator:
     docker_client: DockerClient
     engine: PolicyEngine
     image: str = field(default_factory=resolve_runtime_image)
-    timeout_secs: float = field(
-        default_factory=lambda: float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
-    )
+    timeout_secs: float = field(default_factory=lambda: float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5")))
 
     async def decide(self, policy_input: PolicyRequest) -> PolicyResponse:
         """Evaluate using the current policy source via run_policy_source."""

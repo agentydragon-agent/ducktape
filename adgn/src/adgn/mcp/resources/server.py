@@ -202,9 +202,7 @@ def _build_window_payload(
     )
 
 
-def make_resources_server(
-    name: str = "resources", *, client: Client, compositor: Compositor
-) -> NotifyingFastMCP:
+def make_resources_server(name: str = "resources", *, client: Client, compositor: Compositor) -> NotifyingFastMCP:
     """Create a MCP server that aggregates resources across servers.
 
     Args:
@@ -382,7 +380,9 @@ def make_resources_server(
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
         uri_value = ANY_URL.validate_python(prefixed)
         res = await compositor_client.read_resource_mcp(uri_value)
-        return _build_window_payload(res.contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
+        return _build_window_payload(
+            res.contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes
+        )
 
     @mcp.flat_model()
     async def subscribe(input: ResourcesReadArgs) -> SimpleOk:

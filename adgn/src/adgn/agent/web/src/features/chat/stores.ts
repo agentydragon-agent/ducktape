@@ -49,7 +49,7 @@ export async function connectAgentMcp(agentId: string) {
     approvalsUnsubscribe = await currentClient.subscribeResource<{ pending: Pending[] }>(
       'approvals://pending',
       (data) => {
-        const map = new Map(data.pending.map(p => [p.call_id, p]))
+        const map = new Map(data.pending.map((p) => [p.call_id, p]))
         pendingApprovals.set(map)
       }
     )

@@ -29,7 +29,7 @@ async def mount_standard_inproc_servers(*, compositor: Compositor, mount_resourc
         await compositor.mount_inproc(
             "resources",
             make_resources_server(name="resources", client=Client(compositor), compositor=compositor),
-            pinned=True
+            pinned=True,
         )
 
     compmeta_server = make_compositor_meta_server(compositor=compositor, name=COMPOSITOR_META_SERVER_NAME)

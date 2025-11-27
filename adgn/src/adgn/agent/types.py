@@ -22,8 +22,7 @@ def _validate_agent_id(v: str) -> str:
         raise ValueError("Agent ID cannot be empty")
     if not _AGENT_ID_PATTERN.match(v):
         raise ValueError(
-            f"Invalid agent ID: {v!r}. Must be lowercase alphanumeric + hyphen, "
-            "starting with alphanumeric character."
+            f"Invalid agent ID: {v!r}. Must be lowercase alphanumeric + hyphen, starting with alphanumeric character."
         )
     return v
 

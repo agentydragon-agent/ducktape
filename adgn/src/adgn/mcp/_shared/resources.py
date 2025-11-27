@@ -58,11 +58,7 @@ async def read_text_json_typed(session: ClientSession, uri: str, model: type[T])
     return TypeAdapter(model).validate_json(s)
 
 
-def derive_origin_server(
-    uri: str,
-    mount_names: Iterable[str],
-    prefix_format: str,
-) -> str:
+def derive_origin_server(uri: str, mount_names: Iterable[str], prefix_format: str) -> str:
     """Derive origin server name from resource URI.
 
     Loops through mount names to find which server owns the given URI based on
@@ -83,7 +79,4 @@ def derive_origin_server(
         if has_resource_prefix(uri, name, prefix_format):
             return name
 
-    raise ValueError(
-        f"Could not derive origin server for URI {uri!r}. "
-        f"Available servers: {sorted(mount_names)}"
-    )
+    raise ValueError(f"Could not derive origin server for URI {uri!r}. Available servers: {sorted(mount_names)}")

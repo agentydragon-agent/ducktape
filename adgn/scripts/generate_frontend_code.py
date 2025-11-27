@@ -72,9 +72,7 @@ def extract_constants_from_file(python_file: Path) -> dict[str, Any]:
     return constants
 
 
-def classify_constants(
-    constants: dict[str, Any],
-) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+def classify_constants(constants: dict[str, Any]) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     """Classify constants into simple URIs and format strings."""
     simple_uris: list[tuple[str, str]] = []
     format_uris: list[tuple[str, str]] = []
@@ -89,9 +87,7 @@ def classify_constants(
     return simple_uris, format_uris
 
 
-def generate_mcp_constants_typescript(
-    simple_uris: list[tuple[str, str]], format_uris: list[tuple[str, str]]
-) -> str:
+def generate_mcp_constants_typescript(simple_uris: list[tuple[str, str]], format_uris: list[tuple[str, str]]) -> str:
     """Generate TypeScript constants and helpers."""
     output: list[str] = []
 
@@ -258,7 +254,9 @@ def generate_pydantic_types() -> None:
     unified_schema = {
         "type": "object",
         "title": "AgentTypes",
-        "properties": {name: {"$ref": f"#/$defs/{name}"} for name in all_defs if name in [m.__name__ for m in models_to_export]},
+        "properties": {
+            name: {"$ref": f"#/$defs/{name}"} for name in all_defs if name in [m.__name__ for m in models_to_export]
+        },
         "$defs": all_defs,
     }
 

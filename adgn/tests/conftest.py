@@ -196,11 +196,7 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
 
 
 async def _setup_pg_compositor(
-    servers: McpServerSpecs,
-    policy_engine: PolicyEngine | None,
-    sqlite_persistence,
-    docker_client,
-    agent_id: str,
+    servers: McpServerSpecs, policy_engine: PolicyEngine | None, sqlite_persistence, docker_client, agent_id: str
 ) -> tuple[Compositor, PolicyEngine]:
     """Shared setup for make_pg_client and make_pg_compositor."""
     comp = Compositor("comp")
@@ -254,7 +250,9 @@ def make_pg_compositor(sqlite_persistence, docker_client, test_agent_id):
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
-        comp, engine = await _setup_pg_compositor(servers, policy_engine, sqlite_persistence, docker_client, test_agent_id)
+        comp, engine = await _setup_pg_compositor(
+            servers, policy_engine, sqlite_persistence, docker_client, test_agent_id
+        )
         async with Client(comp) as sess:
             yield sess, comp, engine
 

@@ -105,13 +105,13 @@ class McpManager {
   async disconnectAll(): Promise<void> {
     // Close global client
     if (this._globalClient) {
-      await this._globalClient.close().catch(e => console.warn('Close error:', e))
+      await this._globalClient.close().catch((e) => console.warn('Close error:', e))
       this._globalClient = null
     }
     // Close agent clients
     const clients = Array.from(this.agentClients.values())
     this.agentClients.clear()
-    await Promise.all(clients.map(c => c.close().catch(e => console.warn('Close error:', e))))
+    await Promise.all(clients.map((c) => c.close().catch((e) => console.warn('Close error:', e))))
     this.connectionStatus.set({ connected: false, error: null })
   }
 }
