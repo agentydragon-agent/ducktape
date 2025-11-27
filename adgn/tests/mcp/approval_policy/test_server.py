@@ -3,13 +3,12 @@ from __future__ import annotations
 import pytest
 
 from adgn.mcp._shared.constants import APPROVAL_POLICY_RESOURCE_URI
-from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 
 
 @pytest.mark.requires_docker
-async def test_resources_list_and_read_policy(make_typed_mcp, approval_engine):
+async def test_resources_list_and_read_policy(make_typed_mcp, approval_policy_server):
     """List and read resources directly from the server without a compositor."""
-    server = ApprovalPolicyServer(approval_engine)
+    server = approval_policy_server.reader
 
     async with make_typed_mcp(server, "approval_policy") as (client, _sess):
         # Approval policy server exposes a single canonical resource for the active policy

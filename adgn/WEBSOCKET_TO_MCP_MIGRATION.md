@@ -45,15 +45,16 @@ Each `AgentContainer` has a `_compositor: Compositor` that mounts small FastMCP 
 6. **loop** - `make_loop_server()` - Loop control
    - Tools: `yield_turn()`
 7. **approval_policy** (3 server instances) - Policy & proposal management
-   - **Reader** (`approval_policy`): `ApprovalPolicyServer` - Mounted in user-facing compositor
+   - **Reader** (`approval_policy`): `PolicyEngine.reader` (NotifyingFastMCP) - Mounted in user-facing compositor
      - Resources: `resource://approval-policy/policy.py`, `resource://approval-policy/proposals/{id}`
      - Tool: `evaluate_policy(name, arguments)` - Evaluates policy for a tool call via Docker-backed evaluator
-     - **Architecture**: `ApprovalPolicyServer` contains all policy business logic and owns two sub-servers:
-       - `.proposer`: `NotifyingFastMCP` with proposer tools
-       - `.approver`: `NotifyingFastMCP` with admin tools
-   - **Proposer** (`approval_policy.proposer`): `policy_server.proposer` - Mounted in user-facing compositor
+     - **Architecture**: `PolicyEngine` is a plain class (not a server) that owns three MCP servers:
+       - `.reader`: NotifyingFastMCP with resources + evaluate_policy tool (broadcasts resource updates)
+       - `.proposer`: FastMCP with proposer tools
+       - `.approver`: FastMCP with admin tools
+   - **Proposer** (`approval_policy.proposer`): `engine.proposer` - Mounted in user-facing compositor
      - Tools: `create_proposal(content)`, `withdraw_proposal(id)`
-   - **Admin** (`approval_policy.approver`): `policy_server.approver` - NOT mounted in compositor (private client only)
+   - **Admin** (`approval_policy.approver`): `engine.approver` - NOT mounted in compositor (private client only)
      - Tools: `approve_proposal(id)`, `reject_proposal(id)`, `set_policy_text(source)`
      - Access: Via HTTP endpoints or internal client
 8. **runtime** - `make_runtime_server()` - Container exec

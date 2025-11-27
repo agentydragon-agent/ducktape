@@ -78,7 +78,7 @@ def _load_instructions() -> str:
     return str(rendered)
 
 
-class ApprovalPolicy:
+class PolicyEngine:
     """Approval policy state and business logic with 3 owned MCP servers.
 
     This class holds policy state and exposes it via 3 MCP servers:
@@ -287,32 +287,28 @@ class ApprovalPolicy:
             return self._broadcast_version
 
 
-# Backwards compatibility alias
-ApprovalPolicyServer = ApprovalPolicy
-
-
 # ---- Compositor attach helpers ----
 
 
 async def attach_approval_policy_readonly(
-    comp: Compositor, policy: ApprovalPolicy, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER
+    comp: Compositor, engine: PolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER
 ) -> NotifyingFastMCP:
     """Attach the approval policy reader server (resources + evaluate_policy tool)."""
-    await comp.mount_inproc(name, policy.reader)
-    return policy.reader
+    await comp.mount_inproc(name, engine.reader)
+    return engine.reader
 
 
 async def attach_approval_policy_proposer(
-    comp: Compositor, policy: ApprovalPolicy, *, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER
+    comp: Compositor, engine: PolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER
 ) -> FastMCP:
     """Attach the approval policy proposer server (create/withdraw proposals)."""
-    await comp.mount_inproc(name, policy.proposer)
-    return policy.proposer
+    await comp.mount_inproc(name, engine.proposer)
+    return engine.proposer
 
 
 async def attach_approval_policy_admin(
-    comp: Compositor, policy: ApprovalPolicy, *, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER
+    comp: Compositor, engine: PolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER
 ) -> FastMCP:
     """Attach the approval policy admin server (approve/reject/set_policy_text)."""
-    await comp.mount_inproc(name, policy.approver)
-    return policy.approver
+    await comp.mount_inproc(name, engine.approver)
+    return engine.approver

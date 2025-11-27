@@ -12,7 +12,7 @@ from adgn.agent.policy_eval.runner import run_policy_source
 from adgn.agent.runtime.images import resolve_runtime_image
 
 if TYPE_CHECKING:
-    from adgn.mcp.approval_policy.server import ApprovalPolicyServer
+    from adgn.mcp.approval_policy.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class ContainerPolicyEvaluator:
 
     agent_id: str
     docker_client: DockerClient
-    engine: ApprovalPolicyServer
+    engine: PolicyEngine
     image: str = field(default_factory=resolve_runtime_image)
     timeout_secs: float = field(
         default_factory=lambda: float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))

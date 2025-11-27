@@ -9,8 +9,8 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp.approval_policy.server import (
-    ApprovalPolicyServer,
+from adgn.mcp.approval_policy.engine import (
+    PolicyEngine,
     attach_approval_policy_proposer,
     attach_approval_policy_readonly,
 )
@@ -40,17 +40,17 @@ def filter_persistable_servers(cfg: MCPConfig) -> MCPConfig:
     return MCPConfig(mcpServers={k: v for k, v in (cfg.mcpServers or {}).items() if k not in DEFAULT_AUTO_SERVER_NAMES})
 
 
-async def attach_default_servers(comp: Compositor, *, ui_bus, policy_server: ApprovalPolicyServer) -> None:
+async def attach_default_servers(comp: Compositor, *, ui_bus, engine: PolicyEngine) -> None:
     """Attach the standard UI + approval policy + runtime exec servers.
 
     Inlines UI + policy wiring locally.
     """
     # UI server
     await attach_ui(comp, ui_bus)
-    # Approval policy servers (policy_server owns .proposer and .approver sub-servers)
-    await attach_approval_policy_readonly(comp, policy_server)
+    # Approval policy servers (engine owns .reader, .proposer, .approver)
+    await attach_approval_policy_readonly(comp, engine)
     # Do not mount admin (approver) server into the compositor; UI uses a private client.
-    await attach_approval_policy_proposer(comp, policy_server)
+    await attach_approval_policy_proposer(comp, engine)
     # Runtime exec server (no host mounts)
     runtime_image = resolve_runtime_image()
     opts = ContainerOptions(image=runtime_image, volumes=None, ephemeral=True)

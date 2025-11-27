@@ -99,13 +99,13 @@ class ApprovalHub:
         return self._requests
 
 
-# ---- Approval Policy Engine (DEPRECATED - use ApprovalPolicyServer) ----
+# ---- Approval Policy Engine (DEPRECATED - use PolicyEngine) ----
 #
-# The ApprovalPolicyEngine class has been merged into ApprovalPolicyServer
-# in adgn.mcp.approval_policy.server. This class is kept for backward
+# The ApprovalPolicyEngine class has been merged into PolicyEngine
+# in adgn.mcp.approval_policy.engine. This class is kept for backward
 # compatibility in tests but should not be used in new code.
 #
-# Migration: Use ApprovalPolicyServer directly from adgn.mcp.approval_policy.server
+# Migration: Use PolicyEngine directly from adgn.mcp.approval_policy.engine
 
 
 class WellKnownTools(StrEnum):
@@ -120,10 +120,10 @@ def load_default_policy_source() -> str:
 
 
 class ApprovalPolicyEngine:
-    """DEPRECATED: Use ApprovalPolicyServer from adgn.mcp.approval_policy.server instead.
+    """DEPRECATED: Use PolicyEngine from adgn.mcp.approval_policy.engine instead.
 
     This class is kept for backward compatibility in tests. New code should use
-    ApprovalPolicyServer directly, which combines this class's business logic
+    PolicyEngine directly, which combines this class's business logic
     with the MCP server layer, eliminating the notifier callback indirection.
 
     Original docstring:
@@ -258,10 +258,10 @@ def make_policy_engine(
     notifier: Callable[[str], None] | None = None,
     policy_source: str,
 ) -> ApprovalPolicyEngine:
-    """DEPRECATED: Use ApprovalPolicyServer directly instead.
+    """DEPRECATED: Use PolicyEngine directly instead.
 
     Factory for ApprovalPolicyEngine. Kept for backward compatibility in tests.
-    New code should use ApprovalPolicyServer from adgn.mcp.approval_policy.server.
+    New code should use PolicyEngine from adgn.mcp.approval_policy.engine.
     """
     return ApprovalPolicyEngine(
         notifier, docker_client=docker_client, agent_id=agent_id, persistence=persistence, policy_source=policy_source

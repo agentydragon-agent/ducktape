@@ -19,7 +19,7 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.clients import PolicyReaderStub
-from adgn.mcp.approval_policy.server import ApprovalPolicyServer
+from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
@@ -127,15 +127,15 @@ async def approval_engine(sqlite_persistence) -> ApprovalPolicyEngine:
 
 @pytest.fixture
 def make_approval_policy_server(sqlite_persistence, request: pytest.FixtureRequest):
-    """Factory producing ApprovalPolicyServer instances with per-test defaults.
+    """Factory producing PolicyEngine instances with per-test defaults.
 
-    The returned server owns .proposer and .approver sub-servers.
+    The returned engine owns .reader, .proposer and .approver sub-servers.
     """
 
-    def _make(policy_source: str, *, agent_id: str | None = None) -> ApprovalPolicyServer:
+    def _make(policy_source: str, *, agent_id: str | None = None) -> PolicyEngine:
         default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
         effective_id = agent_id or default_id
-        return ApprovalPolicyServer(
+        return PolicyEngine(
             docker_client=docker.from_env(),
             agent_id=effective_id,
             persistence=sqlite_persistence,
@@ -146,9 +146,9 @@ def make_approval_policy_server(sqlite_persistence, request: pytest.FixtureReque
 
 
 @pytest.fixture
-async def approval_policy_server(sqlite_persistence) -> ApprovalPolicyServer:
-    """ApprovalPolicyServer fixture that owns .proposer and .approver sub-servers."""
-    return ApprovalPolicyServer(
+async def approval_policy_server(sqlite_persistence) -> PolicyEngine:
+    """PolicyEngine fixture that owns .reader, .proposer and .approver sub-servers."""
+    return PolicyEngine(
         docker_client=docker.from_env(),
         agent_id="tests",
         persistence=sqlite_persistence,
@@ -395,10 +395,10 @@ async def approval_policy_reader_allow_all(sqlite_persistence) -> FastMCP:
     Uses the packaged approve_all.py source and evaluates via Docker.
     """
     policy_text = resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
-    eng = ApprovalPolicyEngine(
+    engine = PolicyEngine(
         docker_client=docker.from_env(), agent_id="tests", persistence=sqlite_persistence, policy_source=policy_text
     )
-    return ApprovalPolicyServer(eng)
+    return engine.reader
 
 
 @pytest.fixture

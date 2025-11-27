@@ -10,7 +10,6 @@ import uuid
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import ApprovalHub
-from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
 from adgn.agent.persist import RunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
@@ -35,6 +34,7 @@ from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
 from adgn.agent.server.status_shared import RunPhase, determine_run_phase
 from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,6 @@ class ConnectionManager(BaseHandler):
         This method is kept as a no-op stub to avoid breaking callers.
         All calls to this method are effectively dead code.
         """
-        pass
 
     def set_session(self, session: AgentSession) -> None:
         self._session = session
@@ -130,7 +129,7 @@ class AgentSession:
         persistence=None,
         agent_id: str | None = None,
         ui_bus: Any | None = None,
-        approval_engine: ApprovalPolicyServer | None = None,
+        approval_engine: PolicyEngine | None = None,
         policy_gateway: PolicyGatewayMiddleware | None = None,
     ) -> None:
         self._task: asyncio.Task | None = None
@@ -143,7 +142,7 @@ class AgentSession:
         self._persistence = persistence
         self.ui_bus: Any | None = ui_bus
         self.ui_state: UiState = new_state()
-        self.approval_engine: ApprovalPolicyServer | None = approval_engine
+        self.approval_engine: PolicyEngine | None = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
         # Optional: agent identifier to associate runs with a specific hosted agent
         self.agent_id: str | None = agent_id

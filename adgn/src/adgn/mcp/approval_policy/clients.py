@@ -4,7 +4,7 @@ from typing import Final
 
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.mcp._shared.constants import APPROVAL_POLICY_SERVER_NAME_APPROVER, APPROVAL_POLICY_SERVER_NAME_READER
-from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
+from adgn.mcp.approval_policy.engine import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.stubs.server_stubs import ServerStub
 
 READER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME_READER
