@@ -94,10 +94,6 @@ class _SamplingSnapshotMsg(_ActorMsg):
     """Request a one-shot sampling snapshot for UI/model consumption."""
 
 
-class _SamplingSnapshotIncrementalMsg(_ActorMsg):
-    """Request an incremental sampling snapshot stream as servers initialize."""
-
-
 class _CloseMsg(_ActorMsg):
     """Request container shutdown; drains, closes agent and mcp manager."""
 
@@ -286,21 +282,6 @@ class AgentContainer:
         self._compositor_client = mcp_client
         self._notif_buffer = notif_buffer
 
-        # Coalesced Snapshot refresh
-        self._snapshot_push_pending = False
-
-        async def _coalesced_push() -> None:
-            if self._snapshot_push_pending:
-                return
-            self._snapshot_push_pending = True
-            try:
-                await asyncio.sleep(0.05)
-                await self._push_snapshot_and_status()
-            finally:
-                self._snapshot_push_pending = False
-
-        notif_buffer.add_hook(lambda: asyncio.create_task(_coalesced_push()))
-
         # Attach in-proc UI/approval/runtime servers
         await self._attach_inproc_servers(self._ui_bus)
 
@@ -485,15 +466,11 @@ class AgentContainer:
                             attach_args2.append((name, spec))
                     if attach_args2:
                         await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args2))
-                await self._push_snapshot_and_status()
                 return None
             case _SamplingSnapshotMsg():
                 if self._compositor is None:
                     return None
                 return await self._compositor.sampling_snapshot()
-            case _SamplingSnapshotIncrementalMsg():
-                # Snapshot is now fetched via HTTP GET /api/agents/{id}/snapshot, not pushed
-                return None
             case _CloseMsg():
                 return await self._op_close()
             case _AttachOneMsg(name=name, spec=spec):
@@ -502,14 +479,12 @@ class AgentContainer:
                     raise RuntimeError("mcp client not initialized")
                 admin = CompositorAdminClient(self._compositor_client)
                 await admin.attach_server(name=name, spec=spec)
-                await self._push_snapshot_and_status()
                 return None
             case _DetachOneMsg(name=name):
                 if self._compositor_client is None:
                     raise RuntimeError("mcp client not initialized")
                 admin = CompositorAdminClient(self._compositor_client)
                 await admin.detach_server(name=name)
-                await self._push_snapshot_and_status()
                 return None
             case _:
                 raise TypeError(f"unsupported actor message: {type(msg).__name__}")
@@ -559,10 +534,6 @@ class AgentContainer:
         """Return a structured snapshot of servers/tools via the actor."""
         res = await self._post_msg(_SamplingSnapshotMsg())
         return cast(SamplingSnapshot | None, res)
-
-    async def sampling_snapshot_incremental(self) -> None:
-        """Start streaming sampling snapshots as MCP servers initialize."""
-        await self._post_msg(_SamplingSnapshotIncrementalMsg())
 
     async def record_policy_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
         if self.session is None:
@@ -639,12 +610,6 @@ class AgentContainer:
             docker_client=self.docker_client,
             name=SEATBELT_EXEC_SERVER_NAME,
         )
-
-    async def _push_snapshot_and_status(self) -> None:
-        """Emit a fresh snapshot and broadcast live/working status."""
-        # Snapshot is now fetched via HTTP GET /api/agents/{id}/snapshot, not pushed
-
-    # sampling snapshot helpers are inlined in the actor dispatch handlers
 
     async def _op_close(self) -> CloseResult:
         drained_ok = True

@@ -54,7 +54,6 @@ class ConnectionManager(BaseHandler):
         return self._event_id
 
     async def _send_and_reduce(self, payload: ServerMessage) -> None:
-        await self.send_payload(payload)
         assert self._session is not None
         await self._session._apply_ui_event(payload)
 
@@ -70,18 +69,6 @@ class ConnectionManager(BaseHandler):
                 )
             elif isinstance(item, UiEndTurn):
                 await self._send_and_reduce(UiEndTurnEvt())
-
-    async def send_payload(self, payload: ServerMessage) -> None:
-        """DEAD CODE: WebSocket message delivery. Now a no-op.
-
-        Message delivery is now handled via:
-        - HTTP GET /api/agents/{id}/snapshot for snapshots
-        - MCP resources for real-time updates (e.g., approvals://pending)
-        - HTTP error responses for errors
-
-        This method is kept as a no-op stub to avoid breaking callers.
-        All calls to this method are effectively dead code.
-        """
 
     def set_session(self, session: AgentSession) -> None:
         self._session = session
