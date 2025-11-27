@@ -33,6 +33,15 @@ def _test_agent_id(request: pytest.FixtureRequest) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
 
 
+@pytest.fixture
+async def compositor():
+    """Fresh Compositor instance for each test.
+
+    No explicit cleanup - compositor will be garbage collected after test completes.
+    """
+    return Compositor("comp")
+
+
 # Ensure shared fixtures from tests/fixtures are always registered, even when
 # running a subset of tests or in parallel workers where the module wouldn't be
 # imported implicitly.

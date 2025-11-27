@@ -8,7 +8,6 @@ from fastmcp.server import FastMCP
 import pytest
 
 from adgn.mcp.compositor.clients import CompositorAdminClient
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.clients import ResourcesClient
@@ -22,13 +21,7 @@ def stdio_echo_spec() -> StdioMCPServer:
     return StdioMCPServer(command=sys.executable, args=["-m", "adgn.mcp.testing.stdio_app"])
 
 
-@pytest.fixture(scope="function")
-async def compositor():
-    """Fresh Compositor instance for each test.
-
-    No explicit cleanup - compositor will be garbage collected after test completes.
-    """
-    return Compositor("comp")
+# Note: `compositor` fixture is defined in top-level tests/conftest.py
 
 
 @pytest.fixture
@@ -67,16 +60,6 @@ async def admin_env(make_compositor):
         await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
         admin = CompositorAdminClient(client)
         yield admin, comp
-
-
-@pytest.fixture
-async def resources_env(compositor, compositor_client, resources_server, resources_client):
-    """Compositor + resources server mounted using a real gateway client.
-
-    Yields (ResourcesClient, Compositor) so tests can mount origins and use the
-    typed resources client to subscribe/unsubscribe and read the index.
-    """
-    yield ResourcesClient(resources_client), compositor
 
 
 @pytest.fixture
