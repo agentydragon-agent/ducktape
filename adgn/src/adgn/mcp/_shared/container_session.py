@@ -63,17 +63,23 @@ def _session_state_from_ctx(ctx: Any) -> ContainerSessionState:
     return cast(ContainerSessionState, ctx.request_context.lifespan_context)
 
 
+def _volumes_to_binds(volumes: dict[str, dict[str, str]] | list[str] | None) -> list[str]:
+    """Convert volumes dict to aiodocker Binds format."""
+    if not volumes or not isinstance(volumes, dict):
+        return []
+    binds = []
+    for host_path, volume_config in volumes.items():
+        bind = f"{host_path}:{volume_config['bind']}"
+        if mode := volume_config.get("mode"):
+            bind += f":{mode}"
+        binds.append(bind)
+    return binds
+
+
 async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) -> dict[str, Any]:
-    # Convert volumes to aiodocker format
     host_config: dict[str, Any] = {"AutoRemove": True}
-    if opts.volumes:
-        host_config["Binds"] = []
-        if isinstance(opts.volumes, dict):
-            for host_path, volume_config in opts.volumes.items():
-                bind = f"{host_path}:{volume_config['bind']}"
-                if mode := volume_config.get("mode"):
-                    bind += f":{mode}"
-                host_config["Binds"].append(bind)
+    if binds := _volumes_to_binds(opts.volumes):
+        host_config["Binds"] = binds
 
     container_config: dict[str, Any] = {
         "Image": opts.image,
@@ -157,16 +163,9 @@ async def _run_ephemeral_container(
     """Run command in ephemeral container using aiodocker."""
     docker_client = s.docker_client
 
-    # Convert volumes to aiodocker format
     host_config: dict[str, Any] = {}
-    if s.volumes:
-        host_config["Binds"] = []
-        if isinstance(s.volumes, dict):
-            for host_path, volume_config in s.volumes.items():
-                bind = f"{host_path}:{volume_config['bind']}"
-                if mode := volume_config.get("mode"):
-                    bind += f":{mode}"
-                host_config["Binds"].append(bind)
+    if binds := _volumes_to_binds(s.volumes):
+        host_config["Binds"] = binds
 
     ephemeral_config: dict[str, Any] = {
         "Image": s.image,
