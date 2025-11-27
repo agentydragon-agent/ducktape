@@ -35,7 +35,7 @@ def test_get_commit_diff_normal_commit(temp_repo: pygit2.Repository):
     _stage(temp_repo, "test.txt")
 
     # Get diff without amend
-    diff = get_commit_diff(temp_repo, [], previous_message=None)
+    diff = get_commit_diff(temp_repo, include_all=False, previous_message=None)
 
     assert "more content" in diff
     assert "@@" in diff  # Should have diff headers
@@ -55,7 +55,7 @@ def test_get_commit_diff_amend_with_staged_changes(temp_repo: pygit2.Repository)
     _stage(temp_repo, "test.txt")
 
     # Get diff with amend (previous_message indicates amend)
-    diff = get_commit_diff(temp_repo, [], previous_message="Initial commit")
+    diff = get_commit_diff(temp_repo, include_all=False, previous_message="Initial commit")
 
     # Should have both sections
     assert "=== Original commit" in diff
@@ -77,7 +77,7 @@ def test_get_commit_diff_amend_first_commit(temp_repo: pygit2.Repository):
     _stage(temp_repo, "test.txt")
 
     # Get diff for amending first commit
-    diff = get_commit_diff(temp_repo, [], previous_message="First commit ever")
+    diff = get_commit_diff(temp_repo, include_all=False, previous_message="First commit ever")
 
     # Should handle missing HEAD^ gracefully
     assert "=== Original commit content ===" in diff  # Uses empty tree
@@ -97,7 +97,7 @@ def test_get_commit_diff_amend_with_all_flag(temp_repo: pygit2.Repository):
     test_file.write_text("initial\nmodified\n")
 
     # Get diff with amend and -a flag
-    diff = get_commit_diff(temp_repo, ["-a"], previous_message="Initial")
+    diff = get_commit_diff(temp_repo, include_all=True, previous_message="Initial")
 
     assert "=== Original commit" in diff
     assert "=== New changes being added ===" in diff
@@ -118,8 +118,8 @@ def test_build_prompt_without_amend(temp_repo: pygit2.Repository):
     _stage(temp_repo, "test.txt")
 
     # Use our helper to compute staged diff for prompt builder
-    diff = get_commit_diff(temp_repo, [], previous_message=None)
-    prompt = build_prompt(temp_repo, diff, [], previous_message=None)
+    diff = get_commit_diff(temp_repo, include_all=False, previous_message=None)
+    prompt = build_prompt(temp_repo, diff, include_all=False, previous_message=None)
 
     assert "Write a concise, imperative-mood Git commit message" in prompt
     assert "Previous commit message:" not in prompt
@@ -138,8 +138,8 @@ def test_build_prompt_with_amend(temp_repo: pygit2.Repository):
     test_file.write_text("initial\nmore\n")
     _stage(temp_repo, "test.txt")
 
-    diff = get_commit_diff(temp_repo, [], previous_message="My original message")
-    prompt = build_prompt(temp_repo, diff, [], previous_message="My original message")
+    diff = get_commit_diff(temp_repo, include_all=False, previous_message="My original message")
+    prompt = build_prompt(temp_repo, diff, include_all=False, previous_message="My original message")
 
     assert "Update and refine this existing commit message" in prompt
     assert "Previous commit message:" in prompt
@@ -169,7 +169,7 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fa
     assert previous_message == "Initial implementation"
 
     # Get the diff that would be shown to AI
-    diff = get_commit_diff(repo, [], previous_message=previous_message)
+    diff = get_commit_diff(repo, include_all=False, previous_message=previous_message)
 
     # Verify diff contains both original and new changes
     assert "=== Original commit" in diff
@@ -178,7 +178,7 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fa
     assert "version 2" in diff
 
     # Build prompt as the tool would
-    prompt = build_prompt(repo, diff, [], previous_message=previous_message)
+    prompt = build_prompt(repo, diff, include_all=False, previous_message=previous_message)
 
     # Verify prompt is for amending
     assert "Update and refine" in prompt

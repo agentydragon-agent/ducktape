@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from uuid import UUID
 
-from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
 from adgn.agent.notifications.types import NotificationsBatch
@@ -20,16 +19,9 @@ def build_handlers(
     poll_notifications: Callable[[], NotificationsBatch],
     manager: ConnectionManager,
     persistence: Persistence,
-    approval_engine: ApprovalPolicyEngine,
-    approval_hub: ApprovalHub,
     get_run_id: Callable[[], UUID | None],
-    agent_id: str,
     ui_bus: ServerBus | None = None,
 ) -> tuple[list[BaseHandler], RunPersistenceHandler]:
-    """Construct the standard handler stack for an agent.
-
-    Returns (handlers, persist_handler, policy_handler).
-    """
     persist_handler = RunPersistenceHandler(persistence=persistence, get_run_id=get_run_id)
     handlers: list[BaseHandler] = [manager, persist_handler]
     if ui_bus is not None:

@@ -17,7 +17,7 @@ class _Capture(MessageHandler):
 
 
 async def test_chat_head_notifications_other_participant(compositor) -> None:
-    _store, human, assistant = await attach_chat_servers(compositor)
+    store, human, assistant = await attach_chat_servers(compositor)
 
     # Connect directly to assistant server to capture its notifications
     cap_assist = _Capture()

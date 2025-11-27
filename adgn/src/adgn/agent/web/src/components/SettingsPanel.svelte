@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../styles/shared.css'
   import { prefs } from '../shared/prefs'
 
   export let lastError: string | null = null
@@ -35,11 +36,6 @@
   .settings h4 {
     margin: 0.25rem 0;
   }
-  .row {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
   .danger {
     margin-top: 1rem;
     padding-top: 0.5rem;
@@ -51,8 +47,5 @@
   }
   .danger :global(.danger) {
     color: #b00020;
-  }
-  .secondary {
-    background: var(--surface-2);
   }
 </style>

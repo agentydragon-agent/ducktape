@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
 from typing import cast
 
@@ -56,18 +57,32 @@ def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
     return out
 
 
-def discover_presets(env_dir: str | None = None) -> dict[str, AgentPreset]:
+def discover_presets(*, override_dir: str | Path | None = None) -> dict[str, AgentPreset]:
     """Search for preset files in configured and default directories.
 
-    Precedence: env_dir (if set) first, then DEFAULT_PRESETS_DIRS.
+    Args:
+        override_dir: Optional directory to use instead of env var + defaults.
+                     Useful for testing. If None, uses ADGN_AGENT_PRESETS_DIR
+                     env var (if set) followed by XDG config directory.
+
+    Precedence: override_dir > ADGN_AGENT_PRESETS_DIR env > XDG config
     Later directories do not override earlier names.
     """
     out: dict[str, AgentPreset] = {}
     roots: list[Path] = []
-    if env_dir:
-        roots.append(Path(env_dir))
-    # Resolve only via platformdirs: user_config_dir('adgn') / 'presets'
+
+    # Handle override for testing
+    if override_dir is not None:
+        roots.append(Path(override_dir))
+    else:
+        # Read env var internally (production path)
+        env_dir = os.getenv("ADGN_AGENT_PRESETS_DIR")
+        if env_dir:
+            roots.append(Path(env_dir))
+
+    # Always check XDG directory
     roots.append(_xdg_presets_dir())
+
     for r in roots:
         for name, preset in load_presets_from_dir(r).items():
             if name not in out:

@@ -14,7 +14,7 @@ APPROVER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME_APPROVER
 class PolicyReaderStub(ServerStub):
     """Typed stub for the approval policy reader MCP server."""
 
-    async def decide(self, input: PolicyRequest) -> PolicyResponse:
+    async def evaluate_policy(self, input: PolicyRequest) -> PolicyResponse:
         raise NotImplementedError  # Auto-wired at runtime
 
 

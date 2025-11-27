@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, TypeVar
 
 from fastmcp.client.client import ClientSession
+from fastmcp.server.server import has_resource_prefix
 from mcp import types as mcp_types
 from pydantic import TypeAdapter
 
@@ -54,3 +56,34 @@ async def read_text_json_typed(session: ClientSession, uri: str, model: type[T])
     rr = await session.read_resource(parse_any_url(uri))
     s = extract_single_text_content(rr)
     return TypeAdapter(model).validate_json(s)
+
+
+def derive_origin_server(
+    uri: str,
+    mount_names: Iterable[str],
+    prefix_format: str,
+) -> str:
+    """Derive origin server name from resource URI.
+
+    Loops through mount names to find which server owns the given URI based on
+    resource prefix matching.
+
+    Args:
+        uri: Resource URI to translate (may be prefixed)
+        mount_names: Available mount names to check
+        prefix_format: Resource prefix format from compositor
+
+    Returns:
+        Origin server name
+
+    Raises:
+        ValueError: If no server matches the URI
+    """
+    for name in sorted(mount_names):
+        if has_resource_prefix(uri, name, prefix_format):
+            return name
+
+    raise ValueError(
+        f"Could not derive origin server for URI {uri!r}. "
+        f"Available servers: {sorted(mount_names)}"
+    )

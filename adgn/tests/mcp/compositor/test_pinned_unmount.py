@@ -4,8 +4,9 @@ import pytest
 
 
 async def test_unmount_pinned_server_errors_and_kept(compositor, backend_server):
+    srv = backend_server
     # Mount and then pin
-    await compositor.mount_inproc("backend", backend_server, pinned=True)
+    await compositor.mount_inproc("backend", srv, pinned=True)
 
     # Attempt to unmount should raise and keep the server
     with pytest.raises(RuntimeError):

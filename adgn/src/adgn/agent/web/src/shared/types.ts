@@ -77,13 +77,9 @@ export type SamplingSnapshot = {
 }
 
 // ---- Approval policy (shared) ----
-export type PolicyErrorCode = 'read_error' | 'parse_error'
 
 export type PolicyError = {
   stage: 'read' | 'parse' | 'tests'
-  code: PolicyErrorCode
-  index?: number
-  length?: number
   message?: string | null
 }
 
@@ -98,15 +94,16 @@ export type ApprovalPolicyInfo = {
   proposals?: Proposal[]
 }
 
-export type SnapshotDetails = {
-  run_state: { status: string; pending_approvals: any[] }
-  sampling: SamplingSnapshot
-  approval_policy: ApprovalPolicyInfo
+export type RunState = {
+  status: string
+  pending_approvals: any[]
 }
 
 export type SnapshotPayload = {
   type: 'snapshot'
-  details?: SnapshotDetails
+  approval_policy?: ApprovalPolicyInfo
+  run_state?: RunState
+  sampling?: SamplingSnapshot
 }
 
 // ---- UiState (server-owned) ----

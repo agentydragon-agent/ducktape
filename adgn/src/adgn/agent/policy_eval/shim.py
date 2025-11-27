@@ -12,9 +12,11 @@ read from stdin see the request. Then it exec()s POLICY_SRC. The policy program
 is responsible for printing a single JSON line (PolicyResponse) to stdout.
 
 Notes:
-- Keep this tiny and dependency-free; only stdlib is used.
-- Container image must have the adgn package installed so `python -m
-  adgn.agent.policy_eval.shim` resolves.
+- The shim itself only uses stdlib (no third-party imports).
+- Policy programs CAN import from adgn package (installed in container).
+- Container image must have the adgn package installed for both the shim
+  execution (python -m adgn.agent.policy_eval.shim) and for policy programs
+  to import types/utilities from adgn.
 """
 
 from __future__ import annotations

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../styles/shared.css'
   import hljs from 'highlight.js/lib/common'
   import { onMount } from 'svelte'
   import { get } from 'svelte/store'
@@ -72,26 +73,11 @@
     margin-bottom: 0.5rem;
   }
   /* Removed unused .proposal-docstring */
-  .badge {
-    font-size: 0.7rem;
-    padding: 0.05rem 0.3rem;
-    border-radius: 2px;
-    margin-left: 0.25rem;
-  }
-  .badge {
-    background: var(--surface-2);
-    color: var(--muted);
-    border: 1px solid var(--border);
-  }
   .policy-content {
     background: var(--surface-2);
     padding: 0.5rem;
     overflow: auto;
     max-height: 12rem;
     font-size: 0.75rem;
-  }
-  .error {
-    color: #b00020;
-    font-size: 0.8rem;
   }
 </style>

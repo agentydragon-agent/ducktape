@@ -7,7 +7,7 @@
   import SidebarToggle from './components/SidebarToggle.svelte'
   import { backendOrigin } from './features/agents/api'
   import { stopAgentStatusPolling } from './features/agents/stores'
-  import { disconnectAgentWs } from './features/chat/stores'
+  import { disconnectAgentMcp } from './features/chat/stores'
   import { initAgentUiController } from './features/controller'
   import { prefs } from './shared/prefs'
   import { currentAgentId as currentAgentIdStore, setAgentId } from './shared/router'
@@ -18,7 +18,7 @@
 
   onDestroy(() => {
     stopAgentStatusPolling()
-    disconnectAgentWs()
+    disconnectAgentMcp()
   })
 
   // Resize functionality

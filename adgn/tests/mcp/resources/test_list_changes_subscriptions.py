@@ -1,64 +1,41 @@
 from __future__ import annotations
 
-from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, contains, contains_inanyorder, empty, has_item, has_properties
 
 from adgn.mcp.resources.clients import ResourcesClient
-from adgn.mcp.resources.server import make_resources_server
 
 
-class _StubGatewaySession:
-    async def subscribe_resource(self, uri: str) -> None:
-        return None
-
-    async def unsubscribe_resource(self, uri: str) -> None:
-        return None
-
-
-class _StubGatewayClient:
-    def __init__(self) -> None:
-        self.session = _StubGatewaySession()
-
-
-async def test_list_changes_subscriptions_visible_and_cleared_on_unmount(compositor):
+async def test_list_changes_subscriptions_visible_and_cleared_on_unmount(compositor, resources_client):
     origin = FastMCP("origin")
     await compositor.mount_inproc("origin", origin)
 
-    gw = _StubGatewayClient()
-    res_server = make_resources_server(name="resources", gateway_client=gw, compositor=compositor)
+    # Subscribe to list changes for the origin server
+    rc = ResourcesClient(resources_client)
+    await rc.subscribe_list_changes(server="origin")
+    idx = await rc.list_subscriptions()
+    assert_that(idx.list_subscriptions, has_item(has_properties(server="origin", present=True, active=True)))
 
-    async with Client(res_server) as client:
-        # Subscribe to list changes for the origin server
-        rc = ResourcesClient(client)
-        await rc.subscribe_list_changes(server="origin")
-        idx = await rc.list_subscriptions()
-        assert_that(idx.list_subscriptions, has_item(has_properties(server="origin", present=True, active=True)))
-
-        # Unmount origin; selection should be cleared from the index
-        await compositor.unmount_server("origin")
-        idx2 = await rc.list_subscriptions()
-        assert_that(idx2.list_subscriptions, empty())
+    # Unmount origin; selection should be cleared from the index
+    await compositor.unmount_server("origin")
+    idx2 = await rc.list_subscriptions()
+    assert_that(idx2.list_subscriptions, empty())
 
 
-async def test_list_changes_multiple_subscriptions_and_unsubscribe(compositor):
+async def test_list_changes_multiple_subscriptions_and_unsubscribe(compositor, resources_client):
     a = FastMCP("a")
     b = FastMCP("b")
     await compositor.mount_inproc("a", a)
     await compositor.mount_inproc("b", b)
 
-    gw = _StubGatewayClient()
-    res_server = make_resources_server(name="resources", gateway_client=gw, compositor=compositor)
+    rc = ResourcesClient(resources_client)
+    # Subscribe to both origins
+    await rc.subscribe_list_changes(server="a")
+    await rc.subscribe_list_changes(server="b")
+    idx = await rc.list_subscriptions()
+    assert_that([x.server for x in idx.list_subscriptions], contains_inanyorder("a", "b"))
 
-    async with Client(res_server) as client:
-        rc = ResourcesClient(client)
-        # Subscribe to both origins
-        await rc.subscribe_list_changes(server="a")
-        await rc.subscribe_list_changes(server="b")
-        idx = await rc.list_subscriptions()
-        assert_that([x.server for x in idx.list_subscriptions], contains_inanyorder("a", "b"))
-
-        # Unsubscribe one
-        await rc.unsubscribe_list_changes(server="a")
-        idx2 = await rc.list_subscriptions()
-        assert_that([x.server for x in idx2.list_subscriptions], contains("b"))
+    # Unsubscribe one
+    await rc.unsubscribe_list_changes(server="a")
+    idx2 = await rc.list_subscriptions()
+    assert_that([x.server for x in idx2.list_subscriptions], contains("b"))

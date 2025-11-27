@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from importlib import resources
 import os
 from pathlib import Path
 import platform
@@ -22,8 +23,7 @@ from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.mcp.notifications.buffer import NotificationsBuffer
-from adgn.mcp.policy_gateway.middleware import install_policy_gateway
+from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp
 from tests.types import McpServerSpecs
@@ -98,27 +98,14 @@ async def sqlite_persistence(tmp_path):
 
 
 @pytest.fixture
-def docker_client():
-    """Shared Docker client for tests requiring Docker.
-
-    Centralizes docker.from_env() calls to avoid repeated client creation
-    and ensure consistent cleanup.
-    """
-    client = docker.from_env()
-    yield client
-    with suppress(Exception):
-        client.close()
-
-
-@pytest.fixture
-def make_policy_engine(docker_client, sqlite_persistence, request: pytest.FixtureRequest):
+def make_policy_engine(sqlite_persistence, request: pytest.FixtureRequest):
     """Factory producing ApprovalPolicyEngine instances with per-test defaults."""
 
     def _make(policy_source: str, *, agent_id: str | None = None) -> ApprovalPolicyEngine:
         default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
         effective_id = agent_id or default_id
         return ApprovalPolicyEngine(
-            docker_client=docker_client,
+            docker_client=docker.from_env(),
             agent_id=effective_id,
             persistence=sqlite_persistence,
             policy_source=policy_source,
@@ -128,9 +115,13 @@ def make_policy_engine(docker_client, sqlite_persistence, request: pytest.Fixtur
 
 
 @pytest.fixture
-def approval_engine(make_policy_engine) -> ApprovalPolicyEngine:
-    """Default approval engine using the default (approve-all) policy."""
-    return make_policy_engine(load_default_policy_source(), agent_id="tests")
+async def approval_engine(sqlite_persistence) -> ApprovalPolicyEngine:
+    return ApprovalPolicyEngine(
+        docker_client=docker.from_env(),
+        agent_id="tests",
+        persistence=sqlite_persistence,
+        policy_source=load_default_policy_source(),
+    )
 
 
 @pytest.fixture
@@ -169,12 +160,6 @@ def approval_hub() -> ApprovalHub:
     return ApprovalHub()
 
 
-@pytest.fixture
-def compositor() -> Compositor:
-    """Basic Compositor instance for tests that need direct compositor access."""
-    return Compositor("comp")
-
-
 async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
     """Mount all servers from McpServerSpecs dict onto a compositor.
 
@@ -194,11 +179,11 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
 
 
 @pytest.fixture
-def make_pg_session(approval_hub: ApprovalHub):
-    """Async helper to open a session with policy gateway middleware.
+def make_pg_compositor(approval_hub: ApprovalHub):
+    """Async helper to open a Compositor with policy gateway middleware.
 
     Usage:
-        async with make_pg_session({"backend": server, "approval_policy": reader}) as client:
+        async with make_pg_compositor(backend, evaluator, hub=..., notifier=...) as (sess, comp):
             ...
     """
 
@@ -215,23 +200,27 @@ def make_pg_session(approval_hub: ApprovalHub):
         try:
             _reader_client = await stack.enter_async_context(Client(reader))
             policy_reader = PolicyReaderStub(TypedClient(_reader_client))
-            install_policy_gateway(comp, hub=approval_hub, policy_reader=policy_reader, pending_notifier=notifier)
+            middleware = PolicyGatewayMiddleware(hub=approval_hub, policy_reader=policy_reader, pending_notifier=notifier)
+            comp.add_middleware(middleware)
             # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
-            await mount_standard_inproc_servers(compositor=comp, gateway_client=None)
+            await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
             async with Client(comp) as sess:
-                yield sess
+                yield sess, comp
         finally:
             await stack.aclose()
 
     return _open
 
 
+# Note: legacy open_mcp_with_slots fixture has been removed. Use make_pg_compositor instead.
+
+
 @pytest.fixture
-def make_session():
-    """Async helper to open a session connected to a Compositor.
+def make_compositor():
+    """Async helper to open a Compositor and yield (Client, Compositor).
 
     Usage:
-        async with make_session({"name": server, ...}) as client:
+        async with make_compositor({"name": server, ...}) as (client, comp):
             ...
     """
 
@@ -240,35 +229,58 @@ def make_session():
         comp = Compositor("comp")
         await _mount_servers(comp, servers)
         async with Client(comp) as sess:
-            yield sess
+            yield sess, comp
 
     return _open
 
 
 @pytest.fixture
-async def pg_session_box(approval_policy_reader_allow_all, make_pg_session):
-    """Async fixture yielding a session with boxed Docker exec server and policy."""
-    server = make_container_exec_server(make_container_opts("python:3.12-slim"), name="box")
-    async with make_pg_session({"box": server, "approval_policy": approval_policy_reader_allow_all}) as client:
-        yield client
+def make_pg_compositor_box(approval_policy_reader_allow_all, make_pg_compositor):
+    """Helper to open a Compositor with a boxed Docker exec server and policy.
 
-
-@pytest.fixture
-async def pg_session_echo(make_echo_spec, approval_policy_reader_allow_all, make_pg_session):
-    """Async fixture yielding a session with echo + approval mounted."""
-    servers = {**make_echo_spec(), "approval_policy": approval_policy_reader_allow_all}
-    async with make_pg_session(servers) as client:
-        yield client
-
-
-@pytest.fixture
-async def pg_session_policy_only(make_pg_session, approval_policy_reader_allow_all):
-    """Async fixture yielding a session with only approval_policy mounted.
-
-    Useful for tests that don't need any backend servers but need policy gateway.
+    Mounts a per-session container exec server under name "box" and mounts the
+    approval_policy reader. Yields (client, compositor).
     """
-    async with make_pg_session({"approval_policy": approval_policy_reader_allow_all}) as client:
-        yield client
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _open():
+        server = make_container_exec_server(make_container_opts("python:3.12-slim"), name="box")
+        async with make_pg_compositor({"box": server, "approval_policy": approval_policy_reader_allow_all}) as pair:
+            yield pair
+
+    return _open
+
+
+@pytest.fixture
+def make_pg_compositor_echo(make_echo_spec, approval_policy_reader_allow_all, make_pg_compositor):
+    """Helper to open a Compositor with the echo server and policy mounted.
+
+    Yields (client, compositor).
+    """
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _open():
+        spec_factory = make_echo_spec
+        servers = {**spec_factory(), "approval_policy": approval_policy_reader_allow_all}
+        async with make_pg_compositor(servers) as pair:
+            yield pair
+
+    return _open
+
+
+@pytest.fixture
+async def pg_compositor_echo(make_pg_compositor_echo):
+    """Async fixture yielding (client, compositor) with echo + approval mounted.
+
+    Convenience wrapper around make_pg_compositor_echo() so tests can depend on a
+    ready session without using an explicit async with.
+    """
+    async with make_pg_compositor_echo() as pair:
+        yield pair
 
 
 @pytest.fixture
@@ -283,6 +295,8 @@ def make_buffered_client():
     async def _open(servers: McpServerSpecs):
         comp = Compositor("comp")
         await _mount_servers(comp, servers)
+        from adgn.mcp.notifications.buffer import NotificationsBuffer
+
         buf = NotificationsBuffer(compositor=comp)
         async with Client(comp, message_handler=buf.handler) as sess:
             yield sess, comp, buf
@@ -294,6 +308,8 @@ def make_buffered_client():
 def docker_exec_server_alpine():
     opts = make_container_opts("alpine:3.19")
     # Expose the tool under name expected by docker exec tests
+    from adgn.mcp.exec.docker.server import make_container_exec_server
+
     return make_container_exec_server(opts, tool_exec_name="docker_exec")
 
 
@@ -332,6 +348,8 @@ def live_openai(request):
 def docker_inproc_spec_py312():
     """Alias expected by some tests: in-proc spec backed by Python 3.12 image."""
     opts = make_container_opts("python:3.12-alpine")
+    from adgn.mcp.exec.docker.server import make_container_exec_server
+
     return make_container_exec_server(opts)
 
 
@@ -339,12 +357,16 @@ def docker_inproc_spec_py312():
 
 
 @pytest.fixture
-async def approval_policy_reader_allow_all(make_policy_engine) -> FastMCP:
+async def approval_policy_reader_allow_all(sqlite_persistence) -> FastMCP:
     """Approval policy reader server with an approve-all policy program.
 
     Uses the packaged approve_all.py source and evaluates via Docker.
     """
-    return ApprovalPolicyServer(make_policy_engine(load_default_policy_source()))
+    policy_text = resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
+    eng = ApprovalPolicyEngine(
+        docker_client=docker.from_env(), agent_id="tests", persistence=sqlite_persistence, policy_source=policy_text
+    )
+    return ApprovalPolicyServer(eng)
 
 
 @pytest.fixture
@@ -360,8 +382,8 @@ def stub_approval_policy_engine():
 def approval_policy_reader_stub() -> FastMCP:
     server = FastMCP("approval_policy")
 
-    @server.tool(name="decide")
-    def _decide(name: str, arguments: dict | None = None) -> dict[str, str]:
+    @server.tool(name="evaluate_policy")
+    def _evaluate_policy(name: str, arguments: dict | None = None) -> dict[str, str]:
         return {"decision": "allow", "rationale": "stub"}
 
     return server

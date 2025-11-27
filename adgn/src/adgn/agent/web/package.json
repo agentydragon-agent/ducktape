@@ -13,9 +13,12 @@
     "lint": "eslint src --ext .ts,.svelte",
     "lint:fix": "eslint src --ext .ts,.svelte --fix",
     "format": "prettier --write 'src/**/*.{ts,svelte,css}'",
-    "format:check": "prettier --check 'src/**/*.{ts,svelte,css}'"
+    "format:check": "prettier --check 'src/**/*.{ts,svelte,css}'",
+    "codegen": "adgn-generate-frontend-code",
+    "prebuild": "npm run codegen"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.23.0",
     "diff": "^5.2.0",
     "dompurify": "^3.0.9",
     "highlight.js": "^11.10.0",
@@ -36,6 +39,7 @@
     "eslint-plugin-svelte": "^3.13.0",
     "globals": "^16.5.0",
     "jsdom": "^25.0.0",
+    "json-schema-to-typescript": "^15.0.4",
     "prettier": "^3.4.2",
     "prettier-plugin-svelte": "^3.3.2",
     "svelte": "^5.38.1",

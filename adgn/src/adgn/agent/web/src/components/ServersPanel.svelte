@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../styles/shared.css'
   // @ts-ignore - library ships no types
   import JSONFormatter from 'json-formatter-js'
   import { SvelteMap } from 'svelte/reactivity'
@@ -662,22 +663,6 @@
     border: 1px solid var(--border);
     background: var(--surface-2);
   }
-  .row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-  .col {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  .field {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
   .field .inline {
     white-space: nowrap;
     color: var(--muted);
@@ -709,14 +694,6 @@
   .preview {
     margin-top: 0.5rem;
   }
-  .note {
-    color: var(--muted);
-    font-size: 0.85rem;
-  }
-  .err {
-    color: #b00020;
-    font-size: 0.85rem;
-  }
   .servers h4 {
     margin: 0.25rem 0;
   }
@@ -744,19 +721,6 @@
   .server-header:hover,
   .tool-header:hover {
     background: var(--surface-2);
-  }
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #bbb;
-    display: inline-block;
-  }
-  .dot.on {
-    background: #2ecc71;
-  }
-  .dot.off {
-    background: #c0392b;
   }
   .disclosure {
     display: none;
@@ -822,13 +786,6 @@
     word-break: break-word;
     overflow-wrap: anywhere;
   }
-  .pre {
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-    font-size: 0.85rem;
-  }
   .schema-label {
     font-weight: 500;
     font-size: 0.75rem;
@@ -837,9 +794,6 @@
   }
   .tool-schema {
     font-size: 0.75rem;
-  }
-  .empty {
-    color: var(--muted);
   }
   /* server-actions removed; detach now lives in header row */
 
@@ -866,9 +820,6 @@
     margin-left: 0.25rem;
     color: var(--muted);
   }
-  .badge.cap {
-    background: var(--surface-2);
-  }
 
   /* Modal styles */
   /* Backdrop styling moved to ModalBackdrop component */
@@ -883,11 +834,6 @@
     display: flex;
     flex-direction: column;
   }
-  .modal header {
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--border);
-    font-weight: 600;
-  }
   .modal .body {
     padding: 0.75rem;
     display: grid;
@@ -899,13 +845,6 @@
     display: flex;
     gap: 1rem;
     align-items: center;
-  }
-  .modal footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    border-top: 1px solid var(--border);
   }
   .modal h5 {
     margin: 0.25rem 0;

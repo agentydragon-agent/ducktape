@@ -7,7 +7,6 @@ from mcp import types as mcp_types
 
 from adgn.agent.approvals import WellKnownTools
 from adgn.agent.server.protocol import (
-    ApprovalDecisionEvt,
     FunctionCallOutput,
     ToolCall,
     UiEndTurnEvt,
@@ -38,7 +37,6 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
     - UserText
     - ToolCall
     - FunctionCallOutput
-    - ApprovalDecisionEvt
     - UiMessageEvt
     - UiEndTurnEvt
     """
@@ -83,11 +81,7 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
             build_mcp_function(UI_SERVER_NAME, WellKnownTools.END_TURN),
         ):
             return state
-        return start_tool(state, tool=evt.name, call_id=evt.call_id, cmd=cmd, args=parsed_args)
-
-    # Approval decision → add to the current group
-    if isinstance(evt, ApprovalDecisionEvt):
-        return update_tool_decision(state, evt.call_id, decision=evt.decision.kind)
+        return start_tool(state, tool_call=evt, cmd=cmd, args=parsed_args)
 
     # Function call output → merge stdout/stderr/exit
     if isinstance(evt, FunctionCallOutput):
@@ -130,8 +124,8 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
 
         tool_name: str | None = None
         for it in reversed(state.items):
-            if isinstance(it, ToolItem) and it.call_id == evt.call_id:
-                tool_name = it.tool
+            if isinstance(it, ToolItem) and it.tool_call.call_id == evt.call_id:
+                tool_name = it.tool_call.name
                 break
         if tool_name in (
             build_mcp_function(UI_SERVER_NAME, WellKnownTools.SEND_MESSAGE),

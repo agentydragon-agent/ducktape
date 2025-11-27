@@ -7,10 +7,12 @@ from adgn.mcp._shared.resources import extract_single_text_content
 from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 
-async def test_meta_presents_inproc_mounts(make_pg_session, approval_policy_reader_allow_all, backend_server):
-    async with make_pg_session(
-        {"backend": backend_server, "approval_policy": approval_policy_reader_allow_all}
-    ) as sess:
+async def test_meta_presents_inproc_mounts(make_pg_compositor, approval_policy_reader_allow_all, backend_server):
+    backend = backend_server
+    async with make_pg_compositor({"backend": backend, "approval_policy": approval_policy_reader_allow_all}) as (
+        sess,
+        _comp,
+    ):
         # List resources and find compositor_meta state entry for this mount
         resources = await sess.list_resources()
         uris = {str(r.uri) for r in resources}

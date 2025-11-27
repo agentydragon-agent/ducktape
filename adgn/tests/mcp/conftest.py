@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import sys
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
+from fastmcp.server import FastMCP
 import pytest
 
-from adgn.agent.policies.policy_types import ApprovalDecision
-from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.mcp.compositor.clients import CompositorAdminClient
+from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
+from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
 
 @pytest.fixture
@@ -21,52 +22,86 @@ def stdio_echo_spec() -> StdioMCPServer:
     return StdioMCPServer(command=sys.executable, args=["-m", "adgn.mcp.testing.stdio_app"])
 
 
-@pytest.fixture
-async def admin_client(compositor):
-    """Admin client with standard admin/meta servers mounted on compositor.
+@pytest.fixture(scope="function")
+async def compositor():
+    """Fresh Compositor instance for each test.
 
-    Tests needing direct compositor access can request it as a separate fixture.
+    No explicit cleanup - compositor will be garbage collected after test completes.
     """
-    await mount_standard_inproc_servers(compositor=compositor, gateway_client=None)
+    return Compositor("comp")
+
+
+@pytest.fixture
+async def compositor_client(compositor):
+    """Client connected to the compositor."""
     async with Client(compositor) as client:
-        yield CompositorAdminClient(client)
+        yield client
 
 
 @pytest.fixture
-async def resources_client(compositor):
-    """Resources client mounted using a real gateway client.
-
-    Yields ResourcesClient for tests that need to subscribe/unsubscribe and read the index.
-    Tests needing direct compositor access can request it as a separate fixture.
-    """
-    async with Client(compositor) as gw:
-        res_server = make_resources_server(gateway_client=gw, compositor=compositor)
-        async with Client(res_server) as res_client:
-            yield ResourcesClient(res_client)
-
-
-def _policy_source_for_decision(decision: ApprovalDecision) -> str:
-    """Minimal policy program that returns a fixed decision."""
-    d = str(decision.value)
-    return (
-        f"import sys, json\n_ = json.load(sys.stdin)\nprint(json.dumps({{'decision': '{d}', 'rationale': 'test'}}))\n"
-    )
+async def resources_server(compositor):
+    """Resources server for the compositor."""
+    return make_resources_server(client=Client(compositor), compositor=compositor)
 
 
 @pytest.fixture
-def make_pg_session_with_decision(make_policy_engine, make_pg_session, backend_server):
-    """Factory to open a pg_session with a policy that returns a fixed decision.
+async def resources_client(resources_server):
+    """Client for the resources server."""
+    async with Client(resources_server) as client:
+        yield client
 
-    Usage:
-        async with make_pg_session_with_decision(ApprovalDecision.ALLOW) as sess:
-            ...
+
+@pytest.fixture
+async def typed_resources_client(resources_client):
+    """Typed ResourcesClient wrapping the resources server client."""
+    return ResourcesClient(resources_client)
+
+
+@pytest.fixture
+async def admin_env(make_compositor):
+    """Compositor with standard admin/meta servers and an admin client.
+
+    Yields a tuple (admin_client, compositor).
     """
+    async with make_compositor({}) as (client, comp):
+        await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
+        admin = CompositorAdminClient(client)
+        yield admin, comp
 
-    @asynccontextmanager
-    async def _open(decision: ApprovalDecision, *, notifier=None):
-        eng = make_policy_engine(_policy_source_for_decision(decision))
-        reader = ApprovalPolicyServer(eng)
-        async with make_pg_session({"backend": backend_server, "approval_policy": reader}, notifier=notifier) as sess:
-            yield sess
 
-    return _open
+@pytest.fixture
+async def resources_env(compositor, compositor_client, resources_server, resources_client):
+    """Compositor + resources server mounted using a real gateway client.
+
+    Yields (ResourcesClient, Compositor) so tests can mount origins and use the
+    typed resources client to subscribe/unsubscribe and read the index.
+    """
+    yield ResourcesClient(resources_client), compositor
+
+
+@pytest.fixture
+def origin_with_recorder() -> tuple[FastMCP, SubscriptionRecorder]:
+    """Origin server with subscription recorder attached."""
+    m = NotifyingFastMCP("origin")
+    recorder = install_subscription_recorder(m)
+
+    @m.resource("resource://foo/bar", name="dummy", mime_type="text/plain", description="dummy")
+    async def foo_bar() -> str:
+        return "ok"
+
+    # Ensure this origin advertises resources.subscribe for gating and
+    # registers explicit handlers so subscribe/unsubscribe calls succeed.
+    enable_resources_caps(m, subscribe=True)
+    return m, recorder
+
+
+@pytest.fixture
+def backend_server() -> FastMCP:
+    """Simple backend server with a ping tool."""
+    m = FastMCP("backend")
+
+    @m.tool(name="ping")
+    def ping() -> str:
+        return "pong"
+
+    return m

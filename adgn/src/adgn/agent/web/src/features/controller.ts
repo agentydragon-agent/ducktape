@@ -1,6 +1,6 @@
 import { currentAgentId, getAgentIdFromUrl, setAgentId } from '../shared/router'
 import { startAgentsWs, stopAgentStatusPolling } from './agents/stores'
-import { connectAgentWs, disconnectAgentWs } from './chat/stores'
+import { connectAgentMcp, disconnectAgentMcp } from './chat/stores'
 
 export function initAgentUiController(): () => void {
   // Authoritative bootstrap: read agent_id from URL before subscribing
@@ -26,16 +26,16 @@ export function initAgentUiController(): () => void {
     if (id === lastId) return
     lastId = id ?? null
     if (typeof id === 'string' && id.length > 0) {
-      // Agents list comes via WS; ensure status polling is off (rely on WS + agent WS)
+      // Agents list comes via WS; ensure status polling is off (rely on WS + agent MCP)
       stopAgentStatusPolling()
-      disconnectAgentWs()
+      disconnectAgentMcp()
       // Defer to next microtask to avoid racing with URL/store updates
-      queueMicrotask(() => connectAgentWs(id))
+      queueMicrotask(() => connectAgentMcp(id))
     } else {
       // No agent selected: ensure list WS is active and status polling is off
       startAgentsWs()
       stopAgentStatusPolling()
-      if (lastId !== null) disconnectAgentWs()
+      if (lastId !== null) disconnectAgentMcp()
     }
   })
 

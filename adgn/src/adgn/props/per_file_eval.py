@@ -208,7 +208,7 @@ async def run_per_file_eval(
         cost_tracker = CostTrackingHandler()
         handlers_list: list[BaseHandler] = [cost_tracker]
         if verbose:
-            handlers_list.insert(0, DisplayEventsHandler(max_lines=10, prefix="  [EVAL] "))
+            handlers_list.append(DisplayEventsHandler(max_lines=10, prefix="  [EVAL] "))
         extra_handlers = tuple(handlers_list)
 
         critique = await run_critic_agent(

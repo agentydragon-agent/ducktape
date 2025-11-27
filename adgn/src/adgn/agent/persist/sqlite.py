@@ -433,11 +433,14 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
         run_id: UUID,
         seq: int,
         ts: datetime,
-        type: EventType,
         payload: dict[str, JsonValue],
         call_id: str | None = None,
         tool_key: str | None = None,
     ) -> None:
+        # Extract type from payload (discriminated union field)
+        event_type = payload.get("type")
+        if event_type is None:
+            raise ValueError("payload must contain 'type' field")
         # Apply hard limit per event payload (serialized JSON)
         s = json.dumps(payload, ensure_ascii=False)
         if len(s.encode("utf-8")) > MAX_EVENT_PAYLOAD_BYTES:
@@ -445,7 +448,7 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
         async with self._open() as db:
             await db.execute(
                 "INSERT INTO events (run_id, seq, ts, type, payload, call_id, tool_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (str(run_id), seq, ts.isoformat(), type.value, s, call_id, tool_key),
+                (str(run_id), seq, ts.isoformat(), str(event_type), s, call_id, tool_key),
             )
             await db.execute("UPDATE runs SET event_count = event_count + 1 WHERE id = ?", (str(run_id),))
             await db.commit()

@@ -99,7 +99,13 @@ class ApprovalHub:
         return self._requests
 
 
-# ---- Approval Policy Engine (decoupled, in-memory; optional) ----
+# ---- Approval Policy Engine (DEPRECATED - use ApprovalPolicyServer) ----
+#
+# The ApprovalPolicyEngine class has been merged into ApprovalPolicyServer
+# in adgn.mcp.approval_policy.server. This class is kept for backward
+# compatibility in tests but should not be used in new code.
+#
+# Migration: Use ApprovalPolicyServer directly from adgn.mcp.approval_policy.server
 
 
 class WellKnownTools(StrEnum):
@@ -114,11 +120,15 @@ def load_default_policy_source() -> str:
 
 
 class ApprovalPolicyEngine:
-    """Single source of truth for active policy text/version.
+    """DEPRECATED: Use ApprovalPolicyServer from adgn.mcp.approval_policy.server instead.
 
-    Validation and execution are delegated to the Docker-backed evaluator. The
-    engine stores text and publishes change notifications via the optional
-    notifier callback.
+    This class is kept for backward compatibility in tests. New code should use
+    ApprovalPolicyServer directly, which combines this class's business logic
+    with the MCP server layer, eliminating the notifier callback indirection.
+
+    Original docstring:
+    Single source of truth for active policy text/version.
+    Validation and execution are delegated to the Docker-backed evaluator.
     """
 
     def __init__(
@@ -248,9 +258,10 @@ def make_policy_engine(
     notifier: Callable[[str], None] | None = None,
     policy_source: str,
 ) -> ApprovalPolicyEngine:
-    """Factory for ApprovalPolicyEngine with required context.
+    """DEPRECATED: Use ApprovalPolicyServer directly instead.
 
-    Centralizes creation for wiring, CLI, and tests without hiding parameters.
+    Factory for ApprovalPolicyEngine. Kept for backward compatibility in tests.
+    New code should use ApprovalPolicyServer from adgn.mcp.approval_policy.server.
     """
     return ApprovalPolicyEngine(
         notifier, docker_client=docker_client, agent_id=agent_id, persistence=persistence, policy_source=policy_source

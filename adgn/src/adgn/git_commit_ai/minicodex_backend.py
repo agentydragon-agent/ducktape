@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import logging
 from pathlib import Path
 import sys
 
@@ -13,7 +12,6 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.loop_control import Abort, Continue, RequireAny
 from adgn.agent.reducer import BaseHandler
-from adgn.llm.logging_config import configure_logging
 from adgn.mcp._shared.constants import SUBMIT_COMMIT_MESSAGE_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
@@ -157,13 +155,11 @@ class CommitController(BaseHandler):
         return Continue(RequireAny())
 
 
-async def generate_commit_message_minicodex(model: str, *, debug: bool = False, amend: bool = False) -> str:
+async def generate_commit_message_minicodex(
+    repo: pygit2.Repository, model: str, *, debug: bool = False, amend: bool = False
+) -> str:
     """Run MiniCodex with docker_exec + submit_commit_message MCP servers and return the commit message text."""
-    # Wire an in-proc read-only Git MCP server bound to the current repo
-    gitdir = pygit2.discover_repository(str(Path.cwd()))
-    assert gitdir, "Unable to locate git repository"
-    repo = pygit2.Repository(gitdir)
-    repo_root = Path(repo.workdir or Path(gitdir).parent)
+    repo_root = Path(repo.workdir or repo.path).parent
 
     submit_state = SubmitState()
 
@@ -187,15 +183,9 @@ async def generate_commit_message_minicodex(model: str, *, debug: bool = False, 
 
     prompt = _build_commit_prompt(amend)
 
-    # Initialize global logging (console at WARNING; file at ADGN_LOG_DIR if set)
-    configure_logging()
-    # Silence MiniCodex/structlog chatter for git_commit_ai invocations
-    for name in ("mini_codex", "MiniCodex", "adgn_llm.mini_codex", "mcp", "openai"):
-        logging.getLogger(name).setLevel(logging.WARNING)
-
     handlers: list[BaseHandler] = [CommitController(submit_state, GIT_RO_SERVER_NAME, amend=amend)]
     if debug:
-        handlers.insert(0, DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
+        handlers.append(DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
 
     # Build compositor, mount servers, and run agent with a client
     comp = Compositor("compositor")
