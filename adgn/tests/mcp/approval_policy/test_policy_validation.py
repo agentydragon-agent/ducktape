@@ -54,7 +54,7 @@ class TestPolicyValidation:
 
     @pytest.mark.asyncio
     async def test_create_proposal_validates_policy(self, sqlite_persistence, docker_client):
-        """Creating proposal with failing tests raises an error."""
+        """Creating proposal with failing tests returns error."""
         engine = PolicyEngine(
             docker_client=docker_client,
             agent_id="test-agent",
@@ -65,15 +65,8 @@ class TestPolicyValidation:
         failing_policy = fetch_policy("failing_tests")
 
         async with Client(engine.policy_proposer) as sess:
-            # Try to create proposal with failing policy - should fail validation
-            try:
-                result = await sess.call_tool("create_proposal", {"content": failing_policy})
-                # If we get here without exception, result should indicate error
-                if not result.is_error:
-                    pytest.fail("Expected proposal creation to fail for policy with failing tests")
-            except Exception:
-                # Exception during validation is expected
-                pass
+            result = await sess.call_tool("create_proposal", {"content": failing_policy})
+            assert result.is_error, "Expected error for policy with failing tests"
 
     @pytest.mark.asyncio
     async def test_self_check_directly(self, sqlite_persistence, docker_client):
