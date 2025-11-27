@@ -165,19 +165,21 @@ class InfrastructureRegistry:
             await container.shutdown()
 ```
 
-#### Step 3: Bearer Token Auth
+#### Step 3: Bearer Token Auth & Routing
 
-FastMCP provides `TokenVerifier` interface. Implement custom verifier:
+FastMCP provides `TokenVerifier` interface. Implement custom verifier that also routes:
 
 ```python
-class AgentTokenVerifier:
-    """Routes requests based on bearer token type."""
+class TokenRouter:
+    """Verifies tokens and routes to appropriate compositor."""
 
     def __init__(
         self,
-        user_tokens: dict[str, str],   # token → user_id
-        agent_tokens: dict[str, AgentID],  # token → agent_id
+        registry: InfrastructureRegistry,
+        user_tokens: dict[str, str],       # token → user_id
+        agent_tokens: dict[str, AgentID],  # token → agent_id (which agent this token belongs to)
     ):
+        self.registry = registry
         self.user_tokens = user_tokens
         self.agent_tokens = agent_tokens
 
@@ -190,14 +192,30 @@ class AgentTokenVerifier:
                 expires_at=None,
             )
         if token in self.agent_tokens:
+            agent_id = self.agent_tokens[token]
             return AccessToken(
                 token=token,
-                client_id=str(self.agent_tokens[token]),
+                client_id=str(agent_id),
                 scopes=["agent"],
                 expires_at=None,
             )
         return None
+
+    def get_compositor_for_token(self, token: str) -> Compositor | None:
+        """Route to correct compositor based on token type."""
+        if token in self.user_tokens:
+            # User token → global user-facing compositor
+            return self.registry.global_compositor
+        if token in self.agent_tokens:
+            # Agent token → that agent's agent-facing compositor
+            agent_id = self.agent_tokens[token]
+            container = self.registry.get_agent(agent_id)
+            if container:
+                return container.agent_compositor  # The gated one
+        return None
 ```
+
+**Key insight**: Agent tokens are per-agent. When agent presents its token, we look up which agent it belongs to and route directly to that agent's compositor (with policy gateway).
 
 #### Step 4: Dual Compositor per Agent
 
@@ -266,24 +284,33 @@ verifier = AgentTokenVerifier(user_tokens, agent_tokens)
 ### Implementation Flow
 
 ```
+USER FLOW:
 1. User connects with user bearer token
-   → Routes to user-facing global compositor
-   → Calls: agents_boot_agent(id="abc123")
+   → TokenRouter.get_compositor_for_token() → global_compositor
+   → User sees: agents server + any booted agent_{id} sub-compositors
 
-2. InfrastructureRegistry.boot_agent("abc123")
-   - Acquires lock
-   - Creates AgentContainer (both compositors)
-   - Mounts user_compositor as "agent_abc123"
-   - Releases lock
+2. User calls: agents_boot_agent(id="abc123")
+   - InfrastructureRegistry.boot_agent() acquires lock
+   - Creates AgentContainer (agent_compositor + user_compositor)
+   - Generates agent token for "abc123"
+   - Mounts user_compositor as "agent_abc123" on global
+   - Returns agent token to user (for agent to use)
 
-3. User can now call:
+3. User can now call (via global compositor):
    - agent_abc123_send_prompt(text="Hello")
    - agent_abc123_abort_run()
    - agent_abc123_admin_approve_call(call_id="...")
 
-4. Agent connects with agent bearer token
-   → Routes directly to agent's agent_compositor
-   → Tool calls gated by policy gateway middleware
+AGENT FLOW:
+4. Agent connects with its agent bearer token
+   → TokenRouter.get_compositor_for_token() → that agent's agent_compositor
+   → Agent sees: reader, policy_proposer, ui, chat, loop, runtime
+   → All tool calls gated by policy gateway middleware
+
+5. Agent calls tools (e.g., runtime_exec)
+   → Policy gateway middleware intercepts
+   → Evaluates policy in Docker container
+   → Allow/deny/ask decision
 ```
 
 ### Notes
