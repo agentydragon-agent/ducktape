@@ -166,7 +166,6 @@ async def run_critic_agent(
 
     async with Client(comp) as mcp_client:
         # Mount standard servers (resources, compositor_meta, compositor_admin)
-        # Must be done after creating the client so resources server has gateway access
         await mount_standard_inproc_servers(compositor=comp)
         agent = await MiniCodex.create(
             model=client.model,

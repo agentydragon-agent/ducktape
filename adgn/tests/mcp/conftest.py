@@ -52,7 +52,7 @@ async def compositor_client(compositor):
 @pytest.fixture
 async def resources_server(compositor):
     """Resources server for the compositor."""
-    return make_resources_server(client=Client(compositor), compositor=compositor)
+    return make_resources_server(compositor=compositor)
 
 
 @pytest.fixture

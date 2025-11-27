@@ -3,7 +3,6 @@ from collections.abc import Iterator, Sequence
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.server import add_resource_prefix, remove_resource_prefix
 from mcp import types as mcp_types
@@ -202,20 +201,19 @@ def _build_window_payload(
     )
 
 
-def make_resources_server(name: str = "resources", *, client: Client, compositor: Compositor) -> NotifyingFastMCP:
+def make_resources_server(name: str = "resources", *, compositor: Compositor) -> NotifyingFastMCP:
     """Create a MCP server that aggregates resources across servers.
 
     Args:
         name: Server name
-        client: Direct client to compositor (should bypass policy gateway to prevent double enforcement)
-        compositor: Compositor for metadata and lifecycle listeners
+        compositor: Compositor for resource operations, metadata, and lifecycle listeners
 
     - Synthetic server injected by the runtime; reserved name is ``resources``.
     - Provides a uniform API to discover and read resources exposed by other servers.
 
     **Policy enforcement architecture:**
     - LLM tool calls to this server go through the policy gateway (tool-level enforcement)
-    - This server's internal calls to the compositor BYPASS the policy gateway via the direct client
+    - This server's internal operations use direct compositor methods to avoid client dependency
     - This prevents double policy enforcement and keeps the resources server as a pure facade
 
     Tools
@@ -237,8 +235,6 @@ def make_resources_server(name: str = "resources", *, client: Client, compositor
     mcp = NotifyingFastMCP(
         name, instructions=("Resources aggregator for listing/reading resources across mounted servers.")
     )
-
-    compositor_client = client
 
     # ---- Subscriptions index (single resource) -----------------------------
     # Internal store for subscriptions made via this server's subscribe tool.
@@ -346,7 +342,9 @@ def make_resources_server(name: str = "resources", *, client: Client, compositor
     @mcp.flat_model()
     async def list_resources_tool(input: ResourcesListArgs) -> ResourcesListResult:
         """List resources via aggregator; derive origin using FastMCP prefix logic."""
-        mcp_list = await compositor_client.list_resources()
+        # Call compositor's internal _list_resources_mcp directly to avoid client dependency
+        # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
+        mcp_list = await compositor._list_resources_mcp()
         specs = await compositor.mount_specs()
         mount_names = list(specs.keys())
         out: list[ResourceEntry] = []
@@ -379,10 +377,13 @@ def make_resources_server(name: str = "resources", *, client: Client, compositor
         """
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
         uri_value = ANY_URL.validate_python(prefixed)
-        res = await compositor_client.read_resource_mcp(uri_value)
-        return _build_window_payload(
-            res.contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes
-        )
+        # Call compositor's internal _read_resource_mcp directly to avoid client dependency
+        # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
+        # Cast needed because FastMCP returns list[ReadResourceContents] which mypy doesn't recognize
+        # as compatible with our union type, even though it is at runtime
+        contents_raw = await compositor._read_resource_mcp(uri_value)
+        contents: Sequence[mcp_types.TextResourceContents | mcp_types.BlobResourceContents] = contents_raw  # type: ignore[assignment]
+        return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
 
     @mcp.flat_model()
     async def subscribe(input: ResourcesReadArgs) -> SimpleOk:
