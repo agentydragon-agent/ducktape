@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 from typing import Any
+from urllib.parse import urlencode, urlunparse
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
@@ -19,6 +20,7 @@ import uvicorn
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.mcp_bridge import load_tokens
 from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
 from adgn.agent.server.bus import ServerBus
@@ -128,6 +130,21 @@ def _build_cfg_and_print(mcp_configs: list[Path]) -> MCPConfig:
     return cfg
 
 
+def _print_auth_url(host: str, port: int) -> None:
+    """Print the authenticated URL for accessing the UI."""
+    user_tokens, _agent_tokens = load_tokens()
+    if user_tokens:
+        # Use first user token
+        token = next(iter(user_tokens.keys()))
+        query = urlencode({"token": token})
+        url = urlunparse(("http", f"{host}:{port}", "", "", query, ""))
+        print(f"\nAuthenticated URL: {url}")
+    else:
+        print("\nNo user tokens found. Create ~/.config/adgn/tokens.yaml with:")
+        print("  users:")
+        print('    admin: "your-hex-token"')
+
+
 async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> None:
     _configure_logging_info()
     print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
@@ -176,9 +193,10 @@ async def _serve_async(host: str, port: int, model: str, system: str | None, mcp
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
-    print(f"UI server running at http://{host}:{port}")
+    print(f"\nUI server running at http://{host}:{port}")
+    _print_auth_url(host, port)
 
-    # Keep process alive; UI drives runs via WebSocket
+    # Keep process alive; UI drives runs via MCP
     await asyncio.Event().wait()
 
 
@@ -226,8 +244,6 @@ def dev(
 
     # Prepare Vite environment so frontend can reach backend on a different port
     vite_env = os.environ.copy()
-    from urllib.parse import urlunparse
-
     vite_env["VITE_BACKEND_ORIGIN"] = urlunparse(("http", f"{host}:{backend_port}", "", "", "", ""))
 
     # Start Vite dev server (HMR)
@@ -243,10 +259,19 @@ def dev(
         url = urlunparse(("http", f"{host}:{frontend_dev_port}", "", "", "", ""))
         typer.echo(f"Frontend (HMR): {url}")
         backend_url = urlunparse(("http", f"{host}:{backend_port}", "", "", "", ""))
-        typer.echo(f"Backend (WS/API): {backend_url}")
+        typer.echo(f"Backend (MCP): {backend_url}")
+        _print_auth_url(host, frontend_dev_port)
         if open_browser:
+            # Try to open authenticated URL if token available
+            user_tokens, _ = load_tokens()
+            if user_tokens:
+                token = next(iter(user_tokens.keys()))
+                query = urlencode({"token": token})
+                auth_url = urlunparse(("http", f"{host}:{frontend_dev_port}", "", "", query, ""))
+            else:
+                auth_url = url
             with contextlib.suppress(Exception):
-                subprocess.Popen(["open", url])
+                subprocess.Popen(["open", auth_url])
 
         # Build FastAPI app; agent lifecycle is handled by the runtime container (registry)
         app_fastapi = create_app()

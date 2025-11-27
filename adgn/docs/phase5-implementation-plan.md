@@ -30,13 +30,14 @@ Components updated: AgentsSidebar, App, ServersPanel, ProposalCard, RightSidebar
 
 ---
 
-## Phase 5c: REST API Removal
+## Phase 5c: REST API Removal ✅
 
 **Goal**: Clean removal of REST endpoints.
 
-- [ ] Remove all `/api/*` routes from `app.py`
-- [ ] Keep only: `/`, `/vite.svg`, `/static/*`, `/mcp`
-- [ ] Update CLI to print authenticated URL: `http://host:port?token=...`
+- [x] Remove all `/api/*` routes from `app.py`
+- [x] Keep only: `/`, `/vite.svg`, `/static/*`, `/assets/*`, `/mcp`
+- [x] Update CLI to print authenticated URL: `http://host:port?token=...`
+- [x] Update README documentation
 
 ---
 

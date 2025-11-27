@@ -3,43 +3,25 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from contextlib import AsyncExitStack
-from datetime import datetime
 import logging
 import os
 from pathlib import Path
-from uuid import UUID
 
-# (runtime container constants used only in shared status builder)
 import docker  # type: ignore
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastmcp.mcp_config import MCPConfig
-from pydantic import BaseModel
 import uvicorn
 
 from adgn.agent.mcp_bridge import InfrastructureRegistry, create_global_compositor, load_tokens
-from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist import RunRow
-from adgn.agent.persist.events import EventRecord
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.registry import AgentRegistry
-from adgn.agent.server.exceptions import (
-    AgentNotFoundError,
-    AgentSessionNotReadyError,
-    ApprovalNotFoundError,
-    PolicyOperationError,
-)
 from adgn.agent.server.mcp_routing import TOKEN_TABLE, MCPRoutingMiddleware
-from adgn.agent.server.protocol import Snapshot
-from adgn.agent.server.runtime import AgentSession
-from adgn.agent.server.status_shared import AgentStatusCore, build_agent_status_core
-from adgn.agent.types import AgentID
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 
-PROTOCOL_VERSION = "1.0.0"
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
 
 logger = logging.getLogger(__name__)
@@ -52,72 +34,11 @@ def default_client_factory(model: str) -> OpenAIModelProto:
     return build_client(model, enable_debug_logging=True)
 
 
-# Request/Response models
-
-
-# Typed status bundle (references component models defined above)
-class AgentStatus(AgentStatusCore):
-    """HTTP response model for agent status; mirrors shared core schema."""
-
-
-class RunsList(BaseModel):
-    runs: list[RunRow]
-
-
-class RunInfo(BaseModel):
-    run: RunRow | None
-
-
-class RunEvents(BaseModel):
-    events: list[EventRecord]
-
-    # Proposals API (list and read content)
-
-
-class ProposalRow(BaseModel):
-    id: str
-    status: ProposalStatus
-    created_at: datetime
-    decided_at: datetime | None = None
-
-
-class ProposalsList(BaseModel):
-    proposals: list[ProposalRow]
-
-
-class ProposalContent(BaseModel):
-    id: str
-    content: str
-    status: ProposalStatus
-    created_at: datetime
-    decided_at: datetime | None = None
-
-
-## WebSocket message models moved to ws.py
-
-
 # Factory to create an isolated app with fresh manager/session
 
 
 def create_app(*, require_static_assets: bool = True) -> FastAPI:
     app = FastAPI()
-
-    # Register exception handlers for domain exceptions
-    @app.exception_handler(AgentNotFoundError)
-    async def handle_agent_not_found(request, exc: AgentNotFoundError):
-        raise HTTPException(status_code=404, detail="agent_not_found") from exc
-
-    @app.exception_handler(AgentSessionNotReadyError)
-    async def handle_session_not_ready(request, exc: AgentSessionNotReadyError):
-        raise HTTPException(status_code=500, detail="no_session") from exc
-
-    @app.exception_handler(PolicyOperationError)
-    async def handle_policy_operation_error(request, exc: PolicyOperationError):
-        raise HTTPException(status_code=400, detail=f"policy_operation_error: {exc.reason}") from exc
-
-    @app.exception_handler(ApprovalNotFoundError)
-    async def handle_approval_not_found(request, exc: ApprovalNotFoundError):
-        raise HTTPException(status_code=404, detail="approval_not_found") from exc
 
     def _mount_static(path: str, directory: Path, name: str) -> None:
         if not directory.exists():
@@ -223,20 +144,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                 await container._ui_manager.flush()
         await app.state.registry.close_all()
 
-    # Helper functions to reduce boilerplate
-    async def get_container(agent_id: AgentID):
-        """Get live container for agent, raising AgentNotFoundError if missing."""
-        try:
-            return await app.state.registry.ensure_live(agent_id, with_ui=True)
-        except KeyError as e:
-            raise AgentNotFoundError(agent_id) from e
-
-    def get_session(container, agent_id: AgentID) -> AgentSession:
-        """Get session from container, raising AgentSessionNotReadyError if not initialized."""
-        if container.runtime.session is None:
-            raise AgentSessionNotReadyError(agent_id)
-        return container.runtime.session
-
     @app.get("/", response_model=None)
     async def index() -> Response:
         # Serve built Svelte app
@@ -255,51 +162,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                 raise RuntimeError("Missing vite.svg asset")
             return Response(content="", media_type="image/svg+xml", status_code=404)
         return FileResponse(svg)
-
-    # -----------------------
-    # Agents/Runs API (alpha)
-    # -----------------------
-
-    # No-op helper removed: direct registry.create is used where needed
-
-    # Pull current snapshot for an agent
-    @app.get("/api/agents/{agent_id}/snapshot", response_model=Snapshot)
-    async def api_get_snapshot(agent_id: AgentID) -> Snapshot:
-        container = await get_container(agent_id)
-        sess = get_session(container, agent_id)
-        sampling = await container.running.compositor.sampling_snapshot()
-        return await sess.build_snapshot(sampling=sampling)
-
-    @app.get("/api/agents/{agent_id}/status", response_model=AgentStatus)
-    async def api_agent_status(agent_id: AgentID) -> AgentStatus:
-        core = await build_agent_status_core(app, agent_id)
-        # Re-validate into HTTP schema; dump as JSON-like to coerce enums/inner models
-        return AgentStatus(**core.model_dump(mode="json"))
-
-    @app.get("/api/runs", response_model=RunsList)
-    async def api_list_runs(agent_id: AgentID | None = None, limit: int = 50) -> RunsList:
-        rows = await app.state.persistence.list_runs(agent_id=agent_id, limit=limit)
-        return RunsList(runs=rows)
-
-    @app.get("/api/runs/{run_id}", response_model=RunInfo)
-    async def api_get_run(run_id: UUID) -> RunInfo:
-        row = await app.state.persistence.get_run(run_id)
-        return RunInfo(run=row)
-
-    @app.get("/api/runs/{run_id}/events", response_model=RunEvents)
-    async def api_get_run_events(run_id: UUID) -> RunEvents:
-        events = await app.state.persistence.load_events(run_id)
-        return RunEvents(events=events)
-
-    # Proposals list/content
-    @app.get("/api/agents/{agent_id}/proposals", response_model=ProposalsList)
-    async def api_list_proposals(agent_id: AgentID) -> ProposalsList:
-        return ProposalsList(
-            proposals=[
-                ProposalRow(id=rec.id, status=rec.status, created_at=rec.created_at, decided_at=rec.decided_at)
-                for rec in await app.state.persistence.list_policy_proposals(agent_id)
-            ]
-        )
 
     # Mount MCP routing endpoint
     # Note: The global_compositor is created during startup, so this uses a lazy sub-app
