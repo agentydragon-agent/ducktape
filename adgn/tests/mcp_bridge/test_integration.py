@@ -83,23 +83,15 @@ def agent_app_factory():
 
 
 @pytest.fixture
-def registry_factory(sqlite_persistence):
-    """Factory to create InfrastructureRegistry with real persistence.
-
-    Uses mock Docker client since Docker may not be available in test environments.
-    """
-
-    def make_registry(**kwargs):
-        return InfrastructureRegistry(
-            persistence=kwargs.get("persistence", sqlite_persistence),
-            model="test-model",
-            client_factory=lambda m: MagicMock(),
-            docker_client=kwargs.get("docker_client", MagicMock()),
-            mcp_config=MCPConfig(mcpServers={}),
-            **{k: v for k, v in kwargs.items() if k not in ("persistence", "docker_client")},
-        )
-
-    return make_registry
+def registry(sqlite_persistence):
+    """InfrastructureRegistry with real persistence and mock Docker client."""
+    return InfrastructureRegistry(
+        persistence=sqlite_persistence,
+        model="test-model",
+        client_factory=lambda m: MagicMock(),
+        docker_client=MagicMock(),
+        mcp_config=MCPConfig(mcpServers={}),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -305,32 +297,27 @@ class TestAgentControlServer:
 class TestInfrastructureRegistry:
     """Tests for InfrastructureRegistry agent lifecycle management."""
 
-    def test_get_agent_returns_none_for_unknown(self, registry_factory):
+    def test_get_agent_returns_none_for_unknown(self, registry):
         """get_agent returns None for unknown agent."""
-        registry = registry_factory()
         assert registry.get_agent("unknown-id") is None
 
-    def test_list_agents_empty_initially(self, registry_factory):
+    def test_list_agents_empty_initially(self, registry):
         """list_agents returns empty list initially."""
-        registry = registry_factory()
         assert registry.list_agents() == []
 
-    def test_is_external_false_for_unknown(self, registry_factory):
+    def test_is_external_false_for_unknown(self, registry):
         """is_external returns False for unknown agent."""
-        registry = registry_factory()
         assert registry.is_external("unknown-id") is False
 
     @pytest.mark.asyncio
-    async def test_shutdown_agent_no_op_for_unknown(self, registry_factory):
+    async def test_shutdown_agent_no_op_for_unknown(self, registry):
         """shutdown_agent does nothing for unknown agent."""
-        registry = registry_factory()
         # Should not raise
         await registry.shutdown_agent("unknown-id")
 
     @pytest.mark.asyncio
-    async def test_shutdown_agent_closes_container(self, registry_factory, mock_container, mock_compositor):
+    async def test_shutdown_agent_closes_container(self, registry, mock_container, mock_compositor):
         """shutdown_agent closes container and unmounts from compositor."""
-        registry = registry_factory()
         registry.global_compositor = mock_compositor
         registry._agents["test-agent-1"] = mock_container
 
@@ -341,9 +328,8 @@ class TestInfrastructureRegistry:
         assert "test-agent-1" not in registry._agents
 
     @pytest.mark.asyncio
-    async def test_shutdown_agent_cleans_up_external_tracking(self, registry_factory, mock_container, mock_compositor):
+    async def test_shutdown_agent_cleans_up_external_tracking(self, registry, mock_container, mock_compositor):
         """shutdown_agent removes agent from external tracking set."""
-        registry = registry_factory()
         registry.global_compositor = mock_compositor
         registry._agents["test-agent-1"] = mock_container
         registry._external_agents.add("test-agent-1")
@@ -355,9 +341,8 @@ class TestInfrastructureRegistry:
         assert registry.is_external("test-agent-1") is False
 
     @pytest.mark.asyncio
-    async def test_shutdown_all_shuts_down_all_agents(self, registry_factory, mock_compositor):
+    async def test_shutdown_all_shuts_down_all_agents(self, registry, mock_compositor):
         """shutdown_all shuts down all registered agents."""
-        registry = registry_factory()
         registry.global_compositor = mock_compositor
 
         # Add multiple mock containers
@@ -381,9 +366,8 @@ class TestInfrastructureRegistry:
         assert len(registry._agents) == 0
 
     @pytest.mark.asyncio
-    async def test_boot_agent_returns_existing_if_already_booted(self, registry_factory, mock_container):
+    async def test_boot_agent_returns_existing_if_already_booted(self, registry, mock_container):
         """boot_agent returns existing container if already booted."""
-        registry = registry_factory()
         registry._agents["test-agent-1"] = mock_container
 
         result = await registry.boot_agent("test-agent-1")
@@ -391,17 +375,14 @@ class TestInfrastructureRegistry:
         assert result is mock_container
 
     @pytest.mark.asyncio
-    async def test_boot_agent_raises_for_unknown_agent(self, registry_factory):
+    async def test_boot_agent_raises_for_unknown_agent(self, registry):
         """boot_agent raises KeyError if agent not in DB (using real persistence)."""
-        registry = registry_factory()
-
         with pytest.raises(KeyError, match="Agent not found"):
             await registry.boot_agent("nonexistent-agent")
 
     @pytest.mark.asyncio
-    async def test_create_external_agent_returns_existing_if_already_created(self, registry_factory, mock_container):
+    async def test_create_external_agent_returns_existing_if_already_created(self, registry, mock_container):
         """create_external_agent returns existing container if already exists."""
-        registry = registry_factory()
         registry._agents["test-agent-1"] = mock_container
 
         result = await registry.create_external_agent("test-agent-1")
@@ -409,9 +390,8 @@ class TestInfrastructureRegistry:
         assert result is mock_container
 
     @pytest.mark.asyncio
-    async def test_create_external_agent_marks_as_external(self, registry_factory, mock_compositor):
+    async def test_create_external_agent_marks_as_external(self, registry, mock_compositor):
         """create_external_agent marks agent as external."""
-        registry = registry_factory()
         registry.global_compositor = mock_compositor
 
         # Patch build_container to return a mock
