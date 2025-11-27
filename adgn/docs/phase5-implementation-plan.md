@@ -43,11 +43,11 @@ Components updated: AgentsSidebar, App, ServersPanel, ProposalCard, RightSidebar
 
 ## Phase 5d: Test Coverage
 
-- [ ] Unit tests for `TokenRoutingASGI`
-- [ ] Unit tests for `InfrastructureRegistry`
-- [ ] Unit tests for `agents` server
-- [ ] Integration tests for full user flow
-- [ ] Integration tests for external agent flow
+- [x] Unit tests for `TokenRoutingASGI`
+- [x] Unit tests for `InfrastructureRegistry`
+- [x] Unit tests for `agents` server
+- [ ] Integration tests for full user flow (future)
+- [ ] Integration tests for external agent flow (future)
 
 ---
 
