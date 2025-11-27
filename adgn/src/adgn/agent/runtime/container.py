@@ -7,12 +7,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
 import os
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from docker.client import DockerClient
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
+from pydantic import BaseModel, Field
+
+from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import load_default_policy_source
@@ -58,6 +61,33 @@ class CloseResult:
 
 
 type ActorResult = SamplingSnapshot | CloseResult | None
+
+
+# ---- Agent control MCP models ------------------------------------------------
+
+
+class SendPromptInput(BaseModel):
+    """Input for the send_prompt tool."""
+
+    prompt: str = Field(description="The prompt to send to start an agent run")
+
+
+class SendPromptOutput(BaseModel):
+    """Output for the send_prompt tool."""
+
+    status: Literal["started", "error"]
+    message: str
+
+
+class AbortRunInput(BaseModel):
+    """Input for the abort_run tool (empty - no parameters)."""
+
+
+class AbortRunOutput(BaseModel):
+    """Output for the abort_run tool."""
+
+    status: Literal["aborted", "error"]
+    message: str
 
 
 class _ActorMsg:
@@ -188,7 +218,7 @@ class AgentContainer:
         meta = CompositorMetaClient(self._compositor_client)
         return cast(dict[str, ServerEntry], await meta.list_states())
 
-    def make_control_server(self, name: str) -> FastMCP:
+    def make_control_server(self, name: str) -> FlatModelFastMCP:
         """Create an agent control MCP server for this container.
 
         Tools:
@@ -199,34 +229,26 @@ class AgentContainer:
             name: Server name
 
         Returns:
-            FastMCP server instance
+            FlatModelFastMCP server instance
         """
-        mcp = FastMCP(name)
+        mcp = FlatModelFastMCP(name)
         container = self  # capture self for closures
 
-        @mcp.tool()
-        async def send_prompt(prompt: str) -> dict[str, Any]:
+        @mcp.tool(flat=True)
+        async def send_prompt(input: SendPromptInput) -> SendPromptOutput:
             """Send a prompt to start an agent run."""
             if container.session is None:
-                return {"status": "error", "message": "Agent session not initialized"}
-            try:
-                await container.session.run(prompt)
-                return {"status": "started", "message": "Prompt sent successfully"}
-            except Exception as e:
-                logger.error(f"Failed to send prompt: {e}", exc_info=True)
-                return {"status": "error", "message": str(e)}
+                return SendPromptOutput(status="error", message="Agent session not initialized")
+            await container.session.run(input.prompt)
+            return SendPromptOutput(status="started", message="Prompt sent successfully")
 
-        @mcp.tool()
-        async def abort_run() -> dict[str, Any]:
+        @mcp.tool(flat=True)
+        async def abort_run(input: AbortRunInput) -> AbortRunOutput:
             """Abort the currently running agent."""
             if container.session is None:
-                return {"status": "error", "message": "Agent session not initialized"}
-            try:
-                await container.session.cancel_active_run()
-                return {"status": "aborted", "message": "Run aborted successfully"}
-            except Exception as e:
-                logger.error(f"Failed to abort run: {e}", exc_info=True)
-                return {"status": "error", "message": str(e)}
+                return AbortRunOutput(status="error", message="Agent session not initialized")
+            await container.session.cancel_active_run()
+            return AbortRunOutput(status="aborted", message="Run aborted successfully")
 
         return mcp
 
