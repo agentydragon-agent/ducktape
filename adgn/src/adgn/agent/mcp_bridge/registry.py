@@ -16,7 +16,6 @@ import logging
 from docker.client import DockerClient
 from fastmcp.mcp_config import MCPConfig
 
-from adgn.agent.mcp_bridge.servers.agent_control import make_agent_control_server
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import create_agent_from_preset
 from adgn.agent.runtime.container import AgentContainer, build_container
@@ -80,7 +79,7 @@ class InfrastructureRegistry:
             logger.warning(f"Cannot mount agent_control: compositor not initialized for {container.agent_id}")
             return
 
-        control_server = make_agent_control_server(AGENT_CONTROL_SERVER_NAME, container)
+        control_server = container.make_control_server(AGENT_CONTROL_SERVER_NAME)
         await container._compositor.mount_inproc(AGENT_CONTROL_SERVER_NAME, control_server)
         logger.debug(f"Mounted agent_control for internal agent: {container.agent_id}")
 

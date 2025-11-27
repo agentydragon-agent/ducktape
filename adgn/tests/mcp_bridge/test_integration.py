@@ -42,11 +42,33 @@ def mock_compositor():
 @pytest.fixture
 def mock_container():
     """Create mock agent container for verifying close calls."""
+    from fastmcp import FastMCP
+
     container = MagicMock()
     container.agent_id = "test-agent-1"
     container._compositor = MagicMock()
     container.session = None  # For agent_control tests
     container.close = AsyncMock()
+
+    # Real make_control_server for testing
+    def _make_control_server(name: str) -> FastMCP:
+        mcp = FastMCP(name)
+
+        @mcp.tool()
+        async def send_prompt(prompt: str) -> dict:
+            if container.session is None:
+                return {"status": "error", "message": "Agent session not initialized"}
+            return {"status": "started", "message": "Prompt sent successfully"}
+
+        @mcp.tool()
+        async def abort_run() -> dict:
+            if container.session is None:
+                return {"status": "error", "message": "Agent session not initialized"}
+            return {"status": "aborted", "message": "Run aborted successfully"}
+
+        return mcp
+
+    container.make_control_server = _make_control_server
     return container
 
 
