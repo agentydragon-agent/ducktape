@@ -3,19 +3,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from datetime import UTC, datetime
-import json
 import logging
 from typing import Any
 import uuid
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.approvals import ApprovalHub
 from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
-from adgn.agent.persist import RunStatus
+from adgn.agent.persist import Persistence, RunStatus
 from adgn.agent.persist.handler import RunPersistenceHandler
-from adgn.agent.server.bus import UiEndTurn, UiMessage
+from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
-    ApprovalBrief,
     ApprovalPolicyInfo,
     FunctionCallOutput,
     ProposalInfo,
@@ -33,9 +30,9 @@ from adgn.agent.server.protocol import (
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
 from adgn.agent.server.status_shared import RunPhase, determine_run_phase
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp.approval_policy.engine import PolicyEngine
-from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -111,58 +108,43 @@ class AgentSession:
     def __init__(
         self,
         manager: ConnectionManager,
-        approval_hub: ApprovalHub | None = None,
         *,
-        persistence=None,
-        agent_id: str | None = None,
-        ui_bus: Any | None = None,
+        persistence: Persistence | None = None,
+        agent_id: AgentID | None = None,
+        ui_bus: ServerBus | None = None,
         approval_engine: PolicyEngine | None = None,
-        policy_gateway: PolicyGatewayMiddleware | None = None,
     ) -> None:
         self._task: asyncio.Task | None = None
-        self.approval_hub = approval_hub or ApprovalHub()
         self._lock = asyncio.Lock()
         self.active_run: RunState | None = None
         self._run_counter = 0
         self._agent: MiniCodex | None = None
         self._manager = manager
-        self._persistence = persistence
-        self.ui_bus: Any | None = ui_bus
+        self._persistence: Persistence | None = persistence
+        self.ui_bus: ServerBus | None = ui_bus
         self.ui_state: UiState = new_state()
         self.approval_engine: PolicyEngine | None = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
         # Optional: agent identifier to associate runs with a specific hosted agent
-        self.agent_id: str | None = agent_id
-        # No Docker client on session; runtime server handles any containerization
-        self._policy_gateway = policy_gateway
+        self.agent_id: AgentID | None = agent_id
 
     def current_run_phase(self) -> RunPhase:
         """Compute the current run phase from live signals (no stored state).
 
         - IDLE: no active run
-        - WAITING_APPROVAL: there are pending approvals
-        - TOOLS_RUNNING: MCP policy gateway has in-flight tool calls
-        - SAMPLING: default while running without approvals
+        - SAMPLING: default while running
+
+        Note: WAITING_APPROVAL and TOOLS_RUNNING phases were removed.
+        UI should read pending://calls resource directly for approval state.
         """
-        pending = len(self.approval_hub.pending)
-        # Check policy gateway for in-flight tool calls (if available)
-        has_inflight = bool(self._policy_gateway and self._policy_gateway.has_inflight_calls())
         return determine_run_phase(
             active_run_id=(self.active_run.run_id if self.active_run else None),
-            pending_approvals=pending,
-            mcp_has_inflight=has_inflight,
+            pending_approvals=0,
+            mcp_has_inflight=False,
         )
 
     async def build_snapshot(self, sampling=None) -> Snapshot:
-        if self.active_run:
-            self.active_run.pending_approvals = [
-                ApprovalBrief(
-                    call_id=req.tool_call.call_id,
-                    tool_key=req.tool_key,
-                    args=(json.loads(req.tool_call.args_json or "{}") if req.tool_call.args_json else {}),
-                )
-                for req in self.approval_hub._requests.values()
-            ]
+        # Note: pending_approvals not populated here; UI reads pending://calls resource via MCP
 
         approval_policy = None
         if self.approval_engine is None:

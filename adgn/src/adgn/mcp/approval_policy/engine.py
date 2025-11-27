@@ -1,36 +1,82 @@
+"""PolicyEngine: Complete policy subsystem with servers, state, and middleware."""
+
+from __future__ import annotations
+
 import asyncio
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from enum import StrEnum
 from importlib import resources
+import json
 import logging
+from typing import TYPE_CHECKING, Any
 import uuid
 
 from docker.client import DockerClient
+from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from fastmcp.server.context import ServerSession
+from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.tool import ToolResult
 from jinja2 import Template
+from mcp import McpError, types as mtypes
+from mcp.types import ErrorData
 from pydantic import AnyUrl, BaseModel
 
+from adgn.agent.approvals import ApprovalRequest, ApprovalToolCall
+from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist import Persistence
-from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
+from adgn.agent.persist import ApprovalOutcome, Persistence
+from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.policy_eval.runner import run_policy_source
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import (
     APPROVAL_POLICY_PROPOSALS_INDEX_URI,
     APPROVAL_POLICY_RESOURCE_URI,
-    APPROVAL_POLICY_SERVER_NAME_APPROVER,
-    APPROVAL_POLICY_SERVER_NAME_PROPOSER,
-    APPROVAL_POLICY_SERVER_NAME_READER,
+    PENDING_CALLS_URI,
+    POLICY_BACKEND_RESERVED_MISUSE_CODE,
+    POLICY_BACKEND_RESERVED_MISUSE_MSG,
+    POLICY_DENIED_ABORT_CODE,
+    POLICY_DENIED_ABORT_MSG,
+    POLICY_DENIED_CONTINUE_CODE,
+    POLICY_DENIED_CONTINUE_MSG,
+    POLICY_EVALUATOR_ERROR_CODE,
+    POLICY_EVALUATOR_ERROR_MSG,
+    POLICY_GATEWAY_STAMP_KEY,
     RUNTIME_EXEC_TOOL_NAME,
     RUNTIME_SERVER_NAME,
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
+if TYPE_CHECKING:
+    from adgn.mcp.compositor.server import Compositor
+
 logger = logging.getLogger(__name__)
+
+
+# ---- Enums for consolidated tools ----
+
+
+class CallDecision(StrEnum):
+    """Decision for a pending tool call."""
+
+    APPROVE = "approve"
+    DENY_ABORT = "deny_abort"
+    DENY_CONTINUE = "deny_continue"
+
+
+class ProposalDecision(StrEnum):
+    """Decision for a policy proposal."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
+# ---- Pydantic models ----
 
 
 class CreateProposalArgs(BaseModel):
@@ -48,21 +94,293 @@ class ProposalDescriptor(BaseModel):
     decided_at: datetime | None = None
 
 
-class ApproveProposalArgs(BaseModel):
-    id: str
+class DecideCallArgs(BaseModel):
+    call_id: str
+    decision: CallDecision
 
 
-class RejectProposalArgs(BaseModel):
-    id: str
+class DecideProposalArgs(BaseModel):
+    proposal_id: str
+    decision: ProposalDecision
 
 
 class SetPolicyTextArgs(BaseModel):
-    """Direct policy set input for admin endpoint.
-
-    Uses field name 'source' to distinguish from proposal 'content'.
-    """
+    """Direct policy set input for admin endpoint."""
 
     source: str
+
+
+class PendingCallItem(BaseModel):
+    """Pending call approval request exposed to UI."""
+
+    call_id: str
+    tool_key: str
+    args_json: str | None = None
+
+
+# ---- Private ApprovalHub (internal to PolicyEngine) ----
+
+
+class _ApprovalHub:
+    """In-process rendezvous for pending approval/decision events.
+
+    Internal to PolicyEngine - not exposed publicly.
+    """
+
+    def __init__(self, on_change: Callable[[], None]) -> None:
+        self._futures: dict[str, asyncio.Future[ContinueDecision | AbortTurnDecision]] = {}
+        self._requests: dict[str, ApprovalRequest] = {}
+        self._lock = asyncio.Lock()
+        self._on_change = on_change
+
+    def _notify_change(self) -> None:
+        self._on_change()
+
+    async def await_decision(self, call_id: str, request: ApprovalRequest) -> ContinueDecision | AbortTurnDecision:
+        async with self._lock:
+            self._requests[call_id] = request
+            fut = self._futures.get(call_id)
+            if fut is None:
+                fut = asyncio.get_running_loop().create_future()
+                self._futures[call_id] = fut
+            self._notify_change()
+        return await fut
+
+    def resolve(self, call_id: str, decision: ContinueDecision | AbortTurnDecision) -> None:
+        fut = self._futures.pop(call_id, None)
+        self._requests.pop(call_id, None)
+        if fut is not None and not fut.done():
+            fut.set_result(decision)
+        self._notify_change()
+
+    @property
+    def pending(self) -> dict[str, ApprovalRequest]:
+        """View of pending approval requests."""
+        return self._requests
+
+
+# ---- Gateway middleware helpers ----
+
+
+def _raise_if_reserved_code(e: McpError, name: str) -> None:
+    """Check if error uses reserved policy codes and raise appropriate error."""
+    code: int | None = None
+    msg: str | None = None
+    stamped: bool = False
+    error = e.error
+    try:
+        code = int(error.code)
+    except Exception:
+        code = None
+    try:
+        msg = str(error.message)
+    except Exception:
+        msg = None
+    data = error.data
+    if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
+        stamped = True
+    if msg is None:
+        msg = str(e)
+    if not stamped:
+        for a in e.args:
+            if isinstance(a, mtypes.ErrorData):
+                data = a.data
+                if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
+                    stamped = True
+                    break
+            if isinstance(a, dict):
+                try:
+                    ad = mtypes.ErrorData.model_validate(a)
+                    data = ad.data
+                    if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
+                        stamped = True
+                        break
+                except Exception:
+                    data = a.get("data")
+                    if isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True:
+                        stamped = True
+                        break
+
+    if (
+        stamped
+        or (code in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE))
+        or (msg in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG))
+    ):
+        raise McpError(
+            ErrorData(
+                code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
+                message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
+                data={
+                    POLICY_GATEWAY_STAMP_KEY: True,
+                    "name": name,
+                    "backend_code": code if code is not None else "unknown",
+                },
+            )
+        )
+
+
+_DENIAL_MAP: dict[ApprovalDecision, tuple[int, str]] = {
+    ApprovalDecision.DENY_ABORT: (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_ABORT_MSG),
+    ApprovalDecision.DENY_CONTINUE: (POLICY_DENIED_CONTINUE_CODE, POLICY_DENIED_CONTINUE_MSG),
+}
+
+
+def _policy_denied_error(decision: ApprovalDecision, name: str, reason: str | None) -> McpError:
+    code, msg = _DENIAL_MAP[decision]
+    return McpError(
+        ErrorData(
+            code=code,
+            message=msg,
+            data={POLICY_GATEWAY_STAMP_KEY: True, "decision": str(decision), "name": name, "reason": reason},
+        )
+    )
+
+
+# ---- PolicyGatewayMiddleware (internal to PolicyEngine) ----
+
+
+class _PolicyGatewayMiddleware(Middleware):
+    """Approval-enforcing middleware installed on the agent compositor.
+
+    - Gates tools/call via policy evaluation
+    - Denials raise explicit JSON-RPC errors using reserved codes/messages
+    - ASK blocks until hub resolves to Continue/Abort
+    """
+
+    def __init__(
+        self,
+        *,
+        hub: _ApprovalHub,
+        evaluate_policy: Callable[[PolicyRequest], Awaitable[PolicyResponse]],
+        record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
+    ) -> None:
+        self._hub = hub
+        self._evaluate = evaluate_policy
+        self._record = record_outcome
+        self._inflight: dict[str, str] = {}
+
+    def has_inflight_calls(self) -> bool:
+        """Check if there are any tool calls currently in flight."""
+        return len(self._inflight) > 0
+
+    def inflight_count(self) -> int:
+        """Return the number of tool calls currently in flight."""
+        return len(self._inflight)
+
+    async def on_call_tool(self, context: MiddlewareContext[Any], call_next: CallNext[Any, ToolResult]) -> ToolResult:
+        name = context.message.name
+        arguments = context.message.arguments
+        tool_key = name
+
+        # Evaluate policy
+        try:
+            decision_res = await self._evaluate(PolicyRequest(name=name, arguments=arguments))
+            decision = decision_res.decision
+            rationale = decision_res.rationale
+        except Exception as e:
+            logger.warning("policy evaluator error", exc_info=e)
+            raise McpError(
+                ErrorData(
+                    code=POLICY_EVALUATOR_ERROR_CODE,
+                    message=POLICY_EVALUATOR_ERROR_MSG,
+                    data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "reason": f"{type(e).__name__}: {e}"},
+                )
+            )
+
+        logger.debug("Policy decision: %s → %s (%s)", name, decision, rationale or "")
+
+        if decision is ApprovalDecision.ALLOW:
+            if self._record is not None:
+                await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_ALLOW)
+
+            call_id = uuid.uuid4().hex
+            self._inflight[call_id] = tool_key
+            try:
+                call_result = await call_next(context)
+                if bool(getattr(call_result, "is_error", False)):
+                    err = getattr(call_result, "error", None)
+                    if err is None:
+                        return call_result
+                    try:
+                        ed = mtypes.ErrorData.model_validate(err)
+                    except Exception:
+                        return call_result
+                    stamped_downstream = isinstance(ed.data, dict) and ed.data.get(POLICY_GATEWAY_STAMP_KEY) is True
+                    if (
+                        stamped_downstream
+                        or ed.code
+                        in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
+                        or ed.message
+                        in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG)
+                    ):
+                        raise McpError(
+                            ErrorData(
+                                code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
+                                message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
+                                data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": ed.code},
+                            )
+                        )
+                return call_result
+            except McpError as e:
+                _raise_if_reserved_code(e, name)
+                raise
+            except Exception as e:
+                s = str(e)
+                if (POLICY_DENIED_ABORT_MSG in s) or (POLICY_DENIED_CONTINUE_MSG in s) or (POLICY_EVALUATOR_ERROR_MSG in s):
+                    raise McpError(
+                        ErrorData(
+                            code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
+                            message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
+                            data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
+                        )
+                    )
+                raise
+            finally:
+                self._inflight.pop(call_id, None)
+
+        if decision is ApprovalDecision.DENY_ABORT:
+            if self._record is not None:
+                await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
+            raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, rationale)
+
+        if decision is ApprovalDecision.DENY_CONTINUE:
+            if self._record is not None:
+                await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_CONTINUE)
+            raise _policy_denied_error(ApprovalDecision.DENY_CONTINUE, name, rationale)
+
+        # ASK: block until resolved via hub
+        call_id = "pg:" + uuid.uuid4().hex
+        req = ApprovalRequest(
+            tool_key=tool_key,
+            tool_call=ApprovalToolCall(
+                name=name, call_id=call_id, args_json=(json.dumps(arguments) if arguments else None)
+            ),
+        )
+        decision_obj = await self._hub.await_decision(call_id, req)
+
+        if isinstance(decision_obj, ContinueDecision):
+            if self._record is not None:
+                await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
+            try:
+                return await call_next(context)
+            except McpError as e:
+                _raise_if_reserved_code(e, name)
+                raise
+        if isinstance(decision_obj, AbortTurnDecision):
+            if self._record is not None:
+                await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
+            raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, decision_obj.reason)
+
+        raise McpError(
+            ErrorData(
+                code=-32603,
+                message="internal_error: unknown approval decision type",
+                data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "decision_type": type(decision_obj).__name__},
+            )
+        )
+
+
+# ---- Helper to load instructions ----
 
 
 def _load_instructions() -> str:
@@ -78,54 +396,60 @@ def _load_instructions() -> str:
     return str(rendered)
 
 
+# ---- PolicyEngine ----
+
+
 class PolicyEngine:
-    """Approval policy state and business logic with 3 owned MCP servers.
+    """Complete policy subsystem - servers, state, and middleware.
 
-    This class holds policy state and exposes it via 3 MCP servers:
-    - reader: resources (policy.py, proposals) + evaluate_policy tool
-    - proposer: create_proposal, withdraw_proposal tools
-    - approver: approve_proposal, reject_proposal, set_policy_text tools
-
-    The reader broadcasts resource updates on policy/proposal changes.
+    Owns:
+    - reader: NotifyingFastMCP with evaluate_policy, policy resources, pending://calls
+    - policy_proposer: FastMCP with propose/withdraw tools
+    - admin: FastMCP with decide_call, decide_proposal, set_policy tools
+    - _hub: Internal ApprovalHub for pending call coordination
+    - _gateway: PolicyGatewayMiddleware to install on compositor
     """
 
     def __init__(
         self,
         *,
         docker_client: DockerClient,
-        agent_id: str,
+        agent_id: AgentID,
         persistence: Persistence,
         policy_source: str,
     ) -> None:
         # Policy state
         self._policy_source: str = policy_source
-        self._policy_version: int = 1  # Start at 1 since we have default content
+        self._policy_version: int = 1
 
         # Context for policy operations
         self.docker_client: DockerClient = docker_client
-        self.agent_id: str = agent_id
+        self.agent_id: AgentID = agent_id
         self.persistence: Persistence = persistence
 
-        # Broadcast coordination for deterministic waits (tests)
+        # Broadcast coordination
         self._broadcast_version: int = 0
         self._broadcast_cond: asyncio.Condition = asyncio.Condition()
+        self._bg_tasks: set[asyncio.Task] = set()
+
+        # Create hub with on_change callback that broadcasts pending://calls
+        self._hub = _ApprovalHub(on_change=self._on_hub_change)
 
         # Create owned servers
-        self.reader = NotifyingFastMCP(name=APPROVAL_POLICY_SERVER_NAME_READER, instructions=_load_instructions())
-        self.proposer = FastMCP(name=APPROVAL_POLICY_SERVER_NAME_PROPOSER, instructions=None)
-        self.approver = FastMCP(name=APPROVAL_POLICY_SERVER_NAME_APPROVER, instructions=None)
+        self.reader = NotifyingFastMCP(name="reader", instructions=_load_instructions())
+        self.policy_proposer = FastMCP(name="policy_proposer", instructions=None)
+        self.admin = FastMCP(name="admin", instructions=None)
 
         # Register tools/resources on each server
         self._register_reader()
         self._register_proposer()
-        self._register_approver()
+        self._register_admin()
 
         # Protocol-level resource subscriptions on reader
         self._session_subscriptions: defaultdict[ServerSession, set[AnyUrl]] = defaultdict(set)
         mcp_server = self.reader._mcp_server
 
         def _subscriptions() -> set[AnyUrl]:
-            """Return subscription set for current session context."""
             return self._session_subscriptions[mcp_server.request_context.session]
 
         @mcp_server.subscribe_resource()
@@ -135,6 +459,47 @@ class PolicyEngine:
         @mcp_server.unsubscribe_resource()
         async def _unsubscribe(uri: AnyUrl):
             _subscriptions().discard(uri)
+
+        # Create gateway middleware (uses internal evaluate method)
+        self._gateway = _PolicyGatewayMiddleware(
+            hub=self._hub,
+            evaluate_policy=self._evaluate_policy,
+            record_outcome=self._record_outcome,
+        )
+
+        # Internal reader client for gateway (created lazily)
+        self._reader_client: Client | None = None
+
+    @property
+    def gateway(self) -> Middleware:
+        """Middleware to install on agent compositor."""
+        return self._gateway
+
+    # ---- Internal methods ----
+
+    def _on_hub_change(self) -> None:
+        """Called when hub pending list changes - broadcast pending://calls."""
+        task = asyncio.create_task(self._broadcast_and_signal(PENDING_CALLS_URI))
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    async def _evaluate_policy(self, request: PolicyRequest) -> PolicyResponse:
+        """Evaluate policy for a tool call via Docker-backed evaluator."""
+        evaluator = ContainerPolicyEvaluator(
+            agent_id=self.agent_id, docker_client=self.docker_client, engine=self
+        )
+        return await evaluator.decide(request)
+
+    async def _record_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
+        """Record approval outcome to persistence."""
+        await self.persistence.record_approval(
+            run_id=None,  # No run context available in middleware
+            agent_id=self.agent_id,
+            call_id=call_id,
+            tool_key=tool_key,
+            outcome=outcome,
+            decided_at=datetime.now(UTC),
+        )
 
     # ---- Policy state methods ----
 
@@ -199,7 +564,8 @@ class PolicyEngine:
     def _schedule_broadcast(self, uri: str) -> None:
         """Schedule async broadcast without blocking."""
         task = asyncio.create_task(self._broadcast_and_signal(uri))
-        task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     def _notify_proposal_change(self, proposal_id: str) -> None:
         """Notify about a specific proposal change and the proposals index."""
@@ -231,18 +597,28 @@ class PolicyEngine:
                 raise KeyError(id)
             return got.content
 
+        @self.reader.resource(PENDING_CALLS_URI, name="pending_calls", mime_type="application/json")
+        def pending_calls() -> dict:
+            """List all pending tool call approval requests."""
+            items = [
+                PendingCallItem(
+                    call_id=call_id,
+                    tool_key=req.tool_key,
+                    args_json=req.tool_call.args_json if req.tool_call else None,
+                )
+                for call_id, req in self._hub.pending.items()
+            ]
+            return {"pending": [item.model_dump() for item in items]}
+
         @self.reader.flat_model()
         async def evaluate_policy(input: PolicyRequest) -> PolicyResponse:
             """Evaluate a policy decision for a single tool call via Docker-backed evaluator."""
-            evaluator = ContainerPolicyEvaluator(
-                agent_id=self.agent_id, docker_client=self.docker_client, engine=self
-            )
-            return await evaluator.decide(input)
+            return await self._evaluate_policy(input)
 
     def _register_proposer(self) -> None:
         """Register tools on proposer server: create_proposal, withdraw_proposal."""
 
-        @self.proposer.tool()
+        @self.policy_proposer.tool()
         async def create_proposal(content: str) -> dict:
             """Create a new policy proposal and return its descriptor."""
             new_id = await self.create_proposal(content)
@@ -251,36 +627,51 @@ class PolicyEngine:
             )
             return desc.model_dump(mode="json")
 
-        @self.proposer.tool()
+        @self.policy_proposer.tool()
         async def withdraw_proposal(id: str) -> None:
             """Withdraw a pending policy proposal by id."""
             await self.withdraw_proposal(id)
 
-    def _register_approver(self) -> None:
-        """Register tools on approver server: approve_proposal, reject_proposal, set_policy_text."""
+    def _register_admin(self) -> None:
+        """Register tools on admin server: decide_call, decide_proposal, set_policy."""
 
-        @self.approver.tool()
-        async def approve_proposal(id: str) -> None:
-            """Approve a pending policy proposal by id (activates policy)."""
-            await self.approve_proposal(id)
+        @self.admin.flat_model()
+        async def decide_call(input: DecideCallArgs) -> dict:
+            """Approve or deny a pending tool call."""
+            call_id = input.call_id
+            decision = input.decision
 
-        @self.approver.tool()
-        async def reject_proposal(id: str) -> None:
-            """Reject a pending policy proposal by id."""
-            await self.reject_proposal(id)
+            if decision == CallDecision.APPROVE:
+                self._hub.resolve(call_id, ContinueDecision())
+            elif decision == CallDecision.DENY_ABORT:
+                self._hub.resolve(call_id, AbortTurnDecision(reason="user_denied"))
+            elif decision == CallDecision.DENY_CONTINUE:
+                # Continue without executing - resolve with continue decision
+                # The call is skipped but turn continues
+                self._hub.resolve(call_id, ContinueDecision())
+            return {"ok": True}
 
-        @self.approver.tool()
-        async def set_policy_text(source: str) -> None:
+        @self.admin.flat_model()
+        async def decide_proposal(input: DecideProposalArgs) -> dict:
+            """Approve or reject a policy proposal."""
+            proposal_id = input.proposal_id
+            decision = input.decision
+
+            if decision == ProposalDecision.APPROVE:
+                await self.approve_proposal(proposal_id)
+            elif decision == ProposalDecision.REJECT:
+                await self.reject_proposal(proposal_id)
+            return {"ok": True}
+
+        @self.admin.tool()
+        async def set_policy(source: str) -> dict:
             """Directly set active policy text after self-check."""
             self.self_check(source)
             self.set_policy(source)
+            return {"ok": True}
 
     async def wait_for_broadcast(self, since_version: int | None = None) -> int:
-        """Await the next completed broadcast and return the new version.
-
-        If since_version is provided, waits until a strictly higher version occurs.
-        Use asyncio.timeout() around this call to add a timeout.
-        """
+        """Await the next completed broadcast and return the new version."""
         target = (since_version or 0) + 1
         async with self._broadcast_cond:
             await self._broadcast_cond.wait_for(lambda: self._broadcast_version >= target)
@@ -290,25 +681,19 @@ class PolicyEngine:
 # ---- Compositor attach helpers ----
 
 
-async def attach_approval_policy_readonly(
-    comp: Compositor, engine: PolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER
-) -> NotifyingFastMCP:
-    """Attach the approval policy reader server (resources + evaluate_policy tool)."""
+async def attach_reader(comp: Compositor, engine: PolicyEngine, *, name: str = "reader") -> NotifyingFastMCP:
+    """Attach the policy reader server (resources + evaluate_policy tool)."""
     await comp.mount_inproc(name, engine.reader)
     return engine.reader
 
 
-async def attach_approval_policy_proposer(
-    comp: Compositor, engine: PolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER
-) -> FastMCP:
-    """Attach the approval policy proposer server (create/withdraw proposals)."""
-    await comp.mount_inproc(name, engine.proposer)
-    return engine.proposer
+async def attach_policy_proposer(comp: Compositor, engine: PolicyEngine, *, name: str = "policy_proposer") -> FastMCP:
+    """Attach the policy proposer server (create/withdraw proposals)."""
+    await comp.mount_inproc(name, engine.policy_proposer)
+    return engine.policy_proposer
 
 
-async def attach_approval_policy_admin(
-    comp: Compositor, engine: PolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER
-) -> FastMCP:
-    """Attach the approval policy admin server (approve/reject/set_policy_text)."""
-    await comp.mount_inproc(name, engine.approver)
-    return engine.approver
+async def attach_admin(comp: Compositor, engine: PolicyEngine, *, name: str = "admin") -> FastMCP:
+    """Attach the policy admin server (decide_call/decide_proposal/set_policy)."""
+    await comp.mount_inproc(name, engine.admin)
+    return engine.admin

@@ -9,28 +9,28 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.requires_docker
-async def test_approval_policy_server_is_available(
-    responses_factory, make_echo_spec, make_pg_compositor, approval_policy_server
-):
+async def test_approval_policy_server_is_available(responses_factory, make_echo_spec, make_pg_compositor):
     """Test that the approval policy MCP server is available to the agent and lists tools."""
 
-    # Add approval server to specs - policy_server owns .proposer sub-server
+    # make_pg_compositor creates a PolicyEngine with reader auto-mounted;
+    # we just need to mount the proposer separately
     servers = dict(make_echo_spec())
-    servers["approval_policy"] = approval_policy_server
-    servers["approval_policy.proposer"] = approval_policy_server.proposer
-    async with make_pg_compositor(servers) as (mcp_client, _comp):
+    async with make_pg_compositor(servers) as (mcp_client, comp, policy_engine):
+        # Mount the proposer server under the new naming scheme
+        await comp.mount_inproc("policy_proposer", policy_engine.policy_proposer)
+
         # Create a sequence where agent lists available tools
         seq = [responses_factory.make_assistant_message("I can see the approval tools")]
         client = FakeOpenAIModel(seq)
 
         # With servers attached, proceed with assertions
-        # Check that approval_policy server is available and lists flat tools
+        # Check that policy servers are available and list flat tools
         # List tools via a direct Compositor client
         tools = await mcp_client.list_tools()
         tool_names = {t.name for t in tools}
         expected = {
-            build_mcp_function("approval_policy.proposer", "create_proposal"),
-            build_mcp_function("approval_policy.proposer", "withdraw_proposal"),
+            build_mcp_function("policy_proposer", "create_proposal"),
+            build_mcp_function("policy_proposer", "withdraw_proposal"),
         }
         assert expected <= tool_names
 

@@ -47,6 +47,9 @@ SEATBELT_EXEC_SERVER_NAME: Final[str] = "seatbelt_exec"
 APPROVAL_POLICY_RESOURCE_URI: Final[str] = "resource://approval-policy/policy.py"
 APPROVAL_POLICY_PROPOSALS_INDEX_URI: Final[str] = "resource://approval-policy/proposals"
 
+# Pending tool call approvals resource (runtime state, not policy definitions)
+PENDING_CALLS_URI: Final[str] = "pending://calls"
+
 # MCP notification method names (match MCP spec)
 RESOURCES_UPDATED_METHOD: Final[str] = "notifications/resources/updated"
 RESOURCES_LIST_CHANGED_METHOD: Final[str] = "notifications/resources/list_changed"

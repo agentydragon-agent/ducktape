@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from contextlib import asynccontextmanager, suppress
 from importlib import resources
 import os
 from pathlib import Path
@@ -14,16 +14,14 @@ from fastmcp.server import FastMCP
 from openai import AsyncOpenAI
 import pytest
 
-from adgn.agent.approvals import ApprovalHub, ApprovalPolicyEngine, load_default_policy_source
+from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp.approval_policy.clients import PolicyReaderStub
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp
 from tests.types import McpServerSpecs
@@ -186,12 +184,6 @@ def backend_server(make_backend_server) -> FastMCP:
     return make_backend_server()
 
 
-@pytest.fixture
-def approval_hub() -> ApprovalHub:
-    """Fresh ApprovalHub per test for middleware gating flows."""
-    return ApprovalHub()
-
-
 async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
     """Mount all servers from McpServerSpecs dict onto a compositor.
 
@@ -211,40 +203,94 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
 
 
 @pytest.fixture
-def make_pg_compositor(approval_hub: ApprovalHub):
-    """Async helper to open a Compositor with policy gateway middleware.
+def make_pg_client(sqlite_persistence, request: pytest.FixtureRequest):
+    """Async helper to open a Compositor with policy gateway, yielding just the client.
 
     Usage:
-        async with make_pg_compositor(backend, evaluator, hub=..., notifier=...) as (sess, comp):
-            ...
+        async with make_pg_client(servers) as client:
+            result = await client.call_tool(...)
+
+    For tests that need access to the compositor or engine, use make_pg_compositor instead.
     """
+    from importlib import resources as pkg_resources
 
     @asynccontextmanager
-    async def _open(servers: McpServerSpecs, *, notifier=None):
+    async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
         comp = Compositor("comp")
+
+        # If no engine provided, create one with allow-all policy
+        if policy_engine is None:
+            policy_text = pkg_resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
+            default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
+            policy_engine = PolicyEngine(
+                docker_client=docker.from_env(),
+                agent_id=default_id,
+                persistence=sqlite_persistence,
+                policy_source=policy_text,
+            )
+
+        # Mount the policy engine's reader on compositor
+        await comp.mount_inproc("reader", policy_engine.reader)
+
+        # Mount other provided servers
         await _mount_servers(comp, servers)
-        # Install policy gateway with managed reader client; approval_policy is required
-        reader = servers.get("approval_policy")
-        if reader is None:
-            raise RuntimeError("approval_policy server required for policy gateway tests")
-        stack = AsyncExitStack()
-        await stack.__aenter__()
-        try:
-            _reader_client = await stack.enter_async_context(Client(reader))
-            policy_reader = PolicyReaderStub(TypedClient(_reader_client))
-            middleware = PolicyGatewayMiddleware(hub=approval_hub, policy_reader=policy_reader, pending_notifier=notifier)
-            comp.add_middleware(middleware)
-            # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
-            await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
-            async with Client(comp) as sess:
-                yield sess, comp
-        finally:
-            await stack.aclose()
+
+        # Install policy gateway middleware from the engine
+        comp.add_middleware(policy_engine.gateway)
+
+        # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
+        await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
+        async with Client(comp) as sess:
+            yield sess
 
     return _open
 
 
-# Note: legacy open_mcp_with_slots fixture has been removed. Use make_pg_compositor instead.
+@pytest.fixture
+def make_pg_compositor(make_pg_client, sqlite_persistence, request: pytest.FixtureRequest):
+    """Async helper with full access to compositor and engine.
+
+    Usage:
+        async with make_pg_compositor(servers, policy_engine=engine) as (sess, comp, engine):
+            ...
+
+    For tests that only need the client, prefer make_pg_client instead.
+    """
+    from importlib import resources as pkg_resources
+
+    @asynccontextmanager
+    async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
+        comp = Compositor("comp")
+
+        # If no engine provided, create one with allow-all policy
+        if policy_engine is None:
+            policy_text = pkg_resources.files("adgn.agent.policies").joinpath("approve_all.py").read_text(encoding="utf-8")
+            default_id = re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
+            policy_engine = PolicyEngine(
+                docker_client=docker.from_env(),
+                agent_id=default_id,
+                persistence=sqlite_persistence,
+                policy_source=policy_text,
+            )
+
+        # Mount the policy engine's reader on compositor
+        await comp.mount_inproc("reader", policy_engine.reader)
+
+        # Mount other provided servers
+        await _mount_servers(comp, servers)
+
+        # Install policy gateway middleware from the engine
+        comp.add_middleware(policy_engine.gateway)
+
+        # Mount standard in-proc servers (meta + admin pinned; no resources without gateway client)
+        await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
+        async with Client(comp) as sess:
+            yield sess, comp, policy_engine
+
+    return _open
+
+
+# Note: legacy open_mcp_with_slots fixture has been removed. Use make_pg_client or make_pg_compositor instead.
 
 
 @pytest.fixture
@@ -267,11 +313,11 @@ def make_compositor():
 
 
 @pytest.fixture
-def make_pg_compositor_box(approval_policy_reader_allow_all, make_pg_compositor):
+def make_pg_compositor_box(make_pg_compositor):
     """Helper to open a Compositor with a boxed Docker exec server and policy.
 
-    Mounts a per-session container exec server under name "box" and mounts the
-    approval_policy reader. Yields (client, compositor).
+    Mounts a per-session container exec server under name "box" with policy gateway.
+    Yields (client, compositor, policy_engine).
     """
 
     from contextlib import asynccontextmanager
@@ -279,17 +325,17 @@ def make_pg_compositor_box(approval_policy_reader_allow_all, make_pg_compositor)
     @asynccontextmanager
     async def _open():
         server = make_container_exec_server(make_container_opts("python:3.12-slim"), name="box")
-        async with make_pg_compositor({"box": server, "approval_policy": approval_policy_reader_allow_all}) as pair:
-            yield pair
+        async with make_pg_compositor({"box": server}) as result:
+            yield result
 
     return _open
 
 
 @pytest.fixture
-def make_pg_compositor_echo(make_echo_spec, approval_policy_reader_allow_all, make_pg_compositor):
+def make_pg_compositor_echo(make_echo_spec, make_pg_compositor):
     """Helper to open a Compositor with the echo server and policy mounted.
 
-    Yields (client, compositor).
+    Yields (client, compositor, policy_engine).
     """
 
     from contextlib import asynccontextmanager
@@ -297,22 +343,22 @@ def make_pg_compositor_echo(make_echo_spec, approval_policy_reader_allow_all, ma
     @asynccontextmanager
     async def _open():
         spec_factory = make_echo_spec
-        servers = {**spec_factory(), "approval_policy": approval_policy_reader_allow_all}
-        async with make_pg_compositor(servers) as pair:
-            yield pair
+        servers = spec_factory()
+        async with make_pg_compositor(servers) as result:
+            yield result
 
     return _open
 
 
 @pytest.fixture
 async def pg_compositor_echo(make_pg_compositor_echo):
-    """Async fixture yielding (client, compositor) with echo + approval mounted.
+    """Async fixture yielding (client, compositor, policy_engine) with echo + policy mounted.
 
     Convenience wrapper around make_pg_compositor_echo() so tests can depend on a
     ready session without using an explicit async with.
     """
-    async with make_pg_compositor_echo() as pair:
-        yield pair
+    async with make_pg_compositor_echo() as result:
+        yield result
 
 
 @pytest.fixture
