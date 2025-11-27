@@ -92,8 +92,8 @@ async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) 
 
     container = await client.containers.create(container_config)
     await container.start()
-    # Return dict format to match expected API
-    return {"Id": container._id, "Name": getattr(container, "_name", "")}
+    # Return dict format to match expected API; aiodocker containers use _id internally
+    return {"Id": container._id, "Name": ""}
 
 
 # ---- Lifespan factory (per-session container) ----
@@ -329,23 +329,16 @@ async def _run_session_container(
                 await task
 
         if timeout_task in done:
-            # External timeout - we killed it
+            # External timeout - kill and restart container
             timed_out = True
             exit_code = None
-            try:
-                # Kill and restart container on timeout
-                await container_instance.kill()
-                await asyncio.sleep(0.5)
-                # Restart the container
-                s.container = await _start_container(client=docker_client, opts=opts)
-            except Exception:
-                pass
+            await container_instance.kill()
+            await asyncio.sleep(0.5)
+            s.container = await _start_container(client=docker_client, opts=opts)
         else:
-            # Command completed normally
-            # Get exit code from exec object if available
-            exit_code = getattr(exec_obj, "exit_code", 0)
-    except Exception:
-        exit_code = EXIT_CODE_SIGTERM
+            # Command completed normally - inspect exec for exit code
+            inspect_result = await exec_obj.inspect()
+            exit_code = inspect_result.get("ExitCode", 0)
 
     return stdout_buf, stderr_buf, exit_code, timed_out
 

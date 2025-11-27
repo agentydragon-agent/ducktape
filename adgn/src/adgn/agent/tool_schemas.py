@@ -39,11 +39,16 @@ def extract_tool_schemas(servers: dict[str, FastMCP]) -> dict[tuple[str, str], t
             # Extract return annotation from original function
             # FunctionTool.fn is not in public API but stable
             try:
-                sig = inspect.signature(tool.fn)  # type: ignore[attr-defined]
-                return_type = sig.return_annotation
-            except (ValueError, TypeError, AttributeError):
+                fn = tool.fn  # type: ignore[attr-defined]
+            except AttributeError:
                 continue
 
+            try:
+                sig = inspect.signature(fn)
+            except (ValueError, TypeError):
+                continue
+
+            return_type = sig.return_annotation
             # Only register if it's a Pydantic BaseModel subclass
             if inspect.isclass(return_type) and issubclass(return_type, BaseModel):
                 schemas[(server_name, tool_name)] = return_type
@@ -75,30 +80,34 @@ def extract_tool_input_schemas(servers: dict[str, FastMCP]) -> dict[tuple[str, s
         for tool_name, tool in tools.items():
             try:
                 fn = tool.fn  # type: ignore[attr-defined]
-
-                # Check for flat-model wrapper first
-                if hasattr(fn, "_mcp_flat_input_model"):
-                    input_model = fn._mcp_flat_input_model
-                    if inspect.isclass(input_model) and issubclass(input_model, BaseModel):
-                        schemas[(server_name, tool_name)] = input_model
-                    continue
-
-                # Fall back to signature introspection for regular tools
-                sig = inspect.signature(fn)
-                params = list(sig.parameters.values())
-
-                # Look for a single Pydantic BaseModel parameter
-                pydantic_params = [
-                    p
-                    for p in params
-                    if p.annotation != inspect.Parameter.empty
-                    and inspect.isclass(p.annotation)
-                    and issubclass(p.annotation, BaseModel)
-                ]
-
-                if len(pydantic_params) == 1:
-                    schemas[(server_name, tool_name)] = pydantic_params[0].annotation
-            except (ValueError, TypeError, AttributeError):
+            except AttributeError:
                 continue
+
+            # Check for flat-model wrapper first
+            try:
+                input_model = fn._mcp_flat_input_model  # type: ignore[attr-defined]
+                if inspect.isclass(input_model) and issubclass(input_model, BaseModel):
+                    schemas[(server_name, tool_name)] = input_model
+                continue
+            except AttributeError:
+                pass
+
+            # Fall back to signature introspection for regular tools
+            try:
+                sig = inspect.signature(fn)
+            except (ValueError, TypeError):
+                continue
+
+            params = list(sig.parameters.values())
+            pydantic_params = [
+                p
+                for p in params
+                if p.annotation != inspect.Parameter.empty
+                and inspect.isclass(p.annotation)
+                and issubclass(p.annotation, BaseModel)
+            ]
+
+            if len(pydantic_params) == 1:
+                schemas[(server_name, tool_name)] = pydantic_params[0].annotation
 
     return schemas

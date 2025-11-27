@@ -165,10 +165,7 @@ class _MatrixClient:
                     resolved = await c.resolve_room_alias(RoomAlias(room))
                 except Exception as resolve_exc:
                     raise RuntimeError(f"Matrix alias {room} could not be resolved") from resolve_exc
-                resolved_id = resolved.room_id if hasattr(resolved, "room_id") else None
-                if resolved_id is None:
-                    raise RuntimeError(f"Matrix alias {room} returned no room_id")
-                canonical_room_id = RoomID(resolved_id)
+                canonical_room_id = RoomID(resolved.room_id)
             else:
                 canonical_room_id = RoomID(room)
             self._room_id = canonical_room_id

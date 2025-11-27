@@ -51,8 +51,7 @@ class _CapturingServer(LowLevelServer):
         raise_exceptions: bool = False,
         stateless: bool = False,
     ):
-        name = getattr(self, "name", "<unknown>")
-        logger.debug("_CapturingServer.run: start name=%s", name)
+        logger.debug("_CapturingServer.run: start name=%s", self.name)
         # Intercept the moment the session is created, then handle messages in child tasks
         async with AsyncExitStack() as stack:
             lifespan_context = await stack.enter_async_context(self.lifespan(self))

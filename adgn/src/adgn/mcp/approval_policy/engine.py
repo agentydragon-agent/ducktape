@@ -299,8 +299,7 @@ class _PolicyGatewayMiddleware(Middleware):
             try:
                 call_result = await call_next(context)
                 if call_result.is_error:
-                    err = call_result.error
-                    if err is None:
+                    if (err := call_result.error) is None:
                         return call_result
                     try:
                         ed = mtypes.ErrorData.model_validate(err)
