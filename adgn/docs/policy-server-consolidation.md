@@ -63,16 +63,17 @@ Single `/mcp` endpoint serves both users and agents. Bearer token determines rou
 ```
 User-Facing Global Compositor
 ├── agents (management server)
-│   ├── list_agents
-│   ├── create_agent
-│   ├── delete_agent
-│   └── boot_agent ──► lazy mounts per-agent compositor
+│   ├── agents://list resource (all agents with state)
+│   ├── agents://presets resource
+│   ├── create_agent tool
+│   ├── delete_agent tool
+│   └── boot_agent tool ──► lazy mounts per-agent compositor
 │
 └── agent_{id} (per-agent user compositor, mounted on boot_agent)
     ├── reader (policy.py)
     ├── admin (approve/reject/set)
     ├── agent_control (send_prompt, abort_run)
-    └── snapshot resource
+    └── status, snapshot resources
 ```
 
 ### Architecture: Agent-Facing Compositor
@@ -93,17 +94,30 @@ Agent Compositor (per-agent, gated)
 1. **Single endpoint, token-based routing**
    - Same `/mcp` URL for users and agents
    - Bearer token determines which compositor handles request
-   - Use FastMCP's `TokenVerifier` interface for auth
+   - Use FastMCP's `StaticTokenVerifier` for token validation
+   - **Custom middleware for routing** (FastMCP doesn't route by token natively)
 
 2. **Lazy mounting via `boot_agent(id)`**
    - Global compositor mounts `agents` server at startup
    - `boot_agent(id)` ensures agent is live, then mounts its user compositor
    - Uses `asyncio.Lock` for concurrent calls - boot once, others succeed
+   - **Does NOT generate tokens** - internal agents use inproc MCP
 
-3. **AgentID type**
-   - Use existing `AgentID = NewType("AgentID", str)` from `agent/types.py`
-   - Already has narrow charset (semantic str wrapper)
+3. **AgentID type with validation**
+   - Use Pydantic `Annotated` for runtime charset validation
+   - Safe characters only: `[a-z0-9-]` (lowercase alphanumeric + hyphen)
    - Safe to use as tool prefix: `agent_{id}_send_prompt`
+   ```python
+   from typing import Annotated
+   from pydantic import AfterValidator
+
+   def validate_agent_id(v: str) -> str:
+       if not v or not all(c.isalnum() or c == '-' for c in v) or not v[0].isalnum():
+           raise ValueError(f"Invalid agent ID: {v!r}")
+       return v.lower()
+
+   AgentID = Annotated[str, AfterValidator(validate_agent_id)]
+   ```
 
 4. **Unmount on shutdown**
    - When agent shuts down, unmount its user compositor from global
@@ -112,6 +126,16 @@ Agent Compositor (per-agent, gated)
 5. **Shared PolicyEngine**
    - Single engine per agent, shared between both compositors
    - Both mount same `.reader`, `.policy_proposer`, `.admin` servers
+
+6. **Resource URI prefixing**
+   - FastMCP "path" format: `agents://list` → `agents://agents/list` when mounted
+   - To avoid double-prefix, use short server names or configure prefix format
+   - Current adgn compositor uses `prefix=name` in `mount()` calls
+
+7. **Token types**
+   - **User tokens**: Pre-generated, stored in `tokens.yaml`, route to global compositor
+   - **Agent tokens**: Pre-generated for external agents only, route to that agent's compositor
+   - **Internal agents**: Use inproc MCP transport, bypass HTTP/token routing entirely
 
 ### Implementation Steps
 
@@ -284,30 +308,32 @@ verifier = AgentTokenVerifier(user_tokens, agent_tokens)
 ### Implementation Flow
 
 ```
-USER FLOW:
+USER FLOW (Internal Agents):
 1. User connects with user bearer token
-   → TokenRouter.get_compositor_for_token() → global_compositor
+   → TokenRouter routes to global_compositor
    → User sees: agents server + any booted agent_{id} sub-compositors
 
 2. User calls: agents_boot_agent(id="abc123")
    - InfrastructureRegistry.boot_agent() acquires lock
    - Creates AgentContainer (agent_compositor + user_compositor)
-   - Generates agent token for "abc123"
    - Mounts user_compositor as "agent_abc123" on global
-   - Returns agent token to user (for agent to use)
+   - Agent uses inproc MCP (no HTTP token needed)
 
 3. User can now call (via global compositor):
-   - agent_abc123_send_prompt(text="Hello")
-   - agent_abc123_abort_run()
+   - agent_abc123_agent_control_send_prompt(text="Hello")
+   - agent_abc123_agent_control_abort_run()
    - agent_abc123_admin_approve_call(call_id="...")
 
-AGENT FLOW:
-4. Agent connects with its agent bearer token
-   → TokenRouter.get_compositor_for_token() → that agent's agent_compositor
+4. User subscribes to agents://list resource for real-time updates
+   (notifications when agents boot/shutdown/change state)
+
+EXTERNAL AGENT FLOW:
+5. External agent has pre-generated token in tokens.yaml
+   → TokenRouter routes to that agent's agent_compositor
    → Agent sees: reader, policy_proposer, ui, chat, loop, runtime
    → All tool calls gated by policy gateway middleware
 
-5. Agent calls tools (e.g., runtime_exec)
+6. Agent calls tools (e.g., runtime_exec)
    → Policy gateway middleware intercepts
    → Evaluates policy in Docker container
    → Allow/deny/ask decision
@@ -316,8 +342,68 @@ AGENT FLOW:
 ### Notes
 
 - **No existing bearer token code on devel** - needs full implementation
-- **FastMCP auth**: Use `TokenVerifier` interface, `InMemoryOAuthProvider` as reference
+- **FastMCP auth**: Use `StaticTokenVerifier` for simple token→claims mapping
+- **Routing by token**: FastMCP doesn't support this natively; need custom Starlette middleware
 - **Props specimens** reference planned `mcp_bridge/auth.py` that was never created
+
+### FastMCP Auth Integration
+
+FastMCP provides token verification but not token-based routing to different servers:
+
+```python
+from fastmcp.server.auth import StaticTokenVerifier, AccessToken
+
+# StaticTokenVerifier: maps token strings to claims
+verifier = StaticTokenVerifier(
+    tokens={
+        "user_token_abc": {"client_id": "admin", "scopes": ["user"]},
+        "agent_token_xyz": {"client_id": "agent-1", "scopes": ["agent"]},
+    }
+)
+
+# Verification only - returns AccessToken or None
+token_info = await verifier.verify_token("user_token_abc")
+# AccessToken(token="...", client_id="admin", scopes=["user"], ...)
+```
+
+**Custom routing middleware required:**
+
+```python
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class TokenRoutingMiddleware(BaseHTTPMiddleware):
+    """Routes requests to different compositors based on bearer token."""
+
+    def __init__(self, app, user_compositor, agent_compositors, verifier):
+        super().__init__(app)
+        self.user_compositor = user_compositor
+        self.agent_compositors = agent_compositors  # dict[AgentID, Compositor]
+        self.verifier = verifier
+
+    async def dispatch(self, request, call_next):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return Response("Unauthorized", status_code=401)
+
+        token = auth_header[7:]
+        token_info = await self.verifier.verify_token(token)
+        if not token_info:
+            return Response("Invalid token", status_code=401)
+
+        # Route based on scopes
+        if "user" in token_info.scopes:
+            request.state.compositor = self.user_compositor
+        elif "agent" in token_info.scopes:
+            agent_id = AgentID(token_info.client_id)
+            compositor = self.agent_compositors.get(agent_id)
+            if not compositor:
+                return Response("Agent not found", status_code=404)
+            request.state.compositor = compositor
+        else:
+            return Response("Unknown token type", status_code=403)
+
+        return await call_next(request)
+```
 
 ### Token Configuration
 
@@ -572,5 +658,6 @@ See: [GitHub Issue #852](https://github.com/modelcontextprotocol/typescript-sdk/
 
 - PolicyEngine with `.reader`, `.policy_proposer`, `.admin` servers (✅ Done)
 - Compositor with middleware support (✅ Done)
-- HTTP/SSE MCP transport on `/mcp` (exists but broken due to missing imports)
-- FastMCP TokenVerifier auth (available in fastmcp.server.auth)
+- Streamable HTTP MCP transport on `/mcp` (FastMCP supports via `create_streamable_http_app`)
+- FastMCP `StaticTokenVerifier` for token validation (✅ Available)
+- Custom Starlette middleware for token-based compositor routing (needs implementation)
