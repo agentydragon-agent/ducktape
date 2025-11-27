@@ -6,55 +6,14 @@ Two-compositor architecture with token-based routing. Single `/mcp` endpoint ser
 
 ## Phase 5a: Core Infrastructure (Backend) ✅
 
-**Goal**: Token routing + dual compositor architecture working, no frontend changes yet.
+Token routing + dual compositor architecture. Files:
+- `mcp_bridge/auth.py` - load_tokens(), TokenRoutingASGI
+- `mcp_bridge/registry.py` - InfrastructureRegistry (create/boot/shutdown agents)
+- `mcp_bridge/servers/agents.py` - list/presets resources, create/delete/boot tools
+- `mcp_bridge/servers/agent_control.py` - send_prompt/abort_run tools
+- `server/mcp_routing.py` - MCPRoutingMiddleware for FastAPI
 
-### 5a.1: Types and Utilities ✅
-- [x] Create `AgentID` type with Pydantic validation in `agent/types.py`
-- [x] Create `mcp_bridge/` module structure
-- [x] Implement `load_tokens()` in `mcp_bridge/auth.py`
-- [x] Implement `TokenRoutingASGI` in `mcp_bridge/auth.py`
-
-### 5a.2: Infrastructure Registry ✅
-- [x] Create `InfrastructureRegistry` class in `mcp_bridge/registry.py`
-  - `boot_agent(id)` - boot existing agent from DB
-  - `create_agent(preset)` - create new + boot
-  - `create_external_agent(id)` - for startup
-  - `shutdown_agent(id)`
-  - `get_agent(id)` - lookup
-
-### 5a.3: Agents Management Server ✅
-- [x] Create `mcp_bridge/servers/agents.py`
-  - `list` resource (all agents with state)
-  - `presets` resource
-  - `create_agent` tool
-  - `delete_agent` tool
-  - `boot_agent` tool
-- [x] Wire up resource notifications on agent state changes
-
-### 5a.4: Dual Compositor in AgentContainer ✅
-- [x] Agent compositor (existing + policy gateway)
-- [x] Add `external: bool` flag to control `agent_control` mounting
-- [x] Mount `agent_control` for internal agents only
-
-Note: Full dual compositor (separate user/agent views) deferred to future iteration.
-Current approach mounts agent_control conditionally on single compositor.
-
-### 5a.5: Agent Control Server ✅
-- [x] Create `mcp_bridge/servers/agent_control.py`
-  - `send_prompt` tool
-  - `abort_run` tool
-- [x] Wire to container methods
-
-### 5a.6: Update app.py ✅
-- [x] New lifespan with token loading + external agent startup
-- [x] Integrate InfrastructureRegistry and global compositor
-- [x] Create MCPRoutingMiddleware for token-based routing
-- [x] Keep REST API endpoints (frontend still uses them)
-
-### 5a.7: Integration Test ✅
-- [x] Basic tests for load_tokens
-- [x] Basic tests for agents server creation
-- [x] Basic tests for agent_control server creation
+Internal agents get agent_control; external agents don't.
 
 ---
 
@@ -100,11 +59,8 @@ Current approach mounts agent_control conditionally on single compositor.
 
 ---
 
-## Suggested Order of PRs
+## PRs
 
-1. **PR 1**: Types + mcp_bridge module structure + TokenRoutingASGI + load_tokens
-2. **PR 2**: InfrastructureRegistry + agents server
-3. **PR 3**: Dual compositor in AgentContainer + agent_control server
-4. **PR 4**: app.py integration (REST API still works)
-5. **PR 5**: Frontend migration to MCP
-6. **PR 6**: REST API removal + CLI authenticated URL
+1. ✅ **Phase 5a**: Core infrastructure (mcp_bridge, token routing, agents/agent_control servers)
+2. **Phase 5b**: Frontend migration to MCP
+3. **Phase 5c+d**: REST API removal + test coverage
