@@ -71,8 +71,8 @@ async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) 
         if isinstance(opts.volumes, dict):
             for host_path, volume_config in opts.volumes.items():
                 bind = f"{host_path}:{volume_config['bind']}"
-                if volume_config.get("mode"):
-                    bind += f":{volume_config['mode']}"
+                if mode := volume_config.get("mode"):
+                    bind += f":{mode}"
                 host_config["Binds"].append(bind)
 
     container_config: dict[str, Any] = {
@@ -164,8 +164,8 @@ async def _run_ephemeral_container(
         if isinstance(s.volumes, dict):
             for host_path, volume_config in s.volumes.items():
                 bind = f"{host_path}:{volume_config['bind']}"
-                if volume_config.get("mode"):
-                    bind += f":{volume_config['mode']}"
+                if mode := volume_config.get("mode"):
+                    bind += f":{mode}"
                 host_config["Binds"].append(bind)
 
     ephemeral_config: dict[str, Any] = {

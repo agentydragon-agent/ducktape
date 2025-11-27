@@ -178,11 +178,18 @@ export class AgentMcpClient {
    *
    * @param name - Tool name (without agent prefix)
    * @param args - Tool arguments
-   * @returns Tool result (parsed from first content item)
+   * @returns Tool result (from structuredContent or parsed content)
    */
   async callTool<T = unknown>(name: string, args: Record<string, unknown> = {}): Promise<T> {
     const toolName = this.agentId ? `${this.agentId}_${name}` : name
     const result = await this.client.callTool({ name: toolName, arguments: args })
+
+    // Use structuredContent if available (from flat Pydantic tools with structured output)
+    if ('structuredContent' in result && result.structuredContent !== undefined) {
+      return result.structuredContent as T
+    }
+
+    // Fall back to content extraction for legacy tools
     const data = extractContent<T>(result.content as ContentItem[])
     return data ?? (result as T)
   }

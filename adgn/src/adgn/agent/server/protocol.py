@@ -162,7 +162,6 @@ TranscriptItem = Annotated[
 
 class Snapshot(BaseModel):
     type: Literal["snapshot"] = "snapshot"
-    v: str
     session_state: SessionState
     approval_policy: ApprovalPolicyInfo | None = None
     run_state: RunState | None = None
