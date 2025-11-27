@@ -35,7 +35,7 @@ from adgn.mcp._shared.constants import (
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
 from adgn.mcp.approval_policy.engine import PolicyEngine
-from adgn.mcp.approvals import ApprovalsServerHandle
+from adgn.mcp.approvals import attach_approvals
 from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.mcp.compositor.server import Compositor
@@ -184,8 +184,6 @@ class AgentContainer:
     _policy_approver: PolicyApproverStub | None = field(default=None, init=False)
     # Policy gateway middleware (for tracking in-flight tool calls)
     _policy_gateway: PolicyGatewayMiddleware | None = field(default=None, init=False)
-    # Approvals server handle (for broadcasting pending approvals updates)
-    _approvals_handle: ApprovalsServerHandle | None = field(default=None, init=False)
 
     @property
     def policy_approver(self) -> PolicyApproverStub:
@@ -292,14 +290,10 @@ class AgentContainer:
             raise RuntimeError("policy approver not initialized")
         assert approval_hub is not None
 
-        async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
-            # Broadcast MCP resource update for pending approvals via handle
-            if self._approvals_handle is not None:
-                await self._approvals_handle.notify_pending_changed()
-
+        # Note: pending_notifier is no longer needed - ApprovalHub broadcasts via
+        # set_on_change callback registered by the approvals server.
         self._policy_gateway = PolicyGatewayMiddleware(
             hub=approval_hub,
-            pending_notifier=_pending_notifier,
             record_outcome=lambda call_id, tool_key, outcome: asyncio.create_task(
                 self.record_policy_outcome(call_id, tool_key, ApprovalOutcome(outcome))
             ),
@@ -582,8 +576,8 @@ class AgentContainer:
             await attach_persisted_chat_servers(self._compositor, persistence=self.persistence, agent_id=self.agent_id)
 
             # Approvals server (approval actions: approve_call, deny_abort, deny_continue)
-            from adgn.mcp.approvals import attach_approvals
-            self._approvals_handle = await attach_approvals(self._compositor, hub=self.approval_hub)
+            # Server registers with hub.set_on_change to broadcast resource updates.
+            await attach_approvals(self._compositor, hub=self.approval_hub)
 
             # Runtime exec server (no host mounts)
             runtime_image = resolve_runtime_image()

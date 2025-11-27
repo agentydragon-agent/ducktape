@@ -1,6 +1,8 @@
 """MCP server for approval actions (approve/deny pending tool calls)."""
 from __future__ import annotations
 
+import asyncio
+
 from pydantic import BaseModel, Field
 
 from adgn.agent.approvals import ApprovalHub
@@ -32,12 +34,11 @@ class PendingApprovalItem(BaseModel):
     args_json: str | None = None
 
 
-def make_approvals_server(
-    hub: ApprovalHub, *, name: str = APPROVALS_SERVER_NAME, notifier_callback: callable | None = None
-) -> NotifyingFastMCP:
+def make_approvals_server(hub: ApprovalHub, *, name: str = APPROVALS_SERVER_NAME) -> NotifyingFastMCP:
     """Create MCP server for approval actions.
 
     Exposes tools to approve/deny pending approvals and a resource for the pending list.
+    Registers with hub.set_on_change to broadcast resource updates when pending list changes.
     """
     mcp = NotifyingFastMCP(
         name=name,
@@ -46,6 +47,17 @@ def make_approvals_server(
             "Subscribe to approvals://pending resource for real-time updates."
         ),
     )
+
+    # Track background tasks to satisfy RUF006 (store asyncio.create_task reference)
+    bg_tasks: set[asyncio.Task] = set()
+
+    # Register hub callback to broadcast resource updates
+    def on_hub_change() -> None:
+        task = asyncio.create_task(mcp.broadcast_resource_updated(APPROVALS_PENDING_URI))
+        bg_tasks.add(task)
+        task.add_done_callback(bg_tasks.discard)
+
+    hub.set_on_change(on_hub_change)
 
     # Resource: pending approvals list
     @mcp.resource(APPROVALS_PENDING_URI, name="approvals.pending", mime_type="application/json")
@@ -59,63 +71,33 @@ def make_approvals_server(
         ]
         return {"pending": [item.model_dump() for item in items]}
 
-    # Tools: approval actions
+    # Tools: approval actions (hub.resolve triggers on_change callback)
     @mcp.flat_model()
     async def approve_call(input: ApproveCallArgs) -> SimpleOk:
         """Approve a pending tool call and allow it to execute."""
         hub.resolve(input.call_id, ContinueDecision())
-        # Notify that pending list changed
-        if notifier_callback:
-            notifier_callback(APPROVALS_PENDING_URI)
         return SimpleOk(ok=True)
 
     @mcp.flat_model()
     async def deny_abort(input: DenyAbortArgs) -> SimpleOk:
         """Deny a pending tool call and abort the current turn."""
         hub.resolve(input.call_id, AbortTurnDecision(reason="user_denied"))
-        # Notify that pending list changed
-        if notifier_callback:
-            notifier_callback(APPROVALS_PENDING_URI)
         return SimpleOk(ok=True)
 
     @mcp.flat_model()
     async def deny_continue(input: DenyContinueArgs) -> SimpleOk:
         """Deny a pending tool call but continue the turn (tool is skipped)."""
-        # Continue decision with skip flag (if supported), otherwise just continue
-        # For now, continue without executing the tool
         hub.resolve(input.call_id, ContinueDecision())
-        # Notify that pending list changed
-        if notifier_callback:
-            notifier_callback(APPROVALS_PENDING_URI)
         return SimpleOk(ok=True)
 
     return mcp
 
 
-class ApprovalsServerHandle:
-    """Handle for notifying the approvals server about pending list changes."""
-
-    def __init__(self, server: NotifyingFastMCP) -> None:
-        self._server = server
-
-    async def notify_pending_changed(self) -> None:
-        """Broadcast that pending approvals list has changed."""
-        await self._server.broadcast_resource_updated(APPROVALS_PENDING_URI)
-
-
-async def attach_approvals(comp, hub: ApprovalHub, *, name: str = APPROVALS_SERVER_NAME) -> ApprovalsServerHandle:
+async def attach_approvals(comp, hub: ApprovalHub, *, name: str = APPROVALS_SERVER_NAME) -> None:
     """Attach approvals server in-proc to a Compositor.
 
-    Returns a handle for notifying about pending approval changes (e.g., when new approvals are added).
-    The handle keeps notification logic encapsulated - callers don't access the server directly.
+    The server registers with the hub to receive change notifications and broadcasts
+    resource updates automatically. No handle or external notification needed.
     """
-
-    def notify_callback(uri: str):
-        """Sync callback that schedules async broadcast."""
-        import asyncio
-
-        asyncio.create_task(server.broadcast_resource_updated(uri))
-
-    server = make_approvals_server(hub, name=name, notifier_callback=notify_callback)
+    server = make_approvals_server(hub, name=name)
     await comp.mount_inproc(name, server)
-    return ApprovalsServerHandle(server)

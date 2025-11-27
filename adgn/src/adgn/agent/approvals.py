@@ -69,12 +69,22 @@ class ApprovalHub:
 
     - await_decision(call_id, request) -> ContinueDecision | AbortTurnDecision waits until resolve() is called
     - resolve(call_id, decision) resolves the pending decision
+    - set_on_change(callback) registers a callback for pending list changes
     """
 
     def __init__(self) -> None:
         self._futures: dict[str, asyncio.Future[ContinueDecision | AbortTurnDecision]] = {}
         self._requests: dict[str, ApprovalRequest] = {}
         self._lock = asyncio.Lock()
+        self._on_change: Callable[[], None] | None = None
+
+    def set_on_change(self, callback: Callable[[], None] | None) -> None:
+        """Register a callback that fires when pending requests change."""
+        self._on_change = callback
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change()
 
     async def await_decision(self, call_id: str, request: ApprovalRequest) -> ContinueDecision | AbortTurnDecision:
         async with self._lock:
@@ -84,6 +94,7 @@ class ApprovalHub:
             if fut is None:
                 fut = asyncio.get_running_loop().create_future()
                 self._futures[call_id] = fut
+            self._notify_change()
         return await fut
 
     def resolve(self, call_id: str, decision: ContinueDecision | AbortTurnDecision) -> None:
@@ -92,6 +103,7 @@ class ApprovalHub:
         self._requests.pop(call_id, None)
         if fut is not None and not fut.done():
             fut.set_result(decision)
+        self._notify_change()
 
     @property
     def pending(self) -> dict[str, ApprovalRequest]:
