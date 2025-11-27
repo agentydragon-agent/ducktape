@@ -22,19 +22,7 @@ from pydantic import TypeAdapter
 
 # Import models to export
 from adgn.agent.approvals import ApprovalRequest
-from adgn.agent.mcp_bridge.servers.agents import (
-    AbortAgentArgs,
-    AgentApprovalsHistory,
-    AgentApprovalsPending,
-    AgentInfo,
-    AgentList,
-    AgentPolicyProposals,
-    ApprovalHistoryEntry,
-    ApproveToolCallArgs,
-    PendingApproval,
-    PolicyProposalInfo,
-    RejectToolCallArgs,
-)
+from adgn.agent.mcp_bridge.agents import AgentInfo
 from adgn.agent.persist import (
     ApprovalOutcome,
     Decision,
@@ -216,19 +204,8 @@ def generate_pydantic_types() -> None:
         ToolCallRecord,
         # Approval types
         ApprovalRequest,
-        PendingApproval,
-        ApprovalHistoryEntry,
         # Agent info
         AgentInfo,
-        AgentList,
-        AgentApprovalsPending,
-        AgentApprovalsHistory,
-        PolicyProposalInfo,
-        AgentPolicyProposals,
-        # Tool args
-        ApproveToolCallArgs,
-        RejectToolCallArgs,
-        AbortAgentArgs,
     ]
 
     project_root = Path(__file__).parent.parent

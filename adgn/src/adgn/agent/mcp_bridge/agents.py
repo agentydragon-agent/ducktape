@@ -11,17 +11,20 @@ Provides tools and resources for managing agents:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Literal
 
-from fastmcp import FastMCP
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from adgn.agent.presets import discover_presets
+from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
 
 if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
 
 logger = logging.getLogger(__name__)
+
+
+# ---- Resource models ---------------------------------------------------------
 
 
 class AgentInfo(BaseModel):
@@ -40,7 +43,53 @@ class PresetInfo(BaseModel):
     description: str | None = None
 
 
-def make_agents_server(name: str, registry: InfrastructureRegistry) -> FastMCP:
+# ---- Tool I/O models ---------------------------------------------------------
+
+
+class CreateAgentInput(BaseModel):
+    """Input for create_agent tool."""
+
+    preset: str | None = Field(default=None, description="Preset name to use (default: 'default')")
+
+
+class CreateAgentOutput(BaseModel):
+    """Output for create_agent tool."""
+
+    id: str
+    status: Literal["created"]
+    preset: str
+
+
+class DeleteAgentInput(BaseModel):
+    """Input for delete_agent tool."""
+
+    agent_id: str = Field(description="Agent ID to delete")
+
+
+class DeleteAgentOutput(BaseModel):
+    """Output for delete_agent tool."""
+
+    id: str
+    status: Literal["deleted"]
+
+
+class BootAgentInput(BaseModel):
+    """Input for boot_agent tool."""
+
+    agent_id: str = Field(description="Agent ID to boot (must exist in DB)")
+
+
+class BootAgentOutput(BaseModel):
+    """Output for boot_agent tool."""
+
+    id: str
+    status: Literal["booted"]
+
+
+# ---- Server factory ----------------------------------------------------------
+
+
+def make_agents_server(name: str, registry: InfrastructureRegistry) -> FlatModelFastMCP:
     """Create the agents management MCP server.
 
     Resources:
@@ -52,7 +101,7 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> FastMCP:
     - delete_agent(agent_id) - Delete an agent
     - boot_agent(agent_id) - Boot existing agent from DB
     """
-    mcp = FastMCP(name)
+    mcp = FlatModelFastMCP(name)
 
     @mcp.resource("agents://list")
     async def list_agents() -> list[AgentInfo]:
@@ -88,59 +137,26 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> FastMCP:
         presets = discover_presets()
         return [PresetInfo(name=p.name, description=p.description) for p in presets.values()]
 
-    @mcp.tool()
-    async def create_agent(preset: str | None = None) -> dict[str, Any]:
-        """Create a new agent from a preset and boot it.
-
-        Args:
-            preset: Preset name to use (default: "default")
-
-        Returns:
-            Created agent info
-        """
-        container = await registry.create_agent(preset=preset)
-
-        # Notify resource changed
+    @mcp.tool(flat=True)
+    async def create_agent(input: CreateAgentInput) -> CreateAgentOutput:
+        """Create a new agent from a preset and boot it."""
+        container = await registry.create_agent(preset=input.preset)
         await mcp.notify_resource_updated("agents://list")
+        return CreateAgentOutput(id=container.agent_id, status="created", preset=input.preset or "default")
 
-        return {"id": container.agent_id, "status": "created", "preset": preset or "default"}
-
-    @mcp.tool()
-    async def delete_agent(agent_id: str) -> dict[str, Any]:
-        """Delete an agent.
-
-        Args:
-            agent_id: Agent ID to delete
-
-        Returns:
-            Deletion result
-        """
-        # Shutdown if running
-        await registry.shutdown_agent(agent_id)
-
-        # Delete from persistence
-        await registry.persistence.delete_agent(agent_id)
-
-        # Notify resource changed
+    @mcp.tool(flat=True)
+    async def delete_agent(input: DeleteAgentInput) -> DeleteAgentOutput:
+        """Delete an agent."""
+        await registry.shutdown_agent(input.agent_id)
+        await registry.persistence.delete_agent(input.agent_id)
         await mcp.notify_resource_updated("agents://list")
+        return DeleteAgentOutput(id=input.agent_id, status="deleted")
 
-        return {"id": agent_id, "status": "deleted"}
-
-    @mcp.tool()
-    async def boot_agent(agent_id: str) -> dict[str, Any]:
-        """Boot an existing agent from the database.
-
-        Args:
-            agent_id: Agent ID to boot (must exist in DB)
-
-        Returns:
-            Booted agent info
-        """
-        container = await registry.boot_agent(agent_id)
-
-        # Notify resource changed
+    @mcp.tool(flat=True)
+    async def boot_agent(input: BootAgentInput) -> BootAgentOutput:
+        """Boot an existing agent from the database."""
+        container = await registry.boot_agent(input.agent_id)
         await mcp.notify_resource_updated("agents://list")
-
-        return {"id": container.agent_id, "status": "booted"}
+        return BootAgentOutput(id=container.agent_id, status="booted")
 
     return mcp

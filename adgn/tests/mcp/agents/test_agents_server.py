@@ -13,7 +13,7 @@ from fastmcp.mcp_config import MCPConfig
 from mcp.types import TextContent
 import pytest
 
-from adgn.agent.mcp_bridge.servers.agents import AgentInfo, make_agents_server
+from adgn.agent.mcp_bridge.agents import AgentInfo, make_agents_server
 from adgn.agent.persist import AgentMetadata
 
 

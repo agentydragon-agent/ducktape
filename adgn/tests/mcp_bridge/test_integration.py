@@ -21,7 +21,7 @@ from starlette.testclient import TestClient
 
 from adgn.agent.mcp_bridge.auth import TokenRoutingASGI, TokensConfig
 from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
-from adgn.agent.mcp_bridge.servers.agents import make_agents_server
+from adgn.agent.mcp_bridge.agents import make_agents_server
 
 # ---------------------------------------------------------------------------
 # Shared Fixtures
