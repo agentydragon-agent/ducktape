@@ -5,7 +5,7 @@ from typing import Any
 
 from adgn.agent.handler import BaseHandler
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.props.agent_runners import _convert_critique_to_typed_issues, export_unknown_issues_yaml, run_grader_agent
+from adgn.props.agent_runners import run_grader_agent
 from adgn.props.critic import CriticSubmitPayload
 from adgn.props.grader import GradeSubmitInput
 from adgn.props.specimens.registry import SpecimenRegistry
@@ -47,11 +47,8 @@ async def grade_critic_output(
     """
     # Load and hydrate specimen (single hydration, avoid wasteful re-hydrate)
     async with SpecimenRegistry.load_and_hydrate(specimen) as (rec, content_root):
-        # Build typed critique issues for unknown export
-        critique_issues = _convert_critique_to_typed_issues(critic_obj)
-
         # Use shared grader runner
-        grade = await run_grader_agent(
+        return await run_grader_agent(
             specimen_rec=rec,
             content_root=content_root,
             critique=critic_obj,
@@ -64,10 +61,3 @@ async def grade_critic_output(
             verbose=verbose,
             verbose_prefix=verbose_prefix,
         )
-
-        # Export unknown critique issues as YAML
-        export_unknown_issues_yaml(
-            grade=grade, critique_issues=critique_issues, output_dir=transcript_out_dir / "unknowns"
-        )
-
-        return grade

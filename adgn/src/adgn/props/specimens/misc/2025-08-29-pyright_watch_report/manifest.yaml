@@ -1,0 +1,6 @@
+source:
+  vcs: local
+  root: code
+scope:
+  include:
+    - pyright_watch_report.py

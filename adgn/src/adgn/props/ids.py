@@ -51,6 +51,41 @@ BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitati
 
 
 # =============================================================================
+# Specimen Slug
+# =============================================================================
+
+# Specimen slug type with validated pattern enforcing exactly one slash
+# Pattern: {project}/{date-sequence}
+#   - project: lowercase alphanumeric, underscore, hyphen (e.g., "ducktape", "crush", "misc")
+#   - date-sequence: typically YYYY-MM-DD-NN or YYYY-MM-DD-name (e.g., "2025-11-26-00", "2025-08-30-internal_db")
+# Constraint: EXACTLY ONE SLASH for consistent directory depth in runs/
+#
+# Valid examples:
+#   - "ducktape/2025-11-26-00"
+#   - "crush/2025-08-30-internal_db"
+#   - "misc/2025-08-29-pyright_watch_report"
+#
+# Invalid:
+#   - "2025-08-29-pyright_watch_report" (no slash - migrate to misc/)
+#   - "a/b/c" (multiple slashes)
+#
+# Pattern breakdown:
+#   ^[a-z0-9_-]+  - project part (1+ chars)
+#   /             - exactly one slash separator
+#   [a-z0-9_-]+$  - date-sequence part (1+ chars)
+#
+# ruff: noqa: UP040 - TypeAlias required for mypy compatibility
+SpecimenSlug: TypeAlias = Annotated[  # type: ignore[valid-type]
+    constr(
+        pattern=r"^[a-z0-9_-]+/[a-z0-9_-]+$",
+        min_length=3,  # Minimum: "a/b"
+        max_length=100,  # Reasonable upper bound
+    ),
+    _STR_IDENTITY_SERIALIZER,
+]
+
+
+# =============================================================================
 # Namespaced IDs (NewType for type safety)
 # =============================================================================
 

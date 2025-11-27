@@ -373,28 +373,18 @@ class Compositor(FastMCP):
         returns mcp.server.lowlevel.helper_types.ReadResourceContents which must be converted to
         proper MCP protocol types (TextResourceContents | BlobResourceContents).
         """
-        from mcp.server.lowlevel.helper_types import ReadResourceContents as FastMCPReadResourceContents
+        import base64
 
         raw_contents = await self._read_resource_mcp(uri)
         # Convert FastMCP's internal ReadResourceContents to MCP protocol types
-        result: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents] = []
-        for content in raw_contents:
-            if not isinstance(content, FastMCPReadResourceContents):
-                raise TypeError(f"Expected FastMCPReadResourceContents, got {type(content)}")
-            # FastMCPReadResourceContents has 'content' (str | bytes) and 'mime_type' attributes
-            # If content is bytes, it's a blob; if str, it's text
-            if isinstance(content.content, bytes):
-                # Blob content - base64 encode it
-                import base64
-
-                blob_b64 = base64.b64encode(content.content).decode("ascii")
-                result.append(mcp_types.BlobResourceContents(uri=uri, mimeType=content.mime_type, blob=blob_b64))
-            elif isinstance(content.content, str):
-                # Text content
-                result.append(mcp_types.TextResourceContents(uri=uri, mimeType=content.mime_type, text=content.content))
-            else:
-                raise TypeError(f"Unknown content.content type: {type(content.content)}")
-        return result
+        return [
+            mcp_types.BlobResourceContents(
+                uri=uri, mimeType=c.mime_type, blob=base64.b64encode(c.content).decode("ascii")
+            )
+            if isinstance(c.content, bytes)
+            else mcp_types.TextResourceContents(uri=uri, mimeType=c.mime_type, text=c.content)
+            for c in raw_contents
+        ]
 
 
 async def build_compositor(
