@@ -3,6 +3,12 @@
 system_inspection_nopasswd_user: "{{ my_user }}"
 
 # List of read-only system inspection commands
+# KEEP IN SYNC - BEGIN: Update Claude Code permissions in:
+#   nix/home/claude-code.nix (simpleInspectionCommands, specificSubcommands, logViewingCommands)
+#
+# IMPORTANT: Only include commands that cannot cause irreversible operations
+# - YES: dmesg (read kernel log), docker ps (list containers), fdisk -l (list partitions)
+# - NO: dd (disk operations), docker rm (remove containers), fdisk without -l (interactive mode)
 system_inspection_nopasswd_commands:
   # Hardware information
   - /usr/bin/lspci
@@ -154,3 +160,4 @@ system_inspection_nopasswd_commands:
   - /usr/bin/less /var/log/*
   - /usr/bin/zcat /var/log/*.gz
   - /usr/bin/bzcat /var/log/*.bz2
+# KEEP IN SYNC - END

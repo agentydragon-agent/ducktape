@@ -27,7 +27,7 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.prompt_eval.server import PromptEvalState, attach_prompt_eval
-from adgn.props.prop_utils import pkg_dir, specimens_definitions_root
+from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.specimens.registry import SpecimenRegistry
 from adgn.props.splits import get_train_specimens
 
@@ -85,6 +85,7 @@ async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path
 
 async def run_prompt_optimizer(
     budget: float,
+    runs_dir: Path,
     out_dir: Path | None = None,
     model: str = "gpt-5",
     agent_model: str = "gpt-5-mini",
@@ -94,6 +95,7 @@ async def run_prompt_optimizer(
 
     Args:
         budget: $ budget for optimization
+        runs_dir: Base runs directory (passed from CLI, computed once at entry point)
         out_dir: Output directory (defaults to runs/prompt_optimize_<timestamp>)
         model: Model ID to use for optimization agent
         agent_model: Model ID to use for inner critic agent during evaluations
@@ -104,11 +106,11 @@ async def run_prompt_optimizer(
 
     # Session directory
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    session_dir = (out_dir if out_dir is not None else (pkg_dir() / "runs" / f"prompt_optimize_{ts}")).resolve()
+    session_dir = (out_dir if out_dir is not None else (runs_dir / f"prompt_optimize_{ts}")).resolve()
     session_dir.mkdir(parents=True, exist_ok=True)
 
     # Shared evaluation directories
-    evals_base = (pkg_dir() / "runs" / "prompt_evals").resolve()
+    evals_base = (runs_dir / "prompt_evals").resolve()
     evals_base.mkdir(parents=True, exist_ok=True)
 
     # Hydrate train specimens and keep alive for Docker mounting

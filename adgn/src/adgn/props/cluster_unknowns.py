@@ -16,7 +16,6 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP  # type: ignore
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.ids import BaseIssueID
-from adgn.props.prop_utils import pkg_dir
 from adgn.props.rationale import Rationale
 from adgn.props.run_models import GraderInput, GraderOutput, SpecimenScope
 
@@ -211,7 +210,7 @@ async def cluster_unknowns_async(
     return out_root
 
 
-def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, runs_dir: Path | None = None) -> Path:
+def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, runs_dir: Path) -> Path:
     """Cluster unknowns per specimen in parallel using an LLM (one run per specimen).
 
     - Discovers grader runs and loads unknown issues from output.json files (using Pydantic)
@@ -223,13 +222,8 @@ def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, runs_
     Args:
         model: LLM model to use for clustering
         out_dir: Optional output directory override
-        runs_dir: Base runs directory (if None, uses pkg_dir() / "runs" - should be passed from caller)
+        runs_dir: Base runs directory (passed from CLI, computed once at entry point)
     """
-    # Compute runs directory once (caller should pass this, but allow fallback for backwards compat)
-    # TODO: Remove fallback once all callers are updated to pass runs_dir explicitly
-    if runs_dir is None:
-        runs_dir = pkg_dir() / "runs"
-
     grader_run_dirs = discover_grader_runs(runs_dir)
     issues = load_unknowns(grader_run_dirs)
     if not issues:

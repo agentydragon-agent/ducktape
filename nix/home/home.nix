@@ -90,6 +90,7 @@ in {
       ./codex
       (import ./modules/solarized.nix {inherit pkgs lib enableGui solarizedLight solarizedDark terminalFont;})
       (import ./terminals {inherit config pkgs lib enableGui unstablePkgs solarizedLight solarizedDark terminalFont;})
+      (import ./claude-code.nix {inherit config pkgs lib unstablePkgs;})
     ]
     ++ lib.optionals enableGui [
       ./modules/gnome-workspace-shortcuts.nix
@@ -809,32 +810,6 @@ in {
 
   # Powerlevel10k configuration, sourced in zsh-init.sh
   home.file.".p10k.zsh".source = ./p10k.zsh;
-
-  programs.claude-code = {
-    enable = true;
-    package = unstablePkgs.claude-code;
-    settings = {
-      theme = "dark";
-      includeCoAuthoredBy = false;
-      permissions = {
-        allow = [
-          "Read"
-          "Edit"
-          "Write"
-          "MultiEdit"
-          "Search"
-          "Task"
-          "Bash(git status:*)"
-          "Bash(git diff:*)"
-          "WebFetch"
-          "WebSearch"
-        ];
-        # ask = ["Bash(*)"];  - use Bash without parens to allow all commands
-        deny = [];
-        defaultMode = "default";
-      };
-    };
-  };
 
   # Create Worthy config directory
   home.file.".config/worthy/.keep".text = "";
