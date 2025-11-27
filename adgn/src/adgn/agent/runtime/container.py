@@ -35,6 +35,7 @@ from adgn.mcp._shared.constants import (
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.clients import PolicyApproverStub, PolicyReaderStub
 from adgn.mcp.approval_policy.engine import PolicyEngine
+from adgn.mcp.approvals import ApprovalsServerHandle
 from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.mcp.compositor.server import Compositor
@@ -42,7 +43,6 @@ from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import make_loop_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.policy_gateway.middleware import PolicyGatewayMiddleware
 from adgn.mcp.runtime.server import make_runtime_server
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
@@ -184,8 +184,8 @@ class AgentContainer:
     _policy_approver: PolicyApproverStub | None = field(default=None, init=False)
     # Policy gateway middleware (for tracking in-flight tool calls)
     _policy_gateway: PolicyGatewayMiddleware | None = field(default=None, init=False)
-    # Approvals server reference (for broadcasting pending approvals updates)
-    _approvals_server: NotifyingFastMCP | None = field(default=None, init=False)
+    # Approvals server handle (for broadcasting pending approvals updates)
+    _approvals_handle: ApprovalsServerHandle | None = field(default=None, init=False)
 
     @property
     def policy_approver(self) -> PolicyApproverStub:
@@ -293,10 +293,9 @@ class AgentContainer:
         assert approval_hub is not None
 
         async def _pending_notifier(call_id: str, tool_key: str, args_json: str | None) -> None:
-            # Broadcast MCP resource update for pending approvals
-            if self._approvals_server is not None:
-                from adgn.mcp.approvals.server import APPROVALS_PENDING_URI
-                await self._approvals_server.broadcast_resource_updated(APPROVALS_PENDING_URI)
+            # Broadcast MCP resource update for pending approvals via handle
+            if self._approvals_handle is not None:
+                await self._approvals_handle.notify_pending_changed()
 
         self._policy_gateway = PolicyGatewayMiddleware(
             hub=approval_hub,
@@ -584,7 +583,7 @@ class AgentContainer:
 
             # Approvals server (approval actions: approve_call, deny_abort, deny_continue)
             from adgn.mcp.approvals import attach_approvals
-            self._approvals_server = await attach_approvals(self._compositor, hub=self.approval_hub)
+            self._approvals_handle = await attach_approvals(self._compositor, hub=self.approval_hub)
 
             # Runtime exec server (no host mounts)
             runtime_image = resolve_runtime_image()

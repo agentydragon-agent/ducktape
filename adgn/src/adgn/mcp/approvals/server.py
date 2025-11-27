@@ -92,8 +92,23 @@ def make_approvals_server(
     return mcp
 
 
-async def attach_approvals(comp, hub: ApprovalHub, *, name: str = APPROVALS_SERVER_NAME):
-    """Attach approvals server in-proc to a Compositor."""
+class ApprovalsServerHandle:
+    """Handle for notifying the approvals server about pending list changes."""
+
+    def __init__(self, server: NotifyingFastMCP) -> None:
+        self._server = server
+
+    async def notify_pending_changed(self) -> None:
+        """Broadcast that pending approvals list has changed."""
+        await self._server.broadcast_resource_updated(APPROVALS_PENDING_URI)
+
+
+async def attach_approvals(comp, hub: ApprovalHub, *, name: str = APPROVALS_SERVER_NAME) -> ApprovalsServerHandle:
+    """Attach approvals server in-proc to a Compositor.
+
+    Returns a handle for notifying about pending approval changes (e.g., when new approvals are added).
+    The handle keeps notification logic encapsulated - callers don't access the server directly.
+    """
 
     def notify_callback(uri: str):
         """Sync callback that schedules async broadcast."""
@@ -103,4 +118,4 @@ async def attach_approvals(comp, hub: ApprovalHub, *, name: str = APPROVALS_SERV
 
     server = make_approvals_server(hub, name=name, notifier_callback=notify_callback)
     await comp.mount_inproc(name, server)
-    return server
+    return ApprovalsServerHandle(server)
