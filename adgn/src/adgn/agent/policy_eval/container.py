@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 import os
-from typing import Protocol
+from typing import TYPE_CHECKING
 
 from docker.client import DockerClient
 
@@ -11,15 +11,10 @@ from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.agent.policy_eval.runner import run_policy_source
 from adgn.agent.runtime.images import resolve_runtime_image
 
+if TYPE_CHECKING:
+    from adgn.mcp.approval_policy.server import ApprovalPolicyServer
+
 logger = logging.getLogger(__name__)
-
-
-class PolicySource(Protocol):
-    """Protocol for objects that provide policy source code."""
-
-    def get_policy(self) -> tuple[str, int]:
-        """Return current policy source and version."""
-        ...
 
 
 @dataclass
@@ -34,7 +29,7 @@ class ContainerPolicyEvaluator:
 
     agent_id: str
     docker_client: DockerClient
-    engine: PolicySource
+    engine: ApprovalPolicyServer
     image: str = field(default_factory=resolve_runtime_image)
     timeout_secs: float = field(
         default_factory=lambda: float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
