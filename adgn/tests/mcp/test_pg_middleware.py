@@ -23,12 +23,11 @@ from adgn.mcp.approval_policy.engine import CallDecision
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_allow(make_pg_client, make_decision_engine, backend_server):
-    engine = make_decision_engine("allow")
-    async with make_pg_client({"backend": backend_server}, policy_engine=engine) as sess:
-        res = await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "7"})
-        assert not getattr(res, "is_error", False)
-        assert getattr(res, "structured_content", None) == {"echo": "7"}
+async def test_pg_middleware_allow(pg_client):
+    # pg_client already has allow-all policy
+    res = await pg_client.call_tool(build_mcp_function("backend", "echo"), {"text": "7"})
+    assert not getattr(res, "is_error", False)
+    assert getattr(res, "structured_content", None) == {"echo": "7"}
 
 
 @pytest.mark.requires_docker
@@ -50,24 +49,19 @@ async def test_pg_middleware_deny_continue(make_pg_client, make_decision_engine,
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_reserved_backend_code_remap(make_pg_client, backend_server):
-    # Middleware already installed by make_pg_client with allow-all policy
-    async with make_pg_client({"backend": backend_server}) as sess:
-        with pytest.raises(ToolError) as ei:
-            await sess.call_tool(build_mcp_function("backend", "raise_reserved"), {})
-        # Backend used reserved policy code/message; middleware remaps to explicit misuse error
-        s = str(ei.value)
-        assert "policy_backend_reserved_misuse" in s
+async def test_pg_middleware_reserved_backend_code_remap(pg_client):
+    with pytest.raises(ToolError) as ei:
+        await pg_client.call_tool(build_mcp_function("backend", "raise_reserved"), {})
+    # Backend used reserved policy code/message; middleware remaps to explicit misuse error
+    assert "policy_backend_reserved_misuse" in str(ei.value)
 
 
 @pytest.mark.requires_docker
 @pytest.mark.xfail(reason="In-proc raises drop ErrorData; stamp not inspectable at middleware layer")
-async def test_pg_middleware_backend_stamp_misuse(make_pg_client, backend_server):
-    async with make_pg_client({"backend": backend_server}) as sess:
-        with pytest.raises(ToolError) as ei:
-            await sess.call_tool(build_mcp_function("backend", "raise_with_gateway_stamp"), {})
-        s = str(ei.value)
-        assert POLICY_BACKEND_RESERVED_MISUSE_MSG in s
+async def test_pg_middleware_backend_stamp_misuse(pg_client):
+    with pytest.raises(ToolError) as ei:
+        await pg_client.call_tool(build_mcp_function("backend", "raise_with_gateway_stamp"), {})
+    assert POLICY_BACKEND_RESERVED_MISUSE_MSG in str(ei.value)
 
 
 @pytest.mark.requires_docker

@@ -278,6 +278,16 @@ def make_pg_compositor(sqlite_persistence, request: pytest.FixtureRequest):
 
 
 @pytest.fixture
+async def pg_client(make_pg_client, backend_server):
+    """Ready-to-use client with backend_server mounted and allow-all policy.
+
+    For tests that just need a simple compositor with a backend server.
+    """
+    async with make_pg_client({"backend": backend_server}) as sess:
+        yield sess
+
+
+@pytest.fixture
 def make_compositor():
     """Async helper to open a Compositor and yield (Client, Compositor).
 
