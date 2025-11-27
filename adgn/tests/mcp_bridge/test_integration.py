@@ -27,21 +27,12 @@ from adgn.agent.mcp_bridge.servers.agents import make_agents_server
 # ---------------------------------------------------------------------------
 # Shared Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def mock_persistence():
-    """Create mock persistence layer."""
-    persistence = AsyncMock()
-    persistence.get_agent = AsyncMock(return_value=None)
-    persistence.list_agents = AsyncMock(return_value=[])
-    persistence.delete_agent = AsyncMock()
-    return persistence
+# Note: sqlite_persistence and docker_client fixtures come from tests/conftest.py
 
 
 @pytest.fixture
 def mock_compositor():
-    """Create mock compositor."""
+    """Create mock compositor for verifying mount/unmount calls."""
     compositor = AsyncMock()
     compositor.mount_inproc = AsyncMock()
     compositor.unmount_server = AsyncMock()
@@ -50,7 +41,7 @@ def mock_compositor():
 
 @pytest.fixture
 def mock_container():
-    """Create mock agent container."""
+    """Create mock agent container for verifying close calls."""
     container = MagicMock()
     container.agent_id = "test-agent-1"
     container._compositor = MagicMock()
@@ -60,44 +51,54 @@ def mock_container():
 
 
 @pytest.fixture
-def mock_registry(mock_persistence):
-    """Create mock infrastructure registry."""
+def mock_registry(sqlite_persistence):
+    """Create mock infrastructure registry using real persistence."""
     registry = MagicMock()
     registry.list_agents.return_value = []
-    registry.persistence = mock_persistence
+    registry.persistence = sqlite_persistence
     return registry
 
 
 @pytest.fixture
 def user_app():
     """Create a simple user-facing ASGI app for routing tests."""
+
     async def homepage(request):
         return PlainTextResponse("user-app")
+
     return Starlette(routes=[Route("/", homepage)])
 
 
 @pytest.fixture
 def agent_app_factory():
     """Factory to create agent ASGI apps that identify themselves."""
+
     def make_app(agent_id: str):
         async def homepage(request):
             return PlainTextResponse(f"agent-{agent_id}")
+
         return Starlette(routes=[Route("/", homepage)])
+
     return make_app
 
 
 @pytest.fixture
-def registry_factory(mock_persistence):
-    """Factory to create InfrastructureRegistry with mocked dependencies."""
+def registry_factory(sqlite_persistence):
+    """Factory to create InfrastructureRegistry with real persistence.
+
+    Uses mock Docker client since Docker may not be available in test environments.
+    """
+
     def make_registry(**kwargs):
         return InfrastructureRegistry(
-            persistence=kwargs.get("persistence", mock_persistence),
+            persistence=kwargs.get("persistence", sqlite_persistence),
             model="test-model",
             client_factory=lambda m: MagicMock(),
-            docker_client=MagicMock(),
+            docker_client=kwargs.get("docker_client", MagicMock()),
             mcp_config=MCPConfig(mcpServers={}),
-            **{k: v for k, v in kwargs.items() if k != "persistence"},
+            **{k: v for k, v in kwargs.items() if k not in ("persistence", "docker_client")},
         )
+
     return make_registry
 
 
@@ -390,10 +391,9 @@ class TestInfrastructureRegistry:
         assert result is mock_container
 
     @pytest.mark.asyncio
-    async def test_boot_agent_raises_for_unknown_agent(self, registry_factory, mock_persistence):
-        """boot_agent raises KeyError if agent not in DB."""
-        mock_persistence.get_agent.return_value = None
-        registry = registry_factory(persistence=mock_persistence)
+    async def test_boot_agent_raises_for_unknown_agent(self, registry_factory):
+        """boot_agent raises KeyError if agent not in DB (using real persistence)."""
+        registry = registry_factory()
 
         with pytest.raises(KeyError, match="Agent not found"):
             await registry.boot_agent("nonexistent-agent")
@@ -409,10 +409,9 @@ class TestInfrastructureRegistry:
         assert result is mock_container
 
     @pytest.mark.asyncio
-    async def test_create_external_agent_marks_as_external(self, registry_factory, mock_persistence, mock_compositor):
+    async def test_create_external_agent_marks_as_external(self, registry_factory, mock_compositor):
         """create_external_agent marks agent as external."""
-        mock_persistence.get_agent.return_value = None
-        registry = registry_factory(persistence=mock_persistence)
+        registry = registry_factory()
         registry.global_compositor = mock_compositor
 
         # Patch build_container to return a mock
