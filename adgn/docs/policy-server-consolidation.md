@@ -387,18 +387,76 @@ External agents (e.g., Claude Code connecting remotely) need:
 2. HTTP URL: `http://host:port/mcp`
 3. Bearer token in `Authorization` header
 
+### REST API Removal
+
+**All REST API endpoints will be removed.** Frontend communicates with backend exclusively via MCP.
+
+#### Current REST Endpoints → MCP Replacements
+
+| REST Endpoint | MCP Replacement | Server |
+|---------------|-----------------|--------|
+| **Agent Management** | | |
+| `GET /api/agents` | `agents_list_agents` tool | `agents` |
+| `POST /api/agents` | `agents_create_agent` tool | `agents` |
+| `DELETE /api/agents/{id}` | `agents_delete_agent` tool | `agents` |
+| `GET /api/agents/{id}/status` | `agent_{id}_status` resource | per-agent |
+| `GET /api/agents/{id}/snapshot` | `agent_{id}_snapshot` resource | per-agent |
+| `GET /api/presets` | `agents_list_presets` tool | `agents` |
+| **Agent Control** | | |
+| `POST /api/agents/{id}/prompt` | `agent_{id}_agent_control_send_prompt` tool | per-agent |
+| `POST /api/agents/{id}/abort` | `agent_{id}_agent_control_abort_run` tool | per-agent |
+| **Policy/Approvals** | | |
+| `POST /api/agents/{id}/approve` | `agent_{id}_admin_approve_call` tool | per-agent |
+| `POST /api/agents/{id}/deny_continue` | `agent_{id}_admin_reject_call` tool | per-agent |
+| `POST /api/agents/{id}/deny_abort` | `agent_{id}_admin_reject_call` tool | per-agent |
+| `POST /api/agents/{id}/policy` | `agent_{id}_admin_set_policy` tool | per-agent |
+| `GET /api/agents/{id}/proposals` | `agent_{id}_reader_proposals` resource | per-agent |
+| `POST /api/agents/{id}/proposals/{pid}/withdraw` | `agent_{id}_admin_withdraw_proposal` tool | per-agent |
+| `POST /api/agents/{id}/proposals/{pid}/reject` | `agent_{id}_admin_reject_proposal` tool | per-agent |
+| `GET /api/agents/{id}/proposals/{pid}` | `agent_{id}_reader_proposal` resource | per-agent |
+| **MCP Server Management** | | |
+| `POST /api/agents/{id}/mcp/attach` | `agent_{id}_compositor_attach` tool | per-agent |
+| `POST /api/agents/{id}/mcp/detach` | `agent_{id}_compositor_detach` tool | per-agent |
+| **Runs (Historical)** | | |
+| `GET /api/runs` | `agents_list_runs` tool | `agents` |
+| `GET /api/runs/{id}` | `agents_get_run` tool | `agents` |
+| `GET /api/runs/{id}/events` | `agents_get_run_events` tool | `agents` |
+
+#### Backend Changes
+
+1. **Remove from `app.py`:**
+   - All `@app.get("/api/...")` endpoints
+   - All `@app.post("/api/...")` endpoints
+   - All `@app.delete("/api/...")` endpoints
+   - Keep only: `/` (index.html), `/vite.svg`, `/static/*`, `/mcp`
+
+2. **Add to `agents` server (`mcp_bridge/servers/agents.py`):**
+   - `list_presets` tool
+   - `list_runs`, `get_run`, `get_run_events` tools
+
+3. **Add to per-agent user compositor:**
+   - `status` resource
+   - `snapshot` resource
+   - `compositor_attach`, `compositor_detach` tools (or mount compositor_meta)
+
+#### Frontend Changes
+
+**Delete `api.ts` entirely** - all operations move to MCP client.
+
 ### Frontend Updates
 
 #### Current State
 
 The frontend (`adgn/src/adgn/agent/web/`) currently:
-- Uses HTTP REST API (`api.ts`) for agent CRUD, snapshots, approvals
+- Uses HTTP REST API (`api.ts`) for agent CRUD, snapshots, approvals (**to be removed**)
 - Uses MCP SSE client (`client.ts`) connecting to `/mcp` for tool calls/resources
 - **No authentication** - direct connection without bearer tokens
 
 #### Required Changes
 
-1. **Switch to Streamable HTTP Transport** (`src/features/mcp/client.ts`)
+1. **Delete `api.ts`** - no more REST API calls
+
+2. **Switch to Streamable HTTP Transport** (`src/features/mcp/client.ts`)
 
 The MCP SDK deprecated SSE transport in favor of Streamable HTTP (introduced 2025-03-26).
 Use `StreamableHTTPClientTransport` instead of `SSEClientTransport`:
@@ -408,7 +466,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 export interface McpClientOptions {
-  agentId?: string
   bearerToken: string  // Required: Token from URL query param
 }
 
@@ -430,12 +487,34 @@ export class AgentMcpClient {
     )
 
     await client.connect(transport)
-    return new AgentMcpClient(client, transport, options.agentId)
+    return new AgentMcpClient(client, transport)
+  }
+
+  // Tool calls use global compositor prefixes
+  async listAgents() {
+    return this.callTool('agents_list_agents')
+  }
+
+  async createAgent(preset?: string) {
+    return this.callTool('agents_create_agent', { preset })
+  }
+
+  async bootAgent(agentId: string) {
+    return this.callTool('agents_boot_agent', { agent_id: agentId })
+  }
+
+  // Per-agent tools use agent_{id}_ prefix
+  async sendPrompt(agentId: string, text: string) {
+    return this.callTool(`agent_${agentId}_agent_control_send_prompt`, { text })
+  }
+
+  async approveCall(agentId: string, callId: string) {
+    return this.callTool(`agent_${agentId}_admin_approve_call`, { call_id: callId })
   }
 }
 ```
 
-2. **Token from URL Query Parameter** (`src/shared/auth.ts` - new file)
+3. **Token from URL Query Parameter** (`src/shared/auth.ts` - new file)
 
 CLI prints URL like: `http://localhost:8765?token=user_token_abc123`
 
@@ -461,39 +540,20 @@ export function requireToken(): string {
 }
 ```
 
-3. **MCP Manager Update** (`src/features/mcp/manager.ts`)
-
-```typescript
-import { requireToken } from '../../shared/auth'
-
-async function createClient(agentId: string): Promise<AgentMcpClient> {
-  const token = requireToken()
-  return AgentMcpClient.connect({
-    agentId,
-    bearerToken: token
-  })
-}
-```
-
 4. **CLI URL Output** (backend `cli.py`)
 
 ```python
 # When starting server, print authenticated URL:
-token = load_tokens()[0].get("admin") or generate_dev_token()
+token = list(load_tokens()[0].values())[0]  # Get first user token
 print(f"Open UI: http://{host}:{port}?token={token}")
 ```
 
 #### Migration Path
 
-1. **Phase 5a**: Backend implements token routing + Streamable HTTP transport
-2. **Phase 5b**: Frontend switches to Streamable HTTP + token from URL
-3. **Phase 5c**: CLI prints authenticated URL on startup
-
-#### No Changes Needed
-
-- HTTP REST API (`api.ts`) - These endpoints remain separate from MCP routing
-  - Agent CRUD still uses `/api/agents/*`
-  - This separation is intentional - REST for management, MCP for tool execution
+1. **Phase 5a**: Backend implements MCP tools/resources for all REST functionality
+2. **Phase 5b**: Frontend migrates from api.ts to MCP client calls
+3. **Phase 5c**: Remove REST endpoints from app.py
+4. **Phase 5d**: CLI prints authenticated URL on startup
 
 #### Browser Session Issue (Known)
 
