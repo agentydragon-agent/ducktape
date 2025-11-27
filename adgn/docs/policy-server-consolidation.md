@@ -195,14 +195,19 @@ class InfrastructureRegistry:
         """Create an external agent's container at startup.
 
         External agents are created eagerly from tokens config.
-        Unlike boot_agent(), this does NOT mount to global compositor
-        (external agents have their own ASGI app, not a prefix on the global).
+        Like boot_agent(), this ALSO mounts user compositor to global
+        so the user sees all agents (internal + external) in the same UI.
         """
         async with self._lock:
             if agent_id in self._agents:
                 return self._agents[agent_id]
-            container = await self._create_container(agent_id)
+            container = await self._create_container(agent_id, external=True)
             self._agents[agent_id] = container
+            # Mount user compositor to global (same as internal agents)
+            await self.global_compositor.mount_inproc(
+                f"agent_{agent_id}",
+                container.user_compositor
+            )
             return container
 ```
 
@@ -333,14 +338,17 @@ async def lifespan(app):
     global_comp = await create_global_compositor(registry)
     registry.global_compositor = global_comp
 
-    # Create ASGI app for user compositor
-    user_app = create_streamable_http_app(global_comp)
-
-    # Create external agent compositors at startup
+    # Create external agent containers at startup
+    # This mounts their user compositors to global_comp
     agent_apps: dict[AgentID, ASGIApp] = {}
     for agent_id in set(agent_tokens.values()):
+        # Creates container AND mounts user compositor to global
         container = await registry.create_external_agent(agent_id)
+        # Agent ASGI app for the agent's HTTP connection (with policy gateway)
         agent_apps[agent_id] = create_streamable_http_app(container.agent_compositor)
+
+    # Create ASGI app for user compositor (now includes external agent prefixes)
+    user_app = create_streamable_http_app(global_comp)
 
     # Build token routing app
     mcp_app = TokenRoutingASGI(
@@ -561,7 +569,9 @@ External agents (e.g., Claude Code connecting remotely) need:
 
 #### Startup Behavior
 
-At server startup, external agent compositors are created eagerly from the tokens config:
+At server startup, external agent containers are created eagerly from the tokens config.
+Their **user compositors are mounted on the global compositor** (same as internal agents)
+so the user sees ALL agents in the same UI.
 
 ```python
 async def create_routing_app(
@@ -571,18 +581,19 @@ async def create_routing_app(
 ) -> TokenRoutingASGI:
     """Create the ASGI app with token-based routing.
 
-    Creates external agent compositors at startup from tokens config.
+    Creates external agent containers at startup from tokens config.
+    Each external agent's user compositor is mounted on the global compositor.
     """
-    # Create user-facing compositor ASGI app
-    user_app = create_streamable_http_app(registry.global_compositor)
-
-    # Create agent ASGI apps for ALL external agents defined in tokens
+    # Create external agents first (mounts user compositors to global)
     agent_apps: dict[AgentID, ASGIApp] = {}
     for agent_id in set(agent_tokens.values()):
-        # Create agent container (with agent compositor + policy gateway)
+        # Creates container AND mounts user compositor to global
         container = await registry.create_external_agent(agent_id)
-        # Create ASGI app for this agent's compositor
+        # Agent ASGI app is for the AGENT's connection (with policy gateway)
         agent_apps[agent_id] = create_streamable_http_app(container.agent_compositor)
+
+    # Create user-facing compositor ASGI app (now includes external agent prefixes)
+    user_app = create_streamable_http_app(registry.global_compositor)
 
     return TokenRoutingASGI(
         user_tokens=user_tokens,
@@ -595,12 +606,16 @@ async def create_routing_app(
 **Startup sequence:**
 1. Load tokens from `tokens.yaml`
 2. Create global user-facing compositor
-3. For each external agent token: create `AgentContainer` with agent compositor
-4. Build `TokenRoutingASGI` with all ASGI apps
+3. For each external agent token:
+   - Create `AgentContainer` (user compositor + agent compositor with policy gateway)
+   - Mount user compositor to global as `agent_{id}`
+4. Build `TokenRoutingASGI` with user ASGI app + agent ASGI apps
 5. Mount at `/mcp` endpoint
 
-**Internal agents** (created via `boot_agent()` tool) are created lazily at runtime
-and use inproc MCP - they bypass HTTP/token routing entirely
+**Internal vs External agents:**
+- **Internal**: Created lazily via `boot_agent()`, use inproc MCP (no HTTP token)
+- **External**: Created at startup, connect via HTTP with agent token
+- **Both**: User compositor mounted on global → user sees all agents in same UI
 
 ### REST API Removal
 
