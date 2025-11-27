@@ -35,6 +35,27 @@ When this implementation is complete, the following MUST all be true:
 - ✅ Runs directory computed once and passed down: `discover_grader_runs(runs_dir)` requires explicit path
   - ⚠️ TODO: Audit all callers to pass `runs_dir` explicitly (no fallbacks to `pkg_dir() / "runs"`)
 
+### 6. Path Token Deduplication (TODO)
+- ❌ Path tokens ("grader", "critic", "output.json", "input.json", "events.jsonl") must not be duplicated
+- ❌ Current violations (audit results):
+  - `cluster_unknowns.py:66`: `runs_dir.rglob("*/grader/*/*/output.json")` - hardcoded pattern
+  - `cluster_unknowns.py:88,98`: `run_dir / "input.json"`, `run_dir / "output.json"` - direct path construction
+  - `run_managers.py:134,149,188,202`: Multiple `/ "input.json"` and `/ "output.json"` duplications
+  - `run_managers.py:291`: `return "grader"` - hardcoded run type string
+  - `grade_runner.py:59`: `transcript_out_dir / "grader"` - hardcoded subdirectory
+  - `per_file_eval.py:243`: `file_run_dir / "grader"` - hardcoded subdirectory
+- ❌ Solution: `RunsContext` object pattern:
+  - Holds base runs directory
+  - Provides methods for path derivation: `discover_grader_runs()`, `run_input_path(run_dir)`, `run_output_path(run_dir)`
+  - Centralizes path token constants (no string literals in business logic)
+  - Injected at entry point level (CLI commands, MCP tools)
+- ⚠️ Implementation steps:
+  1. Create `runs_context.py` with `RunsContext` class and path derivation methods
+  2. Define constants: `RUN_TYPE_GRADER`, `RUN_TYPE_CRITIC`, `INPUT_JSON`, `OUTPUT_JSON`, `EVENTS_JSONL`
+  3. Refactor `run_managers.py` to use context methods
+  4. Refactor `cluster_unknowns.py` discovery pattern
+  5. Update all callers to inject `RunsContext` instead of bare `Path`
+
 ## Executive Summary
 
 **Goal**: Unified, type-safe run management with atomic runs + orchestrated sessions
