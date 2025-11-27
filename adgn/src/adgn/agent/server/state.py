@@ -7,7 +7,7 @@ import uuid
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.agent.handler import ToolCall
+from adgn.agent.server.protocol import ToolCall
 
 # ---- Display items (normalized, UI-friendly) ----
 

@@ -19,10 +19,14 @@ def is_assistant_markdown(md: str | None = None):
 
 def is_tool_item(tool: str | None = None, call_id: str | None = None):
     props = {"kind": "Tool"}
+    # ToolItem has tool_call with name and call_id inside
+    tool_call_props = {}
     if tool is not None:
-        props["tool"] = tool
+        tool_call_props["name"] = tool
     if call_id is not None:
-        props["call_id"] = call_id
+        tool_call_props["call_id"] = call_id
+    if tool_call_props:
+        props["tool_call"] = has_properties(**tool_call_props)
     return has_properties(**props)
 
 

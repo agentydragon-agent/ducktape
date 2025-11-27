@@ -21,7 +21,7 @@ def test_end_turn_tool_filtering():
     # Function output for end_turn should also be filtered out
     output = FunctionCallOutput(
         call_id="test-123",
-        result=to_pydantic(CallToolResult(content=[], structured_content={"ok": True}, is_error=False)),
+        result=to_pydantic(CallToolResult(content=[], structured_content={"ok": True}, is_error=False, meta=None)),
     )
     after_output = reduce_ui_state(after_call, output)
 
@@ -78,4 +78,4 @@ def test_regular_tools_not_affected():
 
     assert len(after_regular.items) == 1, "Regular tools should create items"
     assert after_regular.items[0].kind == "Tool", "Should create Tool item"
-    assert after_regular.items[0].tool == build_mcp_function("echo", "echo"), "Should preserve tool name"
+    assert after_regular.items[0].tool_call.name == build_mcp_function("echo", "echo"), "Should preserve tool name"

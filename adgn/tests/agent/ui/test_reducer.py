@@ -69,7 +69,7 @@ def test_function_output_updates_exec_stream():
         ),
     )
     result = CallToolResult(
-        content=[], structured_content={"stdout": "ok", "stderr": "", "exit_code": 0}, is_error=False
+        content=[], structured_content={"stdout": "ok", "stderr": "", "exit_code": 0}, is_error=False, meta=None
     )
     pydantic_result = to_pydantic(result)
     s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c4", result=pydantic_result))
@@ -88,7 +88,7 @@ def test_function_output_updates_json_output_when_not_exec():
         s, ToolCall(name=build_mcp_function("kv", "get"), args_json=json.dumps({"key": "k"}), call_id="c5")
     )
     payload = {"value": {"a": 1}}
-    result = CallToolResult(content=[], structured_content=payload, is_error=False)
+    result = CallToolResult(content=[], structured_content=payload, is_error=False, meta=None)
     pydantic_result = to_pydantic(result)
     s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c5", result=pydantic_result))
     it = s2.items[0]
