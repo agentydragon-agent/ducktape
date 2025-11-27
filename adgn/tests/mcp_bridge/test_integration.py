@@ -21,7 +21,6 @@ from starlette.testclient import TestClient
 
 from adgn.agent.mcp_bridge.auth import TokenRoutingASGI, TokensConfig
 from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
-from adgn.agent.mcp_bridge.servers.agent_control import make_agent_control_server
 from adgn.agent.mcp_bridge.servers.agents import make_agents_server
 
 # ---------------------------------------------------------------------------
@@ -320,12 +319,12 @@ class TestAgentsServer:
 
 
 class TestAgentControlServer:
-    """Tests for agent_control server."""
+    """Tests for agent control server via AgentContainer.make_control_server()."""
 
     @pytest.mark.asyncio
-    async def test_make_agent_control_server_creates_server(self, mock_container):
-        """make_agent_control_server creates a FastMCP server."""
-        server = make_agent_control_server("test-control", mock_container)
+    async def test_container_make_control_server_creates_server(self, mock_container):
+        """container.make_control_server() creates a FastMCP server."""
+        server = mock_container.make_control_server("test-control")
 
         assert server is not None
         assert server.name == "test-control"
