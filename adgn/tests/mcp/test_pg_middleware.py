@@ -32,21 +32,19 @@ async def test_pg_middleware_allow(pg_client):
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_deny_abort(make_pg_client, make_decision_engine, backend_server):
-    engine = make_decision_engine(ApprovalDecision.DENY_ABORT)
+@pytest.mark.parametrize(
+    ("decision", "expected_msg"),
+    [
+        (ApprovalDecision.DENY_ABORT, POLICY_DENIED_ABORT_MSG),
+        (ApprovalDecision.DENY_CONTINUE, POLICY_DENIED_CONTINUE_MSG),
+    ],
+)
+async def test_pg_middleware_deny(make_pg_client, make_decision_engine, backend_server, decision, expected_msg):
+    engine = make_decision_engine(decision)
     async with make_pg_client({"backend": backend_server}, policy_engine=engine) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
-        assert POLICY_DENIED_ABORT_MSG in str(ei.value)
-
-
-@pytest.mark.requires_docker
-async def test_pg_middleware_deny_continue(make_pg_client, make_decision_engine, backend_server):
-    engine = make_decision_engine(ApprovalDecision.DENY_CONTINUE)
-    async with make_pg_client({"backend": backend_server}, policy_engine=engine) as sess:
-        with pytest.raises(ToolError) as ei:
-            await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
-        assert POLICY_DENIED_CONTINUE_MSG in str(ei.value)
+        assert expected_msg in str(ei.value)
 
 
 @pytest.mark.requires_docker
