@@ -20,7 +20,7 @@ import uvicorn
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.mcp_bridge.auth import load_tokens
+from adgn.agent.mcp_bridge.auth import TokensConfig
 from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
 from adgn.agent.server.bus import ServerBus
@@ -132,8 +132,8 @@ def _build_cfg_and_print(mcp_configs: list[Path]) -> MCPConfig:
 
 def _print_auth_url(host: str, port: int) -> None:
     """Print the authenticated URL for accessing the UI."""
-    user_tokens, _agent_tokens = load_tokens()
-    if user_tokens:
+    config = TokensConfig.from_yaml_file()
+    if user_tokens := config.user_tokens():
         # Use first user token
         token = next(iter(user_tokens.keys()))
         query = urlencode({"token": token})
@@ -263,8 +263,8 @@ def dev(
         _print_auth_url(host, frontend_dev_port)
         if open_browser:
             # Try to open authenticated URL if token available
-            user_tokens, _ = load_tokens()
-            if user_tokens:
+            config = TokensConfig.from_yaml_file()
+            if user_tokens := config.user_tokens():
                 token = next(iter(user_tokens.keys()))
                 query = urlencode({"token": token})
                 auth_url = urlunparse(("http", f"{host}:{frontend_dev_port}", "", "", query, ""))

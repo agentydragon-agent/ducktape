@@ -19,7 +19,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from adgn.agent.mcp_bridge.auth import TokenRoutingASGI, load_tokens
+from adgn.agent.mcp_bridge.auth import TokenRoutingASGI, TokensConfig
 from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
 from adgn.agent.mcp_bridge.servers.agent_control import make_agent_control_server
 from adgn.agent.mcp_bridge.servers.agents import make_agents_server
@@ -150,19 +150,30 @@ def registry(sqlite_persistence):
 # ---------------------------------------------------------------------------
 
 
-class TestLoadTokens:
-    """Tests for token loading."""
+@pytest.fixture
+def tokens_yaml(tmp_path: Path):
+    """Factory fixture to write tokens YAML and return the path."""
+    path = tmp_path / "tokens.yaml"
 
-    def test_load_tokens_missing_file(self):
+    def _write(content: str) -> Path:
+        path.write_text(content)
+        return path
+
+    return _write
+
+
+class TestTokensConfig:
+    """Tests for TokensConfig loading."""
+
+    def test_missing_file(self):
         """Returns empty tokens when config file doesn't exist."""
-        user_tokens, agent_tokens = load_tokens(Path("/nonexistent/path.yaml"))
-        assert user_tokens == {}
-        assert agent_tokens == {}
+        config = TokensConfig.from_yaml_file(Path("/nonexistent/path.yaml"))
+        assert config.user_tokens() == {}
+        assert config.agent_tokens() == {}
 
-    def test_load_tokens_from_file(self, tmp_path: Path):
+    def test_from_yaml_file(self, tokens_yaml):
         """Loads tokens from YAML file."""
-        config = tmp_path / "tokens.yaml"
-        config.write_text("""
+        path = tokens_yaml("""
 users:
   admin: "admin-token-123"
   viewer: "viewer-token-456"
@@ -171,35 +182,44 @@ agents:
   claude-code-1: "agent-token-aaa"
   external-agent: "agent-token-bbb"
 """)
-        user_tokens, agent_tokens = load_tokens(config)
+        config = TokensConfig.from_yaml_file(path)
 
         # User tokens: token -> user_id
-        assert user_tokens == {"admin-token-123": "admin", "viewer-token-456": "viewer"}
+        assert config.user_tokens() == {"admin-token-123": "admin", "viewer-token-456": "viewer"}
 
         # Agent tokens: token -> agent_id
-        assert agent_tokens == {"agent-token-aaa": "claude-code-1", "agent-token-bbb": "external-agent"}
+        assert config.agent_tokens() == {"agent-token-aaa": "claude-code-1", "agent-token-bbb": "external-agent"}
 
-    def test_load_tokens_empty_file(self, tmp_path: Path):
+    def test_empty_file(self, tokens_yaml):
         """Returns empty tokens when config file is empty."""
-        config = tmp_path / "tokens.yaml"
-        config.write_text("")
-        user_tokens, agent_tokens = load_tokens(config)
-        assert user_tokens == {}
-        assert agent_tokens == {}
+        config = TokensConfig.from_yaml_file(tokens_yaml(""))
+        assert config.user_tokens() == {}
+        assert config.agent_tokens() == {}
 
-    def test_load_tokens_null_values_skipped(self, tmp_path: Path):
+    def test_null_values_skipped(self, tokens_yaml):
         """Skips null token values in config."""
-        config = tmp_path / "tokens.yaml"
-        config.write_text("""
+        config = TokensConfig.from_yaml_file(tokens_yaml("""
 users:
   admin: "valid-token"
   invalid: null
   empty: ""
-""")
-        user_tokens, agent_tokens = load_tokens(config)
+"""))
         # Only non-null, non-empty tokens should be included
-        assert user_tokens == {"valid-token": "admin"}
-        assert agent_tokens == {}
+        assert config.user_tokens() == {"valid-token": "admin"}
+        assert config.agent_tokens() == {}
+
+    def test_model_validation(self, tokens_yaml):
+        """TokensConfig validates and parses YAML correctly."""
+        config = TokensConfig.from_yaml_file(tokens_yaml("""
+users:
+  admin: "token-1"
+agents:
+  agent-1: "token-2"
+"""))
+
+        # Check raw model attributes
+        assert config.users == {"admin": "token-1"}
+        assert config.agents == {"agent-1": "token-2"}
 
 
 # ---------------------------------------------------------------------------

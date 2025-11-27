@@ -14,7 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from adgn.agent.mcp_bridge.auth import load_tokens
+from adgn.agent.mcp_bridge.auth import TokensConfig
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -25,18 +25,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Load token table at module load (can be refreshed by calling load_tokens again)
+# Load token table at module load (can be refreshed via TokensConfig.from_yaml_file)
 def _build_token_table() -> dict[str, str]:
     """Build token table mapping token -> identity (user or agent:id)."""
-    user_tokens, agent_tokens = load_tokens()
+    config = TokensConfig.from_yaml_file()
     table: dict[str, str] = {}
 
     # User tokens map to "user"
-    for token in user_tokens.keys():
+    for token in config.user_tokens():
         table[token] = "user"
 
     # Agent tokens: token -> agent_id, so build table token -> "agent:{id}"
-    for token, agent_id in agent_tokens.items():
+    for token, agent_id in config.agent_tokens().items():
         table[token] = f"agent:{agent_id}"
 
     return table

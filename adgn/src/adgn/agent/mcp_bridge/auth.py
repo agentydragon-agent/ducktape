@@ -1,7 +1,7 @@
 """Token authentication and routing for MCP bridge.
 
 Provides:
-- Token loading from YAML config
+- Token loading from YAML config via Pydantic model
 - ASGI-level routing based on bearer token
 """
 
@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 import yaml
@@ -25,18 +26,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_TOKENS_PATH = Path("~/.config/adgn/tokens.yaml").expanduser()
 
 
-def load_tokens(path: Path | None = None) -> tuple[dict[str, str], dict[str, str]]:
-    """Load tokens from YAML config file.
+class TokensConfig(BaseModel):
+    """Tokens configuration loaded from YAML.
 
-    Args:
-        path: Path to tokens.yaml file. Defaults to ~/.config/adgn/tokens.yaml
-
-    Returns:
-        Tuple of (user_tokens, agent_tokens) where:
-        - user_tokens: dict mapping token → user_id
-        - agent_tokens: dict mapping token → agent_id
-
-    Token file format:
+    File format:
     ```yaml
     users:
       admin: "hex_token_here"
@@ -44,33 +37,44 @@ def load_tokens(path: Path | None = None) -> tuple[dict[str, str], dict[str, str
     agents:
       claude-code-1: "hex_token_here"
     ```
+
+    Null or empty token values are skipped when generating inverted token mappings.
     """
-    config_path = path or Path(os.getenv("ADGN_TOKENS_PATH", str(DEFAULT_TOKENS_PATH)))
 
-    user_tokens: dict[str, str] = {}
-    agent_tokens: dict[str, str] = {}
+    users: dict[str, str | None] = {}  # user_id -> token (None allowed for disabled users)
+    agents: dict[str, str | None] = {}  # agent_id -> token (None allowed for disabled agents)
 
-    if not config_path.exists():
-        logger.warning(f"Tokens config not found at {config_path}, using empty tokens")
-        return user_tokens, agent_tokens
+    @classmethod
+    def from_yaml_file(cls, path: Path | None = None) -> TokensConfig:
+        """Load tokens config from YAML file.
 
-    with config_path.open() as f:
-        data = yaml.safe_load(f) or {}
+        Args:
+            path: Path to tokens.yaml. Defaults to ~/.config/adgn/tokens.yaml
+                  or ADGN_TOKENS_PATH env var.
 
-    # Parse users section: user_id -> token becomes token -> user_id
-    users_section = data.get("users", {})
-    for user_id, token in users_section.items():
-        if token:
-            user_tokens[token] = user_id
+        Returns:
+            TokensConfig instance (empty if file doesn't exist)
+        """
+        config_path = path or Path(os.getenv("ADGN_TOKENS_PATH", str(DEFAULT_TOKENS_PATH)))
 
-    # Parse agents section: agent_id -> token becomes token -> agent_id
-    agents_section = data.get("agents", {})
-    for agent_id, token in agents_section.items():
-        if token:
-            agent_tokens[token] = agent_id
+        if not config_path.exists():
+            logger.warning(f"Tokens config not found at {config_path}, using empty tokens")
+            return cls()
 
-    logger.info(f"Loaded {len(user_tokens)} user tokens, {len(agent_tokens)} agent tokens")
-    return user_tokens, agent_tokens
+        with config_path.open() as f:
+            data = yaml.safe_load(f) or {}
+
+        config = cls.model_validate(data)
+        logger.info(f"Loaded {len(config.users)} user tokens, {len(config.agents)} agent tokens")
+        return config
+
+    def user_tokens(self) -> dict[str, str]:
+        """Return token -> user_id mapping (inverted from config)."""
+        return {token: user_id for user_id, token in self.users.items() if token}
+
+    def agent_tokens(self) -> dict[str, str]:
+        """Return token -> agent_id mapping (inverted from config)."""
+        return {token: agent_id for agent_id, token in self.agents.items() if token}
 
 
 class TokenRoutingASGI:

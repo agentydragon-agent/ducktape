@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastmcp.mcp_config import MCPConfig
 import uvicorn
 
-from adgn.agent.mcp_bridge.auth import load_tokens
+from adgn.agent.mcp_bridge.auth import TokensConfig
 from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
 from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -118,8 +118,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         logger.info("Global compositor created with agents management server")
 
         # Load tokens and create external agents at startup
-        _user_tokens, agent_tokens = load_tokens()
-        for agent_id in agent_tokens.values():
+        config = TokensConfig.from_yaml_file()
+        for agent_id in config.agent_tokens().values():
             await app.state.mcp_registry.create_external_agent(agent_id)
             logger.info(f"Created external agent from token: {agent_id}")
 

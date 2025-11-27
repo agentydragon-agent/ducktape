@@ -281,64 +281,63 @@ async def _run_session_container(
     timed_out = False
     exit_code = None
 
-    try:
-        # Create exec instance with explicit args (avoid **kwargs issues)
-        exec_obj = await container_instance.exec(
-            cmd,
-            stdout=True,
-            stderr=True,
-            stdin=False,
-            tty=False,  # No TTY to ensure stdout/stderr separation
-            workdir=str(input.cwd) if input.cwd is not None else str(s.working_dir),
-            environment=input.env,
-            user=input.user or "",
-        )
+    # Create exec instance with explicit args (avoid **kwargs issues)
+    exec_obj = await container_instance.exec(
+        cmd,
+        stdout=True,
+        stderr=True,
+        stdin=False,
+        tty=False,  # No TTY to ensure stdout/stderr separation
+        workdir=str(input.cwd) if input.cwd is not None else str(s.working_dir),
+        environment=input.env,
+        user=input.user or "",
+    )
 
-        # Start exec and collect output with timeout
-        stream: Any = exec_obj.start()
+    # Start exec and collect output with timeout
+    stream: Any = exec_obj.start()
 
-        async def collect_output():
-            while True:
-                chunk = await stream.read_out()
-                if chunk is None:
-                    break
+    async def collect_output():
+        while True:
+            chunk = await stream.read_out()
+            if chunk is None:
+                break
 
-                # chunk is a Message namedtuple with stream (1=stdout, 2=stderr) and data (bytes)
-                chunk_bytes = chunk.data  # Always bytes from aiodocker
+            # chunk is a Message namedtuple with stream (1=stdout, 2=stderr) and data (bytes)
+            chunk_bytes = chunk.data  # Always bytes from aiodocker
 
-                # Check stream type (1=stdout, 2=stderr)
-                stream_type = chunk.stream
-                if stream_type == 1:
-                    stdout_buf.extend(chunk_bytes)
-                elif stream_type == 2:
-                    stderr_buf.extend(chunk_bytes)
-                else:
-                    # Unknown stream type, default to stdout
-                    stdout_buf.extend(chunk_bytes)
+            # Check stream type (1=stdout, 2=stderr)
+            stream_type = chunk.stream
+            if stream_type == 1:
+                stdout_buf.extend(chunk_bytes)
+            elif stream_type == 2:
+                stderr_buf.extend(chunk_bytes)
+            else:
+                # Unknown stream type, default to stdout
+                stdout_buf.extend(chunk_bytes)
 
-        # Implement external timeout mechanism
-        timeout_task = asyncio.create_task(asyncio.sleep(input.timeout_ms / 1000.0))
-        collect_task = asyncio.create_task(collect_output())
+    # Implement external timeout mechanism
+    timeout_task = asyncio.create_task(asyncio.sleep(input.timeout_ms / 1000.0))
+    collect_task = asyncio.create_task(collect_output())
 
-        done, pending = await asyncio.wait({timeout_task, collect_task}, return_when=asyncio.FIRST_COMPLETED)
+    done, pending = await asyncio.wait({timeout_task, collect_task}, return_when=asyncio.FIRST_COMPLETED)
 
-        # Cancel pending tasks
-        for task in pending:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+    # Cancel pending tasks
+    for task in pending:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
-        if timeout_task in done:
-            # External timeout - kill and restart container
-            timed_out = True
-            exit_code = None
-            await container_instance.kill()
-            await asyncio.sleep(0.5)
-            s.container = await _start_container(client=docker_client, opts=opts)
-        else:
-            # Command completed normally - inspect exec for exit code
-            inspect_result = await exec_obj.inspect()
-            exit_code = inspect_result.get("ExitCode", 0)
+    if timeout_task in done:
+        # External timeout - kill and restart container
+        timed_out = True
+        exit_code = None
+        await container_instance.kill()
+        await asyncio.sleep(0.5)
+        s.container = await _start_container(client=docker_client, opts=opts)
+    else:
+        # Command completed normally - inspect exec for exit code
+        inspect_result = await exec_obj.inspect()
+        exit_code = inspect_result.get("ExitCode", 0)
 
     return stdout_buf, stderr_buf, exit_code, timed_out
 
