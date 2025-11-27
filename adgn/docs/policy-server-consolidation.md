@@ -37,76 +37,97 @@ Consolidate policy and approval handling into a single `PolicyEngine` class that
 
 ## Phase 5: Two-Compositor Architecture
 
-### Background
+### Overview
 
-The current architecture has a single compositor per agent that serves both the agent (LLM) and the user (UI). Phase 5 separates these concerns:
-
-- **Agent compositor**: Has policy gateway middleware that gates all tool calls
-- **User compositor**: Exposes admin tools without policy gating (trusted user)
-
-### Problem: Broken `app.py` Imports
-
-`app.py` currently imports from non-existent modules:
-```python
-from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
-from adgn.agent.mcp_bridge.server import InfrastructureRegistry
-```
-
-These were planned but never implemented. Phase 5 must either:
-1. Create these modules, or
-2. Refactor app.py to use a different approach
-
-### Architecture
+Single `/mcp` endpoint serves both users and agents. Bearer token determines routing:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Global Level                                   │
-│  /mcp endpoint → Global Compositor → Per-Agent User Compositors         │
-└─────────────────────────────────────────────────────────────────────────┘
-
-Per-Agent Structure:
-┌──────────────────────────────────────────────────────────────────────────┐
-│ AgentContainer owns:                                                      │
-│                                                                          │
-│  ┌─────────────────────────────┐    ┌─────────────────────────────────┐ │
-│  │   Agent Compositor          │    │    User Compositor               │ │
-│  │   (for LLM tool calls)      │    │    (for UI/admin)               │ │
-│  │                             │    │                                  │ │
-│  │  - reader (policy.py)       │    │  - reader (policy.py)           │ │
-│  │  - policy_proposer          │    │  - admin (approve/reject/set)   │ │
-│  │  - ui                       │    │  - agent_control (send_prompt)  │ │
-│  │  - chat.human/assistant     │    │  - snapshot resource            │ │
-│  │  - loop                     │    │                                  │ │
-│  │  - runtime (exec)           │    │                                  │ │
-│  │  + Policy Gateway MW ✓      │    │  (no gateway - trusted)         │ │
-│  └─────────────────────────────┘    └─────────────────────────────────┘ │
-│                                                                          │
-│  PolicyEngine owns both: .reader, .policy_proposer, .admin              │
-└──────────────────────────────────────────────────────────────────────────┘
+                          ┌─────────────────────────────────────────────┐
+                          │              /mcp endpoint                   │
+                          │     (same port, same URL for both)          │
+                          └─────────────────┬───────────────────────────┘
+                                            │
+                          ┌─────────────────┴───────────────────────────┐
+                          │         Bearer Token Router                  │
+                          │   (FastMCP TokenVerifier middleware)        │
+                          └─────────┬───────────────────────┬───────────┘
+                                    │                       │
+                    ┌───────────────┴───────┐   ┌───────────┴───────────────┐
+                    │   User Token          │   │   Agent Token             │
+                    │   → User Compositor   │   │   → Agent Compositor      │
+                    └───────────────────────┘   └───────────────────────────┘
 ```
+
+### Architecture: User-Facing Compositor (2-level)
+
+```
+User-Facing Global Compositor
+├── agents (management server)
+│   ├── list_agents
+│   ├── create_agent
+│   ├── delete_agent
+│   └── boot_agent ──► lazy mounts per-agent compositor
+│
+└── agent_{id} (per-agent user compositor, mounted on boot_agent)
+    ├── reader (policy.py)
+    ├── admin (approve/reject/set)
+    ├── agent_control (send_prompt, abort_run)
+    └── snapshot resource
+```
+
+### Architecture: Agent-Facing Compositor
+
+```
+Agent Compositor (per-agent, gated)
+├── reader (policy.py)
+├── policy_proposer
+├── ui
+├── chat.human / chat.assistant
+├── loop
+├── runtime (exec)
+└── [Policy Gateway Middleware] ─► gates all tool calls
+```
+
+### Design Decisions
+
+1. **Single endpoint, token-based routing**
+   - Same `/mcp` URL for users and agents
+   - Bearer token determines which compositor handles request
+   - Use FastMCP's `TokenVerifier` interface for auth
+
+2. **Lazy mounting via `boot_agent(id)`**
+   - Global compositor mounts `agents` server at startup
+   - `boot_agent(id)` ensures agent is live, then mounts its user compositor
+   - Uses `asyncio.Lock` for concurrent calls - boot once, others succeed
+
+3. **AgentID type**
+   - Use existing `AgentID = NewType("AgentID", str)` from `agent/types.py`
+   - Already has narrow charset (semantic str wrapper)
+   - Safe to use as tool prefix: `agent_{id}_send_prompt`
+
+4. **Unmount on shutdown**
+   - When agent shuts down, unmount its user compositor from global
+   - Uses Compositor's `unmount_server()` method
+
+5. **Shared PolicyEngine**
+   - Single engine per agent, shared between both compositors
+   - Both mount same `.reader`, `.policy_proposer`, `.admin` servers
 
 ### Implementation Steps
 
-#### Step 1: Create `mcp_bridge` Module Structure
-
-New directory: `adgn/src/adgn/agent/mcp_bridge/`
+#### Step 1: Create `mcp_bridge` Module
 
 ```
-mcp_bridge/
+adgn/src/adgn/agent/mcp_bridge/
 ├── __init__.py
+├── auth.py                  # TokenVerifier impl, token→compositor routing
 ├── compositor_factory.py    # create_global_compositor()
 ├── server.py               # InfrastructureRegistry class
 └── servers/
-    └── agents.py           # Agent management tools (create/delete/list)
+    └── agents.py           # Agent management MCP server
 ```
 
-#### Step 2: InfrastructureRegistry (server.py)
-
-Manages per-agent lifecycle and exposes:
-- `list_agents()` - List all agents with status
-- `create_agent(preset)` - Create new agent
-- `delete_agent(id)` - Delete agent
-- `boot_agent(id)` - Ensure agent is running
+#### Step 2: InfrastructureRegistry
 
 ```python
 @dataclass
@@ -115,47 +136,87 @@ class InfrastructureRegistry:
     docker_client: DockerClient
     mcp_config: MCPConfig
     initial_policy: str | None
+    global_compositor: Compositor  # Reference for mounting
 
-    _agents: dict[str, AgentContainer] = field(default_factory=dict)
+    _agents: dict[AgentID, AgentContainer] = field(default_factory=dict)
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
-    async def ensure_live(self, agent_id: str) -> AgentContainer: ...
-    async def create_agent(self, preset: str) -> str: ...
-    async def delete_agent(self, agent_id: str) -> None: ...
+    async def boot_agent(self, agent_id: AgentID) -> None:
+        """Ensure agent is live and mount its user compositor."""
+        async with self._lock:
+            if agent_id in self._agents:
+                return  # Already booted
+            container = await self._create_container(agent_id)
+            self._agents[agent_id] = container
+            # Mount user compositor to global
+            await self.global_compositor.mount_inproc(
+                f"agent_{agent_id}",
+                container.user_compositor
+            )
+
+    async def shutdown_agent(self, agent_id: AgentID) -> None:
+        """Shutdown agent and unmount its user compositor."""
+        async with self._lock:
+            if agent_id not in self._agents:
+                return
+            # Unmount from global
+            await self.global_compositor.unmount_server(f"agent_{agent_id}")
+            container = self._agents.pop(agent_id)
+            await container.shutdown()
 ```
 
-#### Step 3: Global Compositor (compositor_factory.py)
+#### Step 3: Bearer Token Auth
 
-Creates the global `/mcp` compositor that:
-1. Mounts `agents` server (create/delete/list tools)
-2. Dynamically mounts per-agent user compositors on demand
+FastMCP provides `TokenVerifier` interface. Implement custom verifier:
 
 ```python
-async def create_global_compositor(
-    registry: InfrastructureRegistry,
-    gateway_client: Client | None = None,
-) -> Compositor:
-    comp = Compositor("global")
+class AgentTokenVerifier:
+    """Routes requests based on bearer token type."""
 
-    # Mount agents management server
-    agents_server = make_agents_server(registry)
-    await comp.mount_inproc("agents", agents_server)
+    def __init__(
+        self,
+        user_tokens: dict[str, str],   # token → user_id
+        agent_tokens: dict[str, AgentID],  # token → agent_id
+    ):
+        self.user_tokens = user_tokens
+        self.agent_tokens = agent_tokens
 
-    # TODO: Dynamic per-agent sub-compositor mounting
-    return comp
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if token in self.user_tokens:
+            return AccessToken(
+                token=token,
+                client_id=self.user_tokens[token],
+                scopes=["user"],
+                expires_at=None,
+            )
+        if token in self.agent_tokens:
+            return AccessToken(
+                token=token,
+                client_id=str(self.agent_tokens[token]),
+                scopes=["agent"],
+                expires_at=None,
+            )
+        return None
 ```
 
-#### Step 4: AgentContainer Dual Compositor
+#### Step 4: Dual Compositor per Agent
 
-Modify `AgentContainer` to create two compositors:
+Modify `AgentContainer`:
 
 ```python
 class AgentContainer:
     _agent_compositor: Compositor  # For LLM (has gateway)
     _user_compositor: Compositor   # For UI (no gateway)
 
-    async def _attach_inproc_servers(self, ui_bus):
+    @property
+    def user_compositor(self) -> Compositor:
+        return self._user_compositor
+
+    async def _setup_compositors(self):
+        engine = self._policy_engine
+
         # Agent compositor (existing, add gateway)
-        self._agent_compositor.add_middleware(self._policy_engine.gateway)
+        self._agent_compositor.add_middleware(engine.gateway)
         await self._agent_compositor.mount_inproc("reader", engine.reader)
         await self._agent_compositor.mount_inproc("policy_proposer", engine.policy_proposer)
         # ... other servers
@@ -164,65 +225,76 @@ class AgentContainer:
         self._user_compositor = Compositor(f"user-{self.agent_id}")
         await self._user_compositor.mount_inproc("reader", engine.reader)
         await self._user_compositor.mount_inproc("admin", engine.admin)
-        await self._user_compositor.mount_inproc("agent_control", agent_control_server)
+        await self._user_compositor.mount_inproc("agent_control", self._agent_control_server)
 ```
 
 #### Step 5: Agent Control Server
 
-New server exposing:
-- `send_prompt(text)` - Send user prompt to agent
-- `abort_run()` - Abort current agent run
+```python
+def make_agent_control_server(container: AgentContainer) -> FastMCP:
+    mcp = FastMCP("agent_control")
 
-Currently these are HTTP endpoints; migrate to MCP tools.
+    @mcp.tool()
+    async def send_prompt(text: str) -> str:
+        await container.send_prompt(text)
+        return "Prompt sent"
+
+    @mcp.tool()
+    async def abort_run() -> str:
+        await container.abort()
+        return "Run aborted"
+
+    return mcp
+```
 
 #### Step 6: Fix app.py
 
-Update `app.py` to use the new modules:
 ```python
 from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
 from adgn.agent.mcp_bridge.server import InfrastructureRegistry
+from adgn.agent.mcp_bridge.auth import AgentTokenVerifier
+
+# In lifespan:
+registry = InfrastructureRegistry(...)
+global_comp = await create_global_compositor(registry)
+
+# Route based on token
+verifier = AgentTokenVerifier(user_tokens, agent_tokens)
+# Use FastMCP's auth middleware with custom verifier
 ```
-
-### Design Decisions (Resolved)
-
-1. **Dynamic mounting**: Lazy mount on `boot_agent(id)` call
-   - Global compositor mounts `agents` server with tools: `list_agents`, `create_agent`, `delete_agent`, `boot_agent`
-   - `boot_agent(id)` ensures agent is live, then mounts its user compositor to the global compositor
-   - Uses Compositor's existing `mount_inproc()` for hot-mounting
-
-2. **Agent ID routing**: Tool prefix via FastMCP's `mount(prefix=...)`
-   - FastMCP's `mount()` automatically prefixes: `{prefix}_{tool}`
-   - Example: `agent_123_send_prompt`, `agent_123_abort_run`
-   - Resources: `snapshot://agent_123/state`
-   - No query params or nested paths needed
-
-3. **Shared PolicyEngine**: Yes, single engine per agent
-   - Both agent and user compositors mount the same engine's servers
-   - Shared state: pending calls, policy version, hub futures
 
 ### Implementation Flow
 
 ```
-1. User calls: agents_boot_agent(id="123")
-   ↓
-2. InfrastructureRegistry.ensure_live("123")
-   - Creates AgentContainer if not exists
-   - Starts agent_compositor (for LLM)
-   - Creates user_compositor (for UI)
-   ↓
-3. Global compositor mounts user_compositor:
-   global_comp.mount_inproc(f"agent_{id}", user_comp)
-   ↓
-4. Tools now available as:
-   - agent_123_send_prompt
-   - agent_123_abort_run
-   - agent_123_approve_call (via admin)
-   Resources:
-   - snapshot://agent_123/state
+1. User connects with user bearer token
+   → Routes to user-facing global compositor
+   → Calls: agents_boot_agent(id="abc123")
+
+2. InfrastructureRegistry.boot_agent("abc123")
+   - Acquires lock
+   - Creates AgentContainer (both compositors)
+   - Mounts user_compositor as "agent_abc123"
+   - Releases lock
+
+3. User can now call:
+   - agent_abc123_send_prompt(text="Hello")
+   - agent_abc123_abort_run()
+   - agent_abc123_admin_approve_call(call_id="...")
+
+4. Agent connects with agent bearer token
+   → Routes directly to agent's agent_compositor
+   → Tool calls gated by policy gateway middleware
 ```
+
+### Notes
+
+- **No existing bearer token code on devel** - needs full implementation
+- **FastMCP auth**: Use `TokenVerifier` interface, `InMemoryOAuthProvider` as reference
+- **Props specimens** reference planned `mcp_bridge/auth.py` that was never created
 
 ### Dependencies
 
 - PolicyEngine with `.reader`, `.policy_proposer`, `.admin` servers (✅ Done)
 - Compositor with middleware support (✅ Done)
-- HTTP/SSE MCP transport on `/mcp` (exists but broken)
+- HTTP/SSE MCP transport on `/mcp` (exists but broken due to missing imports)
+- FastMCP TokenVerifier auth (available in fastmcp.server.auth)
