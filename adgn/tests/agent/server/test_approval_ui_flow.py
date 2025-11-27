@@ -13,7 +13,7 @@ from tests.llm.support.openai_mock import make_mock
 
 
 @pytest.mark.timeout(10)
-def test_approval_prompt_auto_appears(responses_factory, make_echo_spec, agent_ws_box) -> None:
+def test_approval_prompt_auto_appears(responses_factory, echo_spec, agent_ws_box) -> None:
     """Test that approval prompts appear immediately in UI without manual refresh."""
 
     state = {"step": 0}
@@ -30,7 +30,7 @@ def test_approval_prompt_auto_appears(responses_factory, make_echo_spec, agent_w
         return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
 
     client = make_mock(responses_create)
-    specs = make_echo_spec()
+    specs = echo_spec
 
     try:
         with agent_ws_box(client, specs=specs, auto_approve=True) as box:

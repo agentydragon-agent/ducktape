@@ -28,7 +28,8 @@ from adgn.mcp.testing.simple_servers import make_simple_mcp
 from tests.types import McpServerSpecs
 
 
-def _test_agent_id(request: pytest.FixtureRequest) -> str:
+@pytest.fixture
+def test_agent_id(request: pytest.FixtureRequest) -> str:
     """Generate a sanitized agent ID from the test node ID."""
     return re.sub(r"[^a-zA-Z0-9_-]", "_", request.node.nodeid) or "tests"
 
@@ -118,17 +119,16 @@ async def sqlite_persistence(tmp_path):
 
 
 @pytest.fixture
-def make_approval_policy_server(sqlite_persistence, docker_client, request: pytest.FixtureRequest):
+def make_approval_policy_server(sqlite_persistence, docker_client, test_agent_id):
     """Factory producing PolicyEngine instances with per-test defaults.
 
     The returned engine owns .reader, .proposer and .approver sub-servers.
     """
 
     def _make(policy_source: str, *, agent_id: str | None = None) -> PolicyEngine:
-        effective_id = agent_id or _test_agent_id(request)
         return PolicyEngine(
             docker_client=docker_client,
-            agent_id=effective_id,
+            agent_id=agent_id or test_agent_id,
             persistence=sqlite_persistence,
             policy_source=policy_source,
         )
@@ -222,7 +222,7 @@ async def _setup_pg_compositor(
 
 
 @pytest.fixture
-def make_pg_client(sqlite_persistence, docker_client, request: pytest.FixtureRequest):
+def make_pg_client(sqlite_persistence, docker_client, test_agent_id):
     """Async helper to open a Compositor with policy gateway, yielding just the client.
 
     Usage:
@@ -234,8 +234,7 @@ def make_pg_client(sqlite_persistence, docker_client, request: pytest.FixtureReq
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
-        agent_id = _test_agent_id(request)
-        comp, _ = await _setup_pg_compositor(servers, policy_engine, sqlite_persistence, docker_client, agent_id)
+        comp, _ = await _setup_pg_compositor(servers, policy_engine, sqlite_persistence, docker_client, test_agent_id)
         async with Client(comp) as sess:
             yield sess
 
@@ -243,7 +242,7 @@ def make_pg_client(sqlite_persistence, docker_client, request: pytest.FixtureReq
 
 
 @pytest.fixture
-def make_pg_compositor(sqlite_persistence, docker_client, request: pytest.FixtureRequest):
+def make_pg_compositor(sqlite_persistence, docker_client, test_agent_id):
     """Async helper with full access to compositor and engine.
 
     Usage:
@@ -255,8 +254,7 @@ def make_pg_compositor(sqlite_persistence, docker_client, request: pytest.Fixtur
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
-        agent_id = _test_agent_id(request)
-        comp, engine = await _setup_pg_compositor(servers, policy_engine, sqlite_persistence, docker_client, agent_id)
+        comp, engine = await _setup_pg_compositor(servers, policy_engine, sqlite_persistence, docker_client, test_agent_id)
         async with Client(comp) as sess:
             yield sess, comp, engine
 
@@ -308,13 +306,12 @@ async def pg_compositor_box(make_pg_compositor):
 
 
 @pytest.fixture
-async def pg_compositor_echo(make_echo_spec, make_pg_compositor):
+async def pg_compositor_echo(echo_spec, make_pg_compositor):
     """Async fixture with echo server and policy gateway.
 
     Yields (client, compositor, policy_engine).
     """
-    servers = make_echo_spec()
-    async with make_pg_compositor(servers) as result:
+    async with make_pg_compositor(echo_spec) as result:
         yield result
 
 
@@ -483,10 +480,6 @@ def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemera
 
 
 @pytest.fixture
-def make_echo_spec(make_backend_server) -> Callable[[], McpServerSpecs]:
-    """Return a factory that produces in-proc FastMCP servers for echo tests."""
-
-    def _spec() -> McpServerSpecs:
-        return {"echo": make_backend_server("echo")}
-
-    return _spec
+def echo_spec(make_backend_server) -> McpServerSpecs:
+    """In-proc FastMCP server spec for echo tests."""
+    return {"echo": make_backend_server("echo")}

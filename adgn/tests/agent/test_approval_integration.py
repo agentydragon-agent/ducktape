@@ -17,7 +17,7 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 @pytest.mark.requires_docker
 async def test_approval_system_wired_and_blocks_on_ask(
-    responses_factory, make_echo_spec, make_pg_compositor, make_approval_policy_server
+    responses_factory, echo_spec, make_pg_compositor, make_approval_policy_server
 ) -> None:
     """Test that the approval system is properly wired and blocks tool calls via middleware."""
 
@@ -34,7 +34,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
     client = FakeOpenAIModel(seq)
 
     # Use make_pg_compositor with custom policy engine
-    servers = dict(make_echo_spec())
+    servers = dict(echo_spec)
     async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, _comp, policy_engine):
         agent = await MiniCodex.create(
             model=responses_factory.model, mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()]

@@ -16,7 +16,7 @@ from tests.llm.support.openai_mock import make_mock
 
 
 @pytest.mark.timeout(15)
-def test_ws_tool_multiturn(responses_factory, make_echo_spec, agent_ws_box) -> None:
+def test_ws_tool_multiturn(responses_factory, echo_spec, agent_ws_box) -> None:
     """WS multi-turn: user -> echo tool -> typed MCP result -> UI message."""
 
     state = {"step": 0}
@@ -38,7 +38,7 @@ def test_ws_tool_multiturn(responses_factory, make_echo_spec, agent_ws_box) -> N
 
     client = make_mock(responses_create)
 
-    specs = dict(make_echo_spec())
+    specs = dict(echo_spec)
 
     try:
         with agent_ws_box(client, specs=specs, auto_approve=True) as box:

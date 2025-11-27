@@ -21,10 +21,10 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
-from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import ApprovalPendingEvt, Envelope, RunStatus, RunStatusEvt, ServerMessage
+from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.editor_server import make_editor_server
 from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
@@ -251,7 +251,7 @@ def typed_editor_factory(tmp_path: Path):
 # make_typed_mcp now provided globally in tests/conftest.py
 
 
-# make_echo_spec is provided at tests/conftest.py for all suites.
+# echo_spec fixture is provided at tests/conftest.py for all suites.
 
 
 # Helper: create a live agent via HTTP on a TestClient and return its id

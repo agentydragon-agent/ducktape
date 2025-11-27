@@ -9,12 +9,12 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.mark.requires_docker
-async def test_approval_policy_server_is_available(responses_factory, make_echo_spec, make_pg_compositor):
+async def test_approval_policy_server_is_available(responses_factory, echo_spec, make_pg_compositor):
     """Test that the approval policy MCP server is available to the agent and lists tools."""
 
     # make_pg_compositor creates a PolicyEngine with reader auto-mounted;
     # we just need to mount the proposer separately
-    servers = dict(make_echo_spec())
+    servers = dict(echo_spec)
     async with make_pg_compositor(servers) as (mcp_client, comp, policy_engine):
         # Mount the proposer server under the new naming scheme
         await comp.mount_inproc("policy_proposer", policy_engine.policy_proposer)
