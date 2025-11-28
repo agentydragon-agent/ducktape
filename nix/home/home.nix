@@ -90,7 +90,7 @@ in {
       ./codex
       (import ./modules/solarized.nix {inherit pkgs lib enableGui solarizedLight solarizedDark terminalFont;})
       (import ./terminals {inherit config pkgs lib enableGui unstablePkgs solarizedLight solarizedDark terminalFont;})
-      (import ./claude-code.nix {inherit config pkgs lib unstablePkgs;})
+      (import ./claude-code {inherit config pkgs lib unstablePkgs;})
     ]
     ++ lib.optionals enableGui [
       ./modules/gnome-workspace-shortcuts.nix

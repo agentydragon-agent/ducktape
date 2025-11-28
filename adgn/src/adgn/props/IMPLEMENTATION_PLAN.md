@@ -35,19 +35,67 @@ When this implementation is complete, the following MUST all be true:
 - ✅ Runs directory computed once and passed down: `discover_grader_runs(runs_dir)` requires explicit path
   - ⚠️ TODO: Audit all callers to pass `runs_dir` explicitly (no fallbacks to `pkg_dir() / "runs"`)
 
-### 6. Path Token Deduplication (TODO)
-- ❌ Path tokens ("grader", "critic", "output.json", "input.json", "events.jsonl") must not be duplicated
-- ❌ Current violations (audit results):
-  - `cluster_unknowns.py:66`: `runs_dir.rglob("*/grader/*/*/output.json")` - hardcoded pattern
-  - `cluster_unknowns.py:88,98`: `run_dir / "input.json"`, `run_dir / "output.json"` - direct path construction
-  - `run_managers.py:134,149,188,202`: Multiple `/ "input.json"` and `/ "output.json"` duplications
-  - `run_managers.py:291`: `return "grader"` - hardcoded run type string
-  - `grade_runner.py:59`: `transcript_out_dir / "grader"` - hardcoded subdirectory
-  - `per_file_eval.py:243`: `file_run_dir / "grader"` - hardcoded subdirectory
-- ❌ Solution: `RunsContext` object pattern:
-  - Holds base runs directory
-  - Provides methods for path derivation: `discover_grader_runs()`, `run_input_path(run_dir)`, `run_output_path(run_dir)`
-  - Centralizes path token constants (no string literals in business logic)
+### 6. Path Token Deduplication
+- ✅ **COMPLETED**: `RunsContext` object pattern implemented
+- ✅ Path token constants: `RUN_TYPE_CRITIC`, `RUN_TYPE_GRADER`, `INPUT_JSON`, `OUTPUT_JSON`, `EVENTS_JSONL`
+- ✅ Path derivation methods: `discover_grader_runs()`, `run_input_path()`, `run_output_path()`, `run_events_path()`
+- ✅ Output directory methods: `cluster_output_dir()`, `prompt_optimize_output_dir()`, `prompt_evals_dir()`
+- ✅ Factory method: `RunsContext.from_pkg_dir()` for default construction
+- ✅ Refactored modules: `cluster_unknowns.py`, `run_managers.py`, `prompt_optimizer.py`, `cli_app/main.py`
+- ⚠️ TODO: Remaining hardcoded paths in `cli_app/main.py:375` (prompt-eval), `:548` (per-file-eval)
+- ⚠️ TODO: Use `RUN_TYPE_*` constants instead of string literals in `run_type` properties
+
+## Remaining Refactorings (P1 - Should Do Soon)
+
+### 7. Refactor load_unknowns() Parameter Design
+```python
+# Current (redundant):
+def load_unknowns(run_dirs: Iterable[Path], ctx: RunsContext) -> list[UnknownIssue]:
+    # TODO comment at cluster_unknowns.py:64
+
+# Should be:
+def load_unknowns(ctx: RunsContext) -> list[UnknownIssue]:
+    """Discovers and loads unknown issues using context."""
+    run_dirs = ctx.discover_grader_runs()
+    # ... rest of logic
+```
+
+### 8. Standardize Timestamp Formatting
+- Current inconsistency: `strftime("%Y%m%d_%H%M%S")` vs `strftime("%Y%m%dT%H%M%S")`
+- Add to `runs_context.py`:
+  ```python
+  def format_timestamp_dir(dt: datetime | None = None) -> str:
+      """Standard timestamp format for directory names: YYYYMMDDTHHMMSS"""
+
+  def format_timestamp_log(dt: datetime | None = None) -> str:
+      """Standard timestamp format for log files: YYYYMMDD_HHMMSS"""
+  ```
+
+### 9. Use RUN_TYPE_* Constants
+Replace string literals with constants:
+```python
+from adgn.props.runs_context import RUN_TYPE_CRITIC, RUN_TYPE_GRADER
+
+class CriticRun(...):
+    @property
+    def run_type(self) -> str:
+        return RUN_TYPE_CRITIC  # Not "critic"
+```
+
+## Future Improvements (P2 - Nice to Have)
+
+### 10. Upgrade to Python 3.12 Type Parameter Syntax
+```python
+# Current (UP046 warning):
+class AgentRun(ABC, Generic[TInput, TOutput]):
+
+# Target:
+class AgentRun[TInput: BaseModel, TOutput](ABC):
+```
+
+### 11. Extract Shared Test Fixtures
+- Create `conftest.py` with common fixtures (sample scopes, inputs, outputs)
+- DRY up repeated setup code across test files
   - Injected at entry point level (CLI commands, MCP tools)
 - ⚠️ Implementation steps:
   1. Create `runs_context.py` with `RunsContext` class and path derivation methods

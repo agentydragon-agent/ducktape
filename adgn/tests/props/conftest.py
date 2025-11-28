@@ -1,12 +1,17 @@
 """Shared test fixtures for props tests."""
 
+from pathlib import Path
+
 from pydantic import BaseModel
 import pytest
 import pytest_asyncio
 
+from adgn.props.critic import CriticSubmitPayload
 from adgn.props.ids import BaseIssueID
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
+from adgn.props.run_models import CriticInput, CriticSuccess, GraderInput, SpecimenScope
+from adgn.props.runs_context import RunsContext
 from adgn.props.specimens.registry import SpecimenRegistry
 from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext
 
@@ -94,3 +99,44 @@ async def loaded_specimen_record():
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
     """
     return await SpecimenRegistry.load_strict("ducktape/2025-11-22-02")
+
+
+# =============================================================================
+# Run managers fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def train_specimen_scope() -> SpecimenScope:
+    """Sample train specimen scope (ducktape/2025-11-26-00)."""
+    return SpecimenScope(specimen_slug="ducktape/2025-11-26-00")
+
+
+@pytest.fixture
+def valid_specimen_scope() -> SpecimenScope:
+    """Sample valid specimen scope (ducktape/2025-11-21-repo)."""
+    return SpecimenScope(specimen_slug="ducktape/2025-11-21-repo")
+
+
+@pytest.fixture
+def sample_critic_input(train_specimen_scope: SpecimenScope) -> CriticInput:
+    """Sample CriticInput with train specimen and default model."""
+    return CriticInput(scope=train_specimen_scope, model="claude-sonnet-4")
+
+
+@pytest.fixture
+def sample_critic_success() -> CriticSuccess:
+    """Sample CriticSuccess with empty issues list."""
+    return CriticSuccess(result=CriticSubmitPayload(issues=[]))
+
+
+@pytest.fixture
+def sample_grader_input(train_specimen_scope: SpecimenScope, sample_critic_success: CriticSuccess) -> GraderInput:
+    """Sample GraderInput with train specimen, successful critique, and default model."""
+    return GraderInput(scope=train_specimen_scope, critic_result=sample_critic_success, model="claude-sonnet-4")
+
+
+@pytest.fixture
+def runs_context(tmp_path: Path) -> RunsContext:
+    """RunsContext using pytest tmp_path fixture."""
+    return RunsContext(tmp_path)
