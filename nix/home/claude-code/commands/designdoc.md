@@ -27,23 +27,54 @@ Then write a design document with these sections (organize in whatever order mak
    - Clear, testable criteria for when this work is complete
    - What must be true when finished
 
-2. **Open Questions / Risks / Research Needed**
+2. **Non-goals / Out of Scope**
+   - Explicitly state what is NOT being done
+   - Set clear boundaries to prevent scope creep
+
+3. **Breaking Changes** (if any)
+   - Explicitly call out what existing behavior/APIs will break
+   - What code/configs will stop working
+   - **MUST ask user to confirm breaks are acceptable**
+   - Default assumption: clean breaks, no backcompat shims or migrations
+
+4. **Open Questions / Risks / Research Needed**
    - Unknowns that need answers
    - Potential risks or blockers
    - Areas requiring investigation
 
-3. **Existing Options / Alternatives**
+5. **Existing Options / Alternatives**
    - Current approaches or similar patterns in the codebase
    - Alternative implementation strategies considered
    - Trade-offs between options
 
-4. **Execution Plan (DAG)**
+6. **Execution Plan (DAG)**
    - Tasks organized as a dependency graph
    - Show which tasks can run in parallel across 5 subagents working on the same repo
    - Mark dependencies: tasks MUST NOT run simultaneously if they:
      - Write to the same files
      - Would otherwise conflict/collide
    - Indicate which tasks are blocked by which other tasks
+   - Show file ownership: which agent/subtask writes which files
+
+### Default Assumptions (unless user explicitly requests otherwise)
+
+**Testing:**
+- NOT exhaustive - write high-value tests for main flows only
+- Prefer integration tests over unit tests
+- Use real objects where easy, not mocks
+- NOT complicated e2e browser tests or similar
+- Goal: confidence in main paths, not 100% coverage
+
+**Documentation:**
+- NO separate documentation files (README, design docs, etc.)
+- Only brief inline docs/comments for non-obvious code
+- If it's clear from reading the code, don't document it
+- Comments should add value beyond what's immediately obvious
+
+**Backward Compatibility:**
+- Clean breaks by default - NO backcompat shims or migration code
+- NO migration paths unless explicitly requested
+- Call out breaks clearly and ask user to confirm they're acceptable
 
 **Style Guidelines:**
 - Keep it DRY and concise
