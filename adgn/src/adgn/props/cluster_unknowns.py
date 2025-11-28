@@ -1,6 +1,5 @@
 import asyncio
 from collections.abc import Iterable
-from datetime import datetime
 import json
 import logging
 from pathlib import Path
@@ -18,6 +17,7 @@ from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.ids import BaseIssueID
 from adgn.props.rationale import Rationale
 from adgn.props.run_models import GraderInput, GraderOutput, SpecimenScope
+from adgn.props.runs_context import RunsContext
 
 logger = logging.getLogger(__name__)
 
@@ -47,27 +47,7 @@ class ClusterSubmitState:
         self.result: list[ClusterSpec] | None = None
 
 
-def discover_grader_runs(runs_dir: Path) -> list[Path]:
-    """Find all grader run directories under the runs structure.
-
-    New path structure: {runs_dir}/{split}/grader/{scope_id}/{timestamp}/
-    Example: runs/train/grader/specimen:ducktape/2025-11-26-00/20250127T153045/
-
-    Args:
-        runs_dir: Base runs directory (should be passed from caller, not computed here)
-
-    Returns:
-        List of run directories (each containing input.json and output.json).
-    """
-    # Search pattern: runs/*/grader/*/*/output.json
-    # - First * = split (train/valid/test)
-    # - Second through fourth * = scope_id path components + timestamp
-    output_files = sorted(runs_dir.rglob("*/grader/*/*/output.json"))
-    # Return parent directories (the run dirs)
-    return [f.parent for f in output_files]
-
-
-def load_unknowns(run_dirs: Iterable[Path]) -> list[UnknownIssue]:
+def load_unknowns(run_dirs: Iterable[Path], ctx: RunsContext) -> list[UnknownIssue]:
     """Load unknown issues from grader run directories using Pydantic models.
 
     Loads typed input.json (GraderInput) and output.json (GraderOutput) from each run.
@@ -75,16 +55,21 @@ def load_unknowns(run_dirs: Iterable[Path]) -> list[UnknownIssue]:
 
     Args:
         run_dirs: Grader run directories (each containing input.json and output.json)
+        ctx: RunsContext for path derivation (no hardcoded path tokens)
 
     Returns:
         List of UnknownIssue objects ready for clustering
+
+    TODO: Refactor to not pass run_dirs as a list parameter.
+    Consider: load_unknowns(ctx) discovers runs internally, or use a different pattern.
     """
     issues: list[UnknownIssue] = []
 
     for run_dir in run_dirs:
         try:
-            # Load typed input to get specimen
-            grader_input = GraderInput.model_validate_json((run_dir / "input.json").read_text())
+            # Load typed input to get specimen (using context for path)
+            input_path = ctx.run_input_path(run_dir)
+            grader_input = GraderInput.model_validate_json(input_path.read_text())
 
             # Only handle SpecimenScope for now
             if not isinstance(grader_input.scope, SpecimenScope):
@@ -93,8 +78,9 @@ def load_unknowns(run_dirs: Iterable[Path]) -> list[UnknownIssue]:
 
             specimen_slug = grader_input.scope.specimen_slug
 
-            # Load typed output to get grading results
-            grader_output = GraderOutput.model_validate_json((run_dir / "output.json").read_text())
+            # Load typed output to get grading results (using context for path)
+            output_path = ctx.run_output_path(run_dir)
+            grader_output = GraderOutput.model_validate_json(output_path.read_text())
 
             # Get the critique that was graded (to access original issue details)
             if not isinstance(grader_input.critic_result, type(grader_input.critic_result)):
@@ -210,7 +196,7 @@ async def cluster_unknowns_async(
     return out_root
 
 
-def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, runs_dir: Path) -> Path:
+def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, ctx: RunsContext) -> Path:
     """Cluster unknowns per specimen in parallel using an LLM (one run per specimen).
 
     - Discovers grader runs and loads unknown issues from output.json files (using Pydantic)
@@ -222,17 +208,16 @@ def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, runs_
     Args:
         model: LLM model to use for clustering
         out_dir: Optional output directory override
-        runs_dir: Base runs directory (passed from CLI, computed once at entry point)
+        ctx: RunsContext for path derivation (injected from CLI)
     """
-    grader_run_dirs = discover_grader_runs(runs_dir)
-    issues = load_unknowns(grader_run_dirs)
+    grader_run_dirs = ctx.discover_grader_runs()
+    issues = load_unknowns(grader_run_dirs, ctx)
     if not issues:
-        raise RuntimeError(f"no unknown issues found in grader runs under {runs_dir}/*/grader/*/*/")
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        raise RuntimeError(f"no unknown issues found in grader runs under {ctx.base_dir}/*/grader/*/*/")
     if out_dir is not None:
         root: Path = Path(out_dir).expanduser().resolve()
     else:
-        root = runs_dir / "cluster" / ts
+        root = ctx.cluster_output_dir()
     root.mkdir(parents=True, exist_ok=True)
 
     # Partition by specimen

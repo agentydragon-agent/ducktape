@@ -2,49 +2,31 @@
 # User to grant passwordless sudo for system inspection tools
 system_inspection_nopasswd_user: "{{ my_user }}"
 
-# List of read-only system inspection commands
+# List of read-only system inspection commands that NEED passwordless sudo
 # KEEP IN SYNC - BEGIN: Update Claude Code permissions in:
-#   nix/home/claude-code.nix (simpleInspectionCommands, specificSubcommands, logViewingCommands)
+#   nix/home/claude-code.nix (simpleInspectionCommands, specificSubcommands)
 #
-# IMPORTANT: Only include commands that cannot cause irreversible operations
-# - YES: dmesg (read kernel log), docker ps (list containers), fdisk -l (list partitions)
-# - NO: dd (disk operations), docker rm (remove containers), fdisk without -l (interactive mode)
+# IMPORTANT:
+# - Only include commands that cannot cause irreversible operations
+# - Only include commands that actually NEED sudo (not user-accessible commands)
+# - YES: dmidecode (needs root), docker ps (needs sudo/group), fdisk -l (needs root)
+# - NO: lspci (user can run), df (user can run), ps (user can run)
 system_inspection_nopasswd_commands:
-  # Hardware information
-  - /usr/bin/lspci
-  - /usr/bin/lsusb
-  - /usr/bin/lscpu
-  - /usr/bin/lsblk
-  - /usr/bin/lshw
+  # Hardware information (needs sudo for full access)
   - /usr/sbin/dmidecode
-  - /usr/bin/inxi
   - /usr/sbin/hwinfo
+  - /usr/bin/inxi
   - /usr/bin/acpi
   - /usr/bin/acpitool
   - /usr/sbin/biosdecode
   - /usr/sbin/ownership
   - /usr/sbin/vpddecode
-  - /usr/bin/sensors
   - /usr/sbin/sensors-detect
   - /usr/bin/ipmitool
   - /usr/sbin/ipmi-sensors
   - /usr/sbin/fwupdmgr
-  - /usr/bin/lsscsi
-  - /usr/bin/lsipc
-  - /usr/bin/lslocks
-  - /usr/bin/lsns
-  - /usr/bin/lsirq
-  - /usr/bin/lstopo
-  - /usr/bin/numactl
-  - /usr/bin/numastat
-  - /usr/sbin/mcelog
-  - /usr/bin/turbostat
-  - /usr/bin/cpupower
-  - /usr/bin/powertop
   - /usr/bin/nvidia-smi
   - /usr/bin/nvidia-settings
-  - /usr/bin/radeontop
-  - /usr/bin/intel_gpu_top
   # System information
   - /usr/bin/uname
   - /usr/bin/hostnamectl
@@ -52,45 +34,33 @@ system_inspection_nopasswd_commands:
   - /usr/bin/localectl
   - /usr/bin/loginctl
   - /usr/bin/bootctl
-  # Process information
-  - /usr/bin/ps
-  - /usr/bin/pstree
-  - /usr/bin/top
-  - /usr/bin/htop
+  # Process information (sudo for all processes)
   - /usr/bin/iotop
   - /usr/bin/pidstat
-  - /usr/bin/pgrep
   # Memory information
-  - /usr/bin/free
-  - /usr/bin/vmstat
   - /usr/bin/slabtop
   - /proc/meminfo
   # Disk information
-  - /usr/bin/df
-  - /usr/bin/du
-  - /usr/bin/findmnt
   - /usr/sbin/fdisk -l
   - /usr/sbin/parted -l
   - /usr/sbin/blkid
-  - /usr/bin/lsblk
-  - /usr/sbin/smartctl
-  - /usr/sbin/nvme
-  # Network information
-  - /usr/bin/ip
-  - /usr/sbin/ifconfig
-  - /usr/bin/netstat
-  - /usr/bin/ss
-  - /usr/sbin/route
-  - /usr/sbin/arp
-  - /usr/sbin/ethtool
-  - /usr/sbin/iwconfig
-  - /usr/sbin/iw
-  - /usr/bin/nmap
-  - /usr/bin/dig
-  - /usr/bin/nslookup
-  - /usr/bin/host
-  - /usr/bin/traceroute
-  - /usr/bin/mtr
+  - /usr/sbin/smartctl -a *
+  - /usr/sbin/smartctl -H *
+  - /usr/sbin/smartctl -i *
+  - /usr/sbin/smartctl -l *
+  - /usr/sbin/nvme list
+  - /usr/sbin/nvme smart-log *
+  - /usr/sbin/nvme id-ctrl *
+  - /usr/sbin/nvme id-ns *
+  # Network information (sudo for full interface stats)
+  - /usr/bin/ip addr show
+  - /usr/bin/ip -s addr show
+  - /usr/bin/ip route show
+  - /usr/bin/ip -s route show
+  - /usr/bin/ip link show
+  - /usr/bin/ip -s link show
+  - /usr/bin/ip neighbor show
+  - /usr/bin/ip netns list
   # Service information
   - /usr/bin/systemctl status *
   - /usr/bin/systemctl list-units
@@ -99,9 +69,7 @@ system_inspection_nopasswd_commands:
   - /usr/bin/systemctl list-sockets
   - /usr/bin/systemctl show *
   - /usr/bin/journalctl
-  - /usr/bin/service * status
   # File system information
-  - /usr/bin/mount
   - /usr/bin/findmnt
   - /usr/sbin/zfs list
   - /usr/sbin/zpool status
@@ -117,18 +85,13 @@ system_inspection_nopasswd_commands:
   - /usr/bin/snap list
   - /usr/bin/flatpak list
   # Kernel and module information
-  - /usr/sbin/lsmod
   - /usr/sbin/modinfo *
   - /usr/bin/dmesg
   - /usr/sbin/sysctl -a
+  - /usr/sbin/sysctl -n *
+  - /usr/sbin/sysctl -N
   # Security information
-  - /usr/bin/last
   - /usr/bin/lastlog
-  - /usr/bin/w
-  - /usr/bin/who
-  - /usr/bin/users
-  - /usr/bin/id
-  - /usr/bin/groups
   - /usr/sbin/aa-status
   - /usr/sbin/sestatus
   - /usr/bin/firewall-cmd --list-all

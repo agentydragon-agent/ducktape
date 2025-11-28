@@ -73,6 +73,7 @@ from adgn.props.prompts.builder import (
 )
 from adgn.props.prompts.util import build_scope_text, get_templates_env
 from adgn.props.prop_utils import pkg_dir
+from adgn.props.runs_context import RunsContext
 from adgn.props.specimens.registry import (
     JSONNET_LIBDIR,
     SpecimenRegistry,
@@ -117,13 +118,13 @@ OPT_SKIP_GIT_REPO_CHECK = typer.Option(False, help="Pass --skip-git-repo-check t
 OPT_FULL_AUTO = typer.Option(False, help="Pass --full-auto to codex exec")
 
 
-def _get_runs_dir() -> Path:
-    """Get base runs directory (computed once at CLI entry point level).
+def _get_runs_context() -> RunsContext:
+    """Get RunsContext (computed once at CLI entry point level).
 
-    This is the single source of truth for the runs directory location.
+    This is the single source of truth for runs directory context and path derivation.
     All CLI commands should call this and pass the result down through the call chain.
     """
-    return pkg_dir() / "runs"
+    return RunsContext.from_pkg_dir()
 
 
 def _resolve_gitconfig(arg_val: str | None) -> Path | None:
@@ -336,8 +337,8 @@ def cmd_cluster_unknowns(model: str = OPT_MODEL, out_dir: Path | None = OPT_OUTP
 
     The agent must submit a single payload of clusters: [{name: str, issues: [uid,...]}].
     """
-    runs_dir = _get_runs_dir()
-    root = cluster_unknowns(model=model, out_dir=out_dir, runs_dir=runs_dir)
+    ctx = _get_runs_context()
+    root = cluster_unknowns(model=model, out_dir=out_dir, ctx=ctx)
     typer.echo(f"Clusters written to: {root / 'clusters.json'}")
 
 
@@ -353,9 +354,9 @@ async def prompt_optimize(
     ),
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
-    runs_dir = _get_runs_dir()
+    ctx = _get_runs_context()
     await run_prompt_optimizer(
-        budget=budget, runs_dir=runs_dir, out_dir=out_dir, model=model, agent_model=agent_model, verbose=verbose
+        budget=budget, ctx=ctx, out_dir=out_dir, model=model, agent_model=agent_model, verbose=verbose
     )
 
 
